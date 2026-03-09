@@ -167,14 +167,23 @@ export function toVncViewerUrl(vncBaseUrl: string): string | null {
 
   try {
     const url = new URL(vncBaseUrl);
-    url.pathname = "/vnc.html";
+    const normalizedPath = url.pathname.toLowerCase();
+    const isViewerUrl =
+      normalizedPath.endsWith("/vnc.html") ||
+      normalizedPath.endsWith("/viewer.html");
 
-    const searchParams = new URLSearchParams();
-    searchParams.set("autoconnect", "1");
-    searchParams.set("resize", "scale");
-    searchParams.set("reconnect", "0");
-    url.search = `?${searchParams.toString()}`;
-    url.hash = "";
+    if (!isViewerUrl) {
+      url.pathname = "/vnc.html";
+      url.searchParams.set("reconnect", "0");
+      url.hash = "";
+    }
+
+    if (!url.searchParams.has("autoconnect")) {
+      url.searchParams.set("autoconnect", "1");
+    }
+    if (!url.searchParams.has("resize")) {
+      url.searchParams.set("resize", "scale");
+    }
 
     return url.toString();
   } catch (error) {
@@ -238,6 +247,24 @@ export function toGenericVncUrl(sourceUrl: string): string | null {
     console.debug("[toProxyWorkspaceUrl] Failed to generate generic VNC URL:", sourceUrl, error);
     return null;
   }
+}
+
+export function resolveBrowserPreviewUrl(input: {
+  vncUrl?: string | null;
+  workspaceUrl?: string | null;
+}): string | null {
+  if (input.vncUrl) {
+    const browserPreviewUrl = toVncViewerUrl(input.vncUrl);
+    if (browserPreviewUrl) {
+      return browserPreviewUrl;
+    }
+  }
+
+  if (input.workspaceUrl) {
+    return toGenericVncUrl(input.workspaceUrl);
+  }
+
+  return null;
 }
 
 /**

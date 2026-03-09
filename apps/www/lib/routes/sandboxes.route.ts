@@ -2622,6 +2622,7 @@ sandboxesRouter.openapi(
             schema: z.object({
               running: z.boolean(),
               vscodeUrl: z.string().optional(),
+              vncUrl: z.string().optional(),
               workerUrl: z.string().optional(),
               provider: z.enum(["morph", "pve-lxc"]).optional(),
             }),
@@ -2644,6 +2645,9 @@ sandboxesRouter.openapi(
       const vscodeService = instance.networking.httpServices.find(
         (s) => s.port === 39378,
       );
+      const vncService = instance.networking.httpServices.find(
+        (s) => s.port === 39380,
+      );
       // PVE-LXC uses port 39376 for Node.js worker (Go worker uses 39377)
       // Morph uses port 39377 for Node.js worker
       const workerPort = isPveLxc ? 39376 : 39377;
@@ -2656,6 +2660,7 @@ sandboxesRouter.openapi(
       return c.json({
         running,
         vscodeUrl: vscodeService?.url,
+        vncUrl: vncService?.url,
         workerUrl: workerService?.url,
         provider: isPveLxc ? ("pve-lxc" as const) : ("morph" as const),
       });

@@ -16,7 +16,6 @@ import type {
   LayoutPhase,
 } from "@cmux/shared/components/environment";
 import {
-  deriveVncWebsocketUrl,
   deriveVscodeUrl,
   ensureInitialEnvVars,
 } from "@cmux/shared/components/environment";
@@ -29,6 +28,7 @@ import {
   postApiSandboxesByIdEnvMutation,
   postApiSandboxesByIdRunScriptsMutation,
 } from "@cmux/www-openapi-client/react-query";
+import { resolveBrowserPreviewUrl } from "@/lib/toProxyWorkspaceUrl";
 import { useMutation as useRQMutation, useQuery as useRQQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -46,29 +46,6 @@ import {
 import { toast } from "sonner";
 import { EnvironmentInitialSetup } from "./EnvironmentInitialSetup";
 import { EnvironmentWorkspaceConfig } from "./EnvironmentWorkspaceConfig";
-
-function deriveVncWebsocketUrlFromWorkspace(workspaceUrl?: string): string | undefined {
-  if (!workspaceUrl) return undefined;
-
-  try {
-    const url = new URL(workspaceUrl);
-    const portMatch = url.hostname.match(/port-(\d+)-/);
-    if (!portMatch) {
-      return undefined;
-    }
-    const vncHost = url.hostname.replace(`port-${portMatch[1]}-`, "port-39380-");
-    const wsUrl = new URL(workspaceUrl);
-    wsUrl.hostname = vncHost;
-    wsUrl.port = "";
-    wsUrl.protocol = "wss:";
-    wsUrl.pathname = "/websockify";
-    wsUrl.search = "";
-    wsUrl.hash = "";
-    return wsUrl.toString();
-  } catch {
-    return undefined;
-  }
-}
 
 interface EnvironmentSetupFlowProps {
   teamSlugOrId: string;
@@ -135,7 +112,9 @@ export function EnvironmentSetupFlow({
     enabled: Boolean(instanceId),
   });
 
-  const workspaceUrlFromStatus = sandboxStatusQuery.data?.vscodeUrl;
+  const sandboxStatus = sandboxStatusQuery.data;
+  const workspaceUrlFromStatus = sandboxStatus?.vscodeUrl;
+  const vncUrlFromStatus = sandboxStatus?.vncUrl;
 
   // Derived URLs
   const vscodeUrl = useMemo((): string | undefined => {
@@ -146,13 +125,14 @@ export function EnvironmentSetupFlow({
     return deriveVscodeUrl(instanceId) ?? undefined;
   }, [workspaceUrlFromStatus, instanceId]);
 
-  const vncWebsocketUrl = useMemo((): string | undefined => {
-    const fromStatus = deriveVncWebsocketUrlFromWorkspace(workspaceUrlFromStatus);
-    if (fromStatus) {
-      return fromStatus;
-    }
-    return deriveVncWebsocketUrl(instanceId, vscodeUrl) ?? undefined;
-  }, [instanceId, vscodeUrl, workspaceUrlFromStatus]);
+  const browserHtmlUrl = useMemo(
+    () =>
+      resolveBrowserPreviewUrl({
+        vncUrl: vncUrlFromStatus,
+        workspaceUrl: vscodeUrl,
+      }) ?? undefined,
+    [vncUrlFromStatus, vscodeUrl]
+  );
 
   // Script detection from framework (only fetch if we have repos)
   const hasUserEditedScriptsRef = useRef(false);
@@ -493,7 +473,12 @@ export function EnvironmentSetupFlow({
       envVars={envVars}
       exposedPorts={exposedPorts}
       vscodeUrl={vscodeUrl}
-      vncWebsocketUrl={vncWebsocketUrl}
+      browserHtmlUrl={browserHtmlUrl}
+      browserPersistKey={
+        instanceId
+          ? `env-workspace-config:browser:${instanceId}`
+          : `env-workspace-config:browser:${teamSlugOrId}`
+      }
       isSaving={createEnvironmentMutation.isPending}
       errorMessage={errorMessage}
       initialConfigStep={initialConfigStep}

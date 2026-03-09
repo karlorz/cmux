@@ -28,7 +28,7 @@ import {
   getTaskRunPersistKey,
 } from "@/lib/persistent-webview-keys";
 import {
-  toGenericVncUrl,
+  resolveBrowserPreviewUrl,
   toMorphXtermBaseUrl,
 } from "@/lib/toProxyWorkspaceUrl";
 import { getWorkspaceUrl } from "@/lib/workspace-url";
@@ -147,10 +147,13 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/task/$taskId/")({
           });
         }
       }
-      if (selectedRun && rawBrowserUrl) {
-        const vncUrl = toGenericVncUrl(rawBrowserUrl);
-        if (vncUrl) {
-          void preloadTaskRunBrowserIframe(selectedRun._id, vncUrl).catch(
+      if (selectedRun) {
+        const browserUrl = resolveBrowserPreviewUrl({
+          vncUrl: selectedRun.vscode?.vncUrl,
+          workspaceUrl: rawBrowserUrl,
+        });
+        if (browserUrl) {
+          void preloadTaskRunBrowserIframe(selectedRun._id, browserUrl).catch(
             (error) => {
               console.error("Failed to preload browser iframe", error);
             }
@@ -652,12 +655,14 @@ function TaskDetailPage() {
 
   const rawBrowserUrl =
     selectedRun?.vscode?.url ?? selectedRun?.vscode?.workspaceUrl ?? null;
-  const browserUrl = useMemo(() => {
-    if (!rawBrowserUrl) {
-      return null;
-    }
-    return toGenericVncUrl(rawBrowserUrl);
-  }, [rawBrowserUrl]);
+  const browserUrl = useMemo(
+    () =>
+      resolveBrowserPreviewUrl({
+        vncUrl: selectedRun?.vscode?.vncUrl,
+        workspaceUrl: rawBrowserUrl,
+      }),
+    [rawBrowserUrl, selectedRun?.vscode?.vncUrl]
+  );
   const browserPersistKey = selectedRunId
     ? getTaskRunBrowserPersistKey(selectedRunId)
     : null;

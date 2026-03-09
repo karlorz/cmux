@@ -1,19 +1,22 @@
-import {
-  VncViewer,
-  type VncConnectionStatus,
-  type VncViewerHandle,
-} from "@cmux/shared/components/vnc-viewer";
+import type { PersistentIframeStatus } from "@/components/persistent-iframe";
+import { PersistentWebView } from "@/components/persistent-webview";
 import { WorkspaceLoadingIndicator } from "@/components/workspace-loading-indicator";
-import { toGenericVncWebsocketUrl } from "@/lib/toProxyWorkspaceUrl";
+import { addBrowserReloadListener } from "@/lib/browser-reload-events";
+import { persistentIframeManager } from "@/lib/persistentIframeManager";
+import { getTaskRunBrowserPersistKey } from "@/lib/persistent-webview-keys";
+import {
+  TASK_RUN_IFRAME_ALLOW,
+  TASK_RUN_IFRAME_SANDBOX,
+} from "@/lib/preloadTaskRunIframes";
+import { resolveBrowserPreviewUrl } from "@/lib/toProxyWorkspaceUrl";
+import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { api } from "@cmux/convex/api";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { createFileRoute } from "@tanstack/react-router";
 import clsx from "clsx";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import z from "zod";
-import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { useQuery } from "convex/react";
-import { addBrowserReloadListener } from "@/lib/browser-reload-events";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import z from "zod";
 
 const paramsSchema = z.object({
   taskId: typedZid("tasks"),
@@ -39,54 +42,35 @@ export const Route = createFileRoute(
   },
 });
 
-/**
- * Convert a VNC base URL to a websocket URL for noVNC connection.
- * Supports both HTTP and HTTPS base URLs.
- */
-function toVncWebsocketUrl(vncBaseUrl: string): string {
-  try {
-    const url = new URL(vncBaseUrl);
-    // Convert protocol: https -> wss, http -> ws
-    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-    url.pathname = "/websockify";
-    url.search = "";
-    url.hash = "";
-    return url.toString();
-  } catch {
-    return vncBaseUrl;
-  }
-}
-
 function BrowserComponent() {
   const { runId: taskRunId, teamSlugOrId } = Route.useParams();
-  const vncRef = useRef<VncViewerHandle>(null);
   const taskRun = useQuery(api.taskRuns.get, {
     teamSlugOrId,
     id: taskRunId,
   });
 
   const vscodeInfo = taskRun?.vscode ?? null;
-  const rawMorphUrl = vscodeInfo?.url ?? vscodeInfo?.workspaceUrl ?? null;
+  const rawBrowserUrl = vscodeInfo?.url ?? vscodeInfo?.workspaceUrl ?? null;
+  const browserUrl = useMemo(
+    () =>
+      resolveBrowserPreviewUrl({
+        vncUrl: vscodeInfo?.vncUrl,
+        workspaceUrl: rawBrowserUrl,
+      }),
+    [vscodeInfo?.vncUrl, rawBrowserUrl]
+  );
 
-  // Prefer vncUrl from task run data (works for all providers including PVE LXC)
-  // Fall back to deriving from Morph URL for backward compatibility
-  const vncWebsocketUrl = useMemo(() => {
-    // If we have a direct vncUrl from the task run, use it
-    if (vscodeInfo?.vncUrl) {
-      return toVncWebsocketUrl(vscodeInfo.vncUrl);
-    }
-    // Fall back to URL derivation for backward compatibility (works for both Morph and PVE LXC)
-    if (rawMorphUrl) {
-      return toGenericVncWebsocketUrl(rawMorphUrl);
-    }
-    return null;
-  }, [vscodeInfo?.vncUrl, rawMorphUrl]);
-
-  const hasBrowserView = Boolean(vncWebsocketUrl);
-  const isSupportedProvider = vscodeInfo?.provider === "morph" || vscodeInfo?.provider === "pve-lxc";
+  const persistKey = useMemo(
+    () => getTaskRunBrowserPersistKey(taskRunId),
+    [taskRunId]
+  );
+  const hasBrowserView = Boolean(browserUrl);
+  const isSupportedProvider =
+    vscodeInfo?.provider === "morph" || vscodeInfo?.provider === "pve-lxc";
   const showLoader = isSupportedProvider && !hasBrowserView;
 
-  const [vncStatus, setVncStatus] = useState<VncConnectionStatus>("disconnected");
+  const [browserStatus, setBrowserStatus] =
+    useState<PersistentIframeStatus>("loading");
 
   const overlayMessage = useMemo(() => {
     if (!isSupportedProvider) {
@@ -98,14 +82,15 @@ function BrowserComponent() {
     return "Launching browser preview...";
   }, [hasBrowserView, isSupportedProvider]);
 
-  const onConnect = useCallback(() => {
-    console.log(`Browser VNC connected for task run ${taskRunId}`);
+  const onLoad = useCallback(() => {
+    console.log(`Browser preview loaded for task run ${taskRunId}`);
   }, [taskRunId]);
 
-  const onDisconnect = useCallback(
-    (_rfb: unknown, detail: { clean: boolean }) => {
-      console.log(
-        `Browser VNC disconnected for task run ${taskRunId} (clean: ${detail.clean})`
+  const onError = useCallback(
+    (error: Error) => {
+      console.error(
+        `Failed to load browser preview for task run ${taskRunId}:`,
+        error
       );
     },
     [taskRunId]
@@ -114,11 +99,9 @@ function BrowserComponent() {
   useEffect(() => {
     return addBrowserReloadListener((runId) => {
       if (runId !== taskRunId) return;
-      const viewer = vncRef.current;
-      if (!viewer) return;
       const previousFocus = document.activeElement;
-      viewer.disconnect();
-      viewer.connect();
+      const reloaded = persistentIframeManager.reloadIframe(persistKey);
+      if (!reloaded) return;
       requestAnimationFrame(() => {
         if (
           previousFocus instanceof HTMLElement &&
@@ -128,7 +111,7 @@ function BrowserComponent() {
         }
       });
     });
-  }, [taskRunId]);
+  }, [persistKey, taskRunId]);
 
   const loadingFallback = useMemo(
     () => <WorkspaceLoadingIndicator variant="browser" status="loading" />,
@@ -139,7 +122,7 @@ function BrowserComponent() {
     []
   );
 
-  const isBrowserBusy = !hasBrowserView || vncStatus !== "connected";
+  const isBrowserBusy = !hasBrowserView || browserStatus !== "loaded";
 
   return (
     <div className="flex flex-col grow bg-neutral-50 dark:bg-black">
@@ -148,20 +131,24 @@ function BrowserComponent() {
           className="flex flex-row grow min-h-0 relative"
           aria-busy={isBrowserBusy}
         >
-          {vncWebsocketUrl ? (
-            <VncViewer
-              ref={vncRef}
-              url={vncWebsocketUrl}
-              className="grow"
-              background="#000000"
-              scaleViewport
-              autoConnect
-              focusOnClick
-              onConnect={onConnect}
-              onDisconnect={onDisconnect}
-              onStatusChange={setVncStatus}
-              loadingFallback={loadingFallback}
+          {browserUrl ? (
+            <PersistentWebView
+              key={persistKey}
+              persistKey={persistKey}
+              src={browserUrl}
+              className="grow flex"
+              iframeClassName="select-none"
+              allow={TASK_RUN_IFRAME_ALLOW}
+              sandbox={TASK_RUN_IFRAME_SANDBOX}
+              retainOnUnmount
+              onLoad={onLoad}
+              onError={onError}
+              onStatusChange={setBrowserStatus}
+              fallback={loadingFallback}
+              fallbackClassName="bg-neutral-50 dark:bg-black"
               errorFallback={errorFallback}
+              errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
+              loadTimeoutMs={45_000}
             />
           ) : (
             <div className="grow" />
