@@ -1124,6 +1124,7 @@ sandboxesRouter.openapi(
           snapshotProvider: provider === "pve-lxc" ? "pve-lxc" : "morph",
           templateVmid: resolvedTemplateVmid,
           teamSlugOrId: body.teamSlugOrId,
+          isCloudWorkspace,
         });
         console.log(`[sandboxes.start] Recorded instance creation for ${instance.id}`);
       } catch (error) {

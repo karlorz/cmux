@@ -1346,6 +1346,7 @@ const convexSchema = defineSchema({
     teamId: v.optional(v.string()), // Team that owns this instance
     userId: v.optional(v.string()), // User that created this instance
     createdAt: v.optional(v.number()), // When the activity record was created
+    isCloudWorkspace: v.optional(v.boolean()), // Whether this instance is a cloud workspace (protected from maintenance)
   })
     .index("by_instanceId", ["instanceId"])
     .index("by_vmid", ["vmid"])

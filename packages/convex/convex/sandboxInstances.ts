@@ -220,6 +220,7 @@ export const recordCreateInternal = internalMutation({
     templateVmid: v.optional(v.number()),
     teamId: v.optional(v.string()),
     userId: v.optional(v.string()),
+    isCloudWorkspace: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -237,6 +238,7 @@ export const recordCreateInternal = internalMutation({
         snapshotId: args.snapshotId,
         snapshotProvider: args.snapshotProvider,
         templateVmid: args.templateVmid,
+        isCloudWorkspace: args.isCloudWorkspace,
       });
     } else {
       await ctx.db.insert("sandboxInstanceActivity", {
@@ -250,6 +252,7 @@ export const recordCreateInternal = internalMutation({
         teamId: args.teamId,
         userId: args.userId,
         createdAt: Date.now(),
+        isCloudWorkspace: args.isCloudWorkspace,
       });
     }
   },
@@ -270,6 +273,7 @@ export const recordCreate = authMutation({
     snapshotProvider: v.optional(snapshotProviderValidator),
     templateVmid: v.optional(v.number()),
     teamSlugOrId: v.string(),
+    isCloudWorkspace: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     // Verify user belongs to this team and get team ID
@@ -292,6 +296,7 @@ export const recordCreate = authMutation({
         snapshotId: args.snapshotId,
         snapshotProvider: args.snapshotProvider,
         templateVmid: args.templateVmid,
+        isCloudWorkspace: args.isCloudWorkspace,
       });
     } else {
       await ctx.db.insert("sandboxInstanceActivity", {
@@ -305,6 +310,7 @@ export const recordCreate = authMutation({
         teamId,
         userId,
         createdAt: Date.now(),
+        isCloudWorkspace: args.isCloudWorkspace,
       });
     }
   },
@@ -345,6 +351,7 @@ export const getActivitiesByInstanceIdsInternal = internalQuery({
         teamId?: string;
         userId?: string;
         createdAt?: number;
+        isCloudWorkspace?: boolean;
       }
     > = {};
 
@@ -365,6 +372,7 @@ export const getActivitiesByInstanceIdsInternal = internalQuery({
           teamId: activity.teamId,
           userId: activity.userId,
           createdAt: activity.createdAt,
+          isCloudWorkspace: activity.isCloudWorkspace,
         };
       }
     }

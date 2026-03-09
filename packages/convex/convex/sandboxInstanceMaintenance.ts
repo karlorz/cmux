@@ -391,19 +391,21 @@ export const pauseOldSandboxInstances = internalAction({
           continue;
         }
 
-        // For PVE, we need to check activity table for creation time
-        if (config.provider === "pve-lxc") {
-          const instanceIds = staleInstances.map((i) => i.id);
-          const activities = await ctx.runQuery(
-            internal.sandboxInstances.getActivitiesByInstanceIdsInternal,
-            { instanceIds }
-          );
+        // Pre-fetch activity records for all candidate instances
+        const instanceIds = staleInstances.map((i) => i.id);
+        const activities = await ctx.runQuery(
+          internal.sandboxInstances.getActivitiesByInstanceIdsInternal,
+          { instanceIds }
+        );
 
-          // Filter based on activity creation time
+        // For PVE, filter based on last activity time (not just creation time)
+        // Use lastResumedAt ?? createdAt so recently resumed workspaces are not paused
+        if (config.provider === "pve-lxc") {
           const filteredStale = staleInstances.filter((inst) => {
             const activity = activities[inst.id];
             if (!activity?.createdAt) return true; // No record, assume old
-            return now - activity.createdAt > thresholdMs;
+            const effectiveAge = activity.lastResumedAt ?? activity.createdAt;
+            return now - effectiveAge > thresholdMs;
           });
 
           if (filteredStale.length === 0) {
@@ -416,6 +418,19 @@ export const pauseOldSandboxInstances = internalAction({
           staleInstances = filteredStale;
         }
 
+        // Pre-fetch cloud workspace flags from taskRuns for instances
+        // whose activity record lacks isCloudWorkspace
+        const containerNamesNeedingLookup = staleInstances
+          .filter((inst) => activities[inst.id]?.isCloudWorkspace !== true)
+          .map((inst) => inst.id);
+
+        const taskRunCloudFlags = containerNamesNeedingLookup.length > 0
+          ? await ctx.runQuery(
+              internal.taskRuns.getCloudWorkspaceFlagsByContainerNamesInternal,
+              { containerNames: containerNamesNeedingLookup }
+            )
+          : {};
+
         console.log(
           `[sandboxMaintenance:pause] Found ${staleInstances.length} stale ${config.provider} instances`
         );
@@ -426,11 +441,14 @@ export const pauseOldSandboxInstances = internalAction({
 
           const results = await Promise.allSettled(
             batch.map(async (instance) => {
-              const devboxRecord = await ctx.runQuery(
-                internal.devboxInstances.getByProviderInstanceIdInternal,
-                { providerInstanceId: instance.id }
-              );
-              if (devboxRecord) {
+              // Check cloud workspace protection:
+              // 1. Trust activity.isCloudWorkspace first
+              // 2. Fall back to taskRuns lookup
+              const activity = activities[instance.id];
+              if (
+                activity?.isCloudWorkspace === true ||
+                taskRunCloudFlags[instance.id] === true
+              ) {
                 console.log(
                   `[sandboxMaintenance:pause] Skipping cloud workspace: ${instance.id}`
                 );
@@ -558,24 +576,38 @@ export const stopOldSandboxInstances = internalAction({
           { instanceIds }
         );
 
+        // Pre-fetch cloud workspace flags from taskRuns for instances
+        // whose activity record lacks isCloudWorkspace
+        const containerNamesNeedingLookup = pausedInstances
+          .filter((inst) => activities[inst.id]?.isCloudWorkspace !== true)
+          .map((inst) => inst.id);
+
+        const taskRunCloudFlags = containerNamesNeedingLookup.length > 0
+          ? await ctx.runQuery(
+              internal.taskRuns.getCloudWorkspaceFlagsByContainerNamesInternal,
+              { containerNames: containerNamesNeedingLookup }
+            )
+          : {};
+
         // Process in batches
         for (let i = 0; i < pausedInstances.length; i += BATCH_SIZE) {
           const batch = pausedInstances.slice(i, i + BATCH_SIZE);
 
           const results = await Promise.allSettled(
             batch.map(async (instance) => {
-              const devboxRecord = await ctx.runQuery(
-                internal.devboxInstances.getByProviderInstanceIdInternal,
-                { providerInstanceId: instance.id }
-              );
-              if (devboxRecord) {
+              // Check cloud workspace protection:
+              // 1. Trust activity.isCloudWorkspace first
+              // 2. Fall back to taskRuns lookup
+              const activity = activities[instance.id];
+              if (
+                activity?.isCloudWorkspace === true ||
+                taskRunCloudFlags[instance.id] === true
+              ) {
                 console.log(
                   `[sandboxMaintenance:stop] Skipping cloud workspace: ${instance.id}`
                 );
                 return { skipped: true as const, reason: "cloud_workspace" as const };
               }
-
-              const activity = activities[instance.id];
 
               // Already stopped?
               if (activity?.stoppedAt) {

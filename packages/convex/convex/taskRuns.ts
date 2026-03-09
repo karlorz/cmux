@@ -3015,3 +3015,35 @@ export const getAutopilotInfo = internalQuery({
     };
   },
 });
+
+/**
+ * Batched lookup of cloud-workspace status by container names.
+ * Used by maintenance crons to determine which instances are cloud workspaces
+ * via the taskRuns table (fallback when sandboxInstanceActivity lacks the flag).
+ * Returns a map of containerName → isCloudWorkspace for any matching taskRun.
+ */
+export const getCloudWorkspaceFlagsByContainerNamesInternal = internalQuery({
+  args: {
+    containerNames: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const results: Record<string, boolean> = {};
+
+    await Promise.all(
+      args.containerNames.map(async (containerName) => {
+        const run = await ctx.db
+          .query("taskRuns")
+          .withIndex("by_vscode_container_name", (q) =>
+            q.eq("vscode.containerName", containerName),
+          )
+          .first();
+
+        if (run?.isCloudWorkspace) {
+          results[containerName] = true;
+        }
+      }),
+    );
+
+    return results;
+  },
+});
