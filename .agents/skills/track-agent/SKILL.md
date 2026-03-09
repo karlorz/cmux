@@ -1,11 +1,11 @@
 ---
 name: track-agent
-description: Track a spawned coding agent's progress with real-time updates
+description: Track a spawned coding agent's progress with watch mode updates
 ---
 
 # Track Agent
 
-> **Purpose**: Monitor the progress of a spawned coding agent and get results when complete.
+> **Purpose**: Monitor the progress of a spawned coding agent, wait for completion, inspect outcomes, and cancel tasks when needed.
 
 ## Quick Start
 
@@ -13,11 +13,11 @@ description: Track a spawned coding agent's progress with real-time updates
 # List all spawned agents
 devsh orchestrate list
 
-# Track specific agent (with live updates)
-devsh orchestrate status <orchestrationTaskId> --watch
+# Track a specific task with polling watch mode
+devsh orchestrate status <orch-task-id> --watch
 
-# Get results from all agents
-devsh orchestrate results
+# Wait for completion
+devsh orchestrate wait <orch-task-id>
 ```
 
 ## Usage
@@ -36,31 +36,33 @@ devsh orchestrate list --status failed
 ### Track Specific Agent
 ```bash
 # One-time status check
-devsh orchestrate status <orchestrationTaskId>
+devsh orchestrate status <orch-task-id>
 
-# Continuous monitoring (exits when complete)
-devsh orchestrate status <orchestrationTaskId> --watch
+# Polling watch mode (exits when complete)
+devsh orchestrate status <orch-task-id> --watch
 
 # Custom polling interval
-devsh orchestrate status <orchestrationTaskId> --watch --interval 5
+devsh orchestrate status <orch-task-id> --watch --interval 5
 ```
 
-### Get Results
+### Get Aggregated Results
 ```bash
-# All results
-devsh orchestrate results
+# Aggregated results require an orchestration session ID
+devsh orchestrate results <orchestration-id>
 
 # JSON format for parsing
-devsh orchestrate results --json
+devsh orchestrate results <orchestration-id> --json
 ```
+
+Use `results` only when you actually have an orchestration session ID, such as from a cloud head-agent or migrate-backed workflow.
 
 ### Wait for Completion
 ```bash
 # Wait with default timeout (5 minutes)
-devsh orchestrate wait <orchestrationTaskId>
+devsh orchestrate wait <orch-task-id>
 
 # Custom timeout
-devsh orchestrate wait <orchestrationTaskId> --timeout 10m
+devsh orchestrate wait <orch-task-id> --timeout 10m
 ```
 
 ## Status Values
@@ -78,12 +80,12 @@ devsh orchestrate wait <orchestrationTaskId> --timeout 10m
 
 ```bash
 # Cancel a running agent
-devsh orchestrate cancel <orchestrationTaskId>
+devsh orchestrate cancel <orch-task-id>
 ```
 
 ## Example Output
 
-```
+```text
 Orchestration Task: ns7abc123
 Status: running
 Agent: codex/gpt-5.1-codex-mini
@@ -92,7 +94,14 @@ Started: 2026-03-08T14:30:00Z
 Sandbox: morphvm_xyz789
 ```
 
+## Notes
+
+- `status --watch` is **polling watch mode**, not an SSE stream.
+- `status`, `wait`, and `cancel` take `<orch-task-id>`.
+- `results` takes `<orchestration-id>`.
+- Use this skill for monitoring and cancellation, not for planning or delegation.
+
 ## Related Skills
 
-- `/head-agent-init` - Initialize head agent mode
+- `/head-agent-init` - Initialize workflow head-agent mode
 - `/execute-plan` - Execute a saved plan

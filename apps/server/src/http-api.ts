@@ -33,6 +33,7 @@ import {
 } from "./utils/providerStatus";
 import { runWithAuth, runWithAuthToken } from "./utils/requestContext";
 import { env } from "./utils/server-env";
+import { getResponseErrorMessage } from "./utils/httpError";
 
 interface StartTaskRequest {
   // Required fields
@@ -738,8 +739,8 @@ async function handleOrchestrationSpawn(
       });
 
       if (!taskAndRunResponse.ok) {
-        const errorBody = await taskAndRunResponse.json().catch(() => ({ message: "Unknown error" }));
-        throw new Error(`Failed to create task and run: ${errorBody.message || taskAndRunResponse.statusText}`);
+        const errorMessage = await getResponseErrorMessage(taskAndRunResponse);
+        throw new Error(`Failed to create task and run: ${errorMessage}`);
       }
 
       const { taskId, taskRunId, jwt: newJwt } = await taskAndRunResponse.json() as {
@@ -766,8 +767,8 @@ async function handleOrchestrationSpawn(
       });
 
       if (!orchestrationTaskResponse.ok) {
-        const errorBody = await orchestrationTaskResponse.json().catch(() => ({ message: "Unknown error" }));
-        throw new Error(`Failed to create orchestration task: ${errorBody.message || orchestrationTaskResponse.statusText}`);
+        const errorMessage = await getResponseErrorMessage(orchestrationTaskResponse);
+        throw new Error(`Failed to create orchestration task: ${errorMessage}`);
       }
 
       const { orchestrationTaskId } = await orchestrationTaskResponse.json() as { orchestrationTaskId: string };
@@ -782,8 +783,8 @@ async function handleOrchestrationSpawn(
       });
 
       if (!spawnConfigResponse.ok) {
-        const errorBody = await spawnConfigResponse.json().catch(() => ({ message: "Unknown error" }));
-        throw new Error(`Failed to fetch spawn config: ${errorBody.message || spawnConfigResponse.statusText}`);
+        const errorMessage = await getResponseErrorMessage(spawnConfigResponse);
+        throw new Error(`Failed to fetch spawn config: ${errorMessage}`);
       }
 
       const preFetchedConfig = await spawnConfigResponse.json() as PreFetchedSpawnConfig;
@@ -1851,8 +1852,8 @@ async function handleOrchestrationInternalSpawn(
     });
 
     if (!spawnConfigResponse.ok) {
-      const errorBody = await spawnConfigResponse.json().catch(() => ({ message: "Unknown error" }));
-      throw new Error(`Failed to fetch spawn config: ${errorBody.message || spawnConfigResponse.statusText}`);
+      const errorMessage = await getResponseErrorMessage(spawnConfigResponse);
+      throw new Error(`Failed to fetch spawn config: ${errorMessage}`);
     }
 
     const preFetchedConfig = await spawnConfigResponse.json() as PreFetchedSpawnConfig;
