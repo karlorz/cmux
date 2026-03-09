@@ -106,6 +106,23 @@ function createMorphPortUrl(
   return url;
 }
 
+const NO_VNC_VIEWER_DEFAULT_PARAMS: ReadonlyArray<readonly [string, string]> = [
+  ["autoconnect", "1"],
+  ["resize", "scale"],
+];
+
+function applyNoVncViewerDefaults(
+  url: URL,
+  preserveExistingSearchParams = true
+): void {
+  for (const [key, value] of NO_VNC_VIEWER_DEFAULT_PARAMS) {
+    if (preserveExistingSearchParams && url.searchParams.has(key)) {
+      continue;
+    }
+    url.searchParams.set(key, value);
+  }
+}
+
 export function toProxyWorkspaceUrl(
   workspaceUrl: string,
   preferredOrigin?: string | null
@@ -122,12 +139,8 @@ export function toMorphVncUrl(sourceUrl: string): string | null {
 
   const vncUrl = createMorphPortUrl(components, 39380);
   vncUrl.pathname = "/vnc.html";
-
-  const searchParams = new URLSearchParams();
-  searchParams.set("autoconnect", "1");
-  searchParams.set("resize", "scale");
-  searchParams.set("reconnect", "0");
-  vncUrl.search = `?${searchParams.toString()}`;
+  vncUrl.search = "";
+  applyNoVncViewerDefaults(vncUrl, false);
   vncUrl.hash = "";
 
   return vncUrl.toString();
@@ -167,14 +180,17 @@ export function toVncViewerUrl(vncBaseUrl: string): string | null {
 
   try {
     const url = new URL(vncBaseUrl);
-    url.pathname = "/vnc.html";
+    const normalizedPath = url.pathname.toLowerCase();
+    const isViewerUrl =
+      normalizedPath.endsWith("/vnc.html") ||
+      normalizedPath.endsWith("/viewer.html");
 
-    const searchParams = new URLSearchParams();
-    searchParams.set("autoconnect", "1");
-    searchParams.set("resize", "scale");
-    searchParams.set("reconnect", "0");
-    url.search = `?${searchParams.toString()}`;
-    url.hash = "";
+    if (!isViewerUrl) {
+      url.pathname = "/vnc.html";
+      url.hash = "";
+    }
+
+    applyNoVncViewerDefaults(url);
 
     return url.toString();
   } catch (error) {
@@ -225,12 +241,8 @@ export function toGenericVncUrl(sourceUrl: string): string | null {
     // Replace the port in hostname with VNC port (39380)
     url.hostname = `port-39380-${hostId}.${domain}`;
     url.pathname = "/vnc.html";
-
-    const searchParams = new URLSearchParams();
-    searchParams.set("autoconnect", "1");
-    searchParams.set("resize", "scale");
-    searchParams.set("reconnect", "0");
-    url.search = `?${searchParams.toString()}`;
+    url.search = "";
+    applyNoVncViewerDefaults(url, false);
     url.hash = "";
 
     return url.toString();
@@ -238,6 +250,24 @@ export function toGenericVncUrl(sourceUrl: string): string | null {
     console.debug("[toProxyWorkspaceUrl] Failed to generate generic VNC URL:", sourceUrl, error);
     return null;
   }
+}
+
+export function resolveBrowserPreviewUrl(input: {
+  vncUrl?: string | null;
+  workspaceUrl?: string | null;
+}): string | null {
+  if (input.vncUrl) {
+    const browserPreviewUrl = toVncViewerUrl(input.vncUrl);
+    if (browserPreviewUrl) {
+      return browserPreviewUrl;
+    }
+  }
+
+  if (input.workspaceUrl) {
+    return toGenericVncUrl(input.workspaceUrl);
+  }
+
+  return null;
 }
 
 /**
