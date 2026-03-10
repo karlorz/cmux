@@ -18,6 +18,7 @@ import type * as autopilot_http from "../autopilot_http.js";
 import type * as backfill from "../backfill.js";
 import type * as bedrock_utils from "../bedrock_utils.js";
 import type * as cmux_http from "../cmux_http.js";
+import type * as cmux_http_helpers from "../cmux_http_helpers.js";
 import type * as codeReview from "../codeReview.js";
 import type * as codeReviewActions from "../codeReviewActions.js";
 import type * as codeReview_http from "../codeReview_http.js";
@@ -130,6 +131,7 @@ declare const fullApi: ApiFromModules<{
   backfill: typeof backfill;
   bedrock_utils: typeof bedrock_utils;
   cmux_http: typeof cmux_http;
+  cmux_http_helpers: typeof cmux_http_helpers;
   codeReview: typeof codeReview;
   codeReviewActions: typeof codeReviewActions;
   codeReview_http: typeof codeReview_http;

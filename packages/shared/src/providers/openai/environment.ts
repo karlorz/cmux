@@ -224,7 +224,6 @@ exec "$REAL_GH" "$@"
       contentBase64: Buffer.from(ghWrapperScript).toString("base64"),
       mode: "755",
     });
-    startupCommands.push("chmod +x /usr/local/bin/gh");
   }
 
   // Autopilot wrapper script for unattended OpenAI Codex sessions.

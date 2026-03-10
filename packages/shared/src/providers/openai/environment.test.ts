@@ -661,7 +661,7 @@ foo = "bar"
     expect(ghWrapper).toContain("gh pr create is blocked in cmux sandboxes");
     expect(ghWrapper).toContain("The cmux crown workflow handles PR creation automatically.");
     expect(ghWrapper).toContain('exec "$REAL_GH" "$@"');
-    expect(result.startupCommands).toContain("chmod +x /usr/local/bin/gh");
+    // File mode 755 is set at write time, no chmod needed
 
     const tempDir = await mkdtemp(join(tmpdir(), "cmux-openai-gh-wrapper-"));
 

@@ -117,47 +117,35 @@ function ConnectedAccountsSection({ teamSlugOrId }: { teamSlugOrId: string }) {
   const githubUsername = githubAccount?.username ?? null;
   const githubTokenValid = githubAccount?.tokenValid ?? false;
 
-  const handleConnectGitHub = useCallback(async () => {
-    if (!user) return;
+  const handleConnectGitHub = useCallback(
+    async (reconnect = false) => {
+      if (!user) return;
 
-    setIsConnecting(true);
-    try {
-      if (isElectron) {
-        const oauthUrl = `${WWW_ORIGIN}/handler/connect-github?team=${encodeURIComponent(teamSlugOrId)}`;
-        window.open(oauthUrl, "_blank", "noopener,noreferrer");
+      // For reconnect or Electron, we must redirect to the www handler directly
+      // because Stack's getConnectedAccount({ or: "redirect" }) doesn't force re-auth
+      const needsDirectRedirect = reconnect || isElectron;
+
+      if (needsDirectRedirect) {
+        const url = `${WWW_ORIGIN}/handler/connect-github?team=${encodeURIComponent(teamSlugOrId)}${reconnect ? "&reconnect=1" : ""}`;
+        if (isElectron) {
+          window.open(url, "_blank", "noopener,noreferrer");
+        } else {
+          window.location.href = url;
+        }
         return;
       }
 
-      await user.getConnectedAccount("github", { or: "redirect" });
-    } catch (error) {
-      console.error("Failed to connect GitHub:", error);
-    } finally {
-      setIsConnecting(false);
-    }
-  }, [teamSlugOrId, user]);
-
-  const handleReconnectGitHub = useCallback(() => {
-    console.log("[Settings] Reconnect GitHub clicked", { user: !!user, teamSlugOrId, WWW_ORIGIN });
-    if (!user) {
-      console.log("[Settings] No user, aborting reconnect");
-      return;
-    }
-
-    // Force re-authorization by redirecting to the connect-github handler on WWW
-    // The handler is on the www app (Next.js), not the client app (Vite)
-    const connectUrl = `${WWW_ORIGIN}/handler/connect-github?team=${encodeURIComponent(teamSlugOrId)}&reconnect=1`;
-    console.log("[Settings] Redirecting to:", connectUrl);
-
-    if (isElectron) {
-      // For Electron, open in external browser
-      console.log("[Settings] Opening in external browser:", connectUrl);
-      window.open(connectUrl, "_blank", "noopener,noreferrer");
-      return;
-    }
-
-    // For web, redirect to the connect-github handler on WWW origin
-    window.location.href = connectUrl;
-  }, [teamSlugOrId, user]);
+      setIsConnecting(true);
+      try {
+        await user.getConnectedAccount("github", { or: "redirect" });
+      } catch (error) {
+        console.error("Failed to connect GitHub:", error);
+      } finally {
+        setIsConnecting(false);
+      }
+    },
+    [teamSlugOrId, user]
+  );
 
   if (!user) {
     return null;
@@ -206,7 +194,7 @@ function ConnectedAccountsSection({ teamSlugOrId }: { teamSlugOrId: string }) {
             </span>
             <button
               type="button"
-              onClick={handleReconnectGitHub}
+              onClick={() => handleConnectGitHub(true)}
               disabled={isConnecting}
               className="rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
             >
