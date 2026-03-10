@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -42,8 +41,10 @@ Examples:
   devsh orchestrate debug <task-id> --events # Stream events from sandbox`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
+		ctx := cmd.Context()
+		if ctx == nil {
+			ctx = context.Background()
+		}
 
 		teamSlug, err := auth.GetTeamSlug()
 		if err != nil {
@@ -195,28 +196,219 @@ func showDependencyGraph(ctx context.Context, client *vm.Client, orchTaskID stri
 }
 
 func streamEvents(ctx context.Context, client *vm.Client, orchTaskID string) error {
-	// Get task to find sandbox/instance info
-	result, err := client.OrchestrationStatus(ctx, orchTaskID)
+	statusCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	result, err := client.OrchestrationStatus(statusCtx, orchTaskID)
+	cancel()
 	if err != nil {
 		return fmt.Errorf("failed to get task: %w", err)
 	}
 
-	if result.TaskRun == nil {
-		return fmt.Errorf("task has no linked task run - cannot stream events")
+	streamID, hasSessionID := resolveEventStreamID(result)
+	if strings.TrimSpace(streamID) == "" {
+		return fmt.Errorf("task %s does not expose an event stream identifier", orchTaskID)
 	}
 
-	fmt.Fprintf(os.Stderr, "Streaming events from task run: %s\n", result.TaskRun.ID)
-	fmt.Fprintf(os.Stderr, "Note: Event streaming requires sandbox access\n")
-	fmt.Fprintf(os.Stderr, "Events path: /root/lifecycle/memory/orchestration/EVENTS.jsonl\n")
-	fmt.Fprintf(os.Stderr, "\n--- Events would appear here if sandbox is accessible ---\n")
-
-	// TODO: Implement actual event streaming via sandbox exec or workerUrl websocket
-	// For now, show instructions for manual access
-	if result.TaskRun.VSCodeURL != "" {
-		fmt.Fprintf(os.Stderr, "\nOpen VSCode to view events:\n  %s\n", result.TaskRun.VSCodeURL)
+	fmt.Printf("Streaming orchestration events for %s\n", streamID)
+	fmt.Printf("Source task: %s\n", orchTaskID)
+	if result.TaskRun != nil {
+		fmt.Printf("Linked task run: %s\n", result.TaskRun.ID)
 	}
+	if hasSessionID {
+		fmt.Println("Mode: orchestration session stream")
+	} else {
+		fmt.Println("Mode: single-task fallback stream")
+		fmt.Println("Results tip: this flow may not have a standalone orchestration session ID; rely on status/debug output unless one is shown elsewhere.")
+	}
+	fmt.Println("Press Ctrl+C to stop streaming.")
+	fmt.Println()
 
-	return nil
+	return client.SubscribeOrchestrationEvents(ctx, streamID, "", func(event vm.OrchestrationEvent) {
+		if event.Event == "" {
+			return
+		}
+
+		line, nextAction, terminalStatus := formatOrchestrationEvent(event, result, hasSessionID)
+		if line != "" {
+			fmt.Println(line)
+		}
+		if nextAction != "" {
+			fmt.Println(nextAction)
+		}
+		_ = terminalStatus
+	})
+}
+
+func resolveEventStreamID(result *vm.OrchestrationStatusResult) (string, bool) {
+	if result == nil {
+		return "", false
+	}
+	metadata := result.Task.Metadata
+	if metadata != nil {
+		if orchestrationID, ok := metadata["orchestrationId"].(string); ok && strings.TrimSpace(orchestrationID) != "" {
+			return strings.TrimSpace(orchestrationID), true
+		}
+	}
+	if strings.TrimSpace(result.Task.ID) != "" {
+		return strings.TrimSpace(result.Task.ID), false
+	}
+	return "", false
+}
+
+func formatOrchestrationEvent(event vm.OrchestrationEvent, result *vm.OrchestrationStatusResult, hasSessionID bool) (string, string, string) {
+	timestamp := time.Now().Format("15:04:05")
+	data := event.Data
+	taskID := strings.TrimSpace(getEventString(data, "taskId"))
+	status := strings.TrimSpace(getEventString(data, "status"))
+	assignedAgent := strings.TrimSpace(getEventString(data, "assignedAgentName"))
+	completedCount := getEventInt(data, "completedCount")
+	pendingCount := getEventInt(data, "pendingCount")
+	failedCount := getEventInt(data, "failedCount")
+	runningCount := getEventInt(data, "runningCount")
+
+	switch event.Event {
+	case "connected":
+		return fmt.Sprintf("[%s] connected stream=%s", timestamp, getEventString(data, "orchestrationId")), "", ""
+	case "heartbeat":
+		return fmt.Sprintf("[%s] heartbeat running=%d pending=%d completed=%d failed=%d", timestamp, runningCount, pendingCount, completedCount, failedCount), "", ""
+	case "task_completed":
+		resultSummary := summarizeText(getEventString(data, "result"), 120)
+		line := fmt.Sprintf("[%s] task_completed %s status=completed", timestamp, fallbackTaskID(taskID, result))
+		if resultSummary != "" {
+			line += fmt.Sprintf(" result=%q", resultSummary)
+		}
+		return line, "", "completed"
+	case "task_status":
+		line := fmt.Sprintf("[%s] task_status %s status=%s", timestamp, fallbackTaskID(taskID, result), fallbackStatus(status))
+		if assignedAgent != "" {
+			line += fmt.Sprintf(" agent=%s", assignedAgent)
+		}
+		errorSummary := summarizeText(getEventString(data, "errorMessage"), 160)
+		if errorSummary != "" {
+			line += fmt.Sprintf(" error=%q", errorSummary)
+			return line, renderFailureGuidance(result, hasSessionID), status
+		}
+		if isTerminalStatus(status) && status != "completed" {
+			return line, renderFailureGuidance(result, hasSessionID), status
+		}
+		return line, "", status
+	default:
+		return fmt.Sprintf("[%s] %s %s", timestamp, event.Event, summarizeText(mustMarshalEventData(data), 160)), "", ""
+	}
+}
+
+func renderFailureGuidance(result *vm.OrchestrationStatusResult, hasSessionID bool) string {
+	actions := make([]string, 0, 3)
+	if result != nil && result.TaskRun != nil && strings.TrimSpace(result.TaskRun.ID) != "" {
+		actions = append(actions, fmt.Sprintf("next: devsh orchestrate message %s \"<guidance>\" --type request", result.TaskRun.ID))
+	}
+	if result != nil && result.Task.TaskID != nil && strings.TrimSpace(*result.Task.TaskID) != "" {
+		actions = append(actions, fmt.Sprintf("retry: devsh task retry %s", strings.TrimSpace(*result.Task.TaskID)))
+	}
+	if hasSessionID {
+		if orchestrationID, ok := resolveFailureResultsID(result); ok {
+			actions = append(actions, fmt.Sprintf("results: devsh orchestrate results %s", orchestrationID))
+		}
+	}
+	return strings.Join(actions, " | ")
+}
+
+func resolveFailureResultsID(result *vm.OrchestrationStatusResult) (string, bool) {
+	if result == nil {
+		return "", false
+	}
+	metadata := result.Task.Metadata
+	if metadata == nil {
+		return "", false
+	}
+	orchestrationID, ok := metadata["orchestrationId"].(string)
+	if !ok || strings.TrimSpace(orchestrationID) == "" {
+		return "", false
+	}
+	return strings.TrimSpace(orchestrationID), true
+}
+
+func fallbackTaskID(taskID string, result *vm.OrchestrationStatusResult) string {
+	if strings.TrimSpace(taskID) != "" {
+		return strings.TrimSpace(taskID)
+	}
+	if result != nil {
+		return strings.TrimSpace(result.Task.ID)
+	}
+	return "unknown-task"
+}
+
+func fallbackStatus(status string) string {
+	if strings.TrimSpace(status) == "" {
+		return "unknown"
+	}
+	return strings.TrimSpace(status)
+}
+
+func getEventString(data map[string]any, key string) string {
+	if data == nil {
+		return ""
+	}
+	value, ok := data[key]
+	if !ok || value == nil {
+		return ""
+	}
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case fmt.Stringer:
+		return typed.String()
+	default:
+		return fmt.Sprintf("%v", value)
+	}
+}
+
+func getEventInt(data map[string]any, key string) int {
+	if data == nil {
+		return 0
+	}
+	value, ok := data[key]
+	if !ok || value == nil {
+		return 0
+	}
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int32:
+		return int(typed)
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err == nil {
+			return int(parsed)
+		}
+	}
+	return 0
+}
+
+func summarizeText(value string, limit int) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	trimmed = strings.Join(strings.Fields(trimmed), " ")
+	if len(trimmed) <= limit {
+		return trimmed
+	}
+	if limit <= 3 {
+		return trimmed[:limit]
+	}
+	return trimmed[:limit-3] + "..."
+}
+
+func mustMarshalEventData(data map[string]any) string {
+	encoded, err := json.Marshal(data)
+	if err != nil {
+		return "{}"
+	}
+	return string(encoded)
 }
 
 func showTaskDetails(ctx context.Context, client *vm.Client, orchTaskID string) error {

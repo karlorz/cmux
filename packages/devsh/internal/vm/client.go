@@ -2012,24 +2012,25 @@ type OrchestrationSpawnResult struct {
 
 // OrchestrationTask represents an orchestration task from the API
 type OrchestrationTask struct {
-	ID                string   `json:"_id"`
-	TeamID            string   `json:"teamId"`
-	UserID            string   `json:"userId"`
-	Prompt            string   `json:"prompt"`
-	Status            string   `json:"status"`
-	Priority          int      `json:"priority"`
-	Dependencies      []string `json:"dependencies,omitempty"`
-	AssignedAgentName *string  `json:"assignedAgentName,omitempty"`
-	AssignedSandboxID *string  `json:"assignedSandboxId,omitempty"`
-	TaskID            *string  `json:"taskId,omitempty"`
-	TaskRunID         *string  `json:"taskRunId,omitempty"`
-	Result            *string  `json:"result,omitempty"`
-	ErrorMessage      *string  `json:"errorMessage,omitempty"`
-	CreatedAt         int64    `json:"createdAt"`
-	UpdatedAt         int64    `json:"updatedAt"`
-	AssignedAt        *int64   `json:"assignedAt,omitempty"`
-	StartedAt         *int64   `json:"startedAt,omitempty"`
-	CompletedAt       *int64   `json:"completedAt,omitempty"`
+	ID                string                 `json:"_id"`
+	TeamID            string                 `json:"teamId"`
+	UserID            string                 `json:"userId"`
+	Prompt            string                 `json:"prompt"`
+	Status            string                 `json:"status"`
+	Priority          int                    `json:"priority"`
+	Dependencies      []string               `json:"dependencies,omitempty"`
+	AssignedAgentName *string                `json:"assignedAgentName,omitempty"`
+	AssignedSandboxID *string                `json:"assignedSandboxId,omitempty"`
+	TaskID            *string                `json:"taskId,omitempty"`
+	TaskRunID         *string                `json:"taskRunId,omitempty"`
+	Metadata          map[string]interface{} `json:"metadata,omitempty"`
+	Result            *string                `json:"result,omitempty"`
+	ErrorMessage      *string                `json:"errorMessage,omitempty"`
+	CreatedAt         int64                  `json:"createdAt"`
+	UpdatedAt         int64                  `json:"updatedAt"`
+	AssignedAt        *int64                 `json:"assignedAt,omitempty"`
+	StartedAt         *int64                 `json:"startedAt,omitempty"`
+	CompletedAt       *int64                 `json:"completedAt,omitempty"`
 }
 
 // OrchestrationListResult represents the result of listing orchestration tasks
@@ -2347,9 +2348,9 @@ type OrchestrationProviderInfo struct {
 
 // OrchestrationEvent represents an SSE event from orchestration updates
 type OrchestrationEvent struct {
-	Event string                 `json:"event"`
-	Data  map[string]interface{} `json:"data"`
-	ID    string                 `json:"id,omitempty"`
+	Event string         `json:"event"`
+	Data  map[string]any `json:"data"`
+	ID    string         `json:"id,omitempty"`
 }
 
 // OrchestrationSSECallback is called for each SSE event received
@@ -2362,7 +2363,7 @@ func (c *Client) SubscribeOrchestrationEvents(ctx context.Context, orchestration
 
 	path := fmt.Sprintf("/api/orchestrate/events/%s", orchestrationID)
 	if c.teamSlug != "" && taskRunJwt == "" {
-		path += "?teamSlugOrId=" + c.teamSlug
+		path += "?teamSlugOrId=" + url.QueryEscape(c.teamSlug)
 	}
 
 	url := cfg.ServerURL + path
@@ -2372,7 +2373,6 @@ func (c *Client) SubscribeOrchestrationEvents(ctx context.Context, orchestration
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Set auth header
 	if taskRunJwt != "" {
 		req.Header.Set("X-Task-Run-JWT", taskRunJwt)
 	} else {
@@ -2384,68 +2384,104 @@ func (c *Client) SubscribeOrchestrationEvents(ctx context.Context, orchestration
 	}
 
 	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("Cache-Control", "no-cache")
+	if taskRunJwt != "" {
+		req.Header.Set("Content-Type", "application/json")
+	} else {
+		req.Header.Set("Content-Type", "text/event-stream")
+	}
+	if c.teamSlug != "" {
+		req.Header.Set("X-Team-Slug", c.teamSlug)
+	}
+	if lastEventID := os.Getenv("DEVSH_LAST_EVENT_ID"); strings.TrimSpace(lastEventID) != "" {
+		req.Header.Set("Last-Event-ID", lastEventID)
+	}
+	if taskRunID := os.Getenv("CMUX_PARENT_TASK_RUN_ID"); strings.TrimSpace(taskRunID) != "" {
+		query := req.URL.Query()
+		if query.Get("taskRunId") == "" {
+			query.Set("taskRunId", taskRunID)
+			req.URL.RawQuery = query.Encode()
+		}
+	}
+	if taskRunJwt != "" {
+		query := req.URL.Query()
+		if query.Get("taskRunId") == "" {
+			if taskRunID := os.Getenv("CMUX_TASK_RUN_ID"); strings.TrimSpace(taskRunID) != "" {
+				query.Set("taskRunId", taskRunID)
+				req.URL.RawQuery = query.Encode()
+			}
+		}
+	}
+	if taskRunJwt == "" && c.teamSlug != "" {
+		req.Header.Set("Cache-Control", "no-cache")
+	}
 
-	// Use a client without timeout for SSE
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := (&http.Client{}).Do(req)
 	if err != nil {
 		return fmt.Errorf("SSE connection failed: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
-		return fmt.Errorf("SSE endpoint returned %d", resp.StatusCode)
+		defer resp.Body.Close()
+		return fmt.Errorf("SSE endpoint returned %d: %s", resp.StatusCode, readErrorBody(resp.Body))
 	}
 
-	// Read SSE events in a goroutine
-	go func() {
-		defer resp.Body.Close()
+	defer resp.Body.Close()
 
-		scanner := bufio.NewScanner(resp.Body)
-		// Set larger buffer to handle large SSE payloads (256KB max line)
-		const maxScanTokenSize = 256 * 1024
-		scanner.Buffer(make([]byte, maxScanTokenSize), maxScanTokenSize)
+	scanner := bufio.NewScanner(resp.Body)
+	const maxScanTokenSize = 256 * 1024
+	scanner.Buffer(make([]byte, maxScanTokenSize), maxScanTokenSize)
 
-		var eventType string
-		var data string
-		var id string
+	var eventType string
+	var dataParts []string
+	var id string
 
-		for scanner.Scan() {
-			line := scanner.Text()
-
-			if line == "" {
-				// Empty line = end of event
-				if eventType != "" && data != "" {
-					var eventData map[string]interface{}
-					if err := json.Unmarshal([]byte(data), &eventData); err == nil {
-						callback(OrchestrationEvent{
-							Event: eventType,
-							Data:  eventData,
-							ID:    id,
-						})
-					}
-				}
-				eventType = ""
-				data = ""
-				id = ""
-				continue
-			}
-
-			if strings.HasPrefix(line, "event:") {
-				eventType = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
-			} else if strings.HasPrefix(line, "data:") {
-				data = strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-			} else if strings.HasPrefix(line, "id:") {
-				id = strings.TrimSpace(strings.TrimPrefix(line, "id:"))
-			}
+	dispatch := func() {
+		if eventType == "" || len(dataParts) == 0 {
+			return
 		}
-
-		// Log scanner errors if any
-		if err := scanner.Err(); err != nil {
-			fmt.Fprintf(os.Stderr, "[SSE] Scanner error: %v\n", err)
+		var eventData map[string]any
+		payload := strings.Join(dataParts, "\n")
+		if err := json.Unmarshal([]byte(payload), &eventData); err == nil {
+			callback(OrchestrationEvent{
+				Event: eventType,
+				Data:  eventData,
+				ID:    id,
+			})
 		}
-	}()
+	}
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			dispatch()
+			eventType = ""
+			dataParts = nil
+			id = ""
+			continue
+		}
+		if strings.HasPrefix(line, ":") {
+			continue
+		}
+		if strings.HasPrefix(line, "event:") {
+			eventType = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
+			continue
+		}
+		if strings.HasPrefix(line, "data:") {
+			dataParts = append(dataParts, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
+			continue
+		}
+		if strings.HasPrefix(line, "id:") {
+			id = strings.TrimSpace(strings.TrimPrefix(line, "id:"))
+		}
+	}
+
+	dispatch()
+	if err := scanner.Err(); err != nil && ctx.Err() == nil {
+		return fmt.Errorf("SSE scanner error: %w", err)
+	}
+	if err := ctx.Err(); err != nil && err != context.Canceled {
+		return err
+	}
 
 	return nil
 }

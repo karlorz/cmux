@@ -82,12 +82,27 @@ If you use `--json`, the payload includes fields such as `orchestrationTaskId`, 
    devsh orchestrate status <orch-task-id> --watch
    ```
 
-2. **Wait for Completion**:
+2. **Open Live Triage When Needed**:
+   ```bash
+   devsh orchestrate debug <orch-task-id> --events
+   ```
+
+3. **Steer a Running Worker**:
+   ```bash
+   devsh orchestrate message <task-run-id> "Focus on the failing typecheck first" --type request
+   ```
+
+4. **Retry a Failed PR/Check Workflow**:
+   ```bash
+   devsh task retry <task-id>
+   ```
+
+5. **Wait for Completion**:
    ```bash
    devsh orchestrate wait <orch-task-id>
    ```
 
-3. **Get Aggregated Results**:
+6. **Get Aggregated Results**:
    ```bash
    devsh orchestrate results <orchestration-id>
    ```
@@ -130,6 +145,7 @@ Brief summary
 
 - The worker should not be told to read a local `.claude/plans/*.md` path directly.
 - The portable default is: verify local file, read local file, embed plan content in the spawned prompt.
+- Preserve the task-vs-session contract: `<orch-task-id>` for `status`, `debug`, and `wait`; `<task-run-id>` for `message`; `<task-id>` for `task retry`; `<orchestration-id>` for `results` only when one exists.
 
 ## Related Skills
 

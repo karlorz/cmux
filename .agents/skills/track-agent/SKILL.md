@@ -43,6 +43,18 @@ devsh orchestrate status <orch-task-id> --watch
 
 # Custom polling interval
 devsh orchestrate status <orch-task-id> --watch --interval 5
+
+# Live event stream for deeper triage
+devsh orchestrate debug <orch-task-id> --events
+```
+
+### Steer or Recover
+```bash
+# Send a steering message to the running worker
+devsh orchestrate message <task-run-id> "Investigate the failed lint step" --type request
+
+# Retry a failed PR/check workflow on the original task
+devsh task retry <task-id>
 ```
 
 ### Get Aggregated Results
@@ -97,9 +109,12 @@ Sandbox: morphvm_xyz789
 ## Notes
 
 - `status --watch` is **polling watch mode**, not an SSE stream.
-- `status`, `wait`, and `cancel` take `<orch-task-id>`.
-- `results` takes `<orchestration-id>`.
-- Use this skill for monitoring and cancellation, not for planning or delegation.
+- `debug --events` is the live orchestration event stream and also takes `<orch-task-id>`.
+- `status`, `debug`, `wait`, and `cancel` take `<orch-task-id>`.
+- `message` takes `<task-run-id>`.
+- `task retry` takes `<task-id>`.
+- `results` takes `<orchestration-id>` and only applies when the workflow exposes one.
+- Use this skill for monitoring and recovery, not for planning or delegation.
 
 ## Related Skills
 
