@@ -11,15 +11,16 @@ This project is called cmux. cmux is a web app that spawns Claude Code, Codex CL
 
 1. **NO direct commits to main/master** - Always create a feature branch first
 2. **NO direct push to main/master** - Push to feature branches only
-3. **NO merging PRs without explicit user approval** - Create PR, wait for user to review and approve
-4. **NO force push to main/master** - This destroys history
+3. **NO manual PR creation from agent sessions** - Do not run `gh pr create`; push the branch and let the outer workflow or user create the PR to avoid duplicates
+4. **NO merging PRs without explicit user approval** - Wait for user review and approval before any merge action
+5. **NO force push to main/master** - This destroys history
 
 **Workflow:**
 1. Create feature branch: `git checkout -b <type>/<description>`
 2. Make changes and commit to feature branch
 3. Push feature branch: `git push -u origin <branch>`
-4. Create PR: `gh pr create --base main`
-5. **STOP and wait for user approval before merging**
+4. Report the pushed branch and stop; do not run `gh pr create` from the agent session
+5. **WAIT for the user or outer workflow to create/review the PR**
 6. Only merge after user explicitly says "merge" or "approve"
 
 # Code Review

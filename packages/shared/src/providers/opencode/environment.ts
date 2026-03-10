@@ -14,6 +14,11 @@ import { buildOpencodeMcpConfig } from "../../mcp-injection";
 export const OPENCODE_HTTP_HOST = "127.0.0.1";
 export const OPENCODE_HTTP_PORT = 4096;
 
+const OPENCODE_BASH_DENY_RULES = {
+  "gh pr create": "deny",
+  "gh pr create *": "deny",
+} as const;
+
 async function buildOpencodeEnvironment(
   ctx: EnvironmentContext,
   opts: { skipAuth: boolean; xaiApiKey?: boolean }
@@ -457,6 +462,9 @@ ${getMemoryProtocolInstructions()}
   });
 
   const opencodeConfig = {
+    permission: {
+      bash: OPENCODE_BASH_DENY_RULES,
+    },
     mcp: buildOpencodeMcpConfig(ctx.mcpServerConfigs ?? [], ctx.agentName),
   };
   files.push({

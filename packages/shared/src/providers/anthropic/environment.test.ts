@@ -55,6 +55,22 @@ async function decodeClaudeConfig(args?: {
   };
 }
 
+async function decodeClaudeSettings() {
+  const result = await getClaudeEnvironment(BASE_CONTEXT);
+  const settingsFile = result.files.find(
+    (file) => file.destinationPath === "$HOME/.claude/settings.json",
+  );
+  expect(settingsFile).toBeDefined();
+
+  return JSON.parse(
+    Buffer.from(settingsFile!.contentBase64, "base64").toString("utf-8"),
+  ) as {
+    permissions?: {
+      deny?: string[];
+    };
+  };
+}
+
 describe("getClaudeEnvironment", () => {
   it("includes --agent in devsh-memory MCP args when agentName is provided", async () => {
     const homeDir = await mkdtemp(join(tmpdir(), "cmux-claude-home-"));
@@ -193,6 +209,15 @@ describe("getClaudeEnvironment", () => {
       process.env.HOME = previousHome;
       await rm(homeDir, { recursive: true, force: true });
     }
+  });
+
+  it("denies gh pr create in Claude permissions", async () => {
+    const settings = await decodeClaudeSettings();
+
+    expect(settings.permissions?.deny).toEqual([
+      "Bash(gh pr create)",
+      "Bash(gh pr create *)",
+    ]);
   });
 
   it("merges user MCP servers into .claude.json", async () => {

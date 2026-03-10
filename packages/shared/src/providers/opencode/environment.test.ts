@@ -9,6 +9,9 @@ const BASE_CONTEXT = {
 };
 
 type OpencodeConfig = {
+  permission?: {
+    bash?: Record<string, "ask" | "allow" | "deny">;
+  };
   mcp: Record<
     string,
     {
@@ -79,6 +82,10 @@ describe("getOpencodeEnvironment", () => {
   it("includes managed devsh-memory MCP when no custom servers are configured", async () => {
     const config = await decodeOpencodeConfig();
 
+    expect(config.permission?.bash).toEqual({
+      "gh pr create": "deny",
+      "gh pr create *": "deny",
+    });
     expect(config.mcp["devsh-memory"]).toEqual({
       type: "local",
       command: ["npx", "-y", "devsh-memory-mcp@latest"],

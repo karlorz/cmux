@@ -22,6 +22,11 @@ export const CLAUDE_KEY_ENV_VARS_TO_UNSET = [
   "CLAUDE_API_KEY",
 ];
 
+const CLAUDE_DENY_RULES = [
+  "Bash(gh pr create)",
+  "Bash(gh pr create *)",
+];
+
 export async function getClaudeEnvironment(
   ctx: EnvironmentContext,
 ): Promise<EnvironmentResult> {
@@ -293,6 +298,9 @@ exit 0`;
     alwaysThinkingEnabled: true,
     // Always use apiKeyHelper when not using OAuth (helper outputs correct key based on user config)
     ...(hasOAuthToken ? {} : { apiKeyHelper: claudeApiKeyHelperPath }),
+    permissions: {
+      deny: CLAUDE_DENY_RULES,
+    },
     hooks: {
       Stop: [
         {
