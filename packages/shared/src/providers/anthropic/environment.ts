@@ -22,6 +22,8 @@ export const CLAUDE_KEY_ENV_VARS_TO_UNSET = [
   "CLAUDE_API_KEY",
 ];
 
+const TASK_PR_CREATE_DENY_RULES = ["Bash(gh pr create:*)"];
+
 export async function getClaudeEnvironment(
   ctx: EnvironmentContext,
 ): Promise<EnvironmentResult> {
@@ -272,6 +274,7 @@ exit 0`;
     ctx.apiKeys.ANTHROPIC_API_KEY.trim().length > 0;
   const userCustomBaseUrl = ctx.apiKeys?.ANTHROPIC_BASE_URL?.trim();
   const bypassProxy = ctx.workspaceSettings?.bypassAnthropicProxy ?? false;
+  const hasTaskRunJwt = ctx.taskRunJwt.trim().length > 0;
 
   // If OAuth token is provided, write it to /etc/claude-code/env
   // The wrapper scripts (claude and other launchers) source this file before running claude-code
@@ -293,6 +296,13 @@ exit 0`;
     alwaysThinkingEnabled: true,
     // Always use apiKeyHelper when not using OAuth (helper outputs correct key based on user config)
     ...(hasOAuthToken ? {} : { apiKeyHelper: claudeApiKeyHelperPath }),
+    ...(hasTaskRunJwt
+      ? {
+          permissions: {
+            deny: TASK_PR_CREATE_DENY_RULES,
+          },
+        }
+      : {}),
     hooks: {
       Stop: [
         {

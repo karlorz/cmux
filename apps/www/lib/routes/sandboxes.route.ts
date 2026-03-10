@@ -2321,7 +2321,13 @@ sandboxesRouter.openapi(
         return c.text("Unsupported sandbox provider", 400);
       }
 
+      console.log(
+        `[sandboxes.refresh-github-auth] Fetching instance ${id} (provider=${provider})`
+      );
       const instance = await getInstanceById(id, getMorphClientOrNull());
+      console.log(
+        `[sandboxes.refresh-github-auth] Instance ${id} status=${instance.status}`
+      );
 
       const metadataTeamId = getInstanceTeamId(instance);
       if (metadataTeamId && metadataTeamId !== team.uuid) {
@@ -2332,9 +2338,15 @@ sandboxesRouter.openapi(
       if (provider === "morph" && instance.status === "paused") {
         return c.text("Instance is paused - resume it first", 409);
       } else if (provider === "pve-lxc" && instance.status !== "running") {
-        return c.text("Container is stopped - resume it first", 409);
+        console.log(
+          `[sandboxes.refresh-github-auth] Container ${id} is ${instance.status}, not running`
+        );
+        return c.text(`Container is ${instance.status} - resume it first`, 409);
       }
 
+      console.log(
+        `[sandboxes.refresh-github-auth] Running gh auth login for ${id}`
+      );
       await configureGithubAccess(instance, gitAuthToken);
 
       console.log(
@@ -2343,11 +2355,19 @@ sandboxesRouter.openapi(
 
       return c.json({ refreshed: true });
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(
         `[sandboxes.refresh-github-auth] Failed to refresh GitHub auth for sandbox ${id}:`,
-        error
+        errorMessage
       );
-      return c.text("Failed to refresh GitHub authentication", 500);
+      // Return more specific error message for debugging
+      if (errorMessage.includes("exec failed") || errorMessage.includes("cmux-execd")) {
+        return c.text("Container exec service not reachable - container may need restart", 503);
+      }
+      if (errorMessage.includes("not found") || errorMessage.includes("Unable to resolve")) {
+        return c.text("Sandbox not found or deleted", 404);
+      }
+      return c.text(`Failed to refresh GitHub authentication: ${errorMessage.slice(0, 200)}`, 500);
     }
   }
 );

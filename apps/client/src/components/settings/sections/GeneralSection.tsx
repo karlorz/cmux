@@ -85,27 +85,27 @@ function ConnectedAccountsSection({ teamSlugOrId }: { teamSlugOrId: string }) {
   const { data: githubAccount, isLoading: isCheckingConnection } = useQuery({
     queryKey: ["github-connection", user?.id],
     queryFn: async () => {
-      if (!user) return { connected: false, username: null };
+      if (!user) return { connected: false, username: null, tokenValid: false };
       const account = await user.getConnectedAccount("github");
-      if (!account) return { connected: false, username: null };
+      if (!account) return { connected: false, username: null, tokenValid: false };
 
       try {
         const token = await account.getAccessToken();
-        if (!token.accessToken) return { connected: true, username: null };
+        if (!token.accessToken) return { connected: true, username: null, tokenValid: false };
 
         const response = await fetch("https://api.github.com/user", {
           headers: { Authorization: `Bearer ${token.accessToken}` },
         });
 
-        if (!response.ok) return { connected: true, username: null };
+        if (!response.ok) return { connected: true, username: null, tokenValid: false };
 
         const parsed = GitHubUserSchema.safeParse(await response.json());
-        if (!parsed.success) return { connected: true, username: null };
+        if (!parsed.success) return { connected: true, username: null, tokenValid: false };
 
-        return { connected: true, username: parsed.data.login };
+        return { connected: true, username: parsed.data.login, tokenValid: true };
       } catch (error) {
         console.error("Failed to fetch GitHub username:", error);
-        return { connected: true, username: null };
+        return { connected: true, username: null, tokenValid: false };
       }
     },
     enabled: !!user,
@@ -115,25 +115,37 @@ function ConnectedAccountsSection({ teamSlugOrId }: { teamSlugOrId: string }) {
     ? null
     : (githubAccount?.connected ?? false);
   const githubUsername = githubAccount?.username ?? null;
+  const githubTokenValid = githubAccount?.tokenValid ?? false;
 
-  const handleConnectGitHub = useCallback(async () => {
-    if (!user) return;
+  const handleConnectGitHub = useCallback(
+    async (reconnect = false) => {
+      if (!user) return;
 
-    setIsConnecting(true);
-    try {
-      if (isElectron) {
-        const oauthUrl = `${WWW_ORIGIN}/handler/connect-github?team=${encodeURIComponent(teamSlugOrId)}`;
-        window.open(oauthUrl, "_blank", "noopener,noreferrer");
+      // For reconnect or Electron, we must redirect to the www handler directly
+      // because Stack's getConnectedAccount({ or: "redirect" }) doesn't force re-auth
+      const needsDirectRedirect = reconnect || isElectron;
+
+      if (needsDirectRedirect) {
+        const url = `${WWW_ORIGIN}/handler/connect-github?team=${encodeURIComponent(teamSlugOrId)}${reconnect ? "&reconnect=1" : ""}`;
+        if (isElectron) {
+          window.open(url, "_blank", "noopener,noreferrer");
+        } else {
+          window.location.href = url;
+        }
         return;
       }
 
-      await user.getConnectedAccount("github", { or: "redirect" });
-    } catch (error) {
-      console.error("Failed to connect GitHub:", error);
-    } finally {
-      setIsConnecting(false);
-    }
-  }, [teamSlugOrId, user]);
+      setIsConnecting(true);
+      try {
+        await user.getConnectedAccount("github", { or: "redirect" });
+      } catch (error) {
+        console.error("Failed to connect GitHub:", error);
+      } finally {
+        setIsConnecting(false);
+      }
+    },
+    [teamSlugOrId, user]
+  );
 
   if (!user) {
     return null;
@@ -172,9 +184,23 @@ function ConnectedAccountsSection({ teamSlugOrId }: { teamSlugOrId: string }) {
             {isConnecting ? "Connecting..." : "Connect"}
           </button>
         ) : githubConnected === true ? (
-          <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-400">
-            Connected
-          </span>
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+              githubTokenValid
+                ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"
+            }`}>
+              {githubTokenValid ? "Connected" : "Token expired"}
+            </span>
+            <button
+              type="button"
+              onClick={() => handleConnectGitHub(true)}
+              disabled={isConnecting}
+              className="rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+            >
+              {isConnecting ? "..." : "Reconnect"}
+            </button>
+          </div>
         ) : null}
       </SettingRow>
     </SettingSection>

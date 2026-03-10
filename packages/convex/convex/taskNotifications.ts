@@ -1,8 +1,34 @@
 import { ConvexError, v } from "convex/values";
 import { resolveTeamIdLoose } from "../_shared/team";
-import type { Id } from "./_generated/dataModel";
-import { internalMutation, internalQuery } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
+import { internalMutation, internalQuery, type DatabaseReader } from "./_generated/server";
 import { authMutation, authQuery } from "./users/utils";
+
+async function getUnreadRunIdSet(
+  db: DatabaseReader,
+  teamId: string,
+  userId: string,
+  runIds: readonly Id<"taskRuns">[],
+): Promise<Set<Id<"taskRuns">>> {
+  const targetRunIds = new Set<Id<"taskRuns">>(runIds);
+  if (targetRunIds.size === 0) {
+    return new Set<Id<"taskRuns">>();
+  }
+
+  const unreadRows = await db
+    .query("unreadTaskRuns")
+    .withIndex("by_team_user", (q) => q.eq("teamId", teamId).eq("userId", userId))
+    .collect();
+
+  const unreadRunIds = new Set<Id<"taskRuns">>();
+  for (const unreadRow of unreadRows) {
+    if (targetRunIds.has(unreadRow.taskRunId)) {
+      unreadRunIds.add(unreadRow.taskRunId);
+    }
+  }
+
+  return unreadRunIds;
+}
 
 // Get all notifications for the current user (paginated, newest first)
 export const list = authQuery({
@@ -26,31 +52,32 @@ export const list = authQuery({
     // Fetch associated tasks for display
     const taskIds = [...new Set(notifications.map((n) => n.taskId))];
     const tasks = await Promise.all(taskIds.map((id) => ctx.db.get(id)));
-    const taskMap = new Map(tasks.filter(Boolean).map((t) => [t!._id, t!]));
+    const taskMap = new Map<Id<"tasks">, Doc<"tasks">>();
+    for (const task of tasks) {
+      if (task) {
+        taskMap.set(task._id, task);
+      }
+    }
 
     // Fetch associated task runs for display
-    const runIds = notifications
-      .filter((n) => n.taskRunId)
-      .map((n) => n.taskRunId as Id<"taskRuns">);
+    const runIds: Id<"taskRuns">[] = [];
+    const seenRunIds = new Set<Id<"taskRuns">>();
+    for (const notification of notifications) {
+      if (notification.taskRunId && !seenRunIds.has(notification.taskRunId)) {
+        seenRunIds.add(notification.taskRunId);
+        runIds.push(notification.taskRunId);
+      }
+    }
+
     const runs = await Promise.all(runIds.map((id) => ctx.db.get(id)));
-    const runMap = new Map(runs.filter(Boolean).map((r) => [r!._id, r!]));
+    const runMap = new Map<Id<"taskRuns">, Doc<"taskRuns">>();
+    for (const run of runs) {
+      if (run) {
+        runMap.set(run._id, run);
+      }
+    }
 
-    // Check unread status only for runs in this page (bounded by page size, not total unread history)
-    // Use parallel indexed lookups - O(page_size) instead of O(total_unread_runs)
-    const unreadChecks = await Promise.all(
-      runIds.map(async (runId) => {
-        const unread = await ctx.db
-          .query("unreadTaskRuns")
-          .withIndex("by_run_user", (q) =>
-            q.eq("taskRunId", runId).eq("userId", userId),
-          )
-          .first();
-        return unread ? runId : null;
-      }),
-    );
-
-    // Build set of unread run IDs for O(1) lookup
-    const unreadRunIds = new Set(unreadChecks.filter(Boolean) as Id<"taskRuns">[])
+    const unreadRunIds = await getUnreadRunIdSet(ctx.db, teamId, userId, runIds);
 
     return notifications.map((n) => ({
       ...n,

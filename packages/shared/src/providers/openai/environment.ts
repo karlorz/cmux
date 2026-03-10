@@ -129,6 +129,7 @@ export async function getOpenAIEnvironment(
   const files: EnvironmentResult["files"] = [];
   const env: Record<string, string> = {};
   const startupCommands: string[] = [];
+  const hasTaskRunJwt = !!ctx.taskRunJwt?.trim();
 
   // useHostConfig is safe for desktop/Electron apps where the host IS the user's machine.
   // For server deployments, this should be false to prevent credential leakage.
@@ -198,6 +199,32 @@ exit 1
     contentBase64: Buffer.from(resumeScript).toString("base64"),
     mode: "755",
   });
+
+  if (hasTaskRunJwt) {
+    const ghWrapperScript = `#!/usr/bin/env sh
+set -eu
+
+# Wrapper to block gh pr create in cmux task sandboxes.
+REAL_GH="/usr/bin/gh"
+
+if [ -n "\${CMUX_TASK_RUN_JWT:-}" ]; then
+  case "\${1:-}:\${2:-}" in
+    pr:create)
+      echo "ERROR: gh pr create is blocked in cmux sandboxes." >&2
+      echo "The cmux crown workflow handles PR creation automatically." >&2
+      exit 1
+      ;;
+  esac
+fi
+
+exec "$REAL_GH" "$@"
+`;
+    files.push({
+      destinationPath: "/usr/local/bin/gh",
+      contentBase64: Buffer.from(ghWrapperScript).toString("base64"),
+      mode: "755",
+    });
+  }
 
   // Autopilot wrapper script for unattended OpenAI Codex sessions.
   // Sends heartbeats/status updates and runs Codex in a loop until timeout.

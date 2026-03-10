@@ -1,4 +1,5 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { chmod, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -15,6 +16,17 @@ function decodeConfigToml(result: Awaited<ReturnType<typeof getOpenAIEnvironment
   );
   expect(configFile).toBeDefined();
   return Buffer.from(configFile!.contentBase64, "base64").toString("utf-8");
+}
+
+function decodeEnvironmentFile(
+  result: Awaited<ReturnType<typeof getOpenAIEnvironment>>,
+  destinationPath: string
+): string {
+  const file = result.files?.find(
+    (entry) => entry.destinationPath === destinationPath
+  );
+  expect(file).toBeDefined();
+  return Buffer.from(file!.contentBase64, "base64").toString("utf-8");
 }
 
 function decodeAuthJson(
@@ -633,6 +645,63 @@ foo = "bar"
 
     expect(resumeScript).toContain('SESSION_ID_FILE="/root/lifecycle/codex-session-id.txt"');
     expect(resumeScript).toContain('exec codex resume "$THREAD_ID"');
+  });
+
+  it("injects a gh wrapper for task-backed sandboxes", async () => {
+    const result = await getOpenAIEnvironment({
+      taskRunJwt: "test-jwt",
+    } as never);
+
+    const ghWrapper = decodeEnvironmentFile(result, "/usr/local/bin/gh");
+
+    expect(ghWrapper).toContain('REAL_GH="/usr/bin/gh"');
+    expect(ghWrapper).toContain('if [ -n "${CMUX_TASK_RUN_JWT:-}" ]; then');
+    expect(ghWrapper).toContain('case "${1:-}:${2:-}" in');
+    expect(ghWrapper).toContain("pr:create)");
+    expect(ghWrapper).toContain("gh pr create is blocked in cmux sandboxes");
+    expect(ghWrapper).toContain("The cmux crown workflow handles PR creation automatically.");
+    expect(ghWrapper).toContain('exec "$REAL_GH" "$@"');
+    // File mode 755 is set at write time, no chmod needed
+
+    const tempDir = await mkdtemp(join(tmpdir(), "cmux-openai-gh-wrapper-"));
+
+    try {
+      const wrapperPath = join(tempDir, "gh");
+      await writeFile(wrapperPath, ghWrapper, "utf-8");
+      await chmod(wrapperPath, 0o755);
+
+      const blocked = spawnSync(wrapperPath, ["pr", "create"], {
+        env: {
+          ...process.env,
+          CMUX_TASK_RUN_JWT: "test-jwt",
+        },
+        encoding: "utf-8",
+      });
+      expect(blocked.status).toBe(1);
+      expect(blocked.stderr).toContain(
+        "gh pr create is blocked in cmux sandboxes"
+      );
+
+      const passthrough = spawnSync(wrapperPath, ["--version"], {
+        env: process.env,
+        encoding: "utf-8",
+      });
+      expect(passthrough.status).toBe(0);
+      expect(passthrough.stdout).toContain("gh version");
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not inject a gh wrapper when task JWT is absent", async () => {
+    const result = await getOpenAIEnvironment({} as never);
+
+    const ghWrapper = result.files?.find(
+      (file) => file.destinationPath === "/usr/local/bin/gh"
+    );
+
+    expect(ghWrapper).toBeUndefined();
+    expect(result.startupCommands).not.toContain("chmod +x /usr/local/bin/gh");
   });
 
   it("creates codex-autopilot script with aligned continuation and wrap-up prompts", async () => {
