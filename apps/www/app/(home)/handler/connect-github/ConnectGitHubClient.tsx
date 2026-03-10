@@ -4,9 +4,9 @@ import { useUser } from "@stackframe/stack";
 import { JetBrains_Mono } from "next/font/google";
 import { useCallback, useEffect, useState } from "react";
 
-const jetbrains = JetBrains_Mono({ subsets: ["latin"], preload: true });
+import { OAUTH_CALLBACK_KEY } from "@/lib/utils/oauth-constants";
 
-const OAUTH_CALLBACK_KEY = "oauth_callback_url";
+const jetbrains = JetBrains_Mono({ subsets: ["latin"], preload: true });
 
 type ConnectGitHubClientProps =
   | { href: string; alreadyConnected: true; teamSlugOrId?: never; webReturnUrl?: never }
@@ -34,57 +34,45 @@ export function ConnectGitHubClient(props: ConnectGitHubClientProps) {
     setIsConnecting(true);
     setError(null);
 
-    console.log("[ConnectGitHub] handleConnect called", {
-      webReturnUrl: props.webReturnUrl,
-      alreadyConnected: props.alreadyConnected,
-    });
-
     try {
       // For web reconnect flow, store return URL in sessionStorage
       // The after-sign-in handler will redirect back to this URL
       if (!props.alreadyConnected && props.webReturnUrl) {
         try {
           sessionStorage.setItem(OAUTH_CALLBACK_KEY, props.webReturnUrl);
-          console.log("[ConnectGitHub] Stored sessionStorage callback:", props.webReturnUrl);
         } catch {
           // sessionStorage not available
         }
       }
 
-      // Check if already connected - if so and webReturnUrl is set (reconnect flow),
-      // we need to handle token refresh
-      const existingAccount = await user.getConnectedAccount("github");
-      console.log("[ConnectGitHub] existingAccount:", !!existingAccount);
-
-      if (existingAccount && props.webReturnUrl) {
-        // Account exists - try to get fresh token
-        try {
-          const token = await existingAccount.getAccessToken();
-          console.log("[ConnectGitHub] Got token:", !!token.accessToken);
-          if (token.accessToken) {
-            // Validate token is still valid with GitHub
-            const response = await fetch("https://api.github.com/user", {
-              headers: { Authorization: `Bearer ${token.accessToken}` },
-            });
-            console.log("[ConnectGitHub] GitHub API response:", response.status);
-            if (response.ok) {
-              // Token is valid, redirect back to settings
-              console.log("[ConnectGitHub] Token valid, redirecting to:", props.webReturnUrl);
-              window.location.href = props.webReturnUrl;
-              return;
+      // For reconnect flow, validate existing token before redirecting
+      if (props.webReturnUrl) {
+        const existingAccount = await user.getConnectedAccount("github");
+        if (existingAccount) {
+          // Account exists - try to get fresh token and validate
+          try {
+            const token = await existingAccount.getAccessToken();
+            if (token.accessToken) {
+              const response = await fetch("https://api.github.com/user", {
+                headers: { Authorization: `Bearer ${token.accessToken}` },
+              });
+              if (response.ok) {
+                // Token is valid, redirect back to settings
+                window.location.href = props.webReturnUrl;
+                return;
+              }
             }
+          } catch {
+            // Token fetch failed - fall through to error
           }
-        } catch (tokenErr) {
-          console.error("[ConnectGitHub] Token fetch failed:", tokenErr);
+          // Token is invalid - show error since we can't force re-auth through Stack Auth
+          setError("GitHub token expired. Please revoke access at github.com/settings/applications and try again.");
+          setIsConnecting(false);
+          return;
         }
-        // Token is invalid - show error since we can't force re-auth
-        setError("GitHub token expired. Please revoke access at github.com/settings/applications and try again.");
-        setIsConnecting(false);
-        return;
       }
 
-      // Not connected - redirect to GitHub OAuth
-      console.log("[ConnectGitHub] Not connected, initiating OAuth");
+      // Not connected or not reconnect flow - redirect to GitHub OAuth
       await user.getConnectedAccount("github", { or: "redirect" });
     } catch (err) {
       console.error("Failed to connect GitHub:", err);

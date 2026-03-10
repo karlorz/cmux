@@ -4,8 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { OpenCmuxClient } from "./OpenCmuxClient";
-
-const OAUTH_CALLBACK_KEY = "oauth_callback_url";
+import { OAUTH_CALLBACK_KEY } from "@/lib/utils/oauth-constants";
 
 type CheckSessionStorageRedirectProps = {
   fallbackPath: string;
@@ -24,11 +23,6 @@ export function CheckSessionStorageRedirect({
 
     try {
       const storedCallback = sessionStorage.getItem(OAUTH_CALLBACK_KEY);
-      console.log("[CheckSessionStorageRedirect] sessionStorage check:", {
-        key: OAUTH_CALLBACK_KEY,
-        value: storedCallback,
-        allKeys: Object.keys(sessionStorage),
-      });
       if (storedCallback) {
         // Validate it's either a relative path or a safe full URL
         if (storedCallback.startsWith("/") && !storedCallback.startsWith("//")) {
@@ -40,13 +34,12 @@ export function CheckSessionStorageRedirect({
         }
         sessionStorage.removeItem(OAUTH_CALLBACK_KEY);
       }
-    } catch (err) {
-      console.error("[CheckSessionStorageRedirect] sessionStorage error:", err);
+    } catch {
+      // sessionStorage not available
     }
 
     // If we have a stored web callback URL, use it
     if (redirectPath) {
-      console.log("[CheckSessionStorageRedirect] Redirecting to stored callback:", redirectPath);
       // Use window.location for full URLs (cross-origin), router for relative paths
       if (redirectPath.startsWith("https://")) {
         window.location.href = redirectPath;
@@ -59,13 +52,11 @@ export function CheckSessionStorageRedirect({
     // If we have an electron fallback href (with auth tokens), use electron deeplink
     // This is the default behavior for users coming from Electron without a web returnUrl
     if (electronFallbackHref) {
-      console.log("[CheckSessionStorageRedirect] No stored callback, using electron deeplink");
       setUseElectronDeeplink(true);
       return;
     }
 
     // Final fallback to web path
-    console.log("[CheckSessionStorageRedirect] Redirecting to fallback:", fallbackPath);
     router.replace(fallbackPath);
   }, [router, fallbackPath, electronFallbackHref]);
 
