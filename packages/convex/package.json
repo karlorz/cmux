@@ -25,6 +25,10 @@
     "./dataModel": {
       "import": "./convex/_generated/dataModel.d.ts",
       "types": "./convex/_generated/dataModel.d.ts"
+    },
+    "./orchestrationQueries": {
+      "import": "./convex/orchestrationQueries.ts",
+      "types": "./convex/orchestrationQueries.ts"
     }
   },
   "dependencies": {

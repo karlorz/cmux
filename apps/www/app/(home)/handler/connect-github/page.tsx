@@ -24,12 +24,21 @@ export default async function ConnectGitHubPage({
   const user = await stackServerApp.getUser({ or: "redirect" });
   const searchParams = await searchParamsPromise;
   const teamSlugOrId = getSingleValue(searchParams?.team);
+  const isReconnect = getSingleValue(searchParams?.reconnect) === "1";
+
+  // For web reconnect flow, we want to return to settings page after OAuth
+  // The returnUrl will be stored in sessionStorage by ConnectGitHubClient
+  // Use CLIENT_ORIGIN to redirect back to the client (Vite) app, not the www (Next.js) app
+  const clientOrigin = env.NEXT_PUBLIC_CLIENT_ORIGIN ?? env.NEXT_PUBLIC_BASE_APP_URL;
+  const webReturnUrl = isReconnect && teamSlugOrId && clientOrigin
+    ? `${clientOrigin}/${teamSlugOrId}/settings?section=general`
+    : null;
 
   // Check if GitHub is already connected
   const githubAccount = await user.getConnectedAccount("github");
 
-  if (githubAccount) {
-    // Already connected - redirect to deep link immediately
+  if (githubAccount && !isReconnect) {
+    // Already connected (and not forcing reconnect) - redirect to deep link immediately
     const protocol = env.NEXT_PUBLIC_CMUX_PROTOCOL ?? "cmux-next";
     const deepLinkHref = teamSlugOrId
       ? `${protocol}://github-connect-complete?team=${encodeURIComponent(teamSlugOrId)}`
@@ -39,6 +48,6 @@ export default async function ConnectGitHubPage({
     return <ConnectGitHubClient href={deepLinkHref} alreadyConnected />;
   }
 
-  // Not connected - show client component to initiate OAuth
-  return <ConnectGitHubClient teamSlugOrId={teamSlugOrId} />;
+  // Not connected or forcing reconnect - show client component to initiate OAuth
+  return <ConnectGitHubClient teamSlugOrId={teamSlugOrId} webReturnUrl={webReturnUrl} />;
 }

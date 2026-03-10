@@ -964,6 +964,25 @@ describe(
         expect(result.status).toBe(404);
       });
 
+      it("GET /api/v1/cmux/task-runs/{id}/memory returns 404 for invalid task run ID format", async () => {
+        const teamsResult = await cmuxApiFetch<{
+          teams: Array<{ teamId: string; slug: string }>;
+        }>("/api/v1/cmux/me/teams");
+
+        const teamSlug = teamsResult.data?.teams?.[0]?.slug ?? TEST_TEAM;
+
+        const result = await cmuxApiFetch(
+          "/api/v1/cmux/task-runs/invalid_task_run_id/memory",
+          {
+            query: { teamSlugOrId: teamSlug },
+          }
+        );
+
+        expect(result.ok).toBe(false);
+        expect(result.status).toBe(404);
+        expect(result.error?.message).toBe("Task run not found");
+      });
+
       it("GET /api/v1/cmux/task-runs/{id}/memory returns empty memory for task without synced memory", async () => {
         // Create a task to get a valid task run ID
         const teamsResult = await cmuxApiFetch<{

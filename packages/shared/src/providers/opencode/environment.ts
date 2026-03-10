@@ -14,6 +14,11 @@ import { buildOpencodeMcpConfig } from "../../mcp-injection";
 export const OPENCODE_HTTP_HOST = "127.0.0.1";
 export const OPENCODE_HTTP_PORT = 4096;
 
+const TASK_PR_CREATE_BASH_DENY_RULES = {
+  "gh pr create": "deny",
+  "gh pr create *": "deny",
+} as const;
+
 async function buildOpencodeEnvironment(
   ctx: EnvironmentContext,
   opts: { skipAuth: boolean; xaiApiKey?: boolean }
@@ -28,6 +33,7 @@ async function buildOpencodeEnvironment(
   const files: EnvironmentResult["files"] = [];
   const env: Record<string, string> = {};
   const startupCommands: string[] = [];
+  const hasTaskRunJwt = ctx.taskRunJwt.trim().length > 0;
 
   // Ensure .local/share/opencode directory exists
   startupCommands.push("mkdir -p ~/.local/share/opencode");
@@ -458,6 +464,13 @@ ${getMemoryProtocolInstructions()}
 
   const opencodeConfig = {
     mcp: buildOpencodeMcpConfig(ctx.mcpServerConfigs ?? [], ctx.agentName),
+    ...(hasTaskRunJwt
+      ? {
+          permission: {
+            bash: TASK_PR_CREATE_BASH_DENY_RULES,
+          },
+        }
+      : {}),
   };
   files.push({
     destinationPath: "$HOME/.config/opencode/opencode.json",

@@ -55,6 +55,24 @@ async function decodeClaudeConfig(args?: {
   };
 }
 
+async function decodeClaudeSettings(overrides?: Partial<typeof BASE_CONTEXT>) {
+  const result = await getClaudeEnvironment({
+    ...BASE_CONTEXT,
+    ...overrides,
+  });
+  const settingsFile = result.files.find(
+    (file) => file.destinationPath === "$HOME/.claude/settings.json"
+  );
+  expect(settingsFile).toBeDefined();
+  return JSON.parse(
+    Buffer.from(settingsFile!.contentBase64, "base64").toString("utf-8")
+  ) as {
+    permissions?: {
+      deny?: string[];
+    };
+  };
+}
+
 describe("getClaudeEnvironment", () => {
   it("includes --agent in devsh-memory MCP args when agentName is provided", async () => {
     const homeDir = await mkdtemp(join(tmpdir(), "cmux-claude-home-"));
@@ -244,5 +262,17 @@ describe("getClaudeEnvironment", () => {
       process.env.HOME = previousHome;
       await rm(homeDir, { recursive: true, force: true });
     }
+  });
+
+  it("denies gh pr create for task-backed sandboxes", async () => {
+    const settings = await decodeClaudeSettings();
+
+    expect(settings.permissions?.deny).toContain("Bash(gh pr create:*)");
+  });
+
+  it("does not deny gh pr create when task JWT is absent", async () => {
+    const settings = await decodeClaudeSettings({ taskRunJwt: "" });
+
+    expect(settings.permissions).toBeUndefined();
   });
 });

@@ -15,8 +15,12 @@
  * is not available.
  */
 
-import { describe, it, expect, beforeAll } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { once } from "node:events";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { AGENT_CATALOG } from "@cmux/shared/agent-catalog";
+import { handleHttpRequest, matchesOrchestrationTaskGroup } from "./http-api";
 
 const SERVER_URL = process.env.CMUX_SERVER_URL ?? "http://localhost:9776";
 
@@ -98,6 +102,68 @@ async function safeFetch(
 }
 
 describe("HTTP API - apps/server", () => {
+  describe("Orchestration filtering helpers", () => {
+    it("matches a single-task local flow by task id", () => {
+      const orchestrationId = "orch_task_local_123";
+      const task = {
+        _id: orchestrationId,
+        status: "running",
+        metadata: null,
+      };
+
+      expect(matchesOrchestrationTaskGroup(task, orchestrationId)).toBe(true);
+      expect(matchesOrchestrationTaskGroup(task, "different_orchestration")).toBe(
+        false,
+      );
+    });
+
+    it("matches a grouped orchestration flow by metadata.orchestrationId", () => {
+      const orchestrationId = "orch_group_456";
+      const groupedTask = {
+        _id: "orch_task_child_1",
+        status: "completed",
+        metadata: {
+          orchestrationId,
+        },
+      };
+      const unrelatedTask = {
+        _id: "orch_task_child_2",
+        status: "completed",
+        metadata: {
+          orchestrationId: "other_group",
+        },
+      };
+
+      expect(matchesOrchestrationTaskGroup(groupedTask, orchestrationId)).toBe(true);
+      expect(matchesOrchestrationTaskGroup(unrelatedTask, orchestrationId)).toBe(
+        false,
+      );
+    });
+  });
+
+  describe("Orchestration events auth", () => {
+    it("rejects missing auth for the events endpoint", async () => {
+      const server = createServer((req, res) => {
+        if (!handleHttpRequest(req, res)) {
+          res.statusCode = 404;
+          res.end();
+        }
+      });
+
+      server.listen(0, "127.0.0.1");
+      await once(server, "listening");
+
+      const address = server.address() as AddressInfo;
+      const response = await fetch(
+        `http://127.0.0.1:${address.port}/api/orchestrate/events/orch_task_local_123`,
+      );
+
+      expect(response.status).toBe(401);
+      await server.closeAllConnections();
+      server.close();
+    });
+  });
+
   beforeAll(async () => {
     // Ensure preflight check is complete before tests run
     await serverCheckPromise;
