@@ -137,26 +137,25 @@ function ConnectedAccountsSection({ teamSlugOrId }: { teamSlugOrId: string }) {
   }, [teamSlugOrId, user]);
 
   const handleReconnectGitHub = useCallback(() => {
-    console.log("[Settings] Reconnect GitHub clicked", { user: !!user, teamSlugOrId });
+    console.log("[Settings] Reconnect GitHub clicked", { user: !!user, teamSlugOrId, WWW_ORIGIN });
     if (!user) {
       console.log("[Settings] No user, aborting reconnect");
       return;
     }
 
-    // Force re-authorization by redirecting to the connect-github handler
-    // This handler triggers Stack Auth's OAuth flow
-    const connectUrl = `/handler/connect-github?team=${encodeURIComponent(teamSlugOrId)}&reconnect=1`;
+    // Force re-authorization by redirecting to the connect-github handler on WWW
+    // The handler is on the www app (Next.js), not the client app (Vite)
+    const connectUrl = `${WWW_ORIGIN}/handler/connect-github?team=${encodeURIComponent(teamSlugOrId)}&reconnect=1`;
     console.log("[Settings] Redirecting to:", connectUrl);
 
     if (isElectron) {
       // For Electron, open in external browser
-      const oauthUrl = `${WWW_ORIGIN}${connectUrl}`;
-      console.log("[Settings] Opening in external browser:", oauthUrl);
-      window.open(oauthUrl, "_blank", "noopener,noreferrer");
+      console.log("[Settings] Opening in external browser:", connectUrl);
+      window.open(connectUrl, "_blank", "noopener,noreferrer");
       return;
     }
 
-    // For web, redirect to the connect-github handler
+    // For web, redirect to the connect-github handler on WWW origin
     window.location.href = connectUrl;
   }, [teamSlugOrId, user]);
 
