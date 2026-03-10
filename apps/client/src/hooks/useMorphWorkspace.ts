@@ -183,14 +183,26 @@ export function useRefreshGitHubAuth({
               ? "Container is stopped. Resume it first."
               : "VM is paused. Resume it first.";
         } else if (
+          error.message.includes("503") ||
+          error.message.includes("exec service") ||
+          error.message.includes("not reachable")
+        ) {
+          message =
+            provider === "pve-lxc"
+              ? "Container exec service not responding. Try restarting the container."
+              : "Instance exec service not responding. Try restarting the VM.";
+        } else if (
           error.message.includes("401") ||
-          error.message.includes("GitHub")
+          error.message.includes("GitHub account not connected")
         ) {
           message = "GitHub account not connected. Check your settings.";
         } else if (error.message.includes("Unsupported provider")) {
           message = "This workspace type does not support GitHub refresh.";
+        } else if (error.message.includes("404") || error.message.includes("not found")) {
+          message = "Sandbox not found or has been deleted.";
         } else {
-          message = error.message;
+          // Show server error message if available
+          message = error.message || "Failed to refresh GitHub auth.";
         }
       }
       toast.error(message, { id: context?.toastId });
