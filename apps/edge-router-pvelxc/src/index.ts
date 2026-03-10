@@ -1,6 +1,15 @@
 // Edge Router for PVE-LXC sandboxes on alphasolves.com
 // Based on apps/edge-router/src/index.ts but modified for PVE-LXC URL patterns
 
+// VS Code server port for PVE-LXC sandboxes
+const VSCODE_PORT = "39378";
+
+// Regex to match http:// URLs pointing to the PVE-LXC public domain.
+// Used to rewrite insecure URLs to https:// in VS Code responses.
+const PVELXC_HTTP_URL_REGEX =
+  /http:\/\/port-(\d+)-pvelxc-([^"'\s]+)\.alphasolves\.com/g;
+const PVELXC_HTTPS_REPLACEMENT = "https://port-$1-pvelxc-$2.alphasolves.com";
+
 // Service worker content for PVE-LXC
 const SERVICE_WORKER_JS = `
 
@@ -776,18 +785,17 @@ export default {
     });
 
     const contentType = response.headers.get("content-type") || "";
-    const skipServiceWorker = port === "39378";
-    const isVSCode = port === "39378";
+    const isVSCode = port === VSCODE_PORT;
     const requestOrigin = request.headers.get("Origin");
 
     // Apply HTMLRewriter to HTML responses
     if (contentType.includes("text/html")) {
       let responseHeaders = stripCSPHeaders(response.headers);
-      if (skipServiceWorker) {
+      if (isVSCode) {
         responseHeaders = addPermissiveCORS(responseHeaders, requestOrigin);
       }
 
-      // For VS Code (port 39378), we need to rewrite http:// URLs to https:// in the
+      // For VS Code, we need to rewrite http:// URLs to https:// in the
       // workbench config to fix resourceUrlTemplate using insecure scheme.
       // VS Code server generates URLs based on the request host but defaults to http://
       // when behind a reverse proxy that doesn't properly forward X-Forwarded-Proto.
@@ -796,8 +804,8 @@ export default {
         const text = await response.text();
         // Rewrite http:// URLs that point to the public host pattern
         const rewritten = text.replace(
-          /http:\/\/port-(\d+)-pvelxc-([^"'\s]+)\.alphasolves\.com/g,
-          "https://port-$1-pvelxc-$2.alphasolves.com",
+          PVELXC_HTTP_URL_REGEX,
+          PVELXC_HTTPS_REPLACEMENT,
         );
         responseHeaders = sanitizeRewrittenResponseHeaders(responseHeaders);
         return new Response(rewritten, {
@@ -808,10 +816,10 @@ export default {
       }
 
       const rewriter = new HTMLRewriter()
-        .on("head", new HeadRewriter(skipServiceWorker))
+        .on("head", new HeadRewriter(isVSCode))
         .on("script", new ScriptRewriter());
 
-      if (skipServiceWorker) {
+      if (isVSCode) {
         rewriter.on("meta", new MetaCSPRewriter());
       }
 
@@ -831,13 +839,13 @@ export default {
       // For VS Code, also rewrite http:// URLs to https:// for the public domain
       if (isVSCode) {
         rewritten = rewritten.replace(
-          /http:\/\/port-(\d+)-pvelxc-([^"'\s]+)\.alphasolves\.com/g,
-          "https://port-$1-pvelxc-$2.alphasolves.com",
+          PVELXC_HTTP_URL_REGEX,
+          PVELXC_HTTPS_REPLACEMENT,
         );
       }
       let sanitizedHeaders = sanitizeRewrittenResponseHeaders(response.headers);
       sanitizedHeaders = stripCSPHeaders(sanitizedHeaders);
-      if (skipServiceWorker) {
+      if (isVSCode) {
         sanitizedHeaders = addPermissiveCORS(sanitizedHeaders, requestOrigin);
       }
       return new Response(rewritten, {
@@ -848,7 +856,7 @@ export default {
     }
 
     let responseHeaders = stripCSPHeaders(response.headers);
-    if (skipServiceWorker) {
+    if (isVSCode) {
       responseHeaders = addPermissiveCORS(responseHeaders, requestOrigin);
     } else {
       responseHeaders = fixCORSForCredentials(responseHeaders, requestOrigin);
