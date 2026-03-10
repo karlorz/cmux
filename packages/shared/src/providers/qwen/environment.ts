@@ -8,6 +8,7 @@ import {
   getMemoryProtocolInstructions,
   getProjectContextFile,
 } from "../../agent-memory-protocol";
+import { getTaskSandboxWrapperFiles } from "../common/task-sandbox-wrappers";
 
 // Prepare Qwen CLI environment for OpenAI-compatible API key mode.
 // We previously supported the Qwen OAuth device flow, but cmux now uses
@@ -111,6 +112,12 @@ ${getMemoryProtocolInstructions()}
     contentBase64: Buffer.from(qwenMdContent).toString("base64"),
     mode: "644",
   });
+
+  // Block dangerous commands in task sandboxes
+  const hasTaskRunJwt = ctx.taskRunJwt.trim().length > 0;
+  if (hasTaskRunJwt) {
+    files.push(...getTaskSandboxWrapperFiles(Buffer));
+  }
 
   return { files, env, startupCommands };
 }

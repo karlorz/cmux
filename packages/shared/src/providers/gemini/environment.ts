@@ -11,6 +11,7 @@ import {
   getCrossToolSymlinkCommands,
 } from "../../agent-memory-protocol";
 import { buildGeminiMcpServers } from "../../mcp-injection";
+import { getTaskSandboxWrapperFiles } from "../common/task-sandbox-wrappers";
 
 type GeminiModelSettings = {
   skipNextSpeakerCheck?: boolean;
@@ -274,5 +275,11 @@ ${getMemoryProtocolInstructions()}
     mode: "644",
   });
 
-  return { files, env, startupCommands };
-}
+  // Block dangerous commands in task sandboxes
+  const hasTaskRunJwt = ctx.taskRunJwt.trim().length > 0;
+  if (hasTaskRunJwt) {
+    files.push(...getTaskSandboxWrapperFiles(Buffer));
+  }
+
+  return { files, env, startupCommands };}
+
