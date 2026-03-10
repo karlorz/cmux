@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   shouldUseIframePreflightProxy,
   shouldUseServerIframePreflight,
-} from "./useIframePreflight";
+} from "./iframePreflight.utils";
 
 describe("shouldUseIframePreflightProxy", () => {
   it("returns true for direct Morph cloud hosts", () => {
