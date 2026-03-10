@@ -82,30 +82,30 @@ function ConnectedAccountsSection({ teamSlugOrId }: { teamSlugOrId: string }) {
   const user = useUser({ or: "return-null" });
   const [isConnecting, setIsConnecting] = useState(false);
 
-  const { data: githubAccount, isLoading: isCheckingConnection } = useQuery({
+  const { data: githubAccount, isLoading: isCheckingConnection, refetch } = useQuery({
     queryKey: ["github-connection", user?.id],
     queryFn: async () => {
-      if (!user) return { connected: false, username: null };
+      if (!user) return { connected: false, username: null, tokenValid: false };
       const account = await user.getConnectedAccount("github");
-      if (!account) return { connected: false, username: null };
+      if (!account) return { connected: false, username: null, tokenValid: false };
 
       try {
         const token = await account.getAccessToken();
-        if (!token.accessToken) return { connected: true, username: null };
+        if (!token.accessToken) return { connected: true, username: null, tokenValid: false };
 
         const response = await fetch("https://api.github.com/user", {
           headers: { Authorization: `Bearer ${token.accessToken}` },
         });
 
-        if (!response.ok) return { connected: true, username: null };
+        if (!response.ok) return { connected: true, username: null, tokenValid: false };
 
         const parsed = GitHubUserSchema.safeParse(await response.json());
-        if (!parsed.success) return { connected: true, username: null };
+        if (!parsed.success) return { connected: true, username: null, tokenValid: false };
 
-        return { connected: true, username: parsed.data.login };
+        return { connected: true, username: parsed.data.login, tokenValid: true };
       } catch (error) {
         console.error("Failed to fetch GitHub username:", error);
-        return { connected: true, username: null };
+        return { connected: true, username: null, tokenValid: false };
       }
     },
     enabled: !!user,
@@ -115,6 +115,7 @@ function ConnectedAccountsSection({ teamSlugOrId }: { teamSlugOrId: string }) {
     ? null
     : (githubAccount?.connected ?? false);
   const githubUsername = githubAccount?.username ?? null;
+  const githubTokenValid = githubAccount?.tokenValid ?? false;
 
   const handleConnectGitHub = useCallback(async () => {
     if (!user) return;
@@ -134,6 +135,30 @@ function ConnectedAccountsSection({ teamSlugOrId }: { teamSlugOrId: string }) {
       setIsConnecting(false);
     }
   }, [teamSlugOrId, user]);
+
+  const handleReconnectGitHub = useCallback(async () => {
+    if (!user) return;
+
+    setIsConnecting(true);
+    try {
+      // Force re-authorization by redirecting to GitHub OAuth
+      // This refreshes the OAuth token even if already connected
+      if (isElectron) {
+        const oauthUrl = `${WWW_ORIGIN}/handler/connect-github?team=${encodeURIComponent(teamSlugOrId)}&force=1`;
+        window.open(oauthUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      // For web, redirect to GitHub OAuth with prompt=consent to force re-auth
+      await user.getConnectedAccount("github", { or: "redirect" });
+    } catch (error) {
+      console.error("Failed to reconnect GitHub:", error);
+    } finally {
+      setIsConnecting(false);
+      // Refetch to update status
+      void refetch();
+    }
+  }, [teamSlugOrId, user, refetch]);
 
   if (!user) {
     return null;
@@ -172,9 +197,23 @@ function ConnectedAccountsSection({ teamSlugOrId }: { teamSlugOrId: string }) {
             {isConnecting ? "Connecting..." : "Connect"}
           </button>
         ) : githubConnected === true ? (
-          <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-400">
-            Connected
-          </span>
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+              githubTokenValid
+                ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"
+            }`}>
+              {githubTokenValid ? "Connected" : "Token expired"}
+            </span>
+            <button
+              type="button"
+              onClick={() => void handleReconnectGitHub()}
+              disabled={isConnecting}
+              className="rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+            >
+              {isConnecting ? "..." : "Reconnect"}
+            </button>
+          </div>
         ) : null}
       </SettingRow>
     </SettingSection>
