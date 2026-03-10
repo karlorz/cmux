@@ -470,11 +470,19 @@ morphRouter.openapi(
 
       return c.json({ refreshed: true });
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(
-        "[morph.refresh-github-auth] Failed to refresh GitHub auth:",
-        error
+        `[morph.refresh-github-auth] Failed to refresh GitHub auth for ${instanceId}:`,
+        errorMessage
       );
-      return c.text("Failed to refresh GitHub authentication", 500);
+      // Return more specific error message for debugging
+      if (errorMessage.includes("exec failed") || errorMessage.includes("HTTP exec")) {
+        return c.text("Instance exec service not reachable - instance may need restart", 503);
+      }
+      if (errorMessage.includes("not found") || errorMessage.includes("does not exist")) {
+        return c.text("Instance not found or deleted", 404);
+      }
+      return c.text(`Failed to refresh GitHub authentication: ${errorMessage.slice(0, 200)}`, 500);
     }
   }
 );
