@@ -15,6 +15,10 @@ import {
   AGENT_CATALOG,
   getVariantsForVendor,
 } from "@cmux/shared/agent-catalog";
+import {
+  DEFAULT_TASK_LIST_LIMIT,
+  ORCHESTRATION_STATUSES,
+} from "@cmux/convex/orchestrationQueries";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { spawnAgent, spawnAllAgents, type PreFetchedSpawnConfig } from "./agentSpawner";
 import { getProviderHealthMonitor } from "@cmux/shared/resilience/provider-health";
@@ -994,23 +998,17 @@ async function handleOrchestrationList(
   const url = new URL(req.url || "/", `http://${req.headers.host}`);
   const teamSlugOrId = url.searchParams.get("teamSlugOrId");
   const statusParam = url.searchParams.get("status");
+  const cursor = url.searchParams.get("cursor");
 
   // Validate status parameter if provided
-  const validStatuses = ["pending", "assigned", "running", "completed", "failed", "cancelled"];
-  if (statusParam && !validStatuses.includes(statusParam)) {
+  type OrchestrationStatus = (typeof ORCHESTRATION_STATUSES)[number];
+  if (statusParam && !ORCHESTRATION_STATUSES.includes(statusParam as OrchestrationStatus)) {
     jsonResponse(res, 400, {
-      error: `Invalid status parameter: ${statusParam}. Must be one of: ${validStatuses.join(", ")}`,
+      error: `Invalid status parameter: ${statusParam}. Must be one of: ${ORCHESTRATION_STATUSES.join(", ")}`,
     });
     return;
   }
-  const status = statusParam as
-    | "pending"
-    | "assigned"
-    | "running"
-    | "completed"
-    | "failed"
-    | "cancelled"
-    | null;
+  const status = statusParam as OrchestrationStatus | null;
 
   if (!teamSlugOrId) {
     jsonResponse(res, 400, { error: "Missing required query parameter: teamSlugOrId" });
@@ -1028,10 +1026,29 @@ async function handleOrchestrationList(
         throw new Error("Team not found or not a member");
       }
 
+      if (status) {
+        const paginatedTasks = await getConvex().query(
+          api.orchestrationQueries.listTasksByTeamPaginated,
+          {
+            teamSlugOrId: membership.team.teamId,
+            status,
+            paginationOpts: {
+              cursor,
+              numItems: DEFAULT_TASK_LIST_LIMIT,
+            },
+          }
+        );
+
+        return {
+          tasks: paginatedTasks.page,
+          nextCursor: paginatedTasks.continueCursor,
+          isDone: paginatedTasks.isDone,
+        };
+      }
+
       const tasks = await getConvex().query(api.orchestrationQueries.listTasksByTeam, {
         teamSlugOrId: membership.team.teamId,
-        status: status ?? undefined,
-        limit: 50,
+        limit: DEFAULT_TASK_LIST_LIMIT,
       });
 
       return { tasks };
