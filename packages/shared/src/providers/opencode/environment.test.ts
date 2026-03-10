@@ -20,10 +20,14 @@ type OpencodeConfig = {
       enabled: boolean;
     }
   >;
+  permission?: {
+    bash?: Record<string, "allow" | "ask" | "deny">;
+  };
 };
 
 async function decodeOpencodeConfig(args?: {
   agentName?: string;
+  taskRunJwt?: string;
   mcpServerConfigs?: Array<
     | {
         name: string;
@@ -84,6 +88,21 @@ describe("getOpencodeEnvironment", () => {
       command: ["npx", "-y", "devsh-memory-mcp@latest"],
       enabled: true,
     });
+  });
+
+  it("denies gh pr create for task-backed sandboxes", async () => {
+    const config = await decodeOpencodeConfig();
+
+    expect(config.permission?.bash).toMatchObject({
+      "gh pr create": "deny",
+      "gh pr create *": "deny",
+    });
+  });
+
+  it("does not deny gh pr create when task JWT is absent", async () => {
+    const config = await decodeOpencodeConfig({ taskRunJwt: "" });
+
+    expect(config.permission).toBeUndefined();
   });
 
   it("includes --agent in managed devsh-memory MCP args when agentName is provided", async () => {
