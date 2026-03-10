@@ -24,12 +24,19 @@ export default async function ConnectGitHubPage({
   const user = await stackServerApp.getUser({ or: "redirect" });
   const searchParams = await searchParamsPromise;
   const teamSlugOrId = getSingleValue(searchParams?.team);
+  const isReconnect = getSingleValue(searchParams?.reconnect) === "1";
+
+  // For web reconnect flow, we want to return to settings page after OAuth
+  // The returnUrl will be stored in sessionStorage by ConnectGitHubClient
+  const webReturnUrl = isReconnect && teamSlugOrId
+    ? `/${teamSlugOrId}/settings?section=general`
+    : null;
 
   // Check if GitHub is already connected
   const githubAccount = await user.getConnectedAccount("github");
 
-  if (githubAccount) {
-    // Already connected - redirect to deep link immediately
+  if (githubAccount && !isReconnect) {
+    // Already connected (and not forcing reconnect) - redirect to deep link immediately
     const protocol = env.NEXT_PUBLIC_CMUX_PROTOCOL ?? "cmux-next";
     const deepLinkHref = teamSlugOrId
       ? `${protocol}://github-connect-complete?team=${encodeURIComponent(teamSlugOrId)}`
@@ -39,6 +46,6 @@ export default async function ConnectGitHubPage({
     return <ConnectGitHubClient href={deepLinkHref} alreadyConnected />;
   }
 
-  // Not connected - show client component to initiate OAuth
-  return <ConnectGitHubClient teamSlugOrId={teamSlugOrId} />;
+  // Not connected or forcing reconnect - show client component to initiate OAuth
+  return <ConnectGitHubClient teamSlugOrId={teamSlugOrId} webReturnUrl={webReturnUrl} />;
 }

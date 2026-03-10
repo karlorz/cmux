@@ -6,9 +6,11 @@ import { useCallback, useEffect, useState } from "react";
 
 const jetbrains = JetBrains_Mono({ subsets: ["latin"], preload: true });
 
+const OAUTH_CALLBACK_KEY = "oauth_callback_url";
+
 type ConnectGitHubClientProps =
-  | { href: string; alreadyConnected: true; teamSlugOrId?: never }
-  | { teamSlugOrId: string | null; href?: never; alreadyConnected?: never };
+  | { href: string; alreadyConnected: true; teamSlugOrId?: never; webReturnUrl?: never }
+  | { teamSlugOrId: string | null; webReturnUrl?: string | null; href?: never; alreadyConnected?: never };
 
 export function ConnectGitHubClient(props: ConnectGitHubClientProps) {
   const user = useUser({ or: "redirect" });
@@ -33,6 +35,16 @@ export function ConnectGitHubClient(props: ConnectGitHubClientProps) {
     setError(null);
 
     try {
+      // For web reconnect flow, store return URL in sessionStorage
+      // The after-sign-in handler will redirect back to this URL
+      if (!props.alreadyConnected && props.webReturnUrl) {
+        try {
+          sessionStorage.setItem(OAUTH_CALLBACK_KEY, props.webReturnUrl);
+        } catch {
+          // sessionStorage not available
+        }
+      }
+
       // This will redirect to GitHub OAuth
       await user.getConnectedAccount("github", { or: "redirect" });
     } catch (err) {
@@ -40,7 +52,7 @@ export function ConnectGitHubClient(props: ConnectGitHubClientProps) {
       setError(err instanceof Error ? err.message : "Failed to connect GitHub");
       setIsConnecting(false);
     }
-  }, [user, props.alreadyConnected]);
+  }, [user, props]);
 
   // Auto-start OAuth flow on mount
   useEffect(() => {
