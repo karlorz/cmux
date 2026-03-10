@@ -14,9 +14,44 @@ import { buildOpencodeMcpConfig } from "../../mcp-injection";
 export const OPENCODE_HTTP_HOST = "127.0.0.1";
 export const OPENCODE_HTTP_PORT = 4096;
 
-const TASK_PR_CREATE_BASH_DENY_RULES = {
+/**
+ * Deny rules applied to OpenCode's permission.bash when running inside a cmux
+ * task sandbox (CMUX_TASK_RUN_JWT is set). These prevent the agent from
+ * bypassing the platform-managed PR/merge workflow or mutating cloud infra.
+ */
+const TASK_SANDBOX_BASH_DENY_RULES = {
+  // PR lifecycle — cmux manages PR creation/merging automatically
   "gh pr create": "deny",
   "gh pr create *": "deny",
+  "gh pr merge": "deny",
+  "gh pr merge *": "deny",
+  "gh pr close": "deny",
+  "gh pr close *": "deny",
+  // Force push — destructive history rewrite
+  "git push --force": "deny",
+  "git push --force *": "deny",
+  "git push --force-with-lease": "deny",
+  "git push --force-with-lease *": "deny",
+  "git push -f": "deny",
+  "git push -f *": "deny",
+  // Sandbox lifecycle — only the orchestration system should manage sandboxes
+  "devsh start": "deny",
+  "devsh start *": "deny",
+  "devsh delete": "deny",
+  "devsh delete *": "deny",
+  "devsh pause": "deny",
+  "devsh pause *": "deny",
+  "devsh resume": "deny",
+  "devsh resume *": "deny",
+  "cloudrouter start": "deny",
+  "cloudrouter start *": "deny",
+  "cloudrouter delete": "deny",
+  "cloudrouter delete *": "deny",
+  "cloudrouter stop": "deny",
+  "cloudrouter stop *": "deny",
+  // Infrastructure — snapshot rebuilds / workflow triggers affect all future sandboxes
+  "gh workflow run": "deny",
+  "gh workflow run *": "deny",
 } as const;
 
 async function buildOpencodeEnvironment(
@@ -467,7 +502,7 @@ ${getMemoryProtocolInstructions()}
     ...(hasTaskRunJwt
       ? {
           permission: {
-            bash: TASK_PR_CREATE_BASH_DENY_RULES,
+            bash: TASK_SANDBOX_BASH_DENY_RULES,
           },
         }
       : {}),

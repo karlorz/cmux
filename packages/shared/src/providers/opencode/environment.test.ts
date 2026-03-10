@@ -90,16 +90,33 @@ describe("getOpencodeEnvironment", () => {
     });
   });
 
-  it("denies gh pr create for task-backed sandboxes", async () => {
+  it("denies dangerous commands for task-backed sandboxes", async () => {
     const config = await decodeOpencodeConfig();
 
-    expect(config.permission?.bash).toMatchObject({
+    const bash = config.permission?.bash;
+    expect(bash).toMatchObject({
       "gh pr create": "deny",
       "gh pr create *": "deny",
+      "gh pr merge": "deny",
+      "gh pr merge *": "deny",
+      "gh pr close": "deny",
+      "gh pr close *": "deny",
+      "git push --force": "deny",
+      "git push --force *": "deny",
+      "git push -f": "deny",
+      "git push -f *": "deny",
+      "devsh start": "deny",
+      "devsh start *": "deny",
+      "devsh delete": "deny",
+      "devsh delete *": "deny",
+      "cloudrouter start": "deny",
+      "cloudrouter start *": "deny",
+      "gh workflow run": "deny",
+      "gh workflow run *": "deny",
     });
   });
 
-  it("does not deny gh pr create when task JWT is absent", async () => {
+  it("does not deny commands when task JWT is absent", async () => {
     const config = await decodeOpencodeConfig({ taskRunJwt: "" });
 
     expect(config.permission).toBeUndefined();

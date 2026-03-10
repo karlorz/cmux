@@ -169,4 +169,40 @@ describe("getGeminiEnvironment", () => {
       await rm(homeDir, { recursive: true, force: true });
     }
   });
+
+  it("injects gh and git wrappers for task-backed sandboxes", async () => {
+    const result = await getGeminiEnvironment(BASE_CONTEXT);
+
+    const ghWrapper = result.files.find(
+      (file) => file.destinationPath === "/usr/local/bin/gh"
+    );
+    const gitWrapper = result.files.find(
+      (file) => file.destinationPath === "/usr/local/bin/git"
+    );
+
+    expect(ghWrapper).toBeDefined();
+    expect(gitWrapper).toBeDefined();
+
+    const ghContent = Buffer.from(ghWrapper!.contentBase64, "base64").toString("utf-8");
+    expect(ghContent).toContain("pr:create)");
+    expect(ghContent).toContain("pr:merge)");
+    expect(ghContent).toContain("workflow:run)");
+
+    const gitContent = Buffer.from(gitWrapper!.contentBase64, "base64").toString("utf-8");
+    expect(gitContent).toContain("--force|--force-with-lease|-f)");
+  });
+
+  it("does not inject wrappers when task JWT is absent", async () => {
+    const result = await getGeminiEnvironment({
+      ...BASE_CONTEXT,
+      taskRunJwt: "",
+    });
+
+    expect(
+      result.files.find((f) => f.destinationPath === "/usr/local/bin/gh")
+    ).toBeUndefined();
+    expect(
+      result.files.find((f) => f.destinationPath === "/usr/local/bin/git")
+    ).toBeUndefined();
+  });
 });

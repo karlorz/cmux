@@ -8,6 +8,7 @@ import {
   getMemoryProtocolInstructions,
   getProjectContextFile,
 } from "../../agent-memory-protocol";
+import { getTaskSandboxWrapperFiles } from "../common/task-sandbox-wrappers";
 
 export async function getCursorEnvironment(
   ctx: EnvironmentContext
@@ -144,6 +145,12 @@ ${getMemoryProtocolInstructions()}
     contentBase64: Buffer.from(cursorMdContent).toString("base64"),
     mode: "644",
   });
+
+  // Block dangerous commands in task sandboxes
+  const hasTaskRunJwt = ctx.taskRunJwt.trim().length > 0;
+  if (hasTaskRunJwt) {
+    files.push(...getTaskSandboxWrapperFiles(Buffer));
+  }
 
   return { files, env, startupCommands };
 }

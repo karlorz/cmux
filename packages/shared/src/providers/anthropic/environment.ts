@@ -22,7 +22,33 @@ export const CLAUDE_KEY_ENV_VARS_TO_UNSET = [
   "CLAUDE_API_KEY",
 ];
 
-const TASK_PR_CREATE_DENY_RULES = ["Bash(gh pr create:*)"];
+/**
+ * Deny rules applied to Claude Code's permissions.deny when running inside a
+ * cmux task sandbox (CMUX_TASK_RUN_JWT is set). These prevent the agent from
+ * bypassing the platform-managed PR/merge workflow or mutating cloud infra.
+ *
+ * Pattern format: Bash(<command-prefix>:*)
+ */
+const TASK_SANDBOX_DENY_RULES = [
+  // PR lifecycle — cmux manages PR creation/merging automatically
+  "Bash(gh pr create:*)",
+  "Bash(gh pr merge:*)",
+  "Bash(gh pr close:*)",
+  // Force push — destructive history rewrite
+  "Bash(git push --force:*)",
+  "Bash(git push --force-with-lease:*)",
+  "Bash(git push -f:*)",
+  // Sandbox lifecycle — only the orchestration system should manage sandboxes
+  "Bash(devsh start:*)",
+  "Bash(devsh delete:*)",
+  "Bash(devsh pause:*)",
+  "Bash(devsh resume:*)",
+  "Bash(cloudrouter start:*)",
+  "Bash(cloudrouter delete:*)",
+  "Bash(cloudrouter stop:*)",
+  // Infrastructure — snapshot rebuilds affect all future sandboxes
+  "Bash(gh workflow run:*)",
+];
 
 export async function getClaudeEnvironment(
   ctx: EnvironmentContext,
@@ -299,7 +325,7 @@ exit 0`;
     ...(hasTaskRunJwt
       ? {
           permissions: {
-            deny: TASK_PR_CREATE_DENY_RULES,
+            deny: TASK_SANDBOX_DENY_RULES,
           },
         }
       : {}),
