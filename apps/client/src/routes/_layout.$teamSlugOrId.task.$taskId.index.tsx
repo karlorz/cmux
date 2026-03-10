@@ -64,6 +64,28 @@ type IframeStatusEntry = {
   url: string | null;
 };
 
+function getPreferredActivePanelPosition(
+  activePositions: PanelPosition[],
+  layout: Partial<Record<PanelPosition, PanelType | null>>,
+  preferredPosition: PanelPosition | null
+): PanelPosition | null {
+  if (
+    preferredPosition &&
+    activePositions.includes(preferredPosition) &&
+    layout[preferredPosition]
+  ) {
+    return preferredPosition;
+  }
+
+  for (const position of activePositions) {
+    if (layout[position]) {
+      return position;
+    }
+  }
+
+  return null;
+}
+
 const paramsSchema = z.object({
   taskId: typedZid("tasks"),
 });
@@ -322,6 +344,8 @@ function TaskDetailPage() {
   const [expandedPanel, setExpandedPanel] = useState<PanelPosition | null>(
     null
   );
+  const [activePanelPosition, setActivePanelPosition] =
+    useState<PanelPosition | null>(null);
   const [isPanelSettingsOpen, setIsPanelSettingsOpen] = useState(false);
   const [iframeStatusByKey, setIframeStatusByKey] = useState<
     Record<string, IframeStatusEntry>
@@ -329,7 +353,11 @@ function TaskDetailPage() {
   const previousSelectedRunIdRef = useRef<string | null>(null);
 
   const handleToggleExpand = useCallback((position: PanelPosition) => {
-    setExpandedPanel((current) => (current === position ? null : position));
+    setExpandedPanel((current) => {
+      const nextExpandedPanel = current === position ? null : position;
+      setActivePanelPosition(nextExpandedPanel ?? position);
+      return nextExpandedPanel;
+    });
   }, []);
 
   const handlePanelSwap = useCallback(
@@ -339,15 +367,29 @@ function TaskDetailPage() {
       setPanelConfig((prev) => {
         const currentLayout = getCurrentLayoutPanels(prev);
         const temp = currentLayout[fromPosition];
+        const nextLayout = {
+          ...currentLayout,
+          [fromPosition]: currentLayout[toPosition],
+          [toPosition]: temp,
+        };
+        setActivePanelPosition((current) => {
+          if (current === fromPosition) {
+            return toPosition;
+          }
+          if (current === toPosition) {
+            return fromPosition;
+          }
+          return getPreferredActivePanelPosition(
+            getActivePanelPositions(prev.layoutMode),
+            nextLayout,
+            current
+          );
+        });
         const newConfig = {
           ...prev,
           layouts: {
             ...prev.layouts,
-            [prev.layoutMode]: {
-              ...currentLayout,
-              [fromPosition]: currentLayout[toPosition],
-              [toPosition]: temp,
-            },
+            [prev.layoutMode]: nextLayout,
           },
         };
         savePanelConfig(newConfig);
@@ -369,33 +411,50 @@ function TaskDetailPage() {
     []
   );
 
-  const handlePanelClose = useCallback((position: PanelPosition) => {
-    setExpandedPanel((current) => (current === position ? null : current));
-    setPanelConfig((prev) => {
-      const currentLayout = getCurrentLayoutPanels(prev);
-      const newConfig = {
-        ...prev,
-        layouts: {
-          ...prev.layouts,
-          [prev.layoutMode]: {
-            ...currentLayout,
-            [position]: null,
+  const handlePanelActivate = useCallback((position: PanelPosition) => {
+    setActivePanelPosition((current) =>
+      current === position ? current : position
+    );
+  }, []);
+
+  const handlePanelClose = useCallback(
+    (position: PanelPosition) => {
+      setExpandedPanel((current) => (current === position ? null : current));
+      setPanelConfig((prev) => {
+        const currentLayout = getCurrentLayoutPanels(prev);
+        const nextLayout = {
+          ...currentLayout,
+          [position]: null,
+        };
+        setActivePanelPosition((current) =>
+          getPreferredActivePanelPosition(
+            getActivePanelPositions(prev.layoutMode),
+            nextLayout,
+            current === position ? null : current
+          )
+        );
+        const newConfig = {
+          ...prev,
+          layouts: {
+            ...prev.layouts,
+            [prev.layoutMode]: nextLayout,
           },
-        },
-      };
-      savePanelConfig(newConfig);
-      return newConfig;
-    });
-    // Trigger resize event to help iframes reposition correctly
-    // Use requestAnimationFrame to ensure React has finished re-rendering
-    requestAnimationFrame(() => {
-      window.dispatchEvent(new Event("resize"));
-      // Double RAF to ensure layout is complete
+        };
+        savePanelConfig(newConfig);
+        return newConfig;
+      });
+      // Trigger resize event to help iframes reposition correctly
+      // Use requestAnimationFrame to ensure React has finished re-rendering
       requestAnimationFrame(() => {
         window.dispatchEvent(new Event("resize"));
+        // Double RAF to ensure layout is complete
+        requestAnimationFrame(() => {
+          window.dispatchEvent(new Event("resize"));
+        });
       });
-    });
-  }, []);
+    },
+    []
+  );
 
   const handleAddPanel = useCallback(
     (position: PanelPosition, panelType: PanelType) => {
@@ -545,6 +604,7 @@ function TaskDetailPage() {
     }
     previousSelectedRunIdRef.current = selectedRunId ?? null;
     setExpandedPanel(null);
+    setActivePanelPosition(null);
   }, [selectedRunId]);
   const headerTaskRunId = selectedRunId ?? taskRuns?.[0]?._id ?? null;
 
@@ -846,11 +906,30 @@ function TaskDetailPage() {
     [effectiveLayoutMode]
   );
 
+  useEffect(() => {
+    setActivePanelPosition((current) =>
+      getPreferredActivePanelPosition(activePanelPositions, currentLayout, current)
+    );
+  }, [activePanelPositions, currentLayout]);
+
+  const effectiveActivePanelPosition = expandedPanel ?? activePanelPosition;
+
   const isPanelPositionActive = useCallback(
     (position: PanelPosition) => {
       return activePanelPositions.includes(position);
     },
     [activePanelPositions]
+  );
+
+  const canPanelReceiveProgrammaticFocus = useCallback(
+    (position: PanelPosition) => {
+      if (expandedPanel) {
+        return expandedPanel === position;
+      }
+
+      return effectiveActivePanelPosition === position;
+    },
+    [effectiveActivePanelPosition, expandedPanel]
   );
 
   const panelProps = useMemo(
@@ -959,7 +1038,9 @@ function TaskDetailPage() {
             <div
               aria-hidden
               className="absolute inset-0 z-40 rounded-lg bg-white m-1"
-              onClick={() => setExpandedPanel(null)}
+              onClick={() => {
+                setExpandedPanel(null);
+              }}
             />
           ) : null}
           <FlexiblePanelLayout
@@ -974,8 +1055,10 @@ function TaskDetailPage() {
                   position="topLeft"
                   onSwap={handlePanelSwap}
                   onToggleExpand={handleToggleExpand}
+                  onActivate={handlePanelActivate}
                   isExpanded={expandedPanel === "topLeft"}
                   isAnyPanelExpanded={expandedPanel !== null}
+                  isActivePanel={canPanelReceiveProgrammaticFocus("topLeft")}
                 />
               ) : isPanelPositionActive("topLeft") ? (
                 <EmptyPanelSlot
@@ -996,8 +1079,10 @@ function TaskDetailPage() {
                   position="topRight"
                   onSwap={handlePanelSwap}
                   onToggleExpand={handleToggleExpand}
+                  onActivate={handlePanelActivate}
                   isExpanded={expandedPanel === "topRight"}
                   isAnyPanelExpanded={expandedPanel !== null}
+                  isActivePanel={canPanelReceiveProgrammaticFocus("topRight")}
                 />
               ) : isPanelPositionActive("topRight") ? (
                 <EmptyPanelSlot
@@ -1019,8 +1104,10 @@ function TaskDetailPage() {
                   position="bottomLeft"
                   onSwap={handlePanelSwap}
                   onToggleExpand={handleToggleExpand}
+                  onActivate={handlePanelActivate}
                   isExpanded={expandedPanel === "bottomLeft"}
                   isAnyPanelExpanded={expandedPanel !== null}
+                  isActivePanel={canPanelReceiveProgrammaticFocus("bottomLeft")}
                 />
               ) : isPanelPositionActive("bottomLeft") ? (
                 <EmptyPanelSlot
@@ -1042,8 +1129,10 @@ function TaskDetailPage() {
                   position="bottomRight"
                   onSwap={handlePanelSwap}
                   onToggleExpand={handleToggleExpand}
+                  onActivate={handlePanelActivate}
                   isExpanded={expandedPanel === "bottomRight"}
                   isAnyPanelExpanded={expandedPanel !== null}
+                  isActivePanel={canPanelReceiveProgrammaticFocus("bottomRight")}
                 />
               ) : isPanelPositionActive("bottomRight") ? (
                 <EmptyPanelSlot

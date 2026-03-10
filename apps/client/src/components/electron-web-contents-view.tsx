@@ -13,6 +13,8 @@ import {
   type WebviewActions,
 } from "@/lib/webview-actions";
 import { isElectron } from "@/lib/electron";
+import { getFocusGuardFallbackElement } from "@/lib/iframeFocusGuard";
+import type { ElectronWebContentsEvent } from "@/types/electron-webcontents";
 import { cn } from "@/lib/utils";
 
 interface ElectronWebContentsViewProps {
@@ -32,6 +34,8 @@ interface ElectronWebContentsViewProps {
     restored: boolean;
   }) => void;
   onNativeViewDestroyed?: () => void;
+  isFocusEligible?: boolean;
+  onActivate?: () => void;
 }
 
 function getWebContentsBridge() {
@@ -62,6 +66,7 @@ interface SyncState {
 
 const CONTINUOUS_IDLE_FRAME_LIMIT = 6;
 const PIXEL_RATIO_EPSILON = 1e-3;
+const PROGRAMMATIC_ACTIVATION_SUPPRESSION_MS = 250;
 
 function roundToDevicePixels(value: number, scale: number): number {
   if (!Number.isFinite(scale) || scale <= 0) return Math.round(value);
@@ -160,6 +165,8 @@ export function ElectronWebContentsView({
   retainOnUnmount,
   onNativeViewReady,
   onNativeViewDestroyed,
+  isFocusEligible = true,
+  onActivate,
 }: ElectronWebContentsViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewIdRef = useRef<number | null>(null);
@@ -187,10 +194,20 @@ export function ElectronWebContentsView({
   const scrollCleanupsRef = useRef<Array<() => void>>([]);
   const lastTransformStateRef = useRef(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [eventViewId, setEventViewId] = useState<number | null>(null);
+  const eligibilityChangeIdRef = useRef(0);
+  const lastActivationAtRef = useRef<number>(Number.NEGATIVE_INFINITY);
+  const activationPendingRef = useRef(false);
+  const activationPendingTimeoutRef = useRef<number | null>(null);
+  const pendingProgrammaticActivationRef = useRef(false);
+  const pendingProgrammaticActivationTimeoutRef = useRef<number | null>(null);
+  const ineligibleFocusRedirectTimeoutRef = useRef<number | null>(null);
 
   // Store callback props in refs to prevent effect re-runs when parent re-renders
   const onNativeViewReadyRef = useRef(onNativeViewReady);
   const onNativeViewDestroyedRef = useRef(onNativeViewDestroyed);
+  const isFocusEligibleRef = useRef(isFocusEligible);
+  const onActivateRef = useRef(onActivate);
 
   useEffect(() => {
     latestSrcRef.current = src;
@@ -216,6 +233,128 @@ export function ElectronWebContentsView({
   useEffect(() => {
     onNativeViewDestroyedRef.current = onNativeViewDestroyed;
   }, [onNativeViewDestroyed]);
+
+  const moveFocusAwayFromIneligibleView = useCallback(
+    async (expectedEligibilityChangeId?: number) => {
+      if (!isElectron || isFocusEligibleRef.current) {
+        return;
+      }
+
+      const viewId = viewIdRef.current;
+      const webContentsId = webContentsIdRef.current;
+      if (viewId === null || webContentsId === null) {
+        return;
+      }
+
+      try {
+        const isFocused = await window.cmux?.webContentsView?.isFocused?.(viewId);
+        if (
+          (expectedEligibilityChangeId !== undefined &&
+            eligibilityChangeIdRef.current !== expectedEligibilityChangeId) ||
+          isFocusEligibleRef.current ||
+          !isFocused?.ok ||
+          !isFocused.focused
+        ) {
+          return;
+        }
+
+        const restoreLastFocus = window.cmux?.ui?.restoreLastFocus;
+        if (restoreLastFocus) {
+          const restoreResult = await restoreLastFocus();
+          if (restoreResult?.ok) {
+            const focusedAfterRestore = await window.cmux?.webContentsView?.isFocused?.(viewId);
+            if (!focusedAfterRestore?.ok || !focusedAfterRestore.focused) {
+              return;
+            }
+          }
+        }
+
+        const currentWebContentsId = window.cmux?.getCurrentWebContentsId?.();
+        if (currentWebContentsId) {
+          await window.cmux?.ui?.focusWebContents?.(currentWebContentsId);
+        }
+
+        const focusedAfterHandoff = await window.cmux?.webContentsView?.isFocused?.(viewId);
+        if (!focusedAfterHandoff?.ok || !focusedAfterHandoff.focused) {
+          return;
+        }
+
+        const fallbackElement = getFocusGuardFallbackElement();
+        if (fallbackElement) {
+          fallbackElement.focus({ preventScroll: true });
+        }
+      } catch (error) {
+        console.error("Failed to move focus away from ineligible WebContentsView", error);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    isFocusEligibleRef.current = isFocusEligible;
+    eligibilityChangeIdRef.current += 1;
+
+    if (isFocusEligible) {
+      return;
+    }
+
+    void moveFocusAwayFromIneligibleView(eligibilityChangeIdRef.current);
+  }, [eventViewId, isFocusEligible, moveFocusAwayFromIneligibleView]);
+
+  useEffect(() => {
+    onActivateRef.current = onActivate;
+  }, [onActivate]);
+
+  const clearPendingActivation = useCallback(() => {
+    activationPendingRef.current = false;
+    if (activationPendingTimeoutRef.current !== null) {
+      clearTimeout(activationPendingTimeoutRef.current);
+      activationPendingTimeoutRef.current = null;
+    }
+  }, []);
+
+  const markPendingActivation = useCallback(() => {
+    activationPendingRef.current = true;
+    if (activationPendingTimeoutRef.current !== null) {
+      clearTimeout(activationPendingTimeoutRef.current);
+    }
+    activationPendingTimeoutRef.current = window.setTimeout(() => {
+      activationPendingTimeoutRef.current = null;
+      activationPendingRef.current = false;
+    }, PROGRAMMATIC_ACTIVATION_SUPPRESSION_MS);
+  }, []);
+
+  const clearPendingProgrammaticActivation = useCallback(() => {
+    pendingProgrammaticActivationRef.current = false;
+    if (pendingProgrammaticActivationTimeoutRef.current !== null) {
+      clearTimeout(pendingProgrammaticActivationTimeoutRef.current);
+      pendingProgrammaticActivationTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearPendingIneligibleFocusRedirect = useCallback(() => {
+    if (ineligibleFocusRedirectTimeoutRef.current !== null) {
+      clearTimeout(ineligibleFocusRedirectTimeoutRef.current);
+      ineligibleFocusRedirectTimeoutRef.current = null;
+    }
+  }, []);
+
+  const markPendingProgrammaticActivation = useCallback(() => {
+    pendingProgrammaticActivationRef.current = true;
+    if (pendingProgrammaticActivationTimeoutRef.current !== null) {
+      clearTimeout(pendingProgrammaticActivationTimeoutRef.current);
+    }
+    pendingProgrammaticActivationTimeoutRef.current = window.setTimeout(() => {
+      pendingProgrammaticActivationTimeoutRef.current = null;
+      pendingProgrammaticActivationRef.current = false;
+    }, PROGRAMMATIC_ACTIVATION_SUPPRESSION_MS);
+  }, []);
+
+  const handleActivate = useCallback(() => {
+    markPendingActivation();
+    lastActivationAtRef.current = performance.now();
+    onActivateRef.current?.();
+  }, [markPendingActivation]);
 
   const cancelScheduledSync = useCallback(() => {
     if (rafRef.current !== null) {
@@ -351,6 +490,7 @@ export function ElectronWebContentsView({
       const actions: WebviewActions = {
         focus: async () => {
           if (typeof window === "undefined") return false;
+          if (!isFocusEligibleRef.current) return false;
 
           const targetId = webContentsIdRef.current;
           if (targetId === null) return false;
@@ -358,18 +498,30 @@ export function ElectronWebContentsView({
           try {
             const restore = window.cmux?.ui?.restoreLastFocusInWebContents;
             if (restore) {
+              markPendingProgrammaticActivation();
               const result = await restore(targetId);
               if (result?.ok) {
+                lastActivationAtRef.current = performance.now();
+                onActivateRef.current?.();
                 return true;
               }
+              clearPendingProgrammaticActivation();
             }
 
             const focus = window.cmux?.ui?.focusWebContents;
             if (focus) {
+              markPendingProgrammaticActivation();
               const result = await focus(targetId);
-              return result?.ok ?? false;
+              if (result?.ok) {
+                lastActivationAtRef.current = performance.now();
+                onActivateRef.current?.();
+                return true;
+              }
+              clearPendingProgrammaticActivation();
+              return false;
             }
           } catch (error) {
+            clearPendingProgrammaticActivation();
             console.error("Failed to focus WebContentsView", error);
             return false;
           }
@@ -396,15 +548,78 @@ export function ElectronWebContentsView({
       registeredActionsRef.current = actions;
       registerWebviewActions(key, actions);
     },
-    [],
+    [clearPendingProgrammaticActivation, markPendingProgrammaticActivation],
   );
 
   useEffect(() => {
     return () => {
+      clearPendingActivation();
+      clearPendingProgrammaticActivation();
+      clearPendingIneligibleFocusRedirect();
       unregisterActions();
       webContentsIdRef.current = null;
+      setEventViewId(null);
     };
-  }, [unregisterActions]);
+  }, [
+    clearPendingActivation,
+    clearPendingIneligibleFocusRedirect,
+    clearPendingProgrammaticActivation,
+    unregisterActions,
+  ]);
+
+  useEffect(() => {
+    if (!isElectron || eventViewId === null) {
+      return;
+    }
+
+    const subscribe = window.cmux?.webContentsView?.onEvent;
+    if (!subscribe) {
+      return;
+    }
+
+    const unsubscribe = subscribe(eventViewId, (event: ElectronWebContentsEvent) => {
+      if (event.type === "state" && event.reason === "native-focus") {
+        if (!isFocusEligibleRef.current) {
+          clearPendingIneligibleFocusRedirect();
+          const delayMs = activationPendingRef.current
+            ? PROGRAMMATIC_ACTIVATION_SUPPRESSION_MS
+            : 0;
+          ineligibleFocusRedirectTimeoutRef.current = window.setTimeout(() => {
+            ineligibleFocusRedirectTimeoutRef.current = null;
+            if (activationPendingRef.current || isFocusEligibleRef.current) {
+              return;
+            }
+            void moveFocusAwayFromIneligibleView();
+          }, delayMs);
+          return;
+        }
+        clearPendingIneligibleFocusRedirect();
+        if (pendingProgrammaticActivationRef.current) {
+          clearPendingProgrammaticActivation();
+          clearPendingActivation();
+          return;
+        }
+        const now = performance.now();
+        if (now - lastActivationAtRef.current < PROGRAMMATIC_ACTIVATION_SUPPRESSION_MS) {
+          clearPendingActivation();
+          return;
+        }
+        lastActivationAtRef.current = now;
+        clearPendingActivation();
+        onActivateRef.current?.();
+      }
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [
+    clearPendingActivation,
+    clearPendingIneligibleFocusRedirect,
+    clearPendingProgrammaticActivation,
+    eventViewId,
+    moveFocusAwayFromIneligibleView,
+  ]);
 
   const releaseNativeView = useCallback(
     (id: number, key: string | undefined, persist: boolean) => {
@@ -472,6 +687,7 @@ export function ElectronWebContentsView({
     const id = viewIdRef.current;
     if (id === null) return;
     viewIdRef.current = null;
+    setEventViewId(null);
     lastSyncRef.current = null;
     lastLoadedSrcRef.current = null;
     hasStableAttachmentRef.current = false;
@@ -560,6 +776,7 @@ export function ElectronWebContentsView({
             restored: result.restored,
           });
           viewIdRef.current = result.id;
+          setEventViewId(result.id);
           registerActions(result.webContentsId);
           hasStableAttachmentRef.current = true;
           onNativeViewReadyRef.current?.(result);
@@ -827,6 +1044,8 @@ export function ElectronWebContentsView({
       data-role="electron-web-contents-view"
       data-suspended={suspended ? "true" : "false"}
       data-drag-disable-pointer
+      onPointerDownCapture={handleActivate}
+      onFocusCapture={handleActivate}
     >
       {shouldShowFallback ? (
         <div className="flex h-full w-full items-center justify-center rounded-md border border-dashed border-neutral-300 bg-white/80 text-sm text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900/80 dark:text-neutral-300">

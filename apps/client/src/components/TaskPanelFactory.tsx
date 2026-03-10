@@ -13,7 +13,7 @@ import {
   Minimize2,
 } from "lucide-react";
 import clsx from "clsx";
-import type { PanelType } from "@/lib/panel-config";
+import type { PanelType, PanelPosition } from "@/lib/panel-config";
 import { PANEL_LABELS } from "@/lib/panel-config";
 import type { PersistentIframeStatus } from "@/components/persistent-iframe";
 import type { Doc, Id } from "@cmux/convex/dataModel";
@@ -26,8 +26,6 @@ import type { TaskRunGitDiffPanelProps } from "./TaskRunGitDiffPanel";
 import type { TaskRunMemoryPanelProps } from "./TaskRunMemoryPanel";
 import type { TaskRunSummaryPanelProps } from "./TaskRunSummaryPanel";
 import { shouldUseServerIframePreflight } from "@/hooks/useIframePreflight";
-
-type PanelPosition = "topLeft" | "topRight" | "bottomLeft" | "bottomRight";
 
 const PANEL_DRAG_START_EVENT = "cmux:panel-drag-start";
 const PANEL_DRAG_END_EVENT = "cmux:panel-drag-end";
@@ -143,8 +141,10 @@ interface PanelFactoryProps {
   onSwap?: (fromPosition: PanelPosition, toPosition: PanelPosition) => void;
   onClose?: (position: PanelPosition) => void;
   onToggleExpand?: (position: PanelPosition) => void;
+  onActivate?: (position: PanelPosition) => void;
   isExpanded?: boolean;
   isAnyPanelExpanded?: boolean;
+  isActivePanel?: boolean;
   // Chat panel props
   task?: Doc<"tasks"> | null;
   taskRuns?: TaskRunWithChildren[] | null;
@@ -206,8 +206,10 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
     onSwap,
     onClose,
     onToggleExpand,
+    onActivate,
     isExpanded = false,
     isAnyPanelExpanded = false,
+    isActivePanel = true,
   } = props;
   const [isDragOver, setIsDragOver] = useState(false);
   const [isDraggingSelf, setIsDraggingSelf] = useState(false);
@@ -238,36 +240,6 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
       window.removeEventListener(PANEL_DRAG_END_EVENT, handleEnd);
     };
   }, []);
-
-  // Control iframe wrapper visibility based on this panel's expansion state
-  useEffect(() => {
-    if (typeof document === "undefined" || !type) return;
-
-    // Find the container div for this panel's content
-    const container = document.querySelector(`[data-panel-position="${position}"]`);
-    if (!container) return;
-
-    // Find any iframe target within this panel
-    const iframeTarget = container.querySelector('[data-iframe-target]') as HTMLElement;
-    if (!iframeTarget) return;
-
-    const iframeKey = iframeTarget.getAttribute('data-iframe-target');
-    if (!iframeKey) return;
-
-    // Find the corresponding iframe wrapper
-    const wrapper = document.querySelector(`[data-iframe-key="${iframeKey}"]`) as HTMLElement;
-    if (!wrapper) return;
-
-    if (isAnyPanelExpanded && !isExpanded) {
-      // Another panel is expanded - hide this iframe
-      wrapper.style.visibility = "hidden";
-      wrapper.style.pointerEvents = "none";
-    } else {
-      // This panel is expanded OR no panel is expanded - show iframe
-      wrapper.style.visibility = "visible";
-      wrapper.style.pointerEvents = "auto";
-    }
-  }, [type, position, isExpanded, isAnyPanelExpanded]);
 
   const handleDragStart = useCallback((e: React.DragEvent) => {
     e.dataTransfer.effectAllowed = "move";
@@ -311,6 +283,13 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
   }, [onSwap, position]);
 
   const showDropOverlay = isPanelDragActive && !isDraggingSelf && !isExpanded;
+
+  const handleActivate = useCallback(() => {
+    if (isActivePanel) {
+      return;
+    }
+    onActivate?.(position);
+  }, [isActivePanel, onActivate, position]);
 
   const renderDropOverlay = () => {
     if (!showDropOverlay) {
@@ -386,6 +365,8 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
       style={panelStyle}
       data-panel-position={position}
       aria-hidden={isAnyPanelExpanded && !isExpanded ? true : undefined}
+      onPointerDownCapture={handleActivate}
+      onFocusCapture={handleActivate}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -450,6 +431,8 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
           style={panelStyle}
           data-panel-position={position}
           aria-hidden={isAnyPanelExpanded && !isExpanded ? true : undefined}
+          onPointerDownCapture={handleActivate}
+          onFocusCapture={handleActivate}
           onDragEnter={handleDragEnter}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -526,6 +509,8 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
               loadTimeoutMs={60_000}
               isExpanded={isExpanded}
               isAnyPanelExpanded={isAnyPanelExpanded}
+              isFocusEligible={isActivePanel}
+              onActivate={handleActivate}
             />
           ) : shouldShowWorkspaceLoader ? (
             <div className="flex h-full items-center justify-center">
@@ -611,6 +596,8 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
               loadTimeoutMs={45_000}
               isExpanded={isExpanded}
               isAnyPanelExpanded={isAnyPanelExpanded}
+              isFocusEligible={isActivePanel}
+              onActivate={handleActivate}
             />
           ) : shouldShowBrowserLoader ? (
             <div className="flex h-full items-center justify-center">
@@ -766,12 +753,14 @@ export const RenderPanel = React.memo(RenderPanelComponent, (prevProps, nextProp
     return false;
   }
 
-  if (prevProps.onToggleExpand !== nextProps.onToggleExpand) {
+  if (prevProps.onToggleExpand !== nextProps.onToggleExpand ||
+    prevProps.onActivate !== nextProps.onActivate) {
     return false;
   }
 
   if (prevProps.isExpanded !== nextProps.isExpanded ||
-    prevProps.isAnyPanelExpanded !== nextProps.isAnyPanelExpanded) {
+    prevProps.isAnyPanelExpanded !== nextProps.isAnyPanelExpanded ||
+    prevProps.isActivePanel !== nextProps.isActivePanel) {
     return false;
   }
 

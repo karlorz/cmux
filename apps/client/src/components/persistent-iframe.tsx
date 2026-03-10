@@ -54,6 +54,8 @@ interface PersistentIframeProps {
   preflight?: boolean;
   isExpanded?: boolean;
   isAnyPanelExpanded?: boolean;
+  isFocusEligible?: boolean;
+  onActivate?: () => void;
 }
 
 type ScrollTarget = HTMLElement | Window;
@@ -106,6 +108,8 @@ export function PersistentIframe({
   preflight = true,
   isExpanded = false,
   isAnyPanelExpanded = false,
+  isFocusEligible = true,
+  onActivate,
 }: PersistentIframeProps) {
   const [status, setStatus] = useState<PersistentIframeStatus>("loading");
   const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -289,13 +293,13 @@ export function PersistentIframe({
     style: wrapperStyle,
     onLoad: handleLoad,
     onError: handleError,
+    onActivate,
+    isFocusEligible,
   });
 
   // Hide non-expanded iframes when another panel is expanded
   useEffect(() => {
-    const wrapper = document.querySelector(
-      `[data-iframe-key="${persistKey}"]`
-    ) as HTMLElement;
+    const wrapper = persistentIframeManager.getIframeWrapperElement(persistKey);
     if (!wrapper) return;
 
     if (isAnyPanelExpanded && !isExpanded) {
@@ -310,6 +314,12 @@ export function PersistentIframe({
   }, [persistKey, isExpanded, isAnyPanelExpanded]);
 
   const effectiveStatus = forcedStatus ?? status;
+
+  useEffect(() => {
+    return () => {
+      persistentIframeManager.setFocusEligible(persistKey, true);
+    };
+  }, [persistKey]);
 
   const focusIframe = useCallback(() => {
     return persistentIframeManager.focusIframe(persistKey);
@@ -464,10 +474,16 @@ export function PersistentIframe({
         ref={containerRef}
         className={cn("relative", className)}
         style={style}
+        onPointerDownCapture={onActivate}
+        onFocusCapture={onActivate}
       />
       {overlayElement && overlayContent && shouldShowOverlay
         ? createPortal(
-            <div className={overlayContent.className}>
+            <div
+              className={overlayContent.className}
+              onPointerDownCapture={onActivate}
+              onFocusCapture={onActivate}
+            >
               <div className="pointer-events-auto flex flex-col items-center gap-3 text-center">
                 {overlayContent.node}
                 {resumeMessage ? (

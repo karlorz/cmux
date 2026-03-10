@@ -3,6 +3,11 @@ import { persistentIframeManager } from "../lib/persistentIframeManager";
 
 interface UsePersistentIframeOptions {
   /**
+   * Whether the iframe is allowed to hold focus immediately on creation/mount
+   */
+  isFocusEligible?: boolean;
+
+  /**
    * Unique key to identify this iframe instance
    */
   key: string;
@@ -46,6 +51,11 @@ interface UsePersistentIframeOptions {
    * Sandbox attribute for the iframe
    */
   sandbox?: string;
+
+  /**
+   * Callback when the mounted persistent iframe surface is activated
+   */
+  onActivate?: () => void;
 }
 
 export function usePersistentIframe({
@@ -58,20 +68,34 @@ export function usePersistentIframe({
   style,
   allow,
   sandbox,
+  onActivate,
+  isFocusEligible = true,
 }: UsePersistentIframeOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
   // Store callbacks in refs to avoid triggering effects on callback changes
   const onLoadRef = useRef(onLoad);
   const onErrorRef = useRef(onError);
+  const onActivateRef = useRef(onActivate);
+  const isFocusEligibleRef = useRef(isFocusEligible);
   onLoadRef.current = onLoad;
   onErrorRef.current = onError;
+  onActivateRef.current = onActivate;
+  isFocusEligibleRef.current = isFocusEligible;
+
+  useEffect(() => {
+    persistentIframeManager.setFocusEligible(key, isFocusEligible);
+  }, [key, isFocusEligible]);
 
   // Preload effect - only depends on key, url, and iframe options
   useEffect(() => {
     if (preload) {
       persistentIframeManager
-        .preloadIframe(key, url, { allow, sandbox })
+        .preloadIframe(key, url, {
+          allow,
+          sandbox,
+          focusEligible: isFocusEligibleRef.current,
+        })
         .then(() => onLoadRef.current?.())
         .catch((error) => onErrorRef.current?.(error));
     }
@@ -79,7 +103,13 @@ export function usePersistentIframe({
 
   // Memoize mount options to prevent unnecessary re-mounts
   const mountOptions = useMemo(
-    () => ({ className, style, allow, sandbox }),
+    () => ({
+      className,
+      style,
+      allow,
+      sandbox,
+      onActivate: () => onActivateRef.current?.(),
+    }),
     [className, style, allow, sandbox]
   );
 
@@ -97,6 +127,7 @@ export function usePersistentIframe({
       iframe = persistentIframeManager.getOrCreateIframe(key, url, {
         allow: mountOptions.allow,
         sandbox: mountOptions.sandbox,
+        focusEligible: isFocusEligibleRef.current,
       });
 
       // Set up load handlers if not already loaded
@@ -128,7 +159,10 @@ export function usePersistentIframe({
       cleanupRef.current = persistentIframeManager.mountIframe(
         key,
         containerRef.current,
-        mountOptions
+        {
+          ...mountOptions,
+          focusEligible: isFocusEligibleRef.current,
+        }
       );
     } catch (error) {
       console.error("Error mounting iframe:", error);
@@ -149,7 +183,11 @@ export function usePersistentIframe({
   }, [key, url, mountOptions, preload]);
 
   const handlePreload = useCallback(() => {
-    return persistentIframeManager.preloadIframe(key, url, { allow, sandbox });
+    return persistentIframeManager.preloadIframe(key, url, {
+      allow,
+      sandbox,
+      focusEligible: isFocusEligibleRef.current,
+    });
   }, [key, url, allow, sandbox]);
 
   const handleRemove = useCallback(() => {
@@ -158,7 +196,11 @@ export function usePersistentIframe({
 
   const handleIsLoaded = useCallback(() => {
     try {
-      const iframe = persistentIframeManager.getOrCreateIframe(key, url, { allow, sandbox });
+      const iframe = persistentIframeManager.getOrCreateIframe(key, url, {
+        allow,
+        sandbox,
+        focusEligible: isFocusEligibleRef.current,
+      });
       return iframe.contentWindow !== null && iframe.src === url;
     } catch {
       return false;
