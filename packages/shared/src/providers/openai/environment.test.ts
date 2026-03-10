@@ -830,4 +830,61 @@ foo = "bar"
     // Should NOT set OPENAI_BASE_URL
     expect(result.env?.OPENAI_BASE_URL).toBeUndefined();
   });
+
+  it("includes gh wrapper when taskRunJwt is set", async () => {
+    const result = await getOpenAIEnvironment({
+      taskRunJwt: "test-jwt-token",
+    } as never);
+
+    const wrapper = result.files?.find(
+      (f) => f.destinationPath === "/usr/local/bin/gh"
+    );
+    expect(wrapper).toBeDefined();
+    const content = Buffer.from(wrapper!.contentBase64, "base64").toString(
+      "utf-8"
+    );
+    expect(content).toContain("gh pr create is blocked");
+    expect(content).toContain("cmux crown workflow handles PR creation");
+    expect(content).toContain('REAL_GH="/usr/bin/gh"');
+    expect(content).toContain('exec "$REAL_GH" "$@"');
+  });
+
+  it("does not include gh wrapper when taskRunJwt is absent", async () => {
+    const result = await getOpenAIEnvironment({} as never);
+
+    const wrapper = result.files?.find(
+      (f) => f.destinationPath === "/usr/local/bin/gh"
+    );
+    expect(wrapper).toBeUndefined();
+  });
+
+  it("does not include gh wrapper when taskRunJwt is empty string", async () => {
+    const result = await getOpenAIEnvironment({
+      taskRunJwt: "",
+    } as never);
+
+    const wrapper = result.files?.find(
+      (f) => f.destinationPath === "/usr/local/bin/gh"
+    );
+    expect(wrapper).toBeUndefined();
+  });
+
+  it("gh wrapper blocks only gh pr create, passes other commands through", async () => {
+    const result = await getOpenAIEnvironment({
+      taskRunJwt: "test-jwt-token",
+    } as never);
+
+    const wrapper = result.files?.find(
+      (f) => f.destinationPath === "/usr/local/bin/gh"
+    );
+    expect(wrapper).toBeDefined();
+    const content = Buffer.from(wrapper!.contentBase64, "base64").toString(
+      "utf-8"
+    );
+    // Should only block pr:create specifically
+    expect(content).toContain('case "$1:$2" in');
+    expect(content).toContain("pr:create)");
+    // Other commands pass through to real gh
+    expect(content).toContain('exec "$REAL_GH" "$@"');
+  });
 });

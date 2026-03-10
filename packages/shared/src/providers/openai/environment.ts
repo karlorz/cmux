@@ -199,6 +199,37 @@ exit 1
     mode: "755",
   });
 
+  // gh wrapper script to block `gh pr create` in cmux task sandboxes.
+  // Codex CLI lacks native permissions.deny, so we use a shell wrapper.
+  // Only injected when taskRunJwt is set (indicating cmux sandbox).
+  if (ctx.taskRunJwt) {
+    const ghWrapperScript = `#!/usr/bin/env sh
+# Wrapper to block gh pr create in cmux task sandboxes
+# Real gh binary location
+REAL_GH="/usr/bin/gh"
+
+# Check if we're in a cmux task sandbox
+if [ -n "$CMUX_TASK_RUN_JWT" ]; then
+  # Block pr create commands
+  case "$1:$2" in
+    pr:create)
+      echo "ERROR: gh pr create is blocked in cmux sandboxes." >&2
+      echo "The cmux crown workflow handles PR creation automatically." >&2
+      exit 1
+      ;;
+  esac
+fi
+
+# Pass through to real gh
+exec "$REAL_GH" "$@"
+`;
+    files.push({
+      destinationPath: "/usr/local/bin/gh",
+      contentBase64: Buffer.from(ghWrapperScript).toString("base64"),
+      mode: "755",
+    });
+  }
+
   // Autopilot wrapper script for unattended OpenAI Codex sessions.
   // Sends heartbeats/status updates and runs Codex in a loop until timeout.
   const autopilotScript = `#!/usr/bin/env sh
