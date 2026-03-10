@@ -293,6 +293,17 @@ exit 0`;
     alwaysThinkingEnabled: true,
     // Always use apiKeyHelper when not using OAuth (helper outputs correct key based on user config)
     ...(hasOAuthToken ? {} : { apiKeyHelper: claudeApiKeyHelperPath }),
+    // Block agents from creating PRs - cmux crown workflow handles PR creation
+    permissions: {
+      allow: [],
+      defaultMode: "bypassPermissions",
+      deny: [
+        "Bash(gh pr create *)",
+        "Bash(gh pr create)",
+        "Bash(gh pr merge * --delete-branch*)",
+        "Bash(gh pr merge * --admin*)",
+      ],
+    },
     hooks: {
       Stop: [
         {

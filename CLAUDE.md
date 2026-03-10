@@ -18,9 +18,13 @@ This project is called cmux. cmux is a web app that spawns Claude Code, Codex CL
 1. Create feature branch: `git checkout -b <type>/<description>`
 2. Make changes and commit to feature branch
 3. Push feature branch: `git push -u origin <branch>`
-4. Create PR: `gh pr create --base main`
+4. Create PR (environment-dependent):
+   - **In cmux sandbox** (when `CMUX_TASK_RUN_JWT` env var is set): DO NOT create PR - cmux creates it automatically
+   - **Outside cmux**: Create PR with `gh pr create --base main`
 5. **STOP and wait for user approval before merging**
 6. Only merge after user explicitly says "merge" or "approve"
+
+**cmux sandbox agents:** The platform handles PR creation automatically. Do not run `gh pr create` manually - it is blocked.
 
 # Code Review
 
