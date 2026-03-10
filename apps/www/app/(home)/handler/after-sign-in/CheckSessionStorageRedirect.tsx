@@ -30,8 +30,12 @@ export function CheckSessionStorageRedirect({
         allKeys: Object.keys(sessionStorage),
       });
       if (storedCallback) {
-        // Validate it's a relative path for security
+        // Validate it's either a relative path or a safe full URL
         if (storedCallback.startsWith("/") && !storedCallback.startsWith("//")) {
+          // Relative path - safe
+          redirectPath = storedCallback;
+        } else if (storedCallback.startsWith("https://")) {
+          // Full HTTPS URL - allow for cross-origin OAuth redirects (e.g., www -> client app)
           redirectPath = storedCallback;
         }
         sessionStorage.removeItem(OAUTH_CALLBACK_KEY);
@@ -43,7 +47,12 @@ export function CheckSessionStorageRedirect({
     // If we have a stored web callback URL, use it
     if (redirectPath) {
       console.log("[CheckSessionStorageRedirect] Redirecting to stored callback:", redirectPath);
-      router.replace(redirectPath);
+      // Use window.location for full URLs (cross-origin), router for relative paths
+      if (redirectPath.startsWith("https://")) {
+        window.location.href = redirectPath;
+      } else {
+        router.replace(redirectPath);
+      }
       return;
     }
 

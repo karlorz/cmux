@@ -28,8 +28,10 @@ export default async function ConnectGitHubPage({
 
   // For web reconnect flow, we want to return to settings page after OAuth
   // The returnUrl will be stored in sessionStorage by ConnectGitHubClient
-  const webReturnUrl = isReconnect && teamSlugOrId
-    ? `/${teamSlugOrId}/settings?section=general`
+  // Use CLIENT_ORIGIN to redirect back to the client (Vite) app, not the www (Next.js) app
+  const clientOrigin = env.NEXT_PUBLIC_CLIENT_ORIGIN ?? env.NEXT_PUBLIC_BASE_APP_URL;
+  const webReturnUrl = isReconnect && teamSlugOrId && clientOrigin
+    ? `${clientOrigin}/${teamSlugOrId}/settings?section=general`
     : null;
 
   // Check if GitHub is already connected
