@@ -45,7 +45,34 @@ export function ConnectGitHubClient(props: ConnectGitHubClientProps) {
         }
       }
 
-      // This will redirect to GitHub OAuth
+      // Check if already connected - if so and webReturnUrl is set (reconnect flow),
+      // we need to handle token refresh
+      const existingAccount = await user.getConnectedAccount("github");
+      if (existingAccount && props.webReturnUrl) {
+        // Account exists - try to get fresh token
+        try {
+          const token = await existingAccount.getAccessToken();
+          if (token.accessToken) {
+            // Validate token is still valid with GitHub
+            const response = await fetch("https://api.github.com/user", {
+              headers: { Authorization: `Bearer ${token.accessToken}` },
+            });
+            if (response.ok) {
+              // Token is valid, redirect back to settings
+              window.location.href = props.webReturnUrl;
+              return;
+            }
+          }
+        } catch {
+          // Token fetch failed
+        }
+        // Token is invalid - show error since we can't force re-auth
+        setError("GitHub token expired. Please revoke access at github.com/settings/applications and try again.");
+        setIsConnecting(false);
+        return;
+      }
+
+      // Not connected - redirect to GitHub OAuth
       await user.getConnectedAccount("github", { or: "redirect" });
     } catch (err) {
       console.error("Failed to connect GitHub:", err);
