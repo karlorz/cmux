@@ -24,11 +24,17 @@ devsh orchestrate spawn --agent claude/haiku-4.5 --repo owner/repo "Fix the auth
 # Check status of the spawned task with polling watch mode
 devsh orchestrate status <orch-task-id> --watch
 
+# Stream live orchestration events for the task
+devsh orchestrate debug <orch-task-id> --events
+
+# Send steering guidance to the running worker
+devsh orchestrate message <task-run-id> "Focus on the failing API test first" --type request
+
+# Retry a failed PR/check workflow on the original task branch
+devsh task retry <task-id>
+
 # Wait for completion
 devsh orchestrate wait <orch-task-id>
-
-# Cancel an orchestration task
-devsh orchestrate cancel <orch-task-id>
 
 # Get aggregated results from an orchestration session
 # Requires an orchestration session ID from a flow that creates one
@@ -42,8 +48,11 @@ For small, reliable workflows, prefer this portable pattern:
 1. Plan locally in your current workspace
 2. Keep any `.claude/plans/*.md` file as a **local convenience**
 3. Embed the relevant plan content into the `devsh orchestrate spawn` prompt
-4. Track execution with `status`, `wait`, and `cancel` using `<orch-task-id>`
-5. Use `results <orchestration-id>` only when your workflow actually has an orchestration session ID
+4. Track execution with `status --watch` using `<orch-task-id>`
+5. Use `debug --events <orch-task-id>` for live orchestration insight
+6. Use `message <task-run-id>` to steer a running worker
+7. Use `task retry <task-id>` for failed PR/check workflows
+8. Use `results <orchestration-id>` only when your workflow actually has an orchestration session ID
 
 This avoids assuming the spawned sandbox can read a local plan path from your machine.
 
@@ -124,6 +133,23 @@ devsh orchestrate status <orch-task-id> --watch
 # Custom polling interval
 devsh orchestrate status <orch-task-id> --watch --interval 5
 ```
+
+### Stream Live Orchestration Events
+
+Inspect live orchestration updates for a spawned task.
+
+```bash
+devsh orchestrate debug <orch-task-id> --events
+```
+
+`debug --events` accepts the **orchestration task ID** printed by `spawn`. It resolves the best available stream key automatically:
+- grouped workflows: uses the orchestration session ID from task metadata
+- single local CLI workflows: falls back to the task's own orchestration task ID
+
+Use it when `status --watch` is not enough and you need live triage detail. On failures it points to the next likely operator actions:
+- `devsh orchestrate message <task-run-id> ...` for mid-run steering
+- `devsh task retry <task-id>` for failed PR/check workflows
+- `devsh orchestrate results <orchestration-id>` only when a real orchestration session ID exists
 
 ### Get Orchestration Results
 
@@ -306,10 +332,11 @@ orchestration/
 
 1. **Prefer the portable default first**: local planning plus inline prompt delegation is the safest default workflow
 2. **Use specialized agents**: haiku for quick fixes, opus for complex reasoning, codex for implementation-heavy tasks
-3. **Monitor with watch mode**: `status --watch` is polling watch mode
-4. **Use the right ID**: `<orch-task-id>` for status/wait/cancel, `<orchestration-id>` for results
-5. **Use advanced head-agent paths intentionally**: `--cloud-workspace`, `--use-env-jwt`, `pull_orchestration_updates`, and `orchestrate migrate` are advanced workflow options
-6. **Keep prompts focused**: each sub-agent should have a clear, specific task
+3. **Monitor with polling first**: `status --watch` is polling watch mode
+4. **Escalate to live triage when needed**: `debug --events` is the operator-facing event stream for live orchestration insight
+5. **Use the right ID**: `<orch-task-id>` for status/debug/wait/cancel, `<task-run-id>` for message, `<task-id>` for `task retry`, `<orchestration-id>` for results
+6. **Use advanced head-agent paths intentionally**: `--cloud-workspace`, `--use-env-jwt`, `pull_orchestration_updates`, and `orchestrate migrate` are advanced workflow options
+7. **Keep prompts focused**: each sub-agent should have a clear, specific task
 
 ## Integration with MCP
 

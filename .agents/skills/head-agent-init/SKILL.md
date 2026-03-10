@@ -67,6 +67,15 @@ For large plans, inline only the relevant excerpt or a tight summary instead of 
 # Use the Orchestration Task ID printed by spawn
 devsh orchestrate status <orch-task-id> --watch
 
+# Escalate to live event streaming when you need deeper triage
+devsh orchestrate debug <orch-task-id> --events
+
+# Steer the worker mid-run when course correction is needed
+devsh orchestrate message <task-run-id> "Prioritize fixing the failing checks" --type request
+
+# Retry a failed PR/check workflow on the original task branch
+devsh task retry <task-id>
+
 # Or wait for completion
 devsh orchestrate wait <orch-task-id>
 
@@ -120,6 +129,7 @@ flowchart TD
 
 - This skill provides **workflow scaffolding** for planning, delegation, and reporting.
 - The default portable workflow is: local planning + inline prompt delegation + task-level tracking.
+- The intended operator sequence is `spawn` → `status --watch` → `debug --events` when needed → `message` for mid-run steering → `task retry` for failed PR/check flows → `results` only when a real orchestration session ID exists.
 - Stronger orchestration-session flows such as `--cloud-workspace` and `devsh orchestrate migrate` are advanced options, not the default path for a small workflow-skills change.
 
 ## Related Skills

@@ -666,6 +666,44 @@ interface OrchestrationSpawnResponse {
   status: string;
 }
 
+interface OrchestrationTaskLike {
+  _id: string;
+  status: string;
+  prompt?: string;
+  result?: string | null;
+  errorMessage?: string | null;
+  taskRunId?: string | null;
+  assignedAgentName?: string | null;
+  completedAt?: number | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export function matchesOrchestrationTaskGroup(
+  task: OrchestrationTaskLike,
+  orchestrationId: string,
+): boolean {
+  if (task._id === orchestrationId) {
+    return true;
+  }
+  return task.metadata?.orchestrationId === orchestrationId;
+}
+
+function summarizeOrchestrationTasks(tasks: OrchestrationTaskLike[]) {
+  const completedCount = tasks.filter((task) => task.status === "completed").length;
+  const pendingCount = tasks.filter((task) => task.status === "pending").length;
+  const failedCount = tasks.filter((task) => task.status === "failed").length;
+  const runningCount = tasks.filter(
+    (task) => task.status === "running" || task.status === "assigned",
+  ).length;
+
+  return {
+    completedCount,
+    pendingCount,
+    failedCount,
+    runningCount,
+  };
+}
+
 /**
  * Handle POST /api/orchestrate/spawn
  *
@@ -1160,19 +1198,9 @@ async function handleOrchestrationResults(
         limit: 100,
       });
 
-      // Filter by orchestrationId
-      // Check both:
-      // 1. Task's own _id (for CLI-spawned tasks where _id is the orchestrationId)
-      // 2. metadata.orchestrationId (for MCP-spawned tasks grouped by parent orchestrationId)
-      const filteredTasks = tasks.filter((task) => {
-        // Match if orchestrationId is the task's own ID
-        if (task._id === orchestrationId) {
-          return true;
-        }
-        // Match if orchestrationId is stored in metadata (for grouped tasks)
-        const metadata = task.metadata as Record<string, unknown> | undefined;
-        return metadata?.orchestrationId === orchestrationId;
-      });
+      const filteredTasks = tasks.filter((task) =>
+        matchesOrchestrationTaskGroup(task, orchestrationId),
+      );
 
       const totalTasks = filteredTasks.length;
       const completedTasks = filteredTasks.filter((t) => t.status === "completed").length;
@@ -1324,16 +1352,12 @@ async function handleOrchestrationEvents(
             teamSlugOrId,
             limit: 100,
           });
-          const filtered = tasks.filter((t) => {
-            const metadata = t.metadata as Record<string, unknown> | undefined;
-            return metadata?.orchestrationId === orchestrationId;
-          });
+          const filtered = tasks.filter((task) =>
+            matchesOrchestrationTaskGroup(task, orchestrationId),
+          );
           return {
             tasks: filtered,
-            completedCount: filtered.filter((t) => t.status === "completed").length,
-            pendingCount: filtered.filter((t) => t.status === "pending").length,
-            failedCount: filtered.filter((t) => t.status === "failed").length,
-            runningCount: filtered.filter((t) => t.status === "running" || t.status === "assigned").length,
+            ...summarizeOrchestrationTasks(filtered),
           };
         });
       }
@@ -2075,7 +2099,7 @@ export function handleHttpRequest(
   // CORS headers for CLI access
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Task-Run-JWT, Last-Event-ID");
 
   // Handle preflight
   if (method === "OPTIONS") {
