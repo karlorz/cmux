@@ -777,6 +777,7 @@ export default {
 
     const contentType = response.headers.get("content-type") || "";
     const skipServiceWorker = port === "39378";
+    const isVSCode = port === "39378";
     const requestOrigin = request.headers.get("Origin");
 
     // Apply HTMLRewriter to HTML responses
@@ -785,6 +786,27 @@ export default {
       if (skipServiceWorker) {
         responseHeaders = addPermissiveCORS(responseHeaders, requestOrigin);
       }
+
+      // For VS Code (port 39378), we need to rewrite http:// URLs to https:// in the
+      // workbench config to fix resourceUrlTemplate using insecure scheme.
+      // VS Code server generates URLs based on the request host but defaults to http://
+      // when behind a reverse proxy that doesn't properly forward X-Forwarded-Proto.
+      if (isVSCode) {
+        // Read the full response body and do text replacement
+        const text = await response.text();
+        // Rewrite http:// URLs that point to the public host pattern
+        const rewritten = text.replace(
+          /http:\/\/port-(\d+)-pvelxc-([^"'\s]+)\.alphasolves\.com/g,
+          "https://port-$1-pvelxc-$2.alphasolves.com",
+        );
+        responseHeaders = sanitizeRewrittenResponseHeaders(responseHeaders);
+        return new Response(rewritten, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: responseHeaders,
+        });
+      }
+
       const rewriter = new HTMLRewriter()
         .on("head", new HeadRewriter(skipServiceWorker))
         .on("script", new ScriptRewriter());
@@ -805,7 +827,14 @@ export default {
     // Rewrite JavaScript files
     if (contentType.includes("javascript") || url.pathname.endsWith(".js")) {
       const text = await response.text();
-      const rewritten = rewriteJavaScript(text, true);
+      let rewritten = rewriteJavaScript(text, true);
+      // For VS Code, also rewrite http:// URLs to https:// for the public domain
+      if (isVSCode) {
+        rewritten = rewritten.replace(
+          /http:\/\/port-(\d+)-pvelxc-([^"'\s]+)\.alphasolves\.com/g,
+          "https://port-$1-pvelxc-$2.alphasolves.com",
+        );
+      }
       let sanitizedHeaders = sanitizeRewrittenResponseHeaders(response.headers);
       sanitizedHeaders = stripCSPHeaders(sanitizedHeaders);
       if (skipServiceWorker) {
