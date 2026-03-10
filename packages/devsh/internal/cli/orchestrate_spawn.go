@@ -44,7 +44,7 @@ Examples:
   devsh orchestrate spawn --agent claude/haiku-4.5 --repo owner/repo "Add tests"
   devsh orchestrate spawn --agent codex/gpt-5.1-codex-mini "Fix the bug"
   devsh orchestrate spawn --agent claude/opus-4.5 --repo owner/repo --pr-title "Fix: auth bug" "Fix auth"
-  devsh orchestrate spawn --agent claude/haiku-4.5 --depends-on <task-id> "Task B depends on A"
+  devsh orchestrate spawn --agent claude/haiku-4.5 --depends-on <orch-task-id> "Task B depends on A"
   devsh orchestrate spawn --agent claude/haiku-4.5 --priority 1 "High priority task"
   devsh orchestrate spawn --agent claude/haiku-4.5 --use-env-jwt "Sub-task from head agent"
   devsh orchestrate spawn --cloud-workspace --agent claude/opus-4.6 "Coordinate feature implementation"`,
@@ -104,13 +104,13 @@ Examples:
 
 		fmt.Println("Agent Spawned")
 		fmt.Println("=============")
-		fmt.Printf("  Orchestration ID: %s\n", result.OrchestrationTaskID)
-		fmt.Printf("  Task ID:          %s\n", result.TaskID)
-		fmt.Printf("  Task Run ID:      %s\n", result.TaskRunID)
-		fmt.Printf("  Agent:            %s\n", result.AgentName)
-		fmt.Printf("  Status:           %s\n", result.Status)
+		fmt.Printf("  %-22s %s\n", "Orchestration Task ID:", result.OrchestrationTaskID)
+		fmt.Printf("  %-22s %s\n", "Task ID:", result.TaskID)
+		fmt.Printf("  %-22s %s\n", "Task Run ID:", result.TaskRunID)
+		fmt.Printf("  %-22s %s\n", "Agent:", result.AgentName)
+		fmt.Printf("  %-22s %s\n", "Status:", result.Status)
 		if result.VSCodeURL != "" {
-			fmt.Printf("  VSCode:           %s\n", result.VSCodeURL)
+			fmt.Printf("  %-22s %s\n", "VSCode:", result.VSCodeURL)
 		}
 
 		return nil
