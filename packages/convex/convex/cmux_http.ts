@@ -7,6 +7,7 @@
 import { httpAction, type ActionCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { env } from "../_shared/convex-env";
+import { isValidConvexId, isConvexIdValidationError } from "./cmux_http_helpers";
 import { jsonResponse } from "../_shared/http-utils";
 import type { DevboxProvider } from "@cmux/shared/provider-types";
 import type { FunctionReference } from "convex/server";
@@ -69,6 +70,9 @@ const INSTANCE_ID_REGEX = /^(?:manaflow|cmux|cr)_[a-zA-Z0-9]{8,}$/;
 function isValidInstanceId(id: string): boolean {
   return INSTANCE_ID_REGEX.test(id);
 }
+
+// Re-export from helpers to maintain API compatibility
+export { isValidConvexId, isConvexIdValidationError } from "./cmux_http_helpers";
 
 /**
  * Verify content type is JSON for non-GET requests
@@ -2091,6 +2095,10 @@ async function handleGetTask(
   teamSlugOrId: string,
   userId: string
 ): Promise<Response> {
+  if (!isValidConvexId(taskId)) {
+    return jsonResponse({ code: 404, message: "Task not found" }, 404);
+  }
+
   try {
     const teamId = await resolveTeamIdForHttp(ctx, teamSlugOrId);
 
@@ -2158,9 +2166,7 @@ async function handleGetTask(
       images: task.images,
     });
   } catch (err) {
-    // Check if error is due to invalid ID format (Convex validation error)
-    const errorMessage = err instanceof Error ? err.message : String(err);
-    if (errorMessage.includes("Invalid ID") || errorMessage.includes("not a valid ID")) {
+    if (isConvexIdValidationError(err)) {
       return jsonResponse({ code: 404, message: "Task not found" }, 404);
     }
     console.error("[cmux.tasks.get] Error:", err);
@@ -2233,9 +2239,7 @@ async function handleGetTaskQualityGate(
   limit: number,
 ): Promise<Response> {
   try {
-    // Validate taskId format - Convex IDs are alphanumeric without underscores
-    const isValidConvexIdFormat = /^[a-z][a-z0-9]*$/i.test(taskId);
-    if (!isValidConvexIdFormat) {
+    if (!isValidConvexId(taskId)) {
       return jsonResponse({ code: 404, message: "Task not found" }, 404);
     }
 
@@ -2559,6 +2563,10 @@ async function handleTogglePinTask(
   teamSlugOrId: string,
   userId: string
 ): Promise<Response> {
+  if (!isValidConvexId(taskId)) {
+    return jsonResponse({ code: 404, message: "Task not found" }, 404);
+  }
+
   try {
     const teamId = await resolveTeamIdForHttp(ctx, teamSlugOrId);
 
@@ -2592,6 +2600,9 @@ async function handleTogglePinTask(
 
     return jsonResponse({ pinned: !currentlyPinned });
   } catch (err) {
+    if (isConvexIdValidationError(err)) {
+      return jsonResponse({ code: 404, message: "Task not found" }, 404);
+    }
     console.error("[cmux.tasks.pin] Error:", err);
     return jsonResponse({ code: 500, message: "Failed to toggle pin" }, 500);
   }
@@ -2606,6 +2617,10 @@ async function handleArchiveTask(
   teamSlugOrId: string,
   userId: string
 ): Promise<Response> {
+  if (!isValidConvexId(taskId)) {
+    return jsonResponse({ code: 404, message: "Task not found" }, 404);
+  }
+
   try {
     const teamId = await resolveTeamIdForHttp(ctx, teamSlugOrId);
 
@@ -2630,6 +2645,9 @@ async function handleArchiveTask(
 
     return jsonResponse({ archived: true });
   } catch (err) {
+    if (isConvexIdValidationError(err)) {
+      return jsonResponse({ code: 404, message: "Task not found" }, 404);
+    }
     console.error("[cmux.tasks.archive] Error:", err);
     return jsonResponse({ code: 500, message: "Failed to archive task" }, 500);
   }
@@ -2875,9 +2893,7 @@ async function handleGetTaskRun(ctx: ActionCtx, req: Request): Promise<Response>
     return jsonResponse({ code: 400, message: "Task run ID is required" }, 400);
   }
 
-  // Validate taskRunId format - Convex IDs are alphanumeric without underscores
-  const isValidConvexIdFormat = /^[a-z][a-z0-9]*$/i.test(taskRunId);
-  if (!isValidConvexIdFormat) {
+  if (!isValidConvexId(taskRunId)) {
     return jsonResponse({ code: 404, message: "Task run not found" }, 404);
   }
 
@@ -2933,9 +2949,7 @@ async function handleGetTaskRun(ctx: ActionCtx, req: Request): Promise<Response>
         : undefined,
     });
   } catch (err) {
-    // Check if error is due to invalid ID format (Convex validation error)
-    const errorMessage = err instanceof Error ? err.message : String(err);
-    if (errorMessage.includes("Invalid ID") || errorMessage.includes("not a valid ID")) {
+    if (isConvexIdValidationError(err)) {
       return jsonResponse({ code: 404, message: "Task run not found" }, 404);
     }
     console.error("[cmux.getTaskRun] Error:", err);
@@ -2976,9 +2990,7 @@ async function handleGetTaskRunMemory(ctx: ActionCtx, req: Request): Promise<Res
     return jsonResponse({ code: 400, message: "Task run ID is required" }, 400);
   }
 
-  // Validate taskRunId format - Convex IDs are alphanumeric without underscores
-  const isValidConvexIdFormat = /^[a-z][a-z0-9]*$/i.test(taskRunId);
-  if (!isValidConvexIdFormat) {
+  if (!isValidConvexId(taskRunId)) {
     return jsonResponse({ code: 404, message: "Task run not found" }, 404);
   }
 
@@ -3041,9 +3053,7 @@ async function handleGetTaskRunMemory(ctx: ActionCtx, req: Request): Promise<Res
 
     return jsonResponse({ memory });
   } catch (err) {
-    // Check if error is due to invalid ID format (Convex validation error)
-    const errorMessage = err instanceof Error ? err.message : String(err);
-    if (errorMessage.includes("Invalid ID") || errorMessage.includes("not a valid ID")) {
+    if (isConvexIdValidationError(err)) {
       return jsonResponse({ code: 404, message: "Task run not found" }, 404);
     }
     console.error("[cmux.taskRunMemory] Error:", err);
