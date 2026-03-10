@@ -458,6 +458,15 @@ ${getMemoryProtocolInstructions()}
 
   const opencodeConfig = {
     mcp: buildOpencodeMcpConfig(ctx.mcpServerConfigs ?? [], ctx.agentName),
+    permission: {
+      bash: {
+        "*": "allow",
+        "gh pr create *": "deny",
+        "gh pr create": "deny",
+        "gh pr merge * --delete-branch*": "deny",
+        "gh pr merge * --admin*": "deny",
+      },
+    },
   };
   files.push({
     destinationPath: "$HOME/.config/opencode/opencode.json",

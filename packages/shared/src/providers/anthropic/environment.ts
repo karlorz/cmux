@@ -291,6 +291,16 @@ exit 0`;
   // When only API key is present, we route through cmux proxy for tracking/rate limiting
   const settingsConfig: Record<string, unknown> = {
     alwaysThinkingEnabled: true,
+    permissions: {
+      allow: [],
+      defaultMode: "bypassPermissions",
+      deny: [
+        "Bash(gh pr create *)",
+        "Bash(gh pr create)",
+        "Bash(gh pr merge * --delete-branch*)",
+        "Bash(gh pr merge * --admin*)",
+      ],
+    },
     // Always use apiKeyHelper when not using OAuth (helper outputs correct key based on user config)
     ...(hasOAuthToken ? {} : { apiKeyHelper: claudeApiKeyHelperPath }),
     hooks: {
