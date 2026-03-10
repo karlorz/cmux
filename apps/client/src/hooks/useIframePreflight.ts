@@ -1,13 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  extractMorphInstanceInfo,
   isIframePreflightPhasePayload,
   isIframePreflightResult,
-  isLoopbackHostname,
   type IframePreflightPhasePayload,
   type IframePreflightResult,
   type IframePreflightServerPhase,
 } from "@cmux/shared";
+export {
+  shouldUseIframePreflightProxy,
+  shouldUseServerIframePreflight,
+} from "./iframePreflight.utils";
+import {
+  shouldUseIframePreflightProxy,
+  shouldUseServerIframePreflight,
+} from "./iframePreflight.utils";
 import { WWW_ORIGIN } from "@/lib/wwwOrigin";
 import { useSocket } from "@/contexts/socket/use-socket";
 import { useUser } from "@stackframe/react";
@@ -41,35 +47,6 @@ type ParsedEvent = {
   event: string;
   data: string;
 };
-
-export function shouldUseIframePreflightProxy(
-  target: string | URL | null | undefined
-): boolean {
-  if (!target) {
-    return false;
-  }
-
-  try {
-    return extractMorphInstanceInfo(target) !== null;
-  } catch {
-    return false;
-  }
-}
-
-export function shouldUseServerIframePreflight(
-  target: string | URL | null | undefined
-): boolean {
-  if (!target) {
-    return false;
-  }
-
-  try {
-    const url = typeof target === "string" ? new URL(target) : target;
-    return isLoopbackHostname(url.hostname);
-  } catch {
-    return false;
-  }
-}
 
 const EVENT_SEPARATOR = "\n\n";
 
