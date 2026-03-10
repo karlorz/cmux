@@ -4,9 +4,9 @@ import { useUser } from "@stackframe/stack";
 import { JetBrains_Mono } from "next/font/google";
 import { useCallback, useEffect, useState } from "react";
 
-const jetbrains = JetBrains_Mono({ subsets: ["latin"], preload: true });
+import { OAUTH_CALLBACK_KEY } from "@/lib/utils/oauth-constants";
 
-const OAUTH_CALLBACK_KEY = "oauth_callback_url";
+const jetbrains = JetBrains_Mono({ subsets: ["latin"], preload: true });
 
 type ConnectGitHubClientProps =
   | { href: string; alreadyConnected: true; teamSlugOrId?: never; webReturnUrl?: never }
@@ -45,34 +45,34 @@ export function ConnectGitHubClient(props: ConnectGitHubClientProps) {
         }
       }
 
-      // Check if already connected - if so and webReturnUrl is set (reconnect flow),
-      // we need to handle token refresh
-      const existingAccount = await user.getConnectedAccount("github");
-      if (existingAccount && props.webReturnUrl) {
-        // Account exists - try to get fresh token
-        try {
-          const token = await existingAccount.getAccessToken();
-          if (token.accessToken) {
-            // Validate token is still valid with GitHub
-            const response = await fetch("https://api.github.com/user", {
-              headers: { Authorization: `Bearer ${token.accessToken}` },
-            });
-            if (response.ok) {
-              // Token is valid, redirect back to settings
-              window.location.href = props.webReturnUrl;
-              return;
+      // For reconnect flow, validate existing token before redirecting
+      if (props.webReturnUrl) {
+        const existingAccount = await user.getConnectedAccount("github");
+        if (existingAccount) {
+          // Account exists - try to get fresh token and validate
+          try {
+            const token = await existingAccount.getAccessToken();
+            if (token.accessToken) {
+              const response = await fetch("https://api.github.com/user", {
+                headers: { Authorization: `Bearer ${token.accessToken}` },
+              });
+              if (response.ok) {
+                // Token is valid, redirect back to settings
+                window.location.href = props.webReturnUrl;
+                return;
+              }
             }
+          } catch {
+            // Token fetch failed - fall through to error
           }
-        } catch {
-          // Token fetch failed
+          // Token is invalid - show error since we can't force re-auth through Stack Auth
+          setError("GitHub token expired. Please revoke access at github.com/settings/applications and try again.");
+          setIsConnecting(false);
+          return;
         }
-        // Token is invalid - show error since we can't force re-auth
-        setError("GitHub token expired. Please revoke access at github.com/settings/applications and try again.");
-        setIsConnecting(false);
-        return;
       }
 
-      // Not connected - redirect to GitHub OAuth
+      // Not connected or not reconnect flow - redirect to GitHub OAuth
       await user.getConnectedAccount("github", { or: "redirect" });
     } catch (err) {
       console.error("Failed to connect GitHub:", err);
