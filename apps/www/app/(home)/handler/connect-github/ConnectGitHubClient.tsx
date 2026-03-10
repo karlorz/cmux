@@ -34,12 +34,18 @@ export function ConnectGitHubClient(props: ConnectGitHubClientProps) {
     setIsConnecting(true);
     setError(null);
 
+    console.log("[ConnectGitHub] handleConnect called", {
+      webReturnUrl: props.webReturnUrl,
+      alreadyConnected: props.alreadyConnected,
+    });
+
     try {
       // For web reconnect flow, store return URL in sessionStorage
       // The after-sign-in handler will redirect back to this URL
       if (!props.alreadyConnected && props.webReturnUrl) {
         try {
           sessionStorage.setItem(OAUTH_CALLBACK_KEY, props.webReturnUrl);
+          console.log("[ConnectGitHub] Stored sessionStorage callback:", props.webReturnUrl);
         } catch {
           // sessionStorage not available
         }
@@ -48,23 +54,28 @@ export function ConnectGitHubClient(props: ConnectGitHubClientProps) {
       // Check if already connected - if so and webReturnUrl is set (reconnect flow),
       // we need to handle token refresh
       const existingAccount = await user.getConnectedAccount("github");
+      console.log("[ConnectGitHub] existingAccount:", !!existingAccount);
+
       if (existingAccount && props.webReturnUrl) {
         // Account exists - try to get fresh token
         try {
           const token = await existingAccount.getAccessToken();
+          console.log("[ConnectGitHub] Got token:", !!token.accessToken);
           if (token.accessToken) {
             // Validate token is still valid with GitHub
             const response = await fetch("https://api.github.com/user", {
               headers: { Authorization: `Bearer ${token.accessToken}` },
             });
+            console.log("[ConnectGitHub] GitHub API response:", response.status);
             if (response.ok) {
               // Token is valid, redirect back to settings
+              console.log("[ConnectGitHub] Token valid, redirecting to:", props.webReturnUrl);
               window.location.href = props.webReturnUrl;
               return;
             }
           }
-        } catch {
-          // Token fetch failed
+        } catch (tokenErr) {
+          console.error("[ConnectGitHub] Token fetch failed:", tokenErr);
         }
         // Token is invalid - show error since we can't force re-auth
         setError("GitHub token expired. Please revoke access at github.com/settings/applications and try again.");
@@ -73,6 +84,7 @@ export function ConnectGitHubClient(props: ConnectGitHubClientProps) {
       }
 
       // Not connected - redirect to GitHub OAuth
+      console.log("[ConnectGitHub] Not connected, initiating OAuth");
       await user.getConnectedAccount("github", { or: "redirect" });
     } catch (err) {
       console.error("Failed to connect GitHub:", err);
