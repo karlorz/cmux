@@ -29,7 +29,7 @@ Supports two authentication methods:
    This allows head agents to query results using their task-run JWT.
 
 Examples:
-  devsh orchestrate results k97xcv2...
+  devsh orchestrate results <orchestration-id>
   devsh orchestrate results <orchestration-id> --json
   devsh orchestrate results <orchestration-id> --use-env-jwt`,
 	Args: cobra.ExactArgs(1),
@@ -87,11 +87,11 @@ Examples:
 
 		if len(result.Results) == 0 {
 			fmt.Println("No tasks found for this orchestration.")
-			if result.Status == "completed" {
-				fmt.Println("\nNote: If you expected tasks, the orchestrationId may not have been")
-				fmt.Println("properly linked during task creation. Ensure the spawn command")
-				fmt.Println("passes --orchestration-id or that the MCP spawn_agent tool includes it.")
-			}
+			fmt.Println("\nOne possible cause is using an orchestration task ID instead of an orchestration session ID.")
+			fmt.Println("If you only have an orchestration task ID, use `devsh orchestrate status`")
+			fmt.Println("or `devsh orchestrate wait` for that task instead.")
+			fmt.Println("Use an orchestration ID from a workflow that creates one, such as")
+			fmt.Println("a cloud head-agent run or `devsh orchestrate migrate`.")
 			return nil
 		}
 

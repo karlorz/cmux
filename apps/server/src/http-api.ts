@@ -15,6 +15,10 @@ import {
   AGENT_CATALOG,
   getVariantsForVendor,
 } from "@cmux/shared/agent-catalog";
+import {
+  DEFAULT_TASK_LIST_LIMIT,
+  ORCHESTRATION_STATUSES,
+} from "@cmux/convex/orchestrationQueries";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { spawnAgent, spawnAllAgents, type PreFetchedSpawnConfig } from "./agentSpawner";
 import { getProviderHealthMonitor } from "@cmux/shared/resilience/provider-health";
@@ -33,6 +37,7 @@ import {
 } from "./utils/providerStatus";
 import { runWithAuth, runWithAuthToken } from "./utils/requestContext";
 import { env } from "./utils/server-env";
+import { getResponseErrorMessage } from "./utils/httpError";
 
 interface StartTaskRequest {
   // Required fields
@@ -665,6 +670,44 @@ interface OrchestrationSpawnResponse {
   status: string;
 }
 
+interface OrchestrationTaskLike {
+  _id: string;
+  status: string;
+  prompt?: string;
+  result?: string | null;
+  errorMessage?: string | null;
+  taskRunId?: string | null;
+  assignedAgentName?: string | null;
+  completedAt?: number | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export function matchesOrchestrationTaskGroup(
+  task: OrchestrationTaskLike,
+  orchestrationId: string,
+): boolean {
+  if (task._id === orchestrationId) {
+    return true;
+  }
+  return task.metadata?.orchestrationId === orchestrationId;
+}
+
+function summarizeOrchestrationTasks(tasks: OrchestrationTaskLike[]) {
+  const completedCount = tasks.filter((task) => task.status === "completed").length;
+  const pendingCount = tasks.filter((task) => task.status === "pending").length;
+  const failedCount = tasks.filter((task) => task.status === "failed").length;
+  const runningCount = tasks.filter(
+    (task) => task.status === "running" || task.status === "assigned",
+  ).length;
+
+  return {
+    completedCount,
+    pendingCount,
+    failedCount,
+    runningCount,
+  };
+}
+
 /**
  * Handle POST /api/orchestrate/spawn
  *
@@ -738,8 +781,8 @@ async function handleOrchestrationSpawn(
       });
 
       if (!taskAndRunResponse.ok) {
-        const errorBody = await taskAndRunResponse.json().catch(() => ({ message: "Unknown error" }));
-        throw new Error(`Failed to create task and run: ${errorBody.message || taskAndRunResponse.statusText}`);
+        const errorMessage = await getResponseErrorMessage(taskAndRunResponse);
+        throw new Error(`Failed to create task and run: ${errorMessage}`);
       }
 
       const { taskId, taskRunId, jwt: newJwt } = await taskAndRunResponse.json() as {
@@ -766,8 +809,8 @@ async function handleOrchestrationSpawn(
       });
 
       if (!orchestrationTaskResponse.ok) {
-        const errorBody = await orchestrationTaskResponse.json().catch(() => ({ message: "Unknown error" }));
-        throw new Error(`Failed to create orchestration task: ${errorBody.message || orchestrationTaskResponse.statusText}`);
+        const errorMessage = await getResponseErrorMessage(orchestrationTaskResponse);
+        throw new Error(`Failed to create orchestration task: ${errorMessage}`);
       }
 
       const { orchestrationTaskId } = await orchestrationTaskResponse.json() as { orchestrationTaskId: string };
@@ -782,8 +825,8 @@ async function handleOrchestrationSpawn(
       });
 
       if (!spawnConfigResponse.ok) {
-        const errorBody = await spawnConfigResponse.json().catch(() => ({ message: "Unknown error" }));
-        throw new Error(`Failed to fetch spawn config: ${errorBody.message || spawnConfigResponse.statusText}`);
+        const errorMessage = await getResponseErrorMessage(spawnConfigResponse);
+        throw new Error(`Failed to fetch spawn config: ${errorMessage}`);
       }
 
       const preFetchedConfig = await spawnConfigResponse.json() as PreFetchedSpawnConfig;
@@ -955,23 +998,17 @@ async function handleOrchestrationList(
   const url = new URL(req.url || "/", `http://${req.headers.host}`);
   const teamSlugOrId = url.searchParams.get("teamSlugOrId");
   const statusParam = url.searchParams.get("status");
+  const cursor = url.searchParams.get("cursor");
 
   // Validate status parameter if provided
-  const validStatuses = ["pending", "assigned", "running", "completed", "failed", "cancelled"];
-  if (statusParam && !validStatuses.includes(statusParam)) {
+  type OrchestrationStatus = (typeof ORCHESTRATION_STATUSES)[number];
+  if (statusParam && !ORCHESTRATION_STATUSES.includes(statusParam as OrchestrationStatus)) {
     jsonResponse(res, 400, {
-      error: `Invalid status parameter: ${statusParam}. Must be one of: ${validStatuses.join(", ")}`,
+      error: `Invalid status parameter: ${statusParam}. Must be one of: ${ORCHESTRATION_STATUSES.join(", ")}`,
     });
     return;
   }
-  const status = statusParam as
-    | "pending"
-    | "assigned"
-    | "running"
-    | "completed"
-    | "failed"
-    | "cancelled"
-    | null;
+  const status = statusParam as OrchestrationStatus | null;
 
   if (!teamSlugOrId) {
     jsonResponse(res, 400, { error: "Missing required query parameter: teamSlugOrId" });
@@ -989,10 +1026,29 @@ async function handleOrchestrationList(
         throw new Error("Team not found or not a member");
       }
 
+      if (status) {
+        const paginatedTasks = await getConvex().query(
+          api.orchestrationQueries.listTasksByTeamPaginated,
+          {
+            teamSlugOrId: membership.team.teamId,
+            status,
+            paginationOpts: {
+              cursor,
+              numItems: DEFAULT_TASK_LIST_LIMIT,
+            },
+          }
+        );
+
+        return {
+          tasks: paginatedTasks.page,
+          nextCursor: paginatedTasks.continueCursor,
+          isDone: paginatedTasks.isDone,
+        };
+      }
+
       const tasks = await getConvex().query(api.orchestrationQueries.listTasksByTeam, {
         teamSlugOrId: membership.team.teamId,
-        status: status ?? undefined,
-        limit: 50,
+        limit: DEFAULT_TASK_LIST_LIMIT,
       });
 
       return { tasks };
@@ -1134,8 +1190,8 @@ async function handleOrchestrationResults(
       );
 
       if (!convexResponse.ok) {
-        const errorText = await convexResponse.text();
-        jsonResponse(res, convexResponse.status, { error: errorText });
+        const errorMessage = await getResponseErrorMessage(convexResponse);
+        jsonResponse(res, convexResponse.status, { error: errorMessage });
         return;
       }
 
@@ -1159,19 +1215,9 @@ async function handleOrchestrationResults(
         limit: 100,
       });
 
-      // Filter by orchestrationId
-      // Check both:
-      // 1. Task's own _id (for CLI-spawned tasks where _id is the orchestrationId)
-      // 2. metadata.orchestrationId (for MCP-spawned tasks grouped by parent orchestrationId)
-      const filteredTasks = tasks.filter((task) => {
-        // Match if orchestrationId is the task's own ID
-        if (task._id === orchestrationId) {
-          return true;
-        }
-        // Match if orchestrationId is stored in metadata (for grouped tasks)
-        const metadata = task.metadata as Record<string, unknown> | undefined;
-        return metadata?.orchestrationId === orchestrationId;
-      });
+      const filteredTasks = tasks.filter((task) =>
+        matchesOrchestrationTaskGroup(task, orchestrationId),
+      );
 
       const totalTasks = filteredTasks.length;
       const completedTasks = filteredTasks.filter((t) => t.status === "completed").length;
@@ -1323,16 +1369,12 @@ async function handleOrchestrationEvents(
             teamSlugOrId,
             limit: 100,
           });
-          const filtered = tasks.filter((t) => {
-            const metadata = t.metadata as Record<string, unknown> | undefined;
-            return metadata?.orchestrationId === orchestrationId;
-          });
+          const filtered = tasks.filter((task) =>
+            matchesOrchestrationTaskGroup(task, orchestrationId),
+          );
           return {
             tasks: filtered,
-            completedCount: filtered.filter((t) => t.status === "completed").length,
-            pendingCount: filtered.filter((t) => t.status === "pending").length,
-            failedCount: filtered.filter((t) => t.status === "failed").length,
-            runningCount: filtered.filter((t) => t.status === "running" || t.status === "assigned").length,
+            ...summarizeOrchestrationTasks(filtered),
           };
         });
       }
@@ -1851,8 +1893,8 @@ async function handleOrchestrationInternalSpawn(
     });
 
     if (!spawnConfigResponse.ok) {
-      const errorBody = await spawnConfigResponse.json().catch(() => ({ message: "Unknown error" }));
-      throw new Error(`Failed to fetch spawn config: ${errorBody.message || spawnConfigResponse.statusText}`);
+      const errorMessage = await getResponseErrorMessage(spawnConfigResponse);
+      throw new Error(`Failed to fetch spawn config: ${errorMessage}`);
     }
 
     const preFetchedConfig = await spawnConfigResponse.json() as PreFetchedSpawnConfig;
@@ -2074,7 +2116,7 @@ export function handleHttpRequest(
   // CORS headers for CLI access
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Task-Run-JWT, Last-Event-ID");
 
   // Handle preflight
   if (method === "OPTIONS") {

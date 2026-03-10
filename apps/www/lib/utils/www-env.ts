@@ -83,6 +83,10 @@ export const env = createEnv({
     // Base URL for the app (e.g., https://www.manaflow.com or https://cmux.dev)
     // Used for constructing URLs in client components
     NEXT_PUBLIC_BASE_APP_URL: z.string().url().optional(),
+    // Client app origin for OAuth redirects back to the client (Vite) app
+    // In dev: https://port-5173-pvelxc-*.alphasolves.com
+    // In prod: same as NEXT_PUBLIC_BASE_APP_URL
+    NEXT_PUBLIC_CLIENT_ORIGIN: z.string().url().optional(),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,

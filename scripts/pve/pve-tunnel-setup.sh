@@ -453,6 +453,9 @@ configure_caddy() {
     handle @service {
         reverse_proxy {re.service.2}.${domain_suffix}:{re.service.1} {
             header_up Host {upstream_hostport}
+            # Forward original protocol and host for VS Code resourceUrlTemplate generation
+            header_up X-Forwarded-Proto https
+            header_up X-Forwarded-Host {http.request.host}
             transport http {
                 dial_timeout 10s
             }
