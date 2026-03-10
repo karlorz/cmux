@@ -647,7 +647,7 @@ foo = "bar"
     expect(resumeScript).toContain('exec codex resume "$THREAD_ID"');
   });
 
-  it("injects a gh wrapper for task-backed sandboxes", async () => {
+  it("injects gh and git wrappers for task-backed sandboxes", async () => {
     const result = await getOpenAIEnvironment({
       taskRunJwt: "test-jwt",
     } as never);
@@ -658,10 +658,19 @@ foo = "bar"
     expect(ghWrapper).toContain('if [ -n "${CMUX_TASK_RUN_JWT:-}" ]; then');
     expect(ghWrapper).toContain('case "${1:-}:${2:-}" in');
     expect(ghWrapper).toContain("pr:create)");
+    expect(ghWrapper).toContain("pr:merge)");
+    expect(ghWrapper).toContain("pr:close)");
+    expect(ghWrapper).toContain("workflow:run)");
     expect(ghWrapper).toContain("gh pr create is blocked in cmux sandboxes");
-    expect(ghWrapper).toContain("The cmux crown workflow handles PR creation automatically.");
+    expect(ghWrapper).toContain("gh pr merge is blocked in cmux sandboxes");
     expect(ghWrapper).toContain('exec "$REAL_GH" "$@"');
-    // File mode 755 is set at write time, no chmod needed
+
+    const gitWrapper = decodeEnvironmentFile(result, "/usr/local/bin/git");
+
+    expect(gitWrapper).toContain('REAL_GIT="/usr/bin/git"');
+    expect(gitWrapper).toContain("--force|--force-with-lease|-f)");
+    expect(gitWrapper).toContain("git force push is blocked in cmux sandboxes");
+    expect(gitWrapper).toContain('exec "$REAL_GIT" "$@"');
 
     const tempDir = await mkdtemp(join(tmpdir(), "cmux-openai-gh-wrapper-"));
 
@@ -682,6 +691,30 @@ foo = "bar"
         "gh pr create is blocked in cmux sandboxes"
       );
 
+      const mergeBlocked = spawnSync(wrapperPath, ["pr", "merge", "123"], {
+        env: {
+          ...process.env,
+          CMUX_TASK_RUN_JWT: "test-jwt",
+        },
+        encoding: "utf-8",
+      });
+      expect(mergeBlocked.status).toBe(1);
+      expect(mergeBlocked.stderr).toContain(
+        "gh pr merge is blocked in cmux sandboxes"
+      );
+
+      const workflowBlocked = spawnSync(wrapperPath, ["workflow", "run", "test.yml"], {
+        env: {
+          ...process.env,
+          CMUX_TASK_RUN_JWT: "test-jwt",
+        },
+        encoding: "utf-8",
+      });
+      expect(workflowBlocked.status).toBe(1);
+      expect(workflowBlocked.stderr).toContain(
+        "gh workflow run is blocked in cmux sandboxes"
+      );
+
       const passthrough = spawnSync(wrapperPath, ["--version"], {
         env: process.env,
         encoding: "utf-8",
@@ -693,15 +726,71 @@ foo = "bar"
     }
   });
 
-  it("does not inject a gh wrapper when task JWT is absent", async () => {
+  it("git wrapper blocks force push in task sandboxes", async () => {
+    const result = await getOpenAIEnvironment({
+      taskRunJwt: "test-jwt",
+    } as never);
+
+    const gitWrapper = decodeEnvironmentFile(result, "/usr/local/bin/git");
+    const tempDir = await mkdtemp(join(tmpdir(), "cmux-openai-git-wrapper-"));
+
+    try {
+      const wrapperPath = join(tempDir, "git");
+      await writeFile(wrapperPath, gitWrapper, "utf-8");
+      await chmod(wrapperPath, 0o755);
+
+      const forceBlocked = spawnSync(wrapperPath, ["push", "--force", "origin", "main"], {
+        env: {
+          ...process.env,
+          CMUX_TASK_RUN_JWT: "test-jwt",
+        },
+        encoding: "utf-8",
+      });
+      expect(forceBlocked.status).toBe(1);
+      expect(forceBlocked.stderr).toContain(
+        "git force push is blocked in cmux sandboxes"
+      );
+
+      const shortFlagBlocked = spawnSync(wrapperPath, ["push", "-f", "origin", "main"], {
+        env: {
+          ...process.env,
+          CMUX_TASK_RUN_JWT: "test-jwt",
+        },
+        encoding: "utf-8",
+      });
+      expect(shortFlagBlocked.status).toBe(1);
+      expect(shortFlagBlocked.stderr).toContain(
+        "git force push is blocked in cmux sandboxes"
+      );
+
+      const normalPush = spawnSync(wrapperPath, ["push", "-u", "origin", "feature/test"], {
+        env: {
+          ...process.env,
+          CMUX_TASK_RUN_JWT: "test-jwt",
+        },
+        encoding: "utf-8",
+      });
+      // Normal push should pass through to real git (may fail for other reasons but not exit 1 from wrapper)
+      expect(normalPush.stderr).not.toContain(
+        "git force push is blocked"
+      );
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not inject wrappers when task JWT is absent", async () => {
     const result = await getOpenAIEnvironment({} as never);
 
     const ghWrapper = result.files?.find(
       (file) => file.destinationPath === "/usr/local/bin/gh"
     );
+    const gitWrapper = result.files?.find(
+      (file) => file.destinationPath === "/usr/local/bin/git"
+    );
 
     expect(ghWrapper).toBeUndefined();
-    expect(result.startupCommands).not.toContain("chmod +x /usr/local/bin/gh");
+    expect(gitWrapper).toBeUndefined();
   });
 
   it("creates codex-autopilot script with aligned continuation and wrap-up prompts", async () => {

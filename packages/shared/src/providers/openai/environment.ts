@@ -204,7 +204,7 @@ exit 1
     const ghWrapperScript = `#!/usr/bin/env sh
 set -eu
 
-# Wrapper to block gh pr create in cmux task sandboxes.
+# Wrapper to block dangerous gh commands in cmux task sandboxes.
 REAL_GH="/usr/bin/gh"
 
 if [ -n "\${CMUX_TASK_RUN_JWT:-}" ]; then
@@ -212,6 +212,21 @@ if [ -n "\${CMUX_TASK_RUN_JWT:-}" ]; then
     pr:create)
       echo "ERROR: gh pr create is blocked in cmux sandboxes." >&2
       echo "The cmux crown workflow handles PR creation automatically." >&2
+      exit 1
+      ;;
+    pr:merge)
+      echo "ERROR: gh pr merge is blocked in cmux sandboxes." >&2
+      echo "PR merging requires explicit user approval." >&2
+      exit 1
+      ;;
+    pr:close)
+      echo "ERROR: gh pr close is blocked in cmux sandboxes." >&2
+      echo "PR lifecycle is managed by the cmux platform." >&2
+      exit 1
+      ;;
+    workflow:run)
+      echo "ERROR: gh workflow run is blocked in cmux sandboxes." >&2
+      echo "Infrastructure workflows must be triggered by a human." >&2
       exit 1
       ;;
   esac
@@ -222,6 +237,36 @@ exec "$REAL_GH" "$@"
     files.push({
       destinationPath: "/usr/local/bin/gh",
       contentBase64: Buffer.from(ghWrapperScript).toString("base64"),
+      mode: "755",
+    });
+
+    // Wrapper to block dangerous git operations in cmux task sandboxes.
+    const gitWrapperScript = `#!/usr/bin/env sh
+set -eu
+
+REAL_GIT="/usr/bin/git"
+
+if [ -n "\${CMUX_TASK_RUN_JWT:-}" ]; then
+  case "\${1:-}" in
+    push)
+      for arg in "$@"; do
+        case "$arg" in
+          --force|--force-with-lease|-f)
+            echo "ERROR: git force push is blocked in cmux sandboxes." >&2
+            echo "Force pushing destroys history and breaks PR workflows." >&2
+            exit 1
+            ;;
+        esac
+      done
+      ;;
+  esac
+fi
+
+exec "$REAL_GIT" "$@"
+`;
+    files.push({
+      destinationPath: "/usr/local/bin/git",
+      contentBase64: Buffer.from(gitWrapperScript).toString("base64"),
       mode: "755",
     });
   }
