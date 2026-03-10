@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { chmod, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -669,30 +670,24 @@ foo = "bar"
       await writeFile(wrapperPath, ghWrapper, "utf-8");
       await chmod(wrapperPath, 0o755);
 
-      const blocked = Bun.spawnSync({
-        cmd: [wrapperPath, "pr", "create"],
+      const blocked = spawnSync(wrapperPath, ["pr", "create"], {
         env: {
           ...process.env,
           CMUX_TASK_RUN_JWT: "test-jwt",
         },
-        stdout: "pipe",
-        stderr: "pipe",
+        encoding: "utf-8",
       });
-      expect(blocked.exitCode).toBe(1);
-      expect(Buffer.from(blocked.stderr).toString("utf-8")).toContain(
+      expect(blocked.status).toBe(1);
+      expect(blocked.stderr).toContain(
         "gh pr create is blocked in cmux sandboxes"
       );
 
-      const passthrough = Bun.spawnSync({
-        cmd: [wrapperPath, "--version"],
+      const passthrough = spawnSync(wrapperPath, ["--version"], {
         env: process.env,
-        stdout: "pipe",
-        stderr: "pipe",
+        encoding: "utf-8",
       });
-      expect(passthrough.exitCode).toBe(0);
-      expect(Buffer.from(passthrough.stdout).toString("utf-8")).toContain(
-        "gh version"
-      );
+      expect(passthrough.status).toBe(0);
+      expect(passthrough.stdout).toContain("gh version");
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }
