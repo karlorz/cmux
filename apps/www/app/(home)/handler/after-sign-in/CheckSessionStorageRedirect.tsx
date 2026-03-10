@@ -24,6 +24,11 @@ export function CheckSessionStorageRedirect({
 
     try {
       const storedCallback = sessionStorage.getItem(OAUTH_CALLBACK_KEY);
+      console.log("[CheckSessionStorageRedirect] sessionStorage check:", {
+        key: OAUTH_CALLBACK_KEY,
+        value: storedCallback,
+        allKeys: Object.keys(sessionStorage),
+      });
       if (storedCallback) {
         // Validate it's a relative path for security
         if (storedCallback.startsWith("/") && !storedCallback.startsWith("//")) {
@@ -31,8 +36,8 @@ export function CheckSessionStorageRedirect({
         }
         sessionStorage.removeItem(OAUTH_CALLBACK_KEY);
       }
-    } catch {
-      // sessionStorage not available
+    } catch (err) {
+      console.error("[CheckSessionStorageRedirect] sessionStorage error:", err);
     }
 
     // If we have a stored web callback URL, use it
