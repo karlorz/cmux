@@ -187,7 +187,7 @@ function addPermissiveCORS(headers: Headers, origin?: string | null): Headers {
   );
   headers.set(
     "access-control-allow-headers",
-    "Authorization, Content-Type, X-Client-Version, X-Client-Type, X-Request-Id, Accept, Origin, Cache-Control",
+    "Authorization, Content-Type, X-Client-Version, X-Client-Type, X-Request-Id, Accept, Origin, Cache-Control, x-stack-auth",
   );
   headers.set("access-control-expose-headers", "*");
   headers.set("access-control-allow-credentials", "true");
