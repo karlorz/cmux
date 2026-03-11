@@ -109,6 +109,10 @@ Examples:
 		fmt.Printf("  %-22s %s\n", "Task Run ID:", result.TaskRunID)
 		fmt.Printf("  %-22s %s\n", "Agent:", result.AgentName)
 		fmt.Printf("  %-22s %s\n", "Status:", result.Status)
+		if result.Status == "spawning" {
+			fmt.Println("  Sandbox is being provisioned in the background.")
+			fmt.Println("  Use 'devsh task status' to check progress.")
+		}
 		if result.VSCodeURL != "" {
 			fmt.Printf("  %-22s %s\n", "VSCode:", result.VSCodeURL)
 		}

@@ -401,11 +401,18 @@ Examples:
 							VSCodeURL: r.VSCodeURL,
 						}
 						if r.Success {
-							info.Status = "running"
-							if !flagJSON {
-								fmt.Printf("  Started: %s\n", r.AgentName)
-								if r.VSCodeURL != "" {
-									fmt.Printf("    VSCode: %s\n", r.VSCodeURL)
+							if r.Status == "spawning" {
+								info.Status = "spawning"
+								if !flagJSON {
+									fmt.Printf("  Spawning: %s (provisioning sandbox...)\n", r.AgentName)
+								}
+							} else {
+								info.Status = "running"
+								if !flagJSON {
+									fmt.Printf("  Started: %s\n", r.AgentName)
+									if r.VSCodeURL != "" {
+										fmt.Printf("    VSCode: %s\n", r.VSCodeURL)
+									}
 								}
 							}
 						} else {
@@ -448,8 +455,23 @@ Examples:
 				fmt.Println("  Note: Use web app to start agents, or re-run without --no-sandbox")
 			}
 		} else {
-			fmt.Println("\nTask created and agents started")
-			fmt.Printf("  Task ID: %s\n", result.TaskID)
+			// Check if any agents are still spawning (async 202 response)
+			anySpawning := false
+			for _, a := range agents {
+				if a.Status == "spawning" {
+					anySpawning = true
+					break
+				}
+			}
+			if anySpawning {
+				fmt.Println("\nTask created, agents spawning...")
+				fmt.Printf("  Task ID: %s\n", result.TaskID)
+				fmt.Println("  Sandboxes are being provisioned in the background.")
+				fmt.Println("  Use 'devsh task status' to check progress.")
+			} else {
+				fmt.Println("\nTask created and agents started")
+				fmt.Printf("  Task ID: %s\n", result.TaskID)
+			}
 		}
 
 		return nil

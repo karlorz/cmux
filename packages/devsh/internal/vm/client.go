@@ -1634,6 +1634,7 @@ type StartTaskAgentResult struct {
 	VSCodeURL string `json:"vscodeUrl,omitempty"`
 	Success   bool   `json:"success"`
 	Error     string `json:"error,omitempty"`
+	Status    string `json:"status,omitempty"` // "spawning" when server returns 202 async
 }
 
 // doServerRequest makes an authenticated request to the apps/server HTTP API
@@ -1746,7 +1747,7 @@ func (c *Client) StartTaskAgents(ctx context.Context, opts StartTaskAgentsOption
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
 		return nil, fmt.Errorf("start-task failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
 	}
 
@@ -2094,7 +2095,7 @@ func (c *Client) OrchestrationSpawn(ctx context.Context, opts OrchestrationSpawn
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
 		return nil, fmt.Errorf("orchestration spawn failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
 	}
 
