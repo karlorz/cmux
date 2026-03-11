@@ -38,9 +38,24 @@ Plan files stay here for operator reference. Content is embedded in spawn prompt
 cp TEMPLATE.md fix-auth-bug.md
 # Edit fix-auth-bug.md...
 
+# Dry run first
+../../scripts/execute-plan.sh --dry-run fix-auth-bug.md codex/gpt-5.1-codex-mini
+
 # Execute
 ../../scripts/execute-plan.sh fix-auth-bug.md codex/gpt-5.1-codex-mini
 
 # Track (use orch-task-id from output)
 devsh orchestrate status ns7abc123 --watch
 ```
+
+## Timeout Behavior
+
+Default timeout: **30 minutes**. For longer tasks:
+
+- Break into smaller plans (< 30 min each)
+- Use `devsh task create --autopilot --autopilot-minutes 120` for extended sessions
+- Monitor with `devsh orchestrate status <id> --watch`
+
+## Idle Detection
+
+Sub-agents automatically stop when idle (no git changes for 3 consecutive turns). This prevents infinite loops when a session has no work to do. Configure with `CLAUDE_AUTOPILOT_IDLE_THRESHOLD`.

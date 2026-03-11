@@ -8,7 +8,10 @@ set -euo pipefail
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   echo "Execute a plan file by spawning a sub-agent with inline content"
   echo ""
-  echo "Usage: $0 [plan-file] [agent]"
+  echo "Usage: $0 [--dry-run] [plan-file] [agent]"
+  echo ""
+  echo "Options:"
+  echo "  --dry-run  Show what would be spawned without executing"
   echo ""
   echo "Arguments:"
   echo "  plan-file  Path to plan markdown file (default: most recent in .claude/plans/)"
@@ -16,6 +19,7 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   echo ""
   echo "Examples:"
   echo "  $0                                    # Execute most recent plan"
+  echo "  $0 --dry-run .claude/plans/my-feature.md  # Dry run"
   echo "  $0 .claude/plans/my-feature.md       # Execute specific plan"
   echo "  $0 .claude/plans/fix.md claude/opus-4.5  # Specific plan and agent"
   echo ""
@@ -26,6 +30,13 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   echo "  claude/opus-4.5           Production"
   echo "  claude/haiku-4.5          Quick validation"
   exit 0
+fi
+
+# Dry run flag
+DRY_RUN=false
+if [[ "${1:-}" == "--dry-run" ]]; then
+  DRY_RUN=true
+  shift
 fi
 
 PLAN_FILE="${1:-}"
@@ -51,7 +62,7 @@ if [[ ! -f "$PLAN_FILE" ]]; then
 fi
 
 # Get repo and branch
-REPO=$(git remote get-url origin 2>/dev/null | sed -E 's|.*github.com[:/]([^/]+/[^/]+?)(\.git)?$|\1|' || echo "")
+REPO=$(git remote get-url origin 2>/dev/null | sed -E 's|.*github.com[:/]||; s|\.git$||' || echo "")
 BRANCH=$(git branch --show-current 2>/dev/null || echo "main")
 
 if [[ -z "$REPO" ]]; then
@@ -67,6 +78,19 @@ echo "Agent: $AGENT"
 echo "Repo: $REPO"
 echo "Branch: $BRANCH"
 echo ""
+
+# Dry run mode - show what would happen without spawning
+if [ "$DRY_RUN" = "true" ]; then
+  echo "=== DRY RUN ==="
+  echo ""
+  echo "Plan content:"
+  echo "---"
+  echo "$PLAN_CONTENT"
+  echo "---"
+  echo ""
+  echo "Would spawn: devsh orchestrate spawn --agent $AGENT --repo $REPO --branch $BRANCH"
+  exit 0
+fi
 
 # Spawn agent with inline plan content
 devsh orchestrate spawn \
