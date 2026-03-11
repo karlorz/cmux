@@ -83,6 +83,7 @@ interface StartTaskResponse {
     vscodeUrl?: string;
     success: boolean;
     error?: string;
+    status?: "spawning";
   }>;
 }
 
@@ -350,50 +351,63 @@ async function handleStartTask(
       }
 
       // Spawn all agents using the same code path as socket.io handler
-      const agentResults = await spawnAllAgents(
+      // Return early with 202 to avoid Cloudflare 524 timeout on slow providers
+      const spawnArgs = {
+        repoUrl,
+        branch,
+        taskDescription,
+        prTitle,
+        branchNames,
+        selectedAgents: agentsToSpawn,
+        taskRunIds: taskRunIds as Id<"taskRuns">[] | undefined,
+        isCloudMode,
+        environmentId: environmentId as Id<"environments"> | undefined,
+        images: imagesForSpawner,
+        theme,
+        autopilotOptions: autopilot
+          ? {
+              enabled: true,
+              totalMinutes: autopilotMinutes ?? 30,
+              turnMinutes: autopilotTurnMinutes ?? 5,
+              wrapUpMinutes: autopilotWrapUp ?? 3,
+            }
+          : undefined,
+      };
+
+      return {
+        results: agentsToSpawn.map((agentName, i) => ({
+          agentName,
+          taskRunId: taskRunIds?.[i] ?? "",
+          status: "spawning" as const,
+          success: true,
+          vscodeUrl: undefined,
+        })),
+        spawnArgs,
+      };
+    });
+
+    serverLogger.info("[http-api] start-task returning 202 (async spawn)", {
+      taskId,
+      resultCount: results.results.length,
+    });
+
+    jsonResponse(res, 202, {
+      taskId,
+      results: results.results,
+    } satisfies StartTaskResponse);
+
+    // Fire-and-forget: spawn agents in background
+    // spawnAllAgents already updates Convex task run status on success/failure
+    const { spawnArgs } = results;
+    void runWithAuth(authToken, authHeaderJson, async () => {
+      await spawnAllAgents(
         taskId as Id<"tasks">,
-        {
-          repoUrl,
-          branch,
-          taskDescription,
-          prTitle,
-          branchNames,
-          selectedAgents: agentsToSpawn,
-          taskRunIds: taskRunIds as Id<"taskRuns">[] | undefined,
-          isCloudMode,
-          environmentId: environmentId as Id<"environments"> | undefined,
-          images: imagesForSpawner,
-          theme,
-          autopilotOptions: autopilot
-            ? {
-                enabled: true,
-                totalMinutes: autopilotMinutes ?? 30,
-                turnMinutes: autopilotTurnMinutes ?? 5,
-                wrapUpMinutes: autopilotWrapUp ?? 3,
-              }
-            : undefined,
-        },
+        spawnArgs,
         teamSlugOrId
       );
-
-      return agentResults.map((result) => ({
-        agentName: result.agentName,
-        taskRunId: result.taskRunId,
-        vscodeUrl: result.vscodeUrl,
-        success: result.success,
-        error: result.error,
-      }));
+    }).catch((error) => {
+      serverLogger.error("[http-api] Background spawn failed", error);
     });
-
-    serverLogger.info("[http-api] start-task completed", {
-      taskId,
-      resultCount: results.length,
-    });
-
-    jsonResponse(res, 200, {
-      taskId,
-      results,
-    } satisfies StartTaskResponse);
   } catch (error) {
     serverLogger.error("[http-api] start-task failed", error);
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -831,46 +845,64 @@ async function handleOrchestrationSpawn(
 
       const preFetchedConfig = await spawnConfigResponse.json() as PreFetchedSpawnConfig;
 
-      // Spawn the agent (uses pre-fetched config since Stack Auth is not available)
-      const spawnResult = await spawnAgent(
-        agentConfig,
-        taskId as Id<"tasks">,
-        {
-          repoUrl: repo,
-          branch,
-          taskDescription: prompt,
-          isCloudMode,
-          environmentId: environmentId as Id<"environments"> | undefined,
-          taskRunId: taskRunId as Id<"taskRuns">,
-          preFetchedConfig,
-        },
-        teamSlugOrId,
-        newJwt
-      );
-
-      // Update orchestration task status (fire and forget - don't block on this)
-      fetch(`${convexSiteUrl}/api/orchestration/tasks/update`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Task-Run-JWT": taskRunJwt,
-        },
-        body: JSON.stringify(spawnResult.success
-          ? { orchestrationTaskId, status: "running", agentName: agent }
-          : { orchestrationTaskId, status: "failed", errorMessage: spawnResult.error ?? "Spawn failed" }
-        ),
-      }).catch((err) => {
-        serverLogger.error("[http-api] Failed to update orchestration task status", err);
-      });
-
-      jsonResponse(res, 200, {
+      // Return 202 immediately to avoid Cloudflare 524 timeout on slow providers
+      jsonResponse(res, 202, {
         orchestrationTaskId,
         taskId,
         taskRunId,
         agentName: agent,
-        vscodeUrl: spawnResult.vscodeUrl,
-        status: spawnResult.success ? "running" : "failed",
+        status: "spawning",
       } satisfies OrchestrationSpawnResponse);
+
+      // Fire-and-forget: spawn agent in background
+      void (async () => {
+        try {
+          const spawnResult = await spawnAgent(
+            agentConfig,
+            taskId as Id<"tasks">,
+            {
+              repoUrl: repo,
+              branch,
+              taskDescription: prompt,
+              isCloudMode,
+              environmentId: environmentId as Id<"environments"> | undefined,
+              taskRunId: taskRunId as Id<"taskRuns">,
+              preFetchedConfig,
+            },
+            teamSlugOrId,
+            newJwt
+          );
+
+          // Update orchestration task status
+          fetch(`${convexSiteUrl}/api/orchestration/tasks/update`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Task-Run-JWT": taskRunJwt,
+            },
+            body: JSON.stringify(spawnResult.success
+              ? { orchestrationTaskId, status: "running", agentName: agent }
+              : { orchestrationTaskId, status: "failed", errorMessage: spawnResult.error ?? "Spawn failed" }
+            ),
+          }).catch((err) => {
+            serverLogger.error("[http-api] Failed to update orchestration task status", err);
+          });
+        } catch (error) {
+          serverLogger.error("[http-api] Background orchestration spawn failed (jwt path)", error);
+          fetch(`${convexSiteUrl}/api/orchestration/tasks/update`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Task-Run-JWT": taskRunJwt,
+            },
+            body: JSON.stringify({
+              orchestrationTaskId,
+              status: "failed",
+              errorMessage: error instanceof Error ? error.message : String(error),
+            }),
+          }).catch(() => {});
+        }
+      })();
       return;
     }
 
@@ -931,17 +963,36 @@ async function handleOrchestrationSpawn(
         dependencies: dependencyIds,
       });
 
-      // Spawn the agent using existing infrastructure
-      const spawnResult = await spawnAgent(
+      return {
+        orchestrationTaskId: String(orchestrationTaskId),
+        taskId: String(taskId),
+        taskRunId: String(taskRunId),
+        agentName: agent,
         agentConfig,
-        taskId,
+      };
+    });
+
+    // Return 202 immediately to avoid Cloudflare 524 timeout on slow providers
+    jsonResponse(res, 202, {
+      orchestrationTaskId: result.orchestrationTaskId,
+      taskId: result.taskId,
+      taskRunId: result.taskRunId,
+      agentName: result.agentName,
+      status: "spawning",
+    } satisfies OrchestrationSpawnResponse);
+
+    // Fire-and-forget: spawn agent in background
+    void runWithAuth(authToken, authHeaderJson, async () => {
+      const spawnResult = await spawnAgent(
+        result.agentConfig,
+        result.taskId as Id<"tasks">,
         {
           repoUrl: repo,
           branch,
           taskDescription: prompt,
           isCloudMode,
           environmentId: environmentId as Id<"environments"> | undefined,
-          taskRunId,
+          taskRunId: result.taskRunId as Id<"taskRuns">,
         },
         teamSlugOrId
       );
@@ -949,30 +1000,21 @@ async function handleOrchestrationSpawn(
       // Update orchestration task with assignment
       if (spawnResult.success) {
         await getConvex().mutation(api.orchestrationQueries.assignTask, {
-          taskId: orchestrationTaskId,
+          taskId: result.orchestrationTaskId as Id<"orchestrationTasks">,
           agentName: agent,
         });
         await getConvex().mutation(api.orchestrationQueries.startTask, {
-          taskId: orchestrationTaskId,
+          taskId: result.orchestrationTaskId as Id<"orchestrationTasks">,
         });
       } else {
         await getConvex().mutation(api.orchestrationQueries.failTask, {
-          taskId: orchestrationTaskId,
+          taskId: result.orchestrationTaskId as Id<"orchestrationTasks">,
           errorMessage: spawnResult.error ?? "Spawn failed",
         });
       }
-
-      return {
-        orchestrationTaskId: String(orchestrationTaskId),
-        taskId: String(taskId),
-        taskRunId: String(taskRunId),
-        agentName: agent,
-        vscodeUrl: spawnResult.vscodeUrl,
-        status: spawnResult.success ? "running" : "failed",
-      };
+    }).catch((error) => {
+      serverLogger.error("[http-api] Background orchestration spawn failed (bearer path)", error);
     });
-
-    jsonResponse(res, 200, result satisfies OrchestrationSpawnResponse);
   } catch (error) {
     serverLogger.error("[http-api] orchestrate/spawn failed", error);
     const message = error instanceof Error ? error.message : "Unknown error";
