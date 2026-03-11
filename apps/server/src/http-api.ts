@@ -900,7 +900,9 @@ async function handleOrchestrationSpawn(
               status: "failed",
               errorMessage: error instanceof Error ? error.message : String(error),
             }),
-          }).catch(() => {});
+          }).catch((err) => {
+            serverLogger.error("[http-api] Failed to update orchestration task failure status", err);
+          });
         }
       })();
       return;
