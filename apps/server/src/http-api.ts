@@ -120,6 +120,52 @@ async function readJsonBody<T>(req: IncomingMessage): Promise<T | null> {
 }
 
 /**
+ * Get the Convex site URL for HTTP API calls.
+ * Prefers CONVEX_SITE_URL, falls back to NEXT_PUBLIC_CONVEX_URL.
+ */
+function getConvexSiteUrl(): string {
+  const url = env.CONVEX_SITE_URL ?? env.NEXT_PUBLIC_CONVEX_URL;
+  if (!url) {
+    throw new Error("Neither CONVEX_SITE_URL nor NEXT_PUBLIC_CONVEX_URL is configured");
+  }
+  return url;
+}
+
+/**
+ * Update an orchestration task's status via the Convex HTTP endpoint.
+ * Used by JWT-authenticated paths that cannot use the typed Convex client.
+ * Best-effort: logs errors but does not throw.
+ */
+function updateOrchestrationTaskViaHttp(
+  taskRunJwt: string,
+  body: {
+    orchestrationTaskId: string;
+    status: string;
+    agentName?: string;
+    errorMessage?: string;
+  }
+): void {
+  const convexSiteUrl = getConvexSiteUrl();
+  fetch(`${convexSiteUrl}/api/orchestration/tasks/update`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Task-Run-JWT": taskRunJwt,
+    },
+    body: JSON.stringify(body),
+  }).then((updateRes) => {
+    if (!updateRes.ok) {
+      serverLogger.error("[http-api] Orchestration task status update failed", {
+        status: updateRes.status,
+        orchestrationTaskId: body.orchestrationTaskId,
+      });
+    }
+  }).catch((err) => {
+    serverLogger.error("[http-api] Failed to update orchestration task status", err);
+  });
+}
+
+/**
  * Handle POST /api/start-task
  *
  * This is the HTTP equivalent of the socket.io "start-task" event.
@@ -222,12 +268,31 @@ async function handleStartTask(
       }
     }
 
-    // Run with auth context (both token and authHeaderJson needed for www API calls)
-    const results = await runWithAuth(authToken, authHeaderJson, async () => {
-      // Determine which agents to spawn
-      // Default to claude/opus-4.5 if no agent specified (matches CLI default)
-      // Must align with branchNames validation which also treats empty array as "unspecified"
-      const agentsToSpawn = selectedAgents && selectedAgents.length > 0 ? selectedAgents : ["claude/opus-4.5"];
+    // Determine which agents to spawn (pure computation from request body)
+    const agentsToSpawn = selectedAgents && selectedAgents.length > 0 ? selectedAgents : ["claude/opus-4.5"];
+
+    // Build 202 response immediately - no auth or DB calls needed
+    const responseResults = agentsToSpawn.map((agentName, i) => ({
+      agentName,
+      taskRunId: taskRunIds?.[i] ?? "",
+      status: "spawning" as const,
+      success: true,
+      vscodeUrl: undefined,
+    }));
+
+    serverLogger.info("[http-api] start-task returning 202 (async spawn)", {
+      taskId,
+      resultCount: responseResults.length,
+    });
+
+    jsonResponse(res, 202, {
+      taskId,
+      results: responseResults,
+    } satisfies StartTaskResponse);
+
+    // Fire-and-forget: all authenticated work + spawn in background
+    // spawnAllAgents already updates Convex task run status on success/failure
+    void runWithAuth(authToken, authHeaderJson, async () => {
       const agentCount = agentsToSpawn.length;
 
       // Fetch workspace settings for branchPrefix (same as socket.io handler)
@@ -235,8 +300,6 @@ async function handleStartTask(
         api.workspaceSettings.get,
         { teamSlugOrId }
       );
-      // Use configured prefix, or default if not set (undefined/null)
-      // Empty string is valid and means no prefix
       const branchPrefix =
         workspaceSettings?.branchPrefix !== undefined
           ? workspaceSettings.branchPrefix
@@ -264,7 +327,6 @@ async function handleStartTask(
       }
 
       // Fire-and-forget: generate AI PR title asynchronously (non-blocking)
-      // Mirrors the socket.io "start-task" handler behavior.
       if (!prTitle || prTitle.trim().length === 0) {
         void (async () => {
           try {
@@ -350,59 +412,29 @@ async function handleStartTask(
         }
       }
 
-      // Spawn all agents using the same code path as socket.io handler
-      // Return early with 202 to avoid Cloudflare 524 timeout on slow providers
-      const spawnArgs = {
-        repoUrl,
-        branch,
-        taskDescription,
-        prTitle,
-        branchNames,
-        selectedAgents: agentsToSpawn,
-        taskRunIds: taskRunIds as Id<"taskRuns">[] | undefined,
-        isCloudMode,
-        environmentId: environmentId as Id<"environments"> | undefined,
-        images: imagesForSpawner,
-        theme,
-        autopilotOptions: autopilot
-          ? {
-              enabled: true,
-              totalMinutes: autopilotMinutes ?? 30,
-              turnMinutes: autopilotTurnMinutes ?? 5,
-              wrapUpMinutes: autopilotWrapUp ?? 3,
-            }
-          : undefined,
-      };
-
-      return {
-        results: agentsToSpawn.map((agentName, i) => ({
-          agentName,
-          taskRunId: taskRunIds?.[i] ?? "",
-          status: "spawning" as const,
-          success: true,
-          vscodeUrl: undefined,
-        })),
-        spawnArgs,
-      };
-    });
-
-    serverLogger.info("[http-api] start-task returning 202 (async spawn)", {
-      taskId,
-      resultCount: results.results.length,
-    });
-
-    jsonResponse(res, 202, {
-      taskId,
-      results: results.results,
-    } satisfies StartTaskResponse);
-
-    // Fire-and-forget: spawn agents in background
-    // spawnAllAgents already updates Convex task run status on success/failure
-    const { spawnArgs } = results;
-    void runWithAuth(authToken, authHeaderJson, async () => {
       await spawnAllAgents(
         taskId as Id<"tasks">,
-        spawnArgs,
+        {
+          repoUrl,
+          branch,
+          taskDescription,
+          prTitle,
+          branchNames,
+          selectedAgents: agentsToSpawn,
+          taskRunIds: taskRunIds as Id<"taskRuns">[] | undefined,
+          isCloudMode,
+          environmentId: environmentId as Id<"environments"> | undefined,
+          images: imagesForSpawner,
+          theme,
+          autopilotOptions: autopilot
+            ? {
+                enabled: true,
+                totalMinutes: autopilotMinutes ?? 30,
+                turnMinutes: autopilotTurnMinutes ?? 5,
+                wrapUpMinutes: autopilotWrapUp ?? 3,
+              }
+            : undefined,
+        },
         teamSlugOrId
       );
     }).catch((error) => {
@@ -776,7 +808,7 @@ async function handleOrchestrationSpawn(
       }
 
       // Call Convex HTTP endpoint to create task and run (handles JWT validation internally)
-      const convexSiteUrl = env.CONVEX_SITE_URL ?? env.NEXT_PUBLIC_CONVEX_URL;
+      const convexSiteUrl = getConvexSiteUrl();
       const taskAndRunResponse = await fetch(`${convexSiteUrl}/api/orchestration/task-and-run`, {
         method: "POST",
         headers: {
@@ -874,34 +906,16 @@ async function handleOrchestrationSpawn(
           );
 
           // Update orchestration task status
-          fetch(`${convexSiteUrl}/api/orchestration/tasks/update`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Task-Run-JWT": taskRunJwt,
-            },
-            body: JSON.stringify(spawnResult.success
-              ? { orchestrationTaskId, status: "running", agentName: agent }
-              : { orchestrationTaskId, status: "failed", errorMessage: spawnResult.error ?? "Spawn failed" }
-            ),
-          }).catch((err) => {
-            serverLogger.error("[http-api] Failed to update orchestration task status", err);
-          });
+          updateOrchestrationTaskViaHttp(taskRunJwt, spawnResult.success
+            ? { orchestrationTaskId, status: "running", agentName: agent }
+            : { orchestrationTaskId, status: "failed", errorMessage: spawnResult.error ?? "Spawn failed" }
+          );
         } catch (error) {
           serverLogger.error("[http-api] Background orchestration spawn failed (jwt path)", error);
-          fetch(`${convexSiteUrl}/api/orchestration/tasks/update`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Task-Run-JWT": taskRunJwt,
-            },
-            body: JSON.stringify({
-              orchestrationTaskId,
-              status: "failed",
-              errorMessage: error instanceof Error ? error.message : String(error),
-            }),
-          }).catch((err) => {
-            serverLogger.error("[http-api] Failed to update orchestration task failure status", err);
+          updateOrchestrationTaskViaHttp(taskRunJwt, {
+            orchestrationTaskId,
+            status: "failed",
+            errorMessage: error instanceof Error ? error.message : String(error),
           });
         }
       })();
@@ -1001,12 +1015,9 @@ async function handleOrchestrationSpawn(
 
       // Update orchestration task with assignment
       if (spawnResult.success) {
-        await getConvex().mutation(api.orchestrationQueries.assignTask, {
+        await getConvex().mutation(api.orchestrationQueries.assignAndStartTask, {
           taskId: result.orchestrationTaskId as Id<"orchestrationTasks">,
           agentName: agent,
-        });
-        await getConvex().mutation(api.orchestrationQueries.startTask, {
-          taskId: result.orchestrationTaskId as Id<"orchestrationTasks">,
         });
       } else {
         await getConvex().mutation(api.orchestrationQueries.failTask, {
@@ -1220,7 +1231,7 @@ async function handleOrchestrationResults(
   try {
     // If using JWT auth, query via Convex HTTP endpoint
     if (taskRunJwt) {
-      const convexSiteUrl = env.CONVEX_SITE_URL || env.NEXT_PUBLIC_CONVEX_URL;
+      const convexSiteUrl = getConvexSiteUrl();
 
       const convexResponse = await fetch(
         `${convexSiteUrl}/api/orchestration/results?orchestrationId=${encodeURIComponent(orchestrationId)}`,
@@ -1388,7 +1399,7 @@ async function handleOrchestrationEvents(
   const fetchState = async () => {
     try {
       if (taskRunJwt) {
-        const convexSiteUrl = env.CONVEX_SITE_URL || env.NEXT_PUBLIC_CONVEX_URL;
+        const convexSiteUrl = getConvexSiteUrl();
         const response = await fetch(
           `${convexSiteUrl}/api/orchestration/pull?orchestrationId=${encodeURIComponent(orchestrationId)}`,
           {
@@ -1756,12 +1767,9 @@ Orchestration ID: ${orchestrationId}`;
 
       // Update orchestration task with assignment
       if (spawnResult.success) {
-        await getConvex().mutation(api.orchestrationQueries.assignTask, {
+        await getConvex().mutation(api.orchestrationQueries.assignAndStartTask, {
           taskId: orchestrationTaskId,
           agentName: headAgent,
-        });
-        await getConvex().mutation(api.orchestrationQueries.startTask, {
-          taskId: orchestrationTaskId,
         });
       } else {
         await getConvex().mutation(api.orchestrationQueries.failTask, {
@@ -1928,7 +1936,7 @@ async function handleOrchestrationInternalSpawn(
     }
 
     // Fetch spawn config via JWT-authenticated endpoint (needed for spawnAgent)
-    const convexSiteUrl = env.CONVEX_SITE_URL ?? env.NEXT_PUBLIC_CONVEX_URL;
+    const convexSiteUrl = getConvexSiteUrl();
     const spawnConfigResponse = await fetch(`${convexSiteUrl}/api/orchestration/spawn-config`, {
       method: "GET",
       headers: {
@@ -1967,32 +1975,10 @@ async function handleOrchestrationInternalSpawn(
     });
 
     // Update orchestration task status via Convex HTTP endpoint (best-effort, non-blocking)
-    // Wrapped in try-catch to prevent synchronous fetch errors from reaching the outer
-    // catch block which would attempt a second jsonResponse after 200 was already sent.
-    try {
-      fetch(`${convexSiteUrl}/api/orchestration/tasks/update`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Task-Run-JWT": taskRunJwt,
-        },
-        body: JSON.stringify(spawnResult.success
-          ? { orchestrationTaskId, status: "running", agentName }
-          : { orchestrationTaskId, status: "failed", errorMessage: spawnResult.error ?? "Spawn failed" }
-        ),
-      }).then((updateRes) => {
-        if (!updateRes.ok) {
-          serverLogger.error("[http-api] orchestration status update failed", {
-            status: updateRes.status,
-            orchestrationTaskId,
-          });
-        }
-      }).catch((err) => {
-        serverLogger.error("[http-api] Failed to update orchestration task status", err);
-      });
-    } catch (err) {
-      serverLogger.error("[http-api] Failed to initiate orchestration status update", err);
-    }
+    updateOrchestrationTaskViaHttp(taskRunJwt, spawnResult.success
+      ? { orchestrationTaskId, status: "running", agentName }
+      : { orchestrationTaskId, status: "failed", errorMessage: spawnResult.error ?? "Spawn failed" }
+    );
   } catch (error) {
     serverLogger.error("[http-api] orchestrate/internal/spawn failed", error);
     const message = error instanceof Error ? error.message : "Unknown error";
