@@ -568,6 +568,36 @@ export const startTask = authMutation({
 });
 
 /**
+ * Assign an agent to a task and mark it as running in a single mutation.
+ * Eliminates the race condition and extra round-trip of calling assignTask + startTask separately.
+ * Requires authentication and team membership.
+ */
+export const assignAndStartTask = authMutation({
+  args: {
+    taskId: v.id("orchestrationTasks"),
+    agentName: v.string(),
+    sandboxId: v.optional(v.string()),
+  },
+  handler: async (ctx, { taskId, agentName, sandboxId }) => {
+    const task = await ctx.db.get(taskId);
+    if (!task) throw new Error("Task not found");
+
+    // Verify user has access to task's team
+    await getTeamId(ctx, task.teamId);
+
+    const now = Date.now();
+    await ctx.db.patch(taskId, {
+      status: "running",
+      assignedAgentName: agentName,
+      assignedSandboxId: sandboxId,
+      assignedAt: now,
+      startedAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+/**
  * Complete a task successfully.
  * After completion, schedules immediate triggering of dependent tasks.
  * Requires authentication and team membership.
