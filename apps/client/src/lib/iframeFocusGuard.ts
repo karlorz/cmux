@@ -2,7 +2,16 @@ let focusGuardInitialized = false;
 let lastActiveElement: Element | null = null;
 let iframeFocusAllowedChecker: (iframe: HTMLIFrameElement) => boolean = () => true;
 let focusInHandler: ((event: FocusEvent) => void) | null = null;
+let windowBlurHandler: (() => void) | null = null;
+let windowFocusHandler: (() => void) | null = null;
 let focusGuardFallbackElement: HTMLDivElement | null = null;
+/**
+ * Tracks which iframe had focus before window blur.
+ * This is captured proactively on blur (before activeElement changes)
+ * so we can restore focus correctly on window refocus.
+ */
+let focusedIframeBeforeBlur: HTMLIFrameElement | null = null;
+let windowHasFocus = typeof document !== "undefined" ? document.hasFocus() : true;
 const FOCUS_GUARD_FALLBACK_ID = "cmux-iframe-focus-guard-fallback";
 const PERSISTENT_IFRAME_CONTAINER_ID = "persistent-iframe-container";
 const INTERACTIVE_FOCUS_RETENTION_ROLES = new Set([
@@ -266,6 +275,7 @@ export const ensureIframeFocusGuard = (): void => {
 
   focusGuardInitialized = true;
   lastActiveElement = document.activeElement;
+  windowHasFocus = document.hasFocus();
 
   const handleFocusIn = (event: FocusEvent) => {
     const target = event.target;
@@ -291,13 +301,94 @@ export const ensureIframeFocusGuard = (): void => {
     lastActiveElement = target;
   };
 
+  /**
+   * Capture iframe focus ownership BEFORE the window loses focus.
+   * This is critical because once the window blurs, document.activeElement
+   * may have already changed (especially for cross-origin iframes).
+   */
+  const handleWindowBlur = () => {
+    windowHasFocus = false;
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLIFrameElement) {
+      // Only remember if the iframe is focus-eligible
+      if (iframeFocusAllowedChecker(activeElement) && isIframeVisibleOnScreen(activeElement)) {
+        focusedIframeBeforeBlur = activeElement;
+      } else {
+        focusedIframeBeforeBlur = null;
+      }
+    } else {
+      focusedIframeBeforeBlur = null;
+    }
+  };
+
+  /**
+   * On window refocus, restore focus to the iframe that had it before blur,
+   * but only if it's still eligible for focus.
+   */
+  const handleWindowFocus = () => {
+    windowHasFocus = true;
+    const iframeToRestore = focusedIframeBeforeBlur;
+    focusedIframeBeforeBlur = null;
+
+    if (!iframeToRestore || !iframeToRestore.isConnected) {
+      return;
+    }
+
+    // Check if the iframe is still eligible for focus
+    if (!iframeFocusAllowedChecker(iframeToRestore) || !isIframeVisibleOnScreen(iframeToRestore)) {
+      return;
+    }
+
+    // Check if user has clicked on something else during refocus
+    const currentActive = document.activeElement;
+    if (isInteractiveFocusRetentionElement(currentActive)) {
+      return;
+    }
+
+    // Use a short delay to let the browser settle focus state
+    requestAnimationFrame(() => {
+      // Re-check conditions after the frame
+      if (!iframeToRestore.isConnected) {
+        return;
+      }
+      if (!iframeFocusAllowedChecker(iframeToRestore) || !isIframeVisibleOnScreen(iframeToRestore)) {
+        return;
+      }
+      const stillCurrentActive = document.activeElement;
+      if (isInteractiveFocusRetentionElement(stillCurrentActive)) {
+        return;
+      }
+
+      try {
+        iframeToRestore.focus({ preventScroll: true });
+        lastActiveElement = iframeToRestore;
+      } catch (error) {
+        console.error("Failed to restore iframe focus on window refocus", error);
+      }
+    });
+  };
+
   focusInHandler = handleFocusIn;
+  windowBlurHandler = handleWindowBlur;
+  windowFocusHandler = handleWindowFocus;
+
   document.addEventListener("focusin", handleFocusIn, true);
+  window.addEventListener("blur", handleWindowBlur);
+  window.addEventListener("focus", handleWindowFocus);
 };
 
 export const resetIframeFocusGuardForTests = (): void => {
   if (typeof document !== "undefined" && focusInHandler) {
     document.removeEventListener("focusin", focusInHandler, true);
+  }
+
+  if (typeof window !== "undefined") {
+    if (windowBlurHandler) {
+      window.removeEventListener("blur", windowBlurHandler);
+    }
+    if (windowFocusHandler) {
+      window.removeEventListener("focus", windowFocusHandler);
+    }
   }
 
   if (typeof document !== "undefined") {
@@ -307,6 +398,24 @@ export const resetIframeFocusGuardForTests = (): void => {
   focusGuardFallbackElement = null;
   focusGuardInitialized = false;
   focusInHandler = null;
+  windowBlurHandler = null;
+  windowFocusHandler = null;
   lastActiveElement = null;
+  focusedIframeBeforeBlur = null;
+  windowHasFocus = typeof document !== "undefined" ? document.hasFocus() : true;
   iframeFocusAllowedChecker = () => true;
+};
+
+/**
+ * Returns whether the window currently has focus.
+ * Useful for components that need to know focus state without querying document.hasFocus().
+ */
+export const getWindowHasFocus = (): boolean => windowHasFocus;
+
+/**
+ * Manually clear the stored iframe focus ownership.
+ * Call this when programmatically moving focus away from iframes.
+ */
+export const clearFocusedIframeBeforeBlur = (): void => {
+  focusedIframeBeforeBlur = null;
 };
