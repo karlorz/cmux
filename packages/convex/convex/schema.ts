@@ -1731,6 +1731,51 @@ const convexSchema = defineSchema({
     .index("by_task_run", ["taskRunId", "createdAt"])
     .index("by_event_id", ["eventId"]),
 
+  // Provider session bindings for task-bound resume and continuity
+  // Persists provider-specific session IDs (Claude session, Codex thread) per task
+  providerSessionBindings: defineTable({
+    orchestrationId: v.string(), // Parent orchestration
+    taskId: v.string(), // Orchestration task ID
+    taskRunId: v.optional(v.id("taskRuns")), // Link to task run
+    teamId: v.string(),
+    agentName: v.string(), // e.g., "claude/opus-4.5", "codex/gpt-5.1-codex"
+    provider: v.union(
+      v.literal("claude"),
+      v.literal("codex"),
+      v.literal("gemini"),
+      v.literal("opencode"),
+      v.literal("amp"),
+      v.literal("grok"),
+      v.literal("cursor"),
+      v.literal("qwen")
+    ),
+    mode: v.union(v.literal("head"), v.literal("worker"), v.literal("reviewer")),
+    // Provider-specific session identifiers
+    providerSessionId: v.optional(v.string()), // Claude session ID
+    providerThreadId: v.optional(v.string()), // Codex thread ID
+    providerConversationId: v.optional(v.string()), // Generic conversation ID
+    // Communication channel preference
+    replyChannel: v.optional(
+      v.union(v.literal("mailbox"), v.literal("sse"), v.literal("pty"), v.literal("ui"))
+    ),
+    // Lifecycle tracking
+    status: v.union(
+      v.literal("active"),
+      v.literal("suspended"),
+      v.literal("expired"),
+      v.literal("terminated")
+    ),
+    lastActiveAt: v.optional(v.number()),
+    expiresAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orchestration", ["orchestrationId", "createdAt"])
+    .index("by_task", ["taskId"])
+    .index("by_task_run", ["taskRunId"])
+    .index("by_team_provider", ["teamId", "provider", "status"])
+    .index("by_team_agent", ["teamId", "agentName", "status"]),
+
   // Projects for grouping related tasks and tracking aggregate progress
   // Supports plan storage, Obsidian integration, and progress metrics
   projects: defineTable({

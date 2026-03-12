@@ -85,6 +85,7 @@ import type * as preview_jobs_worker from "../preview_jobs_worker.js";
 import type * as preview_screenshots_http from "../preview_screenshots_http.js";
 import type * as projectQueries from "../projectQueries.js";
 import type * as providerOverrides from "../providerOverrides.js";
+import type * as providerSessions from "../providerSessions.js";
 import type * as pveLxcInstances from "../pveLxcInstances.js";
 import type * as pve_lxc_actions from "../pve_lxc_actions.js";
 import type * as resultAggregation from "../resultAggregation.js";
@@ -202,6 +203,7 @@ declare const fullApi: ApiFromModules<{
   preview_screenshots_http: typeof preview_screenshots_http;
   projectQueries: typeof projectQueries;
   providerOverrides: typeof providerOverrides;
+  providerSessions: typeof providerSessions;
   pveLxcInstances: typeof pveLxcInstances;
   pve_lxc_actions: typeof pve_lxc_actions;
   resultAggregation: typeof resultAggregation;
