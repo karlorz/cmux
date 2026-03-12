@@ -146,7 +146,7 @@ function FileChangeHeatmapContent({ teamSlugOrId, days = 7 }: FileChangeHeatmapP
   const sessions = useMemo(() => result?.items ?? [], [result?.items]);
 
   // Aggregate all file changes and group by directory
-  const { groups, maxAdditions } = useMemo(() => {
+  const { groups, maxAdditions, totalFiles, totalAdditions, totalDeletions } = useMemo(() => {
     const fileMap = new Map<string, FileChange>();
 
     // Aggregate changes across all sessions within the time period
@@ -202,18 +202,25 @@ function FileChangeHeatmapContent({ teamSlugOrId, days = 7 }: FileChangeHeatmapP
         files: group.files.sort((a, b) => b.additions - a.additions),
       }));
 
-    return { groups: sortedGroups, maxAdditions: maxAdd };
+    // Compute totals in the same pass
+    const totalFiles = sortedGroups.reduce((sum, g) => sum + g.files.length, 0);
+    const totalAdditions = sortedGroups.reduce((sum, g) => sum + g.totalAdditions, 0);
+    const totalDeletions = sortedGroups.reduce((sum, g) => sum + g.totalDeletions, 0);
+
+    return { groups: sortedGroups, maxAdditions: maxAdd, totalFiles, totalAdditions, totalDeletions };
   }, [sessions, days]);
 
-  // Track expanded directories
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Track expanded directories - initialize with top 3 when groups are available
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [initialized, setInitialized] = useState(false);
 
-  // Initialize expanded to top 3 directories when groups first load
+  // Initialize expanded to top 3 directories once when groups first load
   useEffect(() => {
-    if (groups.length > 0 && expanded.size === 0) {
+    if (groups.length > 0 && !initialized) {
       setExpanded(new Set(groups.slice(0, 3).map((g) => g.directory)));
+      setInitialized(true);
     }
-  }, [groups, expanded.size]);
+  }, [groups, initialized]);
 
   const toggleDir = (dir: string) => {
     setExpanded((prev) => {
@@ -245,10 +252,6 @@ function FileChangeHeatmapContent({ teamSlugOrId, days = 7 }: FileChangeHeatmapP
       </div>
     );
   }
-
-  const totalFiles = groups.reduce((sum, g) => sum + g.files.length, 0);
-  const totalAdditions = groups.reduce((sum, g) => sum + g.totalAdditions, 0);
-  const totalDeletions = groups.reduce((sum, g) => sum + g.totalDeletions, 0);
 
   return (
     <div className="space-y-3">
