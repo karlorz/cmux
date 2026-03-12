@@ -1,6 +1,7 @@
 import type { PersistentIframeStatus } from "@/components/persistent-iframe";
 import { PersistentWebView } from "@/components/persistent-webview";
 import { WorkspaceLoadingIndicator } from "@/components/workspace-loading-indicator";
+import { useVncClipboardBridge } from "@/hooks/useVncClipboardBridge";
 import { addBrowserReloadListener } from "@/lib/browser-reload-events";
 import { persistentIframeManager } from "@/lib/persistentIframeManager";
 import { getTaskRunBrowserPersistKey } from "@/lib/persistent-webview-keys";
@@ -64,6 +65,14 @@ function BrowserComponent() {
     () => getTaskRunBrowserPersistKey(taskRunId),
     [taskRunId]
   );
+
+  // Enable clipboard bridge only for VNC panel (vnc.html URLs)
+  const isVncPanel = Boolean(browserUrl?.includes("/vnc.html"));
+  useVncClipboardBridge({
+    persistKey,
+    enabled: isVncPanel,
+  });
+
   const hasBrowserView = Boolean(browserUrl);
   const isSupportedProvider =
     vscodeInfo?.provider === "morph" || vscodeInfo?.provider === "pve-lxc";

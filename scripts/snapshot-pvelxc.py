@@ -3151,6 +3151,88 @@ async def task_configure_openbox(ctx: PveTaskContext) -> None:
 
 
 @registry.task(
+    name="install-vnc-clipboard-bridge",
+    deps=("upload-repo", "install-base-packages"),
+    description="Install VNC clipboard bridge for cross-origin paste support",
+)
+@update_registry.task(
+    name="install-vnc-clipboard-bridge",
+    deps=("upload-repo",),  # novnc already installed
+    description="Install VNC clipboard bridge for cross-origin paste support",
+)
+async def task_install_vnc_clipboard_bridge(ctx: PveTaskContext) -> None:
+    """
+    Injects the VNC clipboard bridge script into /usr/share/novnc/vnc.html.
+
+    The bridge enables clipboard paste from the parent window (cmux client) into
+    the VNC session. The parent intercepts paste events when the iframe is focused
+    and sends clipboard text via postMessage. This script receives those messages
+    and injects the text into the VNC session using noVNC's RFB API.
+    """
+    repo = shlex.quote(ctx.remote_repo_root)
+    cmd = textwrap.dedent(
+        f"""
+        set -eux
+
+        NOVNC_DIR="/usr/share/novnc"
+        VNC_HTML="$NOVNC_DIR/vnc.html"
+        BRIDGE_SCRIPT="{repo}/packages/sandbox/scripts/vnc-clipboard-bridge.js"
+
+        if [ ! -f "$VNC_HTML" ]; then
+            echo "[vnc-clipboard-bridge] vnc.html not found at $VNC_HTML, skipping"
+            exit 0
+        fi
+
+        if [ ! -f "$BRIDGE_SCRIPT" ]; then
+            echo "[vnc-clipboard-bridge] Bridge script not found at $BRIDGE_SCRIPT" >&2
+            exit 1
+        fi
+
+        # Check if already injected
+        if grep -q "vnc-clipboard-bridge" "$VNC_HTML" 2>/dev/null; then
+            echo "[vnc-clipboard-bridge] Already installed, skipping"
+            exit 0
+        fi
+
+        # Create a backup
+        cp "$VNC_HTML" "$VNC_HTML.backup"
+
+        # Inject the script before </body> using Python for reliable multiline handling
+        BRIDGE_SCRIPT_PATH="$BRIDGE_SCRIPT" python3 << 'INJECT_SCRIPT'
+import os
+import sys
+
+vnc_html_path = "/usr/share/novnc/vnc.html"
+bridge_script_path = os.environ["BRIDGE_SCRIPT_PATH"]
+
+with open(bridge_script_path, "r") as f:
+    bridge_js = f.read()
+
+with open(vnc_html_path, "r") as f:
+    html = f.read()
+
+script_tag = f'''<script id="vnc-clipboard-bridge">
+{bridge_js}
+</script>
+'''
+
+if "</body>" not in html:
+    print("[vnc-clipboard-bridge] </body> tag not found in vnc.html", file=sys.stderr)
+    sys.exit(1)
+
+html = html.replace("</body>", script_tag + "</body>")
+
+with open(vnc_html_path, "w") as f:
+    f.write(html)
+
+print("[vnc-clipboard-bridge] Successfully installed into " + vnc_html_path)
+INJECT_SCRIPT
+        """
+    )
+    await ctx.run("install-vnc-clipboard-bridge", cmd)
+
+
+@registry.task(
     name="install-service-scripts",
     deps=("upload-repo", "install-base-packages"),
     description="Install VNC startup script (includes Chrome DevTools)",
@@ -3652,6 +3734,7 @@ PROFILE
     deps=(
         "configure-envctl",
         "configure-openbox",
+        "install-vnc-clipboard-bridge",
         "install-prompt-wrapper",
         "install-tmux-conf",
         "install-collect-scripts",
@@ -3665,6 +3748,7 @@ PROFILE
     name="cleanup-build-artifacts",
     deps=(
         "configure-envctl",
+        "install-vnc-clipboard-bridge",
         "install-prompt-wrapper",
         "install-tmux-conf",
         "install-collect-scripts",
