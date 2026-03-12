@@ -3212,7 +3212,7 @@ with open(vnc_html_path, "r") as f:
     html = f.read()
 
 script_tag = f'''<script id="vnc-clipboard-bridge">
-{bridge_js}
+{{bridge_js}}
 </script>
 '''
 
