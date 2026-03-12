@@ -791,6 +791,51 @@ sync_memory() {
     log "Added orchestration/EVENTS.jsonl"
   fi
 
+  # Sync behavior/HOT.md (self-improving behavior rules)
+  if [ -f "$MEMORY_DIR/behavior/HOT.md" ]; then
+    content=$(head -c $MAX_SIZE "$MEMORY_DIR/behavior/HOT.md" | jq -Rs .)
+    files_json=$(echo "$files_json" | jq --argjson c "$content" '. + [{"memoryType": "behavior_hot", "content": ($c), "fileName": "behavior/HOT.md"}]')
+    log "Added behavior/HOT.md"
+  fi
+
+  # Sync behavior/corrections.jsonl (correction log)
+  if [ -f "$MEMORY_DIR/behavior/corrections.jsonl" ] && [ -s "$MEMORY_DIR/behavior/corrections.jsonl" ]; then
+    content=$(head -c $MAX_SIZE "$MEMORY_DIR/behavior/corrections.jsonl" | jq -Rs .)
+    files_json=$(echo "$files_json" | jq --argjson c "$content" '. + [{"memoryType": "behavior_corrections", "content": ($c), "fileName": "behavior/corrections.jsonl"}]')
+    log "Added behavior/corrections.jsonl"
+  fi
+
+  # Sync behavior/index.json (behavior metadata)
+  if [ -f "$MEMORY_DIR/behavior/index.json" ]; then
+    content=$(head -c $MAX_SIZE "$MEMORY_DIR/behavior/index.json" | jq -Rs .)
+    files_json=$(echo "$files_json" | jq --argjson c "$content" '. + [{"memoryType": "behavior_index", "content": ($c), "fileName": "behavior/index.json"}]')
+    log "Added behavior/index.json"
+  fi
+
+  # Sync behavior domain files
+  if [ -d "$MEMORY_DIR/behavior/domains" ]; then
+    for domain_file in "$MEMORY_DIR/behavior/domains"/*.md; do
+      if [ -f "$domain_file" ]; then
+        filename=$(basename "$domain_file")
+        content=$(head -c $MAX_SIZE "$domain_file" | jq -Rs .)
+        files_json=$(echo "$files_json" | jq --argjson c "$content" --arg f "behavior/domains/$filename" '. + [{"memoryType": "behavior_domain", "content": ($c), "fileName": ($f)}]')
+        log "Added behavior/domains/$filename"
+      fi
+    done
+  fi
+
+  # Sync behavior project files
+  if [ -d "$MEMORY_DIR/behavior/projects" ]; then
+    for project_file in "$MEMORY_DIR/behavior/projects"/*.md; do
+      if [ -f "$project_file" ]; then
+        filename=$(basename "$project_file")
+        content=$(head -c $MAX_SIZE "$project_file" | jq -Rs .)
+        files_json=$(echo "$files_json" | jq --argjson c "$content" --arg f "behavior/projects/$filename" '. + [{"memoryType": "behavior_project", "content": ($c), "fileName": ($f)}]')
+        log "Added behavior/projects/$filename"
+      fi
+    done
+  fi
+
   # Check if we have any files to sync
   file_count=$(echo "$files_json" | jq 'length')
   if [ "$file_count" -eq 0 ]; then

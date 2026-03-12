@@ -249,3 +249,131 @@ export const getLatestTeamMailboxInternal = internalQuery({
     return JSON.stringify(mergedMailbox, null, 2);
   },
 });
+
+// =============================================================================
+// Behavior Memory Queries (self-improving preferences)
+// =============================================================================
+
+/**
+ * Get the latest behavior HOT memory snapshot for a team.
+ * Used for cross-run memory seeding - new sandboxes get previous run's behavior rules.
+ *
+ * Returns the most recent "behavior_hot" type snapshot content, or null if none exists.
+ */
+export const getLatestTeamBehaviorHot = authQuery({
+  args: { teamSlugOrId: v.string() },
+  handler: async (ctx, args): Promise<string | null> => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+
+    const snapshot = await ctx.db
+      .query("agentMemorySnapshots")
+      .withIndex("by_team_type", (q) =>
+        q.eq("teamId", teamId).eq("memoryType", "behavior_hot")
+      )
+      .order("desc")
+      .first();
+
+    if (!snapshot) {
+      return null;
+    }
+
+    // Return content if it's non-empty and has actual rules
+    const content = snapshot.content?.trim();
+    if (!content || content.length < 50) {
+      return null;
+    }
+
+    return snapshot.content;
+  },
+});
+
+/**
+ * Internal query to get the latest team behavior HOT for JWT-based spawns.
+ * Used by orchestration HTTP endpoints when Stack Auth is not available.
+ */
+export const getLatestTeamBehaviorHotInternal = internalQuery({
+  args: { teamId: v.string() },
+  handler: async (ctx, args): Promise<string | null> => {
+    const snapshot = await ctx.db
+      .query("agentMemorySnapshots")
+      .withIndex("by_team_type", (q) =>
+        q.eq("teamId", args.teamId).eq("memoryType", "behavior_hot")
+      )
+      .order("desc")
+      .first();
+
+    if (!snapshot) {
+      return null;
+    }
+
+    const content = snapshot.content?.trim();
+    if (!content || content.length < 50) {
+      return null;
+    }
+
+    return snapshot.content;
+  },
+});
+
+/**
+ * Get all behavior memory snapshots for a team.
+ * Returns behavior_hot, behavior_corrections, behavior_domain, behavior_project, and behavior_index.
+ */
+export const getTeamBehaviorMemory = authQuery({
+  args: { teamSlugOrId: v.string() },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+
+    const behaviorTypes = [
+      "behavior_hot",
+      "behavior_corrections",
+      "behavior_domain",
+      "behavior_project",
+      "behavior_index",
+    ] as const;
+
+    type MemorySnapshot = {
+      _id: string;
+      _creationTime: number;
+      taskRunId: string;
+      teamId: string;
+      userId: string;
+      agentName?: string;
+      memoryType: string;
+      content: string;
+      fileName?: string;
+      date?: string;
+      truncated?: boolean;
+      createdAt: number;
+    };
+
+    const results: Record<string, MemorySnapshot[]> = {};
+
+    for (const memoryType of behaviorTypes) {
+      const snapshots = await ctx.db
+        .query("agentMemorySnapshots")
+        .withIndex("by_team_type", (q) =>
+          q.eq("teamId", teamId).eq("memoryType", memoryType)
+        )
+        .order("desc")
+        .take(10);
+
+      results[memoryType] = snapshots.map((s) => ({
+        _id: s._id,
+        _creationTime: s._creationTime,
+        taskRunId: s.taskRunId,
+        teamId: s.teamId,
+        userId: s.userId,
+        agentName: s.agentName,
+        memoryType: s.memoryType,
+        content: s.content,
+        fileName: s.fileName,
+        date: s.date,
+        truncated: s.truncated,
+        createdAt: s.createdAt,
+      }));
+    }
+
+    return results;
+  },
+});
