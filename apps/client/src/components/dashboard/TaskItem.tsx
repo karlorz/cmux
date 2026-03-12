@@ -22,7 +22,9 @@ import {
   Box,
   Check,
   Copy,
+  GitCommitVertical,
   GitMerge,
+  GitPullRequestArrow,
   Loader2,
   Pencil,
   Pin,
@@ -69,6 +71,12 @@ export const TaskItem = memo(function TaskItem({
   // Query for task runs to find VSCode instances
   const taskRunsQuery = useConvexQuery(
     api.taskRuns.getByTask,
+    isFakeConvexId(task._id) ? "skip" : { teamSlugOrId, taskId: task._id }
+  );
+
+  // Query session activity stats for this task
+  const taskStats = useConvexQuery(
+    api.sessionActivity.getTaskStats,
     isFakeConvexId(task._id) ? "skip" : { teamSlugOrId, taskId: task._id }
   );
 
@@ -329,7 +337,7 @@ export const TaskItem = memo(function TaskItem({
                 />
               )}
             </div>
-            <div className="min-w-0 flex items-center">
+            <div className="min-w-0 flex items-center gap-1.5">
               {isRenaming ? (
                 <input
                   ref={renameInputRef}
@@ -359,6 +367,40 @@ export const TaskItem = memo(function TaskItem({
                 <span className="text-[13px] font-medium truncate min-w-0 pr-1">
                   {task.text}
                 </span>
+              )}
+              {/* Inline activity stats badges */}
+              {taskStats && !isRenaming && (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {taskStats.totalCommits > 0 && (
+                    <span className="inline-flex items-center gap-0.5 text-[10px] tabular-nums text-neutral-400 dark:text-neutral-500">
+                      <GitCommitVertical className="size-3" />
+                      {taskStats.totalCommits}
+                    </span>
+                  )}
+                  {taskStats.totalPRs > 0 && (
+                    <span className="inline-flex items-center gap-0.5 text-[10px] tabular-nums text-purple-400 dark:text-purple-500">
+                      <GitPullRequestArrow className="size-3" />
+                      {taskStats.totalPRs}
+                    </span>
+                  )}
+                  {(taskStats.totalAdditions > 0 || taskStats.totalDeletions > 0) && (
+                    <span className="text-[10px] tabular-nums">
+                      {taskStats.totalAdditions > 0 && (
+                        <span className="text-emerald-500 dark:text-emerald-400">
+                          +{taskStats.totalAdditions}
+                        </span>
+                      )}
+                      {taskStats.totalAdditions > 0 && taskStats.totalDeletions > 0 && (
+                        <span className="text-neutral-300 dark:text-neutral-600">/</span>
+                      )}
+                      {taskStats.totalDeletions > 0 && (
+                        <span className="text-red-400 dark:text-red-500">
+                          -{taskStats.totalDeletions}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </div>
               )}
             </div>
             <div className="text-[11px] text-neutral-400 dark:text-neutral-500 min-w-0 text-right flex items-center justify-end gap-2">
