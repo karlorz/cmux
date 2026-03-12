@@ -103,7 +103,7 @@ echo "[3/4] Checking task runs for idle detection..."
 
 RUNS_OUTPUT=$(get_task_runs_json "$TASK_ID")
 
-RUN_COUNT=$(echo "$RUNS_OUTPUT" | grep -c '"runId"' || echo "0")
+RUN_COUNT=$(echo "$RUNS_OUTPUT" | grep -c '"agent"' || echo "0")
 echo "       Found $RUN_COUNT run(s)"
 
 EXIT_CODE=$(extract_json_number "$RUNS_OUTPUT" "exitCode")

@@ -122,6 +122,11 @@ check_prerequisites() {
   if ! command -v devsh &> /dev/null; then
     echo "[SETUP] devsh not found, building..."
     make install-devsh-dev
+    export PATH="$HOME/.local/bin:$PATH"
+    if ! command -v devsh &> /dev/null; then
+      echo "[ERROR] devsh still not found after install"
+      exit 1
+    fi
   fi
 
   if [ -z "${CMUX_AUTH_TOKEN:-}" ]; then
@@ -156,6 +161,9 @@ create_autopilot_task() {
 }
 
 # Poll task status until terminal state. Prints final status to stdout.
+# devsh task status --json returns TaskDetail which has isCompleted/isArchived
+# (no top-level "status" field). We derive status from those booleans and
+# check that all taskRuns are terminal for multi-agent tasks.
 # Args: <task_id> [timeout_seconds] [poll_interval_seconds]
 poll_until_terminal() {
   local task_id="$1"
@@ -168,7 +176,34 @@ poll_until_terminal() {
 
   while true; do
     status_output=$(devsh task status "$task_id" --json 2>&1 || echo "{}")
-    current_status=$(echo "$status_output" | grep -oP '"status":\s*"\K[^"]+' | head -1 || echo "unknown")
+
+    # Derive task-level status from TaskDetail booleans
+    local is_completed is_archived
+    is_completed=$(extract_json_bool "$status_output" "isCompleted")
+    is_archived=$(extract_json_bool "$status_output" "isArchived")
+
+    if [ "$is_archived" = "true" ]; then
+      current_status="archived"
+    elif [ "$is_completed" = "true" ]; then
+      # Check if all runs are in terminal state
+      local run_statuses all_terminal
+      run_statuses=$(echo "$status_output" | grep -oP '"status":\s*"\K[^"]+' || echo "")
+      all_terminal="true"
+      for rs in $run_statuses; do
+        if ! echo "$rs" | grep -qiE "^(completed|stopped|failed)$"; then
+          all_terminal="false"
+          break
+        fi
+      done
+      if [ "$all_terminal" = "true" ]; then
+        current_status="completed"
+      else
+        current_status="running"
+      fi
+    else
+      # Not completed yet; report first run status for progress
+      current_status=$(echo "$status_output" | grep -oP '"status":\s*"\K[^"]+' | head -1 || echo "pending")
+    fi
 
     if [ "$current_status" != "$last_status" ]; then
       elapsed=$(( $(date +%s) - start_time ))

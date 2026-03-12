@@ -139,7 +139,7 @@ if [ -z "$SCENARIO" ] || [ "$SCENARIO" = "plan-to-completion" ]; then
     else
       # Check runs
       RUNS_OUTPUT=$(get_task_runs_json "$TASK_ID")
-      RUN_COUNT=$(echo "$RUNS_OUTPUT" | grep -c '"runId"' || echo "0")
+      RUN_COUNT=$(echo "$RUNS_OUTPUT" | grep -c '"agent"' || echo "0")
 
       assert_contains "plan-to-completion: terminal status" "completed stopped" "$FINAL_STATUS"
       assert_gt "plan-to-completion: has at least one run" "$RUN_COUNT" 0
@@ -197,7 +197,7 @@ if [ -z "$SCENARIO" ] || [ "$SCENARIO" = "multi-agent-spawn" ]; then
 
     if [ "$FINAL_STATUS" != "timeout" ]; then
       RUNS_OUTPUT=$(get_task_runs_json "$TASK_ID")
-      RUN_COUNT=$(echo "$RUNS_OUTPUT" | grep -c '"runId"' || echo "0")
+      RUN_COUNT=$(echo "$RUNS_OUTPUT" | grep -c '"agent"' || echo "0")
       assert_eq "multi-agent-spawn: 2 runs exist" "2" "$RUN_COUNT"
 
       if echo "$FINAL_STATUS" | grep -qiE "^(completed|stopped)$"; then
@@ -306,8 +306,19 @@ if [ -z "$SCENARIO" ] || [ "$SCENARIO" = "status-tracking" ]; then
 
     while true; do
       STATUS_OUTPUT=$(devsh task status "$TASK_ID" --json 2>&1 || echo "{}")
-      CURRENT_STATUS=$(echo "$STATUS_OUTPUT" | grep -oP '"status":\s*"\K[^"]+' | head -1 || echo "unknown")
+      # Derive task status from TaskDetail booleans (no top-level "status" field)
+      IS_COMPLETED=$(extract_json_bool "$STATUS_OUTPUT" "isCompleted")
+      IS_ARCHIVED=$(extract_json_bool "$STATUS_OUTPUT" "isArchived")
       AUTOPILOT_STATUS=$(extract_json_field "$STATUS_OUTPUT" "autopilotStatus")
+
+      if [ "$IS_ARCHIVED" = "true" ]; then
+        CURRENT_STATUS="archived"
+      elif [ "$IS_COMPLETED" = "true" ]; then
+        CURRENT_STATUS="completed"
+      else
+        # Use first run status for progress tracking
+        CURRENT_STATUS=$(echo "$STATUS_OUTPUT" | grep -oP '"status":\s*"\K[^"]+' | head -1 || echo "pending")
+      fi
 
       # Track observed statuses
       OBSERVED_STATUSES="${OBSERVED_STATUSES} ${CURRENT_STATUS}"
