@@ -125,7 +125,7 @@ for index in range(0, len(files), batch_size):
     batch_path = tmp_dir / f"batch-{index // batch_size}.json"
     batch_path.write_text(json.dumps(batch), encoding="utf-8")
     batch_paths.append(str(batch_path))
-batch_list_file.write_text("\n".join(batch_paths), encoding="utf-8")
+batch_list_file.write_text("\n".join(batch_paths) + "\n", encoding="utf-8")
 PY
 
 run_batch() {
