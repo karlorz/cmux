@@ -1,17 +1,28 @@
 ---
 name: simplify
 description: Review and simplify recently changed code for reuse, clarity, and efficiency while preserving behavior. Use when the user asks to simplify, refine, polish, clean up, or make code clearer, or after finishing a logical chunk of implementation that should be tightened before commit.
+args: "[<base-ref>]"
 ---
 
 # Simplify
 
 Use this skill to improve recently changed code without changing what it does.
 
+## Usage
+
+```
+/simplify              # Review current uncommitted changes
+/simplify HEAD~3       # Review changes from 3 commits ago to HEAD
+/simplify main         # Review changes from main branch to HEAD
+/simplify abc123       # Review changes from commit abc123 to HEAD
+```
+
 ## Workflow
 
 ### 1. Scope the review
 
-- Prefer the current diff first.
+- If a `<base-ref>` argument is provided, use `git diff <base-ref>..HEAD` to get all changes from that reference to HEAD.
+- Otherwise, prefer the current diff first.
 - Use `git diff` for unstaged changes, or `git diff HEAD` when staged changes exist and you want the full working-tree delta.
 - If there are no git changes, review files the user named or files you edited earlier in the session.
 - Keep the scope narrow unless the user asks for a broader refactor.

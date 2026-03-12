@@ -14,20 +14,31 @@ interface UseVncClipboardBridgeOptions {
 }
 
 /**
+ * Message type identifier for clipboard paste messages.
+ * Must match the value in packages/sandbox/scripts/vnc-clipboard-bridge.js
+ */
+const VNC_CLIPBOARD_MESSAGE_TYPE = "vnc-clipboard-paste" as const;
+
+/**
  * Message type sent to the iframe for clipboard paste
  */
 interface VncClipboardPasteMessage {
-  type: "vnc-clipboard-paste";
+  type: typeof VNC_CLIPBOARD_MESSAGE_TYPE;
   text: string;
 }
 
+/**
+ * Type guard for VncClipboardPasteMessage.
+ * Note: This logic is duplicated in packages/sandbox/scripts/vnc-clipboard-bridge.js
+ * because the bridge script runs in a separate context and cannot import this module.
+ */
 function isVncClipboardPasteMessage(
   data: unknown
 ): data is VncClipboardPasteMessage {
   return (
     typeof data === "object" &&
     data !== null &&
-    (data as VncClipboardPasteMessage).type === "vnc-clipboard-paste" &&
+    (data as VncClipboardPasteMessage).type === VNC_CLIPBOARD_MESSAGE_TYPE &&
     typeof (data as VncClipboardPasteMessage).text === "string"
   );
 }
@@ -63,62 +74,47 @@ export function useVncClipboardBridge({
     const isMac = isMacRef.current;
 
     /**
-     * Check if the VNC iframe is currently focused
+     * Get the iframe element if it's currently focused.
+     * Returns the iframe with contentWindow if focused, null otherwise.
+     * This combines focus check and element retrieval to avoid redundant lookups.
      */
-    const isIframeFocused = (): boolean => {
+    const getFocusedIframe = (): HTMLIFrameElement | null => {
       const iframe = persistentIframeManager.getIframeElement(persistKey);
-      if (!iframe) {
-        return false;
+      if (!iframe?.contentWindow) {
+        return null;
       }
 
       // Check if iframe itself is focused (document.activeElement === iframe)
       // or if we're in a wrapper that contains focus
       const wrapper = persistentIframeManager.getIframeWrapperElement(persistKey);
       if (!wrapper) {
-        return false;
+        return null;
       }
 
       const activeElement = document.activeElement;
-      return activeElement === iframe || wrapper.contains(activeElement);
+      const isFocused = activeElement === iframe || wrapper.contains(activeElement);
+      return isFocused ? iframe : null;
     };
 
     /**
      * Send clipboard text to the iframe via postMessage
      */
-    const sendClipboardToIframe = (text: string): void => {
-      const iframe = persistentIframeManager.getIframeElement(persistKey);
-      if (!iframe?.contentWindow) {
-        return;
-      }
-
+    const sendClipboardToIframe = (iframe: HTMLIFrameElement, text: string): void => {
       const message: VncClipboardPasteMessage = {
-        type: "vnc-clipboard-paste",
+        type: VNC_CLIPBOARD_MESSAGE_TYPE,
         text,
       };
 
       // Send to iframe - use '*' for origin since the iframe is cross-origin
-      iframe.contentWindow.postMessage(message, "*");
-    };
-
-    /**
-     * Read clipboard and send to iframe
-     */
-    const pasteClipboardToIframe = async (): Promise<void> => {
-      try {
-        const text = await navigator.clipboard.readText();
-        if (text) {
-          sendClipboardToIframe(text);
-        }
-      } catch (error) {
-        console.error("[VncClipboardBridge] Failed to read clipboard:", error);
-      }
+      iframe.contentWindow?.postMessage(message, "*");
     };
 
     /**
      * Handle paste events when the iframe is focused
      */
     const handlePaste = (event: ClipboardEvent): void => {
-      if (!isIframeFocused()) {
+      const iframe = getFocusedIframe();
+      if (!iframe) {
         return;
       }
 
@@ -129,15 +125,16 @@ export function useVncClipboardBridge({
       if (text) {
         event.preventDefault();
         event.stopPropagation();
-        sendClipboardToIframe(text);
+        sendClipboardToIframe(iframe, text);
       }
     };
 
     /**
      * Handle keyboard shortcuts (Cmd+V on Mac, Ctrl+V on other platforms)
      */
-    const handleKeyDown = async (event: KeyboardEvent): Promise<void> => {
-      if (!isIframeFocused()) {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      const iframe = getFocusedIframe();
+      if (!iframe) {
         return;
       }
 
@@ -151,7 +148,17 @@ export function useVncClipboardBridge({
       if (isPasteShortcut) {
         event.preventDefault();
         event.stopPropagation();
-        await pasteClipboardToIframe();
+        // Read clipboard and send - fire-and-forget to avoid blocking
+        navigator.clipboard.readText().then(
+          (text) => {
+            if (text) {
+              sendClipboardToIframe(iframe, text);
+            }
+          },
+          (error) => {
+            console.error("[VncClipboardBridge] Failed to read clipboard:", error);
+          }
+        );
       }
     };
 

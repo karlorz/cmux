@@ -9,6 +9,8 @@
  * postMessage. This script receives those messages and injects the text into
  * the VNC session using noVNC's RFB API.
  *
+ * Related file: apps/client/src/hooks/useVncClipboardBridge.ts (parent-side hook)
+ *
  * Key X11 symbols for keyboard simulation:
  * - XK_Control_L: 0xffe3
  * - XK_Meta_L: 0xffe7
@@ -21,13 +23,21 @@
 (function () {
   'use strict';
 
-  // Key symbols for VNC keyboard simulation
+  /**
+   * Message type identifier - must match VNC_CLIPBOARD_MESSAGE_TYPE in useVncClipboardBridge.ts
+   */
+  var MESSAGE_TYPE = 'vnc-clipboard-paste';
+
+  // Key symbols for VNC keyboard simulation (same values as in vnc-viewer.tsx)
   var XK_Meta_L = 0xffe7;
   var XK_Meta_R = 0xffe8;
   var XK_Super_L = 0xffeb;
   var XK_Super_R = 0xffec;
   var XK_Control_L = 0xffe3;
   var XK_v = 0x0076;
+
+  // Debounce timeout ID to prevent stacking rapid paste requests
+  var pendingPasteTimeout = null;
 
   /**
    * Get the RFB instance from noVNC.
@@ -72,8 +82,17 @@
         return;
       }
 
-      // Wait a bit for the clipboard to be set, then simulate Ctrl+V
-      setTimeout(function () {
+      // Clear any pending paste to debounce rapid requests
+      if (pendingPasteTimeout !== null) {
+        clearTimeout(pendingPasteTimeout);
+      }
+
+      // Wait 50ms for clipboardPasteFrom to propagate to the remote clipboard
+      // before simulating Ctrl+V. This delay is necessary because the VNC
+      // clipboard sync is asynchronous.
+      pendingPasteTimeout = setTimeout(function () {
+        pendingPasteTimeout = null;
+
         if (typeof rfb.sendKey !== 'function') {
           console.warn('[VNC Clipboard Bridge] sendKey not available');
           return;
@@ -102,11 +121,16 @@
    * @param {*} data - The message data to validate
    * @returns {boolean} - True if valid clipboard paste message
    */
+  /**
+   * Type guard for clipboard paste messages.
+   * Note: This logic is duplicated from apps/client/src/hooks/useVncClipboardBridge.ts
+   * because this script runs in a separate context and cannot import the TypeScript module.
+   */
   function isVncClipboardPasteMessage(data) {
     return (
       typeof data === 'object' &&
       data !== null &&
-      data.type === 'vnc-clipboard-paste' &&
+      data.type === MESSAGE_TYPE &&
       typeof data.text === 'string'
     );
   }
