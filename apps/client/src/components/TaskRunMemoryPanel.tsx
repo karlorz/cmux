@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
-import { Brain, FileText, Calendar, CheckSquare, Mail, AlertCircle, Clock, ArrowRight, Megaphone, MessageSquare, CheckCheck, Zap, ListChecks, FolderTree, Sparkles } from "lucide-react";
+import { Brain, FileText, Calendar, CheckSquare, Mail, AlertCircle, Clock, ArrowRight, Megaphone, MessageSquare, CheckCheck, Zap, ListChecks, FolderTree, Sparkles, Eye } from "lucide-react";
 import clsx from "clsx";
 
 export interface TaskRunMemoryPanelProps {
@@ -14,7 +14,7 @@ export interface TaskRunMemoryPanelProps {
 type FactualMemoryType = "knowledge" | "daily" | "tasks" | "mailbox";
 
 // Behavior memory types (self-improving preferences)
-type BehaviorMemoryType = "behavior_hot" | "behavior_corrections" | "behavior_domain" | "behavior_project" | "behavior_index";
+type BehaviorMemoryType = "behavior_hot" | "behavior_corrections" | "behavior_domain" | "behavior_project" | "behavior_index" | "behavior_provenance";
 
 type MemoryType = FactualMemoryType | BehaviorMemoryType;
 
@@ -33,6 +33,7 @@ const MEMORY_TYPE_LABELS: Record<MemoryType, string> = {
   behavior_domain: "Domain Rules",
   behavior_project: "Project Rules",
   behavior_index: "Index",
+  behavior_provenance: "Applied",
 };
 
 const MEMORY_TYPE_ICONS: Record<MemoryType, React.ElementType> = {
@@ -47,10 +48,11 @@ const MEMORY_TYPE_ICONS: Record<MemoryType, React.ElementType> = {
   behavior_domain: FolderTree,
   behavior_project: FileText,
   behavior_index: Sparkles,
+  behavior_provenance: Eye,
 };
 
 const FACTUAL_MEMORY_TYPES: FactualMemoryType[] = ["knowledge", "daily", "tasks", "mailbox"];
-const BEHAVIOR_MEMORY_TYPES: BehaviorMemoryType[] = ["behavior_hot", "behavior_corrections", "behavior_domain", "behavior_project", "behavior_index"];
+const BEHAVIOR_MEMORY_TYPES: BehaviorMemoryType[] = ["behavior_provenance", "behavior_hot", "behavior_corrections", "behavior_domain", "behavior_project", "behavior_index"];
 
 export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPanelProps) {
   const [selectedCategory, setSelectedCategory] = useState<MemoryCategory>("factual");
@@ -62,11 +64,17 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
     taskRunId ? { teamSlugOrId, taskRunId } : "skip"
   );
 
+  // Query provenance data (rules applied during this task run)
+  const provenance = useQuery(
+    api.agentMemoryQueries.getBehaviorRulesForTaskRun,
+    taskRunId ? { teamSlugOrId, taskRunId } : "skip"
+  );
+
   // Group snapshots by type
   const snapshotsByType = useMemo(() => {
     if (!snapshots) return null;
 
-    const grouped: Record<MemoryType, typeof snapshots> = {
+    const grouped: Record<Exclude<MemoryType, "behavior_provenance">, typeof snapshots> = {
       // Factual
       knowledge: [],
       daily: [],
@@ -81,8 +89,8 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
     };
 
     for (const snapshot of snapshots) {
-      const type = snapshot.memoryType as MemoryType;
-      if (grouped[type]) {
+      const type = snapshot.memoryType as Exclude<MemoryType, "behavior_provenance">;
+      if (type in grouped) {
         grouped[type].push(snapshot);
       }
     }
@@ -97,11 +105,19 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
     return grouped;
   }, [snapshots]);
 
-  // Check if any behavior memory exists
+  // Check if any behavior memory exists (including provenance)
   const hasBehaviorMemory = useMemo(() => {
+    // Check provenance data
+    const hasProvenance = provenance && (provenance.rules.length > 0 || provenance.events.length > 0);
+    if (hasProvenance) return true;
+    // Check snapshot-based behavior memory
     if (!snapshotsByType) return false;
-    return BEHAVIOR_MEMORY_TYPES.some((type) => snapshotsByType[type].length > 0);
-  }, [snapshotsByType]);
+    const snapshotTypes = ["behavior_hot", "behavior_corrections", "behavior_domain", "behavior_project", "behavior_index"] as const;
+    return snapshotTypes.some((type) => snapshotsByType[type]?.length > 0);
+  }, [snapshotsByType, provenance]);
+
+  // Get provenance count for tab display
+  const provenanceCount = provenance?.rules.length ?? 0;
 
   // Get available dates for daily logs
   const dailyDates = useMemo(() => {
@@ -111,6 +127,9 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
 
   // Get the selected snapshot content
   const selectedContent = useMemo(() => {
+    // Provenance is handled separately
+    if (selectedType === "behavior_provenance") return null;
+
     if (!snapshotsByType) return null;
 
     if (selectedType === "daily") {
@@ -122,7 +141,8 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
     }
 
     // For other types, get the first (and only) snapshot
-    return snapshotsByType[selectedType][0] ?? null;
+    const typeSnapshots = snapshotsByType[selectedType as keyof typeof snapshotsByType];
+    return typeSnapshots?.[0] ?? null;
   }, [snapshotsByType, selectedType, selectedDate, dailyDates]);
 
   // Empty state - no task run selected (check before loading to avoid spinner when skipped)
@@ -176,11 +196,16 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
           if (category === "factual") {
             setSelectedType("knowledge");
           } else {
-            // Find first behavior type with content
-            const firstWithContent = BEHAVIOR_MEMORY_TYPES.find(
-              (type) => (snapshotsByType?.[type]?.length ?? 0) > 0
-            );
-            setSelectedType(firstWithContent ?? "behavior_hot");
+            // Find first behavior type with content (check provenance first)
+            if (provenanceCount > 0) {
+              setSelectedType("behavior_provenance");
+            } else {
+              const snapshotBehaviorTypes = ["behavior_hot", "behavior_corrections", "behavior_domain", "behavior_project", "behavior_index"] as const;
+              const firstWithContent = snapshotBehaviorTypes.find(
+                (type) => (snapshotsByType?.[type]?.length ?? 0) > 0
+              );
+              setSelectedType(firstWithContent ?? "behavior_provenance");
+            }
           }
         }}
         className={clsx(
@@ -200,7 +225,10 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
 
   const renderTabButton = (type: MemoryType) => {
     const Icon = MEMORY_TYPE_ICONS[type];
-    const count = snapshotsByType?.[type]?.length ?? 0;
+    // Provenance uses rules count, others use snapshot count
+    const count = type === "behavior_provenance"
+      ? provenanceCount
+      : (snapshotsByType?.[type as Exclude<MemoryType, "behavior_provenance">]?.length ?? 0);
     const isActive = selectedType === type;
 
     return (
@@ -224,7 +252,7 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
       >
         <Icon className="size-3.5" />
         {MEMORY_TYPE_LABELS[type]}
-        {count > 1 && (
+        {count > 0 && (
           <span className="text-[10px] text-neutral-400 dark:text-neutral-500">
             ({count})
           </span>
@@ -234,6 +262,11 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
   };
 
   const renderContent = () => {
+    // Handle provenance specially - it comes from a different query
+    if (selectedType === "behavior_provenance") {
+      return <BehaviorProvenanceView provenance={provenance} />;
+    }
+
     if (!selectedContent) {
       return (
         <div className="flex h-full flex-col items-center justify-center gap-2 text-neutral-500 dark:text-neutral-400">
@@ -607,6 +640,153 @@ function BehaviorCorrectionsView({ content }: { content: string }) {
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+// Behavior provenance view - shows which rules were applied during the task run
+// Uses loose typing since Convex returns complex union types
+interface ProvenanceRule {
+  _id: string;
+  text?: string;
+  scope?: string;
+  namespace?: string;
+  status?: string;
+  confidence?: number;
+  timesSeen?: number;
+  timesUsed?: number;
+  sourceType?: string;
+  createdAt?: number;
+  lastUsedAt?: number;
+}
+
+interface ProvenanceEvent {
+  _id: string;
+  eventType?: string;
+  appliedInContext?: string;
+  createdAt?: number;
+}
+
+interface ProvenanceData {
+  rules: ProvenanceRule[];
+  events: ProvenanceEvent[];
+}
+
+function BehaviorProvenanceView({ provenance }: { provenance: { rules: unknown[]; events: unknown[] } | undefined | null }) {
+  // Cast to typed interface after null check
+  const typedProvenance = provenance as ProvenanceData | undefined | null;
+  if (!typedProvenance) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 text-neutral-500 dark:text-neutral-400">
+        <div className="size-5 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-600 dark:border-neutral-600 dark:border-t-neutral-300" />
+        <span className="text-sm">Loading provenance...</span>
+      </div>
+    );
+  }
+
+  // Filter out null rules
+  const rules = typedProvenance.rules.filter((r): r is ProvenanceRule => r !== null && r.text !== undefined);
+  const events = typedProvenance.events.filter((e): e is ProvenanceEvent => e !== null);
+
+  if (rules.length === 0) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 py-8 text-neutral-500 dark:text-neutral-400">
+        <Eye className="size-8 text-neutral-300 dark:text-neutral-600" />
+        <p className="text-sm">No behavior rules were applied in this run</p>
+        <p className="text-xs text-neutral-400 dark:text-neutral-500">
+          Rules are tracked when agents reference behavior memory
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900">
+        <span className="text-xs font-medium text-neutral-600 dark:text-neutral-300">
+          {rules.length} rule{rules.length !== 1 ? "s" : ""} applied
+        </span>
+        <span className="text-xs text-neutral-400 dark:text-neutral-500">
+          {events.length} application{events.length !== 1 ? "s" : ""}
+        </span>
+      </div>
+
+      {/* Rules list */}
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
+        {rules.map((rule) => {
+          // Find events for this rule
+          const ruleEvents = events.filter(
+            (e) => e.eventType === "rule_used"
+          );
+
+          return (
+            <div
+              key={rule._id}
+              className="rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900"
+            >
+              {/* Rule header */}
+              <div className="flex items-center gap-2 text-xs">
+                <span
+                  className={clsx(
+                    "inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium",
+                    rule.scope === "hot" && "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+                    rule.scope === "domain" && "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+                    rule.scope === "project" && "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
+                  )}
+                >
+                  <Zap className="size-3" />
+                  {rule.scope}
+                </span>
+                <span className="text-neutral-400 dark:text-neutral-500">
+                  {rule.namespace}
+                </span>
+                <span className="ml-auto flex items-center gap-1 text-neutral-400 dark:text-neutral-500">
+                  <CheckCheck className="size-3" />
+                  used {rule.timesUsed ?? 0}x
+                </span>
+              </div>
+
+              {/* Rule text */}
+              <div className="mt-2 text-sm text-neutral-700 dark:text-neutral-300">
+                {rule.text}
+              </div>
+
+              {/* Usage contexts */}
+              {ruleEvents.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {ruleEvents.slice(0, 3).map((event) => (
+                    <div
+                      key={event._id}
+                      className="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400"
+                    >
+                      <Clock className="size-3" />
+                      <span>{event.createdAt ? new Date(event.createdAt).toLocaleTimeString() : "unknown"}</span>
+                      {event.appliedInContext && (
+                        <span className="truncate text-neutral-400 dark:text-neutral-500">
+                          in {event.appliedInContext}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                  {ruleEvents.length > 3 && (
+                    <div className="text-xs text-neutral-400 dark:text-neutral-500">
+                      +{ruleEvents.length - 3} more applications
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Source info */}
+              <div className="mt-2 flex items-center gap-2 text-xs text-neutral-400 dark:text-neutral-500">
+                <span>Source: {(rule.sourceType ?? "unknown").replace(/_/g, " ")}</span>
+                <span>|</span>
+                <span>Confidence: {Math.round((rule.confidence ?? 0) * 100)}%</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -381,3 +381,149 @@ export const getTeamBehaviorMemory = authQuery({
     return results;
   },
 });
+
+// =============================================================================
+// Behavior Rules Queries (S15 provenance tracking)
+// =============================================================================
+
+/**
+ * Get active behavior rules for a team.
+ * Used to show which rules are currently loaded and their usage stats.
+ */
+export const getActiveBehaviorRules = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    scope: v.optional(
+      v.union(v.literal("hot"), v.literal("domain"), v.literal("project"))
+    ),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+    const limit = args.limit ?? 50;
+
+    let query = ctx.db
+      .query("agentBehaviorRules")
+      .withIndex("by_team_status", (q) =>
+        q.eq("teamId", teamId).eq("status", "active")
+      );
+
+    const rules = await query.order("desc").take(limit);
+
+    // Filter by scope if specified
+    if (args.scope) {
+      return rules.filter((r) => r.scope === args.scope);
+    }
+
+    return rules;
+  },
+});
+
+/**
+ * Get behavior rules applied in a specific task run (provenance).
+ * Shows which rules were actually used during agent execution.
+ */
+export const getBehaviorRulesForTaskRun = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    taskRunId: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+
+    // Verify task run belongs to team
+    const taskRun = await ctx.db.get(args.taskRunId);
+    if (!taskRun || taskRun.teamId !== teamId) {
+      return { rules: [], events: [] };
+    }
+
+    // Get rule_used events for this task run
+    const events = await ctx.db
+      .query("agentBehaviorEvents")
+      .withIndex("by_task_run", (q) => q.eq("taskRunId", args.taskRunId))
+      .collect();
+
+    // Get unique rule IDs from rule_used events
+    const ruleIds = new Set<string>();
+    for (const event of events) {
+      if (event.eventType === "rule_used" && event.ruleId) {
+        ruleIds.add(event.ruleId);
+      }
+    }
+
+    // Fetch the actual rules
+    const rules = await Promise.all(
+      Array.from(ruleIds).map((id) => ctx.db.get(id as any))
+    );
+
+    return {
+      rules: rules.filter(Boolean),
+      events: events.filter((e) => e.eventType === "rule_used"),
+    };
+  },
+});
+
+/**
+ * Get behavior events for a team (corrections, promotions, demotions).
+ * Used by the behavior dashboard to show history.
+ */
+export const getBehaviorEvents = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    eventType: v.optional(
+      v.union(
+        v.literal("correction_logged"),
+        v.literal("reflection_logged"),
+        v.literal("rule_promoted"),
+        v.literal("rule_demoted"),
+        v.literal("rule_forgotten"),
+        v.literal("rule_suppressed"),
+        v.literal("rule_used")
+      )
+    ),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+    const limit = args.limit ?? 50;
+
+    if (args.eventType) {
+      return ctx.db
+        .query("agentBehaviorEvents")
+        .withIndex("by_team_type", (q) =>
+          q.eq("teamId", teamId).eq("eventType", args.eventType!)
+        )
+        .order("desc")
+        .take(limit);
+    }
+
+    return ctx.db
+      .query("agentBehaviorEvents")
+      .withIndex("by_team_created", (q) => q.eq("teamId", teamId))
+      .order("desc")
+      .take(limit);
+  },
+});
+
+/**
+ * Get candidate rules pending confirmation.
+ * Used by the review dashboard to show rules that need user approval.
+ */
+export const getCandidateBehaviorRules = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+    const limit = args.limit ?? 20;
+
+    return ctx.db
+      .query("agentBehaviorRules")
+      .withIndex("by_team_status", (q) =>
+        q.eq("teamId", teamId).eq("status", "candidate")
+      )
+      .order("desc")
+      .take(limit);
+  },
+});

@@ -9,6 +9,7 @@
  */
 
 import type * as admin from "../admin.js";
+import type * as agentBehaviorMutations from "../agentBehaviorMutations.js";
 import type * as agentMemoryQueries from "../agentMemoryQueries.js";
 import type * as agentMemory_http from "../agentMemory_http.js";
 import type * as analytics from "../analytics.js";
@@ -124,6 +125,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
+  agentBehaviorMutations: typeof agentBehaviorMutations;
   agentMemoryQueries: typeof agentMemoryQueries;
   agentMemory_http: typeof agentMemory_http;
   analytics: typeof analytics;
