@@ -71,6 +71,7 @@ import type * as morphInstanceMaintenance from "../morphInstanceMaintenance.js";
 import type * as morphInstances from "../morphInstances.js";
 import type * as notifications_http from "../notifications_http.js";
 import type * as orchestrate from "../orchestrate.js";
+import type * as orchestrationEvents from "../orchestrationEvents.js";
 import type * as orchestrationQueries from "../orchestrationQueries.js";
 import type * as orchestrationWorker from "../orchestrationWorker.js";
 import type * as orchestration_http from "../orchestration_http.js";
@@ -187,6 +188,7 @@ declare const fullApi: ApiFromModules<{
   morphInstances: typeof morphInstances;
   notifications_http: typeof notifications_http;
   orchestrate: typeof orchestrate;
+  orchestrationEvents: typeof orchestrationEvents;
   orchestrationQueries: typeof orchestrationQueries;
   orchestrationWorker: typeof orchestrationWorker;
   orchestration_http: typeof orchestration_http;

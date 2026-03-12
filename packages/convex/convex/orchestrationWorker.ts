@@ -39,6 +39,11 @@ import {
   internalQuery,
 } from "./_generated/server";
 import { isLinkedToProject } from "./orchestrationQueries";
+import {
+  generateEventId,
+  type TaskCompletedEvent,
+  type TaskStatusChangedEvent,
+} from "@cmux/shared/convex-safe";
 
 // Configuration
 const MAX_CONCURRENT_SPAWNS = 3; // Per-team concurrent spawn limit
@@ -260,6 +265,8 @@ export const handleTaskCompletion = internalMutation({
     if (!orchTask) return; // Not an orchestration-managed task
 
     const now = Date.now();
+    const previousStatus = orchTask.status;
+    const orchestrationId = orchTask.parentTaskId ?? orchTask._id;
 
     if (args.exitCode === 0 || args.exitCode === undefined) {
       // Success (exitCode 0 or not specified = success)
@@ -268,13 +275,55 @@ export const handleTaskCompletion = internalMutation({
         completedAt: now,
         updatedAt: now,
       });
+
+      // Log task_completed event
+      const completedEvent: Omit<TaskCompletedEvent, "eventId" | "timestamp"> = {
+        type: "task_completed",
+        orchestrationId: String(orchestrationId),
+        taskId: orchTask._id,
+        taskRunId: args.taskRunId,
+        status: "completed",
+        exitCode: args.exitCode ?? 0,
+      };
+      await ctx.db.insert("orchestrationEvents", {
+        eventId: generateEventId(),
+        orchestrationId: String(orchestrationId),
+        eventType: "task_completed",
+        teamId: orchTask.teamId,
+        taskId: orchTask._id,
+        taskRunId: args.taskRunId,
+        payload: completedEvent,
+        createdAt: now,
+      });
     } else {
       // Failure
+      const errorMessage = `Agent exited with code ${args.exitCode}`;
       await ctx.db.patch(orchTask._id, {
         status: "failed",
-        errorMessage: `Agent exited with code ${args.exitCode}`,
+        errorMessage,
         completedAt: now,
         updatedAt: now,
+      });
+
+      // Log task_completed event (failed)
+      const failedEvent: Omit<TaskCompletedEvent, "eventId" | "timestamp"> = {
+        type: "task_completed",
+        orchestrationId: String(orchestrationId),
+        taskId: orchTask._id,
+        taskRunId: args.taskRunId,
+        status: "failed",
+        exitCode: args.exitCode,
+        error: errorMessage,
+      };
+      await ctx.db.insert("orchestrationEvents", {
+        eventId: generateEventId(),
+        orchestrationId: String(orchestrationId),
+        eventType: "task_completed",
+        teamId: orchTask.teamId,
+        taskId: orchTask._id,
+        taskRunId: args.taskRunId,
+        payload: failedEvent,
+        createdAt: now,
       });
 
       // Cascade failure to dependent tasks
@@ -282,6 +331,26 @@ export const handleTaskCompletion = internalMutation({
         failedTaskId: orchTask._id,
       });
     }
+
+    // Log status change event
+    const statusEvent: Omit<TaskStatusChangedEvent, "eventId" | "timestamp"> = {
+      type: "task_status_changed",
+      orchestrationId: String(orchestrationId),
+      taskId: orchTask._id,
+      taskRunId: args.taskRunId,
+      previousStatus,
+      newStatus: args.exitCode === 0 || args.exitCode === undefined ? "completed" : "failed",
+    };
+    await ctx.db.insert("orchestrationEvents", {
+      eventId: generateEventId(),
+      orchestrationId: String(orchestrationId),
+      eventType: "task_status_changed",
+      teamId: orchTask.teamId,
+      taskId: orchTask._id,
+      taskRunId: args.taskRunId,
+      payload: statusEvent,
+      createdAt: now,
+    });
 
     // Trigger dependent tasks immediately (don't wait for poll cycle)
     await ctx.scheduler.runAfter(0, internal.orchestrationQueries.triggerDependentTasks, {

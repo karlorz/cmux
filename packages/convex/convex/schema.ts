@@ -1699,6 +1699,38 @@ const convexSchema = defineSchema({
     .index("by_team", ["teamId", "createdAt"])
     .index("by_recipient", ["recipientName", "read", "createdAt"]),
 
+  // Orchestration events for typed agent communication
+  // Persists AgentCommEvent events for audit, replay, and SSE delivery
+  orchestrationEvents: defineTable({
+    eventId: v.string(), // Unique event ID (evt_xxx)
+    orchestrationId: v.string(), // Orchestration this event belongs to
+    eventType: v.union(
+      v.literal("task_spawn_requested"),
+      v.literal("task_started"),
+      v.literal("task_status_changed"),
+      v.literal("task_completed"),
+      v.literal("worker_message"),
+      v.literal("worker_status"),
+      v.literal("approval_required"),
+      v.literal("approval_resolved"),
+      v.literal("plan_updated"),
+      v.literal("orchestration_completed"),
+      v.literal("provider_session_bound")
+    ),
+    teamId: v.string(),
+    taskId: v.optional(v.string()), // Related orchestration task ID
+    taskRunId: v.optional(v.id("taskRuns")), // Related task run
+    correlationId: v.optional(v.string()), // For request-response tracking
+    payload: v.any(), // Event-specific data (JSON)
+    createdAt: v.number(),
+  })
+    .index("by_orchestration", ["orchestrationId", "createdAt"])
+    .index("by_orchestration_type", ["orchestrationId", "eventType", "createdAt"])
+    .index("by_team", ["teamId", "createdAt"])
+    .index("by_task", ["taskId", "createdAt"])
+    .index("by_task_run", ["taskRunId", "createdAt"])
+    .index("by_event_id", ["eventId"]),
+
   // Projects for grouping related tasks and tracking aggregate progress
   // Supports plan storage, Obsidian integration, and progress metrics
   projects: defineTable({
