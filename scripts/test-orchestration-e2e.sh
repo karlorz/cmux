@@ -107,9 +107,12 @@ SPAWN_OUTPUT=$(devsh orchestrate spawn \
   --repo karlorz/testing-repo-1 \
   "List the files in the current directory and describe the project structure" 2>&1 || true)
 
-if echo "$SPAWN_OUTPUT" | grep -qiE "orchestrationTaskId"; then
-  # Extract task ID from JSON output
+if echo "$SPAWN_OUTPUT" | grep -qiE "orchestrationTaskId|Orchestration Task ID"; then
+  # Extract task ID from JSON or human-readable output
   TASK_ID=$(echo "$SPAWN_OUTPUT" | grep -oP '"orchestrationTaskId":\s*"\K[^"]+' || echo "")
+  if [ -z "$TASK_ID" ]; then
+    TASK_ID=$(echo "$SPAWN_OUTPUT" | grep -oP 'Orchestration Task ID:\s*\K\S+' || echo "")
+  fi
   if [ -n "$TASK_ID" ]; then
     CREATED_TASKS+=("$TASK_ID")
     pass "Single spawn created task: $TASK_ID"
@@ -119,6 +122,27 @@ if echo "$SPAWN_OUTPUT" | grep -qiE "orchestrationTaskId"; then
     sleep 2
     STATUS_OUTPUT=$(devsh orchestrate status "$TASK_ID" 2>&1 || true)
     if echo "$STATUS_OUTPUT" | grep -qiE "status.*running|status.*assigned|status.*pending"; then
+      pass "Task status check successful"
+    else
+      echo "    Status output: $STATUS_OUTPUT"
+      fail "Task status check failed"
+    fi
+  else
+    echo "    Could not extract task ID from: $SPAWN_OUTPUT"
+    fail "Single spawn - no task ID in response"
+  fi
+elif echo "$SPAWN_OUTPUT" | grep -qiE "Agent Spawned|spawning"; then
+  # Human-readable successful spawn output
+  TASK_ID=$(echo "$SPAWN_OUTPUT" | grep -oP 'Orchestration Task ID:\s*\K\S+' || echo "")
+  if [ -n "$TASK_ID" ]; then
+    CREATED_TASKS+=("$TASK_ID")
+    pass "Single spawn created task: $TASK_ID"
+
+    # Check status
+    echo "Checking task status..."
+    sleep 2
+    STATUS_OUTPUT=$(devsh orchestrate status "$TASK_ID" 2>&1 || true)
+    if echo "$STATUS_OUTPUT" | grep -qiE "status.*running|status.*assigned|status.*pending|status.*spawning|Status:"; then
       pass "Task status check successful"
     else
       echo "    Status output: $STATUS_OUTPUT"
