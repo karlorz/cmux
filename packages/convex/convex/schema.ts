@@ -1531,6 +1531,79 @@ const convexSchema = defineSchema({
     .index("by_team_type", ["teamId", "memoryType", "createdAt"])
     .index("by_team_created", ["teamId", "createdAt"]),
 
+  // Normalized behavior rules for self-improving memory (S15 provenance)
+  // Enables fast querying, cross-run seeding, and provenance tracking
+  agentBehaviorRules: defineTable({
+    teamId: v.string(),
+    userId: v.optional(v.string()),
+    projectFullName: v.optional(v.string()), // e.g., "karlorz/cmux"
+    namespace: v.string(), // e.g., "coding", "research", "communication"
+    scope: v.union(
+      v.literal("hot"), // Always-loaded rules
+      v.literal("domain"), // Domain-specific rules
+      v.literal("project") // Project-specific rules
+    ),
+    status: v.union(
+      v.literal("candidate"), // Seen but not confirmed
+      v.literal("active"), // Confirmed and in use
+      v.literal("suppressed"), // User-suppressed
+      v.literal("archived") // Decayed/archived
+    ),
+    text: v.string(), // The rule content
+    sourceType: v.union(
+      v.literal("user_correction"), // From explicit user feedback
+      v.literal("stop_hook_reflection"), // From agent self-reflection
+      v.literal("manual_promotion"), // Manually promoted by user
+      v.literal("manual_import") // Imported from external source
+    ),
+    sourceTaskRunId: v.optional(v.id("taskRuns")),
+    sourceSnapshotId: v.optional(v.id("agentMemorySnapshots")),
+    confidence: v.number(), // 0.0 to 1.0
+    timesSeen: v.number(), // How many times this rule was seen
+    timesUsed: v.number(), // How many times this rule was applied
+    lastUsedAt: v.optional(v.number()), // Timestamp of last application
+    lastConfirmedAt: v.optional(v.number()), // Timestamp of last user confirmation
+    staleScore: v.optional(v.number()), // Decay score for archival
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_team_status", ["teamId", "status", "updatedAt"])
+    .index("by_team_scope_status", ["teamId", "scope", "status"])
+    .index("by_team_namespace_status", ["teamId", "namespace", "status"])
+    .index("by_team_project_status", ["teamId", "projectFullName", "status"])
+    .index("by_team_updated", ["teamId", "updatedAt"]),
+
+  // Behavior events log for provenance tracking (S15)
+  // Append-only log of rule applications, corrections, promotions, and demotions
+  agentBehaviorEvents: defineTable({
+    teamId: v.string(),
+    userId: v.optional(v.string()),
+    taskRunId: v.optional(v.id("taskRuns")),
+    ruleId: v.optional(v.id("agentBehaviorRules")),
+    eventType: v.union(
+      v.literal("correction_logged"), // User provided correction
+      v.literal("reflection_logged"), // Agent self-reflection
+      v.literal("rule_promoted"), // Rule promoted to active
+      v.literal("rule_demoted"), // Rule demoted from active
+      v.literal("rule_forgotten"), // Rule permanently removed
+      v.literal("rule_suppressed"), // Rule suppressed by user
+      v.literal("rule_used") // Rule was applied in a run (provenance)
+    ),
+    // Event payload - varies by eventType
+    wrongAction: v.optional(v.string()), // For corrections
+    correctAction: v.optional(v.string()), // For corrections
+    learnedRule: v.optional(v.string()), // Derived rule text
+    context: v.optional(v.string()), // Additional context
+    previousStatus: v.optional(v.string()), // For status changes
+    newStatus: v.optional(v.string()), // For status changes
+    appliedInContext: v.optional(v.string()), // For rule_used: where it was applied
+    createdAt: v.number(),
+  })
+    .index("by_team_type", ["teamId", "eventType", "createdAt"])
+    .index("by_task_run", ["taskRunId", "createdAt"])
+    .index("by_rule", ["ruleId", "createdAt"])
+    .index("by_team_created", ["teamId", "createdAt"]),
+
   // Provider health tracking for circuit breaker and resilience patterns
   // Tracks latency, success rate, and circuit state per provider
   providerHealth: defineTable({
