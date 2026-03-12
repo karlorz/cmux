@@ -1,8 +1,11 @@
 import { api } from "@cmux/convex/api";
 import { useQuery as useConvexQuery } from "convex/react";
 import { GitCommit, GitPullRequest, FileCode, Plus, Minus, Clock } from "lucide-react";
-import { memo } from "react";
+import { memo, useState } from "react";
 import { cn } from "@/lib/utils";
+
+const TIME_RANGES = [7, 14, 30] as const;
+type TimeRange = (typeof TIME_RANGES)[number];
 
 interface SessionActivityCardProps {
   teamSlugOrId: string;
@@ -103,9 +106,13 @@ function SessionActivityCardContent({ teamSlugOrId, days = 7 }: SessionActivityC
 
 export const SessionActivityCard = memo(function SessionActivityCard({
   teamSlugOrId,
-  days = 7,
+  days: initialDays = 7,
   className,
 }: SessionActivityCardProps) {
+  const [selectedDays, setSelectedDays] = useState<TimeRange>(
+    TIME_RANGES.includes(initialDays as TimeRange) ? (initialDays as TimeRange) : 7
+  );
+
   return (
     <div
       className={cn(
@@ -117,11 +124,24 @@ export const SessionActivityCard = memo(function SessionActivityCard({
         <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
           Session Activity
         </h3>
-        <span className="text-xs text-neutral-500 dark:text-neutral-400">
-          Last {days} days
-        </span>
+        <div className="flex items-center gap-1">
+          {TIME_RANGES.map((range) => (
+            <button
+              key={range}
+              onClick={() => setSelectedDays(range)}
+              className={cn(
+                "px-2 py-0.5 text-xs rounded transition-colors",
+                selectedDays === range
+                  ? "bg-neutral-200 text-neutral-900 dark:bg-neutral-700 dark:text-neutral-100"
+                  : "text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+              )}
+            >
+              {range}d
+            </button>
+          ))}
+        </div>
       </div>
-      <SessionActivityCardContent teamSlugOrId={teamSlugOrId} days={days} />
+      <SessionActivityCardContent teamSlugOrId={teamSlugOrId} days={selectedDays} />
     </div>
   );
 });
