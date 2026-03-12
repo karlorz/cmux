@@ -3,7 +3,9 @@ import type { EditorApi } from "@/components/dashboard/DashboardInput";
 import { DashboardInputControls } from "@/components/dashboard/DashboardInputControls";
 import { DashboardInputFooter } from "@/components/dashboard/DashboardInputFooter";
 import { DashboardStartTaskButton } from "@/components/dashboard/DashboardStartTaskButton";
+import { FileChangeHeatmap } from "@/components/dashboard/FileChangeHeatmap";
 import { SessionActivityCard } from "@/components/dashboard/SessionActivityCard";
+import { SessionTimeline } from "@/components/dashboard/SessionTimeline";
 import { TaskList } from "@/components/dashboard/TaskList";
 import { WorkspaceCreationButtons } from "@/components/dashboard/WorkspaceCreationButtons";
 import { FloatingPane } from "@/components/floating-pane";
@@ -1480,6 +1482,12 @@ function DashboardComponent() {
 
           {/* Session Activity */}
           <SessionActivityCard teamSlugOrId={teamSlugOrId} className="mb-4" />
+
+          {/* Visual Charts */}
+          <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <SessionTimeline teamSlugOrId={teamSlugOrId} limit={5} />
+            <FileChangeHeatmap teamSlugOrId={teamSlugOrId} days={7} />
+          </div>
 
           {/* Task List */}
           <div className="w-full">
