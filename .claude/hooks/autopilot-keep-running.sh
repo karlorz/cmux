@@ -30,6 +30,13 @@ cleanup_blocked_flag() {
   rm -f "/tmp/claude-autopilot-blocked-${SESSION_ID}"
   rm -f "/tmp/claude-autopilot-state-${SESSION_ID}"
   rm -f "/tmp/claude-autopilot-idle-${SESSION_ID}"
+
+  # Record session activity end (if in cmux sandbox with JWT)
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  if [ -f "$script_dir/session-activity-capture.sh" ]; then
+    "$script_dir/session-activity-capture.sh" end "$SESSION_ID" 2>/dev/null || true
+  fi
 }
 
 # Clean up any stale completed marker from a previous cycle where codex-review

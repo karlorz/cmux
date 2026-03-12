@@ -27,6 +27,12 @@ log_debug "SESSION_ID: $SESSION_ID"
 echo "$SESSION_ID" > /tmp/claude-current-session-id
 log_debug "Wrote session ID to /tmp/claude-current-session-id"
 
+# Record session activity start (if in cmux sandbox with JWT)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$SCRIPT_DIR/session-activity-capture.sh" ]; then
+  "$SCRIPT_DIR/session-activity-capture.sh" start "$SESSION_ID" 2>/dev/null || true
+fi
+
 # Output environment variable for Claude to set
 OUTPUT="{\"env\": {\"CLAUDE_SESSION_ID\": \"$SESSION_ID\"}}"
 log_debug "OUTPUT: $OUTPUT"
