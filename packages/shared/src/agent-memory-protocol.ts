@@ -1545,6 +1545,44 @@ const tools = [
       },
       required: ['rulePattern']
     }
+  },
+  {
+    name: 'check_stale_behavior',
+    description: 'Check for stale or unused behavior rules. Unconfirmed rules older than 30 days or rules without recent usage are considered stale. Can optionally archive them.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        autoArchive: {
+          type: 'boolean',
+          description: 'If true, move stale rules to behavior/archive/ (default: false, just report)'
+        },
+        staleDays: {
+          type: 'number',
+          description: 'Number of days after which unconfirmed rules are considered stale (default: 30)'
+        }
+      }
+    }
+  },
+  {
+    name: 'compact_corrections',
+    description: 'Compact the corrections.jsonl file by keeping only the most recent N entries. Older entries are summarized into a single archive entry.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        keepCount: {
+          type: 'number',
+          description: 'Number of recent corrections to keep (default: 100)'
+        }
+      }
+    }
+  },
+  {
+    name: 'update_behavior_index',
+    description: 'Update the behavior/index.json with current stats (rule count, correction count, domains, projects). Call after making changes to behavior memory.',
+    inputSchema: {
+      type: 'object',
+      properties: {}
+    }
   }
 ];
 
@@ -2038,6 +2076,164 @@ function handleRequest(request) {
             return sendResponse(id, { content: [{ type: 'text', text: 'Rule confirmed in HOT.md' }] });
           } catch {
             return sendResponse(id, { content: [{ type: 'text', text: 'Failed to update HOT.md' }] });
+          }
+        }
+
+        case 'check_stale_behavior': {
+          const BEHAVIOR_DIR = path.join(MEMORY_DIR, 'behavior');
+          const hotPath = path.join(BEHAVIOR_DIR, 'HOT.md');
+          const archiveDir = path.join(BEHAVIOR_DIR, 'archive');
+          const content = readFile(hotPath);
+
+          if (!content) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'HOT.md not found' }] });
+          }
+
+          const staleDays = args.staleDays || 30;
+          const today = new Date();
+          const staleThreshold = new Date(today.getTime() - staleDays * 24 * 60 * 60 * 1000);
+
+          // Parse rules to find stale ones (unconfirmed and old)
+          const lines = content.split('\\n');
+          const staleRules = [];
+          const keptLines = [];
+
+          for (const line of lines) {
+            if (line.trim().startsWith('-') && !line.includes('[confirmed]')) {
+              // Check for date in comment: <!-- id:xxx date:YYYY-MM-DD -->
+              const dateMatch = line.match(/date:(\\d{4}-\\d{2}-\\d{2})/);
+              if (dateMatch) {
+                const ruleDate = new Date(dateMatch[1]);
+                if (ruleDate < staleThreshold) {
+                  staleRules.push(line.trim());
+                  continue;
+                }
+              }
+            }
+            keptLines.push(line);
+          }
+
+          if (staleRules.length === 0) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'No stale rules found (threshold: ' + staleDays + ' days)' }] });
+          }
+
+          if (args.autoArchive) {
+            try {
+              // Write stale rules to archive
+              const archivePath = path.join(archiveDir, 'archived-' + today.toISOString().split('T')[0] + '.md');
+              const archiveContent = '# Archived Rules (' + today.toISOString().split('T')[0] + ')\\n\\n' + staleRules.map(r => r).join('\\n') + '\\n';
+              fs.mkdirSync(archiveDir, { recursive: true });
+              fs.writeFileSync(archivePath, archiveContent);
+
+              // Update HOT.md without stale rules
+              fs.writeFileSync(hotPath, keptLines.join('\\n'));
+
+              return sendResponse(id, { content: [{ type: 'text', text: 'Archived ' + staleRules.length + ' stale rules to ' + archivePath }] });
+            } catch {
+              return sendResponse(id, { content: [{ type: 'text', text: 'Failed to archive stale rules' }] });
+            }
+          }
+
+          return sendResponse(id, { content: [{ type: 'text', text: 'Found ' + staleRules.length + ' stale rules:\\n' + staleRules.join('\\n') }] });
+        }
+
+        case 'compact_corrections': {
+          const BEHAVIOR_DIR = path.join(MEMORY_DIR, 'behavior');
+          const correctionsPath = path.join(BEHAVIOR_DIR, 'corrections.jsonl');
+          const content = readFile(correctionsPath);
+
+          if (!content) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'No corrections.jsonl found' }] });
+          }
+
+          const lines = content.split('\\n').filter(l => l.trim());
+          const keepCount = args.keepCount || 100;
+
+          if (lines.length <= keepCount) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Corrections file has ' + lines.length + ' entries, no compaction needed (threshold: ' + keepCount + ')' }] });
+          }
+
+          const toArchive = lines.slice(0, lines.length - keepCount);
+          const toKeep = lines.slice(lines.length - keepCount);
+
+          try {
+            // Create archive summary
+            const archiveSummary = {
+              id: 'archive_' + crypto.randomBytes(4).toString('hex'),
+              timestamp: new Date().toISOString(),
+              type: 'archive_summary',
+              count: toArchive.length,
+              dateRange: {
+                from: JSON.parse(toArchive[0]).timestamp,
+                to: JSON.parse(toArchive[toArchive.length - 1]).timestamp
+              }
+            };
+
+            // Write compacted file
+            fs.writeFileSync(correctionsPath, JSON.stringify(archiveSummary) + '\\n' + toKeep.join('\\n') + '\\n');
+
+            return sendResponse(id, { content: [{ type: 'text', text: 'Compacted corrections: archived ' + toArchive.length + ' entries, kept ' + toKeep.length }] });
+          } catch {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Failed to compact corrections' }] });
+          }
+        }
+
+        case 'update_behavior_index': {
+          const BEHAVIOR_DIR = path.join(MEMORY_DIR, 'behavior');
+          const indexPath = path.join(BEHAVIOR_DIR, 'index.json');
+          const hotPath = path.join(BEHAVIOR_DIR, 'HOT.md');
+          const correctionsPath = path.join(BEHAVIOR_DIR, 'corrections.jsonl');
+          const domainsDir = path.join(BEHAVIOR_DIR, 'domains');
+          const projectsDir = path.join(BEHAVIOR_DIR, 'projects');
+          const archiveDir = path.join(BEHAVIOR_DIR, 'archive');
+
+          try {
+            // Count HOT rules
+            const hotContent = readFile(hotPath) || '';
+            const hotRules = (hotContent.match(/^\\s*-\\s/gm) || []).length;
+
+            // Count corrections
+            const correctionsContent = readFile(correctionsPath) || '';
+            const corrections = correctionsContent.split('\\n').filter(l => l.trim()).length;
+
+            // List domains
+            let domains = [];
+            try {
+              domains = fs.readdirSync(domainsDir).filter(f => f.endsWith('.md')).map(f => f.replace('.md', ''));
+            } catch { /* ignore */ }
+
+            // List projects
+            let projects = [];
+            try {
+              projects = fs.readdirSync(projectsDir).filter(f => f.endsWith('.md')).map(f => f.replace('.md', ''));
+            } catch { /* ignore */ }
+
+            // Count archived rules
+            let archivedRules = 0;
+            try {
+              const archiveFiles = fs.readdirSync(archiveDir).filter(f => f.endsWith('.md'));
+              for (const af of archiveFiles) {
+                const archiveContent = readFile(path.join(archiveDir, af)) || '';
+                archivedRules += (archiveContent.match(/^\\s*-\\s/gm) || []).length;
+              }
+            } catch { /* ignore */ }
+
+            const index = {
+              version: 1,
+              lastUpdated: new Date().toISOString(),
+              stats: {
+                hotRules,
+                corrections,
+                domains,
+                projects,
+                archivedRules
+              }
+            };
+
+            fs.writeFileSync(indexPath, JSON.stringify(index, null, 2));
+            return sendResponse(id, { content: [{ type: 'text', text: 'Index updated: ' + JSON.stringify(index.stats) }] });
+          } catch {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Failed to update index' }] });
           }
         }
 

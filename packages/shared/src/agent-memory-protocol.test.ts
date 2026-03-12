@@ -63,6 +63,10 @@ describe("agent-memory-protocol", () => {
       "add_behavior_rule",
       "log_correction",
       "confirm_behavior_rule",
+      // Behavior admin/decay tools
+      "check_stale_behavior",
+      "compact_corrections",
+      "update_behavior_index",
     ];
 
     for (const tool of expectedTools) {
