@@ -770,6 +770,55 @@ export type OrchestrationSyncResponse = {
     };
 };
 
+export type ApprovalRequest = {
+    /**
+     * Approval request ID (apr_xxx format)
+     */
+    requestId: string;
+    /**
+     * Orchestration ID
+     */
+    orchestrationId: string;
+    /**
+     * Task ID (if linked)
+     */
+    taskId?: string;
+    /**
+     * Source of the approval request
+     */
+    source: 'tool_use' | 'head_agent' | 'worker_agent' | 'policy' | 'system';
+    /**
+     * Type of approval
+     */
+    approvalType: 'tool_permission' | 'review_request' | 'deployment' | 'cost_override' | 'escalation' | 'risky_action';
+    /**
+     * Action being requested
+     */
+    action: string;
+    /**
+     * Context for the approval
+     */
+    context: {
+        agentName: string;
+        filePath?: string;
+        command?: string;
+        reasoning?: string;
+        riskLevel?: 'low' | 'medium' | 'high';
+    };
+    /**
+     * Current status
+     */
+    status: 'pending' | 'approved' | 'denied' | 'expired' | 'cancelled';
+    /**
+     * Expiration timestamp
+     */
+    expiresAt?: number;
+    /**
+     * Creation timestamp
+     */
+    createdAt: number;
+};
+
 export type ProjectGoal = {
     /**
      * Goal ID
@@ -3685,6 +3734,136 @@ export type GetApiV1CmuxOrchestrationByOrchestrationIdSyncResponses = {
 };
 
 export type GetApiV1CmuxOrchestrationByOrchestrationIdSyncResponse = GetApiV1CmuxOrchestrationByOrchestrationIdSyncResponses[keyof GetApiV1CmuxOrchestrationByOrchestrationIdSyncResponses];
+
+export type GetApiOrchestrateApprovalsByOrchestrationIdPendingData = {
+    body?: never;
+    path: {
+        /**
+         * Orchestration ID
+         */
+        orchestrationId: string;
+    };
+    query?: {
+        /**
+         * Team slug or ID (extracted from JWT if not provided)
+         */
+        teamSlugOrId?: string;
+    };
+    url: '/api/orchestrate/approvals/{orchestrationId}/pending';
+};
+
+export type GetApiOrchestrateApprovalsByOrchestrationIdPendingErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiOrchestrateApprovalsByOrchestrationIdPendingResponses = {
+    /**
+     * Pending approvals retrieved successfully
+     */
+    200: Array<ApprovalRequest>;
+};
+
+export type GetApiOrchestrateApprovalsByOrchestrationIdPendingResponse = GetApiOrchestrateApprovalsByOrchestrationIdPendingResponses[keyof GetApiOrchestrateApprovalsByOrchestrationIdPendingResponses];
+
+export type PostApiOrchestrateApprovalsByRequestIdResolveData = {
+    body: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId?: string;
+        /**
+         * Resolution decision
+         */
+        resolution: 'allow' | 'allow_once' | 'allow_session' | 'deny' | 'deny_always';
+        /**
+         * Optional note explaining the decision
+         */
+        note?: string;
+    };
+    path: {
+        /**
+         * Approval request ID (apr_xxx format)
+         */
+        requestId: string;
+    };
+    query?: never;
+    url: '/api/orchestrate/approvals/{requestId}/resolve';
+};
+
+export type PostApiOrchestrateApprovalsByRequestIdResolveErrors = {
+    /**
+     * Invalid request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Approval request not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiOrchestrateApprovalsByRequestIdResolveResponses = {
+    /**
+     * Approval resolved successfully
+     */
+    200: {
+        success: boolean;
+        status: string;
+    };
+};
+
+export type PostApiOrchestrateApprovalsByRequestIdResolveResponse = PostApiOrchestrateApprovalsByRequestIdResolveResponses[keyof PostApiOrchestrateApprovalsByRequestIdResolveResponses];
+
+export type GetApiOrchestrateApprovalsTeamByTeamSlugOrIdData = {
+    body?: never;
+    path: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId: string;
+    };
+    query?: {
+        /**
+         * Maximum number of approvals to return
+         */
+        limit?: number | null;
+    };
+    url: '/api/orchestrate/approvals/team/{teamSlugOrId}';
+};
+
+export type GetApiOrchestrateApprovalsTeamByTeamSlugOrIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiOrchestrateApprovalsTeamByTeamSlugOrIdResponses = {
+    /**
+     * Pending approvals retrieved successfully
+     */
+    200: Array<ApprovalRequest>;
+};
+
+export type GetApiOrchestrateApprovalsTeamByTeamSlugOrIdResponse = GetApiOrchestrateApprovalsTeamByTeamSlugOrIdResponses[keyof GetApiOrchestrateApprovalsTeamByTeamSlugOrIdResponses];
 
 export type GetApiProjectsData = {
     body?: never;

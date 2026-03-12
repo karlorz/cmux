@@ -660,6 +660,74 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
           properties: {},
         },
       },
+      {
+        name: "wait_for_events",
+        description:
+          "Wait for orchestration events using SSE streaming. Returns when a matching event arrives or timeout. " +
+          "More efficient than polling wait_for_agent. Use for event-driven head agent loops.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            orchestrationId: {
+              type: "string",
+              description: "The orchestration ID to subscribe to events for",
+            },
+            eventTypes: {
+              type: "array",
+              items: { type: "string" },
+              description:
+                "Event types to wait for (e.g., ['task_completed', 'approval_required']). " +
+                "If empty, returns on any event.",
+            },
+            timeout: {
+              type: "number",
+              description: "Maximum wait time in milliseconds (default: 30000 = 30 seconds)",
+            },
+          },
+          required: ["orchestrationId"],
+        },
+      },
+      {
+        name: "get_pending_approvals",
+        description:
+          "Get pending approval requests for the current orchestration. " +
+          "Returns approvals that require human decision before agents can proceed.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            orchestrationId: {
+              type: "string",
+              description: "The orchestration ID to get pending approvals for (optional, uses current if not provided)",
+            },
+          },
+        },
+      },
+      {
+        name: "resolve_approval",
+        description:
+          "Resolve a pending approval request. Use to approve or deny actions that require human authorization.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            requestId: {
+              type: "string",
+              description: "The approval request ID (apr_xxx format)",
+            },
+            resolution: {
+              type: "string",
+              enum: ["allow", "allow_once", "allow_session", "deny", "deny_always"],
+              description:
+                "Resolution decision: allow (permit action), allow_once (permit this time only), " +
+                "allow_session (permit for session), deny (reject), deny_always (block permanently)",
+            },
+            note: {
+              type: "string",
+              description: "Optional note explaining the decision",
+            },
+          },
+          required: ["requestId", "resolution"],
+        },
+      },
     ],
   }));
 
@@ -1602,6 +1670,263 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
             content: [{
               type: "text",
               text: `Error getting orchestration summary: ${errorMsg}`,
+            }],
+          };
+        }
+      }
+
+      case "wait_for_events": {
+        const { orchestrationId, eventTypes = [], timeout = 30000 } = args as {
+          orchestrationId: string;
+          eventTypes?: string[];
+          timeout?: number;
+        };
+
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux.sh";
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "CMUX_TASK_RUN_JWT environment variable not set. This tool requires JWT authentication.",
+            }],
+          };
+        }
+
+        try {
+          // Use the v2 SSE endpoint for typed events
+          const url = `${apiBaseUrl}/api/orchestrate/v2/events/${orchestrationId}`;
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+          const response = await fetch(url, {
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${jwt}`,
+              "Accept": "text/event-stream",
+            },
+            signal: controller.signal,
+          });
+
+          clearTimeout(timeoutId);
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            return {
+              content: [{
+                type: "text",
+                text: `Failed to connect to event stream: ${response.status} ${errorText}`,
+              }],
+            };
+          }
+
+          // Read the SSE stream for matching events
+          const reader = response.body?.getReader();
+          if (!reader) {
+            return {
+              content: [{
+                type: "text",
+                text: "No response body from event stream",
+              }],
+            };
+          }
+
+          const decoder = new TextDecoder();
+          const startTime = Date.now();
+          let buffer = "";
+
+          while (Date.now() - startTime < timeout) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
+
+            for (const line of lines) {
+              if (line.startsWith("data: ")) {
+                try {
+                  const event = JSON.parse(line.slice(6));
+                  // Check if event matches filter
+                  if (eventTypes.length === 0 || eventTypes.includes(event.type)) {
+                    reader.cancel();
+                    return {
+                      content: [{
+                        type: "text",
+                        text: JSON.stringify({
+                          event,
+                          waitDuration: Date.now() - startTime,
+                        }, null, 2),
+                      }],
+                    };
+                  }
+                } catch {
+                  // Ignore parse errors for non-JSON lines
+                }
+              }
+            }
+          }
+
+          reader.cancel();
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                status: "timeout",
+                message: `No matching events received within ${timeout}ms`,
+                eventTypesFilter: eventTypes,
+                waitDuration: Date.now() - startTime,
+              }, null, 2),
+            }],
+          };
+        } catch (error) {
+          if (error instanceof Error && error.name === "AbortError") {
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({
+                  status: "timeout",
+                  message: `Connection timed out after ${timeout}ms`,
+                }, null, 2),
+              }],
+            };
+          }
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{
+              type: "text",
+              text: `Error waiting for events: ${errorMsg}`,
+            }],
+          };
+        }
+      }
+
+      case "get_pending_approvals": {
+        const { orchestrationId: providedOrchId } = args as { orchestrationId?: string };
+
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux.sh";
+        const orchestrationId = providedOrchId ?? process.env.CMUX_ORCHESTRATION_ID;
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "CMUX_TASK_RUN_JWT environment variable not set. This tool requires JWT authentication.",
+            }],
+          };
+        }
+
+        if (!orchestrationId) {
+          return {
+            content: [{
+              type: "text",
+              text: "No orchestration ID provided and CMUX_ORCHESTRATION_ID not set.",
+            }],
+          };
+        }
+
+        try {
+          const url = `${apiBaseUrl}/api/orchestrate/approvals/${orchestrationId}/pending`;
+          const response = await fetch(url, {
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            return {
+              content: [{
+                type: "text",
+                text: `Failed to get pending approvals: ${response.status} ${errorText}`,
+              }],
+            };
+          }
+
+          const approvals = await response.json();
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                orchestrationId,
+                pendingCount: Array.isArray(approvals) ? approvals.length : 0,
+                approvals,
+              }, null, 2),
+            }],
+          };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{
+              type: "text",
+              text: `Error getting pending approvals: ${errorMsg}`,
+            }],
+          };
+        }
+      }
+
+      case "resolve_approval": {
+        const { requestId, resolution, note } = args as {
+          requestId: string;
+          resolution: string;
+          note?: string;
+        };
+
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux.sh";
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "CMUX_TASK_RUN_JWT environment variable not set. This tool requires JWT authentication.",
+            }],
+          };
+        }
+
+        try {
+          const url = `${apiBaseUrl}/api/orchestrate/approvals/${requestId}/resolve`;
+          const response = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ resolution, note }),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            return {
+              content: [{
+                type: "text",
+                text: `Failed to resolve approval: ${response.status} ${errorText}`,
+              }],
+            };
+          }
+
+          const result = await response.json();
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                requestId,
+                resolution,
+                status: "resolved",
+                ...result,
+              }, null, 2),
+            }],
+          };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{
+              type: "text",
+              text: `Error resolving approval: ${errorMsg}`,
             }],
           };
         }
