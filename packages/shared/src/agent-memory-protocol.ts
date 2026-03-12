@@ -1463,6 +1463,88 @@ const tools = [
         }
       }
     }
+  },
+  // Behavior memory tools (self-improving preferences)
+  {
+    name: 'read_behavior',
+    description: 'Read behavior memory files (HOT.md, corrections.jsonl, index.json, or domain/project rules).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: {
+          type: 'string',
+          enum: ['hot', 'corrections', 'index', 'domain', 'project'],
+          description: 'Type of behavior memory to read'
+        },
+        name: {
+          type: 'string',
+          description: 'For domain/project types, the name of the domain or project file (without .md extension)'
+        }
+      },
+      required: ['type']
+    }
+  },
+  {
+    name: 'add_behavior_rule',
+    description: 'Add a new rule to behavior/HOT.md. Rules capture workflow preferences learned from user feedback.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        rule: {
+          type: 'string',
+          description: 'The rule text (e.g., "Always use bun instead of npm")'
+        },
+        confirmed: {
+          type: 'boolean',
+          description: 'If true, mark the rule as [confirmed] (user-verified). Default: false'
+        }
+      },
+      required: ['rule']
+    }
+  },
+  {
+    name: 'log_correction',
+    description: 'Log a correction to behavior/corrections.jsonl. Use when the user corrects your action.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        wrongAction: {
+          type: 'string',
+          description: 'What you did wrong'
+        },
+        correctAction: {
+          type: 'string',
+          description: 'What the user said to do instead'
+        },
+        context: {
+          type: 'string',
+          description: 'Optional context about when this applies'
+        },
+        learnedRule: {
+          type: 'string',
+          description: 'Optional rule to add to HOT.md based on this correction'
+        },
+        promoteToHot: {
+          type: 'boolean',
+          description: 'If true and learnedRule is provided, also add the rule to HOT.md'
+        }
+      },
+      required: ['wrongAction', 'correctAction']
+    }
+  },
+  {
+    name: 'confirm_behavior_rule',
+    description: 'Mark an existing rule in HOT.md as [confirmed]. Use when user explicitly validates a rule.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        rulePattern: {
+          type: 'string',
+          description: 'Text pattern to match the rule (substring match)'
+        }
+      },
+      required: ['rulePattern']
+    }
   }
 ];
 
@@ -1833,6 +1915,129 @@ function handleRequest(request) {
           } catch (pullErr) {
             const errMsg = pullErr instanceof Error ? pullErr.message : String(pullErr);
             return sendResponse(id, { content: [{ type: 'text', text: 'Failed to pull orchestration updates: ' + errMsg }] });
+          }
+        }
+
+        // Behavior memory tool handlers
+        case 'read_behavior': {
+          const BEHAVIOR_DIR = path.join(MEMORY_DIR, 'behavior');
+          let filePath;
+          if (args.type === 'hot') {
+            filePath = path.join(BEHAVIOR_DIR, 'HOT.md');
+          } else if (args.type === 'corrections') {
+            filePath = path.join(BEHAVIOR_DIR, 'corrections.jsonl');
+          } else if (args.type === 'index') {
+            filePath = path.join(BEHAVIOR_DIR, 'index.json');
+          } else if (args.type === 'domain' && args.name) {
+            filePath = path.join(BEHAVIOR_DIR, 'domains', args.name + '.md');
+          } else if (args.type === 'project' && args.name) {
+            filePath = path.join(BEHAVIOR_DIR, 'projects', args.name + '.md');
+          } else {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Invalid behavior type or missing name for domain/project' }] });
+          }
+          const content = readFile(filePath);
+          if (content === null) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Behavior file not found: ' + filePath }] });
+          }
+          return sendResponse(id, { content: [{ type: 'text', text: content }] });
+        }
+
+        case 'add_behavior_rule': {
+          const BEHAVIOR_DIR = path.join(MEMORY_DIR, 'behavior');
+          const hotPath = path.join(BEHAVIOR_DIR, 'HOT.md');
+          let content = readFile(hotPath) || '# HOT Behavior Rules\\n\\n## Rules\\n';
+
+          // Generate unique rule ID
+          const ruleId = 'rule_' + crypto.randomBytes(4).toString('hex');
+          const tag = args.confirmed ? '[confirmed]' : '';
+          const newRule = '- ' + tag + ' ' + args.rule + ' <!-- id:' + ruleId + ' -->';
+
+          // Find the ## Rules section and append
+          if (content.includes('## Rules')) {
+            content = content.replace(/(## Rules\\n)/, '$1' + newRule + '\\n');
+          } else {
+            content += '\\n## Rules\\n' + newRule + '\\n';
+          }
+
+          try {
+            fs.writeFileSync(hotPath, content);
+            return sendResponse(id, { content: [{ type: 'text', text: 'Rule added to HOT.md: ' + newRule }] });
+          } catch {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Failed to write HOT.md' }] });
+          }
+        }
+
+        case 'log_correction': {
+          const BEHAVIOR_DIR = path.join(MEMORY_DIR, 'behavior');
+          const correctionsPath = path.join(BEHAVIOR_DIR, 'corrections.jsonl');
+          const correctionId = 'corr_' + crypto.randomBytes(4).toString('hex');
+
+          const correction = {
+            id: correctionId,
+            timestamp: new Date().toISOString(),
+            wrongAction: args.wrongAction,
+            correctAction: args.correctAction
+          };
+          if (args.context) correction.context = args.context;
+          if (args.learnedRule) {
+            correction.learnedRule = args.learnedRule;
+            if (args.promoteToHot) correction.rulePromotedTo = 'HOT';
+          }
+
+          try {
+            fs.appendFileSync(correctionsPath, JSON.stringify(correction) + '\\n');
+
+            // Optionally promote rule to HOT.md
+            if (args.learnedRule && args.promoteToHot) {
+              const hotPath = path.join(BEHAVIOR_DIR, 'HOT.md');
+              let hotContent = readFile(hotPath) || '# HOT Behavior Rules\\n\\n## Rules\\n';
+              const ruleId = 'rule_' + crypto.randomBytes(4).toString('hex');
+              const newRule = '- ' + args.learnedRule + ' <!-- id:' + ruleId + ' from:' + correctionId + ' -->';
+
+              if (hotContent.includes('## Rules')) {
+                hotContent = hotContent.replace(/(## Rules\\n)/, '$1' + newRule + '\\n');
+              } else {
+                hotContent += '\\n## Rules\\n' + newRule + '\\n';
+              }
+              fs.writeFileSync(hotPath, hotContent);
+              return sendResponse(id, { content: [{ type: 'text', text: 'Correction logged and rule promoted to HOT.md. Correction ID: ' + correctionId }] });
+            }
+
+            return sendResponse(id, { content: [{ type: 'text', text: 'Correction logged. ID: ' + correctionId }] });
+          } catch {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Failed to log correction' }] });
+          }
+        }
+
+        case 'confirm_behavior_rule': {
+          const BEHAVIOR_DIR = path.join(MEMORY_DIR, 'behavior');
+          const hotPath = path.join(BEHAVIOR_DIR, 'HOT.md');
+          let content = readFile(hotPath);
+          if (!content) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'HOT.md not found' }] });
+          }
+
+          // Find lines matching the pattern and add [confirmed] tag if not present
+          const lines = content.split('\\n');
+          let found = false;
+          const updatedLines = lines.map(line => {
+            if (line.includes(args.rulePattern) && line.trim().startsWith('-') && !line.includes('[confirmed]')) {
+              found = true;
+              // Insert [confirmed] after the leading dash
+              return line.replace(/^(\\s*-)\\s*/, '$1 [confirmed] ');
+            }
+            return line;
+          });
+
+          if (!found) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'No unconfirmed rule found matching pattern: ' + args.rulePattern }] });
+          }
+
+          try {
+            fs.writeFileSync(hotPath, updatedLines.join('\\n'));
+            return sendResponse(id, { content: [{ type: 'text', text: 'Rule confirmed in HOT.md' }] });
+          } catch {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Failed to update HOT.md' }] });
           }
         }
 

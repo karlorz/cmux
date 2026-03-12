@@ -45,10 +45,10 @@ describe("agent-memory-protocol", () => {
 
   it("MCP server script contains expected tools", () => {
     const script = getMemoryMcpServerScript();
-    
+
     const expectedTools = [
       "read_memory",
-      "list_daily_logs", 
+      "list_daily_logs",
       "read_daily_log",
       "search_memory",
       "send_message",
@@ -58,8 +58,13 @@ describe("agent-memory-protocol", () => {
       "update_knowledge",
       "add_task",
       "update_task",
+      // Behavior memory tools
+      "read_behavior",
+      "add_behavior_rule",
+      "log_correction",
+      "confirm_behavior_rule",
     ];
-    
+
     for (const tool of expectedTools) {
       expect(script).toContain(`name: '${tool}'`);
     }
