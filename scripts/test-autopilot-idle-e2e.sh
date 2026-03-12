@@ -15,6 +15,9 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/lib/autopilot-test-helpers.sh"
+
 echo "=== Autopilot Idle Detection E2E Test ==="
 echo ""
 
@@ -53,17 +56,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Check prerequisites
-if ! command -v devsh &> /dev/null; then
-  echo "[SETUP] devsh not found, building..."
-  make install-devsh-dev
-fi
-
-if [ -z "${CMUX_AUTH_TOKEN:-}" ]; then
-  echo "[ERROR] CMUX_AUTH_TOKEN not set"
-  echo "Run: CMUX_AUTH_TOKEN=\$(cloudrouter auth token) ./scripts/test-autopilot-idle-e2e.sh"
-  exit 1
-fi
+check_prerequisites
+register_task_cleanup
 
 echo "Configuration:"
 echo "  Repo: $REPO"
@@ -75,26 +69,11 @@ echo ""
 echo "[1/4] Spawning autopilot task with no-op prompt..."
 PROMPT="Check git status and report the current branch name. List the files in the repository root directory. Do NOT make any changes to files - just report what you see."
 
-CREATE_OUTPUT=$(devsh task create \
+TASK_ID=$(create_autopilot_task \
   --repo "$REPO" \
   --agent "$AGENT" \
-  --autopilot \
   --autopilot-minutes 5 \
-  --json \
-  "$PROMPT" 2>&1 || true)
-
-# Extract task ID from JSON output
-TASK_ID=$(echo "$CREATE_OUTPUT" | grep -oP '"taskId":\s*"\K[^"]+' || echo "")
-if [ -z "$TASK_ID" ]; then
-  # Try alternate format
-  TASK_ID=$(echo "$CREATE_OUTPUT" | grep -oP 'Task ID:\s*\K\S+' || echo "")
-fi
-
-if [ -z "$TASK_ID" ]; then
-  echo "[FAIL] Failed to extract task ID from output:"
-  echo "$CREATE_OUTPUT"
-  exit 1
-fi
+  "$PROMPT")
 
 echo "[PASS] Task created: $TASK_ID"
 echo ""
@@ -105,40 +84,14 @@ echo "       Expecting idle detection to stop task early (within ~2 minutes)"
 echo ""
 
 START_TIME=$(date +%s)
-LAST_STATUS=""
+FINAL_STATUS=$(poll_until_terminal "$TASK_ID" "$TIMEOUT_SECONDS" 10) || {
+  echo ""
+  echo "[FAIL] Timeout after ${TIMEOUT_SECONDS}s - task did not complete"
+  exit 1
+}
 
-while true; do
-  STATUS_OUTPUT=$(devsh task status "$TASK_ID" --json 2>&1 || echo "{}")
-
-  # Extract status from JSON
-  CURRENT_STATUS=$(echo "$STATUS_OUTPUT" | grep -oP '"status":\s*"\K[^"]+' | head -1 || echo "unknown")
-
-  # Only log when status changes
-  if [ "$CURRENT_STATUS" != "$LAST_STATUS" ]; then
-    ELAPSED=$(($(date +%s) - START_TIME))
-    echo "  [${ELAPSED}s] Status: $CURRENT_STATUS"
-    LAST_STATUS="$CURRENT_STATUS"
-  fi
-
-  # Check for terminal states
-  if echo "$CURRENT_STATUS" | grep -qiE "^(completed|stopped|failed|archived)$"; then
-    echo ""
-    echo "[PASS] Task reached terminal state: $CURRENT_STATUS"
-    break
-  fi
-
-  # Check timeout
-  ELAPSED=$(($(date +%s) - START_TIME))
-  if [ "$ELAPSED" -ge "$TIMEOUT_SECONDS" ]; then
-    echo ""
-    echo "[FAIL] Timeout after ${TIMEOUT_SECONDS}s - task did not complete"
-    echo "       Stopping task..."
-    devsh task stop "$TASK_ID" 2>/dev/null || true
-    exit 1
-  fi
-
-  sleep 10
-done
+echo ""
+echo "[PASS] Task reached terminal state: $FINAL_STATUS"
 
 TOTAL_TIME=$(($(date +%s) - START_TIME))
 echo "       Total time: ${TOTAL_TIME}s"
@@ -147,16 +100,13 @@ echo ""
 # Check task runs for exit codes and idle detection
 echo "[3/4] Checking task runs for idle detection..."
 
-RUNS_OUTPUT=$(devsh task runs "$TASK_ID" --json 2>&1 || echo "[]")
+RUNS_OUTPUT=$(get_task_runs_json "$TASK_ID")
 
-# Check for idle detection in the runs
-# The run should show evidence of early termination via idle detection
 RUN_COUNT=$(echo "$RUNS_OUTPUT" | grep -c '"runId"' || echo "0")
 echo "       Found $RUN_COUNT run(s)"
 
-# Get the first (and likely only) run's exit code
-EXIT_CODE=$(echo "$RUNS_OUTPUT" | grep -oP '"exitCode":\s*\K[0-9]+' | head -1 || echo "unknown")
-echo "       Exit code: $EXIT_CODE"
+EXIT_CODE=$(extract_json_number "$RUNS_OUTPUT" "exitCode")
+echo "       Exit code: ${EXIT_CODE:-unknown}"
 
 # Success criteria:
 # 1. Task completed in reasonable time (< 3 minutes suggests idle detection worked)
@@ -177,11 +127,11 @@ fi
 echo ""
 echo "=== Test Summary ==="
 echo "Task ID: $TASK_ID"
-echo "Final Status: $CURRENT_STATUS"
+echo "Final Status: $FINAL_STATUS"
 echo "Total Time: ${TOTAL_TIME}s"
-echo "Exit Code: $EXIT_CODE"
+echo "Exit Code: ${EXIT_CODE:-unknown}"
 
-if [ "$CURRENT_STATUS" = "completed" ] || [ "$CURRENT_STATUS" = "stopped" ]; then
+if [ "$FINAL_STATUS" = "completed" ] || [ "$FINAL_STATUS" = "stopped" ]; then
   if [ "$TOTAL_TIME" -lt 180 ]; then
     echo ""
     echo "[SUCCESS] Idle detection test passed"
@@ -196,6 +146,6 @@ if [ "$CURRENT_STATUS" = "completed" ] || [ "$CURRENT_STATUS" = "stopped" ]; the
   fi
 else
   echo ""
-  echo "[FAIL] Task ended in unexpected state: $CURRENT_STATUS"
+  echo "[FAIL] Task ended in unexpected state: $FINAL_STATUS"
   exit 1
 fi
