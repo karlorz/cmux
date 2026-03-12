@@ -96,6 +96,8 @@ scenario_passed() {
 scenario_failed() {
   local name="$1" reason="$2"
   SCENARIOS_FAILED=$((SCENARIOS_FAILED + 1))
+  _ATH_FAIL=$((_ATH_FAIL + 1))
+  _ATH_TOTAL=$((_ATH_TOTAL + 1))
   echo ""
   echo "[SCENARIO FAIL] $name: $reason"
   echo ""
@@ -120,6 +122,7 @@ if [ -z "$SCENARIO" ] || [ "$SCENARIO" = "plan-to-completion" ]; then
   }
 
   if [ -n "${TASK_ID:-}" ]; then
+    _ATH_CREATED_TASKS+=("$TASK_ID")
     echo "  Task ID: $TASK_ID"
 
     START_TIME=$(date +%s)
@@ -139,7 +142,7 @@ if [ -z "$SCENARIO" ] || [ "$SCENARIO" = "plan-to-completion" ]; then
       RUN_COUNT=$(echo "$RUNS_OUTPUT" | grep -c '"runId"' || echo "0")
 
       assert_contains "plan-to-completion: terminal status" "completed stopped" "$FINAL_STATUS"
-      assert_not_empty "plan-to-completion: has at least one run" "$RUN_COUNT"
+      assert_gt "plan-to-completion: has at least one run" "$RUN_COUNT" 0
 
       if [ "$FINAL_STATUS" = "completed" ] || [ "$FINAL_STATUS" = "stopped" ]; then
         scenario_passed "plan-to-completion"
@@ -225,6 +228,7 @@ if [ -z "$SCENARIO" ] || [ "$SCENARIO" = "quality-gate-check" ]; then
   }
 
   if [ -n "${TASK_ID:-}" ]; then
+    _ATH_CREATED_TASKS+=("$TASK_ID")
     echo "  Task ID: $TASK_ID"
 
     FINAL_STATUS=$(poll_until_terminal "$TASK_ID" "$TIMEOUT_SECONDS" 10) || {
@@ -292,6 +296,7 @@ if [ -z "$SCENARIO" ] || [ "$SCENARIO" = "status-tracking" ]; then
   }
 
   if [ -n "${TASK_ID:-}" ]; then
+    _ATH_CREATED_TASKS+=("$TASK_ID")
     echo "  Task ID: $TASK_ID"
 
     # Collect status snapshots while polling

@@ -75,6 +75,7 @@ TASK_ID=$(create_autopilot_task \
   --autopilot-minutes 5 \
   "$PROMPT")
 
+_ATH_CREATED_TASKS+=("$TASK_ID")
 echo "[PASS] Task created: $TASK_ID"
 echo ""
 

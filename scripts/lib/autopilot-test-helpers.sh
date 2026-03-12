@@ -65,6 +65,18 @@ assert_not_empty() {
   fi
 }
 
+assert_gt() {
+  local desc="$1" actual="$2" threshold="$3"
+  _ATH_TOTAL=$((_ATH_TOTAL + 1))
+  if [ "$actual" -gt "$threshold" ] 2>/dev/null; then
+    echo -e "  ${_ATH_GREEN}PASS${_ATH_NC}: $desc (got: $actual > $threshold)"
+    _ATH_PASS=$((_ATH_PASS + 1))
+  else
+    echo -e "  ${_ATH_RED}FAIL${_ATH_NC}: $desc (expected > $threshold, got: $actual)"
+    _ATH_FAIL=$((_ATH_FAIL + 1))
+  fi
+}
+
 assert_file_exists() {
   local desc="$1" path="$2"
   _ATH_TOTAL=$((_ATH_TOTAL + 1))
@@ -125,6 +137,8 @@ check_prerequisites() {
 
 # Create an autopilot task. Prints the task ID to stdout.
 # Usage: TASK_ID=$(create_autopilot_task --repo <repo> --agent <agent> --autopilot-minutes <min> "<prompt>")
+# NOTE: Runs in a subshell via $(), so callers must register cleanup themselves:
+#   _ATH_CREATED_TASKS+=("$TASK_ID")
 create_autopilot_task() {
   local output
   output=$(devsh task create --autopilot --json "$@" 2>&1 || true)
@@ -137,9 +151,6 @@ create_autopilot_task() {
     echo "$output" >&2
     return 1
   fi
-
-  # Register for cleanup
-  _ATH_CREATED_TASKS+=("$task_id")
 
   echo "$task_id"
 }
