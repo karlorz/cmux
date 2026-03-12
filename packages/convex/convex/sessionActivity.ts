@@ -224,3 +224,57 @@ export const getTeamStats = authQuery({
     };
   },
 });
+
+/**
+ * Get aggregated stats for a specific task (across all its runs).
+ * Used by TaskItem to show inline activity badges.
+ */
+export const getTaskStats = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    taskId: v.id("tasks"),
+  },
+  async handler(ctx, args) {
+    // Get all task runs for this task
+    const taskRuns = await ctx.db
+      .query("taskRuns")
+      .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
+      .collect();
+
+    if (taskRuns.length === 0) {
+      return null;
+    }
+
+    // Get session activity for all runs in parallel
+    const activityPromises = taskRuns.map((run) =>
+      ctx.db
+        .query("sessionActivity")
+        .withIndex("by_taskRun", (q) => q.eq("taskRunId", run._id))
+        .collect()
+    );
+    const allActivities = (await Promise.all(activityPromises)).flat();
+
+    if (allActivities.length === 0) {
+      return null;
+    }
+
+    // Aggregate
+    return allActivities.reduce(
+      (acc, activity) => {
+        acc.totalCommits += activity.stats.totalCommits;
+        acc.totalPRs += activity.stats.totalPRs;
+        acc.totalAdditions += activity.stats.totalAdditions;
+        acc.totalDeletions += activity.stats.totalDeletions;
+        acc.totalFiles += activity.stats.totalFiles;
+        return acc;
+      },
+      {
+        totalCommits: 0,
+        totalPRs: 0,
+        totalAdditions: 0,
+        totalDeletions: 0,
+        totalFiles: 0,
+      }
+    );
+  },
+});
