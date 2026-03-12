@@ -1,17 +1,24 @@
 /**
  * Agent Memory Protocol - Spike S2b
  *
- * Two-tier memory architecture with priority tiering:
+ * Three-tier memory architecture:
  * - Layer 1 (daily/): Ephemeral daily logs - auto-dated, session-specific
  * - Layer 2 (knowledge/): Curated long-term memory with P0/P1/P2 priority tiers
  *   - P0 Core: Never expires - project fundamentals, safety rules, invariants
  *   - P1 Active: 90-day TTL - ongoing work, current strategies, recent decisions
  *   - P2 Reference: 30-day TTL - debug notes, one-time findings, temporary context
+ * - Layer 3 (behavior/): Self-improving behavior memory
+ *   - HOT.md: Active preferences and workflow rules (high-frequency)
+ *   - corrections.jsonl: Correction log for learning from mistakes
+ *   - domains/: Domain-specific rules (e.g., testing, debugging, security)
+ *   - projects/: Project-scoped preferences
+ *   - archive/: Demoted/inactive rules
  *
  * Seeds memory directory with:
  * - TASKS.json, MAILBOX.json at root
  * - knowledge/MEMORY.md for permanent insights (P0/P1/P2 sections)
  * - daily/{date}.md for session-specific notes
+ * - behavior/HOT.md, behavior/corrections.jsonl, behavior/index.json for behavior memory
  *
  * IMPORTANT: Memory is stored at /root/lifecycle/memory/ (OUTSIDE the git workspace)
  * to avoid polluting the user's repository with untracked files. This follows the
@@ -31,6 +38,12 @@ export const MEMORY_KNOWLEDGE_DIR = `${MEMORY_PROTOCOL_DIR}/knowledge`;
 
 // Orchestration subdirectory for multi-agent coordination
 export const MEMORY_ORCHESTRATION_DIR = `${MEMORY_PROTOCOL_DIR}/orchestration`;
+
+// Behavior memory subdirectory for self-improving preferences
+export const MEMORY_BEHAVIOR_DIR = `${MEMORY_PROTOCOL_DIR}/behavior`;
+export const MEMORY_BEHAVIOR_DOMAINS_DIR = `${MEMORY_BEHAVIOR_DIR}/domains`;
+export const MEMORY_BEHAVIOR_PROJECTS_DIR = `${MEMORY_BEHAVIOR_DIR}/projects`;
+export const MEMORY_BEHAVIOR_ARCHIVE_DIR = `${MEMORY_BEHAVIOR_DIR}/archive`;
 
 /**
  * Get today's date string in YYYY-MM-DD format for daily log files.
@@ -103,6 +116,131 @@ export function getMailboxSeedContent(): string {
     messages: [],
   };
   return JSON.stringify(seed, null, 2);
+}
+
+// =============================================================================
+// Behavior Memory (Layer 3) - Self-improving preferences and workflow rules
+// =============================================================================
+
+/**
+ * Behavior rule structure for HOT.md entries (parsed from markdown)
+ */
+export interface BehaviorRule {
+  id: string;
+  rule: string;
+  scope?: "global" | "domain" | "project";
+  domain?: string;
+  project?: string;
+  confirmed?: boolean;
+  lastUsedAt?: string;
+  timesUsed?: number;
+  createdAt: string;
+}
+
+/**
+ * Correction entry structure for corrections.jsonl
+ */
+export interface BehaviorCorrection {
+  id: string;
+  timestamp: string;
+  wrongAction: string;
+  correctAction: string;
+  context?: string;
+  learnedRule?: string;
+  rulePromotedTo?: "HOT" | "domain" | "project";
+}
+
+/**
+ * Behavior index structure for index.json
+ */
+export interface BehaviorIndex {
+  version: number;
+  lastUpdated: string;
+  stats: {
+    hotRules: number;
+    corrections: number;
+    domains: string[];
+    projects: string[];
+    archivedRules: number;
+  };
+}
+
+/**
+ * Seed content for behavior/HOT.md (high-frequency behavior rules)
+ */
+export function getBehaviorHotSeedContent(): string {
+  return `# HOT Behavior Rules
+
+> Active preferences and workflow rules. These are high-frequency rules that apply across all work.
+
+## Format
+
+Each rule should be on its own line with optional metadata:
+- \`[confirmed]\` - User explicitly confirmed this rule
+- \`[domain:X]\` - Applies to specific domain (testing, debugging, etc.)
+- \`[project:X]\` - Applies to specific project
+
+## Rules
+
+<!-- Add rules below this line -->
+
+---
+*Add rules learned from corrections and user feedback here.*
+*Rules that aren't used frequently should be demoted to domain/ or archive/.*
+`;
+}
+
+/**
+ * Seed content for behavior/corrections.jsonl (empty - append-only log)
+ */
+export function getBehaviorCorrectionsSeedContent(): string {
+  // Empty file - corrections are appended as JSONL
+  return "";
+}
+
+/**
+ * Seed content for behavior/index.json (behavior metadata)
+ */
+export function getBehaviorIndexSeedContent(): string {
+  const index: BehaviorIndex = {
+    version: 1,
+    lastUpdated: new Date().toISOString(),
+    stats: {
+      hotRules: 0,
+      corrections: 0,
+      domains: [],
+      projects: [],
+      archivedRules: 0,
+    },
+  };
+  return JSON.stringify(index, null, 2);
+}
+
+/**
+ * Generate unique behavior rule ID
+ */
+export function generateBehaviorRuleId(): string {
+  const timestamp = Date.now().toString(36);
+  const random = Math.random().toString(36).substring(2, 6);
+  return `rule_${timestamp}${random}`;
+}
+
+/**
+ * Generate unique correction ID
+ */
+export function generateCorrectionId(): string {
+  const timestamp = Date.now().toString(36);
+  const random = Math.random().toString(36).substring(2, 6);
+  return `corr_${timestamp}${random}`;
+}
+
+/**
+ * Format a correction entry for appending to corrections.jsonl
+ */
+export function formatBehaviorCorrection(
+  correction: BehaviorCorrection
+): string {
+  return JSON.stringify(correction);
 }
 
 /**
@@ -519,10 +657,10 @@ devsh orchestrate spawn --agent claude/opus-4.6 "Task 3"
 
 /**
  * Get the startup command to create the memory directory structure.
- * Creates daily/, knowledge/, and orchestration/ subdirectories.
+ * Creates daily/, knowledge/, orchestration/, and behavior/ subdirectories.
  */
 export function getMemoryStartupCommand(): string {
-  return `mkdir -p ${MEMORY_DAILY_DIR} ${MEMORY_KNOWLEDGE_DIR} ${MEMORY_ORCHESTRATION_DIR}`;
+  return `mkdir -p ${MEMORY_DAILY_DIR} ${MEMORY_KNOWLEDGE_DIR} ${MEMORY_ORCHESTRATION_DIR} ${MEMORY_BEHAVIOR_DIR} ${MEMORY_BEHAVIOR_DOMAINS_DIR} ${MEMORY_BEHAVIOR_PROJECTS_DIR} ${MEMORY_BEHAVIOR_ARCHIVE_DIR}`;
 }
 
 /**
@@ -1716,12 +1854,14 @@ export function getOrchestrationSeedFiles(
  * @param previousKnowledge - Optional previous knowledge content from earlier runs (for cross-run seeding)
  * @param previousMailbox - Optional previous mailbox content with unread messages (for cross-run seeding)
  * @param orchestrationOptions - Optional orchestration seed options for multi-agent mode
+ * @param previousBehavior - Optional previous behavior HOT content (for cross-run seeding)
  */
 export function getMemorySeedFiles(
   sandboxId: string,
   previousKnowledge?: string,
   previousMailbox?: string,
-  orchestrationOptions?: OrchestrationSeedOptions
+  orchestrationOptions?: OrchestrationSeedOptions,
+  previousBehavior?: string
 ): AuthFile[] {
   const Buffer = globalThis.Buffer;
   const today = getTodayDateString();
@@ -1737,6 +1877,12 @@ export function getMemorySeedFiles(
     previousMailbox && previousMailbox.trim().length > 0
       ? previousMailbox
       : getMailboxSeedContent();
+
+  // Use previous behavior HOT if provided, otherwise use default template
+  const behaviorHotContent =
+    previousBehavior && previousBehavior.trim().length > 0
+      ? previousBehavior
+      : getBehaviorHotSeedContent();
 
   const files: AuthFile[] = [
     {
@@ -1761,6 +1907,42 @@ export function getMemorySeedFiles(
     {
       destinationPath: `${MEMORY_PROTOCOL_DIR}/MAILBOX.json`,
       contentBase64: Buffer.from(mailboxContent).toString("base64"),
+      mode: "644",
+    },
+    // Behavior memory files (Layer 3)
+    {
+      destinationPath: `${MEMORY_BEHAVIOR_DIR}/HOT.md`,
+      contentBase64: Buffer.from(behaviorHotContent).toString("base64"),
+      mode: "644",
+    },
+    {
+      destinationPath: `${MEMORY_BEHAVIOR_DIR}/corrections.jsonl`,
+      contentBase64: Buffer.from(getBehaviorCorrectionsSeedContent()).toString(
+        "base64"
+      ),
+      mode: "644",
+    },
+    {
+      destinationPath: `${MEMORY_BEHAVIOR_DIR}/index.json`,
+      contentBase64: Buffer.from(getBehaviorIndexSeedContent()).toString(
+        "base64"
+      ),
+      mode: "644",
+    },
+    // .keep files for empty directories
+    {
+      destinationPath: `${MEMORY_BEHAVIOR_DOMAINS_DIR}/.keep`,
+      contentBase64: Buffer.from("").toString("base64"),
+      mode: "644",
+    },
+    {
+      destinationPath: `${MEMORY_BEHAVIOR_PROJECTS_DIR}/.keep`,
+      contentBase64: Buffer.from("").toString("base64"),
+      mode: "644",
+    },
+    {
+      destinationPath: `${MEMORY_BEHAVIOR_ARCHIVE_DIR}/.keep`,
+      contentBase64: Buffer.from("").toString("base64"),
       mode: "644",
     },
     // Include sync script for memory sync to Convex
