@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { memo, useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
+import { formatTime, formatShortDate, formatDuration } from "@/lib/time";
 
 interface SessionTimelineProps {
   teamSlugOrId: string;
@@ -32,26 +33,6 @@ interface TimelineEvent {
   url?: string;
   sha?: string;
   prNumber?: number;
-}
-
-function formatTime(isoString: string): string {
-  const date = new Date(isoString);
-  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function formatDate(isoString: string): string {
-  const date = new Date(isoString);
-  return date.toLocaleDateString([], { month: "short", day: "numeric" });
-}
-
-function formatDuration(ms: number): string {
-  const minutes = Math.floor(ms / 60000);
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  if (hours > 0) {
-    return `${hours}h ${remainingMinutes}m`;
-  }
-  return `${minutes}m`;
 }
 
 function TimelineEventItem({
@@ -308,7 +289,7 @@ function SessionTimelineContent({ teamSlugOrId, limit = 5 }: SessionTimelineProp
     <div className="space-y-4">
       {sessionEvents.map(({ session, events }) => {
         const isExpanded = expandedSessions.has(session._id);
-        const dateStr = formatDate(session.startedAt);
+        const dateStr = formatShortDate(session.startedAt);
         const timeStr = formatTime(session.startedAt);
 
         return (

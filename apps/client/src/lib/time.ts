@@ -1,3 +1,34 @@
+/**
+ * Format a duration in milliseconds to a human-readable string.
+ * @example formatDuration(7200000) // "2h 0m"
+ * @example formatDuration(90000) // "1m"
+ */
+export function formatDuration(ms: number): string {
+  const minutes = Math.floor(ms / 60000);
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (hours > 0) {
+    return `${hours}h ${remainingMinutes}m`;
+  }
+  return `${minutes}m`;
+}
+
+/**
+ * Format a timestamp as time only (HH:MM).
+ */
+export function formatTime(isoString: string): string {
+  const date = new Date(isoString);
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+/**
+ * Format a timestamp as short date (Mon DD).
+ */
+export function formatShortDate(isoString: string): string {
+  const date = new Date(isoString);
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
 export function formatTimeAgo(input?: number | string): string {
   if (!input) return "";
   const timestamp = typeof input === "number" ? input : Date.parse(input);
