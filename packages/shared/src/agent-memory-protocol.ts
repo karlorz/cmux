@@ -432,11 +432,14 @@ You have access to persistent memory at \`${MEMORY_PROTOCOL_DIR}/\`:
 - \`${MEMORY_DAILY_DIR}/{date}.md\` - Daily logs (ephemeral)
 - \`${MEMORY_PROTOCOL_DIR}/TASKS.json\` - Task registry
 - \`${MEMORY_PROTOCOL_DIR}/MAILBOX.json\` - Inter-agent messages
+- \`${MEMORY_BEHAVIOR_DIR}/HOT.md\` - Active behavior rules (self-improving)
+- \`${MEMORY_BEHAVIOR_DIR}/corrections.jsonl\` - Correction log
 
 ### On Start
 1. Read \`knowledge/MEMORY.md\` for permanent project insights
-2. Read \`TASKS.json\` to see existing tasks and their statuses
-3. Optionally scan recent \`daily/\` logs for recent context
+2. Read \`behavior/HOT.md\` for active workflow preferences
+3. Read \`TASKS.json\` to see existing tasks and their statuses
+4. Optionally scan recent \`daily/\` logs for recent context
 
 ### During Work
 - Append observations to \`daily/{today}.md\` (create if doesn't exist)
@@ -445,6 +448,7 @@ You have access to persistent memory at \`${MEMORY_PROTOCOL_DIR}/\`:
 ### On Completion
 - **Daily log**: Append what you did today to \`daily/{today}.md\`
 - **Knowledge**: Promote KEY learnings to \`knowledge/MEMORY.md\` (only permanent insights)
+- **Behavior**: If the user corrected you, add the correction to \`behavior/corrections.jsonl\` and consider adding a rule to \`behavior/HOT.md\`
 - Update TASKS.json with final statuses
 
 ### Execution Summary (Required on Completion)
@@ -511,13 +515,28 @@ flowchart TD
 
 ### What Goes Where?
 
-| Type | Location | Priority | Example |
-|------|----------|----------|---------|
-| Project fundamentals | \`knowledge/MEMORY.md\` | P0 | "This project uses bun, not npm" |
-| Current work context | \`knowledge/MEMORY.md\` | P1 | "Auth refactor in progress" |
-| Temporary findings | \`knowledge/MEMORY.md\` | P2 | "Sandbox morphvm_abc for testing" |
-| Today's work | \`daily/{date}.md\` | - | "Fixed bug in auth.ts line 42" |
-| Debug notes | \`daily/{date}.md\` | - | "Tested endpoint with curl" |
+**Knowledge vs Behavior**: Knowledge is about *facts* (what IS). Behavior is about *preferences* (how to ACT).
+
+| Type | Location | Example |
+|------|----------|---------|
+| Project facts | \`knowledge/MEMORY.md\` | "This project uses bun, not npm" |
+| Architecture decisions | \`knowledge/MEMORY.md\` | "Auth uses JWT with 24h expiry" |
+| Workflow preferences | \`behavior/HOT.md\` | "Always run tests before committing" |
+| Tool preferences | \`behavior/HOT.md\` | "Use vitest, not jest" |
+| User corrections | \`behavior/corrections.jsonl\` | {"wrong": "Used npm", "correct": "Use bun"} |
+| Domain-specific rules | \`behavior/domains/testing.md\` | "Mock external APIs in unit tests" |
+| Today's work | \`daily/{date}.md\` | "Fixed bug in auth.ts line 42" |
+
+**Knowledge (facts about the project)**:
+- P0 Core: Tooling, ports, invariants ("Uses bun", "Port 3001 for auth")
+- P1 Active: Current work context ("Auth refactor in progress")
+- P2 Reference: Temporary findings ("Sandbox morphvm_abc for testing")
+
+**Behavior (how you should act)**:
+- HOT rules: High-frequency preferences that apply everywhere
+- Domain rules: Context-specific preferences (testing, debugging, security)
+- Project rules: Rules for specific repositories
+- Corrections: Log of mistakes and fixes (append-only)
 
 ### Priority Guidelines
 
@@ -568,6 +587,48 @@ get_my_messages()  // See if any agent has left instructions for you
 \`\`\`
 
 Messages from previous runs are automatically seeded into your mailbox.
+
+### Behavior Memory (Self-Improving)
+
+Behavior memory helps you learn from corrections and user feedback. Unlike knowledge (facts), behavior memory captures *preferences* about how to work.
+
+#### Structure
+
+- \`behavior/HOT.md\` - Active rules that apply to all work
+- \`behavior/corrections.jsonl\` - Log of corrections (append-only)
+- \`behavior/domains/\` - Domain-specific rules (e.g., \`testing.md\`, \`security.md\`)
+- \`behavior/projects/\` - Project-specific rules
+- \`behavior/archive/\` - Demoted/inactive rules
+
+#### When to Update Behavior
+
+1. **User explicitly corrects you**: Add to \`corrections.jsonl\` and consider promoting to \`HOT.md\`
+2. **User states a preference**: Add to \`HOT.md\` with \`[confirmed]\` tag
+3. **Pattern emerges**: After 2-3 similar corrections, create a rule in \`HOT.md\`
+
+#### HOT.md Format
+
+Rules in \`behavior/HOT.md\` use simple markdown with optional tags:
+\`\`\`markdown
+## Rules
+- [confirmed] Always use bun instead of npm
+- [domain:testing] Run tests before committing
+- [project:cmux] Use vitest for unit tests
+\`\`\`
+
+#### corrections.jsonl Format
+
+Each line is a JSON object:
+\`\`\`json
+{"id":"corr_abc123","timestamp":"2026-03-12T10:00:00Z","wrongAction":"Used npm install","correctAction":"Should use bun install","learnedRule":"Always use bun"}
+\`\`\`
+
+#### Best Practices
+
+- Keep HOT.md concise (under 50 rules)
+- Archive rules that haven't been used in 30+ days
+- Don't mix facts (knowledge) with preferences (behavior)
+- When in doubt, log to corrections.jsonl first before creating a rule
 `;
 }
 

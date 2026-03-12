@@ -4,6 +4,7 @@ import {
   getCrossToolSymlinkCommands,
   getMemoryStartupCommand,
   getMemorySeedFiles,
+  getMemoryProtocolInstructions,
   MEMORY_PROTOCOL_DIR,
   MEMORY_DAILY_DIR,
   MEMORY_KNOWLEDGE_DIR,
@@ -306,6 +307,40 @@ describe("agent-memory-protocol", () => {
       expect(parsed.id).toBe("corr_test123");
       expect(parsed.wrongAction).toBe("Used npm install");
       expect(parsed.correctAction).toBe("Should use bun install");
+    });
+  });
+
+  describe("getMemoryProtocolInstructions", () => {
+    it("includes behavior memory in structure section", () => {
+      const instructions = getMemoryProtocolInstructions();
+      expect(instructions).toContain("behavior/HOT.md");
+      expect(instructions).toContain("behavior/corrections.jsonl");
+    });
+
+    it("includes behavior memory in on-start section", () => {
+      const instructions = getMemoryProtocolInstructions();
+      expect(instructions).toContain("Read `behavior/HOT.md`");
+    });
+
+    it("includes behavior memory in on-completion section", () => {
+      const instructions = getMemoryProtocolInstructions();
+      expect(instructions).toContain("corrections.jsonl");
+      expect(instructions).toContain("If the user corrected you");
+    });
+
+    it("distinguishes knowledge from behavior", () => {
+      const instructions = getMemoryProtocolInstructions();
+      expect(instructions).toContain("Knowledge vs Behavior");
+      expect(instructions).toContain("facts");
+      expect(instructions).toContain("preferences");
+    });
+
+    it("includes behavior memory section with format examples", () => {
+      const instructions = getMemoryProtocolInstructions();
+      expect(instructions).toContain("Behavior Memory (Self-Improving)");
+      expect(instructions).toContain("HOT.md Format");
+      expect(instructions).toContain("corrections.jsonl Format");
+      expect(instructions).toContain("[confirmed]");
     });
   });
 });
