@@ -12,9 +12,8 @@
 # Scenarios:
 #   plan-to-completion  - Agent makes a real code change, task completes
 #   multi-agent-spawn   - Two agents spawned on same task, both complete
-#   quality-gate-check  - Quality gate endpoint returns valid response after completion
+#   quality-gate-check  - Quality gate and retry dry-run return valid responses
 #   status-tracking     - Autopilot heartbeat and status updates flow correctly
-#   retry-dry-run       - Retry dry-run returns valid structure
 #
 # Required:
 #   - CMUX_AUTH_TOKEN: Auth token from cloudrouter
@@ -54,7 +53,7 @@ while [[ $# -gt 0 ]]; do
       echo "Usage: $0 [--scenario <name>] [--agent <agent>] [--timeout <seconds>]"
       echo ""
       echo "Scenarios: plan-to-completion, multi-agent-spawn, quality-gate-check,"
-      echo "           status-tracking, retry-dry-run"
+      echo "           status-tracking"
       echo ""
       echo "Options:"
       echo "  --scenario  Run a single scenario (default: all)"
@@ -83,17 +82,8 @@ echo ""
 check_prerequisites
 register_task_cleanup
 
-SCENARIOS_RUN=0
 SCENARIOS_PASSED=0
 SCENARIOS_FAILED=0
-
-run_scenario() {
-  local name="$1"
-  if [ -n "$SCENARIO" ] && [ "$SCENARIO" != "$name" ]; then
-    return 0
-  fi
-  SCENARIOS_RUN=$((SCENARIOS_RUN + 1))
-}
 
 scenario_passed() {
   local name="$1"
@@ -115,7 +105,6 @@ scenario_failed() {
 # Scenario 1: Plan to Completion
 # ============================================================================
 if [ -z "$SCENARIO" ] || [ "$SCENARIO" = "plan-to-completion" ]; then
-  run_scenario "plan-to-completion"
   echo "--- Scenario 1: Plan to Completion ---"
   echo "Spawning agent with a prompt that makes a real code change..."
 
@@ -148,7 +137,6 @@ if [ -z "$SCENARIO" ] || [ "$SCENARIO" = "plan-to-completion" ]; then
       # Check runs
       RUNS_OUTPUT=$(get_task_runs_json "$TASK_ID")
       RUN_COUNT=$(echo "$RUNS_OUTPUT" | grep -c '"runId"' || echo "0")
-      EXIT_CODE=$(extract_json_number "$RUNS_OUTPUT" "exitCode")
 
       assert_contains "plan-to-completion: terminal status" "completed stopped" "$FINAL_STATUS"
       assert_not_empty "plan-to-completion: has at least one run" "$RUN_COUNT"
@@ -166,7 +154,6 @@ fi
 # Scenario 2: Multi-Agent Spawn
 # ============================================================================
 if [ -z "$SCENARIO" ] || [ "$SCENARIO" = "multi-agent-spawn" ]; then
-  run_scenario "multi-agent-spawn"
   echo "--- Scenario 2: Multi-Agent Spawn ---"
   echo "Spawning 2 agents on the same task..."
 
@@ -182,10 +169,7 @@ if [ -z "$SCENARIO" ] || [ "$SCENARIO" = "multi-agent-spawn" ]; then
     --json \
     "$PROMPT" 2>&1 || true)
 
-  TASK_ID=$(echo "$CREATE_OUTPUT" | grep -oP '"taskId":\s*"\K[^"]+' || echo "")
-  if [ -z "$TASK_ID" ]; then
-    TASK_ID=$(echo "$CREATE_OUTPUT" | grep -oP 'Task ID:\s*\K\S+' || echo "")
-  fi
+  TASK_ID=$(extract_task_id "$CREATE_OUTPUT")
 
   if [ -z "$TASK_ID" ]; then
     scenario_failed "multi-agent-spawn" "Failed to create task"
@@ -223,11 +207,10 @@ if [ -z "$SCENARIO" ] || [ "$SCENARIO" = "multi-agent-spawn" ]; then
 fi
 
 # ============================================================================
-# Scenario 3: Quality Gate Check
+# Scenario 3: Quality Gate Check + Retry Dry-Run
 # ============================================================================
 if [ -z "$SCENARIO" ] || [ "$SCENARIO" = "quality-gate-check" ]; then
-  run_scenario "quality-gate-check"
-  echo "--- Scenario 3: Quality Gate Check ---"
+  echo "--- Scenario 3: Quality Gate Check + Retry Dry-Run ---"
   echo "Creating task and checking quality gate after completion..."
 
   PROMPT="Create a file called TEST_QG.md with 'quality gate test - $(date +%s)'. Stage and commit. Do not create a PR."
@@ -250,28 +233,35 @@ if [ -z "$SCENARIO" ] || [ "$SCENARIO" = "quality-gate-check" ]; then
     }
 
     if [ "$FINAL_STATUS" != "timeout" ]; then
-      # Call quality gate via retry dry-run
-      echo "  Checking quality gate..."
-      RETRY_OUTPUT=$(devsh task retry "$TASK_ID" --dry-run --json 2>&1 || echo "{}")
+      # Test structured output (--json)
+      echo "  Checking quality gate (structured)..."
+      RETRY_JSON=$(devsh task retry "$TASK_ID" --dry-run --json 2>&1 || echo "{}")
 
-      # Verify response structure
-      QG_STATUS=$(extract_json_field "$RETRY_OUTPUT" "status")
-      SHOULD_RETRY=$(extract_json_bool "$RETRY_OUTPUT" "shouldRetry")
-      MAX_RETRIES=$(extract_json_number "$RETRY_OUTPUT" "maxRetries")
+      QG_STATUS=$(extract_json_field "$RETRY_JSON" "status")
 
       # Quality gate status should be one of the valid values
       # For repos without GitHub Actions, "unknown" is acceptable
       if echo "$QG_STATUS" | grep -qiE "^(unknown|running|pass|fail)$"; then
-        assert_eq "quality-gate-check: valid status" "true" "true"
+        assert_eq "quality-gate: valid status" "true" "true"
       else
-        # Status might not be in top-level field; check if retry output has structure
-        HAS_QUALITY_GATE=$(echo "$RETRY_OUTPUT" | grep -c "qualityGate\|quality_gate\|eligible" || echo "0")
+        # Status might not be in top-level field; check if output has structure
+        HAS_QUALITY_GATE=$(echo "$RETRY_JSON" | grep -c "qualityGate\|quality_gate\|eligible" || echo "0")
         if [ "$HAS_QUALITY_GATE" -gt 0 ]; then
-          assert_eq "quality-gate-check: response has quality gate fields" "true" "true"
+          assert_eq "quality-gate: response has quality gate fields" "true" "true"
         else
-          # If devsh task retry --dry-run doesn't support --json yet, just verify it ran
-          assert_not_empty "quality-gate-check: retry output not empty" "$RETRY_OUTPUT"
+          assert_not_empty "quality-gate: retry output not empty" "$RETRY_JSON"
         fi
+      fi
+
+      # Test plain text output (no --json)
+      echo "  Checking retry dry-run (plain text)..."
+      RETRY_TEXT=$(devsh task retry "$TASK_ID" --dry-run 2>&1 || echo "")
+      assert_not_empty "retry-dry-run: output not empty" "$RETRY_TEXT"
+
+      if echo "$RETRY_TEXT" | grep -qiE "eligible|retry|quality|checks|no failing"; then
+        assert_eq "retry-dry-run: has retry-related output" "true" "true"
+      else
+        assert_not_empty "retry-dry-run: got response" "$RETRY_TEXT"
       fi
 
       if echo "$FINAL_STATUS" | grep -qiE "^(completed|stopped)$"; then
@@ -287,7 +277,6 @@ fi
 # Scenario 4: Status Tracking
 # ============================================================================
 if [ -z "$SCENARIO" ] || [ "$SCENARIO" = "status-tracking" ]; then
-  run_scenario "status-tracking"
   echo "--- Scenario 4: Status Tracking ---"
   echo "Monitoring autopilot status transitions during task execution..."
 
@@ -369,66 +358,14 @@ if [ -z "$SCENARIO" ] || [ "$SCENARIO" = "status-tracking" ]; then
 fi
 
 # ============================================================================
-# Scenario 5: Retry Dry-Run
-# ============================================================================
-if [ -z "$SCENARIO" ] || [ "$SCENARIO" = "retry-dry-run" ]; then
-  run_scenario "retry-dry-run"
-  echo "--- Scenario 5: Retry Dry-Run ---"
-  echo "Testing retry dry-run response structure..."
-
-  PROMPT="Create a file called TEST_RETRY.md with 'retry test - $(date +%s)'. Stage and commit. Do not create a PR."
-
-  TASK_ID=$(create_autopilot_task \
-    --repo "$REPO_1" \
-    --agent "$AGENT" \
-    --autopilot-minutes 5 \
-    "$PROMPT") || {
-    scenario_failed "retry-dry-run" "Failed to create task"
-    TASK_ID=""
-  }
-
-  if [ -n "${TASK_ID:-}" ]; then
-    echo "  Task ID: $TASK_ID"
-
-    FINAL_STATUS=$(poll_until_terminal "$TASK_ID" "$TIMEOUT_SECONDS" 10) || {
-      scenario_failed "retry-dry-run" "Task did not complete"
-      FINAL_STATUS="timeout"
-    }
-
-    if [ "$FINAL_STATUS" != "timeout" ]; then
-      echo "  Running retry dry-run..."
-      RETRY_OUTPUT=$(devsh task retry "$TASK_ID" --dry-run 2>&1 || echo "")
-
-      assert_not_empty "retry-dry-run: output not empty" "$RETRY_OUTPUT"
-
-      # Check for expected fields/messages in output
-      # devsh task retry --dry-run should report eligibility
-      if echo "$RETRY_OUTPUT" | grep -qiE "eligible|retry|quality|checks|no failing"; then
-        assert_eq "retry-dry-run: has retry-related output" "true" "true"
-      else
-        # Even if the output format differs, verify something was returned
-        assert_not_empty "retry-dry-run: got response" "$RETRY_OUTPUT"
-      fi
-
-      scenario_passed "retry-dry-run"
-    fi
-  fi
-fi
-
-# ============================================================================
 # Summary
 # ============================================================================
 echo ""
 echo "========================================="
 echo "Autopilot Lifecycle E2E Test Summary"
 echo "========================================="
-echo "Scenarios run:    $SCENARIOS_RUN"
 echo "Scenarios passed: $SCENARIOS_PASSED"
 echo "Scenarios failed: $SCENARIOS_FAILED"
 echo ""
 
 print_summary
-
-if [ "$SCENARIOS_FAILED" -gt 0 ]; then
-  exit 1
-fi

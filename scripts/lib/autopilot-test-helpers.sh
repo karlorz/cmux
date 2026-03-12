@@ -20,7 +20,6 @@ _ATH_TOTAL=0
 # --- Colors ---
 _ATH_RED='\033[0;31m'
 _ATH_GREEN='\033[0;32m'
-_ATH_YELLOW='\033[0;33m'
 _ATH_NC='\033[0m'
 
 # --- Created tasks for cleanup ---
@@ -131,10 +130,7 @@ create_autopilot_task() {
   output=$(devsh task create --autopilot --json "$@" 2>&1 || true)
 
   local task_id
-  task_id=$(echo "$output" | grep -oP '"taskId":\s*"\K[^"]+' || echo "")
-  if [ -z "$task_id" ]; then
-    task_id=$(echo "$output" | grep -oP 'Task ID:\s*\K\S+' || echo "")
-  fi
+  task_id=$(extract_task_id "$output")
 
   if [ -z "$task_id" ]; then
     echo "[ERROR] Failed to extract task ID from output:" >&2
@@ -211,6 +207,17 @@ extract_json_number() {
 extract_json_bool() {
   local json="$1" field="$2"
   echo "$json" | grep -oP "\"${field}\":\s*\K(true|false)" | head -1 || echo ""
+}
+
+# Extract task ID from devsh task create output (JSON or plain text).
+extract_task_id() {
+  local output="$1"
+  local task_id
+  task_id=$(echo "$output" | grep -oP '"taskId":\s*"\K[^"]+' || echo "")
+  if [ -z "$task_id" ]; then
+    task_id=$(echo "$output" | grep -oP 'Task ID:\s*\K\S+' || echo "")
+  fi
+  echo "$task_id"
 }
 
 # ============================================================================
