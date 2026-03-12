@@ -8,6 +8,7 @@ import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { streamSSE } from "hono/streaming";
+import type { AgentCommEvent } from "@cmux/shared";
 
 // ============================================================================
 // Schemas
@@ -818,6 +819,154 @@ orchestrateRouter.get("/orchestrate/events/:orchestrationId", async (c) => {
         await new Promise((resolve) => setTimeout(resolve, 3000));
       } catch (error) {
         console.error("[orchestrate] SSE poll error:", error);
+        await stream.writeSSE({
+          event: "error",
+          data: JSON.stringify({
+            message: error instanceof Error ? error.message : "Unknown error",
+            timestamp: new Date().toISOString(),
+          }),
+        });
+        // Wait before retrying
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+    }
+  });
+});
+
+// ============================================================================
+// Typed Orchestration Events SSE Endpoint (v2 - reads from persisted events)
+// ============================================================================
+
+/**
+ * GET /api/orchestrate/v2/events/:orchestrationId
+ * Server-Sent Events endpoint for typed orchestration events.
+ * Reads from persisted orchestrationEvents table for replay capability.
+ * Events are emitted in AgentCommEvent format.
+ */
+orchestrateRouter.get("/orchestrate/v2/events/:orchestrationId", async (c) => {
+  const accessToken = await getAccessTokenFromRequest(c.req.raw);
+  if (!accessToken) {
+    return c.text("Unauthorized", 401);
+  }
+
+  const orchestrationId = c.req.param("orchestrationId");
+  const teamSlugOrId = c.req.query("teamSlugOrId");
+  const sinceTimestamp = c.req.query("since");
+  const replayAll = c.req.query("replay") === "true";
+
+  if (!teamSlugOrId) {
+    return c.text("teamSlugOrId query parameter required", 400);
+  }
+
+  try {
+    await verifyTeamAccess({ req: c.req.raw, teamSlugOrId });
+  } catch {
+    return c.text("Unauthorized", 401);
+  }
+
+  const convex = getConvex({ accessToken });
+
+  return streamSSE(c, async (stream) => {
+    let lastTimestamp = sinceTimestamp ? parseInt(sinceTimestamp, 10) : 0;
+    let isConnected = true;
+
+    // Send connected event
+    await stream.writeSSE({
+      event: "connected",
+      data: JSON.stringify({
+        orchestrationId,
+        version: "v2",
+        timestamp: new Date().toISOString(),
+      }),
+    });
+
+    // If replay requested, fetch all historical events first
+    if (replayAll) {
+      try {
+        const historicalEvents = await convex.query(
+          api.orchestrationEvents.getByOrchestration,
+          {
+            teamSlugOrId,
+            orchestrationId,
+            limit: 500,
+          }
+        );
+
+        for (const event of historicalEvents) {
+          await stream.writeSSE({
+            event: event.eventType,
+            id: event.eventId,
+            data: JSON.stringify(event.payload as AgentCommEvent),
+          });
+          lastTimestamp = Math.max(lastTimestamp, event.createdAt);
+        }
+
+        await stream.writeSSE({
+          event: "replay_complete",
+          data: JSON.stringify({
+            eventsReplayed: historicalEvents.length,
+            timestamp: new Date().toISOString(),
+          }),
+        });
+      } catch (error) {
+        console.error("[orchestrate/v2] Replay error:", error);
+        await stream.writeSSE({
+          event: "error",
+          data: JSON.stringify({
+            message: "Failed to replay events",
+            timestamp: new Date().toISOString(),
+          }),
+        });
+      }
+    }
+
+    // Poll for new events
+    while (isConnected) {
+      try {
+        // Fetch new events since last timestamp
+        const newEvents = await convex.query(
+          api.orchestrationEvents.getByOrchestration,
+          {
+            teamSlugOrId,
+            orchestrationId,
+            afterTimestamp: lastTimestamp,
+            limit: 100,
+          }
+        );
+
+        // Emit new events
+        for (const event of newEvents) {
+          await stream.writeSSE({
+            event: event.eventType,
+            id: event.eventId,
+            data: JSON.stringify(event.payload as AgentCommEvent),
+          });
+          lastTimestamp = Math.max(lastTimestamp, event.createdAt);
+        }
+
+        // Check for orchestration_completed event
+        const completedEvent = newEvents.find(
+          (e) => e.eventType === "orchestration_completed"
+        );
+        if (completedEvent) {
+          isConnected = false;
+          break;
+        }
+
+        // Send heartbeat with current state
+        await stream.writeSSE({
+          event: "heartbeat",
+          data: JSON.stringify({
+            lastTimestamp,
+            newEventsCount: newEvents.length,
+            timestamp: new Date().toISOString(),
+          }),
+        });
+
+        // Wait 2 seconds before next poll (faster than v1 since events are pre-computed)
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      } catch (error) {
+        console.error("[orchestrate/v2] SSE poll error:", error);
         await stream.writeSSE({
           event: "error",
           data: JSON.stringify({
