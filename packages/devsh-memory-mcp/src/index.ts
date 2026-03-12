@@ -1694,10 +1694,15 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
           };
         }
 
+        const startTime = Date.now();
+        let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+
         try {
           // Use the v2 SSE endpoint for typed events
           const url = `${apiBaseUrl}/api/orchestrate/v2/events/${orchestrationId}`;
           const controller = new AbortController();
+
+          // Set up timeout that aborts the controller - this affects both fetch and stream
           const timeoutId = setTimeout(() => controller.abort(), timeout);
 
           const response = await fetch(url, {
@@ -1709,9 +1714,8 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
             signal: controller.signal,
           });
 
-          clearTimeout(timeoutId);
-
           if (!response.ok) {
+            clearTimeout(timeoutId);
             const errorText = await response.text();
             return {
               content: [{
@@ -1722,8 +1726,9 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
           }
 
           // Read the SSE stream for matching events
-          const reader = response.body?.getReader();
+          reader = response.body?.getReader();
           if (!reader) {
+            clearTimeout(timeoutId);
             return {
               content: [{
                 type: "text",
@@ -1733,7 +1738,6 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
           }
 
           const decoder = new TextDecoder();
-          const startTime = Date.now();
           let buffer = "";
 
           while (Date.now() - startTime < timeout) {
@@ -1750,7 +1754,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
                   const event = JSON.parse(line.slice(6));
                   // Check if event matches filter
                   if (eventTypes.length === 0 || eventTypes.includes(event.type)) {
-                    reader.cancel();
+                    clearTimeout(timeoutId);
                     return {
                       content: [{
                         type: "text",
@@ -1768,7 +1772,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
             }
           }
 
-          reader.cancel();
+          clearTimeout(timeoutId);
           return {
             content: [{
               type: "text",
@@ -1799,6 +1803,15 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
               text: `Error waiting for events: ${errorMsg}`,
             }],
           };
+        } finally {
+          // Ensure reader is always cleaned up
+          if (reader) {
+            try {
+              reader.cancel();
+            } catch {
+              // Ignore cancel errors
+            }
+          }
         }
       }
 

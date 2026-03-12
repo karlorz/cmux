@@ -407,21 +407,22 @@ orchestrateRouter.openapi(
 
       let cancelledCount = 1;
 
-      // Optionally cascade to dependents
+      // Optionally cascade to dependents (in parallel for efficiency)
       if (cascade) {
         const dependents = await convex.query(api.orchestrationQueries.getDependentTasks, {
           taskId: taskId as Id<"orchestrationTasks">,
         });
 
-        for (const dependent of dependents) {
-          if (!dependent) continue;
-          if (dependent.status === "pending" || dependent.status === "assigned") {
-            await convex.mutation(api.orchestrationQueries.cancelTask, {
-              taskId: dependent._id,
-            });
-            cancelledCount++;
-          }
-        }
+        const cancellable = dependents.filter(
+          (d) => d && (d.status === "pending" || d.status === "assigned")
+        );
+
+        await Promise.all(
+          cancellable.map((d) =>
+            convex.mutation(api.orchestrationQueries.cancelTask, { taskId: d._id })
+          )
+        );
+        cancelledCount += cancellable.length;
       }
 
       return c.json({ ok: true, cancelledCount });
