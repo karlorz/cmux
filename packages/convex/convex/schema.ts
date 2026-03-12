@@ -1776,6 +1776,78 @@ const convexSchema = defineSchema({
     .index("by_team_provider", ["teamId", "provider", "status"])
     .index("by_team_agent", ["teamId", "agentName", "status"]),
 
+  // Approval requests for human-in-the-loop orchestration
+  // Stores pending approvals for risky actions, review requests, and policy escalations
+  approvalRequests: defineTable({
+    orchestrationId: v.string(), // Parent orchestration
+    taskId: v.optional(v.string()), // Related orchestration task
+    taskRunId: v.optional(v.id("taskRuns")), // Related task run
+    teamId: v.string(),
+    requestId: v.string(), // Unique approval request ID (apr_xxx)
+    // Source of the approval request
+    source: v.union(
+      v.literal("tool_use"), // Claude SDK tool permission
+      v.literal("head_agent"), // Head agent review request
+      v.literal("worker_agent"), // Worker escalation
+      v.literal("policy"), // Policy-triggered approval
+      v.literal("system") // System-generated (e.g., timeout warning)
+    ),
+    // Type of approval needed
+    approvalType: v.union(
+      v.literal("tool_permission"), // Tool use approval (Bash, Edit, etc.)
+      v.literal("review_request"), // Code review request
+      v.literal("deployment"), // Deployment approval
+      v.literal("cost_override"), // Budget override request
+      v.literal("escalation"), // General escalation to human
+      v.literal("risky_action") // Risky action warning
+    ),
+    // What action is being requested
+    action: v.string(), // e.g., "Bash: rm -rf node_modules", "Edit: src/main.ts"
+    // Context for the approval decision
+    context: v.object({
+      agentName: v.string(), // Who is requesting
+      filePath: v.optional(v.string()), // Affected file if applicable
+      command: v.optional(v.string()), // Command if applicable
+      reasoning: v.optional(v.string()), // Why the agent wants this
+      riskLevel: v.optional(
+        v.union(v.literal("low"), v.literal("medium"), v.literal("high"))
+      ),
+    }),
+    // Optional payload for additional data
+    payload: v.optional(v.any()),
+    // Approval status
+    status: v.union(
+      v.literal("pending"),
+      v.literal("approved"),
+      v.literal("denied"),
+      v.literal("expired"),
+      v.literal("cancelled")
+    ),
+    // Resolution details
+    resolvedBy: v.optional(v.string()), // User ID who resolved
+    resolvedAt: v.optional(v.number()),
+    resolution: v.optional(
+      v.union(
+        v.literal("allow"),
+        v.literal("allow_once"),
+        v.literal("allow_session"),
+        v.literal("deny"),
+        v.literal("deny_always")
+      )
+    ),
+    resolutionNote: v.optional(v.string()), // Optional note from resolver
+    // Timing
+    expiresAt: v.optional(v.number()), // Auto-expire if not resolved
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orchestration", ["orchestrationId", "createdAt"])
+    .index("by_orchestration_status", ["orchestrationId", "status", "createdAt"])
+    .index("by_team_status", ["teamId", "status", "createdAt"])
+    .index("by_task", ["taskId", "createdAt"])
+    .index("by_task_run", ["taskRunId", "createdAt"])
+    .index("by_request_id", ["requestId"]),
+
   // Projects for grouping related tasks and tracking aggregate progress
   // Supports plan storage, Obsidian integration, and progress metrics
   projects: defineTable({

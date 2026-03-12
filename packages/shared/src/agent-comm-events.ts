@@ -137,7 +137,7 @@ export interface WorkerStatusEvent extends AgentCommEventBase {
  */
 export interface ApprovalRequiredEvent extends AgentCommEventBase {
   type: "approval_required";
-  taskId: string;
+  taskId?: string;
   taskRunId?: string;
   source: string;
   action: string;
@@ -151,10 +151,16 @@ export interface ApprovalRequiredEvent extends AgentCommEventBase {
  */
 export interface ApprovalResolvedEvent extends AgentCommEventBase {
   type: "approval_resolved";
-  taskId: string;
+  taskId?: string;
   taskRunId?: string;
-  approvalId: string;
-  resolution: "allow" | "deny" | "timeout";
+  approvalId?: string;
+  resolution:
+    | "allow"
+    | "allow_once"
+    | "allow_session"
+    | "deny"
+    | "deny_always"
+    | "timeout";
   resolvedBy?: string;
   reason?: string;
 }
