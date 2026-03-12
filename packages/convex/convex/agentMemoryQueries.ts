@@ -347,18 +347,22 @@ export const getTeamBehaviorMemory = authQuery({
       createdAt: number;
     };
 
-    const results: Record<string, MemorySnapshot[]> = {};
-
-    for (const memoryType of behaviorTypes) {
-      const snapshots = await ctx.db
+    // Fetch all behavior types in parallel (avoid N+1 sequential queries)
+    const snapshotPromises = behaviorTypes.map((memoryType) =>
+      ctx.db
         .query("agentMemorySnapshots")
         .withIndex("by_team_type", (q) =>
           q.eq("teamId", teamId).eq("memoryType", memoryType)
         )
         .order("desc")
-        .take(10);
+        .take(10)
+    );
 
-      results[memoryType] = snapshots.map((s) => ({
+    const allSnapshots = await Promise.all(snapshotPromises);
+
+    const results: Record<string, MemorySnapshot[]> = {};
+    behaviorTypes.forEach((memoryType, index) => {
+      results[memoryType] = allSnapshots[index].map((s) => ({
         _id: s._id,
         _creationTime: s._creationTime,
         taskRunId: s.taskRunId,
@@ -372,7 +376,7 @@ export const getTeamBehaviorMemory = authQuery({
         truncated: s.truncated,
         createdAt: s.createdAt,
       }));
-    }
+    });
 
     return results;
   },
