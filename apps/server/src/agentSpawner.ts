@@ -132,6 +132,7 @@ export interface PreFetchedSpawnConfig {
   };
   previousKnowledge: string | null;
   previousMailbox: string | null;
+  previousBehavior: string | null;
 }
 
 /** Autopilot mode configuration for long-running agent sessions (Phase 6) */
@@ -561,6 +562,7 @@ export async function spawnAgent(
       | undefined;
     let previousKnowledge: string | null;
     let previousMailbox: string | null;
+    let previousBehavior: string | null;
 
     if (options.preFetchedConfig) {
       // Use pre-fetched config (JWT auth path - Stack Auth not available)
@@ -571,6 +573,7 @@ export async function spawnAgent(
       mcpServerConfigs = options.preFetchedConfig.mcpServerConfigs;
       previousKnowledge = options.preFetchedConfig.previousKnowledge;
       previousMailbox = options.preFetchedConfig.previousMailbox;
+      previousBehavior = options.preFetchedConfig.previousBehavior;
     } else {
       // Fetch from Convex (Stack Auth available)
       const results = await Promise.all([
@@ -634,6 +637,18 @@ export async function spawnAgent(
             );
             return null;
           }),
+        // Query previous behavior HOT for cross-run behavior memory seeding
+        getConvex()
+          .query(api.agentMemoryQueries.getLatestTeamBehaviorHot, {
+            teamSlugOrId,
+          })
+          .catch((error) => {
+            serverLogger.warn(
+              "[AgentSpawner] Failed to fetch previous behavior for memory seeding",
+              error
+            );
+            return null;
+          }),
       ]);
       userApiKeys = results[0];
       workspaceSettings = results[1];
@@ -641,6 +656,7 @@ export async function spawnAgent(
       mcpServerConfigs = results[3];
       previousKnowledge = results[4];
       previousMailbox = results[5];
+      previousBehavior = results[6];
     }
 
     if (previousKnowledge) {
@@ -651,6 +667,11 @@ export async function spawnAgent(
     if (previousMailbox) {
       serverLogger.info(
         `[AgentSpawner] Found previous mailbox (${previousMailbox.length} chars) with unread messages for cross-run seeding`
+      );
+    }
+    if (previousBehavior) {
+      serverLogger.info(
+        `[AgentSpawner] Found previous behavior HOT (${previousBehavior.length} chars) for cross-run seeding`
       );
     }
 
@@ -744,6 +765,7 @@ export async function spawnAgent(
         providerConfig: effectiveProviderConfig,
         previousKnowledge: previousKnowledge ?? undefined,
         previousMailbox: previousMailbox ?? undefined,
+        previousBehavior: previousBehavior ?? undefined,
         orchestrationOptions: options.orchestrationOptions,
         // GitHub Projects v2 context (Phase 5: Sandbox Project Integration)
         githubProjectContext:

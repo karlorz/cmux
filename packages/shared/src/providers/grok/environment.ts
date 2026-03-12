@@ -84,7 +84,8 @@ async function makeGrokEnvironment(
       ctx.taskRunId,
       ctx.previousKnowledge,
       ctx.previousMailbox,
-      ctx.orchestrationOptions
+      ctx.orchestrationOptions,
+      ctx.previousBehavior
     )
   );
 
