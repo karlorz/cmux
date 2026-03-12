@@ -42,7 +42,6 @@ import { isLinkedToProject } from "./orchestrationQueries";
 import {
   generateEventId,
   type TaskCompletedEvent,
-  type TaskStartedEvent,
   type TaskStatusChangedEvent,
 } from "@cmux/shared/convex-safe";
 
