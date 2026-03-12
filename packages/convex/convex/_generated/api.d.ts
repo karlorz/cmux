@@ -90,6 +90,8 @@ import type * as sandboxInstanceMaintenance from "../sandboxInstanceMaintenance.
 import type * as sandboxInstances from "../sandboxInstances.js";
 import type * as screenshots_http from "../screenshots_http.js";
 import type * as seed from "../seed.js";
+import type * as sessionActivity from "../sessionActivity.js";
+import type * as sessionActivity_http from "../sessionActivity_http.js";
 import type * as sourceRepoMappings from "../sourceRepoMappings.js";
 import type * as stack from "../stack.js";
 import type * as stack_webhook from "../stack_webhook.js";
@@ -203,6 +205,8 @@ declare const fullApi: ApiFromModules<{
   sandboxInstances: typeof sandboxInstances;
   screenshots_http: typeof screenshots_http;
   seed: typeof seed;
+  sessionActivity: typeof sessionActivity;
+  sessionActivity_http: typeof sessionActivity_http;
   sourceRepoMappings: typeof sourceRepoMappings;
   stack: typeof stack;
   stack_webhook: typeof stack_webhook;

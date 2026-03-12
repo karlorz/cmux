@@ -3,6 +3,7 @@ import type { EditorApi } from "@/components/dashboard/DashboardInput";
 import { DashboardInputControls } from "@/components/dashboard/DashboardInputControls";
 import { DashboardInputFooter } from "@/components/dashboard/DashboardInputFooter";
 import { DashboardStartTaskButton } from "@/components/dashboard/DashboardStartTaskButton";
+import { SessionActivityCard } from "@/components/dashboard/SessionActivityCard";
 import { TaskList } from "@/components/dashboard/TaskList";
 import { WorkspaceCreationButtons } from "@/components/dashboard/WorkspaceCreationButtons";
 import { FloatingPane } from "@/components/floating-pane";
@@ -1476,6 +1477,9 @@ function DashboardComponent() {
               </div>
             ) : null} */}
           </div>
+
+          {/* Session Activity */}
+          <SessionActivityCard teamSlugOrId={teamSlugOrId} className="mb-4" />
 
           {/* Task List */}
           <div className="w-full">

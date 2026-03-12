@@ -82,6 +82,10 @@ import {
   autopilotStatus,
   autopilotInfo,
 } from "./autopilot_http";
+import {
+  recordStart as sessionActivityRecordStart,
+  recordEnd as sessionActivityRecordEnd,
+} from "./sessionActivity_http";
 
 const http = httpRouter();
 
@@ -496,6 +500,22 @@ http.route({
   path: "/api/autopilot/info",
   method: "GET",
   handler: autopilotInfo,
+});
+
+// =============================================================================
+// Session Activity API - Track agent session changes (commits, PRs, files)
+// =============================================================================
+
+http.route({
+  path: "/api/session-activity/start",
+  method: "POST",
+  handler: sessionActivityRecordStart,
+});
+
+http.route({
+  path: "/api/session-activity/end",
+  method: "POST",
+  handler: sessionActivityRecordEnd,
 });
 
 export default http;
