@@ -1718,6 +1718,74 @@ const convexSchema = defineSchema({
     .index("by_team", ["teamId"])
     .index("by_team_scope", ["teamId", "scope"])
     .index("by_team_project", ["teamId", "projectFullName"]),
+
+  // Session activity tracking for visual change dashboards
+  sessionActivity: defineTable({
+    // Link to task run
+    taskRunId: v.id("taskRuns"),
+    // Session identifier (from autopilot)
+    sessionId: v.string(),
+    // Timing
+    startedAt: v.string(),
+    endedAt: v.optional(v.string()),
+    durationMs: v.optional(v.number()),
+    // Git state
+    startCommit: v.string(),
+    endCommit: v.optional(v.string()),
+    // Commits made during session
+    commits: v.array(
+      v.object({
+        sha: v.string(),
+        message: v.string(),
+        timestamp: v.string(),
+        filesChanged: v.number(),
+        additions: v.number(),
+        deletions: v.number(),
+      })
+    ),
+    // PRs merged during session
+    prsMerged: v.array(
+      v.object({
+        number: v.number(),
+        title: v.string(),
+        url: v.string(),
+        mergedAt: v.string(),
+        additions: v.number(),
+        deletions: v.number(),
+        filesChanged: v.number(),
+      })
+    ),
+    // Files changed with details
+    filesChanged: v.array(
+      v.object({
+        path: v.string(),
+        additions: v.number(),
+        deletions: v.number(),
+        status: v.union(
+          v.literal("added"),
+          v.literal("modified"),
+          v.literal("deleted"),
+          v.literal("renamed")
+        ),
+      })
+    ),
+    // Aggregated stats for quick display
+    stats: v.object({
+      totalCommits: v.number(),
+      totalPRs: v.number(),
+      totalFiles: v.number(),
+      totalAdditions: v.number(),
+      totalDeletions: v.number(),
+    }),
+    // Ownership
+    teamId: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_taskRun", ["taskRunId"])
+    .index("by_session", ["sessionId"])
+    .index("by_team", ["teamId"])
+    .index("by_team_time", ["teamId", "startedAt"]),
 });
 
 export default convexSchema;
