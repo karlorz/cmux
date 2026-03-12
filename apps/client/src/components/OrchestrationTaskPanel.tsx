@@ -15,10 +15,12 @@ import {
   ExternalLink,
   MessageSquare,
   XOctagon,
+  Shield,
 } from "lucide-react";
 import clsx from "clsx";
 import { toast } from "sonner";
 import { OrchestrationMessageDialog } from "./orchestration/OrchestrationMessageDialog";
+import { ApprovalRequestList } from "./orchestration/ApprovalRequestCard";
 import type { Id } from "@cmux/convex/dataModel";
 
 export interface OrchestrationTaskPanelProps {
@@ -38,12 +40,19 @@ const STATUS_CONFIG: Record<TaskStatus, { icon: React.ElementType; color: string
 
 export function OrchestrationTaskPanel({ teamSlugOrId }: OrchestrationTaskPanelProps) {
   const [statusFilter, setStatusFilter] = useState<TaskStatus | "all">("all");
+  const [activeTab, setActiveTab] = useState<"tasks" | "approvals">("tasks");
   const [messageDialogOpen, setMessageDialogOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<{
     taskRunId: Id<"taskRuns">;
     agentName: string;
   } | null>(null);
   const convex = useConvex();
+
+  // Query pending approvals count for badge
+  const pendingApprovals = useQuery(api.approvalBroker.getPendingByTeam, {
+    teamSlugOrId,
+    limit: 50,
+  });
 
   const tasks = useQuery(api.orchestrationQueries.listTasksByTeam, {
     teamSlugOrId,
@@ -137,41 +146,77 @@ export function OrchestrationTaskPanel({ teamSlugOrId }: OrchestrationTaskPanelP
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header with filters */}
+      {/* Header with tabs */}
       <div className="flex items-center gap-2 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
-        <Users className="size-4 text-neutral-500" />
-        <span className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-          Orchestration Tasks
-        </span>
-        <span className="text-xs text-neutral-400">({tasks.length})</span>
+        {/* Tab buttons */}
+        <button
+          type="button"
+          onClick={() => setActiveTab("tasks")}
+          className={clsx(
+            "inline-flex items-center gap-1.5 rounded px-2 py-1 text-sm font-medium transition-colors",
+            activeTab === "tasks"
+              ? "bg-neutral-200 text-neutral-900 dark:bg-neutral-700 dark:text-neutral-100"
+              : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+          )}
+        >
+          <Users className="size-4" />
+          Tasks
+          <span className="text-xs text-neutral-400">({tasks.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("approvals")}
+          className={clsx(
+            "inline-flex items-center gap-1.5 rounded px-2 py-1 text-sm font-medium transition-colors",
+            activeTab === "approvals"
+              ? "bg-neutral-200 text-neutral-900 dark:bg-neutral-700 dark:text-neutral-100"
+              : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+          )}
+        >
+          <Shield className="size-4" />
+          Approvals
+          {pendingApprovals && pendingApprovals.length > 0 && (
+            <span className="inline-flex size-5 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white">
+              {pendingApprovals.length}
+            </span>
+          )}
+        </button>
 
         {/* Link to dashboard */}
         <Link
           to="/$teamSlugOrId/orchestration"
           params={{ teamSlugOrId }}
-          className="ml-1 rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+          className="ml-auto rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
           title="Open dashboard"
         >
           <ExternalLink className="size-3" />
         </Link>
 
-        {/* Status filter */}
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as TaskStatus | "all")}
-          className="ml-auto rounded border border-neutral-200 bg-white px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-800"
-        >
-          <option value="all">All statuses</option>
-          {(Object.keys(STATUS_CONFIG) as TaskStatus[]).map((status) => (
-            <option key={status} value={status}>
-              {STATUS_CONFIG[status].label} ({statusCounts[status] || 0})
-            </option>
-          ))}
-        </select>
+        {/* Status filter (only for tasks tab) */}
+        {activeTab === "tasks" && (
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as TaskStatus | "all")}
+            className="rounded border border-neutral-200 bg-white px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-800"
+          >
+            <option value="all">All statuses</option>
+            {(Object.keys(STATUS_CONFIG) as TaskStatus[]).map((status) => (
+              <option key={status} value={status}>
+                {STATUS_CONFIG[status].label} ({statusCounts[status] || 0})
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
-      {/* Task list */}
+      {/* Content based on active tab */}
       <div className="flex-1 overflow-auto">
+        {activeTab === "approvals" ? (
+          <div className="p-3">
+            <ApprovalRequestList teamSlugOrId={teamSlugOrId} />
+          </div>
+        ) : (
         <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
           {tasks.map((task) => {
             const status = task.status as TaskStatus;
@@ -265,6 +310,7 @@ export function OrchestrationTaskPanel({ teamSlugOrId }: OrchestrationTaskPanelP
             );
           })}
         </div>
+        )}
       </div>
 
       {/* Message Dialog */}
