@@ -50,6 +50,36 @@ const MAX_CONCURRENT_SPAWNS = 3; // Per-team concurrent spawn limit
 const TASK_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes - fail tasks running longer than this
 
 /**
+ * Extract provider name from agent name.
+ * E.g., "claude/opus-4.5" -> "claude", "codex/gpt-5.1-codex" -> "codex"
+ */
+function getProviderFromAgentName(
+  agentName: string
+): "claude" | "codex" | "gemini" | "opencode" | "amp" | "grok" | "cursor" | "qwen" {
+  const prefix = agentName.split("/")[0]?.toLowerCase();
+  switch (prefix) {
+    case "claude":
+      return "claude";
+    case "codex":
+      return "codex";
+    case "gemini":
+      return "gemini";
+    case "opencode":
+      return "opencode";
+    case "amp":
+      return "amp";
+    case "grok":
+      return "grok";
+    case "cursor":
+      return "cursor";
+    case "qwen":
+      return "qwen";
+    default:
+      return "claude"; // Default fallback
+  }
+}
+
+/**
  * Poll for ready tasks across all teams.
  * Called by cron job every minute.
  *
@@ -224,6 +254,20 @@ export const dispatchSpawn = internalAction({
       await ctx.runMutation(internal.orchestrationQueries.startTaskInternal, {
         taskId: args.taskId,
       });
+
+      // Bind provider session for task resume capability
+      const provider = getProviderFromAgentName(agentName);
+      const orchestrationId = task.parentTaskId ?? args.taskId;
+
+      await ctx.runMutation(internal.providerSessions.bindSessionInternal, {
+        teamId: args.teamId,
+        orchestrationId: String(orchestrationId),
+        taskId: args.taskId,
+        taskRunId: task.taskRunId,
+        agentName,
+        provider,
+        mode: task.parentTaskId ? "worker" : "head",
+      });
     } catch (error) {
       // Schedule retry with backoff
       await ctx.runMutation(internal.orchestrationQueries.scheduleRetry, {
@@ -350,6 +394,11 @@ export const handleTaskCompletion = internalMutation({
       taskRunId: args.taskRunId,
       payload: statusEvent,
       createdAt: now,
+    });
+
+    // Terminate provider session binding
+    await ctx.runMutation(internal.providerSessions.terminateSessionInternal, {
+      taskId: String(orchTask._id),
     });
 
     // Trigger dependent tasks immediately (don't wait for poll cycle)
