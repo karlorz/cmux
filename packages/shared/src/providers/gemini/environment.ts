@@ -243,7 +243,7 @@ export async function getGeminiEnvironment(
 
   // Add agent memory protocol support
   startupCommands.push(getMemoryStartupCommand());
-  files.push(...getMemorySeedFiles(ctx.taskRunId, ctx.previousKnowledge, ctx.previousMailbox, ctx.orchestrationOptions));
+  files.push(...getMemorySeedFiles(ctx.taskRunId, ctx.previousKnowledge, ctx.previousMailbox, ctx.orchestrationOptions, ctx.previousBehavior));
 
   // Create cross-tool symlinks for shared instructions
   // If Claude's CLAUDE.md exists, link it to ~/.gemini/GEMINI.md

@@ -41,6 +41,7 @@ export interface SpawnConfigData {
   };
   previousKnowledge: string | null;
   previousMailbox: string | null;
+  previousBehavior: string | null;
 }
 
 const CreateTaskAndRunSchema = z.object({
@@ -441,6 +442,7 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
       opencodeMcpConfigs,
       previousKnowledge,
       previousMailbox,
+      previousBehavior,
     ] = await Promise.all([
       ctx.runQuery(internal.apiKeys.getAllForAgentsInternal, { teamId, userId }),
       ctx.runQuery(internal.workspaceSettings.getByTeamAndUserInternal, { teamId, userId }),
@@ -467,6 +469,7 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
       }),
       ctx.runQuery(internal.agentMemoryQueries.getLatestTeamKnowledgeInternal, { teamId }),
       ctx.runQuery(internal.agentMemoryQueries.getLatestTeamMailboxInternal, { teamId }),
+      ctx.runQuery(internal.agentMemoryQueries.getLatestTeamBehaviorHotInternal, { teamId }),
     ]);
 
     const config: SpawnConfigData = {
@@ -491,6 +494,7 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
       },
       previousKnowledge,
       previousMailbox,
+      previousBehavior,
     };
 
     return jsonResponse(config);

@@ -43,6 +43,10 @@ SEED_MEMORY=true  # Manually seed memory for devsh sandboxes
 MEMORY_DIR="/root/lifecycle/memory"
 KNOWLEDGE_DIR="${MEMORY_DIR}/knowledge"
 DAILY_DIR="${MEMORY_DIR}/daily"
+BEHAVIOR_DIR="${MEMORY_DIR}/behavior"
+BEHAVIOR_DOMAINS_DIR="${BEHAVIOR_DIR}/domains"
+BEHAVIOR_PROJECTS_DIR="${BEHAVIOR_DIR}/projects"
+BEHAVIOR_ARCHIVE_DIR="${BEHAVIOR_DIR}/archive"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -185,7 +189,7 @@ seed_memory_protocol() {
   today="$(date +%Y-%m-%d)"
 
   # Create directory structure
-  sandbox_exec "mkdir -p ${KNOWLEDGE_DIR} ${DAILY_DIR}"
+  sandbox_exec "mkdir -p ${KNOWLEDGE_DIR} ${DAILY_DIR} ${BEHAVIOR_DIR} ${BEHAVIOR_DOMAINS_DIR} ${BEHAVIOR_PROJECTS_DIR} ${BEHAVIOR_ARCHIVE_DIR}"
 
   # Seed TASKS.json
   local tasks_json='{"version":1,"tasks":[],"metadata":{"sandboxId":"'${SANDBOX_ID}'","createdAt":"'$(date -Iseconds)'"}}'
@@ -248,6 +252,39 @@ console.log(JSON.stringify({tools}));'
   local mcp_b64
   mcp_b64="$(echo "${mcp_stub}" | base64)"
   sandbox_exec "echo '${mcp_b64}' | base64 -d > ${MEMORY_DIR}/mcp-server.js && chmod +x ${MEMORY_DIR}/mcp-server.js"
+
+  # Seed behavior/HOT.md
+  local hot_content='# HOT Behavior Rules
+
+> Active preferences and workflow rules. These are high-frequency rules that apply across all work.
+
+## Format
+
+Each rule should be on its own line with optional metadata:
+- `[confirmed]` - User explicitly confirmed this rule
+- `[domain:X]` - Applies to specific domain (testing, debugging, etc.)
+- `[project:X]` - Applies to specific project
+
+## Rules
+
+<!-- Add rules below this line -->
+
+---
+*Add rules learned from corrections and user feedback here.*
+*Rules that are not used frequently should be demoted to domain/ or archive/.*'
+  local hot_b64
+  hot_b64="$(echo "${hot_content}" | base64)"
+  sandbox_exec "echo '${hot_b64}' | base64 -d > ${BEHAVIOR_DIR}/HOT.md"
+
+  # Seed behavior/corrections.jsonl (empty)
+  sandbox_exec "touch ${BEHAVIOR_DIR}/corrections.jsonl"
+
+  # Seed behavior/index.json
+  local index_content="{\"version\":1,\"lastUpdated\":\"$(date -Iseconds)\",\"stats\":{\"hotRules\":0,\"corrections\":0,\"domains\":[],\"projects\":[],\"archivedRules\":0}}"
+  sandbox_exec "echo '${index_content}' > ${BEHAVIOR_DIR}/index.json"
+
+  # Seed .keep files for empty directories
+  sandbox_exec "touch ${BEHAVIOR_DOMAINS_DIR}/.keep ${BEHAVIOR_PROJECTS_DIR}/.keep ${BEHAVIOR_ARCHIVE_DIR}/.keep"
 
   info "Memory protocol seeded successfully"
 }
@@ -340,6 +377,53 @@ test_memory_seeding() {
     record_pass "MCP server exists: ${MEMORY_DIR}/mcp-server.js"
   else
     record_fail "MCP server missing: ${MEMORY_DIR}/mcp-server.js"
+  fi
+
+  # Test 1.10: Check behavior directory
+  if sandbox_dir_exists "${BEHAVIOR_DIR}"; then
+    record_pass "Behavior directory exists: ${BEHAVIOR_DIR}"
+  else
+    record_fail "Behavior directory missing: ${BEHAVIOR_DIR}"
+  fi
+
+  # Test 1.11: Check behavior/HOT.md
+  if sandbox_file_exists "${BEHAVIOR_DIR}/HOT.md"; then
+    local hot_content
+    hot_content="$(sandbox_cat "${BEHAVIOR_DIR}/HOT.md")"
+    if echo "${hot_content}" | grep -q "HOT Behavior Rules"; then
+      record_pass "behavior/HOT.md exists with valid template"
+    else
+      record_fail "behavior/HOT.md exists but has invalid structure"
+    fi
+  else
+    record_fail "behavior/HOT.md missing: ${BEHAVIOR_DIR}/HOT.md"
+  fi
+
+  # Test 1.12: Check behavior/corrections.jsonl
+  if sandbox_file_exists "${BEHAVIOR_DIR}/corrections.jsonl"; then
+    record_pass "behavior/corrections.jsonl exists"
+  else
+    record_fail "behavior/corrections.jsonl missing"
+  fi
+
+  # Test 1.13: Check behavior/index.json
+  if sandbox_file_exists "${BEHAVIOR_DIR}/index.json"; then
+    local index_content
+    index_content="$(sandbox_cat "${BEHAVIOR_DIR}/index.json")"
+    if echo "${index_content}" | grep -q '"version"'; then
+      record_pass "behavior/index.json exists with valid structure"
+    else
+      record_fail "behavior/index.json exists but has invalid structure"
+    fi
+  else
+    record_fail "behavior/index.json missing"
+  fi
+
+  # Test 1.14: Check behavior subdirectories
+  if sandbox_dir_exists "${BEHAVIOR_DOMAINS_DIR}" && sandbox_dir_exists "${BEHAVIOR_PROJECTS_DIR}" && sandbox_dir_exists "${BEHAVIOR_ARCHIVE_DIR}"; then
+    record_pass "behavior subdirectories exist (domains/, projects/, archive/)"
+  else
+    record_fail "behavior subdirectories missing"
   fi
 
   info "=== Scenario 1 Complete ==="
@@ -540,10 +624,83 @@ test_sync_script() {
 }
 
 # ============================================================================
-# Test Scenario 6: Git Workspace Isolation
+# Test Scenario 6: Behavior Memory Verification
+# ============================================================================
+test_behavior_memory() {
+  info "=== Scenario 6: Behavior Memory Verification ==="
+
+  local test_marker="TEST_MARKER_${RANDOM}"
+  local today
+  today="$(date +%Y-%m-%d)"
+
+  # Test 6.1: Write a rule to HOT.md
+  local hot_path="${BEHAVIOR_DIR}/HOT.md"
+  local hot_content
+  hot_content="$(sandbox_cat "${hot_path}")"
+  local new_hot="${hot_content}
+- [confirmed] ${test_marker} Always use bun instead of npm"
+
+  sandbox_write "${hot_path}" "${new_hot}"
+
+  local updated_hot
+  updated_hot="$(sandbox_cat "${hot_path}")"
+  if echo "${updated_hot}" | grep -q "${test_marker}"; then
+    record_pass "Successfully wrote rule to behavior/HOT.md"
+  else
+    record_fail "Failed to write rule to behavior/HOT.md"
+  fi
+
+  # Test 6.2: Append correction to corrections.jsonl
+  local correction_entry="{\"id\":\"corr_${RANDOM}\",\"timestamp\":\"$(date -Iseconds)\",\"wrongAction\":\"Used npm\",\"correctAction\":\"Use bun\",\"learnedRule\":\"${test_marker}\"}"
+  sandbox_exec "echo '${correction_entry}' >> ${BEHAVIOR_DIR}/corrections.jsonl"
+
+  local corrections_content
+  corrections_content="$(sandbox_cat "${BEHAVIOR_DIR}/corrections.jsonl")"
+  if echo "${corrections_content}" | grep -q "${test_marker}"; then
+    record_pass "Successfully appended correction to corrections.jsonl"
+  else
+    record_fail "Failed to append correction to corrections.jsonl"
+  fi
+
+  # Test 6.3: Update index.json stats
+  local index_path="${BEHAVIOR_DIR}/index.json"
+  local index_content
+  index_content="$(sandbox_cat "${index_path}")"
+  local updated_index
+  updated_index="$(echo "${index_content}" | jq '.stats.hotRules = 1 | .stats.corrections = 1')"
+
+  sandbox_write "${index_path}" "${updated_index}"
+
+  local verify_index
+  verify_index="$(sandbox_cat "${index_path}")"
+  if echo "${verify_index}" | jq -e '.stats.hotRules == 1' >/dev/null 2>&1; then
+    record_pass "Successfully updated behavior/index.json"
+  else
+    record_fail "Failed to update behavior/index.json"
+  fi
+
+  # Test 6.4: Create domain-specific rule file
+  local domain_file="${BEHAVIOR_DOMAINS_DIR}/testing.md"
+  local domain_content="# Testing Domain Rules
+
+- Always run tests before committing
+- Use vitest for unit tests"
+  sandbox_write "${domain_file}" "${domain_content}"
+
+  if sandbox_file_exists "${domain_file}"; then
+    record_pass "Successfully created domain-specific rule file"
+  else
+    record_fail "Failed to create domain-specific rule file"
+  fi
+
+  info "=== Scenario 7 Complete ==="
+}
+
+# ============================================================================
+# Test Scenario 7: Git Workspace Isolation
 # ============================================================================
 test_git_isolation() {
-  info "=== Scenario 6: Git Workspace Isolation ==="
+  info "=== Scenario 7: Git Workspace Isolation ==="
 
   # Test 6.1: Memory directory is outside /root/workspace
   if [[ "${MEMORY_DIR}" != /root/workspace* ]]; then
@@ -645,6 +802,8 @@ main() {
   test_mcp_server
   echo ""
   test_sync_script
+  echo ""
+  test_behavior_memory
   echo ""
   test_git_isolation
 

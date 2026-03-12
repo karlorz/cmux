@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
-import { Brain, FileText, Calendar, CheckSquare, Mail, AlertCircle, Clock, ArrowRight, Megaphone, MessageSquare, CheckCheck } from "lucide-react";
+import { Brain, FileText, Calendar, CheckSquare, Mail, AlertCircle, Clock, ArrowRight, Megaphone, MessageSquare, CheckCheck, Zap, ListChecks, FolderTree, Sparkles } from "lucide-react";
 import clsx from "clsx";
 
 export interface TaskRunMemoryPanelProps {
@@ -10,23 +10,50 @@ export interface TaskRunMemoryPanelProps {
   taskRunId: Id<"taskRuns"> | null | undefined;
 }
 
-type MemoryType = "knowledge" | "daily" | "tasks" | "mailbox";
+// Factual memory types (project facts and state)
+type FactualMemoryType = "knowledge" | "daily" | "tasks" | "mailbox";
+
+// Behavior memory types (self-improving preferences)
+type BehaviorMemoryType = "behavior_hot" | "behavior_corrections" | "behavior_domain" | "behavior_project" | "behavior_index";
+
+type MemoryType = FactualMemoryType | BehaviorMemoryType;
+
+// Group types for tab organization
+type MemoryCategory = "factual" | "behavior";
 
 const MEMORY_TYPE_LABELS: Record<MemoryType, string> = {
+  // Factual
   knowledge: "Knowledge",
   daily: "Daily Logs",
   tasks: "Tasks",
   mailbox: "Mailbox",
+  // Behavior
+  behavior_hot: "HOT Rules",
+  behavior_corrections: "Corrections",
+  behavior_domain: "Domain Rules",
+  behavior_project: "Project Rules",
+  behavior_index: "Index",
 };
 
 const MEMORY_TYPE_ICONS: Record<MemoryType, React.ElementType> = {
+  // Factual
   knowledge: Brain,
   daily: Calendar,
   tasks: CheckSquare,
   mailbox: Mail,
+  // Behavior
+  behavior_hot: Zap,
+  behavior_corrections: ListChecks,
+  behavior_domain: FolderTree,
+  behavior_project: FileText,
+  behavior_index: Sparkles,
 };
 
+const FACTUAL_MEMORY_TYPES: FactualMemoryType[] = ["knowledge", "daily", "tasks", "mailbox"];
+const BEHAVIOR_MEMORY_TYPES: BehaviorMemoryType[] = ["behavior_hot", "behavior_corrections", "behavior_domain", "behavior_project", "behavior_index"];
+
 export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPanelProps) {
+  const [selectedCategory, setSelectedCategory] = useState<MemoryCategory>("factual");
   const [selectedType, setSelectedType] = useState<MemoryType>("knowledge");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
@@ -40,10 +67,17 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
     if (!snapshots) return null;
 
     const grouped: Record<MemoryType, typeof snapshots> = {
+      // Factual
       knowledge: [],
       daily: [],
       tasks: [],
       mailbox: [],
+      // Behavior
+      behavior_hot: [],
+      behavior_corrections: [],
+      behavior_domain: [],
+      behavior_project: [],
+      behavior_index: [],
     };
 
     for (const snapshot of snapshots) {
@@ -62,6 +96,12 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
 
     return grouped;
   }, [snapshots]);
+
+  // Check if any behavior memory exists
+  const hasBehaviorMemory = useMemo(() => {
+    if (!snapshotsByType) return false;
+    return BEHAVIOR_MEMORY_TYPES.some((type) => snapshotsByType[type].length > 0);
+  }, [snapshotsByType]);
 
   // Get available dates for daily logs
   const dailyDates = useMemo(() => {
@@ -120,6 +160,43 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
       </div>
     );
   }
+
+  const renderCategoryButton = (category: MemoryCategory, label: string, icon: React.ElementType) => {
+    const Icon = icon;
+    const isActive = selectedCategory === category;
+    const isDisabled = category === "behavior" && !hasBehaviorMemory;
+
+    return (
+      <button
+        key={category}
+        type="button"
+        onClick={() => {
+          setSelectedCategory(category);
+          // Switch to first type in category
+          if (category === "factual") {
+            setSelectedType("knowledge");
+          } else {
+            // Find first behavior type with content
+            const firstWithContent = BEHAVIOR_MEMORY_TYPES.find(
+              (type) => (snapshotsByType?.[type]?.length ?? 0) > 0
+            );
+            setSelectedType(firstWithContent ?? "behavior_hot");
+          }
+        }}
+        className={clsx(
+          "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+          isActive
+            ? "bg-neutral-200 text-neutral-900 dark:bg-neutral-700 dark:text-neutral-100"
+            : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800",
+          isDisabled && "opacity-50 cursor-not-allowed"
+        )}
+        disabled={isDisabled}
+      >
+        <Icon className="size-3.5" />
+        {label}
+      </button>
+    );
+  };
 
   const renderTabButton = (type: MemoryType) => {
     const Icon = MEMORY_TYPE_ICONS[type];
@@ -208,11 +285,17 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
                 </pre>
               );
             })()
-          ) : selectedType === "tasks" ? (
-            // Tasks - render as formatted JSON
+          ) : selectedType === "tasks" || selectedType === "behavior_index" ? (
+            // Tasks and behavior index - render as formatted JSON
             <pre className="whitespace-pre-wrap font-mono text-xs text-neutral-700 dark:text-neutral-300">
               {formatJsonContent(content)}
             </pre>
+          ) : selectedType === "behavior_corrections" ? (
+            // Corrections - render JSONL lines
+            <BehaviorCorrectionsView content={content} />
+          ) : selectedType === "behavior_hot" ? (
+            // HOT rules - render with visual indicators
+            <BehaviorHotView content={content} />
           ) : (
             // Markdown content - render as preformatted text with basic styling
             <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none">
@@ -228,9 +311,17 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Tab bar */}
+      {/* Category selector */}
       <div className="flex items-center gap-1 border-b border-neutral-200 px-2 py-1.5 dark:border-neutral-800">
-        {(["knowledge", "daily", "tasks", "mailbox"] as MemoryType[]).map(renderTabButton)}
+        {renderCategoryButton("factual", "Factual", Brain)}
+        {renderCategoryButton("behavior", "Behavior", Sparkles)}
+      </div>
+
+      {/* Type tab bar */}
+      <div className="flex items-center gap-1 border-b border-neutral-200 px-2 py-1.5 dark:border-neutral-800">
+        {selectedCategory === "factual"
+          ? FACTUAL_MEMORY_TYPES.map(renderTabButton)
+          : BEHAVIOR_MEMORY_TYPES.map(renderTabButton)}
 
         {/* Date selector for daily logs */}
         {selectedType === "daily" && dailyDates.length > 1 && (
@@ -388,6 +479,134 @@ function MailboxMessageList({ messages }: { messages: MailboxMessage[] }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// Behavior HOT rules view - renders markdown with visual indicators for confirmed rules
+function BehaviorHotView({ content }: { content: string }) {
+  // Parse HOT.md format to highlight confirmed rules
+  const lines = content.split("\n");
+
+  return (
+    <div className="space-y-1">
+      {lines.map((line, idx) => {
+        const isConfirmed = line.includes("[confirmed]");
+        const isRule = line.trim().startsWith("-") || line.trim().startsWith("*");
+
+        if (isRule) {
+          return (
+            <div
+              key={idx}
+              className={clsx(
+                "flex items-start gap-2 rounded px-2 py-1 text-sm",
+                isConfirmed
+                  ? "bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-300"
+                  : "text-neutral-700 dark:text-neutral-300"
+              )}
+            >
+              {isConfirmed && <CheckCheck className="mt-0.5 size-4 flex-shrink-0 text-green-600 dark:text-green-400" />}
+              <span className="whitespace-pre-wrap">{line}</span>
+            </div>
+          );
+        }
+
+        // Headers and other content
+        if (line.startsWith("#")) {
+          return (
+            <div key={idx} className="mt-3 mb-1 font-semibold text-neutral-900 dark:text-neutral-100">
+              {line}
+            </div>
+          );
+        }
+
+        return (
+          <div key={idx} className="text-sm text-neutral-600 dark:text-neutral-400 whitespace-pre-wrap">
+            {line}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Behavior corrections view - renders JSONL with friendly format
+function BehaviorCorrectionsView({ content }: { content: string }) {
+  // Parse JSONL - each line is a JSON object
+  const corrections = content
+    .split("\n")
+    .filter((line) => line.trim())
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+
+  if (corrections.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 py-8 text-neutral-500 dark:text-neutral-400">
+        <ListChecks className="size-6 text-neutral-400 dark:text-neutral-500" />
+        <span className="text-sm">No corrections logged</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {corrections.map((correction, idx) => (
+        <div
+          key={correction.id ?? idx}
+          className="rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900"
+        >
+          {/* Header with timestamp */}
+          <div className="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+            <Clock className="size-3" />
+            {correction.timestamp ? new Date(correction.timestamp).toLocaleString() : "Unknown time"}
+            {correction.rulePromotedTo && (
+              <span className="ml-auto inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                <ArrowRight className="size-3" />
+                Promoted to {correction.rulePromotedTo}
+              </span>
+            )}
+          </div>
+
+          {/* Wrong action */}
+          <div className="mt-2">
+            <span className="text-xs font-medium text-red-600 dark:text-red-400">Wrong:</span>
+            <div className="mt-0.5 text-sm text-neutral-700 dark:text-neutral-300">
+              {correction.wrongAction}
+            </div>
+          </div>
+
+          {/* Correct action */}
+          <div className="mt-2">
+            <span className="text-xs font-medium text-green-600 dark:text-green-400">Correct:</span>
+            <div className="mt-0.5 text-sm text-neutral-700 dark:text-neutral-300">
+              {correction.correctAction}
+            </div>
+          </div>
+
+          {/* Learned rule if present */}
+          {correction.learnedRule && (
+            <div className="mt-2 rounded bg-neutral-50 p-2 dark:bg-neutral-800">
+              <span className="text-xs font-medium text-neutral-600 dark:text-neutral-400">Learned rule:</span>
+              <div className="mt-0.5 text-sm text-neutral-800 dark:text-neutral-200">
+                {correction.learnedRule}
+              </div>
+            </div>
+          )}
+
+          {/* Context if present */}
+          {correction.context && (
+            <div className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+              Context: {correction.context}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

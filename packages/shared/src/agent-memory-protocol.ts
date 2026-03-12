@@ -1,17 +1,24 @@
 /**
  * Agent Memory Protocol - Spike S2b
  *
- * Two-tier memory architecture with priority tiering:
+ * Three-tier memory architecture:
  * - Layer 1 (daily/): Ephemeral daily logs - auto-dated, session-specific
  * - Layer 2 (knowledge/): Curated long-term memory with P0/P1/P2 priority tiers
  *   - P0 Core: Never expires - project fundamentals, safety rules, invariants
  *   - P1 Active: 90-day TTL - ongoing work, current strategies, recent decisions
  *   - P2 Reference: 30-day TTL - debug notes, one-time findings, temporary context
+ * - Layer 3 (behavior/): Self-improving behavior memory
+ *   - HOT.md: Active preferences and workflow rules (high-frequency)
+ *   - corrections.jsonl: Correction log for learning from mistakes
+ *   - domains/: Domain-specific rules (e.g., testing, debugging, security)
+ *   - projects/: Project-scoped preferences
+ *   - archive/: Demoted/inactive rules
  *
  * Seeds memory directory with:
  * - TASKS.json, MAILBOX.json at root
  * - knowledge/MEMORY.md for permanent insights (P0/P1/P2 sections)
  * - daily/{date}.md for session-specific notes
+ * - behavior/HOT.md, behavior/corrections.jsonl, behavior/index.json for behavior memory
  *
  * IMPORTANT: Memory is stored at /root/lifecycle/memory/ (OUTSIDE the git workspace)
  * to avoid polluting the user's repository with untracked files. This follows the
@@ -31,6 +38,12 @@ export const MEMORY_KNOWLEDGE_DIR = `${MEMORY_PROTOCOL_DIR}/knowledge`;
 
 // Orchestration subdirectory for multi-agent coordination
 export const MEMORY_ORCHESTRATION_DIR = `${MEMORY_PROTOCOL_DIR}/orchestration`;
+
+// Behavior memory subdirectory for self-improving preferences
+export const MEMORY_BEHAVIOR_DIR = `${MEMORY_PROTOCOL_DIR}/behavior`;
+export const MEMORY_BEHAVIOR_DOMAINS_DIR = `${MEMORY_BEHAVIOR_DIR}/domains`;
+export const MEMORY_BEHAVIOR_PROJECTS_DIR = `${MEMORY_BEHAVIOR_DIR}/projects`;
+export const MEMORY_BEHAVIOR_ARCHIVE_DIR = `${MEMORY_BEHAVIOR_DIR}/archive`;
 
 /**
  * Get today's date string in YYYY-MM-DD format for daily log files.
@@ -103,6 +116,131 @@ export function getMailboxSeedContent(): string {
     messages: [],
   };
   return JSON.stringify(seed, null, 2);
+}
+
+// =============================================================================
+// Behavior Memory (Layer 3) - Self-improving preferences and workflow rules
+// =============================================================================
+
+/**
+ * Behavior rule structure for HOT.md entries (parsed from markdown)
+ */
+export interface BehaviorRule {
+  id: string;
+  rule: string;
+  scope?: "global" | "domain" | "project";
+  domain?: string;
+  project?: string;
+  confirmed?: boolean;
+  lastUsedAt?: string;
+  timesUsed?: number;
+  createdAt: string;
+}
+
+/**
+ * Correction entry structure for corrections.jsonl
+ */
+export interface BehaviorCorrection {
+  id: string;
+  timestamp: string;
+  wrongAction: string;
+  correctAction: string;
+  context?: string;
+  learnedRule?: string;
+  rulePromotedTo?: "HOT" | "domain" | "project";
+}
+
+/**
+ * Behavior index structure for index.json
+ */
+export interface BehaviorIndex {
+  version: number;
+  lastUpdated: string;
+  stats: {
+    hotRules: number;
+    corrections: number;
+    domains: string[];
+    projects: string[];
+    archivedRules: number;
+  };
+}
+
+/**
+ * Seed content for behavior/HOT.md (high-frequency behavior rules)
+ */
+export function getBehaviorHotSeedContent(): string {
+  return `# HOT Behavior Rules
+
+> Active preferences and workflow rules. These are high-frequency rules that apply across all work.
+
+## Format
+
+Each rule should be on its own line with optional metadata:
+- \`[confirmed]\` - User explicitly confirmed this rule
+- \`[domain:X]\` - Applies to specific domain (testing, debugging, etc.)
+- \`[project:X]\` - Applies to specific project
+
+## Rules
+
+<!-- Add rules below this line -->
+
+---
+*Add rules learned from corrections and user feedback here.*
+*Rules that aren't used frequently should be demoted to domain/ or archive/.*
+`;
+}
+
+/**
+ * Seed content for behavior/corrections.jsonl (empty - append-only log)
+ */
+export function getBehaviorCorrectionsSeedContent(): string {
+  // Empty file - corrections are appended as JSONL
+  return "";
+}
+
+/**
+ * Seed content for behavior/index.json (behavior metadata)
+ */
+export function getBehaviorIndexSeedContent(): string {
+  const index: BehaviorIndex = {
+    version: 1,
+    lastUpdated: new Date().toISOString(),
+    stats: {
+      hotRules: 0,
+      corrections: 0,
+      domains: [],
+      projects: [],
+      archivedRules: 0,
+    },
+  };
+  return JSON.stringify(index, null, 2);
+}
+
+/**
+ * Generate unique behavior rule ID
+ */
+export function generateBehaviorRuleId(): string {
+  const timestamp = Date.now().toString(36);
+  const random = Math.random().toString(36).substring(2, 6);
+  return `rule_${timestamp}${random}`;
+}
+
+/**
+ * Generate unique correction ID
+ */
+export function generateCorrectionId(): string {
+  const timestamp = Date.now().toString(36);
+  const random = Math.random().toString(36).substring(2, 6);
+  return `corr_${timestamp}${random}`;
+}
+
+/**
+ * Format a correction entry for appending to corrections.jsonl
+ */
+export function formatBehaviorCorrection(
+  correction: BehaviorCorrection
+): string {
+  return JSON.stringify(correction);
 }
 
 /**
@@ -294,11 +432,14 @@ You have access to persistent memory at \`${MEMORY_PROTOCOL_DIR}/\`:
 - \`${MEMORY_DAILY_DIR}/{date}.md\` - Daily logs (ephemeral)
 - \`${MEMORY_PROTOCOL_DIR}/TASKS.json\` - Task registry
 - \`${MEMORY_PROTOCOL_DIR}/MAILBOX.json\` - Inter-agent messages
+- \`${MEMORY_BEHAVIOR_DIR}/HOT.md\` - Active behavior rules (self-improving)
+- \`${MEMORY_BEHAVIOR_DIR}/corrections.jsonl\` - Correction log
 
 ### On Start
 1. Read \`knowledge/MEMORY.md\` for permanent project insights
-2. Read \`TASKS.json\` to see existing tasks and their statuses
-3. Optionally scan recent \`daily/\` logs for recent context
+2. Read \`behavior/HOT.md\` for active workflow preferences
+3. Read \`TASKS.json\` to see existing tasks and their statuses
+4. Optionally scan recent \`daily/\` logs for recent context
 
 ### During Work
 - Append observations to \`daily/{today}.md\` (create if doesn't exist)
@@ -307,6 +448,7 @@ You have access to persistent memory at \`${MEMORY_PROTOCOL_DIR}/\`:
 ### On Completion
 - **Daily log**: Append what you did today to \`daily/{today}.md\`
 - **Knowledge**: Promote KEY learnings to \`knowledge/MEMORY.md\` (only permanent insights)
+- **Behavior**: If the user corrected you, add the correction to \`behavior/corrections.jsonl\` and consider adding a rule to \`behavior/HOT.md\`
 - Update TASKS.json with final statuses
 
 ### Execution Summary (Required on Completion)
@@ -373,13 +515,28 @@ flowchart TD
 
 ### What Goes Where?
 
-| Type | Location | Priority | Example |
-|------|----------|----------|---------|
-| Project fundamentals | \`knowledge/MEMORY.md\` | P0 | "This project uses bun, not npm" |
-| Current work context | \`knowledge/MEMORY.md\` | P1 | "Auth refactor in progress" |
-| Temporary findings | \`knowledge/MEMORY.md\` | P2 | "Sandbox morphvm_abc for testing" |
-| Today's work | \`daily/{date}.md\` | - | "Fixed bug in auth.ts line 42" |
-| Debug notes | \`daily/{date}.md\` | - | "Tested endpoint with curl" |
+**Knowledge vs Behavior**: Knowledge is about *facts* (what IS). Behavior is about *preferences* (how to ACT).
+
+| Type | Location | Example |
+|------|----------|---------|
+| Project facts | \`knowledge/MEMORY.md\` | "This project uses bun, not npm" |
+| Architecture decisions | \`knowledge/MEMORY.md\` | "Auth uses JWT with 24h expiry" |
+| Workflow preferences | \`behavior/HOT.md\` | "Always run tests before committing" |
+| Tool preferences | \`behavior/HOT.md\` | "Use vitest, not jest" |
+| User corrections | \`behavior/corrections.jsonl\` | {"wrong": "Used npm", "correct": "Use bun"} |
+| Domain-specific rules | \`behavior/domains/testing.md\` | "Mock external APIs in unit tests" |
+| Today's work | \`daily/{date}.md\` | "Fixed bug in auth.ts line 42" |
+
+**Knowledge (facts about the project)**:
+- P0 Core: Tooling, ports, invariants ("Uses bun", "Port 3001 for auth")
+- P1 Active: Current work context ("Auth refactor in progress")
+- P2 Reference: Temporary findings ("Sandbox morphvm_abc for testing")
+
+**Behavior (how you should act)**:
+- HOT rules: High-frequency preferences that apply everywhere
+- Domain rules: Context-specific preferences (testing, debugging, security)
+- Project rules: Rules for specific repositories
+- Corrections: Log of mistakes and fixes (append-only)
 
 ### Priority Guidelines
 
@@ -430,6 +587,48 @@ get_my_messages()  // See if any agent has left instructions for you
 \`\`\`
 
 Messages from previous runs are automatically seeded into your mailbox.
+
+### Behavior Memory (Self-Improving)
+
+Behavior memory helps you learn from corrections and user feedback. Unlike knowledge (facts), behavior memory captures *preferences* about how to work.
+
+#### Structure
+
+- \`behavior/HOT.md\` - Active rules that apply to all work
+- \`behavior/corrections.jsonl\` - Log of corrections (append-only)
+- \`behavior/domains/\` - Domain-specific rules (e.g., \`testing.md\`, \`security.md\`)
+- \`behavior/projects/\` - Project-specific rules
+- \`behavior/archive/\` - Demoted/inactive rules
+
+#### When to Update Behavior
+
+1. **User explicitly corrects you**: Add to \`corrections.jsonl\` and consider promoting to \`HOT.md\`
+2. **User states a preference**: Add to \`HOT.md\` with \`[confirmed]\` tag
+3. **Pattern emerges**: After 2-3 similar corrections, create a rule in \`HOT.md\`
+
+#### HOT.md Format
+
+Rules in \`behavior/HOT.md\` use simple markdown with optional tags:
+\`\`\`markdown
+## Rules
+- [confirmed] Always use bun instead of npm
+- [domain:testing] Run tests before committing
+- [project:cmux] Use vitest for unit tests
+\`\`\`
+
+#### corrections.jsonl Format
+
+Each line is a JSON object:
+\`\`\`json
+{"id":"corr_abc123","timestamp":"2026-03-12T10:00:00Z","wrongAction":"Used npm install","correctAction":"Should use bun install","learnedRule":"Always use bun"}
+\`\`\`
+
+#### Best Practices
+
+- Keep HOT.md concise (under 50 rules)
+- Archive rules that haven't been used in 30+ days
+- Don't mix facts (knowledge) with preferences (behavior)
+- When in doubt, log to corrections.jsonl first before creating a rule
 `;
 }
 
@@ -519,10 +718,10 @@ devsh orchestrate spawn --agent claude/opus-4.6 "Task 3"
 
 /**
  * Get the startup command to create the memory directory structure.
- * Creates daily/, knowledge/, and orchestration/ subdirectories.
+ * Creates daily/, knowledge/, orchestration/, and behavior/ subdirectories.
  */
 export function getMemoryStartupCommand(): string {
-  return `mkdir -p ${MEMORY_DAILY_DIR} ${MEMORY_KNOWLEDGE_DIR} ${MEMORY_ORCHESTRATION_DIR}`;
+  return `mkdir -p ${MEMORY_DAILY_DIR} ${MEMORY_KNOWLEDGE_DIR} ${MEMORY_ORCHESTRATION_DIR} ${MEMORY_BEHAVIOR_DIR} ${MEMORY_BEHAVIOR_DOMAINS_DIR} ${MEMORY_BEHAVIOR_PROJECTS_DIR} ${MEMORY_BEHAVIOR_ARCHIVE_DIR}`;
 }
 
 /**
@@ -651,6 +850,51 @@ sync_memory() {
     content=$(head -c $MAX_SIZE "$MEMORY_DIR/orchestration/EVENTS.jsonl" | jq -Rs .)
     files_json=$(echo "$files_json" | jq --argjson c "$content" '. + [{"memoryType": "events", "content": ($c), "fileName": "orchestration/EVENTS.jsonl"}]')
     log "Added orchestration/EVENTS.jsonl"
+  fi
+
+  # Sync behavior/HOT.md (self-improving behavior rules)
+  if [ -f "$MEMORY_DIR/behavior/HOT.md" ]; then
+    content=$(head -c $MAX_SIZE "$MEMORY_DIR/behavior/HOT.md" | jq -Rs .)
+    files_json=$(echo "$files_json" | jq --argjson c "$content" '. + [{"memoryType": "behavior_hot", "content": ($c), "fileName": "behavior/HOT.md"}]')
+    log "Added behavior/HOT.md"
+  fi
+
+  # Sync behavior/corrections.jsonl (correction log)
+  if [ -f "$MEMORY_DIR/behavior/corrections.jsonl" ] && [ -s "$MEMORY_DIR/behavior/corrections.jsonl" ]; then
+    content=$(head -c $MAX_SIZE "$MEMORY_DIR/behavior/corrections.jsonl" | jq -Rs .)
+    files_json=$(echo "$files_json" | jq --argjson c "$content" '. + [{"memoryType": "behavior_corrections", "content": ($c), "fileName": "behavior/corrections.jsonl"}]')
+    log "Added behavior/corrections.jsonl"
+  fi
+
+  # Sync behavior/index.json (behavior metadata)
+  if [ -f "$MEMORY_DIR/behavior/index.json" ]; then
+    content=$(head -c $MAX_SIZE "$MEMORY_DIR/behavior/index.json" | jq -Rs .)
+    files_json=$(echo "$files_json" | jq --argjson c "$content" '. + [{"memoryType": "behavior_index", "content": ($c), "fileName": "behavior/index.json"}]')
+    log "Added behavior/index.json"
+  fi
+
+  # Sync behavior domain files
+  if [ -d "$MEMORY_DIR/behavior/domains" ]; then
+    for domain_file in "$MEMORY_DIR/behavior/domains"/*.md; do
+      if [ -f "$domain_file" ]; then
+        filename=$(basename "$domain_file")
+        content=$(head -c $MAX_SIZE "$domain_file" | jq -Rs .)
+        files_json=$(echo "$files_json" | jq --argjson c "$content" --arg f "behavior/domains/$filename" '. + [{"memoryType": "behavior_domain", "content": ($c), "fileName": ($f)}]')
+        log "Added behavior/domains/$filename"
+      fi
+    done
+  fi
+
+  # Sync behavior project files
+  if [ -d "$MEMORY_DIR/behavior/projects" ]; then
+    for project_file in "$MEMORY_DIR/behavior/projects"/*.md; do
+      if [ -f "$project_file" ]; then
+        filename=$(basename "$project_file")
+        content=$(head -c $MAX_SIZE "$project_file" | jq -Rs .)
+        files_json=$(echo "$files_json" | jq --argjson c "$content" --arg f "behavior/projects/$filename" '. + [{"memoryType": "behavior_project", "content": ($c), "fileName": ($f)}]')
+        log "Added behavior/projects/$filename"
+      fi
+    done
   fi
 
   # Check if we have any files to sync
@@ -1219,6 +1463,126 @@ const tools = [
         }
       }
     }
+  },
+  // Behavior memory tools (self-improving preferences)
+  {
+    name: 'read_behavior',
+    description: 'Read behavior memory files (HOT.md, corrections.jsonl, index.json, or domain/project rules).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: {
+          type: 'string',
+          enum: ['hot', 'corrections', 'index', 'domain', 'project'],
+          description: 'Type of behavior memory to read'
+        },
+        name: {
+          type: 'string',
+          description: 'For domain/project types, the name of the domain or project file (without .md extension)'
+        }
+      },
+      required: ['type']
+    }
+  },
+  {
+    name: 'add_behavior_rule',
+    description: 'Add a new rule to behavior/HOT.md. Rules capture workflow preferences learned from user feedback.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        rule: {
+          type: 'string',
+          description: 'The rule text (e.g., "Always use bun instead of npm")'
+        },
+        confirmed: {
+          type: 'boolean',
+          description: 'If true, mark the rule as [confirmed] (user-verified). Default: false'
+        }
+      },
+      required: ['rule']
+    }
+  },
+  {
+    name: 'log_correction',
+    description: 'Log a correction to behavior/corrections.jsonl. Use when the user corrects your action.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        wrongAction: {
+          type: 'string',
+          description: 'What you did wrong'
+        },
+        correctAction: {
+          type: 'string',
+          description: 'What the user said to do instead'
+        },
+        context: {
+          type: 'string',
+          description: 'Optional context about when this applies'
+        },
+        learnedRule: {
+          type: 'string',
+          description: 'Optional rule to add to HOT.md based on this correction'
+        },
+        promoteToHot: {
+          type: 'boolean',
+          description: 'If true and learnedRule is provided, also add the rule to HOT.md'
+        }
+      },
+      required: ['wrongAction', 'correctAction']
+    }
+  },
+  {
+    name: 'confirm_behavior_rule',
+    description: 'Mark an existing rule in HOT.md as [confirmed]. Use when user explicitly validates a rule.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        rulePattern: {
+          type: 'string',
+          description: 'Text pattern to match the rule (substring match)'
+        }
+      },
+      required: ['rulePattern']
+    }
+  },
+  {
+    name: 'check_stale_behavior',
+    description: 'Check for stale or unused behavior rules. Unconfirmed rules older than 30 days or rules without recent usage are considered stale. Can optionally archive them.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        autoArchive: {
+          type: 'boolean',
+          description: 'If true, move stale rules to behavior/archive/ (default: false, just report)'
+        },
+        staleDays: {
+          type: 'number',
+          description: 'Number of days after which unconfirmed rules are considered stale (default: 30)'
+        }
+      }
+    }
+  },
+  {
+    name: 'compact_corrections',
+    description: 'Compact the corrections.jsonl file by keeping only the most recent N entries. Older entries are summarized into a single archive entry.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        keepCount: {
+          type: 'number',
+          description: 'Number of recent corrections to keep (default: 100)'
+        }
+      }
+    }
+  },
+  {
+    name: 'update_behavior_index',
+    description: 'Update the behavior/index.json with current stats (rule count, correction count, domains, projects). Call after making changes to behavior memory.',
+    inputSchema: {
+      type: 'object',
+      properties: {}
+    }
   }
 ];
 
@@ -1592,6 +1956,287 @@ function handleRequest(request) {
           }
         }
 
+        // Behavior memory tool handlers
+        case 'read_behavior': {
+          const BEHAVIOR_DIR = path.join(MEMORY_DIR, 'behavior');
+          let filePath;
+          if (args.type === 'hot') {
+            filePath = path.join(BEHAVIOR_DIR, 'HOT.md');
+          } else if (args.type === 'corrections') {
+            filePath = path.join(BEHAVIOR_DIR, 'corrections.jsonl');
+          } else if (args.type === 'index') {
+            filePath = path.join(BEHAVIOR_DIR, 'index.json');
+          } else if (args.type === 'domain' && args.name) {
+            filePath = path.join(BEHAVIOR_DIR, 'domains', args.name + '.md');
+          } else if (args.type === 'project' && args.name) {
+            filePath = path.join(BEHAVIOR_DIR, 'projects', args.name + '.md');
+          } else {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Invalid behavior type or missing name for domain/project' }] });
+          }
+          const content = readFile(filePath);
+          if (content === null) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Behavior file not found: ' + filePath }] });
+          }
+          return sendResponse(id, { content: [{ type: 'text', text: content }] });
+        }
+
+        case 'add_behavior_rule': {
+          const BEHAVIOR_DIR = path.join(MEMORY_DIR, 'behavior');
+          const hotPath = path.join(BEHAVIOR_DIR, 'HOT.md');
+          let content = readFile(hotPath) || '# HOT Behavior Rules\\n\\n## Rules\\n';
+
+          // Generate unique rule ID
+          const ruleId = 'rule_' + crypto.randomBytes(4).toString('hex');
+          const tag = args.confirmed ? '[confirmed]' : '';
+          const newRule = '- ' + tag + ' ' + args.rule + ' <!-- id:' + ruleId + ' -->';
+
+          // Find the ## Rules section and append
+          if (content.includes('## Rules')) {
+            content = content.replace(/(## Rules\\n)/, '$1' + newRule + '\\n');
+          } else {
+            content += '\\n## Rules\\n' + newRule + '\\n';
+          }
+
+          try {
+            fs.writeFileSync(hotPath, content);
+            return sendResponse(id, { content: [{ type: 'text', text: 'Rule added to HOT.md: ' + newRule }] });
+          } catch {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Failed to write HOT.md' }] });
+          }
+        }
+
+        case 'log_correction': {
+          const BEHAVIOR_DIR = path.join(MEMORY_DIR, 'behavior');
+          const correctionsPath = path.join(BEHAVIOR_DIR, 'corrections.jsonl');
+          const correctionId = 'corr_' + crypto.randomBytes(4).toString('hex');
+
+          const correction = {
+            id: correctionId,
+            timestamp: new Date().toISOString(),
+            wrongAction: args.wrongAction,
+            correctAction: args.correctAction
+          };
+          if (args.context) correction.context = args.context;
+          if (args.learnedRule) {
+            correction.learnedRule = args.learnedRule;
+            if (args.promoteToHot) correction.rulePromotedTo = 'HOT';
+          }
+
+          try {
+            fs.appendFileSync(correctionsPath, JSON.stringify(correction) + '\\n');
+
+            // Optionally promote rule to HOT.md
+            if (args.learnedRule && args.promoteToHot) {
+              const hotPath = path.join(BEHAVIOR_DIR, 'HOT.md');
+              let hotContent = readFile(hotPath) || '# HOT Behavior Rules\\n\\n## Rules\\n';
+              const ruleId = 'rule_' + crypto.randomBytes(4).toString('hex');
+              const newRule = '- ' + args.learnedRule + ' <!-- id:' + ruleId + ' from:' + correctionId + ' -->';
+
+              if (hotContent.includes('## Rules')) {
+                hotContent = hotContent.replace(/(## Rules\\n)/, '$1' + newRule + '\\n');
+              } else {
+                hotContent += '\\n## Rules\\n' + newRule + '\\n';
+              }
+              fs.writeFileSync(hotPath, hotContent);
+              return sendResponse(id, { content: [{ type: 'text', text: 'Correction logged and rule promoted to HOT.md. Correction ID: ' + correctionId }] });
+            }
+
+            return sendResponse(id, { content: [{ type: 'text', text: 'Correction logged. ID: ' + correctionId }] });
+          } catch {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Failed to log correction' }] });
+          }
+        }
+
+        case 'confirm_behavior_rule': {
+          const BEHAVIOR_DIR = path.join(MEMORY_DIR, 'behavior');
+          const hotPath = path.join(BEHAVIOR_DIR, 'HOT.md');
+          let content = readFile(hotPath);
+          if (!content) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'HOT.md not found' }] });
+          }
+
+          // Find lines matching the pattern and add [confirmed] tag if not present
+          const lines = content.split('\\n');
+          let found = false;
+          const updatedLines = lines.map(line => {
+            if (line.includes(args.rulePattern) && line.trim().startsWith('-') && !line.includes('[confirmed]')) {
+              found = true;
+              // Insert [confirmed] after the leading dash
+              return line.replace(/^(\\s*-)\\s*/, '$1 [confirmed] ');
+            }
+            return line;
+          });
+
+          if (!found) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'No unconfirmed rule found matching pattern: ' + args.rulePattern }] });
+          }
+
+          try {
+            fs.writeFileSync(hotPath, updatedLines.join('\\n'));
+            return sendResponse(id, { content: [{ type: 'text', text: 'Rule confirmed in HOT.md' }] });
+          } catch {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Failed to update HOT.md' }] });
+          }
+        }
+
+        case 'check_stale_behavior': {
+          const BEHAVIOR_DIR = path.join(MEMORY_DIR, 'behavior');
+          const hotPath = path.join(BEHAVIOR_DIR, 'HOT.md');
+          const archiveDir = path.join(BEHAVIOR_DIR, 'archive');
+          const content = readFile(hotPath);
+
+          if (!content) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'HOT.md not found' }] });
+          }
+
+          const staleDays = args.staleDays || 30;
+          const today = new Date();
+          const staleThreshold = new Date(today.getTime() - staleDays * 24 * 60 * 60 * 1000);
+
+          // Parse rules to find stale ones (unconfirmed and old)
+          const lines = content.split('\\n');
+          const staleRules = [];
+          const keptLines = [];
+
+          for (const line of lines) {
+            if (line.trim().startsWith('-') && !line.includes('[confirmed]')) {
+              // Check for date in comment: <!-- id:xxx date:YYYY-MM-DD -->
+              const dateMatch = line.match(/date:(\\d{4}-\\d{2}-\\d{2})/);
+              if (dateMatch) {
+                const ruleDate = new Date(dateMatch[1]);
+                if (ruleDate < staleThreshold) {
+                  staleRules.push(line.trim());
+                  continue;
+                }
+              }
+            }
+            keptLines.push(line);
+          }
+
+          if (staleRules.length === 0) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'No stale rules found (threshold: ' + staleDays + ' days)' }] });
+          }
+
+          if (args.autoArchive) {
+            try {
+              // Write stale rules to archive
+              const archivePath = path.join(archiveDir, 'archived-' + today.toISOString().split('T')[0] + '.md');
+              const archiveContent = '# Archived Rules (' + today.toISOString().split('T')[0] + ')\\n\\n' + staleRules.map(r => r).join('\\n') + '\\n';
+              fs.mkdirSync(archiveDir, { recursive: true });
+              fs.writeFileSync(archivePath, archiveContent);
+
+              // Update HOT.md without stale rules
+              fs.writeFileSync(hotPath, keptLines.join('\\n'));
+
+              return sendResponse(id, { content: [{ type: 'text', text: 'Archived ' + staleRules.length + ' stale rules to ' + archivePath }] });
+            } catch {
+              return sendResponse(id, { content: [{ type: 'text', text: 'Failed to archive stale rules' }] });
+            }
+          }
+
+          return sendResponse(id, { content: [{ type: 'text', text: 'Found ' + staleRules.length + ' stale rules:\\n' + staleRules.join('\\n') }] });
+        }
+
+        case 'compact_corrections': {
+          const BEHAVIOR_DIR = path.join(MEMORY_DIR, 'behavior');
+          const correctionsPath = path.join(BEHAVIOR_DIR, 'corrections.jsonl');
+          const content = readFile(correctionsPath);
+
+          if (!content) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'No corrections.jsonl found' }] });
+          }
+
+          const lines = content.split('\\n').filter(l => l.trim());
+          const keepCount = args.keepCount || 100;
+
+          if (lines.length <= keepCount) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Corrections file has ' + lines.length + ' entries, no compaction needed (threshold: ' + keepCount + ')' }] });
+          }
+
+          const toArchive = lines.slice(0, lines.length - keepCount);
+          const toKeep = lines.slice(lines.length - keepCount);
+
+          try {
+            // Create archive summary
+            const archiveSummary = {
+              id: 'archive_' + crypto.randomBytes(4).toString('hex'),
+              timestamp: new Date().toISOString(),
+              type: 'archive_summary',
+              count: toArchive.length,
+              dateRange: {
+                from: JSON.parse(toArchive[0]).timestamp,
+                to: JSON.parse(toArchive[toArchive.length - 1]).timestamp
+              }
+            };
+
+            // Write compacted file
+            fs.writeFileSync(correctionsPath, JSON.stringify(archiveSummary) + '\\n' + toKeep.join('\\n') + '\\n');
+
+            return sendResponse(id, { content: [{ type: 'text', text: 'Compacted corrections: archived ' + toArchive.length + ' entries, kept ' + toKeep.length }] });
+          } catch {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Failed to compact corrections' }] });
+          }
+        }
+
+        case 'update_behavior_index': {
+          const BEHAVIOR_DIR = path.join(MEMORY_DIR, 'behavior');
+          const indexPath = path.join(BEHAVIOR_DIR, 'index.json');
+          const hotPath = path.join(BEHAVIOR_DIR, 'HOT.md');
+          const correctionsPath = path.join(BEHAVIOR_DIR, 'corrections.jsonl');
+          const domainsDir = path.join(BEHAVIOR_DIR, 'domains');
+          const projectsDir = path.join(BEHAVIOR_DIR, 'projects');
+          const archiveDir = path.join(BEHAVIOR_DIR, 'archive');
+
+          try {
+            // Count HOT rules
+            const hotContent = readFile(hotPath) || '';
+            const hotRules = (hotContent.match(/^\\s*-\\s/gm) || []).length;
+
+            // Count corrections
+            const correctionsContent = readFile(correctionsPath) || '';
+            const corrections = correctionsContent.split('\\n').filter(l => l.trim()).length;
+
+            // List domains
+            let domains = [];
+            try {
+              domains = fs.readdirSync(domainsDir).filter(f => f.endsWith('.md')).map(f => f.replace('.md', ''));
+            } catch { /* ignore */ }
+
+            // List projects
+            let projects = [];
+            try {
+              projects = fs.readdirSync(projectsDir).filter(f => f.endsWith('.md')).map(f => f.replace('.md', ''));
+            } catch { /* ignore */ }
+
+            // Count archived rules
+            let archivedRules = 0;
+            try {
+              const archiveFiles = fs.readdirSync(archiveDir).filter(f => f.endsWith('.md'));
+              for (const af of archiveFiles) {
+                const archiveContent = readFile(path.join(archiveDir, af)) || '';
+                archivedRules += (archiveContent.match(/^\\s*-\\s/gm) || []).length;
+              }
+            } catch { /* ignore */ }
+
+            const index = {
+              version: 1,
+              lastUpdated: new Date().toISOString(),
+              stats: {
+                hotRules,
+                corrections,
+                domains,
+                projects,
+                archivedRules
+              }
+            };
+
+            fs.writeFileSync(indexPath, JSON.stringify(index, null, 2));
+            return sendResponse(id, { content: [{ type: 'text', text: 'Index updated: ' + JSON.stringify(index.stats) }] });
+          } catch {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Failed to update index' }] });
+          }
+        }
+
         default:
           return sendResponse(id, null, 'Unknown tool: ' + name);
       }
@@ -1716,12 +2361,14 @@ export function getOrchestrationSeedFiles(
  * @param previousKnowledge - Optional previous knowledge content from earlier runs (for cross-run seeding)
  * @param previousMailbox - Optional previous mailbox content with unread messages (for cross-run seeding)
  * @param orchestrationOptions - Optional orchestration seed options for multi-agent mode
+ * @param previousBehavior - Optional previous behavior HOT content (for cross-run seeding)
  */
 export function getMemorySeedFiles(
   sandboxId: string,
   previousKnowledge?: string,
   previousMailbox?: string,
-  orchestrationOptions?: OrchestrationSeedOptions
+  orchestrationOptions?: OrchestrationSeedOptions,
+  previousBehavior?: string
 ): AuthFile[] {
   const Buffer = globalThis.Buffer;
   const today = getTodayDateString();
@@ -1737,6 +2384,12 @@ export function getMemorySeedFiles(
     previousMailbox && previousMailbox.trim().length > 0
       ? previousMailbox
       : getMailboxSeedContent();
+
+  // Use previous behavior HOT if provided, otherwise use default template
+  const behaviorHotContent =
+    previousBehavior && previousBehavior.trim().length > 0
+      ? previousBehavior
+      : getBehaviorHotSeedContent();
 
   const files: AuthFile[] = [
     {
@@ -1761,6 +2414,42 @@ export function getMemorySeedFiles(
     {
       destinationPath: `${MEMORY_PROTOCOL_DIR}/MAILBOX.json`,
       contentBase64: Buffer.from(mailboxContent).toString("base64"),
+      mode: "644",
+    },
+    // Behavior memory files (Layer 3)
+    {
+      destinationPath: `${MEMORY_BEHAVIOR_DIR}/HOT.md`,
+      contentBase64: Buffer.from(behaviorHotContent).toString("base64"),
+      mode: "644",
+    },
+    {
+      destinationPath: `${MEMORY_BEHAVIOR_DIR}/corrections.jsonl`,
+      contentBase64: Buffer.from(getBehaviorCorrectionsSeedContent()).toString(
+        "base64"
+      ),
+      mode: "644",
+    },
+    {
+      destinationPath: `${MEMORY_BEHAVIOR_DIR}/index.json`,
+      contentBase64: Buffer.from(getBehaviorIndexSeedContent()).toString(
+        "base64"
+      ),
+      mode: "644",
+    },
+    // .keep files for empty directories
+    {
+      destinationPath: `${MEMORY_BEHAVIOR_DOMAINS_DIR}/.keep`,
+      contentBase64: Buffer.from("").toString("base64"),
+      mode: "644",
+    },
+    {
+      destinationPath: `${MEMORY_BEHAVIOR_PROJECTS_DIR}/.keep`,
+      contentBase64: Buffer.from("").toString("base64"),
+      mode: "644",
+    },
+    {
+      destinationPath: `${MEMORY_BEHAVIOR_ARCHIVE_DIR}/.keep`,
+      contentBase64: Buffer.from("").toString("base64"),
       mode: "644",
     },
     // Include sync script for memory sync to Convex

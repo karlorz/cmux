@@ -52,6 +52,8 @@ export type EnvironmentContext = {
   previousKnowledge?: string;
   /** Previous mailbox content with unread messages (for cross-run mailbox seeding) */
   previousMailbox?: string;
+  /** Previous behavior HOT content from earlier runs (for cross-run behavior seeding) */
+  previousBehavior?: string;
   /** GitHub Projects v2 linkage context (Phase 5: injected as /root/lifecycle/project-context.json) */
   githubProjectContext?: {
     projectId: string;

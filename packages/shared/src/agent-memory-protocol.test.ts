@@ -4,10 +4,20 @@ import {
   getCrossToolSymlinkCommands,
   getMemoryStartupCommand,
   getMemorySeedFiles,
+  getMemoryProtocolInstructions,
   MEMORY_PROTOCOL_DIR,
   MEMORY_DAILY_DIR,
   MEMORY_KNOWLEDGE_DIR,
   MEMORY_ORCHESTRATION_DIR,
+  MEMORY_BEHAVIOR_DIR,
+  MEMORY_BEHAVIOR_DOMAINS_DIR,
+  MEMORY_BEHAVIOR_PROJECTS_DIR,
+  MEMORY_BEHAVIOR_ARCHIVE_DIR,
+  getBehaviorHotSeedContent,
+  getBehaviorIndexSeedContent,
+  generateBehaviorRuleId,
+  generateCorrectionId,
+  formatBehaviorCorrection,
 } from "./agent-memory-protocol";
 import { execSync } from "node:child_process";
 import { writeFileSync, unlinkSync } from "node:fs";
@@ -35,10 +45,10 @@ describe("agent-memory-protocol", () => {
 
   it("MCP server script contains expected tools", () => {
     const script = getMemoryMcpServerScript();
-    
+
     const expectedTools = [
       "read_memory",
-      "list_daily_logs", 
+      "list_daily_logs",
       "read_daily_log",
       "search_memory",
       "send_message",
@@ -48,8 +58,17 @@ describe("agent-memory-protocol", () => {
       "update_knowledge",
       "add_task",
       "update_task",
+      // Behavior memory tools
+      "read_behavior",
+      "add_behavior_rule",
+      "log_correction",
+      "confirm_behavior_rule",
+      // Behavior admin/decay tools
+      "check_stale_behavior",
+      "compact_corrections",
+      "update_behavior_index",
     ];
-    
+
     for (const tool of expectedTools) {
       expect(script).toContain(`name: '${tool}'`);
     }
@@ -115,6 +134,14 @@ describe("agent-memory-protocol", () => {
       expect(command).toContain(MEMORY_DAILY_DIR);
       expect(command).toContain(MEMORY_KNOWLEDGE_DIR);
       expect(command).toContain(MEMORY_ORCHESTRATION_DIR);
+    });
+
+    it("creates behavior memory directories", () => {
+      const command = getMemoryStartupCommand();
+      expect(command).toContain(MEMORY_BEHAVIOR_DIR);
+      expect(command).toContain(MEMORY_BEHAVIOR_DOMAINS_DIR);
+      expect(command).toContain(MEMORY_BEHAVIOR_PROJECTS_DIR);
+      expect(command).toContain(MEMORY_BEHAVIOR_ARCHIVE_DIR);
     });
   });
 
@@ -184,6 +211,145 @@ describe("agent-memory-protocol", () => {
       expect(paths).toContain(
         `${MEMORY_ORCHESTRATION_DIR}/HEAD_AGENT_INSTRUCTIONS.md`
       );
+    });
+
+    it("includes behavior memory files", () => {
+      const files = getMemorySeedFiles("test-sandbox-id");
+
+      const paths = files.map((f) => f.destinationPath);
+      expect(paths).toContain(`${MEMORY_BEHAVIOR_DIR}/HOT.md`);
+      expect(paths).toContain(`${MEMORY_BEHAVIOR_DIR}/corrections.jsonl`);
+      expect(paths).toContain(`${MEMORY_BEHAVIOR_DIR}/index.json`);
+      expect(paths).toContain(`${MEMORY_BEHAVIOR_DOMAINS_DIR}/.keep`);
+      expect(paths).toContain(`${MEMORY_BEHAVIOR_PROJECTS_DIR}/.keep`);
+      expect(paths).toContain(`${MEMORY_BEHAVIOR_ARCHIVE_DIR}/.keep`);
+    });
+
+    it("includes previous behavior HOT when provided", () => {
+      const previousBehavior = "# My Custom HOT Rules\n- Always use TypeScript";
+      const files = getMemorySeedFiles(
+        "test-sandbox-id",
+        undefined,
+        undefined,
+        undefined,
+        previousBehavior
+      );
+
+      const hotFile = files.find((f) =>
+        f.destinationPath.includes("HOT.md")
+      );
+      expect(hotFile).toBeDefined();
+
+      // Decode content and verify
+      const content = Buffer.from(
+        hotFile?.contentBase64 ?? "",
+        "base64"
+      ).toString();
+      expect(content).toContain("My Custom HOT Rules");
+      expect(content).toContain("Always use TypeScript");
+    });
+
+    it("uses default behavior HOT when no previous provided", () => {
+      const files = getMemorySeedFiles("test-sandbox-id");
+
+      const hotFile = files.find((f) =>
+        f.destinationPath.includes("HOT.md")
+      );
+      expect(hotFile).toBeDefined();
+
+      // Decode content and verify it's the default template
+      const content = Buffer.from(
+        hotFile?.contentBase64 ?? "",
+        "base64"
+      ).toString();
+      expect(content).toContain("# HOT Behavior Rules");
+      expect(content).toContain("Active preferences and workflow rules");
+    });
+  });
+
+  describe("behavior memory helpers", () => {
+    it("getBehaviorHotSeedContent returns valid template", () => {
+      const content = getBehaviorHotSeedContent();
+      expect(content).toContain("# HOT Behavior Rules");
+      expect(content).toContain("## Format");
+      expect(content).toContain("## Rules");
+    });
+
+    it("getBehaviorIndexSeedContent returns valid JSON", () => {
+      const content = getBehaviorIndexSeedContent();
+      const parsed = JSON.parse(content);
+      expect(parsed.version).toBe(1);
+      expect(parsed.stats).toBeDefined();
+      expect(parsed.stats.hotRules).toBe(0);
+      expect(parsed.stats.corrections).toBe(0);
+      expect(parsed.stats.domains).toEqual([]);
+      expect(parsed.stats.projects).toEqual([]);
+    });
+
+    it("generateBehaviorRuleId returns unique IDs", () => {
+      const id1 = generateBehaviorRuleId();
+      const id2 = generateBehaviorRuleId();
+      expect(id1).toMatch(/^rule_[a-z0-9]+$/);
+      expect(id2).toMatch(/^rule_[a-z0-9]+$/);
+      expect(id1).not.toBe(id2);
+    });
+
+    it("generateCorrectionId returns unique IDs", () => {
+      const id1 = generateCorrectionId();
+      const id2 = generateCorrectionId();
+      expect(id1).toMatch(/^corr_[a-z0-9]+$/);
+      expect(id2).toMatch(/^corr_[a-z0-9]+$/);
+      expect(id1).not.toBe(id2);
+    });
+
+    it("formatBehaviorCorrection returns valid JSONL", () => {
+      const correction = {
+        id: "corr_test123",
+        timestamp: "2026-03-12T10:00:00Z",
+        wrongAction: "Used npm install",
+        correctAction: "Should use bun install",
+        context: "Package management",
+        learnedRule: "Always use bun instead of npm",
+      };
+      const formatted = formatBehaviorCorrection(correction);
+      const parsed = JSON.parse(formatted);
+      expect(parsed.id).toBe("corr_test123");
+      expect(parsed.wrongAction).toBe("Used npm install");
+      expect(parsed.correctAction).toBe("Should use bun install");
+    });
+  });
+
+  describe("getMemoryProtocolInstructions", () => {
+    it("includes behavior memory in structure section", () => {
+      const instructions = getMemoryProtocolInstructions();
+      expect(instructions).toContain("behavior/HOT.md");
+      expect(instructions).toContain("behavior/corrections.jsonl");
+    });
+
+    it("includes behavior memory in on-start section", () => {
+      const instructions = getMemoryProtocolInstructions();
+      expect(instructions).toContain("Read `behavior/HOT.md`");
+    });
+
+    it("includes behavior memory in on-completion section", () => {
+      const instructions = getMemoryProtocolInstructions();
+      expect(instructions).toContain("corrections.jsonl");
+      expect(instructions).toContain("If the user corrected you");
+    });
+
+    it("distinguishes knowledge from behavior", () => {
+      const instructions = getMemoryProtocolInstructions();
+      expect(instructions).toContain("Knowledge vs Behavior");
+      expect(instructions).toContain("facts");
+      expect(instructions).toContain("preferences");
+    });
+
+    it("includes behavior memory section with format examples", () => {
+      const instructions = getMemoryProtocolInstructions();
+      expect(instructions).toContain("Behavior Memory (Self-Improving)");
+      expect(instructions).toContain("HOT.md Format");
+      expect(instructions).toContain("corrections.jsonl Format");
+      expect(instructions).toContain("[confirmed]");
     });
   });
 });

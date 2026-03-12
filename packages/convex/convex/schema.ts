@@ -1513,7 +1513,13 @@ const convexSchema = defineSchema({
       v.literal("daily"),
       v.literal("tasks"),
       v.literal("mailbox"),
-      v.literal("events")
+      v.literal("events"),
+      // Behavior memory types (self-improving preferences)
+      v.literal("behavior_hot"),
+      v.literal("behavior_corrections"),
+      v.literal("behavior_domain"),
+      v.literal("behavior_project"),
+      v.literal("behavior_index")
     ),
     content: v.string(),
     fileName: v.optional(v.string()),

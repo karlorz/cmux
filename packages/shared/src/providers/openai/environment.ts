@@ -463,7 +463,8 @@ log "Autopilot completed after \$ITER turns"
       ctx.taskRunId,
       ctx.previousKnowledge,
       ctx.previousMailbox,
-      ctx.orchestrationOptions
+      ctx.orchestrationOptions,
+      ctx.previousBehavior
     )
   );
 

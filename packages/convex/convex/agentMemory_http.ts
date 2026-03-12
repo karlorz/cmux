@@ -11,7 +11,20 @@ import { typedZid } from "@cmux/shared/utils/typed-zid";
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
 const MemoryFileSchema = z.object({
-  memoryType: z.enum(["knowledge", "daily", "tasks", "mailbox", "events", "plan"]),
+  memoryType: z.enum([
+    "knowledge",
+    "daily",
+    "tasks",
+    "mailbox",
+    "events",
+    "plan",
+    // Behavior memory types (self-improving preferences)
+    "behavior_hot",
+    "behavior_corrections",
+    "behavior_domain",
+    "behavior_project",
+    "behavior_index",
+  ]),
   content: z.string(),
   fileName: z.string().optional(),
   date: z
@@ -34,7 +47,13 @@ const memoryTypeValidator = v.union(
   v.literal("daily"),
   v.literal("tasks"),
   v.literal("mailbox"),
-  v.literal("events")
+  v.literal("events"),
+  // Behavior memory types (self-improving preferences)
+  v.literal("behavior_hot"),
+  v.literal("behavior_corrections"),
+  v.literal("behavior_domain"),
+  v.literal("behavior_project"),
+  v.literal("behavior_index")
 );
 
 // Schema for parsing PLAN.json content
@@ -315,7 +334,17 @@ export const syncMemory = httpAction(async (ctx, req) => {
   const nonPlanFiles = validation.data.files
     .filter((f) => f.memoryType !== "plan")
     .map((f) => ({
-      memoryType: f.memoryType as "knowledge" | "daily" | "tasks" | "mailbox" | "events",
+      memoryType: f.memoryType as
+        | "knowledge"
+        | "daily"
+        | "tasks"
+        | "mailbox"
+        | "events"
+        | "behavior_hot"
+        | "behavior_corrections"
+        | "behavior_domain"
+        | "behavior_project"
+        | "behavior_index",
       content: f.content,
       fileName: f.fileName,
       date: f.date,
