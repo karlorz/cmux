@@ -68,7 +68,7 @@ if [ -n "${CMUX_AUTH_TOKEN:-}" ]; then
     --agent claude/haiku-4.5 \
     --repo karlorz/testing-repo-1 \
     "Test prompt: list files in current directory" 2>&1 || true)
-  if echo "$SPAWN_OUTPUT" | grep -qiE "orchestrationTaskId|taskId|running|success"; then
+  if echo "$SPAWN_OUTPUT" | grep -qiE "orchestrationTaskId|Orchestration Task ID|Agent Spawned|spawning"; then
     pass "spawn succeeded"
   elif echo "$SPAWN_OUTPUT" | grep -qiE "error|fail|unauthorized"; then
     fail "spawn failed: $SPAWN_OUTPUT"
