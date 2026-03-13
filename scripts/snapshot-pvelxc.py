@@ -2963,8 +2963,13 @@ async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
         echo "[install-ide-extensions] checking cmux extension"
         ls -la {cmux_vsix}
         echo "[install-ide-extensions] installing bundled cmux extension"
-        {bin_path} --install-extension {cmux_vsix} --force --extensions-dir {extensions_dir} --user-data-dir {user_data_dir} </dev/null || true
+        {bin_path} --install-extension {cmux_vsix} --force --extensions-dir {extensions_dir} --user-data-dir {user_data_dir} </dev/null
         echo "[install-ide-extensions] cmux extension installed"
+        # Verify the extension was actually installed
+        if ! ls -d {extensions_dir}/cmux.* 2>/dev/null; then
+            echo "[install-ide-extensions] ERROR: cmux extension not found in {extensions_dir}" >&2
+            exit 1
+        fi
         rm -f {cmux_vsix}
         """
     )
@@ -3821,6 +3826,7 @@ PROFILE
 @registry.task(
     name="cleanup-build-artifacts",
     deps=(
+        "build-worker",
         "configure-envctl",
         "configure-openbox",
         "install-vnc-clipboard-bridge",
@@ -3836,6 +3842,7 @@ PROFILE
 @update_registry.task(
     name="cleanup-build-artifacts",
     deps=(
+        "build-worker",
         "configure-envctl",
         "install-vnc-clipboard-bridge",
         "install-prompt-wrapper",
