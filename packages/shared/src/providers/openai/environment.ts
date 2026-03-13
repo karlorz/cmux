@@ -8,6 +8,7 @@ import {
   getMemoryProtocolInstructions,
   getProjectContextFile,
   getCrossToolSymlinkCommands,
+  getPolicyRulesInstructions,
 } from "../../agent-memory-protocol";
 import { buildMergedCodexConfigToml } from "../../mcp-preview";
 export { stripFilteredConfigKeys } from "../../mcp-preview";
@@ -411,9 +412,13 @@ log "Autopilot completed after \$ITER turns"
       console.warn("Failed to read .codex/instructions.md:", error);
     }
   }
+  const policyRulesSection = ctx.policyRules && ctx.policyRules.length > 0
+    ? getPolicyRulesInstructions(ctx.policyRules) + "\n\n"
+    : "";
   const fullInstructions =
     instructionsContent +
     (instructionsContent ? "\n\n" : "") +
+    policyRulesSection +
     getMemoryProtocolInstructions();
   files.push({
     destinationPath: "$HOME/.codex/instructions.md",

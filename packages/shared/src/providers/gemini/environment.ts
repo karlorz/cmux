@@ -9,6 +9,7 @@ import {
   getMemoryProtocolInstructions,
   getProjectContextFile,
   getCrossToolSymlinkCommands,
+  getPolicyRulesInstructions,
 } from "../../agent-memory-protocol";
 import { buildGeminiMcpServers } from "../../mcp-injection";
 import { getTaskSandboxWrapperFiles } from "../common/task-sandbox-wrappers";
@@ -265,8 +266,11 @@ export async function getGeminiEnvironment(
   // This is created at user-level ~/.gemini/GEMINI.md (not in workspace)
   // If Claude's CLAUDE.md exists, the symlink from getCrossToolSymlinkCommands()
   // will override this file, ensuring all tools share the same instructions
+  const policyRulesSection = ctx.policyRules && ctx.policyRules.length > 0
+    ? `\n${getPolicyRulesInstructions(ctx.policyRules)}\n`
+    : "";
   const geminiMdContent = `# cmux Project Instructions
-
+${policyRulesSection}
 ${getMemoryProtocolInstructions()}
 `;
   files.push({

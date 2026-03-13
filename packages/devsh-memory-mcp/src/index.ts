@@ -48,7 +48,6 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
   // Helper functions
   function readFile(filePath: string): string | null {
     try {
-      if (!fs.existsSync(filePath)) return null;
       return fs.readFileSync(filePath, "utf-8");
     } catch {
       return null;
@@ -726,6 +725,16 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
             },
           },
           required: ["requestId", "resolution"],
+        },
+      },
+      {
+        name: "refresh_policy_rules",
+        description:
+          "Fetch the latest centralized policy rules from the server and update local instruction files. " +
+          "Use this to get updated policies without restarting the sandbox. Requires CMUX_TASK_RUN_JWT.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {},
         },
       },
     ],
@@ -1940,6 +1949,233 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
             content: [{
               type: "text",
               text: `Error resolving approval: ${errorMsg}`,
+            }],
+          };
+        }
+      }
+
+      case "refresh_policy_rules": {
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        // CMUX_CALLBACK_URL is the Convex HTTP endpoint URL
+        const callbackUrl = process.env.CMUX_CALLBACK_URL;
+        const agentNameFull = process.env.CMUX_AGENT_NAME; // e.g., "claude/sonnet-4"
+        const isOrchestrationHead = process.env.CMUX_IS_ORCHESTRATION_HEAD === "1";
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "CMUX_TASK_RUN_JWT environment variable not set. This tool requires JWT authentication.",
+            }],
+          };
+        }
+
+        if (!callbackUrl) {
+          return {
+            content: [{
+              type: "text",
+              text: "CMUX_CALLBACK_URL environment variable not set. Cannot reach policy server.",
+            }],
+          };
+        }
+
+        if (!agentNameFull) {
+          return {
+            content: [{
+              type: "text",
+              text: "CMUX_AGENT_NAME environment variable not set. Cannot determine agent type.",
+            }],
+          };
+        }
+
+        // Extract agent type from full name (e.g., "claude/sonnet-4" -> "claude")
+        const agentType = agentNameFull.split("/")[0];
+        const validAgentTypes = ["claude", "codex", "gemini", "opencode"];
+        if (!validAgentTypes.includes(agentType)) {
+          return {
+            content: [{
+              type: "text",
+              text: `Unknown agent type '${agentType}'. Expected one of: ${validAgentTypes.join(", ")}`,
+            }],
+          };
+        }
+
+        // Determine context from environment
+        // Head agents run in cloud_workspace context, sub-agents run in task_sandbox
+        const context = isOrchestrationHead ? "cloud_workspace" : "task_sandbox";
+
+        try {
+          // Build URL with required query parameters
+          const url = new URL(`${callbackUrl}/api/agent/policy-rules`);
+          url.searchParams.set("agentType", agentType);
+          url.searchParams.set("context", context);
+
+          // Fetch latest policy rules from server
+          const response = await fetch(url.toString(), {
+            method: "GET",
+            headers: {
+              "x-cmux-token": jwt,
+              "Convex-Client": "node-1.0.0",
+            },
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            return {
+              content: [{
+                type: "text",
+                text: `Failed to fetch policy rules: ${response.status} ${errorText}`,
+              }],
+            };
+          }
+
+          const result = await response.json() as {
+            rules: Array<{
+              ruleId: string;
+              name: string;
+              category: string;
+              ruleText: string;
+              priority: number;
+              scope: string;
+            }>;
+          };
+
+          if (!result.rules || result.rules.length === 0) {
+            return {
+              content: [{
+                type: "text",
+                text: "No policy rules found for this context.",
+              }],
+            };
+          }
+
+          // Format rules as markdown and update instruction files
+          const categoryOrder: Record<string, number> = {
+            git_policy: 1,
+            security: 2,
+            workflow: 3,
+            tool_restriction: 4,
+            custom: 5,
+          };
+          const categoryLabels: Record<string, string> = {
+            git_policy: "Git Policy",
+            security: "Security",
+            workflow: "Workflow",
+            tool_restriction: "Tool Restrictions",
+            custom: "Custom",
+          };
+
+          // Group rules by category
+          const byCategory = new Map<string, typeof result.rules>();
+          for (const rule of result.rules) {
+            const existing = byCategory.get(rule.category) ?? [];
+            existing.push(rule);
+            byCategory.set(rule.category, existing);
+          }
+
+          // Sort rules within each category by priority
+          for (const rules of byCategory.values()) {
+            rules.sort((a, b) => a.priority - b.priority);
+          }
+
+          // Build markdown
+          let markdown = "# Agent Policy Rules\n\n";
+          markdown += "> These rules are centrally managed by cmux and override repo-level rules.\n";
+          markdown += `> Last refreshed: ${new Date().toISOString()}\n\n`;
+
+          const sortedCategories = Array.from(byCategory.keys()).sort(
+            (a, b) => (categoryOrder[a] ?? 99) - (categoryOrder[b] ?? 99)
+          );
+
+          for (const category of sortedCategories) {
+            const rules = byCategory.get(category);
+            if (!rules || rules.length === 0) continue;
+
+            const label = categoryLabels[category] ?? category;
+            markdown += `## ${label}\n\n`;
+
+            for (const rule of rules) {
+              markdown += `${rule.ruleText}\n\n`;
+            }
+          }
+
+          // Try to update local instruction files
+          const updates: string[] = [];
+          const claudeMdPath = path.join(process.env.HOME ?? "/root", ".claude", "CLAUDE.md");
+          const codexMdPath = path.join(process.env.HOME ?? "/root", ".codex", "instructions.md");
+
+          // Read existing file, find policy rules section, and replace it
+          const updateInstructionFile = (filePath: string): boolean => {
+            try {
+              let content: string;
+              try {
+                content = fs.readFileSync(filePath, "utf-8");
+              } catch {
+                // File doesn't exist
+                return false;
+              }
+              const policyMarkerStart = "# Agent Policy Rules";
+              const startIdx = content.indexOf(policyMarkerStart);
+
+              if (startIdx === -1) {
+                // No existing policy section, prepend it after the first heading
+                const firstHeadingEnd = content.indexOf("\n\n");
+                if (firstHeadingEnd > 0) {
+                  content = content.slice(0, firstHeadingEnd + 2) + markdown + "\n" + content.slice(firstHeadingEnd + 2);
+                } else {
+                  content = markdown + "\n" + content;
+                }
+              } else {
+                // Find the end of the policy section (next top-level heading or memory protocol)
+                const nextHeadingMatch = content.slice(startIdx + policyMarkerStart.length).match(/\n# [A-Z]/);
+                const memoryProtocolMatch = content.slice(startIdx + policyMarkerStart.length).match(/\n## cmux Agent Memory Protocol/);
+
+                let endIdx: number;
+                if (memoryProtocolMatch && memoryProtocolMatch.index !== undefined) {
+                  endIdx = startIdx + policyMarkerStart.length + memoryProtocolMatch.index;
+                } else if (nextHeadingMatch && nextHeadingMatch.index !== undefined) {
+                  endIdx = startIdx + policyMarkerStart.length + nextHeadingMatch.index;
+                } else {
+                  endIdx = content.length;
+                }
+
+                content = content.slice(0, startIdx) + markdown + content.slice(endIdx);
+              }
+
+              fs.writeFileSync(filePath, content, "utf-8");
+              return true;
+            } catch {
+              return false;
+            }
+          };
+
+          if (updateInstructionFile(claudeMdPath)) {
+            updates.push("~/.claude/CLAUDE.md");
+          }
+          if (updateInstructionFile(codexMdPath)) {
+            updates.push("~/.codex/instructions.md");
+          }
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                refreshed: true,
+                rulesCount: result.rules.length,
+                categories: sortedCategories,
+                updatedFiles: updates,
+                message: updates.length > 0
+                  ? `Successfully refreshed ${result.rules.length} policy rules. Updated: ${updates.join(", ")}`
+                  : `Fetched ${result.rules.length} policy rules but could not update local files.`,
+              }, null, 2),
+            }],
+          };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{
+              type: "text",
+              text: `Error refreshing policy rules: ${errorMsg}`,
             }],
           };
         }
