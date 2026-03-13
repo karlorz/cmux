@@ -706,9 +706,20 @@ export default {
       redirect: "manual",
     });
 
-    // WebSocket upgrades: proxy the connection through the Worker
+    // WebSocket upgrades
     const upgradeHeader = request.headers.get("Upgrade");
     if (upgradeHeader?.toLowerCase() === "websocket") {
+      // VNC (port 39380): Pass through directly to CF Tunnel without Worker proxy
+      // The Worker's WebSocket proxy adds latency and doesn't support proper keepalive,
+      // causing disconnections from external networks due to CF's 100s idle timeout.
+      // CF Tunnel handles WebSocket keepalive correctly at the protocol level.
+      const VNC_PORT = "39380";
+      if (port === VNC_PORT) {
+        // Pass through to CF Tunnel - it will handle the WebSocket upgrade
+        return fetch(request);
+      }
+
+      // Other WebSockets (VS Code, xterm): proxy through the Worker
       // Fetch the upstream WebSocket (use outbound which has X-Cmux-Proxied header)
       const upstreamResponse = await fetch(outbound);
 
