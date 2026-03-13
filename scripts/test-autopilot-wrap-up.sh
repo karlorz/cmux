@@ -34,6 +34,7 @@ run_hook() {
   echo "$input_json" | \
     env \
       CLAUDE_AUTOPILOT=1 \
+      AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
       CLAUDE_AUTOPILOT_DELAY=0 \
       CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
       "$@" \
@@ -210,6 +211,7 @@ echo "3" > "/tmp/claude-autopilot-blocked-${SID}"
 INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":false}'
 OUTPUT=$(echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_AUTOPILOT_STOP_FILE="$EXT_STOP_FILE" \
   CLAUDE_PROJECT_DIR="$PROJECT_DIR" \

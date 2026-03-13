@@ -68,6 +68,7 @@ echo "1" > "/tmp/claude-autopilot-turns-${TEST_SESSION}"
 
 echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
   CLAUDE_AUTOPILOT=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CLAUDE_AUTOPILOT_MAX_TURNS=2 \
   CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
   bash "$SCRIPT_DIR/autopilot-keep-running.sh" >/dev/null 2>&1 || true
@@ -83,6 +84,7 @@ echo "[2] codex-review.sh: detects completed marker (dry-run)"
 # The completed marker from test 1 should still exist
 echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
   CLAUDE_AUTOPILOT=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CODEX_REVIEW_DISABLED=0 \
   CODEX_REVIEW_DEBUG=1 \
   CODEX_REVIEW_DRY_RUN=1 \
@@ -105,6 +107,7 @@ echo "stale" > "/tmp/claude-autopilot-completed-${TEST_SESSION}"
 
 echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
   CLAUDE_AUTOPILOT=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CLAUDE_AUTOPILOT_MAX_TURNS=20 \
   CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
   bash "$SCRIPT_DIR/autopilot-keep-running.sh" >/dev/null 2>&1 || true
@@ -117,22 +120,27 @@ echo "[4] SESSION_ID guard: empty falls back to 'default'"
 
 echo '{}' | \
   CLAUDE_AUTOPILOT=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CLAUDE_AUTOPILOT_MAX_TURNS=1 \
   CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
   bash "$SCRIPT_DIR/autopilot-keep-running.sh" >/dev/null 2>&1 || true
 
 assert "Marker written with 'default' session" test -f "/tmp/claude-autopilot-completed-default"
 
-# --- Test 5: no marker when autopilot not enabled ---
+# --- Test 5: no marker when keep-running toggle is unset ---
 echo ""
-echo "[5] No marker when CLAUDE_AUTOPILOT unset"
+echo "[5] No marker when AUTOPILOT_KEEP_RUNNING_DISABLED is unset"
 cleanup
 
 echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
-  CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
-  bash "$SCRIPT_DIR/autopilot-keep-running.sh" >/dev/null 2>&1 || true
+  env -u AUTOPILOT_KEEP_RUNNING_DISABLED \
+    CLAUDE_AUTOPILOT=1 \
+    CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
+    bash "$SCRIPT_DIR/autopilot-keep-running.sh" >/dev/null 2>&1 || true
 
 assert_not "No marker when autopilot disabled" test -f "/tmp/claude-autopilot-completed-${TEST_SESSION}"
+assert_not "No blocked flag when autopilot disabled" test -f "/tmp/claude-autopilot-blocked-${TEST_SESSION}"
+assert_not "No turn file when autopilot disabled" test -f "/tmp/claude-autopilot-turns-${TEST_SESSION}"
 
 # --- Test 6: max turns -1 keeps running without completed marker ---
 echo ""
@@ -142,6 +150,7 @@ echo "5" > "/tmp/claude-autopilot-turns-${TEST_SESSION}"
 
 echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
   CLAUDE_AUTOPILOT=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CLAUDE_AUTOPILOT_MAX_TURNS=-1 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_PROJECT_DIR="$PROJECT_DIR" \

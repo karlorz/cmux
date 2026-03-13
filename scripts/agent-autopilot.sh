@@ -261,9 +261,13 @@ wrap_up_threshold="$((WRAP_UP_MINUTES * 60))"
 
 # For Claude tool: export env vars for autopilot-keep-running hook integration
 if [[ "$TOOL" = "claude" ]]; then
-  # CLAUDE_AUTOPILOT is now enabled by default in the hook, no need to set it
+  # Explicitly enable the hook for this run. Ordinary sessions stay disabled
+  # unless AUTOPILOT_KEEP_RUNNING_DISABLED=0 is set.
+  export AUTOPILOT_KEEP_RUNNING_DISABLED=0
+  export AUTOPILOT_STOP_FILE="$STOP_FILE"
   export CLAUDE_AUTOPILOT_STOP_FILE="$STOP_FILE"
   # Calculate max turns based on session duration (3 turns per TURN_MINUTES period)
+  export AUTOPILOT_MAX_TURNS=$(( (MINUTES / TURN_MINUTES) * 3 ))
   export CLAUDE_AUTOPILOT_MAX_TURNS=$(( (MINUTES / TURN_MINUTES) * 3 ))
 fi
 
@@ -316,6 +320,58 @@ Now epoch seconds: ${now_epoch}
 Mission:
 ${mission}
 EOF
+}
+
+build_hooked_start_prompt() {
+  local now_epoch="$1"
+  local deadline="$2"
+  local turn_minutes="$3"
+  local mission="$4"
+
+  cat <<EOF
+You are running in unattended autopilot mode inside a single Codex session.
+The repo-local Stop hook will continue the session automatically until it requests a final wrap-up turn or allows the session to stop.
+
+Rules:
+- Do not ask for confirmation to continue; just proceed.
+- If you need user input, write "BLOCKED: <question>" in the output and immediately switch to the next best task.
+- Keep changes small and verifiable; prefer running tests/lints when appropriate.
+- End every substantial turn with: Progress, Commands run, Files changed, Next.
+
+Timebox each work turn: about ${turn_minutes} minutes.
+Deadline epoch seconds: ${deadline}
+Now epoch seconds: ${now_epoch}
+
+Mission:
+${mission}
+EOF
+}
+
+build_hooked_resume_prompt() {
+  local time_left="$1"
+  local turn_minutes="$2"
+  local mission="${3:-}"
+
+  if [[ -n "$mission" ]]; then
+    cat <<EOF
+Resume this unattended autopilot session.
+Time left in the overall session: ${time_left} seconds.
+Timebox each work turn: about ${turn_minutes} minutes.
+
+Continue from where you left off. The Stop hook will continue the session automatically until it requests wrap-up.
+
+Mission reminder:
+${mission}
+EOF
+  else
+    cat <<EOF
+Resume this unattended autopilot session.
+Time left in the overall session: ${time_left} seconds.
+Timebox each work turn: about ${turn_minutes} minutes.
+
+Continue from where you left off. The Stop hook will continue the session automatically until it requests wrap-up.
+EOF
+  fi
 }
 
 build_continue_prompt() {
@@ -454,6 +510,84 @@ run_turn_codex() {
   return "$rc"
 }
 
+run_codex_native_autopilot() {
+  local mode="$1"
+  local prompt="$2"
+  local turn_file="$3"
+  local max_turns="$4"
+
+  local -a base=(codex -a never -s workspace-write --enable codex_hooks)
+  if [[ -n "$MODEL" ]]; then
+    base+=(-m "$MODEL")
+  fi
+
+  local -a cmd=("${base[@]}")
+  if [[ "$mode" = "resume" ]]; then
+    cmd+=(exec resume --last)
+  else
+    cmd+=(exec)
+  fi
+  if [[ "$PREFER_JSON" -eq 1 ]]; then
+    cmd+=(--json)
+  fi
+  cmd+=("$prompt")
+
+  : >"$turn_file"
+
+  local header=""
+  header+="timestamp: $(date '+%Y-%m-%dT%H:%M:%S%z')\n"
+  header+="mode: $mode\n"
+  header+="cwd: $CWD\n"
+  header+="command: $(format_cmd "${cmd[@]}")\n"
+  header+="max_turns: $max_turns\n"
+  header+="stop_file: $STOP_FILE\n"
+  header+="\n"
+  header+="prompt:\n"
+  header+="$prompt\n"
+  header+="\n"
+  header+="output:\n"
+  write_header_both "$turn_file" "$header"
+
+  local rc=0
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    write_header_both "$turn_file" "(dry-run) skipping codex native-hook invocation\n"
+    rc=0
+  else
+    (
+      while :; do
+        sleep 30
+        local_now="$(date +%s)"
+        time_left="$((deadline_epoch - local_now))"
+        if [[ "$time_left" -le "$wrap_up_threshold" ]]; then
+          touch "$STOP_FILE"
+          exit 0
+        fi
+      done
+    ) &
+    WATCHER_PID=$!
+
+    set +e
+    AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+      AUTOPILOT_ENABLED=1 \
+      AUTOPILOT_STOP_FILE="$STOP_FILE" \
+      AUTOPILOT_MAX_TURNS="$max_turns" \
+      CMUX_AUTOPILOT_ENABLED=1 \
+      CMUX_AUTOPILOT_STOP_FILE="$STOP_FILE" \
+      CMUX_AUTOPILOT_MAX_TURNS="$max_turns" \
+      CMUX_AUTOPILOT_INLINE_WRAPUP=1 \
+      CMUX_AUTOPILOT_CURRENT_SESSION_FILE="/tmp/codex-current-session-id" \
+      run_and_tee "$turn_file" "${cmd[@]}"
+    rc=$?
+    set -e
+
+    cleanup_watcher
+    WATCHER_PID=""
+  fi
+
+  write_header_both "$turn_file" "\nexit_code: $rc\n"
+  return "$rc"
+}
+
 run_turn_opencode() {
   local mode="$1"
   local prompt="$2"
@@ -515,6 +649,43 @@ print_and_log "Stop file: $STOP_FILE (touch to stop)"
 
 if [[ "$OPEN_MONITOR" -eq 1 ]]; then
   open_monitor "$run_log"
+fi
+
+if [[ "$TOOL" = "codex" ]]; then
+  max_turns=$(( (MINUTES / TURN_MINUTES) * 3 ))
+  mode="start"
+  if [[ "$RESUME" -eq 1 ]]; then
+    mode="resume"
+  fi
+
+  now_epoch="$(date +%s)"
+  time_left="$((deadline_epoch - now_epoch))"
+  if [[ "$mode" = "start" ]]; then
+    prompt="$(build_hooked_start_prompt "$now_epoch" "$deadline_epoch" "$TURN_MINUTES" "$MISSION")"
+  else
+    prompt="$(build_hooked_resume_prompt "$time_left" "$TURN_MINUTES" "$MISSION")"
+  fi
+
+  turn_file="$session_dir/turn-001.log"
+  print_and_log "turn=1 tool=$TOOL mode=$mode native_hooks=1 time_left_seconds=$time_left"
+
+  rc=0
+  run_codex_native_autopilot "$mode" "$prompt" "$turn_file" "$max_turns" || rc=$?
+
+  if [[ "$rc" -ne 0 && "$mode" = "resume" && -n "$MISSION" ]]; then
+    print_and_log "Initial resume failed; falling back to starting a new Codex session."
+    prompt="$(build_hooked_start_prompt "$now_epoch" "$deadline_epoch" "$TURN_MINUTES" "$MISSION")"
+    : >"$turn_file"
+    run_codex_native_autopilot "start" "$prompt" "$turn_file" "$max_turns" || rc=$?
+  fi
+
+  if [[ "$rc" -ne 0 ]]; then
+    print_and_log "turn=1 exit_code=$rc (see $turn_file)"
+    exit "$rc"
+  fi
+
+  print_and_log "Done. Logs: $session_dir"
+  exit 0
 fi
 
 while :; do
