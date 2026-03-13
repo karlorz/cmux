@@ -658,10 +658,22 @@ export async function spawnAgent(
         ((): Promise<PolicyRuleForInstructions[] | undefined> => {
           const providerId = getProviderIdFromAgentName(agent.name);
           if (!providerId) return Promise.resolve(undefined);
-          const agentType = providerId === "anthropic" ? "claude"
-            : providerId === "openai" ? "codex"
-            : providerId === "gemini" ? "gemini"
-            : "opencode";
+          // Map provider to agent type - only for explicitly supported providers
+          const providerToAgentType: Record<string, "claude" | "codex" | "gemini" | "opencode"> = {
+            anthropic: "claude",
+            openai: "codex",
+            gemini: "gemini",
+            opencode: "opencode",
+            amp: "opencode", // Amp uses similar patterns to opencode
+            cursor: "opencode", // Cursor uses similar patterns
+            qwen: "opencode", // Qwen uses similar patterns
+            grok: "opencode", // Grok uses similar patterns
+          };
+          const agentType = providerToAgentType[providerId];
+          if (!agentType) {
+            serverLogger.debug(`[AgentSpawner] No policy agent type mapping for provider: ${providerId}`);
+            return Promise.resolve(undefined);
+          }
           return getConvex()
             .query(api.agentPolicyRules.getForSandbox, {
               teamSlugOrId,

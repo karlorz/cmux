@@ -2078,7 +2078,9 @@ const convexSchema = defineSchema({
     .index("by_team", ["teamId", "status"])
     .index("by_team_scope", ["teamId", "scope", "status"])
     .index("by_project", ["projectFullName", "status"])
-    .index("by_user", ["userId", "status"]),
+    .index("by_team_project", ["teamId", "projectFullName", "status"]) // Workspace scope with team isolation
+    .index("by_user", ["userId", "status"])
+    .index("by_ruleId", ["ruleId"]), // For upsert lookups
 });
 
 export default convexSchema;

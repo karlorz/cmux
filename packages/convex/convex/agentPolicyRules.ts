@@ -68,53 +68,61 @@ function normalizeRequiredString(fieldName: string, value: string): string {
 
 /**
  * List policy rules for a team (UI display).
+ * Returns all statuses by default so disabled/deprecated rules are visible for management.
  */
 export const list = authQuery({
   args: {
     teamSlugOrId: v.string(),
     scope: v.optional(scopeValidator),
     projectFullName: v.optional(v.string()),
-    status: v.optional(statusValidator),
+    status: v.optional(statusValidator), // Filter by status, or undefined for all
   },
   handler: async (ctx, args) => {
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
     const projectFullName = normalizeOptionalString(args.projectFullName);
 
-    // Get all relevant rules
+    // Helper to filter by status if specified
+    const filterByStatus = <T extends { status: string }>(rules: T[]): T[] => {
+      if (args.status) {
+        return rules.filter((r) => r.status === args.status);
+      }
+      return rules;
+    };
+
+    // Get all relevant rules - query without status filter, then filter in memory
+    // This allows showing all statuses when status arg is undefined
     let rules;
     if (projectFullName) {
-      rules = await ctx.db
+      // Use team_project index for proper isolation
+      const allRules = await ctx.db
         .query("agentPolicyRules")
-        .withIndex("by_project", (q) =>
-          q.eq("projectFullName", projectFullName).eq("status", args.status ?? "active"),
+        .withIndex("by_team_project", (q) =>
+          q.eq("teamId", teamId).eq("projectFullName", projectFullName),
         )
         .collect();
+      rules = filterByStatus(allRules);
     } else if (args.scope) {
-      rules = await ctx.db
+      const allRules = await ctx.db
         .query("agentPolicyRules")
         .withIndex("by_team_scope", (q) =>
-          q
-            .eq("teamId", teamId)
-            .eq("scope", args.scope!)
-            .eq("status", args.status ?? "active"),
+          q.eq("teamId", teamId).eq("scope", args.scope!),
         )
         .collect();
+      rules = filterByStatus(allRules);
     } else {
-      rules = await ctx.db
+      const allRules = await ctx.db
         .query("agentPolicyRules")
-        .withIndex("by_team", (q) =>
-          q.eq("teamId", teamId).eq("status", args.status ?? "active"),
-        )
+        .withIndex("by_team", (q) => q.eq("teamId", teamId))
         .collect();
+      rules = filterByStatus(allRules);
     }
 
     // Also include system rules (always visible)
-    const systemRules = await ctx.db
+    const allSystemRules = await ctx.db
       .query("agentPolicyRules")
-      .withIndex("by_scope", (q) =>
-        q.eq("scope", "system").eq("status", args.status ?? "active"),
-      )
+      .withIndex("by_scope", (q) => q.eq("scope", "system"))
       .collect();
+    const systemRules = filterByStatus(allSystemRules);
 
     // Combine and dedupe (team rules override system rules with same ruleId)
     const ruleMap = new Map<string, (typeof rules)[number]>();
@@ -211,12 +219,12 @@ async function getForSandboxImpl(
         q.eq("teamId", args.teamId).eq("scope", "team").eq("status", "active"),
       )
       .collect(),
-    // Workspace rules (if projectFullName provided)
+    // Workspace rules (if projectFullName provided) - use team_project index for isolation
     args.projectFullName
       ? ctx.db
           .query("agentPolicyRules")
-          .withIndex("by_project", (q) =>
-            q.eq("projectFullName", args.projectFullName).eq("status", "active"),
+          .withIndex("by_team_project", (q) =>
+            q.eq("teamId", args.teamId).eq("projectFullName", args.projectFullName).eq("status", "active"),
           )
           .collect()
           .then((rules) => rules.filter((r) => r.scope === "workspace"))
@@ -302,10 +310,12 @@ async function getForSandboxImpl(
 
 /**
  * Create or update a policy rule.
+ * For updates, pass the document _id directly instead of ruleId to avoid ambiguity.
  */
 export const upsert = authMutation({
   args: {
-    ruleId: v.optional(v.string()), // If provided, updates existing rule
+    id: v.optional(v.id("agentPolicyRules")), // Document ID for updates (preferred)
+    ruleId: v.optional(v.string()), // For creating with specific ruleId (new rules only)
     name: v.string(),
     description: v.optional(v.string()),
     scope: scopeValidator,
@@ -337,43 +347,44 @@ export const upsert = authMutation({
     if (args.scope === "team" && !teamId) {
       throw new Error("Team scope requires teamSlugOrId");
     }
-    if (args.scope === "workspace" && !projectFullName) {
-      throw new Error("Workspace scope requires projectFullName");
+    if (args.scope === "workspace" && (!projectFullName || !teamId)) {
+      throw new Error("Workspace scope requires both teamSlugOrId and projectFullName");
     }
     if (args.scope === "user" && !teamId) {
       throw new Error("User scope requires teamSlugOrId");
     }
 
-    // Check for existing rule if ruleId provided
-    if (args.ruleId) {
-      const existingRules = await ctx.db
-        .query("agentPolicyRules")
-        .filter((q) => q.eq(q.field("ruleId"), args.ruleId))
-        .collect();
-      const existing = existingRules[0];
-
-      if (existing) {
-        // Update existing rule
-        await ctx.db.patch(existing._id, {
-          name,
-          description,
-          scope: args.scope,
-          teamId: args.scope === "system" ? undefined : teamId,
-          projectFullName: args.scope === "workspace" ? projectFullName : undefined,
-          userId: args.scope === "user" ? userId : undefined,
-          agents: args.agents,
-          contexts: args.contexts,
-          category: args.category,
-          ruleText,
-          priority: args.priority,
-          status: args.status ?? existing.status,
-          updatedAt: now,
-        });
-        return existing._id;
+    // Update existing rule if document ID provided
+    if (args.id) {
+      const existing = await ctx.db.get(args.id);
+      if (!existing) {
+        throw new Error("Policy rule not found");
       }
+
+      // Prevent modifying system rules (except by seed script)
+      if (existing.scope === "system" && args.scope !== "system") {
+        throw new Error("Cannot change scope of system rules");
+      }
+
+      await ctx.db.patch(args.id, {
+        name,
+        description,
+        scope: args.scope,
+        teamId: args.scope === "system" ? undefined : teamId,
+        projectFullName: args.scope === "workspace" ? projectFullName : undefined,
+        userId: args.scope === "user" ? userId : undefined,
+        agents: args.agents,
+        contexts: args.contexts,
+        category: args.category,
+        ruleText,
+        priority: args.priority,
+        status: args.status ?? existing.status,
+        updatedAt: now,
+      });
+      return args.id;
     }
 
-    // Generate new ruleId if not provided or not found
+    // Generate new ruleId if not provided
     const ruleId = args.ruleId ?? generateRuleId();
 
     // Create new rule

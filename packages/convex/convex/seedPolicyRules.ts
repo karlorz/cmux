@@ -85,15 +85,15 @@ export const seed = internalMutation({
     let updated = 0;
 
     for (const rule of SYSTEM_POLICY_RULES) {
-      // Check if rule already exists
+      // Check if rule already exists by ruleId (regardless of status)
+      // Use the by_ruleId index for efficient lookup
       const existing = await ctx.db
         .query("agentPolicyRules")
-        .withIndex("by_scope", (q) => q.eq("scope", "system").eq("status", "active"))
-        .filter((q) => q.eq(q.field("ruleId"), rule.ruleId))
+        .withIndex("by_ruleId", (q) => q.eq("ruleId", rule.ruleId))
         .first();
 
       if (existing) {
-        // Update existing rule
+        // Update existing rule (reactivate if it was disabled/deprecated)
         await ctx.db.patch(existing._id, {
           name: rule.name,
           description: rule.description,
@@ -101,6 +101,7 @@ export const seed = internalMutation({
           contexts: rule.contexts,
           ruleText: rule.ruleText,
           priority: rule.priority,
+          status: "active", // Reactivate if disabled
           updatedAt: now,
         });
         updated++;
