@@ -184,7 +184,8 @@ export function PolicyRulesSection({ teamSlugOrId }: PolicyRulesSectionProps) {
 
     setFormError(null);
     upsertMutation.mutate({
-      ruleId: editingRule?.ruleId,
+      id: editingRule?._id, // Use document ID for updates (preferred over ruleId)
+      ruleId: editingRule ? undefined : undefined, // Let backend generate for new rules
       name: form.name.trim(),
       description: form.description.trim() || undefined,
       scope: form.scope,
@@ -371,7 +372,9 @@ export function PolicyRulesSection({ teamSlugOrId }: PolicyRulesSectionProps) {
                     disabled={editingRule?.scope === "system"}
                   >
                     <option value="team">Team</option>
-                    <option value="workspace">Workspace</option>
+                    <option value="workspace" disabled title="Workspace scope requires project context (coming soon)">
+                      Workspace (coming soon)
+                    </option>
                     <option value="user">User</option>
                   </select>
                 </div>
