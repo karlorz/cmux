@@ -13,7 +13,7 @@ describe("toMorphVncUrl", () => {
     );
 
     expect(result).toBe(
-      "https://port-39380-morphvm-abc123.http.cloud.morph.so/vnc.html?autoconnect=1&resize=scale",
+      "https://port-39380-morphvm-abc123.http.cloud.morph.so/vnc.html?autoconnect=1&resize=scale&reconnect=1&reconnect_delay=3000",
     );
   });
 });
@@ -25,7 +25,7 @@ describe("toGenericVncUrl", () => {
     );
 
     expect(result).toBe(
-      "https://port-39380-pvelxc-1cc7473f.alphasolves.com/vnc.html?autoconnect=1&resize=scale",
+      "https://port-39380-pvelxc-1cc7473f.alphasolves.com/vnc.html?autoconnect=1&resize=scale&reconnect=1&reconnect_delay=3000",
     );
   });
 });
@@ -37,7 +37,7 @@ describe("toVncViewerUrl", () => {
     );
 
     expect(result).toBe(
-      "https://vnc-201.example.com/vnc.html?foo=bar&autoconnect=1&resize=scale",
+      "https://vnc-201.example.com/vnc.html?foo=bar&autoconnect=1&resize=scale&reconnect=1&reconnect_delay=3000",
     );
   });
 
@@ -61,7 +61,7 @@ describe("resolveBrowserPreviewUrl", () => {
     });
 
     expect(result).toBe(
-      "https://vnc-201.example.com/vnc.html?autoconnect=1&resize=scale",
+      "https://vnc-201.example.com/vnc.html?autoconnect=1&resize=scale&reconnect=1&reconnect_delay=3000",
     );
   });
 });
