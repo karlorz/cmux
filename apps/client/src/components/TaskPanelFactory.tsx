@@ -26,6 +26,7 @@ import type { TaskRunGitDiffPanelProps } from "./TaskRunGitDiffPanel";
 import type { TaskRunMemoryPanelProps } from "./TaskRunMemoryPanel";
 import type { TaskRunSummaryPanelProps } from "./TaskRunSummaryPanel";
 import { shouldUseServerIframePreflight } from "@/hooks/useIframePreflight";
+import { useVncClipboardBridge } from "@/hooks/useVncClipboardBridge";
 
 const PANEL_DRAG_START_EVENT = "cmux:panel-drag-start";
 const PANEL_DRAG_END_EVENT = "cmux:panel-drag-end";
@@ -197,6 +198,77 @@ interface PanelFactoryProps {
   // Git diff panel props
   teamSlugOrId?: string;
   taskId?: Id<"tasks">;
+}
+
+/**
+ * Browser panel content wrapper that includes VNC clipboard bridge.
+ * This is a separate component so we can use hooks (useVncClipboardBridge).
+ */
+interface BrowserPanelContentProps {
+  browserUrl: string;
+  browserPersistKey: string;
+  isExpanded: boolean;
+  isAnyPanelExpanded: boolean;
+  isActivePanel: boolean;
+  isBrowserBusy?: boolean;
+  setBrowserStatus?: (status: PersistentIframeStatus) => void;
+  handleActivate: () => void;
+  PersistentWebView: React.ComponentType<PersistentWebViewProps>;
+  WorkspaceLoadingIndicator: React.ComponentType<WorkspaceLoadingIndicatorProps>;
+  TASK_RUN_IFRAME_ALLOW?: string;
+  TASK_RUN_IFRAME_SANDBOX?: string;
+}
+
+function BrowserPanelContent({
+  browserUrl,
+  browserPersistKey,
+  isExpanded,
+  isAnyPanelExpanded,
+  isActivePanel,
+  isBrowserBusy,
+  setBrowserStatus,
+  handleActivate,
+  PersistentWebView,
+  WorkspaceLoadingIndicator,
+  TASK_RUN_IFRAME_ALLOW,
+  TASK_RUN_IFRAME_SANDBOX,
+}: BrowserPanelContentProps): ReactNode {
+  // Enable clipboard bridge for VNC panel (vnc.html URLs)
+  const isVncPanel = browserUrl.includes("/vnc.html");
+  useVncClipboardBridge({
+    persistKey: browserPersistKey,
+    enabled: isVncPanel,
+  });
+
+  return (
+    <div className={clsx("relative flex-1", isExpanded && "h-full")} aria-busy={isBrowserBusy}>
+      <PersistentWebView
+        key={browserPersistKey}
+        persistKey={browserPersistKey}
+        src={browserUrl}
+        className="flex h-full"
+        iframeClassName={clsx("select-none")}
+        persistentWrapperClassName={isExpanded ? "z-[var(--z-maximized-iframe)]" : undefined}
+        allow={TASK_RUN_IFRAME_ALLOW}
+        sandbox={TASK_RUN_IFRAME_SANDBOX}
+        retainOnUnmount
+        onStatusChange={setBrowserStatus}
+        fallback={
+          <WorkspaceLoadingIndicator variant="browser" status="loading" />
+        }
+        fallbackClassName="bg-neutral-50 dark:bg-black"
+        errorFallback={
+          <WorkspaceLoadingIndicator variant="browser" status="error" />
+        }
+        errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
+        loadTimeoutMs={45_000}
+        isExpanded={isExpanded}
+        isAnyPanelExpanded={isAnyPanelExpanded}
+        isFocusEligible={isActivePanel}
+        onActivate={handleActivate}
+      />
+    </div>
+  );
 }
 
 const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
@@ -572,50 +644,37 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
       return panelWrapper(
         <Globe2 className="size-3" aria-hidden />,
         PANEL_LABELS.browser,
-        <div className={clsx("relative flex-1", isExpanded && "h-full")} aria-busy={isBrowserBusy}>
-          {browserUrl && browserPersistKey ? (
-            <PersistentWebView
-              key={browserPersistKey}
-              persistKey={browserPersistKey}
-              src={browserUrl}
-              className="flex h-full"
-              iframeClassName={clsx("select-none")}
-              persistentWrapperClassName={isExpanded ? "z-[var(--z-maximized-iframe)]" : undefined}
-              allow={TASK_RUN_IFRAME_ALLOW}
-              sandbox={TASK_RUN_IFRAME_SANDBOX}
-              retainOnUnmount
-              onStatusChange={setBrowserStatus}
-              fallback={
-                <WorkspaceLoadingIndicator variant="browser" status="loading" />
-              }
-              fallbackClassName="bg-neutral-50 dark:bg-black"
-              errorFallback={
-                <WorkspaceLoadingIndicator variant="browser" status="error" />
-              }
-              errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
-              loadTimeoutMs={45_000}
-              isExpanded={isExpanded}
-              isAnyPanelExpanded={isAnyPanelExpanded}
-              isFocusEligible={isActivePanel}
-              onActivate={handleActivate}
-            />
-          ) : shouldShowBrowserLoader ? (
-            <div className="flex h-full items-center justify-center">
-              <WorkspaceLoadingIndicator variant="browser" status="loading" />
+        browserUrl && browserPersistKey ? (
+          <BrowserPanelContent
+            browserUrl={browserUrl}
+            browserPersistKey={browserPersistKey}
+            isExpanded={isExpanded}
+            isAnyPanelExpanded={isAnyPanelExpanded}
+            isActivePanel={isActivePanel}
+            isBrowserBusy={isBrowserBusy}
+            setBrowserStatus={setBrowserStatus}
+            handleActivate={handleActivate}
+            PersistentWebView={PersistentWebView}
+            WorkspaceLoadingIndicator={WorkspaceLoadingIndicator}
+            TASK_RUN_IFRAME_ALLOW={TASK_RUN_IFRAME_ALLOW}
+            TASK_RUN_IFRAME_SANDBOX={TASK_RUN_IFRAME_SANDBOX}
+          />
+        ) : shouldShowBrowserLoader ? (
+          <div className="flex h-full items-center justify-center">
+            <WorkspaceLoadingIndicator variant="browser" status="loading" />
+          </div>
+        ) : browserPlaceholder ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-neutral-500 dark:text-neutral-400">
+            <div className="text-sm font-medium text-neutral-600 dark:text-neutral-200">
+              {browserPlaceholder.title}
             </div>
-          ) : browserPlaceholder ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-neutral-500 dark:text-neutral-400">
-              <div className="text-sm font-medium text-neutral-600 dark:text-neutral-200">
-                {browserPlaceholder.title}
-              </div>
-              {browserPlaceholder.description ? (
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                  {browserPlaceholder.description}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
+            {browserPlaceholder.description ? (
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                {browserPlaceholder.description}
+              </p>
+            ) : null}
+          </div>
+        ) : null
       );
     }
 
