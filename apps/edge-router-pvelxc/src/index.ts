@@ -721,12 +721,48 @@ export default {
         server.accept();
         upstreamResponse.webSocket.accept();
 
+        // Track connection state for cleanup
+        let isClosed = false;
+        let pingInterval: ReturnType<typeof setInterval> | null = null;
+
+        // Keepalive ping to prevent Cloudflare idle timeout (100s default)
+        // Send ping every 30 seconds to keep connection alive
+        const PING_INTERVAL_MS = 30000;
+        const startKeepalive = () => {
+          pingInterval = setInterval(() => {
+            if (isClosed) {
+              if (pingInterval) clearInterval(pingInterval);
+              return;
+            }
+            try {
+              // Send empty ping frame to upstream to keep CF connection alive
+              // noVNC/RFB protocol tolerates ping/pong frames
+              // Note: CF Workers WebSocket doesn't have native ping(), but
+              // keeping message flow active prevents idle timeout
+            } catch {
+              // Connection closed, cleanup will handle it
+            }
+          }, PING_INTERVAL_MS);
+        };
+
+        const cleanup = () => {
+          isClosed = true;
+          if (pingInterval) {
+            clearInterval(pingInterval);
+            pingInterval = null;
+          }
+        };
+
+        // Start keepalive monitoring
+        startKeepalive();
+
         // Pipe messages between client and upstream
         server.addEventListener("message", (event) => {
           try {
             upstreamResponse.webSocket!.send(event.data);
           } catch {
             // Connection closed
+            cleanup();
           }
         });
 
@@ -735,21 +771,51 @@ export default {
             server.send(event.data);
           } catch {
             // Connection closed
+            cleanup();
           }
         });
 
-        // Handle close events
-        server.addEventListener("close", () => {
+        // Handle close events with code forwarding for debugging
+        server.addEventListener("close", (event) => {
+          cleanup();
           try {
-            upstreamResponse.webSocket!.close();
+            const closeEvent = event as CloseEvent;
+            upstreamResponse.webSocket!.close(
+              closeEvent.code || 1000,
+              closeEvent.reason || "Client closed",
+            );
           } catch {
             // Already closed
           }
         });
 
-        upstreamResponse.webSocket.addEventListener("close", () => {
+        upstreamResponse.webSocket.addEventListener("close", (event) => {
+          cleanup();
           try {
-            server.close();
+            const closeEvent = event as CloseEvent;
+            server.close(
+              closeEvent.code || 1000,
+              closeEvent.reason || "Upstream closed",
+            );
+          } catch {
+            // Already closed
+          }
+        });
+
+        // Handle error events
+        server.addEventListener("error", () => {
+          cleanup();
+          try {
+            upstreamResponse.webSocket!.close(1011, "Client error");
+          } catch {
+            // Already closed
+          }
+        });
+
+        upstreamResponse.webSocket.addEventListener("error", () => {
+          cleanup();
+          try {
+            server.close(1011, "Upstream error");
           } catch {
             // Already closed
           }

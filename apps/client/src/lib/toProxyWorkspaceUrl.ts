@@ -109,6 +109,9 @@ function createMorphPortUrl(
 const NO_VNC_VIEWER_DEFAULT_PARAMS: ReadonlyArray<readonly [string, string]> = [
   ["autoconnect", "1"],
   ["resize", "scale"],
+  // Enable auto-reconnect with 3 second delay (helps with CF Worker idle timeout)
+  ["reconnect", "1"],
+  ["reconnect_delay", "3000"],
 ];
 
 function applyNoVncViewerDefaults(
