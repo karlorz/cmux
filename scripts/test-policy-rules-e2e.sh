@@ -114,6 +114,76 @@ fi
 devsh task delete "$TASK_ID" 2>/dev/null || true
 TASK_ID=""
 
+# --- Scenario 2: Codex Agent ---
+log_info ""
+log_info "=== Scenario 2: Codex Agent Policy Rules ==="
+
+# Create a Codex task
+log_info "Creating Codex task..."
+TASK_RESULT=$(devsh task create \
+    --repo karlorz/testing-repo-1 \
+    --agent codex/gpt-5.1-codex-mini \
+    --json \
+    "Echo 'Policy test complete' and exit" 2>&1) || { log_fail "Failed to create Codex task: $TASK_RESULT"; exit 1; }
+
+TASK_ID=$(echo "$TASK_RESULT" | jq -r '.taskId // .id // empty')
+if [[ -z "$TASK_ID" ]]; then
+    log_fail "Could not extract task ID from: $TASK_RESULT"
+    exit 1
+fi
+log_info "Task created: $TASK_ID"
+
+# Wait for sandbox to be ready
+log_info "Waiting for Codex sandbox to be ready..."
+for i in {1..30}; do
+    STATUS=$(devsh task status "$TASK_ID" --json 2>/dev/null | jq -r '.status // "unknown"')
+    if [[ "$STATUS" == "running" || "$STATUS" == "completed" ]]; then
+        break
+    fi
+    sleep 2
+done
+
+if [[ "$STATUS" != "running" && "$STATUS" != "completed" ]]; then
+    log_fail "Codex task did not reach running state: $STATUS"
+    exit 1
+fi
+log_pass "Codex sandbox is ready (status: $STATUS)"
+
+# Check for policy rules in Codex instructions
+log_info "Checking ~/.codex/instructions.md for policy rules..."
+
+CODEX_MD=$(devsh exec "$TASK_ID" "cat ~/.codex/instructions.md 2>/dev/null || echo 'FILE_NOT_FOUND'" 2>&1)
+
+if [[ "$CODEX_MD" == "FILE_NOT_FOUND" ]]; then
+    log_fail "~/.codex/instructions.md not found in sandbox"
+else
+    log_pass "~/.codex/instructions.md exists"
+
+    # Check for policy rules section header
+    if echo "$CODEX_MD" | grep -q "Agent Policy Rules"; then
+        log_pass "Policy rules section found in Codex instructions"
+    else
+        log_fail "Policy rules section NOT found in Codex instructions"
+    fi
+
+    # Check for specific seeded rules
+    if echo "$CODEX_MD" | grep -qi "NO direct commits to main"; then
+        log_pass "Git policy rule (no direct main) found in Codex"
+    else
+        log_fail "Git policy rule (no direct main) NOT found in Codex"
+    fi
+
+    if echo "$CODEX_MD" | grep -qi "credentials\|secrets"; then
+        log_pass "Security policy rule (no credentials) found in Codex"
+    else
+        log_fail "Security policy rule (no credentials) NOT found in Codex"
+    fi
+fi
+
+# Cleanup Codex task
+devsh task delete "$TASK_ID" 2>/dev/null || true
+TASK_ID=""
+
 # --- Summary ---
 log_info ""
 log_info "=== Test Summary ==="
