@@ -13,14 +13,14 @@ This project is called cmux. cmux is a web app that spawns Claude Code, Codex CL
 2. **NO direct push to main/master** - Push to feature branches only
 3. **NO merging PRs without explicit user approval** - Create PR, wait for user to review and approve
 4. **NO force push to main/master** - This destroys history
-5. **NO manual PR creation from cmux task sandboxes** - If `CMUX_TASK_RUN_JWT` is set, do not run `gh pr create`; cmux creates or updates the task PR automatically
+5. **NO manual PR creation from cmux task sandboxes** - If `CMUX_TASK_RUN_JWT` is set AND `CMUX_IS_ORCHESTRATION_HEAD` is NOT set, do not run `gh pr create`; cmux creates or updates the task PR automatically. Cloud workspaces (head agents with `CMUX_IS_ORCHESTRATION_HEAD=1`) CAN create PRs manually.
 
 **Workflow:**
 1. Create feature branch: `git checkout -b <type>/<description>`
 2. Make changes and commit to feature branch
 3. Push feature branch: `git push -u origin <branch>`
-4. If `CMUX_TASK_RUN_JWT` is unset, create PR manually: `gh pr create --base main`
-5. If `CMUX_TASK_RUN_JWT` is set, stop after pushing and let cmux create or update the PR
+4. If `CMUX_TASK_RUN_JWT` is unset OR `CMUX_IS_ORCHESTRATION_HEAD=1`, create PR manually: `gh pr create --base main`
+5. If `CMUX_TASK_RUN_JWT` is set AND `CMUX_IS_ORCHESTRATION_HEAD` is NOT set, stop after pushing and let cmux create or update the PR
 6. **STOP and wait for user approval before merging**
 7. Only merge after user explicitly says "merge" or "approve"
 
