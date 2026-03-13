@@ -304,7 +304,7 @@ elif command -v Xvfb &>/dev/null; then
     mark_done "06-vnc"
 else
     echo "[6/10] Installing VNC and X11..."
-    apt-get install -y -qq xvfb tigervnc-standalone-server tigervnc-common x11-utils xterm dbus-x11
+    apt-get install -y -qq xvfb tigervnc-standalone-server tigervnc-common x11-utils xterm dbus-x11 xclip xsel
     mark_done "06-vnc"
 fi
 

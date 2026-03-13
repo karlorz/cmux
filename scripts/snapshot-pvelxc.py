@@ -2077,7 +2077,7 @@ async def task_install_base_packages(ctx: PveTaskContext) -> None:
             tigervnc-standalone-server tigervnc-common \
             xvfb \
             x11-xserver-utils xterm novnc \
-            dbus-x11 openbox \
+            dbus-x11 openbox xclip xsel parcellite \
             tmux \
             gh \
             zsh \
@@ -2108,6 +2108,93 @@ async def task_install_base_packages(ctx: PveTaskContext) -> None:
         """
     )
     await ctx.run("install-base-packages", cmd)
+
+
+@registry.task(
+    name="upgrade-novnc",
+    deps=("install-base-packages",),
+    description="Upgrade noVNC to 1.7.0-beta for improved clipboard sync",
+)
+@update_registry.task(
+    name="upgrade-novnc",
+    deps=(),  # Safe to run anytime in update mode
+    description="Upgrade noVNC to 1.7.0-beta for improved clipboard sync",
+)
+async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
+    """
+    Upgrade noVNC from Ubuntu's 1.3.0 to GitHub's 1.7.0-beta.
+
+    The newer version includes PR #1993 which adds automatic clipboard sync
+    between the browser and VNC session, improving clipboard paste reliability.
+    See: https://github.com/novnc/noVNC/pull/1993
+    """
+    cmd = textwrap.dedent(
+        """
+        set -eux
+
+        NOVNC_VERSION="v1.7.0-beta"
+        NOVNC_DIR="/usr/share/novnc"
+
+        # Check if already upgraded by looking for version marker
+        MARKER_FILE="${NOVNC_DIR}/.cmux-novnc-version"
+        if [ -f "$MARKER_FILE" ] && grep -qF "$NOVNC_VERSION" "$MARKER_FILE" 2>/dev/null; then
+            echo "[upgrade-novnc] Already at $NOVNC_VERSION, skipping"
+            exit 0
+        fi
+
+        echo "[upgrade-novnc] Downloading noVNC $NOVNC_VERSION from GitHub..."
+        cd /tmp
+        rm -rf noVNC-* novnc-*.tar.gz
+
+        # Download and extract noVNC release
+        curl -fsSL "https://github.com/novnc/noVNC/archive/refs/tags/${NOVNC_VERSION}.tar.gz" -o novnc.tar.gz
+        tar xzf novnc.tar.gz
+        EXTRACTED_DIR="$(ls -d noVNC-* 2>/dev/null | head -1)"
+
+        if [ -z "$EXTRACTED_DIR" ] || [ ! -d "$EXTRACTED_DIR" ]; then
+            echo "[upgrade-novnc] Failed to extract noVNC archive" >&2
+            exit 1
+        fi
+
+        # Backup original vnc.html if it has our bridge script (will be re-injected later)
+        HAD_BRIDGE=0
+        if grep -q "vnc-clipboard-bridge" "$NOVNC_DIR/vnc.html" 2>/dev/null; then
+            HAD_BRIDGE=1
+        fi
+
+        # Replace noVNC installation
+        echo "[upgrade-novnc] Installing noVNC $NOVNC_VERSION to $NOVNC_DIR..."
+
+        # Preserve any custom configuration symlinks
+        OLD_INDEX=""
+        if [ -L "$NOVNC_DIR/index.html" ]; then
+            OLD_INDEX="$(readlink -f "$NOVNC_DIR/index.html" 2>/dev/null || true)"
+        fi
+
+        # Clear and replace
+        rm -rf "${NOVNC_DIR:?}"/*
+        cp -r "$EXTRACTED_DIR"/* "$NOVNC_DIR/"
+
+        # Re-create vnc.html symlink as index.html if it existed
+        if [ -n "$OLD_INDEX" ] && [ -f "$NOVNC_DIR/vnc.html" ]; then
+            ln -sf vnc.html "$NOVNC_DIR/index.html"
+        fi
+
+        # Write version marker
+        echo "$NOVNC_VERSION" > "$MARKER_FILE"
+
+        # Cleanup
+        rm -rf /tmp/noVNC-* /tmp/novnc.tar.gz
+
+        echo "[upgrade-novnc] Successfully installed noVNC $NOVNC_VERSION"
+
+        # Note: vnc-clipboard-bridge will be re-injected by install-vnc-clipboard-bridge task
+        if [ "$HAD_BRIDGE" = "1" ]; then
+            echo "[upgrade-novnc] Note: clipboard bridge will be re-injected"
+        fi
+        """
+    )
+    await ctx.run("upgrade-novnc", cmd)
 
 
 @registry.task(
@@ -3152,12 +3239,12 @@ async def task_configure_openbox(ctx: PveTaskContext) -> None:
 
 @registry.task(
     name="install-vnc-clipboard-bridge",
-    deps=("upload-repo", "install-base-packages"),
+    deps=("upload-repo", "upgrade-novnc"),
     description="Install VNC clipboard bridge for cross-origin paste support",
 )
 @update_registry.task(
     name="install-vnc-clipboard-bridge",
-    deps=("upload-repo",),  # novnc already installed
+    deps=("upload-repo", "upgrade-novnc"),
     description="Install VNC clipboard bridge for cross-origin paste support",
 )
 async def task_install_vnc_clipboard_bridge(ctx: PveTaskContext) -> None:
@@ -3556,6 +3643,7 @@ async def task_install_systemd_units(ctx: PveTaskContext) -> None:
         install -Dm0644 {repo}/configs/systemd/cmux-xvfb.service /usr/lib/systemd/system/cmux-xvfb.service
         install -Dm0644 {repo}/configs/systemd/cmux-tigervnc.service /usr/lib/systemd/system/cmux-tigervnc.service
         install -Dm0644 {repo}/configs/systemd/cmux-openbox.service /usr/lib/systemd/system/cmux-openbox.service
+        install -Dm0644 {repo}/configs/systemd/cmux-clipboard.service /usr/lib/systemd/system/cmux-clipboard.service
         install -Dm0644 {repo}/configs/systemd/cmux-vnc-proxy.service /usr/lib/systemd/system/cmux-vnc-proxy.service
         install -Dm0644 {repo}/configs/systemd/cmux-cdp-proxy.service /usr/lib/systemd/system/cmux-cdp-proxy.service
         install -Dm0644 {repo}/configs/systemd/cmux-pty.service /usr/lib/systemd/system/cmux-pty.service
@@ -3584,6 +3672,7 @@ async def task_install_systemd_units(ctx: PveTaskContext) -> None:
         ln -sf /usr/lib/systemd/system/cmux-devtools.service /etc/systemd/system/cmux.target.wants/cmux-devtools.service
         ln -sf /usr/lib/systemd/system/cmux-tigervnc.service /etc/systemd/system/cmux.target.wants/cmux-tigervnc.service
         ln -sf /usr/lib/systemd/system/cmux-openbox.service /etc/systemd/system/cmux.target.wants/cmux-openbox.service
+        ln -sf /usr/lib/systemd/system/cmux-clipboard.service /etc/systemd/system/cmux.target.wants/cmux-clipboard.service
         ln -sf /usr/lib/systemd/system/cmux-vnc-proxy.service /etc/systemd/system/cmux.target.wants/cmux-vnc-proxy.service
         ln -sf /usr/lib/systemd/system/cmux-cdp-proxy.service /etc/systemd/system/cmux.target.wants/cmux-cdp-proxy.service
         ln -sf /usr/lib/systemd/system/cmux-pty.service /etc/systemd/system/cmux.target.wants/cmux-pty.service

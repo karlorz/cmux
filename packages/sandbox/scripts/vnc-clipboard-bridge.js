@@ -18,6 +18,7 @@
  * - XK_Super_L: 0xffeb
  * - XK_Super_R: 0xffec
  * - XK_v: 0x0076
+ * - XK_Shift_L: 0xffe1
  */
 
 (function () {
@@ -34,10 +35,17 @@
   var XK_Super_L = 0xffeb;
   var XK_Super_R = 0xffec;
   var XK_Control_L = 0xffe3;
+  var XK_Shift_L = 0xffe1;
   var XK_v = 0x0076;
 
   // Debounce timeout ID to prevent stacking rapid paste requests
   var pendingPasteTimeout = null;
+
+  // Flag to track if we should use sendKey fallback for typing
+  var useSendKeyFallback = false;
+
+  // Maximum text length for sendKey fallback (longer texts should use clipboard)
+  var SENDKEY_FALLBACK_MAX_LENGTH = 500;
 
   /**
    * Get the RFB instance from noVNC.
@@ -59,10 +67,117 @@
   }
 
   /**
+   * Map a character to its X11 keysym.
+   * Returns an object with keysym and whether shift is required.
+   *
+   * @param {string} char - Single character to map
+   * @returns {{ keysym: number, shift: boolean } | null}
+   */
+  function charToKeysym(char) {
+    var code = char.charCodeAt(0);
+
+    // ASCII printable range (32-126)
+    if (code >= 32 && code <= 126) {
+      // Lowercase letters: a-z (keysym 0x61-0x7a)
+      if (code >= 97 && code <= 122) {
+        return { keysym: code, shift: false };
+      }
+      // Uppercase letters: A-Z (keysym 0x41-0x5a)
+      if (code >= 65 && code <= 90) {
+        return { keysym: code, shift: true };
+      }
+      // Digits: 0-9 (keysym 0x30-0x39)
+      if (code >= 48 && code <= 57) {
+        return { keysym: code, shift: false };
+      }
+      // Special characters that require shift on US keyboard
+      var shiftChars = '~!@#$%^&*()_+{}|:"<>?';
+      var noShiftEquiv = '`1234567890-=[]\\;\',./';
+      var shiftIdx = shiftChars.indexOf(char);
+      if (shiftIdx !== -1) {
+        return { keysym: noShiftEquiv.charCodeAt(shiftIdx), shift: true };
+      }
+      // Other printable ASCII (space, punctuation without shift)
+      return { keysym: code, shift: false };
+    }
+
+    // Common special keysyms
+    switch (code) {
+      case 10:  // LF
+      case 13:  // CR
+        return { keysym: 0xff0d, shift: false }; // XK_Return
+      case 9:   // Tab
+        return { keysym: 0xff09, shift: false }; // XK_Tab
+      case 8:   // Backspace
+        return { keysym: 0xff08, shift: false }; // XK_BackSpace
+      default:
+        // For Unicode characters, use Unicode keysym (0x01000000 + code)
+        if (code > 126) {
+          return { keysym: 0x01000000 + code, shift: false };
+        }
+        return null;
+    }
+  }
+
+  /**
+   * Type text character by character using sendKey.
+   * This is a fallback when clipboardPasteFrom + Ctrl+V doesn't work.
+   *
+   * @param {object} rfb - The noVNC RFB instance
+   * @param {string} text - The text to type
+   */
+  function typeTextViaSendKey(rfb, text) {
+    if (typeof rfb.sendKey !== 'function') {
+      console.warn('[VNC Clipboard Bridge] sendKey not available for fallback typing');
+      return;
+    }
+
+    var i = 0;
+    var delay = 10; // ms between keystrokes
+
+    function typeNextChar() {
+      if (i >= text.length) {
+        console.log('[VNC Clipboard Bridge] Finished typing ' + text.length + ' characters');
+        return;
+      }
+
+      var char = text[i];
+      var keyInfo = charToKeysym(char);
+
+      if (keyInfo) {
+        try {
+          // Press shift if needed
+          if (keyInfo.shift) {
+            rfb.sendKey(XK_Shift_L, 'ShiftLeft', true);
+          }
+          // Press and release the key
+          rfb.sendKey(keyInfo.keysym, null, true);
+          rfb.sendKey(keyInfo.keysym, null, false);
+          // Release shift if it was pressed
+          if (keyInfo.shift) {
+            rfb.sendKey(XK_Shift_L, 'ShiftLeft', false);
+          }
+        } catch (e) {
+          console.warn('[VNC Clipboard Bridge] Error sending key for char "' + char + '":', e);
+        }
+      }
+
+      i++;
+      setTimeout(typeNextChar, delay);
+    }
+
+    console.log('[VNC Clipboard Bridge] Starting sendKey fallback typing for ' + text.length + ' characters');
+    typeNextChar();
+  }
+
+  /**
    * Inject clipboard text into the VNC session.
    *
-   * Uses noVNC's clipboardPasteFrom() to set the remote clipboard,
+   * Primary method: Uses noVNC's clipboardPasteFrom() to set the remote clipboard,
    * then simulates Ctrl+V to trigger paste in the remote session.
+   *
+   * Fallback: If useSendKeyFallback is enabled and text is short enough,
+   * types the text character by character using sendKey().
    *
    * @param {string} text - The text to paste
    */
@@ -73,12 +188,25 @@
       return;
     }
 
+    // If fallback mode is enabled and text is short, type directly
+    if (useSendKeyFallback && text.length <= SENDKEY_FALLBACK_MAX_LENGTH) {
+      console.log('[VNC Clipboard Bridge] Using sendKey fallback mode');
+      typeTextViaSendKey(rfb, text);
+      return;
+    }
+
     try {
       // Set the clipboard text on the remote server
       if (typeof rfb.clipboardPasteFrom === 'function') {
         rfb.clipboardPasteFrom(text);
+        console.log('[VNC Clipboard Bridge] Set remote clipboard via clipboardPasteFrom');
       } else {
         console.warn('[VNC Clipboard Bridge] clipboardPasteFrom not available');
+        // Fall back to typing if clipboard method isn't available
+        if (text.length <= SENDKEY_FALLBACK_MAX_LENGTH) {
+          console.log('[VNC Clipboard Bridge] Falling back to sendKey typing');
+          typeTextViaSendKey(rfb, text);
+        }
         return;
       }
 
@@ -109,9 +237,16 @@
         rfb.sendKey(XK_v, 'KeyV', true);
         rfb.sendKey(XK_v, 'KeyV', false);
         rfb.sendKey(XK_Control_L, 'ControlLeft', false);
+
+        console.log('[VNC Clipboard Bridge] Sent Ctrl+V keystroke');
       }, 50);
     } catch (error) {
       console.error('[VNC Clipboard Bridge] Error injecting clipboard:', error);
+      // Try fallback on error if text is short enough
+      if (text.length <= SENDKEY_FALLBACK_MAX_LENGTH) {
+        console.log('[VNC Clipboard Bridge] Attempting sendKey fallback after error');
+        typeTextViaSendKey(rfb, text);
+      }
     }
   }
 
@@ -148,11 +283,18 @@
 
     var data = event.data;
 
-    if (!isVncClipboardPasteMessage(data)) {
+    // Handle clipboard paste message
+    if (isVncClipboardPasteMessage(data)) {
+      injectClipboard(data.text);
       return;
     }
 
-    injectClipboard(data.text);
+    // Handle fallback mode toggle
+    if (typeof data === 'object' && data !== null && data.type === 'vnc-clipboard-fallback') {
+      useSendKeyFallback = !!data.enabled;
+      console.log('[VNC Clipboard Bridge] Fallback mode ' + (useSendKeyFallback ? 'enabled' : 'disabled'));
+      return;
+    }
   }
 
   // Listen for messages from parent window
