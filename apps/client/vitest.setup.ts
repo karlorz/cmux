@@ -8,6 +8,25 @@
  * "Invalid environment variables" errors.
  */
 
+// Polyfill ResizeObserver for jsdom tests (used by persistentIframeManager)
+if (typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class ResizeObserver {
+    callback: ResizeObserverCallback;
+    constructor(callback: ResizeObserverCallback) {
+      this.callback = callback;
+    }
+    observe() {
+      // no-op for tests
+    }
+    unobserve() {
+      // no-op for tests
+    }
+    disconnect() {
+      // no-op for tests
+    }
+  };
+}
+
 // Set required environment variables before any module loads
 process.env.NEXT_PUBLIC_CONVEX_URL = "https://example.com/convex";
 process.env.NEXT_PUBLIC_STACK_PROJECT_ID = "test-stack-project";
