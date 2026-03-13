@@ -18,14 +18,14 @@ PASS_COUNT=0
 FAIL_COUNT=0
 
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
-log_pass() { echo -e "${GREEN}[PASS]${NC} $1"; ((PASS_COUNT++)); }
-log_fail() { echo -e "${RED}[FAIL]${NC} $1"; ((FAIL_COUNT++)); }
+log_pass() { echo -e "${GREEN}[PASS]${NC} $1"; ((PASS_COUNT++)) || true; }
+log_fail() { echo -e "${RED}[FAIL]${NC} $1"; ((FAIL_COUNT++)) || true; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 
 cleanup() {
     if [[ -n "${TASK_ID:-}" ]]; then
         log_info "Cleaning up task $TASK_ID..."
-        devsh task delete "$TASK_ID" 2>/dev/null || true
+        devsh task stop "$TASK_ID" 2>/dev/null || true
     fi
 }
 trap cleanup EXIT
@@ -58,9 +58,16 @@ log_info "Task created: $TASK_ID"
 
 # Wait for sandbox to be ready (instance running)
 log_info "Waiting for sandbox to be ready..."
+INSTANCE_ID=""
 for i in {1..30}; do
-    STATUS=$(devsh task status "$TASK_ID" --json 2>/dev/null | jq -r '.status // "unknown"')
-    if [[ "$STATUS" == "running" || "$STATUS" == "completed" ]]; then
+    TASK_JSON=$(devsh task status "$TASK_ID" --json 2>/dev/null || echo '{}')
+    STATUS=$(echo "$TASK_JSON" | jq -r '.taskRuns[0].status // .status // "unknown"')
+    VSCODE_URL=$(echo "$TASK_JSON" | jq -r '.taskRuns[0].vscodeUrl // empty')
+    # Extract instance ID from URL pattern: port-XXXXX-pvelxc-XXXXXXXX.domain
+    if [[ -n "$VSCODE_URL" ]]; then
+        INSTANCE_ID=$(echo "$VSCODE_URL" | grep -oE 'pvelxc-[a-f0-9]+' | head -1)
+    fi
+    if [[ "$STATUS" == "running" || "$STATUS" == "completed" ]] && [[ -n "$INSTANCE_ID" ]]; then
         break
     fi
     sleep 2
@@ -70,13 +77,17 @@ if [[ "$STATUS" != "running" && "$STATUS" != "completed" ]]; then
     log_fail "Task did not reach running state: $STATUS"
     exit 1
 fi
-log_pass "Sandbox is ready (status: $STATUS)"
+if [[ -z "$INSTANCE_ID" ]]; then
+    log_fail "Could not extract instance ID from vscodeUrl: $VSCODE_URL"
+    exit 1
+fi
+log_pass "Sandbox is ready (status: $STATUS, instance: $INSTANCE_ID)"
 
 # Check for policy rules in CLAUDE.md
 log_info "Checking ~/.claude/CLAUDE.md for policy rules..."
 
 # Get the instruction file content
-CLAUDE_MD=$(devsh exec "$TASK_ID" "cat ~/.claude/CLAUDE.md 2>/dev/null || echo 'FILE_NOT_FOUND'" 2>&1)
+CLAUDE_MD=$(devsh exec "$INSTANCE_ID" "cat ~/.claude/CLAUDE.md 2>/dev/null || echo 'FILE_NOT_FOUND'" 2>&1)
 
 if [[ "$CLAUDE_MD" == "FILE_NOT_FOUND" ]]; then
     log_fail "~/.claude/CLAUDE.md not found in sandbox"
@@ -111,7 +122,7 @@ else
 fi
 
 # Cleanup this task
-devsh task delete "$TASK_ID" 2>/dev/null || true
+devsh task stop "$TASK_ID" 2>/dev/null || true
 TASK_ID=""
 
 # --- Scenario 2: Codex Agent ---
@@ -135,9 +146,15 @@ log_info "Task created: $TASK_ID"
 
 # Wait for sandbox to be ready
 log_info "Waiting for Codex sandbox to be ready..."
+INSTANCE_ID=""
 for i in {1..30}; do
-    STATUS=$(devsh task status "$TASK_ID" --json 2>/dev/null | jq -r '.status // "unknown"')
-    if [[ "$STATUS" == "running" || "$STATUS" == "completed" ]]; then
+    TASK_JSON=$(devsh task status "$TASK_ID" --json 2>/dev/null || echo '{}')
+    STATUS=$(echo "$TASK_JSON" | jq -r '.taskRuns[0].status // .status // "unknown"')
+    VSCODE_URL=$(echo "$TASK_JSON" | jq -r '.taskRuns[0].vscodeUrl // empty')
+    if [[ -n "$VSCODE_URL" ]]; then
+        INSTANCE_ID=$(echo "$VSCODE_URL" | grep -oE 'pvelxc-[a-f0-9]+' | head -1)
+    fi
+    if [[ "$STATUS" == "running" || "$STATUS" == "completed" ]] && [[ -n "$INSTANCE_ID" ]]; then
         break
     fi
     sleep 2
@@ -147,12 +164,16 @@ if [[ "$STATUS" != "running" && "$STATUS" != "completed" ]]; then
     log_fail "Codex task did not reach running state: $STATUS"
     exit 1
 fi
-log_pass "Codex sandbox is ready (status: $STATUS)"
+if [[ -z "$INSTANCE_ID" ]]; then
+    log_fail "Could not extract Codex instance ID from vscodeUrl: $VSCODE_URL"
+    exit 1
+fi
+log_pass "Codex sandbox is ready (status: $STATUS, instance: $INSTANCE_ID)"
 
 # Check for policy rules in Codex instructions
 log_info "Checking ~/.codex/instructions.md for policy rules..."
 
-CODEX_MD=$(devsh exec "$TASK_ID" "cat ~/.codex/instructions.md 2>/dev/null || echo 'FILE_NOT_FOUND'" 2>&1)
+CODEX_MD=$(devsh exec "$INSTANCE_ID" "cat ~/.codex/instructions.md 2>/dev/null || echo 'FILE_NOT_FOUND'" 2>&1)
 
 if [[ "$CODEX_MD" == "FILE_NOT_FOUND" ]]; then
     log_fail "~/.codex/instructions.md not found in sandbox"
@@ -181,7 +202,7 @@ else
 fi
 
 # Cleanup Codex task
-devsh task delete "$TASK_ID" 2>/dev/null || true
+devsh task stop "$TASK_ID" 2>/dev/null || true
 TASK_ID=""
 
 # --- Summary ---
