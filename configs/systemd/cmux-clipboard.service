@@ -1,0 +1,20 @@
+[Unit]
+Description=Cmux X11 clipboard manager (parcellite)
+After=cmux-tigervnc.service cmux-openbox.service
+Requires=cmux-tigervnc.service
+
+[Service]
+Type=simple
+Environment=DISPLAY=:1
+Environment=HOME=/root
+ExecStartPre=/bin/mkdir -p /var/log/cmux
+# Wait for X server to be fully ready
+ExecStartPre=/bin/sh -c 'for i in 1 2 3 4 5; do xdpyinfo -display :1 >/dev/null 2>&1 && exit 0; sleep 1; done; exit 1'
+ExecStart=/usr/bin/parcellite
+Restart=always
+RestartSec=3
+StandardOutput=append:/var/log/cmux/clipboard.log
+StandardError=append:/var/log/cmux/clipboard.log
+
+[Install]
+WantedBy=cmux.target
