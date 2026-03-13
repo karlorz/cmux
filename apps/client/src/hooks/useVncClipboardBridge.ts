@@ -20,6 +20,12 @@ interface UseVncClipboardBridgeOptions {
 const VNC_CLIPBOARD_MESSAGE_TYPE = "vnc-clipboard-paste" as const;
 
 /**
+ * Message type for clipboard request from iframe.
+ * The iframe sends this when it detects Cmd/Ctrl+V and needs clipboard content.
+ */
+const VNC_CLIPBOARD_REQUEST_TYPE = "vnc-clipboard-request" as const;
+
+/**
  * Message type sent to the iframe for clipboard paste
  */
 interface VncClipboardPasteMessage {
@@ -135,6 +141,17 @@ export function useVncClipboardBridge({
     const handleKeyDown = (event: KeyboardEvent): void => {
       const iframe = getFocusedIframe();
       if (!iframe) {
+        // Debug: log when we skip due to no focused iframe
+        if (process.env.NODE_ENV === "development") {
+          const code = event.code;
+          const isPasteKey = code === "KeyV" && (event.metaKey || event.ctrlKey);
+          if (isPasteKey) {
+            console.debug("[VncClipboardBridge] Paste shortcut detected but iframe not focused", {
+              persistKey,
+              activeElement: document.activeElement?.tagName,
+            });
+          }
+        }
         return;
       }
 
@@ -148,11 +165,65 @@ export function useVncClipboardBridge({
       if (isPasteShortcut) {
         event.preventDefault();
         event.stopPropagation();
+        console.log("[VncClipboardBridge] Intercepted paste shortcut, reading clipboard...");
         // Read clipboard and send - fire-and-forget to avoid blocking
         navigator.clipboard.readText().then(
           (text) => {
             if (text) {
+              console.log("[VncClipboardBridge] Sending clipboard text to iframe:", text.slice(0, 50) + (text.length > 50 ? "..." : ""));
               sendClipboardToIframe(iframe, text);
+            }
+          },
+          (error) => {
+            console.error("[VncClipboardBridge] Failed to read clipboard:", error);
+          }
+        );
+      }
+    };
+
+    /**
+     * Handle window focus to track when user clicks back to parent window.
+     * When user clicks outside the iframe (e.g., on a paste button), we can
+     * handle clipboard operations from the parent context.
+     */
+    const handleWindowFocus = (): void => {
+      console.debug("[VncClipboardBridge] Window focused");
+    };
+
+    /**
+     * Handle clipboard request from iframe.
+     * When the iframe detects Cmd/Ctrl+V, it sends a request to the parent
+     * to read the clipboard and send it back.
+     */
+    const handleMessage = (event: MessageEvent): void => {
+      // Check if this is a clipboard request from the VNC iframe
+      if (
+        typeof event.data === "object" &&
+        event.data !== null &&
+        event.data.type === VNC_CLIPBOARD_REQUEST_TYPE
+      ) {
+        const iframe = persistentIframeManager.getIframeElement(persistKey);
+        if (!iframe?.contentWindow) {
+          console.debug("[VncClipboardBridge] Clipboard request received but iframe not found");
+          return;
+        }
+
+        // Verify the request came from our iframe
+        if (event.source !== iframe.contentWindow) {
+          console.debug("[VncClipboardBridge] Clipboard request from unknown source, ignoring");
+          return;
+        }
+
+        console.log("[VncClipboardBridge] Clipboard request received from iframe, reading clipboard...");
+
+        // Read clipboard and send to iframe
+        navigator.clipboard.readText().then(
+          (text) => {
+            if (text) {
+              console.log("[VncClipboardBridge] Sending clipboard text to iframe:", text.slice(0, 50) + (text.length > 50 ? "..." : ""));
+              sendClipboardToIframe(iframe, text);
+            } else {
+              console.debug("[VncClipboardBridge] Clipboard is empty");
             }
           },
           (error) => {
@@ -165,10 +236,17 @@ export function useVncClipboardBridge({
     // Add listeners with capture to intercept before iframe
     document.addEventListener("paste", handlePaste, { capture: true });
     document.addEventListener("keydown", handleKeyDown, { capture: true });
+    window.addEventListener("focus", handleWindowFocus);
+    window.addEventListener("message", handleMessage);
+
+    // Log initialization
+    console.log("[VncClipboardBridge] Hook initialized for persistKey:", persistKey);
 
     return () => {
       document.removeEventListener("paste", handlePaste, { capture: true });
       document.removeEventListener("keydown", handleKeyDown, { capture: true });
+      window.removeEventListener("focus", handleWindowFocus);
+      window.removeEventListener("message", handleMessage);
     };
   }, [persistKey, enabled]);
 }

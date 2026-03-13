@@ -158,6 +158,35 @@
   // Listen for messages from parent window
   window.addEventListener('message', handleMessage, false);
 
+  /**
+   * Handle keyboard events to request clipboard from parent.
+   * When user presses Cmd/Ctrl+V inside the VNC iframe, we request
+   * the clipboard from the parent window which has access to it.
+   */
+  function handleKeyDown(event) {
+    var code = event.code || event.key;
+    var isMac = /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent);
+
+    // Check for paste shortcut (Cmd+V on Mac, Ctrl+V elsewhere)
+    var isPasteShortcut = isMac
+      ? event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && (code === 'KeyV' || code === 'v')
+      : event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && (code === 'KeyV' || code === 'v');
+
+    if (isPasteShortcut) {
+      event.preventDefault();
+      event.stopPropagation();
+      console.log('[VNC Clipboard Bridge] Paste shortcut detected in iframe, requesting clipboard from parent');
+
+      // Request clipboard from parent window
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'vnc-clipboard-request' }, '*');
+      }
+    }
+  }
+
+  // Listen for keyboard events in the iframe
+  document.addEventListener('keydown', handleKeyDown, { capture: true });
+
   // Log initialization (debug)
-  console.log('[VNC Clipboard Bridge] Initialized');
+  console.log('[VNC Clipboard Bridge] Initialized with keyboard listener');
 })();
