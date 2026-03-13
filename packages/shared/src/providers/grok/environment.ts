@@ -7,6 +7,7 @@ import {
   getMemorySeedFiles,
   getMemoryProtocolInstructions,
   getProjectContextFile,
+  getPolicyRulesInstructions,
 } from "../../agent-memory-protocol";
 import { getTaskSandboxWrapperFiles } from "../common/task-sandbox-wrappers";
 
@@ -99,8 +100,11 @@ async function makeGrokEnvironment(
     );
   }
 
+  const policyRulesSection = ctx.policyRules && ctx.policyRules.length > 0
+    ? `\n${getPolicyRulesInstructions(ctx.policyRules)}\n`
+    : "";
   const grokMdContent = `# cmux Project Instructions
-
+${policyRulesSection}
 ${getMemoryProtocolInstructions()}
 `;
   files.push({

@@ -12,6 +12,7 @@ import {
   getMemoryProtocolInstructions,
   getProjectContextFile,
   getCrossToolSymlinkCommands,
+  getPolicyRulesInstructions,
 } from "../../agent-memory-protocol";
 import { buildMergedClaudeConfig } from "../../mcp-preview";
 
@@ -452,8 +453,11 @@ echo ${apiKeyToOutput}`;
   // - User memory (~/.claude/CLAUDE.md) applies to all projects
   // - Stored outside git workspace to avoid pollution
   // See: https://code.claude.com/docs/en/memory.md
+  const policyRulesSection = ctx.policyRules && ctx.policyRules.length > 0
+    ? `\n${getPolicyRulesInstructions(ctx.policyRules)}\n`
+    : "";
   const claudeMdContent = `# cmux Agent Instructions
-
+${policyRulesSection}
 ${getMemoryProtocolInstructions()}
 `;
   files.push({

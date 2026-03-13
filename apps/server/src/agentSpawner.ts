@@ -6,6 +6,7 @@ import {
   type EnvironmentResult,
 } from "@cmux/shared/agentConfig";
 import type { McpServerConfig } from "@cmux/shared";
+import type { PolicyRuleForInstructions } from "@cmux/shared/agent-memory-protocol";
 import {
   getProviderIdFromAgentName,
   getProviderRegistry,
@@ -133,6 +134,8 @@ export interface PreFetchedSpawnConfig {
   previousKnowledge: string | null;
   previousMailbox: string | null;
   previousBehavior: string | null;
+  /** Centralized policy rules (Agent Policy Management) */
+  policyRules?: PolicyRuleForInstructions[];
 }
 
 /** Autopilot mode configuration for long-running agent sessions (Phase 6) */
@@ -563,6 +566,7 @@ export async function spawnAgent(
     let previousKnowledge: string | null;
     let previousMailbox: string | null;
     let previousBehavior: string | null;
+    let policyRules: PolicyRuleForInstructions[] | undefined;
 
     if (options.preFetchedConfig) {
       // Use pre-fetched config (JWT auth path - Stack Auth not available)
@@ -574,6 +578,7 @@ export async function spawnAgent(
       previousKnowledge = options.preFetchedConfig.previousKnowledge;
       previousMailbox = options.preFetchedConfig.previousMailbox;
       previousBehavior = options.preFetchedConfig.previousBehavior;
+      policyRules = options.preFetchedConfig.policyRules;
     } else {
       // Fetch from Convex (Stack Auth available)
       const results = await Promise.all([
@@ -649,6 +654,26 @@ export async function spawnAgent(
             );
             return null;
           }),
+        // Query centralized policy rules (Agent Policy Management)
+        ((): Promise<PolicyRuleForInstructions[] | undefined> => {
+          const providerId = getProviderIdFromAgentName(agent.name);
+          if (!providerId) return Promise.resolve(undefined);
+          const agentType = providerId === "anthropic" ? "claude"
+            : providerId === "openai" ? "codex"
+            : providerId === "gemini" ? "gemini"
+            : "opencode";
+          return getConvex()
+            .query(api.agentPolicyRules.getForSandbox, {
+              teamSlugOrId,
+              agentType,
+              ...(task?.projectFullName ? { projectFullName: task.projectFullName } : {}),
+              context: options.isCloudMode ? "cloud_workspace" : "task_sandbox",
+            })
+            .catch((error) => {
+              serverLogger.warn("[AgentSpawner] Failed to fetch policy rules", error);
+              return undefined;
+            });
+        })(),
       ]);
       userApiKeys = results[0];
       workspaceSettings = results[1];
@@ -657,6 +682,7 @@ export async function spawnAgent(
       previousKnowledge = results[4];
       previousMailbox = results[5];
       previousBehavior = results[6];
+      policyRules = results[7];
     }
 
     if (previousKnowledge) {
@@ -672,6 +698,11 @@ export async function spawnAgent(
     if (previousBehavior) {
       serverLogger.info(
         `[AgentSpawner] Found previous behavior HOT (${previousBehavior.length} chars) for cross-run seeding`
+      );
+    }
+    if (policyRules && policyRules.length > 0) {
+      serverLogger.info(
+        `[AgentSpawner] Loaded ${policyRules.length} centralized policy rules`
       );
     }
 
@@ -767,6 +798,8 @@ export async function spawnAgent(
         previousMailbox: previousMailbox ?? undefined,
         previousBehavior: previousBehavior ?? undefined,
         orchestrationOptions: options.orchestrationOptions,
+        // Centralized policy rules (Agent Policy Management)
+        policyRules,
         // GitHub Projects v2 context (Phase 5: Sandbox Project Integration)
         githubProjectContext:
           task?.githubProjectId &&

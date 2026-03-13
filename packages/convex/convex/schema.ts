@@ -2014,6 +2014,71 @@ const convexSchema = defineSchema({
     .index("by_session", ["sessionId"])
     .index("by_team", ["teamId"])
     .index("by_team_time", ["teamId", "startedAt"]),
+
+  // Centralized agent policy rules (Phase: Agent Policy Management)
+  // Manages rules that apply to spawned agent sandboxes with scope hierarchy:
+  // system > team > workspace > user (most specific wins)
+  agentPolicyRules: defineTable({
+    // Identity
+    ruleId: v.string(), // "apr_xxx" format for stable external references
+    name: v.string(), // Human-readable name
+    description: v.optional(v.string()),
+
+    // Scope hierarchy: system > team > workspace > user
+    scope: v.union(
+      v.literal("system"), // Applies to all sandboxes (cmux-managed)
+      v.literal("team"), // Applies to team workspaces
+      v.literal("workspace"), // Applies to specific repo
+      v.literal("user") // User-specific override
+    ),
+
+    // Targeting fields (set based on scope)
+    teamId: v.optional(v.string()), // For team/workspace/user scope
+    projectFullName: v.optional(v.string()), // For workspace scope (owner/repo)
+    userId: v.optional(v.string()), // For user scope
+
+    // Agent targeting (empty = all agents)
+    agents: v.optional(v.array(v.string())), // ["claude", "codex", "gemini", "opencode"]
+
+    // Environment context targeting
+    contexts: v.optional(
+      v.array(
+        v.union(
+          v.literal("task_sandbox"), // Regular task spawns
+          v.literal("cloud_workspace"), // Head agent / long-running workspaces
+          v.literal("local_dev") // Desktop/local development
+        )
+      )
+    ),
+
+    // Rule content
+    category: v.union(
+      v.literal("git_policy"),
+      v.literal("security"),
+      v.literal("workflow"),
+      v.literal("tool_restriction"),
+      v.literal("custom")
+    ),
+    ruleText: v.string(), // Markdown text to inject into agent instructions
+    priority: v.number(), // Lower = higher priority (for conflict resolution within same scope)
+
+    // Status
+    status: v.union(
+      v.literal("active"),
+      v.literal("disabled"),
+      v.literal("deprecated")
+    ),
+
+    // Audit fields
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    createdBy: v.optional(v.string()), // userId who created the rule
+  })
+    .index("by_scope", ["scope", "status"])
+    .index("by_team", ["teamId", "status"])
+    .index("by_team_scope", ["teamId", "scope", "status"])
+    .index("by_project", ["projectFullName", "status"])
+    .index("by_user", ["userId", "status"]),
 });
 
 export default convexSchema;

@@ -7,6 +7,7 @@ import {
   getMemorySeedFiles,
   getMemoryProtocolInstructions,
   getProjectContextFile,
+  getPolicyRulesInstructions,
 } from "../../agent-memory-protocol";
 import { getTaskSandboxWrapperFiles } from "../common/task-sandbox-wrappers";
 
@@ -103,8 +104,11 @@ async function makeQwenEnvironment(
   }
 
   // Add QWEN.md with memory protocol instructions for the project
+  const policyRulesSection = ctx.policyRules && ctx.policyRules.length > 0
+    ? `\n${getPolicyRulesInstructions(ctx.policyRules)}\n`
+    : "";
   const qwenMdContent = `# cmux Project Instructions
-
+${policyRulesSection}
 ${getMemoryProtocolInstructions()}
 `;
   files.push({

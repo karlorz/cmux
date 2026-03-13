@@ -12,6 +12,8 @@ import type * as admin from "../admin.js";
 import type * as agentBehaviorMutations from "../agentBehaviorMutations.js";
 import type * as agentMemoryQueries from "../agentMemoryQueries.js";
 import type * as agentMemory_http from "../agentMemory_http.js";
+import type * as agentPolicyRules from "../agentPolicyRules.js";
+import type * as agentPolicyRules_http from "../agentPolicyRules_http.js";
 import type * as analytics from "../analytics.js";
 import type * as anthropic_http from "../anthropic_http.js";
 import type * as apiKeys from "../apiKeys.js";
@@ -94,6 +96,7 @@ import type * as sandboxInstanceMaintenance from "../sandboxInstanceMaintenance.
 import type * as sandboxInstances from "../sandboxInstances.js";
 import type * as screenshots_http from "../screenshots_http.js";
 import type * as seed from "../seed.js";
+import type * as seedPolicyRules from "../seedPolicyRules.js";
 import type * as sessionActivity from "../sessionActivity.js";
 import type * as sessionActivity_http from "../sessionActivity_http.js";
 import type * as sourceRepoMappings from "../sourceRepoMappings.js";
@@ -131,6 +134,8 @@ declare const fullApi: ApiFromModules<{
   agentBehaviorMutations: typeof agentBehaviorMutations;
   agentMemoryQueries: typeof agentMemoryQueries;
   agentMemory_http: typeof agentMemory_http;
+  agentPolicyRules: typeof agentPolicyRules;
+  agentPolicyRules_http: typeof agentPolicyRules_http;
   analytics: typeof analytics;
   anthropic_http: typeof anthropic_http;
   apiKeys: typeof apiKeys;
@@ -213,6 +218,7 @@ declare const fullApi: ApiFromModules<{
   sandboxInstances: typeof sandboxInstances;
   screenshots_http: typeof screenshots_http;
   seed: typeof seed;
+  seedPolicyRules: typeof seedPolicyRules;
   sessionActivity: typeof sessionActivity;
   sessionActivity_http: typeof sessionActivity_http;
   sourceRepoMappings: typeof sourceRepoMappings;

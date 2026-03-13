@@ -7,7 +7,7 @@ import {
 import { isElectron } from "@/lib/electron";
 import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
-import { Archive, ArrowLeft, FolderGit2, GitBranch, KeyRound, Layers, Plug, Settings } from "lucide-react";
+import { Archive, ArrowLeft, FolderGit2, GitBranch, KeyRound, Layers, Plug, Settings, Shield } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -25,6 +25,7 @@ export type SettingsSection =
   | "models"
   | "model-catalog"
   | "mcp-servers"
+  | "policy-rules"
   | "git"
   | "worktrees"
   | "archived";
@@ -68,6 +69,11 @@ const allNavItems: SettingsSidebarNavItem[] = [
     label: "MCP Servers",
     section: "mcp-servers",
     icon: Plug,
+  },
+  {
+    label: "Policy Rules",
+    section: "policy-rules",
+    icon: Shield,
   },
   {
     label: "Git",

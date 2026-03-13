@@ -2505,3 +2505,84 @@ export function getProjectContextFile(context: {
     mode: "644",
   };
 }
+
+/**
+ * Agent Policy Rule interface for instruction generation.
+ * This mirrors the Convex table structure but only includes fields needed for injection.
+ */
+export interface PolicyRuleForInstructions {
+  ruleId: string;
+  name: string;
+  category: "git_policy" | "security" | "workflow" | "tool_restriction" | "custom";
+  ruleText: string;
+  priority: number;
+  scope: "system" | "team" | "workspace" | "user";
+}
+
+/**
+ * Category display configuration for policy rules.
+ */
+const POLICY_CATEGORY_CONFIG: Record<
+  PolicyRuleForInstructions["category"],
+  { label: string; order: number }
+> = {
+  git_policy: { label: "Git Policy", order: 1 },
+  security: { label: "Security", order: 2 },
+  workflow: { label: "Workflow", order: 3 },
+  tool_restriction: { label: "Tool Restrictions", order: 4 },
+  custom: { label: "Custom", order: 5 },
+};
+
+/**
+ * Generate markdown instructions from centralized policy rules.
+ * Groups rules by category and renders them in a consistent format.
+ *
+ * @param policyRules - Array of policy rules fetched from Convex
+ * @returns Markdown string to inject into agent instruction files
+ */
+export function getPolicyRulesInstructions(
+  policyRules: PolicyRuleForInstructions[],
+): string {
+  if (!policyRules || policyRules.length === 0) {
+    return "";
+  }
+
+  // Group rules by category
+  const byCategory = new Map<PolicyRuleForInstructions["category"], PolicyRuleForInstructions[]>();
+  for (const rule of policyRules) {
+    const existing = byCategory.get(rule.category) ?? [];
+    existing.push(rule);
+    byCategory.set(rule.category, existing);
+  }
+
+  // Sort rules within each category by priority
+  for (const rules of byCategory.values()) {
+    rules.sort((a, b) => a.priority - b.priority);
+  }
+
+  // Build markdown output
+  let output = "# Agent Policy Rules\n\n";
+  output +=
+    "> These rules are centrally managed by cmux and override repo-level rules.\n";
+  output += "> Last updated at spawn time. Use refresh_policy_rules MCP tool to fetch latest.\n\n";
+
+  // Render categories in order
+  const sortedCategories = Array.from(byCategory.keys()).sort(
+    (a, b) => POLICY_CATEGORY_CONFIG[a].order - POLICY_CATEGORY_CONFIG[b].order,
+  );
+
+  for (const category of sortedCategories) {
+    const rules = byCategory.get(category);
+    if (!rules || rules.length === 0) continue;
+
+    const { label } = POLICY_CATEGORY_CONFIG[category];
+    output += `## ${label}\n\n`;
+
+    for (const rule of rules) {
+      // Add rule text directly (it's already markdown)
+      output += `${rule.ruleText}\n\n`;
+    }
+  }
+
+  return output;
+}

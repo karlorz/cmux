@@ -1,5 +1,6 @@
 import type { AuthFile } from "../../worker-schemas";
 import type { McpServerConfig } from "../../mcp-server-config";
+import type { PolicyRuleForInstructions } from "../../agent-memory-protocol";
 
 export interface EnvironmentResult {
   files: AuthFile[];
@@ -77,4 +78,10 @@ export type EnvironmentContext = {
    * @default false
    */
   useHostConfig?: boolean;
+  /**
+   * Centralized policy rules from Convex (Phase: Agent Policy Management).
+   * These are merged by scope hierarchy and filtered by agent type and context.
+   * Rules are injected into agent instruction files (e.g., ~/.claude/CLAUDE.md).
+   */
+  policyRules?: PolicyRuleForInstructions[];
 };
