@@ -133,7 +133,7 @@ assert "Codex stop_hook_active=true on turn 1 still blocks" jq -e '.decision == 
 cleanup
 
 DISABLED_BY_DEFAULT_OUTPUT=$(echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
-  env -u AUTOPILOT_KEEP_RUNNING_DISABLED \
+  env -u AUTOPILOT_KEEP_RUNNING_DISABLED -u CMUX_AUTOPILOT_ENABLED \
     AUTOPILOT_ENABLED=1 \
     AUTOPILOT_DELAY=0 \
     bash "$HOOK" || true)
@@ -142,10 +142,11 @@ assert "Unset AUTOPILOT_KEEP_RUNNING_DISABLED disables Codex autopilot" test -z 
 assert "Disabled-by-default run does not create blocked flag" test ! -f "/tmp/codex-autopilot-blocked-${TEST_SESSION}"
 
 STALE_LOGIN_ENV_OUTPUT=$(echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
-  AUTOPILOT_ENABLED=1 \
-  AUTOPILOT_DELAY=0 \
-  bash "$HOOK" || true)
+  env -u CMUX_AUTOPILOT_ENABLED \
+    AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+    AUTOPILOT_ENABLED=1 \
+    AUTOPILOT_DELAY=0 \
+    bash "$HOOK" || true)
 
 assert "Stale generic AUTOPILOT_KEEP_RUNNING_DISABLED=0 does not enable Codex autopilot without CMUX_AUTOPILOT_ENABLED=1" test -z "$STALE_LOGIN_ENV_OUTPUT"
 assert "Stale generic enable does not create blocked flag" test ! -f "/tmp/codex-autopilot-blocked-${TEST_SESSION}"
