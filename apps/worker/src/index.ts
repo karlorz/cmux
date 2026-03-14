@@ -1586,7 +1586,49 @@ async function createTerminal(
       log("INFO", `[createTerminal] Using cmux-pty backend for ${terminalId}`);
 
       try {
-        // 1. Merge environment variables
+        // 1. Run system-level startup commands (like timezone) BEFORE creating the PTY session
+        // These run as separate processes, not as PTY input, to ensure they complete
+        const systemCommands = startupCommands.filter(cmd =>
+          cmd.includes("timedatectl") || cmd.includes("/etc/localtime") || cmd.includes("/etc/timezone")
+        );
+        const shellCommands = startupCommands.filter(cmd =>
+          !cmd.includes("timedatectl") && !cmd.includes("/etc/localtime") && !cmd.includes("/etc/timezone")
+        );
+
+        if (systemCommands.length > 0) {
+          log("INFO", `[createTerminal] Running ${systemCommands.length} system command(s) before PTY creation`);
+          for (const cmd of systemCommands) {
+            try {
+              log("INFO", `[createTerminal] Running system command: ${cmd}`);
+              await new Promise<void>((resolve, reject) => {
+                const p = spawn("bash", ["-lc", cmd], {
+                  cwd: cwd || "/root/workspace",
+                  env: { ...process.env, ...env },
+                  stdio: ["ignore", "pipe", "pipe"],
+                });
+                let stderr = "";
+                p.stderr.on("data", (d) => { stderr += d.toString(); });
+                p.on("exit", (code) => {
+                  if (code === 0) {
+                    log("INFO", `[createTerminal] System command succeeded: ${cmd.slice(0, 50)}...`);
+                    resolve();
+                  } else {
+                    log("WARN", `[createTerminal] System command failed (${code}): ${cmd.slice(0, 50)}...`, new Error(stderr));
+                    resolve(); // Don't reject - continue with other commands
+                  }
+                });
+                p.on("error", (e) => {
+                  log("ERROR", `[createTerminal] System command error: ${cmd.slice(0, 50)}...`, e);
+                  resolve(); // Don't reject
+                });
+              });
+            } catch (e) {
+              log("ERROR", `[createTerminal] Failed to run system command`, e instanceof Error ? e : new Error(String(e)));
+            }
+          }
+        }
+
+        // 2. Merge environment variables
         const inheritedEnvEntries = Object.entries(process.env).filter(
           (entry): entry is [string, string] => typeof entry[1] === "string"
         );
@@ -1627,19 +1669,25 @@ async function createTerminal(
           pid: session.pid,
         });
 
-        // 3. Send startup commands as input
-        for (const cmd of startupCommands) {
-          log("INFO", `[createTerminal] Sending startup command: ${cmd}`);
-          await ptyClient.sendInput(session.id, cmd + "\n");
+        // 4. Send non-system startup commands as PTY input
+        // Wait briefly for shell to initialize before sending commands
+        if (shellCommands.length > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          for (const cmd of shellCommands) {
+            log("INFO", `[createTerminal] Sending startup command: ${cmd}`);
+            await ptyClient.sendInput(session.id, cmd + "\n");
+          }
+          // Small delay after startup commands to let them execute before agent starts
+          await new Promise((resolve) => setTimeout(resolve, 100));
         }
 
-        // 4. Send the agent command (uses ptyCommand which is the clean command for cmux-pty)
+        // 5. Send the agent command (uses ptyCommand which is the clean command for cmux-pty)
         if (ptyCommand) {
           log("INFO", `[createTerminal] Sending agent command: ${ptyCommand}`);
           await ptyClient.sendInput(session.id, ptyCommand + "\n");
         }
 
-        // 5. Send post-start commands after a delay
+        // 6. Send post-start commands after a delay
         if (postStartCommands.length > 0) {
           setTimeout(async () => {
             for (const cmd of postStartCommands) {
@@ -1656,7 +1704,7 @@ async function createTerminal(
           }, 1000);
         }
 
-        // 6. Set up completion detection (same as tmux backend)
+        // 7. Set up completion detection (same as tmux backend)
         const processStartTime = Date.now();
         const agentConfig = options.agentModel
           ? AGENT_CONFIGS.find((c) => c.name === options.agentModel)
