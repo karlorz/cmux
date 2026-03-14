@@ -55,8 +55,9 @@ case "${AUTOPILOT_KEEP_RUNNING_DISABLED:-}" in
 esac
 
 INPUT=$(cat)
-# Parse session_id and stop_hook_active in a single jq call
-read -r SESSION_ID STOP_HOOK_ACTIVE < <(echo "$INPUT" | jq -r '[.session_id // "default", .stop_hook_active // false] | @tsv' 2>/dev/null || echo "default false")
+# Parse only the session id. Codex may also send stop_hook_active, but the
+# shared autopilot loop intentionally ignores that field.
+SESSION_ID="$(echo "$INPUT" | jq -r '.session_id // "default"' 2>/dev/null || echo "default")"
 SESSION_ID="${SESSION_ID:-default}"
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 
@@ -187,17 +188,9 @@ fi
 TURN_COUNT=$((TURN_COUNT + 1))
 printf '%s\n' "$TURN_COUNT" > "$TURN_FILE"
 
-# Codex stop_hook_active=true: allow stop only after completing at least one full turn
-# This prevents immediate exit on re-invocation while still breaking infinite loops
-if [ "$PROVIDER" = "codex" ] && [ "$STOP_HOOK_ACTIVE" = "true" ] && [ "$STOP_REQUESTED" -eq 0 ] && [ -z "$WRAPUP_SOURCE" ]; then
-  if [ "$TURN_COUNT" -ge 2 ]; then
-    log_debug "allowing stop because codex stop_hook_active=true and turn_count=$TURN_COUNT >= 2"
-    cleanup_runtime_state
-    exit 0
-  else
-    log_debug "ignoring stop_hook_active=true because turn_count=$TURN_COUNT < 2"
-  fi
-fi
+# Codex exposes stop_hook_active on repeated Stop events, but cmux autopilot
+# intentionally ignores it so Codex keeps looping until normal stop conditions
+# apply: explicit stop request, idle detection, or max turns / wrap-up.
 
 if [ -z "$WRAPUP_SOURCE" ]; then
   CURRENT_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
