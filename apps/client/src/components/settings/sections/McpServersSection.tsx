@@ -77,7 +77,7 @@ export function McpServersSection({
     convexQuery(api.mcpServerConfigs.list, { teamSlugOrId }),
   );
 
-  const { data: claudeHostConfig } = useQuery({
+  const { data: claudeHostConfig, refetch: refetchClaudeConfig } = useQuery({
     queryKey: ["mcp-host-config", "claude"],
     enabled: isElectron,
     queryFn: async () => {
@@ -86,7 +86,7 @@ export function McpServersSection({
     },
   });
 
-  const { data: codexHostConfig } = useQuery({
+  const { data: codexHostConfig, refetch: refetchCodexConfig } = useQuery({
     queryKey: ["mcp-host-config", "codex"],
     enabled: isElectron,
     queryFn: async () => {
@@ -95,7 +95,7 @@ export function McpServersSection({
     },
   });
 
-  const { data: opencodeHostConfig } = useQuery({
+  const { data: opencodeHostConfig, refetch: refetchOpencodeConfig } = useQuery({
     queryKey: ["mcp-host-config", "opencode"],
     enabled: isElectron,
     queryFn: async () => {
@@ -103,6 +103,12 @@ export function McpServersSection({
       return bridge?.mcpHostConfig?.readOpencodeJson() ?? null;
     },
   });
+
+  const handleRefreshHostConfigs = useCallback(() => {
+    void refetchClaudeConfig();
+    void refetchCodexConfig();
+    void refetchOpencodeConfig();
+  }, [refetchClaudeConfig, refetchCodexConfig, refetchOpencodeConfig]);
 
   const upsertMutation = useMutation({
     mutationFn: async (
@@ -448,6 +454,7 @@ export function McpServersSection({
               selectedWorkspaceProject={effectiveWorkspacePreviewProject}
               onWorkspaceProjectChange={setWorkspacePreviewProject}
               webMode={env.NEXT_PUBLIC_WEB_MODE}
+              onRefreshHostConfigs={handleRefreshHostConfigs}
             />
           ) : null}
 

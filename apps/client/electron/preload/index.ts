@@ -13,6 +13,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import {
   MCP_HOST_CONFIG_IPC_CHANNELS,
   type HostMcpFileResult,
+  type HostMcpWriteResult,
 } from "../main/mcp-host-config";
 import type {
   ElectronDevToolsMode,
@@ -231,6 +232,12 @@ const cmuxAPI = {
       ipcRenderer.invoke(MCP_HOST_CONFIG_IPC_CHANNELS.readCodexToml) as Promise<HostMcpFileResult>,
     readOpencodeJson: () =>
       ipcRenderer.invoke(MCP_HOST_CONFIG_IPC_CHANNELS.readOpencodeJson) as Promise<HostMcpFileResult>,
+    writeClaudeJson: (content: string) =>
+      ipcRenderer.invoke(MCP_HOST_CONFIG_IPC_CHANNELS.writeClaudeJson, content) as Promise<HostMcpWriteResult>,
+    writeCodexToml: (content: string) =>
+      ipcRenderer.invoke(MCP_HOST_CONFIG_IPC_CHANNELS.writeCodexToml, content) as Promise<HostMcpWriteResult>,
+    writeOpencodeJson: (content: string) =>
+      ipcRenderer.invoke(MCP_HOST_CONFIG_IPC_CHANNELS.writeOpencodeJson, content) as Promise<HostMcpWriteResult>,
   },
   webContentsView: {
     create: (options: {

@@ -66,7 +66,11 @@ import {
   readClaudeJsonConfig,
   readCodexTomlConfig,
   readOpencodeJsonConfig,
+  writeClaudeJsonConfig,
+  writeCodexTomlConfig,
+  writeOpencodeJsonConfig,
   type HostMcpFileResult,
+  type HostMcpWriteResult,
 } from "./mcp-host-config";
 
 // Use a cookieable HTTPS origin intercepted locally instead of a custom scheme.
@@ -585,6 +589,7 @@ function registerAppIpcHandlers(): void {
 }
 
 function registerMcpHostConfigIpcHandlers(): void {
+  // Read handlers
   ipcMain.handle(
     MCP_HOST_CONFIG_IPC_CHANNELS.readClaudeJson,
     (): Promise<HostMcpFileResult> => readClaudeJsonConfig(),
@@ -596,6 +601,19 @@ function registerMcpHostConfigIpcHandlers(): void {
   ipcMain.handle(
     MCP_HOST_CONFIG_IPC_CHANNELS.readOpencodeJson,
     (): Promise<HostMcpFileResult> => readOpencodeJsonConfig(),
+  );
+  // Write handlers
+  ipcMain.handle(
+    MCP_HOST_CONFIG_IPC_CHANNELS.writeClaudeJson,
+    (_event, content: string): Promise<HostMcpWriteResult> => writeClaudeJsonConfig(content),
+  );
+  ipcMain.handle(
+    MCP_HOST_CONFIG_IPC_CHANNELS.writeCodexToml,
+    (_event, content: string): Promise<HostMcpWriteResult> => writeCodexTomlConfig(content),
+  );
+  ipcMain.handle(
+    MCP_HOST_CONFIG_IPC_CHANNELS.writeOpencodeJson,
+    (_event, content: string): Promise<HostMcpWriteResult> => writeOpencodeJsonConfig(content),
   );
 }
 

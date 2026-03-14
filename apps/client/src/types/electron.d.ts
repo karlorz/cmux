@@ -93,10 +93,20 @@ export interface HostMcpFileResult {
   error?: string;
 }
 
+export interface HostMcpWriteResult {
+  ok: boolean;
+  path: string;
+  backupPath?: string;
+  error?: string;
+}
+
 interface CmuxMcpHostConfigAPI {
   readClaudeJson: () => Promise<HostMcpFileResult>;
   readCodexToml: () => Promise<HostMcpFileResult>;
   readOpencodeJson: () => Promise<HostMcpFileResult>;
+  writeClaudeJson: (content: string) => Promise<HostMcpWriteResult>;
+  writeCodexToml: (content: string) => Promise<HostMcpWriteResult>;
+  writeOpencodeJson: (content: string) => Promise<HostMcpWriteResult>;
 }
 
 export interface CmuxAPI {
