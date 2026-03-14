@@ -11,6 +11,7 @@ describe("isValidTimezoneIdentifier", () => {
       isValidTimezoneIdentifier("America/Argentina/Buenos_Aires")
     ).toBe(true);
     expect(isValidTimezoneIdentifier("Etc/GMT+8")).toBe(true);
+    expect(isValidTimezoneIdentifier("Japan")).toBe(true);
     expect(isValidTimezoneIdentifier("UTC")).toBe(true);
   });
 
@@ -18,6 +19,7 @@ describe("isValidTimezoneIdentifier", () => {
     expect(isValidTimezoneIdentifier("")).toBe(false);
     expect(isValidTimezoneIdentifier("America/New York")).toBe(false);
     expect(isValidTimezoneIdentifier("../etc/passwd")).toBe(false);
+    expect(isValidTimezoneIdentifier("America/./New_York")).toBe(false);
     expect(isValidTimezoneIdentifier("Asia/Tokyo; rm -rf /")).toBe(false);
   });
 });

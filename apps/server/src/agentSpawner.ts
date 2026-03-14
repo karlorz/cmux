@@ -911,18 +911,19 @@ export async function spawnAgent(
       }
     }
 
-    if (envVars.TZ) {
+    const timezone = envVars.TZ;
+    if (timezone) {
       const timezoneStartupCommand = buildSystemTimezoneStartupCommand(
-        envVars.TZ
+        timezone
       );
       if (timezoneStartupCommand) {
         startupCommands.unshift(timezoneStartupCommand);
         serverLogger.info(
-          `[AgentSpawner] Will apply system timezone from TZ=${envVars.TZ}`
+          `[AgentSpawner] Will apply system timezone from TZ=${timezone}`
         );
       } else {
         serverLogger.warn(
-          `[AgentSpawner] Invalid TZ value ${envVars.TZ}, skipping system timezone setup`
+          `[AgentSpawner] Invalid TZ value ${timezone}, skipping system timezone setup`
         );
       }
     }

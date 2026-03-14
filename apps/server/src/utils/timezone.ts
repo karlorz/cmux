@@ -1,11 +1,13 @@
-const VALID_TIMEZONE_PATTERN =
-  /^(?:UTC|GMT|[A-Za-z0-9_+-]+(?:\/[A-Za-z0-9_+-]+)+)$/;
+const VALID_TIMEZONE_PATTERN = /^[A-Za-z0-9_.+-]+(?:\/[A-Za-z0-9_.+-]+)*$/;
 
 const shellSingleQuote = (value: string): string =>
   `'${value.replace(/'/g, "'\\''")}'`;
 
 export function isValidTimezoneIdentifier(timezone: string): boolean {
-  return VALID_TIMEZONE_PATTERN.test(timezone);
+  return (
+    VALID_TIMEZONE_PATTERN.test(timezone) &&
+    timezone.split("/").every((segment) => segment !== "." && segment !== "..")
+  );
 }
 
 export function buildSystemTimezoneStartupCommand(
