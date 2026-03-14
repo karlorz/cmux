@@ -911,10 +911,13 @@ export async function spawnAgent(
     }
 
     // Apply TZ environment variable as system timezone
+    // IANA format: Region/City, Region/Sub/City, or Etc/GMT[+-]N
+    // Also accept UTC/GMT abbreviations
+    const IANA_TZ_PATTERN = /^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z][A-Za-z0-9_+-]*)+$/;
+    const UTC_GMT_PATTERN = /^(UTC|GMT)$/;
     if (envVars.TZ) {
       const tz = envVars.TZ;
-      // Validate timezone format (IANA region/city or abbreviation)
-      if (/^[A-Za-z_]+\/[A-Za-z_]+$/.test(tz) || /^(UTC|GMT)$/.test(tz)) {
+      if (IANA_TZ_PATTERN.test(tz) || UTC_GMT_PATTERN.test(tz)) {
         startupCommands.unshift(
           `timedatectl set-timezone "${tz}" 2>/dev/null || ln -sf /usr/share/zoneinfo/${tz} /etc/localtime`
         );
