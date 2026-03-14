@@ -11,6 +11,28 @@ import { streamSSE } from "hono/streaming";
 import type { AgentCommEvent } from "@cmux/shared";
 
 // ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Map known Convex/domain errors to appropriate HTTP status codes.
+ * Returns null if the error is not a recognized domain error (caller should return 500).
+ */
+function mapDomainError(
+  error: unknown,
+): { status: 403 | 404; message: string } | null {
+  if (!(error instanceof Error)) return null;
+  const msg = error.message;
+  if (msg.includes("Forbidden")) {
+    return { status: 403, message: msg };
+  }
+  if (msg.includes("not found") || msg.includes("Not found")) {
+    return { status: 404, message: msg };
+  }
+  return null;
+}
+
+// ============================================================================
 // Schemas
 // ============================================================================
 
@@ -309,6 +331,7 @@ orchestrateRouter.openapi(
         description: "Task retrieved successfully",
       },
       401: { description: "Unauthorized" },
+      403: { description: "Forbidden: task does not belong to this team" },
       404: { description: "Task not found" },
       500: { description: "Server error" },
     },
@@ -338,6 +361,8 @@ orchestrateRouter.openapi(
       return c.json(task);
     } catch (error) {
       console.error("[orchestrate] Failed to get task:", error);
+      const mapped = mapDomainError(error);
+      if (mapped) return c.text(mapped.message, mapped.status);
       return c.text("Failed to get task", 500);
     }
   }
@@ -383,6 +408,7 @@ orchestrateRouter.openapi(
         description: "Task cancelled successfully",
       },
       401: { description: "Unauthorized" },
+      403: { description: "Forbidden" },
       404: { description: "Task not found" },
       500: { description: "Server error" },
     },
@@ -428,6 +454,8 @@ orchestrateRouter.openapi(
       return c.json({ ok: true, cancelledCount });
     } catch (error) {
       console.error("[orchestrate] Failed to cancel task:", error);
+      const mapped = mapDomainError(error);
+      if (mapped) return c.text(mapped.message, mapped.status);
       return c.text("Failed to cancel task", 500);
     }
   }
@@ -1177,9 +1205,8 @@ orchestrateRouter.openapi(
       return c.json(result);
     } catch (error) {
       console.error("[orchestrate] Failed to resolve approval:", error);
-      if (error instanceof Error && error.message.includes("not found")) {
-        return c.text("Approval request not found", 404);
-      }
+      const mapped = mapDomainError(error);
+      if (mapped) return c.text(mapped.message, mapped.status);
       return c.text("Failed to resolve approval", 500);
     }
   }
