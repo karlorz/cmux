@@ -121,6 +121,37 @@ def get_ide_provider() -> str:
     return _ide_provider
 
 
+def format_package_task_label(pkg: str) -> str:
+    """Extract a task-friendly label from an npm package specifier.
+
+    Handles scoped packages (@org/pkg@version) and regular packages (pkg@version).
+    Returns the package name with @ stripped and / replaced with -.
+    """
+    # Strip version suffix if present (handles both @scope/pkg@ver and pkg@ver)
+    if pkg.startswith("@"):
+        # For scoped packages, find the version @ (after the scope @)
+        version_idx = pkg.rfind("@")
+        package_name = pkg[:version_idx] if version_idx > 0 else pkg
+    else:
+        package_name = pkg.split("@", 1)[0]
+    return package_name.lstrip("@").replace("/", "-")
+
+
+def is_transient_http_exec_error(exc: Exception) -> bool:
+    """Check if an exception indicates a transient HTTP error worth retrying.
+
+    Matches error messages containing transient HTTP status codes (502-504, 520-524)
+    in common error formats like 'HTTP exec error 502' or 'error code: 502'.
+    """
+    from snapshot.exec import TRANSIENT_HTTP_CODES
+
+    message = str(exc)
+    return any(
+        f"HTTP exec error {code}" in message or f"error code: {code}" in message
+        for code in TRANSIENT_HTTP_CODES
+    )
+
+
 # ---------------------------------------------------------------------------
 # Git Diff Mode Configuration
 # ---------------------------------------------------------------------------
@@ -3006,12 +3037,28 @@ async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
             set -eux
             export HOME=/root
             echo "[install-ide-extensions] installing {ext_id}"
-            {bin_path} --install-extension {vsix_path} --force --extensions-dir {extensions_dir} --user-data-dir {user_data_dir} </dev/null || true
+            {bin_path} --install-extension {vsix_path} --force --extensions-dir {extensions_dir} --user-data-dir {user_data_dir} </dev/null
+            if ! ls -d {extensions_dir}/{ext_id}-* >/dev/null 2>&1; then
+                echo "[install-ide-extensions] ERROR: {ext_id} not found in {extensions_dir}" >&2
+                exit 1
+            fi
             echo "[install-ide-extensions] installed {ext_id}"
             rm -f {vsix_path}
             """
         )
-        await ctx.run(f"install-{ext_id}", install_ext_cmd)
+        for attempt in range(1, 4):
+            try:
+                await ctx.run(f"install-{ext_id}", install_ext_cmd)
+                break
+            except Exception as exc:
+                if attempt >= 3 or not is_transient_http_exec_error(exc):
+                    raise
+                delay = float(attempt * 5)
+                ctx.console.info(
+                    f"[install-{ext_id}] retrying after transient exec error "
+                    f"(attempt {attempt}/3) in {delay:.1f}s"
+                )
+                await asyncio.sleep(delay)
 
 
 @registry.task(
@@ -3062,11 +3109,12 @@ async def task_install_global_cli(ctx: PveTaskContext) -> None:
     for i, pkg in enumerate(package_args, 1):
         ctx.console.info(f"Installing package {i}/{len(package_args)}: {pkg}")
         last_error: Exception | None = None
+        task_label = format_package_task_label(pkg)
 
         for attempt in range(1, max_retries + 1):
             try:
                 cmd = f"bun add -g {pkg}"
-                await ctx.run(f"install-pkg-{pkg.split('@')[0].replace('/', '-')}", cmd)
+                await ctx.run(f"install-pkg-{task_label}", cmd)
                 ctx.console.info(f"Successfully installed {pkg}")
                 break
             except Exception as e:
@@ -3554,6 +3602,15 @@ async def task_build_rust_binaries(ctx: PveTaskContext) -> None:
         cargo build --locked --release --manifest-path {repo}/crates/cmux-env/Cargo.toml
         cargo build --locked --release --manifest-path {repo}/crates/cmux-proxy/Cargo.toml
         cargo build --locked --release --manifest-path {repo}/crates/cmux-pty/Cargo.toml
+        test -x {repo}/target/release/envd
+        test -x {repo}/target/release/envctl
+        test -x {repo}/target/release/cmux-proxy
+        test -x {repo}/target/release/cmux-pty
+        ls -lh \
+          {repo}/target/release/envd \
+          {repo}/target/release/envctl \
+          {repo}/target/release/cmux-proxy \
+          {repo}/target/release/cmux-pty
         """
     )
     await ctx.run("build-rust-binaries", cmd, timeout=60 * 30)

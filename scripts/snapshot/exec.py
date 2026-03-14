@@ -22,8 +22,9 @@ from morphcloud.api import InstanceExecResponse
 
 from ._types import Console, Command
 
-# HTTP status codes that indicate transient errors worth retrying
-TRANSIENT_HTTP_CODES = frozenset({502, 503, 504})
+# HTTP status codes that indicate transient errors worth retrying.
+# Includes standard gateway errors (502-504) and Cloudflare-specific codes (520-524).
+TRANSIENT_HTTP_CODES = frozenset({502, 503, 504, 520, 521, 522, 523, 524})
 
 
 def shell_command(command: Command) -> list[str]:
