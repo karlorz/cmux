@@ -101,18 +101,30 @@ build-npm:
 	@chmod +x npm/devsh/bin/devsh
 	@echo "Done! Binaries built in npm/*/bin/"
 
-# Update version in all npm package.json files
+# Update version in all npm package.json files (cross-platform sed)
 npm-version:
 	@echo "Updating npm package versions to $(VERSION)..."
 	@for pkg in devsh darwin-arm64 darwin-x64 linux-arm64 linux-x64 win32-x64; do \
 		if [ -f "npm/$$pkg/package.json" ]; then \
-			sed -i '' 's/"version": "[^"]*"/"version": "$(VERSION)"/' npm/$$pkg/package.json; \
+			if sed --version >/dev/null 2>&1; then \
+				sed -i 's/"version": "[^"]*"/"version": "$(VERSION)"/' npm/$$pkg/package.json; \
+			else \
+				sed -i '' 's/"version": "[^"]*"/"version": "$(VERSION)"/' npm/$$pkg/package.json; \
+			fi; \
 			if [ "$$pkg" = "devsh" ]; then \
-				sed -i '' 's/"devsh-darwin-arm64": "[^"]*"/"devsh-darwin-arm64": "$(VERSION)"/' npm/$$pkg/package.json; \
-				sed -i '' 's/"devsh-darwin-x64": "[^"]*"/"devsh-darwin-x64": "$(VERSION)"/' npm/$$pkg/package.json; \
-				sed -i '' 's/"devsh-linux-arm64": "[^"]*"/"devsh-linux-arm64": "$(VERSION)"/' npm/$$pkg/package.json; \
-				sed -i '' 's/"devsh-linux-x64": "[^"]*"/"devsh-linux-x64": "$(VERSION)"/' npm/$$pkg/package.json; \
-				sed -i '' 's/"devsh-win32-x64": "[^"]*"/"devsh-win32-x64": "$(VERSION)"/' npm/$$pkg/package.json; \
+				if sed --version >/dev/null 2>&1; then \
+					sed -i 's/"devsh-darwin-arm64": "[^"]*"/"devsh-darwin-arm64": "$(VERSION)"/' npm/$$pkg/package.json; \
+					sed -i 's/"devsh-darwin-x64": "[^"]*"/"devsh-darwin-x64": "$(VERSION)"/' npm/$$pkg/package.json; \
+					sed -i 's/"devsh-linux-arm64": "[^"]*"/"devsh-linux-arm64": "$(VERSION)"/' npm/$$pkg/package.json; \
+					sed -i 's/"devsh-linux-x64": "[^"]*"/"devsh-linux-x64": "$(VERSION)"/' npm/$$pkg/package.json; \
+					sed -i 's/"devsh-win32-x64": "[^"]*"/"devsh-win32-x64": "$(VERSION)"/' npm/$$pkg/package.json; \
+				else \
+					sed -i '' 's/"devsh-darwin-arm64": "[^"]*"/"devsh-darwin-arm64": "$(VERSION)"/' npm/$$pkg/package.json; \
+					sed -i '' 's/"devsh-darwin-x64": "[^"]*"/"devsh-darwin-x64": "$(VERSION)"/' npm/$$pkg/package.json; \
+					sed -i '' 's/"devsh-linux-arm64": "[^"]*"/"devsh-linux-arm64": "$(VERSION)"/' npm/$$pkg/package.json; \
+					sed -i '' 's/"devsh-linux-x64": "[^"]*"/"devsh-linux-x64": "$(VERSION)"/' npm/$$pkg/package.json; \
+					sed -i '' 's/"devsh-win32-x64": "[^"]*"/"devsh-win32-x64": "$(VERSION)"/' npm/$$pkg/package.json; \
+				fi; \
 			fi; \
 		fi; \
 	done

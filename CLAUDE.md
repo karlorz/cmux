@@ -258,9 +258,8 @@ Message types: `handoff`, `request`, `status`
 ## devsh Publishing
 
 - `make install-devsh-prod` builds and installs the production `devsh` binary locally using `.env.production`.
-- `cd packages/devsh && make npm-version VERSION=x.y.z` bumps the published package version.
-- `make devsh-npm-republish-prod-dry` runs the npm publish dry-run.
-- `make devsh-npm-republish-prod` publishes the package and requires browser 2FA.
+- `make devsh-release VERSION=x.y.z` is the single-command release: bumps version, builds all platforms, publishes to npm (requires 2FA).
+- `make devsh-release VERSION=x.y.z DRY_RUN=1` runs the full release pipeline as a dry-run without publishing.
 - The Go module path is `github.com/karlorz/devsh`; do not change it.
 
 ## Host Machine Commands

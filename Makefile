@@ -332,6 +332,25 @@ cloudrouter-npm-republish-prod:
 		CONVEX_SITE_URL="$$CONVEX_SITE_URL" \
 		VERSION="$$VERSION"
 
+# Single-command devsh release: bumps version, builds all platforms, publishes to npm
+# Usage: make devsh-release VERSION=x.y.z
+# Optional: make devsh-release VERSION=x.y.z DRY_RUN=1
+devsh-release:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "Usage: make devsh-release VERSION=x.y.z"; \
+		echo "       make devsh-release VERSION=x.y.z DRY_RUN=1"; \
+		exit 1; \
+	fi
+	@echo "==> Bumping version to $(VERSION) in all package.json files..."
+	$(MAKE) -C packages/devsh npm-version VERSION=$(VERSION)
+	@if [ "$(DRY_RUN)" = "1" ]; then \
+		echo "==> Running dry-run publish..."; \
+		$(MAKE) devsh-npm-republish-prod-dry DEVSH_NPM_VERSION=$(VERSION); \
+	else \
+		echo "==> Publishing to npm (2FA required)..."; \
+		$(MAKE) devsh-npm-republish-prod DEVSH_NPM_VERSION=$(VERSION); \
+	fi
+
 # devsh npm republish using production env file
 devsh-npm-republish-prod-dry:
 	@ENV_FILE="$(ENV_FILE_PROD)"; \
