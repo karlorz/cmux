@@ -37,30 +37,37 @@ assert() {
   fi
 }
 
+run_enabled_hook() {
+  local input_json="$1"
+  shift
+
+  echo "$input_json" | env \
+    CMUX_AUTOPILOT_ENABLED=1 \
+    AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+    AUTOPILOT_ENABLED=1 \
+    AUTOPILOT_DELAY=0 \
+    "$@" \
+    bash "$HOOK"
+}
+
 echo "=== Codex autopilot hook smoke test ==="
 
 cleanup
 touch "$STOP_FILE"
 
-FIRST_OUTPUT=$(echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
-  AUTOPILOT_ENABLED=1 \
+FIRST_OUTPUT=$(run_enabled_hook \
+  "{\"session_id\":\"${TEST_SESSION}\"}" \
   AUTOPILOT_MAX_TURNS=20 \
-  AUTOPILOT_DELAY=0 \
-  AUTOPILOT_STOP_FILE="$STOP_FILE" \
-  bash "$HOOK")
+  AUTOPILOT_STOP_FILE="$STOP_FILE")
 
 assert "First stop request blocks for inline wrapup" jq -e '.decision == "block"' <<<"$FIRST_OUTPUT"
 assert "Wrapup marker created" test -f "/tmp/codex-autopilot-wrapup-${TEST_SESSION}"
 assert "Pid marker created on block" test -f "/tmp/codex-autopilot-pid-${TEST_SESSION}"
 
-SECOND_OUTPUT=$(echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
-  AUTOPILOT_ENABLED=1 \
+SECOND_OUTPUT=$(run_enabled_hook \
+  "{\"session_id\":\"${TEST_SESSION}\"}" \
   AUTOPILOT_MAX_TURNS=20 \
-  AUTOPILOT_DELAY=0 \
-  AUTOPILOT_STOP_FILE="$STOP_FILE" \
-  bash "$HOOK" || true)
+  AUTOPILOT_STOP_FILE="$STOP_FILE" || true)
 
 assert "Second stop request allows stop" test -z "$SECOND_OUTPUT"
 assert "Wrapup marker removed after allow" test ! -f "/tmp/codex-autopilot-wrapup-${TEST_SESSION}"
@@ -69,35 +76,26 @@ assert "Pid marker removed after allow" test ! -f "/tmp/codex-autopilot-pid-${TE
 cleanup
 echo "0" > "/tmp/codex-autopilot-turns-${TEST_SESSION}"
 
-MAX_TURN_OUTPUT=$(echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
-  AUTOPILOT_ENABLED=1 \
-  AUTOPILOT_MAX_TURNS=1 \
-  AUTOPILOT_DELAY=0 \
-  bash "$HOOK")
+MAX_TURN_OUTPUT=$(run_enabled_hook \
+  "{\"session_id\":\"${TEST_SESSION}\"}" \
+  AUTOPILOT_MAX_TURNS=1)
 
 assert "Max turns triggers final wrapup block" jq -e '.decision == "block"' <<<"$MAX_TURN_OUTPUT"
 assert "Max-turn wrapup marker created" grep -q "max-turns" "/tmp/codex-autopilot-wrapup-${TEST_SESSION}"
 
-MAX_TURN_ALLOW=$(echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
-  AUTOPILOT_ENABLED=1 \
-  AUTOPILOT_MAX_TURNS=1 \
-  AUTOPILOT_DELAY=0 \
-  bash "$HOOK" || true)
+MAX_TURN_ALLOW=$(run_enabled_hook \
+  "{\"session_id\":\"${TEST_SESSION}\"}" \
+  AUTOPILOT_MAX_TURNS=1 || true)
 
 assert "Follow-up stop after max-turn wrapup allows stop" test -z "$MAX_TURN_ALLOW"
 
 cleanup
 echo "0" > "/tmp/codex-autopilot-turns-${TEST_SESSION}"
 
-ALIAS_PRECEDENCE_OUTPUT=$(echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
-  AUTOPILOT_ENABLED=1 \
+ALIAS_PRECEDENCE_OUTPUT=$(run_enabled_hook \
+  "{\"session_id\":\"${TEST_SESSION}\"}" \
   AUTOPILOT_MAX_TURNS=1 \
-  AUTOPILOT_DELAY=0 \
-  CMUX_AUTOPILOT_MAX_TURNS=20 \
-  bash "$HOOK")
+  CMUX_AUTOPILOT_MAX_TURNS=20)
 
 assert "Generic AUTOPILOT_MAX_TURNS overrides CMUX_AUTOPILOT_MAX_TURNS" jq -e '.decision == "block"' <<<"$ALIAS_PRECEDENCE_OUTPUT"
 assert "Generic alias max-turn wrapup marker created" grep -q "max-turns" "/tmp/codex-autopilot-wrapup-${TEST_SESSION}"
@@ -105,26 +103,34 @@ assert "Generic alias max-turn wrapup marker created" grep -q "max-turns" "/tmp/
 cleanup
 echo "0" > "/tmp/codex-autopilot-turns-${TEST_SESSION}"
 
-LEGACY_CLAUDE_ALIAS_OUTPUT=$(echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
-  AUTOPILOT_ENABLED=1 \
-  AUTOPILOT_DELAY=0 \
-  CLAUDE_AUTOPILOT_MAX_TURNS=1 \
-  bash "$HOOK")
+LEGACY_CLAUDE_ALIAS_OUTPUT=$(run_enabled_hook \
+  "{\"session_id\":\"${TEST_SESSION}\"}" \
+  CLAUDE_AUTOPILOT_MAX_TURNS=1)
 
 assert "Legacy CLAUDE_AUTOPILOT_MAX_TURNS still works for Codex when enabled" jq -e '.decision == "block"' <<<"$LEGACY_CLAUDE_ALIAS_OUTPUT"
 assert "Legacy CLAUDE alias creates max-turn wrapup marker" grep -q "max-turns" "/tmp/codex-autopilot-wrapup-${TEST_SESSION}"
 
 cleanup
 
-STOP_ACTIVE_OUTPUT=$(echo "{\"session_id\":\"${TEST_SESSION}\",\"stop_hook_active\":true}" | \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
-  AUTOPILOT_ENABLED=1 \
-  AUTOPILOT_DELAY=0 \
-  bash "$HOOK" || true)
+# Pre-seed turn count to 1 so stop_hook_active=true check passes (requires turn >= 2)
+echo "1" > "/tmp/codex-autopilot-turns-${TEST_SESSION}"
 
-assert "Codex repeated stop with stop_hook_active=true allows stop" test -z "$STOP_ACTIVE_OUTPUT"
+STOP_ACTIVE_OUTPUT=$(run_enabled_hook \
+  "{\"session_id\":\"${TEST_SESSION}\",\"stop_hook_active\":true}" || true)
+
+assert "Codex repeated stop with stop_hook_active=true allows stop (turn>=2)" test -z "$STOP_ACTIVE_OUTPUT"
 assert "Repeated codex stop does not recreate blocked flag" test ! -f "/tmp/codex-autopilot-blocked-${TEST_SESSION}"
+
+cleanup
+
+# Test stop_hook_active=true on turn 1 should NOT allow stop (blocks instead)
+STOP_ACTIVE_TURN1_OUTPUT=$(run_enabled_hook \
+  "{\"session_id\":\"${TEST_SESSION}\",\"stop_hook_active\":true}" \
+  AUTOPILOT_MAX_TURNS=99999)
+
+assert "Codex stop_hook_active=true on turn 1 still blocks" jq -e '.decision == "block"' <<<"$STOP_ACTIVE_TURN1_OUTPUT"
+
+cleanup
 
 DISABLED_BY_DEFAULT_OUTPUT=$(echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
   env -u AUTOPILOT_KEEP_RUNNING_DISABLED \
@@ -134,6 +140,15 @@ DISABLED_BY_DEFAULT_OUTPUT=$(echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
 
 assert "Unset AUTOPILOT_KEEP_RUNNING_DISABLED disables Codex autopilot" test -z "$DISABLED_BY_DEFAULT_OUTPUT"
 assert "Disabled-by-default run does not create blocked flag" test ! -f "/tmp/codex-autopilot-blocked-${TEST_SESSION}"
+
+STALE_LOGIN_ENV_OUTPUT=$(echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+  AUTOPILOT_ENABLED=1 \
+  AUTOPILOT_DELAY=0 \
+  bash "$HOOK" || true)
+
+assert "Stale generic AUTOPILOT_KEEP_RUNNING_DISABLED=0 does not enable Codex autopilot without CMUX_AUTOPILOT_ENABLED=1" test -z "$STALE_LOGIN_ENV_OUTPUT"
+assert "Stale generic enable does not create blocked flag" test ! -f "/tmp/codex-autopilot-blocked-${TEST_SESSION}"
 
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
