@@ -80,9 +80,12 @@ MONITORING_THRESHOLD="$(first_set "${AUTOPILOT_MONITORING_THRESHOLD:-}" "${CMUX_
 BASE_DELAY="$(first_set "${AUTOPILOT_DELAY:-}" "${CMUX_AUTOPILOT_DELAY:-}" "${CLAUDE_AUTOPILOT_DELAY:-2}")"
 EXTERNAL_STOP_FILE="$(first_set "${AUTOPILOT_STOP_FILE:-}" "${CMUX_AUTOPILOT_STOP_FILE:-}" "${CLAUDE_AUTOPILOT_STOP_FILE:-}")"
 
-MONITORING_PHASE1_OFFSET=5
-MONITORING_PHASE1_WAIT=30
-MONITORING_PHASE2_WAIT=60
+MONITORING_PHASE1_OFFSET="$(first_set "${AUTOPILOT_MONITORING_PHASE1_OFFSET:-}" "${CMUX_AUTOPILOT_MONITORING_PHASE1_OFFSET:-}" "${CLAUDE_AUTOPILOT_MONITORING_PHASE1_OFFSET:-5}")"
+MONITORING_PHASE1_WAIT="$(first_set "${AUTOPILOT_MONITORING_PHASE1_WAIT:-}" "${CMUX_AUTOPILOT_MONITORING_PHASE1_WAIT:-}" "${CLAUDE_AUTOPILOT_MONITORING_PHASE1_WAIT:-30}")"
+MONITORING_PHASE2_WAIT="$(first_set "${AUTOPILOT_MONITORING_PHASE2_WAIT:-}" "${CMUX_AUTOPILOT_MONITORING_PHASE2_WAIT:-}" "${CLAUDE_AUTOPILOT_MONITORING_PHASE2_WAIT:-60}")"
+# BASE_DELAY is always enforced between turns.
+# Claude keeps the longer monitoring waits in the prompt so polling stays
+# visible. Codex performs those monitoring waits inside the hook instead.
 WAIT_PROMPT_PREFIX="Only if you are blocked on external work and are about to poll status, run: sleep"
 
 cleanup_runtime_state() {
@@ -241,16 +244,21 @@ if [ -z "$WRAPUP_SOURCE" ] && ! is_infinite_mode && [ "$TURN_COUNT" -ge "$MAX_TU
 fi
 
 WAIT_INSTRUCTION=""
+MONITORING_SLEEP_SECONDS=""
 PHASE="work"
 
 if [ -z "$WRAPUP_SOURCE" ] && ! is_infinite_mode && [ "$TURN_COUNT" -gt "$MONITORING_THRESHOLD" ]; then
   if [ "$TURN_COUNT" -le $((MONITORING_THRESHOLD + MONITORING_PHASE1_OFFSET)) ]; then
-    WAIT_INSTRUCTION="${WAIT_PROMPT_PREFIX} ${MONITORING_PHASE1_WAIT}"
+    MONITORING_SLEEP_SECONDS="$MONITORING_PHASE1_WAIT"
     PHASE="monitoring-${MONITORING_PHASE1_WAIT}s"
   else
-    WAIT_INSTRUCTION="${WAIT_PROMPT_PREFIX} ${MONITORING_PHASE2_WAIT}"
+    MONITORING_SLEEP_SECONDS="$MONITORING_PHASE2_WAIT"
     PHASE="monitoring-${MONITORING_PHASE2_WAIT}s"
   fi
+fi
+
+if [ "$PROVIDER" != "codex" ] && [ -n "$MONITORING_SLEEP_SECONDS" ]; then
+  WAIT_INSTRUCTION="${WAIT_PROMPT_PREFIX} ${MONITORING_SLEEP_SECONDS}"
 fi
 
 REVIEW_ENABLED=0
@@ -267,8 +275,13 @@ if [ "$REVIEW_ENABLED" != "1" ]; then
   printf '%s\n' "$TURN_COUNT" > "$BLOCKED_FILE"
 fi
 
-if [ "$BASE_DELAY" -gt 0 ]; then
+if ! is_infinite_mode && [ "$BASE_DELAY" -gt 0 ]; then
   sleep "$BASE_DELAY"
+fi
+
+if [ "$PROVIDER" = "codex" ] && [ -n "$MONITORING_SLEEP_SECONDS" ] && [ "$MONITORING_SLEEP_SECONDS" -gt 0 ]; then
+  log_debug "codex monitoring sleep seconds=$MONITORING_SLEEP_SECONDS turn=$TURN_COUNT"
+  sleep "$MONITORING_SLEEP_SECONDS"
 fi
 
 if is_infinite_mode; then
