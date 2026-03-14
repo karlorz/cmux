@@ -11,7 +11,7 @@ Use this skill when the user asks for `$autopilot_reset` or wants autopilot stat
 ## Defaults
 
 - Target: the current Codex autopilot session
-- Default mode: `status`
+- Default mode: `reset`
 
 ## Supported modes
 
@@ -26,7 +26,7 @@ Use this skill when the user asks for `$autopilot_reset` or wants autopilot stat
 ## Workflow
 
 1. Parse the requested mode.
-2. If no mode is provided, use `status`.
+2. If no mode is provided, use `reset`.
 3. Run the shared repo script with the Codex target baked in:
 
 ```bash
@@ -39,6 +39,7 @@ AUTOPILOT_PROVIDER=codex bash "$ROOT"/scripts/autopilot-reset.sh <mode>
 ## Examples
 
 ```bash
+$autopilot_reset
 $autopilot_reset status
 $autopilot_reset stop
 $autopilot_reset debug-on

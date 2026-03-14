@@ -13,4 +13,15 @@ export CMUX_AUTOPILOT_ENABLE_REVIEW_WINDOW="${CMUX_AUTOPILOT_ENABLE_REVIEW_WINDO
 export CMUX_AUTOPILOT_INLINE_WRAPUP="${CMUX_AUTOPILOT_INLINE_WRAPUP:-1}"
 export CMUX_SESSION_ACTIVITY_SCRIPT="${CMUX_SESSION_ACTIVITY_SCRIPT:-$PROJECT_DIR/.claude/hooks/session-activity-capture.sh}"
 
+# Codex launches hook commands through the user's login shell. If shell startup
+# exports stale AUTOPILOT_* defaults, ordinary interactive sessions can be
+# forced into autopilot unexpectedly. Gate Codex autopilot on the cmux-scoped
+# flag and only allow the generic env var path when the wrapper is explicitly
+# enabled by the autopilot runner.
+if [ "$CMUX_AUTOPILOT_ENABLED" = "1" ]; then
+  export AUTOPILOT_KEEP_RUNNING_DISABLED="${AUTOPILOT_KEEP_RUNNING_DISABLED:-0}"
+else
+  export AUTOPILOT_KEEP_RUNNING_DISABLED="1"
+fi
+
 exec "$PROJECT_DIR/scripts/hooks/cmux-autopilot-stop-core.sh"
