@@ -10,6 +10,9 @@
 
 set -euo pipefail
 
+unset AUTOPILOT_DELAY AUTOPILOT_IDLE_THRESHOLD AUTOPILOT_MAX_TURNS AUTOPILOT_MONITORING_THRESHOLD
+unset CMUX_AUTOPILOT_DELAY CMUX_AUTOPILOT_IDLE_THRESHOLD CMUX_AUTOPILOT_MAX_TURNS CMUX_AUTOPILOT_MONITORING_THRESHOLD
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 HOOKS_DIR="$PROJECT_DIR/.claude/hooks"
@@ -117,6 +120,7 @@ INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":false}'
 # Run autopilot hook (should block)
 AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CLAUDE_AUTOPILOT_MAX_TURNS=20 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
@@ -133,6 +137,7 @@ assert_eq "autopilot output block decision" "block" "$DECISION"
 REVIEW_EXIT=0
 echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CODEX_REVIEW_DISABLED=0 \
   CODEX_REVIEW_DEBUG=1 \
   CODEX_REVIEW_DRY_RUN=1 \
@@ -163,6 +168,7 @@ INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":false}'
 # Run autopilot hook (should allow - max turns reached)
 AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CLAUDE_AUTOPILOT_MAX_TURNS=1 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
@@ -178,6 +184,7 @@ assert_eq "autopilot output empty (allowed stop)" "" "$AUTOPILOT_OUTPUT"
 REVIEW_EXIT=0
 echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CODEX_REVIEW_DISABLED=0 \
   CODEX_REVIEW_DEBUG=1 \
   CODEX_REVIEW_DRY_RUN=1 \
@@ -265,6 +272,7 @@ INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":true}'
 # (autopilot is first in chain, MAX_TURNS is the only loop guard)
 AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CLAUDE_AUTOPILOT_MAX_TURNS=20 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
@@ -285,6 +293,7 @@ assert_eq "turn counter incremented to 1" "1" "$TURN_COUNT"
 REVIEW_EXIT=0
 echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CODEX_REVIEW_DISABLED=0 \
   CODEX_REVIEW_DEBUG=1 \
   CODEX_REVIEW_DRY_RUN=1 \
@@ -314,6 +323,7 @@ INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":false}'
 # Run autopilot hook (should detect stop file, clean flag, and allow)
 AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
   bash "$AUTOPILOT_HOOK" 2>/dev/null) || true
@@ -356,6 +366,60 @@ assert_log_contains "debug log shows proceeding" "/tmp/codex-review-debug.log" "
 cleanup_session "$SID"
 
 # ============================================================================
+# Test 7a: Generic AUTOPILOT_* aliases override legacy CLAUDE_* values
+# ============================================================================
+echo ""
+echo -e "${YELLOW}Test 7a: Generic AUTOPILOT_* aliases override CLAUDE_*${NC}"
+
+SID="test-stop-hook-7a"
+cleanup_session "$SID"
+
+echo "0" > "/tmp/claude-autopilot-turns-${SID}"
+
+INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":false}'
+
+AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+  AUTOPILOT_MAX_TURNS=1 \
+  AUTOPILOT_DELAY=0 \
+  CLAUDE_AUTOPILOT_MAX_TURNS=20 \
+  CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
+  bash "$AUTOPILOT_HOOK" 2>/dev/null) || true
+
+assert_eq "generic AUTOPILOT_MAX_TURNS allows stop at turn 1" "" "$AUTOPILOT_OUTPUT"
+assert_file_exists "completed marker written using generic alias" "/tmp/claude-autopilot-completed-${SID}"
+
+cleanup_session "$SID"
+
+# ============================================================================
+# Test 7b: Debug flag file enables autopilot debug logging
+# ============================================================================
+echo ""
+echo -e "${YELLOW}Test 7b: Debug flag file enables autopilot debug logging${NC}"
+
+SID="test-stop-hook-7b"
+cleanup_session "$SID"
+rm -f /tmp/claude-autopilot-debug.log
+touch /tmp/claude-autopilot-debug-enabled
+
+INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":false}'
+
+AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
+  CLAUDE_AUTOPILOT=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+  CLAUDE_AUTOPILOT_MAX_TURNS=20 \
+  CLAUDE_AUTOPILOT_DELAY=0 \
+  CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
+  bash "$AUTOPILOT_HOOK" 2>/dev/null) || true
+
+DECISION=$(echo "$AUTOPILOT_OUTPUT" | jq -r '.decision' 2>/dev/null || echo "")
+assert_eq "debug flag run still blocks normally" "block" "$DECISION"
+assert_log_contains "autopilot debug log captures session id" "/tmp/claude-autopilot-debug.log" "$SID"
+
+rm -f /tmp/claude-autopilot-debug-enabled /tmp/claude-autopilot-debug.log
+cleanup_session "$SID"
+
+# ============================================================================
 # Test 8: Smart delay escalation - work phase vs monitoring phase
 # ============================================================================
 echo ""
@@ -369,6 +433,7 @@ INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":false}'
 # Turn 1: should be "work" phase (no sleep instruction in output)
 AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CLAUDE_AUTOPILOT_MAX_TURNS=30 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_AUTOPILOT_MONITORING_THRESHOLD=3 \
@@ -385,6 +450,7 @@ assert_eq "turn 1 starts with continue guidance" "1" "$STARTS_WITH_CONTINUE"
 # Turn 4 (threshold=3, so turn 4 is monitoring phase 1): should include "sleep 30"
 echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CLAUDE_AUTOPILOT_MAX_TURNS=30 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_AUTOPILOT_MONITORING_THRESHOLD=3 \
@@ -393,6 +459,7 @@ echo "$INPUT_JSON" | \
   bash "$AUTOPILOT_HOOK" >/dev/null 2>&1 || true
 echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CLAUDE_AUTOPILOT_MAX_TURNS=30 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_AUTOPILOT_MONITORING_THRESHOLD=3 \
@@ -402,6 +469,7 @@ echo "$INPUT_JSON" | \
 
 AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CLAUDE_AUTOPILOT_MAX_TURNS=30 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_AUTOPILOT_MONITORING_THRESHOLD=3 \
@@ -421,6 +489,7 @@ assert_eq "turn 4 sleep guidance is conditional" "1" "$HAS_CONDITIONAL_WAIT_30"
 for i in $(seq 5 8); do
   echo "$INPUT_JSON" | \
     CLAUDE_AUTOPILOT=1 \
+    AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
     CLAUDE_AUTOPILOT_MAX_TURNS=30 \
     CLAUDE_AUTOPILOT_DELAY=0 \
     CLAUDE_AUTOPILOT_MONITORING_THRESHOLD=3 \
@@ -431,6 +500,7 @@ done
 
 AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CLAUDE_AUTOPILOT_MAX_TURNS=30 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_AUTOPILOT_MONITORING_THRESHOLD=3 \
@@ -462,6 +532,7 @@ INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":false}'
 for i in $(seq 1 8); do
   AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
     CLAUDE_AUTOPILOT=1 \
+    AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
     CLAUDE_AUTOPILOT_MAX_TURNS=-1 \
     CLAUDE_AUTOPILOT_DELAY=0 \
     CLAUDE_AUTOPILOT_MONITORING_THRESHOLD=3 \
@@ -495,6 +566,7 @@ echo "7" > "/tmp/claude-autopilot-turns-${SID}"
 
 AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CLAUDE_AUTOPILOT_MAX_TURNS=10 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_AUTOPILOT_MONITORING_THRESHOLD=1 \

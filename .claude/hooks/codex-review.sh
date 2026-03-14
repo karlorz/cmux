@@ -231,10 +231,10 @@ TRANSPORT_COOLDOWN_SECONDS="${CODEX_REVIEW_TRANSPORT_COOLDOWN_SECONDS:-300}"
 # Clean up completed marker on exit
 trap 'rm -f "$COMPLETED_FILE"' EXIT
 
-# Autopilot is only active when Claude set it for this run and it has not been
-# explicitly disabled via AUTOPILOT_KEEP_RUNNING_DISABLED=1.
+# Autopilot is only active when Claude set it for this run and it was
+# explicitly enabled via AUTOPILOT_KEEP_RUNNING_DISABLED=0.
 AUTOPILOT_ACTIVE="0"
-if [ "${CLAUDE_AUTOPILOT:-0}" = "1" ] && [ "${AUTOPILOT_KEEP_RUNNING_DISABLED:-0}" != "1" ]; then
+if [ "${CLAUDE_AUTOPILOT:-0}" = "1" ] && [ "${AUTOPILOT_KEEP_RUNNING_DISABLED:-1}" = "0" ]; then
   AUTOPILOT_ACTIVE="1"
 fi
 debug_log "AUTOPILOT_ACTIVE: $AUTOPILOT_ACTIVE, AUTOPILOT_BLOCKED_FILE exists: $([ -f "$AUTOPILOT_BLOCKED_FILE" ] && echo 'true' || echo 'false')"
@@ -323,7 +323,7 @@ if [ "${#ISSUE_SECTIONS[@]}" -gt 0 ]; then
     TURN_FILE="/tmp/claude-autopilot-turns-${SESSION_ID}"
     if [ -f "$TURN_FILE" ]; then
       CURRENT_TURN=$(cat "$TURN_FILE" 2>/dev/null || echo "0")
-      AP_MAX="${CLAUDE_AUTOPILOT_MAX_TURNS:-20}"
+      AP_MAX="${AUTOPILOT_MAX_TURNS:-${CMUX_AUTOPILOT_MAX_TURNS:-${CLAUDE_AUTOPILOT_MAX_TURNS:-20}}}"
       REMAINING=$((AP_MAX - CURRENT_TURN))
       if [ "$REMAINING" -gt 0 ]; then
         REMAINING_INFO=" You have $REMAINING autopilot turns remaining to address these."

@@ -1,0 +1,16 @@
+#!/bin/bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+export CMUX_HOOK_PROVIDER="codex"
+export CMUX_PROJECT_DIR="${CMUX_PROJECT_DIR:-$PROJECT_DIR}"
+export CMUX_AUTOPILOT_ENABLED="${CMUX_AUTOPILOT_ENABLED:-0}"
+export CMUX_AUTOPILOT_STATE_PREFIX="${CMUX_AUTOPILOT_STATE_PREFIX:-codex-autopilot}"
+export CMUX_AUTOPILOT_CURRENT_SESSION_FILE="${CMUX_AUTOPILOT_CURRENT_SESSION_FILE:-/tmp/codex-current-session-id}"
+export CMUX_AUTOPILOT_ENABLE_REVIEW_WINDOW="${CMUX_AUTOPILOT_ENABLE_REVIEW_WINDOW:-0}"
+export CMUX_AUTOPILOT_INLINE_WRAPUP="${CMUX_AUTOPILOT_INLINE_WRAPUP:-1}"
+export CMUX_SESSION_ACTIVITY_SCRIPT="${CMUX_SESSION_ACTIVITY_SCRIPT:-$PROJECT_DIR/.claude/hooks/session-activity-capture.sh}"
+
+exec "$PROJECT_DIR/scripts/hooks/cmux-autopilot-stop-core.sh"
