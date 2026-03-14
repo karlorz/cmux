@@ -9,6 +9,8 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 HOOK="$SCRIPT_DIR/autopilot-stop.sh"
 TEST_SESSION="codex-hook-test-$$"
 STOP_FILE="/tmp/codex-test-stop-${TEST_SESSION}"
+FAKE_BIN_DIR="/tmp/codex-hook-bin-${TEST_SESSION}"
+FAKE_SLEEP_LOG="/tmp/codex-hook-sleep-${TEST_SESSION}.log"
 PASS=0
 FAIL=0
 CONDITIONAL_WAIT_TEXT="Only if you are blocked on external work and are about to poll status"
@@ -23,8 +25,23 @@ cleanup() {
   rm -f "/tmp/codex-autopilot-stop-${TEST_SESSION}"
   rm -f "/tmp/codex-autopilot-turns-${TEST_SESSION}"
   rm -f "/tmp/codex-autopilot-wrapup-${TEST_SESSION}"
+  rm -f "$FAKE_SLEEP_LOG"
+  rm -rf "$FAKE_BIN_DIR"
 }
 trap cleanup EXIT
+
+assert_eq() {
+  local desc="$1"
+  local expected="$2"
+  local actual="$3"
+  if [ "$expected" = "$actual" ]; then
+    echo "  PASS: $desc"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL: $desc (expected: $expected, got: $actual)"
+    FAIL=$((FAIL + 1))
+  fi
+}
 
 assert() {
   local desc="$1"
@@ -38,15 +55,36 @@ assert() {
   fi
 }
 
-reason_text() {
-  jq -r '.reason' <<<"$1"
+setup_fake_sleep() {
+  mkdir -p "$FAKE_BIN_DIR"
+  cat > "$FAKE_BIN_DIR/sleep" <<EOF
+#!/bin/bash
+set -euo pipefail
+printf '%s\n' "\$1" >> "$FAKE_SLEEP_LOG"
+exit 0
+EOF
+  chmod +x "$FAKE_BIN_DIR/sleep"
 }
 
-assert_reason_contains() {
-  local desc="$1"
-  local output="$2"
-  local pattern="$3"
-  assert "$desc" grep -Fq "$pattern" <<<"$(reason_text "$output")"
+sleep_log_line_count() {
+  if [ -f "$FAKE_SLEEP_LOG" ]; then
+    wc -l < "$FAKE_SLEEP_LOG" | tr -d '[:space:]'
+  else
+    echo "0"
+  fi
+}
+
+sleep_log_match_count() {
+  local seconds="$1"
+  if [ -f "$FAKE_SLEEP_LOG" ]; then
+    grep -c "^${seconds}\$" "$FAKE_SLEEP_LOG" || true
+  else
+    echo "0"
+  fi
+}
+
+reason_text() {
+  jq -r '.reason' <<<"$1"
 }
 
 assert_reason_not_contains() {
@@ -71,11 +109,32 @@ run_enabled_hook() {
     AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
     AUTOPILOT_ENABLED=1 \
     AUTOPILOT_DELAY=0 \
+    AUTOPILOT_MONITORING_THRESHOLD=999999 \
     "$@" \
     bash "$HOOK"
 }
 
+run_hidden_sleep_monitoring_hook() {
+  local input_json="$1"
+  shift
+
+  run_enabled_hook \
+    "$input_json" \
+    AUTOPILOT_MAX_TURNS=30 \
+    AUTOPILOT_MONITORING_THRESHOLD=1 \
+    AUTOPILOT_MONITORING_PHASE1_OFFSET=1 \
+    AUTOPILOT_MONITORING_PHASE1_WAIT=1 \
+    AUTOPILOT_MONITORING_PHASE2_WAIT=2 \
+    AUTOPILOT_IDLE_THRESHOLD=999 \
+    PATH="$FAKE_BIN_DIR:$PATH" \
+    "$@"
+}
+
 echo "=== Codex autopilot hook smoke test ==="
+
+assert "Codex Stop hook timeout allows hidden monitoring sleeps" jq -e '
+  .hooks.Stop[0].hooks[0].timeout >= 75
+' "$PROJECT_DIR/.codex/hooks.json"
 
 cleanup
 touch "$STOP_FILE"
@@ -180,51 +239,45 @@ assert "Stale generic enable does not create blocked flag" test ! -f "/tmp/codex
 
 cleanup
 INPUT_JSON="{\"session_id\":\"${TEST_SESSION}\",\"stop_hook_active\":false}"
+setup_fake_sleep
 
-WORK_PHASE_OUTPUT=$(run_enabled_hook \
-  "$INPUT_JSON" \
+DEFAULT_THRESHOLD_OUTPUT=$(echo "$INPUT_JSON" | env \
+  CMUX_AUTOPILOT_ENABLED=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+  AUTOPILOT_ENABLED=1 \
+  AUTOPILOT_DELAY=0 \
   AUTOPILOT_MAX_TURNS=30 \
-  AUTOPILOT_MONITORING_THRESHOLD=3 \
-  AUTOPILOT_IDLE_THRESHOLD=999)
+  AUTOPILOT_IDLE_THRESHOLD=999 \
+  PATH="$FAKE_BIN_DIR:$PATH" \
+  bash "$HOOK")
+
+assert_reason_not_contains "Codex first-hook monitoring omits prompt sleep guidance" "$DEFAULT_THRESHOLD_OUTPUT" "sleep 30"
+assert_reason_not_contains "Codex first-hook monitoring omits conditional wait text" "$DEFAULT_THRESHOLD_OUTPUT" "$CONDITIONAL_WAIT_TEXT"
+assert_eq "Codex default threshold triggers hidden 30s sleep on turn 1" "1" "$(sleep_log_match_count 30)"
+assert_eq "Codex default threshold logs one hidden sleep total" "1" "$(sleep_log_line_count)"
+
+cleanup
+INPUT_JSON="{\"session_id\":\"${TEST_SESSION}\",\"stop_hook_active\":false}"
+setup_fake_sleep
+
+WORK_PHASE_OUTPUT=$(run_hidden_sleep_monitoring_hook "$INPUT_JSON")
 
 assert_reason_not_contains "Codex turn 1 work phase has no wait instruction" "$WORK_PHASE_OUTPUT" "sleep"
+assert_eq "Codex turn 1 work phase does not trigger hidden sleep" "0" "$(sleep_log_line_count)"
 
-run_enabled_hook \
-  "$INPUT_JSON" \
-  AUTOPILOT_MAX_TURNS=30 \
-  AUTOPILOT_MONITORING_THRESHOLD=3 \
-  AUTOPILOT_IDLE_THRESHOLD=999 >/dev/null
-run_enabled_hook \
-  "$INPUT_JSON" \
-  AUTOPILOT_MAX_TURNS=30 \
-  AUTOPILOT_MONITORING_THRESHOLD=3 \
-  AUTOPILOT_IDLE_THRESHOLD=999 >/dev/null
+PHASE1_OUTPUT=$(run_hidden_sleep_monitoring_hook "$INPUT_JSON")
 
-PHASE1_OUTPUT=$(run_enabled_hook \
-  "$INPUT_JSON" \
-  AUTOPILOT_MAX_TURNS=30 \
-  AUTOPILOT_MONITORING_THRESHOLD=3 \
-  AUTOPILOT_IDLE_THRESHOLD=999)
+assert_reason_not_contains "Codex monitoring phase 1 omits prompt sleep guidance" "$PHASE1_OUTPUT" "sleep 1"
+assert_reason_not_contains "Codex monitoring phase 1 omits conditional wait text" "$PHASE1_OUTPUT" "$CONDITIONAL_WAIT_TEXT"
+assert_eq "Codex monitoring phase 1 triggers one hidden sleep" "1" "$(sleep_log_match_count 1)"
+assert_eq "Codex monitoring phase 1 logs one hidden sleep total" "1" "$(sleep_log_line_count)"
 
-assert_reason_contains "Codex monitoring phase 1 includes sleep 30" "$PHASE1_OUTPUT" "sleep 30"
-assert_reason_contains "Codex monitoring phase 1 wait guidance is conditional" "$PHASE1_OUTPUT" "$CONDITIONAL_WAIT_TEXT"
+PHASE2_OUTPUT=$(run_hidden_sleep_monitoring_hook "$INPUT_JSON")
 
-for _turn in 5 6 7 8; do
-  run_enabled_hook \
-    "$INPUT_JSON" \
-    AUTOPILOT_MAX_TURNS=30 \
-    AUTOPILOT_MONITORING_THRESHOLD=3 \
-    AUTOPILOT_IDLE_THRESHOLD=999 >/dev/null
-done
-
-PHASE2_OUTPUT=$(run_enabled_hook \
-  "$INPUT_JSON" \
-  AUTOPILOT_MAX_TURNS=30 \
-  AUTOPILOT_MONITORING_THRESHOLD=3 \
-  AUTOPILOT_IDLE_THRESHOLD=999)
-
-assert_reason_contains "Codex monitoring phase 2 includes sleep 60" "$PHASE2_OUTPUT" "sleep 60"
-assert_reason_contains "Codex monitoring phase 2 wait guidance is conditional" "$PHASE2_OUTPUT" "$CONDITIONAL_WAIT_TEXT"
+assert_reason_not_contains "Codex monitoring phase 2 omits prompt sleep guidance" "$PHASE2_OUTPUT" "sleep 2"
+assert_reason_not_contains "Codex monitoring phase 2 omits conditional wait text" "$PHASE2_OUTPUT" "$CONDITIONAL_WAIT_TEXT"
+assert_eq "Codex monitoring phase 2 triggers one hidden 2s sleep" "1" "$(sleep_log_match_count 2)"
+assert_eq "Codex monitoring phases log two hidden sleeps total" "2" "$(sleep_log_line_count)"
 
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

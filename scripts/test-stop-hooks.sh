@@ -528,29 +528,51 @@ SID="test-stop-hook-9"
 cleanup_session "$SID"
 
 INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":false}'
+FAKE_SLEEP_DIR="/tmp/test-stop-hook-9-bin-$$"
+FAKE_SLEEP_LOG="/tmp/test-stop-hook-9-sleep.log"
+
+rm -rf "$FAKE_SLEEP_DIR"
+rm -f "$FAKE_SLEEP_LOG"
+mkdir -p "$FAKE_SLEEP_DIR"
+cat > "$FAKE_SLEEP_DIR/sleep" <<EOF
+#!/bin/bash
+set -euo pipefail
+printf '%s\n' "\$1" >> "$FAKE_SLEEP_LOG"
+exit 0
+EOF
+chmod +x "$FAKE_SLEEP_DIR/sleep"
 
 for i in $(seq 1 8); do
   AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
     CLAUDE_AUTOPILOT=1 \
     AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
     CLAUDE_AUTOPILOT_MAX_TURNS=-1 \
-    CLAUDE_AUTOPILOT_DELAY=0 \
+    CLAUDE_AUTOPILOT_DELAY=5 \
     CLAUDE_AUTOPILOT_MONITORING_THRESHOLD=3 \
     CLAUDE_AUTOPILOT_IDLE_THRESHOLD=999 \
     CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
+    PATH="$FAKE_SLEEP_DIR:$PATH" \
     bash "$AUTOPILOT_HOOK" 2>/dev/null) || true
 done
 
 REASON=$(echo "$AUTOPILOT_OUTPUT" | jq -r '.reason' 2>/dev/null || echo "")
 HAS_SLEEP=$(echo "$REASON" | grep -c "sleep" || true)
 TURN_COUNT=$(cat "/tmp/claude-autopilot-turns-${SID}" 2>/dev/null || echo "")
+if [ -f "$FAKE_SLEEP_LOG" ]; then
+  SLEEP_CALLS=$(wc -l < "$FAKE_SLEEP_LOG" | tr -d '[:space:]')
+else
+  SLEEP_CALLS="0"
+fi
 
 assert_eq "infinite mode has no sleep instruction after many turns" "0" "$HAS_SLEEP"
 assert_eq "infinite mode keeps incrementing turns" "8" "$TURN_COUNT"
+assert_eq "infinite mode skips all hook-side sleep calls" "0" "$SLEEP_CALLS"
 assert_file_exists "infinite mode keeps blocked flag set" "/tmp/claude-autopilot-blocked-${SID}"
 assert_file_not_exists "infinite mode does not write completed marker" "/tmp/claude-autopilot-completed-${SID}"
 
 cleanup_session "$SID"
+rm -rf "$FAKE_SLEEP_DIR"
+rm -f "$FAKE_SLEEP_LOG"
 
 # ============================================================================
 # Test 10: Review-enabled prompt keeps review guidance first

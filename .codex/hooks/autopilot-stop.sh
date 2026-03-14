@@ -11,6 +11,9 @@ export CMUX_AUTOPILOT_STATE_PREFIX="${CMUX_AUTOPILOT_STATE_PREFIX:-codex-autopil
 export CMUX_AUTOPILOT_CURRENT_SESSION_FILE="${CMUX_AUTOPILOT_CURRENT_SESSION_FILE:-/tmp/codex-current-session-id}"
 export CMUX_AUTOPILOT_ENABLE_REVIEW_WINDOW="${CMUX_AUTOPILOT_ENABLE_REVIEW_WINDOW:-0}"
 export CMUX_AUTOPILOT_INLINE_WRAPUP="${CMUX_AUTOPILOT_INLINE_WRAPUP:-1}"
+# Codex uses hidden monitoring sleeps, so default to monitoring from the
+# first hook instead of waiting for a later visible polling phase.
+export CMUX_AUTOPILOT_MONITORING_THRESHOLD="${CMUX_AUTOPILOT_MONITORING_THRESHOLD:-0}"
 export CMUX_SESSION_ACTIVITY_SCRIPT="${CMUX_SESSION_ACTIVITY_SCRIPT:-$PROJECT_DIR/.claude/hooks/session-activity-capture.sh}"
 
 # Codex launches hook commands through the user's login shell. If shell startup
