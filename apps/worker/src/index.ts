@@ -1588,43 +1588,39 @@ async function createTerminal(
       try {
         // 1. Run system-level startup commands (like timezone) BEFORE creating the PTY session
         // These run as separate processes, not as PTY input, to ensure they complete
-        const systemCommands = startupCommands.filter(cmd =>
-          cmd.includes("timedatectl") || cmd.includes("/etc/localtime") || cmd.includes("/etc/timezone")
-        );
-        const shellCommands = startupCommands.filter(cmd =>
-          !cmd.includes("timedatectl") && !cmd.includes("/etc/localtime") && !cmd.includes("/etc/timezone")
-        );
+        const isSystemCommand = (cmd: string) =>
+          cmd.includes("timedatectl") || cmd.includes("/etc/localtime") || cmd.includes("/etc/timezone");
+        const systemCommands: string[] = [];
+        const shellCommands: string[] = [];
+        for (const cmd of startupCommands) {
+          (isSystemCommand(cmd) ? systemCommands : shellCommands).push(cmd);
+        }
 
         if (systemCommands.length > 0) {
           log("INFO", `[createTerminal] Running ${systemCommands.length} system command(s) before PTY creation`);
           for (const cmd of systemCommands) {
-            try {
-              log("INFO", `[createTerminal] Running system command: ${cmd}`);
-              await new Promise<void>((resolve, reject) => {
-                const p = spawn("bash", ["-lc", cmd], {
-                  cwd: cwd || "/root/workspace",
-                  env: { ...process.env, ...env },
-                  stdio: ["ignore", "pipe", "pipe"],
-                });
-                let stderr = "";
-                p.stderr.on("data", (d) => { stderr += d.toString(); });
-                p.on("exit", (code) => {
-                  if (code === 0) {
-                    log("INFO", `[createTerminal] System command succeeded: ${cmd.slice(0, 50)}...`);
-                    resolve();
-                  } else {
-                    log("WARN", `[createTerminal] System command failed (${code}): ${cmd.slice(0, 50)}...`, new Error(stderr));
-                    resolve(); // Don't reject - continue with other commands
-                  }
-                });
-                p.on("error", (e) => {
-                  log("ERROR", `[createTerminal] System command error: ${cmd.slice(0, 50)}...`, e);
-                  resolve(); // Don't reject
-                });
+            log("INFO", `[createTerminal] Running system command: ${cmd}`);
+            await new Promise<void>((resolve) => {
+              const p = spawn("bash", ["-lc", cmd], {
+                cwd: cwd || "/root/workspace",
+                env: { ...process.env, ...env },
+                stdio: ["ignore", "pipe", "pipe"],
               });
-            } catch (e) {
-              log("ERROR", `[createTerminal] Failed to run system command`, e instanceof Error ? e : new Error(String(e)));
-            }
+              let stderr = "";
+              p.stderr.on("data", (d) => { stderr += d.toString(); });
+              p.on("exit", (code) => {
+                if (code === 0) {
+                  log("INFO", `[createTerminal] System command succeeded: ${cmd.slice(0, 50)}...`);
+                } else {
+                  log("WARN", `[createTerminal] System command failed (${code}): ${cmd.slice(0, 50)}...`, new Error(stderr));
+                }
+                resolve();
+              });
+              p.on("error", (e) => {
+                log("ERROR", `[createTerminal] System command error: ${cmd.slice(0, 50)}...`, e);
+                resolve();
+              });
+            });
           }
         }
 
