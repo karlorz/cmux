@@ -910,6 +910,22 @@ export async function spawnAgent(
       }
     }
 
+    // Apply TZ environment variable as system timezone
+    if (envVars.TZ) {
+      const tz = envVars.TZ;
+      // Validate timezone format (IANA region/city or abbreviation)
+      if (/^[A-Za-z_]+\/[A-Za-z_]+$/.test(tz) || /^(UTC|GMT)$/.test(tz)) {
+        startupCommands.unshift(
+          `timedatectl set-timezone "${tz}" 2>/dev/null || ln -sf /usr/share/zoneinfo/${tz} /etc/localtime`
+        );
+        serverLogger.info(`[AgentSpawner] Setting system timezone to ${tz}`);
+      } else {
+        serverLogger.warn(
+          `[AgentSpawner] Invalid TZ format: ${tz}, skipping timezone setup`
+        );
+      }
+    }
+
     // Replace $PROMPT placeholders in args with $CMUX_PROMPT token for shell-time expansion
     const processedArgs = agent.args.map((arg) => {
       if (arg.includes("$PROMPT")) {
