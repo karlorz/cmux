@@ -51,6 +51,7 @@ import {
 import { env } from "./utils/server-env";
 import { getWwwClient } from "./utils/wwwClient";
 import { getWwwOpenApiModule } from "./utils/wwwOpenApiModule";
+import { buildSystemTimezoneStartupCommand } from "./utils/timezone";
 import { CmuxVSCodeInstance } from "./vscode/CmuxVSCodeInstance";
 import { DockerVSCodeInstance } from "./vscode/DockerVSCodeInstance";
 import { VSCodeInstance } from "./vscode/VSCodeInstance";
@@ -906,6 +907,22 @@ export async function spawnAgent(
         delete envVars[envVar];
         serverLogger.info(
           `[AgentSpawner] Removed ${envVar} from environment for ${agent.name} as requested by agent config`
+        );
+      }
+    }
+
+    if (envVars.TZ) {
+      const timezoneStartupCommand = buildSystemTimezoneStartupCommand(
+        envVars.TZ
+      );
+      if (timezoneStartupCommand) {
+        startupCommands.unshift(timezoneStartupCommand);
+        serverLogger.info(
+          `[AgentSpawner] Will apply system timezone from TZ=${envVars.TZ}`
+        );
+      } else {
+        serverLogger.warn(
+          `[AgentSpawner] Invalid TZ value ${envVars.TZ}, skipping system timezone setup`
         );
       }
     }
