@@ -112,18 +112,20 @@ assert "Legacy CLAUDE alias creates max-turn wrapup marker" grep -q "max-turns" 
 
 cleanup
 
-# Pre-seed turn count to 1 so stop_hook_active=true check passes (requires turn >= 2)
+# Pre-seed turn count to 1 to simulate a repeated Stop event on the same session
 echo "1" > "/tmp/codex-autopilot-turns-${TEST_SESSION}"
 
 STOP_ACTIVE_OUTPUT=$(run_enabled_hook \
-  "{\"session_id\":\"${TEST_SESSION}\",\"stop_hook_active\":true}" || true)
+  "{\"session_id\":\"${TEST_SESSION}\",\"stop_hook_active\":true}" \
+  AUTOPILOT_MAX_TURNS=99999)
 
-assert "Codex repeated stop with stop_hook_active=true allows stop (turn>=2)" test -z "$STOP_ACTIVE_OUTPUT"
-assert "Repeated codex stop does not recreate blocked flag" test ! -f "/tmp/codex-autopilot-blocked-${TEST_SESSION}"
+assert "Codex repeated stop with stop_hook_active=true still blocks" jq -e '.decision == "block"' <<<"$STOP_ACTIVE_OUTPUT"
+assert "Repeated codex stop recreates blocked flag" test -f "/tmp/codex-autopilot-blocked-${TEST_SESSION}"
+assert "Repeated codex stop increments turn counter to 2" grep -q '^2$' "/tmp/codex-autopilot-turns-${TEST_SESSION}"
 
 cleanup
 
-# Test stop_hook_active=true on turn 1 should NOT allow stop (blocks instead)
+# Test stop_hook_active=true on turn 1 should also block
 STOP_ACTIVE_TURN1_OUTPUT=$(run_enabled_hook \
   "{\"session_id\":\"${TEST_SESSION}\",\"stop_hook_active\":true}" \
   AUTOPILOT_MAX_TURNS=99999)
