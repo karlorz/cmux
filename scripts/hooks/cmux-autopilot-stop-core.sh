@@ -180,18 +180,24 @@ elif [ "$INLINE_WRAPUP" = "1" ] && [ "$WRAPUP_SOURCE" = "max-turns" ]; then
   exit 0
 fi
 
-if [ "$PROVIDER" = "codex" ] && [ "$STOP_HOOK_ACTIVE" = "true" ] && [ "$STOP_REQUESTED" -eq 0 ] && [ -z "$WRAPUP_SOURCE" ]; then
-  log_debug "allowing stop because codex stop_hook_active=true"
-  cleanup_runtime_state
-  exit 0
-fi
-
 TURN_COUNT=0
 if [ -f "$TURN_FILE" ]; then
   TURN_COUNT=$(cat "$TURN_FILE" 2>/dev/null || echo "0")
 fi
 TURN_COUNT=$((TURN_COUNT + 1))
 printf '%s\n' "$TURN_COUNT" > "$TURN_FILE"
+
+# Codex stop_hook_active=true: allow stop only after completing at least one full turn
+# This prevents immediate exit on re-invocation while still breaking infinite loops
+if [ "$PROVIDER" = "codex" ] && [ "$STOP_HOOK_ACTIVE" = "true" ] && [ "$STOP_REQUESTED" -eq 0 ] && [ -z "$WRAPUP_SOURCE" ]; then
+  if [ "$TURN_COUNT" -ge 2 ]; then
+    log_debug "allowing stop because codex stop_hook_active=true and turn_count=$TURN_COUNT >= 2"
+    cleanup_runtime_state
+    exit 0
+  else
+    log_debug "ignoring stop_hook_active=true because turn_count=$TURN_COUNT < 2"
+  fi
+fi
 
 if [ -z "$WRAPUP_SOURCE" ]; then
   CURRENT_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
