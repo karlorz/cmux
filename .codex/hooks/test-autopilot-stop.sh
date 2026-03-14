@@ -11,6 +11,7 @@ TEST_SESSION="codex-hook-test-$$"
 STOP_FILE="/tmp/codex-test-stop-${TEST_SESSION}"
 PASS=0
 FAIL=0
+CONDITIONAL_WAIT_TEXT="Only if you are blocked on external work and are about to poll status"
 
 cleanup() {
   rm -f "$STOP_FILE"
@@ -34,6 +35,30 @@ assert() {
   else
     echo "  FAIL: $desc"
     FAIL=$((FAIL + 1))
+  fi
+}
+
+reason_text() {
+  jq -r '.reason' <<<"$1"
+}
+
+assert_reason_contains() {
+  local desc="$1"
+  local output="$2"
+  local pattern="$3"
+  assert "$desc" grep -Fq "$pattern" <<<"$(reason_text "$output")"
+}
+
+assert_reason_not_contains() {
+  local desc="$1"
+  local output="$2"
+  local pattern="$3"
+  if grep -Fq "$pattern" <<<"$(reason_text "$output")"; then
+    echo "  FAIL: $desc"
+    FAIL=$((FAIL + 1))
+  else
+    echo "  PASS: $desc"
+    PASS=$((PASS + 1))
   fi
 }
 
@@ -152,6 +177,54 @@ STALE_LOGIN_ENV_OUTPUT=$(echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
 
 assert "Stale generic AUTOPILOT_KEEP_RUNNING_DISABLED=0 does not enable Codex autopilot without CMUX_AUTOPILOT_ENABLED=1" test -z "$STALE_LOGIN_ENV_OUTPUT"
 assert "Stale generic enable does not create blocked flag" test ! -f "/tmp/codex-autopilot-blocked-${TEST_SESSION}"
+
+cleanup
+INPUT_JSON="{\"session_id\":\"${TEST_SESSION}\",\"stop_hook_active\":false}"
+
+WORK_PHASE_OUTPUT=$(run_enabled_hook \
+  "$INPUT_JSON" \
+  AUTOPILOT_MAX_TURNS=30 \
+  AUTOPILOT_MONITORING_THRESHOLD=3 \
+  AUTOPILOT_IDLE_THRESHOLD=999)
+
+assert_reason_not_contains "Codex turn 1 work phase has no wait instruction" "$WORK_PHASE_OUTPUT" "sleep"
+
+run_enabled_hook \
+  "$INPUT_JSON" \
+  AUTOPILOT_MAX_TURNS=30 \
+  AUTOPILOT_MONITORING_THRESHOLD=3 \
+  AUTOPILOT_IDLE_THRESHOLD=999 >/dev/null
+run_enabled_hook \
+  "$INPUT_JSON" \
+  AUTOPILOT_MAX_TURNS=30 \
+  AUTOPILOT_MONITORING_THRESHOLD=3 \
+  AUTOPILOT_IDLE_THRESHOLD=999 >/dev/null
+
+PHASE1_OUTPUT=$(run_enabled_hook \
+  "$INPUT_JSON" \
+  AUTOPILOT_MAX_TURNS=30 \
+  AUTOPILOT_MONITORING_THRESHOLD=3 \
+  AUTOPILOT_IDLE_THRESHOLD=999)
+
+assert_reason_contains "Codex monitoring phase 1 includes sleep 30" "$PHASE1_OUTPUT" "sleep 30"
+assert_reason_contains "Codex monitoring phase 1 wait guidance is conditional" "$PHASE1_OUTPUT" "$CONDITIONAL_WAIT_TEXT"
+
+for _turn in 5 6 7 8; do
+  run_enabled_hook \
+    "$INPUT_JSON" \
+    AUTOPILOT_MAX_TURNS=30 \
+    AUTOPILOT_MONITORING_THRESHOLD=3 \
+    AUTOPILOT_IDLE_THRESHOLD=999 >/dev/null
+done
+
+PHASE2_OUTPUT=$(run_enabled_hook \
+  "$INPUT_JSON" \
+  AUTOPILOT_MAX_TURNS=30 \
+  AUTOPILOT_MONITORING_THRESHOLD=3 \
+  AUTOPILOT_IDLE_THRESHOLD=999)
+
+assert_reason_contains "Codex monitoring phase 2 includes sleep 60" "$PHASE2_OUTPUT" "sleep 60"
+assert_reason_contains "Codex monitoring phase 2 wait guidance is conditional" "$PHASE2_OUTPUT" "$CONDITIONAL_WAIT_TEXT"
 
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

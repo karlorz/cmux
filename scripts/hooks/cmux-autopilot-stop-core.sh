@@ -83,6 +83,9 @@ EXTERNAL_STOP_FILE="$(first_set "${AUTOPILOT_STOP_FILE:-}" "${CMUX_AUTOPILOT_STO
 MONITORING_PHASE1_OFFSET=5
 MONITORING_PHASE1_WAIT=30
 MONITORING_PHASE2_WAIT=60
+# BASE_DELAY is the only enforced between-turn sleep in this hook.
+# The longer 30s/60s monitoring waits stay in the prompt so long polling
+# remains visible to the user instead of hiding inside the hook runtime.
 WAIT_PROMPT_PREFIX="Only if you are blocked on external work and are about to poll status, run: sleep"
 
 cleanup_runtime_state() {
