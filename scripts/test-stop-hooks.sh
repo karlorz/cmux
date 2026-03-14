@@ -10,6 +10,9 @@
 
 set -euo pipefail
 
+unset AUTOPILOT_DELAY AUTOPILOT_IDLE_THRESHOLD AUTOPILOT_MAX_TURNS AUTOPILOT_MONITORING_THRESHOLD
+unset CMUX_AUTOPILOT_DELAY CMUX_AUTOPILOT_IDLE_THRESHOLD CMUX_AUTOPILOT_MAX_TURNS CMUX_AUTOPILOT_MONITORING_THRESHOLD
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 HOOKS_DIR="$PROJECT_DIR/.claude/hooks"
@@ -386,6 +389,34 @@ AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
 assert_eq "generic AUTOPILOT_MAX_TURNS allows stop at turn 1" "" "$AUTOPILOT_OUTPUT"
 assert_file_exists "completed marker written using generic alias" "/tmp/claude-autopilot-completed-${SID}"
 
+cleanup_session "$SID"
+
+# ============================================================================
+# Test 7b: Debug flag file enables autopilot debug logging
+# ============================================================================
+echo ""
+echo -e "${YELLOW}Test 7b: Debug flag file enables autopilot debug logging${NC}"
+
+SID="test-stop-hook-7b"
+cleanup_session "$SID"
+rm -f /tmp/claude-autopilot-debug.log
+touch /tmp/claude-autopilot-debug-enabled
+
+INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":false}'
+
+AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
+  CLAUDE_AUTOPILOT=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+  CLAUDE_AUTOPILOT_MAX_TURNS=20 \
+  CLAUDE_AUTOPILOT_DELAY=0 \
+  CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
+  bash "$AUTOPILOT_HOOK" 2>/dev/null) || true
+
+DECISION=$(echo "$AUTOPILOT_OUTPUT" | jq -r '.decision' 2>/dev/null || echo "")
+assert_eq "debug flag run still blocks normally" "block" "$DECISION"
+assert_log_contains "autopilot debug log captures session id" "/tmp/claude-autopilot-debug.log" "$SID"
+
+rm -f /tmp/claude-autopilot-debug-enabled /tmp/claude-autopilot-debug.log
 cleanup_session "$SID"
 
 # ============================================================================

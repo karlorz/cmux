@@ -49,6 +49,16 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "Missing command: $1"
 }
 
+first_set() {
+  local value=""
+  for value in "$@"; do
+    if [[ -n "$value" ]]; then
+      printf '%s\n' "$value"
+      return 0
+    fi
+  done
+}
+
 is_pos_int() {
   [[ "${1:-}" =~ ^[0-9]+$ ]] && [[ "$1" -gt 0 ]]
 }
@@ -258,6 +268,11 @@ EOF
 start_epoch="$(date +%s)"
 deadline_epoch="$((start_epoch + (MINUTES * 60)))"
 wrap_up_threshold="$((WRAP_UP_MINUTES * 60))"
+default_hook_max_turns=$(( (MINUTES / TURN_MINUTES) * 3 ))
+if [[ "$default_hook_max_turns" -lt 1 ]]; then
+  default_hook_max_turns=1
+fi
+hook_max_turns="$(first_set "${AUTOPILOT_MAX_TURNS:-}" "${CMUX_AUTOPILOT_MAX_TURNS:-}" "${CLAUDE_AUTOPILOT_MAX_TURNS:-}" "$default_hook_max_turns")"
 
 # For Claude tool: export env vars for autopilot-keep-running hook integration
 if [[ "$TOOL" = "claude" ]]; then
@@ -266,9 +281,8 @@ if [[ "$TOOL" = "claude" ]]; then
   export AUTOPILOT_KEEP_RUNNING_DISABLED=0
   export AUTOPILOT_STOP_FILE="$STOP_FILE"
   export CLAUDE_AUTOPILOT_STOP_FILE="$STOP_FILE"
-  # Calculate max turns based on session duration (3 turns per TURN_MINUTES period)
-  export AUTOPILOT_MAX_TURNS=$(( (MINUTES / TURN_MINUTES) * 3 ))
-  export CLAUDE_AUTOPILOT_MAX_TURNS=$(( (MINUTES / TURN_MINUTES) * 3 ))
+  export AUTOPILOT_MAX_TURNS="$hook_max_turns"
+  export CLAUDE_AUTOPILOT_MAX_TURNS="$hook_max_turns"
 fi
 
 # Background time-watcher: polls every 30s and touches stop file when deadline approaches
@@ -329,8 +343,8 @@ build_hooked_start_prompt() {
   local mission="$4"
 
   cat <<EOF
-You are running in unattended autopilot mode inside a single Codex session.
-The repo-local Stop hook will continue the session automatically until it requests a final wrap-up turn or allows the session to stop.
+You are running in unattended autopilot mode inside a resumed Codex session.
+The repo-local Stop hook may continue the current Codex turn automatically once, and an outer supervisor may resume the same session repeatedly until wrap-up.
 
 Rules:
 - Do not ask for confirmation to continue; just proceed.
@@ -358,7 +372,7 @@ Resume this unattended autopilot session.
 Time left in the overall session: ${time_left} seconds.
 Timebox each work turn: about ${turn_minutes} minutes.
 
-Continue from where you left off. The Stop hook will continue the session automatically until it requests wrap-up.
+Continue from where you left off. The Stop hook may continue the current turn automatically, and the outer autopilot supervisor may resume the same session again until wrap-up.
 
 Mission reminder:
 ${mission}
@@ -369,8 +383,43 @@ Resume this unattended autopilot session.
 Time left in the overall session: ${time_left} seconds.
 Timebox each work turn: about ${turn_minutes} minutes.
 
-Continue from where you left off. The Stop hook will continue the session automatically until it requests wrap-up.
+Continue from where you left off. The Stop hook may continue the current turn automatically, and the outer autopilot supervisor may resume the same session again until wrap-up.
 EOF
+  fi
+}
+
+codex_current_session_id() {
+  local session_file="${CMUX_AUTOPILOT_CURRENT_SESSION_FILE:-/tmp/codex-current-session-id}"
+  if [[ -f "$session_file" ]]; then
+    tr -d '\n' < "$session_file"
+  fi
+}
+
+codex_completed_marker_for_session() {
+  local sid="$1"
+  local state_prefix="${CMUX_AUTOPILOT_STATE_PREFIX:-codex-autopilot}"
+  printf '/tmp/%s-completed-%s\n' "$state_prefix" "$sid"
+}
+
+codex_turns_file_for_session() {
+  local sid="$1"
+  local state_prefix="${CMUX_AUTOPILOT_STATE_PREFIX:-codex-autopilot}"
+  printf '/tmp/%s-turns-%s\n' "$state_prefix" "$sid"
+}
+
+codex_turn_count_for_session() {
+  local sid="$1"
+  local turns_file=""
+  if [[ -z "$sid" ]]; then
+    printf '0\n'
+    return 0
+  fi
+
+  turns_file="$(codex_turns_file_for_session "$sid")"
+  if [[ -f "$turns_file" ]]; then
+    tr -d '\n' < "$turns_file"
+  else
+    printf '0\n'
   fi
 }
 
@@ -646,43 +695,83 @@ print_and_log "Starting agent autopilot"
 print_and_log "Logs: $session_dir"
 print_and_log "Deadline epoch seconds: $deadline_epoch"
 print_and_log "Stop file: $STOP_FILE (touch to stop)"
+print_and_log "Hook max turns: $hook_max_turns"
 
 if [[ "$OPEN_MONITOR" -eq 1 ]]; then
   open_monitor "$run_log"
 fi
 
 if [[ "$TOOL" = "codex" ]]; then
-  max_turns=$(( (MINUTES / TURN_MINUTES) * 3 ))
-  mode="start"
-  if [[ "$RESUME" -eq 1 ]]; then
+  while :; do
+    now_epoch="$(date +%s)"
+    if [[ "$now_epoch" -ge "$deadline_epoch" ]]; then
+      break
+    fi
+
+    iter="$((iter + 1))"
+    time_left="$((deadline_epoch - now_epoch))"
+
     mode="resume"
-  fi
+    if [[ "$iter" -eq 1 && "$RESUME" -eq 0 ]]; then
+      mode="start"
+    fi
 
-  now_epoch="$(date +%s)"
-  time_left="$((deadline_epoch - now_epoch))"
-  if [[ "$mode" = "start" ]]; then
-    prompt="$(build_hooked_start_prompt "$now_epoch" "$deadline_epoch" "$TURN_MINUTES" "$MISSION")"
-  else
-    prompt="$(build_hooked_resume_prompt "$time_left" "$TURN_MINUTES" "$MISSION")"
-  fi
+    if [[ -f "$STOP_FILE" ]]; then
+      stop_requested=1
+    fi
 
-  turn_file="$session_dir/turn-001.log"
-  print_and_log "turn=1 tool=$TOOL mode=$mode native_hooks=1 time_left_seconds=$time_left"
+    prompt=""
+    if [[ "$did_wrap_up" -eq 0 && ( "$time_left" -le "$wrap_up_threshold" || "$stop_requested" -eq 1 ) ]]; then
+      prompt="$(build_wrap_up_prompt "$time_left")"
+      did_wrap_up=1
+      touch "$STOP_FILE"
+    elif [[ "$mode" = "start" ]]; then
+      prompt="$(build_hooked_start_prompt "$now_epoch" "$deadline_epoch" "$TURN_MINUTES" "$MISSION")"
+    else
+      prompt="$(build_hooked_resume_prompt "$time_left" "$TURN_MINUTES" "$MISSION")"
+    fi
 
-  rc=0
-  run_codex_native_autopilot "$mode" "$prompt" "$turn_file" "$max_turns" || rc=$?
+    turn_file="$session_dir/turn-$(printf '%03d' "$iter").log"
+    print_and_log "outer_turn=$iter tool=$TOOL mode=$mode native_hooks=1 time_left_seconds=$time_left"
 
-  if [[ "$rc" -ne 0 && "$mode" = "resume" && -n "$MISSION" ]]; then
-    print_and_log "Initial resume failed; falling back to starting a new Codex session."
-    prompt="$(build_hooked_start_prompt "$now_epoch" "$deadline_epoch" "$TURN_MINUTES" "$MISSION")"
-    : >"$turn_file"
-    run_codex_native_autopilot "start" "$prompt" "$turn_file" "$max_turns" || rc=$?
-  fi
+    rc=0
+    run_codex_native_autopilot "$mode" "$prompt" "$turn_file" "$hook_max_turns" || rc=$?
 
-  if [[ "$rc" -ne 0 ]]; then
-    print_and_log "turn=1 exit_code=$rc (see $turn_file)"
-    exit "$rc"
-  fi
+    if [[ "$rc" -ne 0 && "$iter" -eq 1 && "$mode" = "resume" && "$RESUME" -eq 1 && "$did_resume_fallback" -eq 0 ]]; then
+      if [[ -n "$MISSION" ]]; then
+        print_and_log "Initial resume failed; falling back to starting a new Codex session."
+        RESUME=0
+        did_resume_fallback=1
+        iter=0
+        sleep 1
+        continue
+      fi
+      print_and_log "Initial resume failed and no mission prompt was provided."
+      print_and_log "Re-run with a mission prompt after --, or without --resume."
+      exit 1
+    fi
+
+    current_sid="$(codex_current_session_id)"
+    current_hook_turn="$(codex_turn_count_for_session "$current_sid")"
+    hook_completed=0
+    if [[ -n "$current_sid" && -f "$(codex_completed_marker_for_session "$current_sid")" ]]; then
+      hook_completed=1
+      did_wrap_up=1
+      print_and_log "outer_turn=$iter hook_session=${current_sid} hook_completed=1 reason=max-turns"
+    fi
+    print_and_log "outer_turn=$iter hook_session=${current_sid:-unknown} hook_turn=$current_hook_turn hook_completed=$hook_completed stop_requested=$stop_requested did_wrap_up=$did_wrap_up exit_code=$rc"
+
+    if [[ "$rc" -ne 0 ]]; then
+      print_and_log "outer_turn=$iter exit_code=$rc (see $turn_file)"
+      sleep 10
+    else
+      sleep 2
+    fi
+
+    if [[ "$did_wrap_up" -eq 1 ]]; then
+      break
+    fi
+  done
 
   print_and_log "Done. Logs: $session_dir"
   exit 0
@@ -719,7 +808,7 @@ while :; do
   fi
 
   turn_file="$session_dir/turn-$(printf '%03d' "$iter").log"
-  print_and_log "turn=$iter tool=$TOOL mode=$mode time_left_seconds=$time_left"
+  print_and_log "outer_turn=$iter tool=$TOOL mode=$mode time_left_seconds=$time_left"
 
   rc=0
   case "$TOOL" in
@@ -749,7 +838,7 @@ while :; do
   fi
 
   if [[ "$rc" -ne 0 ]]; then
-    print_and_log "turn=$iter exit_code=$rc (see $turn_file)"
+    print_and_log "outer_turn=$iter exit_code=$rc (see $turn_file)"
     sleep 10
   else
     sleep 2

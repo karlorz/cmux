@@ -10,8 +10,13 @@ SESSION_ACTIVITY_SCRIPT="${CMUX_SESSION_ACTIVITY_SCRIPT:-}"
 INLINE_WRAPUP="${CMUX_AUTOPILOT_INLINE_WRAPUP:-0}"
 ENABLE_REVIEW_WINDOW="${CMUX_AUTOPILOT_ENABLE_REVIEW_WINDOW:-0}"
 
-DEBUG_ENABLED="${CMUX_AUTOPILOT_DEBUG:-0}"
 DEBUG_LOG="${CMUX_AUTOPILOT_DEBUG_LOG:-${STATE_DIR}/${STATE_PREFIX}-debug.log}"
+DEBUG_FLAG_FILE="${CMUX_AUTOPILOT_DEBUG_FLAG_FILE:-${STATE_DIR}/${STATE_PREFIX}-debug-enabled}"
+DEBUG_INPUT_FILE_TEMPLATE="${CMUX_AUTOPILOT_DEBUG_INPUT_FILE_TEMPLATE:-${STATE_DIR}/${STATE_PREFIX}-last-stop-input-%s.json}"
+DEBUG_ENABLED="0"
+if [ "${CMUX_AUTOPILOT_DEBUG:-0}" = "1" ] || [ -f "$DEBUG_FLAG_FILE" ]; then
+  DEBUG_ENABLED="1"
+fi
 
 log_debug() {
   if [ "$DEBUG_ENABLED" = "1" ]; then
@@ -50,9 +55,15 @@ case "${AUTOPILOT_KEEP_RUNNING_DISABLED:-}" in
 esac
 
 INPUT=$(cat)
-SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "default"' 2>/dev/null || echo "default")
+# Parse session_id and stop_hook_active in a single jq call
+read -r SESSION_ID STOP_HOOK_ACTIVE < <(echo "$INPUT" | jq -r '[.session_id // "default", .stop_hook_active // false] | @tsv' 2>/dev/null || echo "default false")
 SESSION_ID="${SESSION_ID:-default}"
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
+
+if [ "$DEBUG_ENABLED" = "1" ]; then
+  DEBUG_INPUT_FILE=$(printf "$DEBUG_INPUT_FILE_TEMPLATE" "$SESSION_ID")
+  printf '%s\n' "$INPUT" > "$DEBUG_INPUT_FILE"
+fi
 
 TURN_FILE="${STATE_DIR}/${STATE_PREFIX}-turns-${SESSION_ID}"
 SESSION_STOP_FILE="${STATE_DIR}/${STATE_PREFIX}-stop-${SESSION_ID}"
@@ -61,6 +72,7 @@ COMPLETED_FILE="${STATE_DIR}/${STATE_PREFIX}-completed-${SESSION_ID}"
 STATE_FILE="${STATE_DIR}/${STATE_PREFIX}-state-${SESSION_ID}"
 IDLE_COUNT_FILE="${STATE_DIR}/${STATE_PREFIX}-idle-${SESSION_ID}"
 WRAPUP_FILE="${STATE_DIR}/${STATE_PREFIX}-wrapup-${SESSION_ID}"
+PID_FILE="${STATE_DIR}/${STATE_PREFIX}-pid-${SESSION_ID}"
 MAX_TURNS="$(first_set "${AUTOPILOT_MAX_TURNS:-}" "${CMUX_AUTOPILOT_MAX_TURNS:-}" "${CLAUDE_AUTOPILOT_MAX_TURNS:-20}")"
 IDLE_THRESHOLD="$(first_set "${AUTOPILOT_IDLE_THRESHOLD:-}" "${CMUX_AUTOPILOT_IDLE_THRESHOLD:-}" "${CLAUDE_AUTOPILOT_IDLE_THRESHOLD:-3}")"
 MONITORING_THRESHOLD="$(first_set "${AUTOPILOT_MONITORING_THRESHOLD:-}" "${CMUX_AUTOPILOT_MONITORING_THRESHOLD:-}" "${CLAUDE_AUTOPILOT_MONITORING_THRESHOLD:-10}")"
@@ -73,7 +85,7 @@ MONITORING_PHASE2_WAIT=60
 WAIT_PROMPT_PREFIX="Only if you are blocked on external work and are about to poll status, run: sleep"
 
 cleanup_runtime_state() {
-  rm -f "$BLOCKED_FILE" "$STATE_FILE" "$IDLE_COUNT_FILE" "$WRAPUP_FILE"
+  rm -f "$BLOCKED_FILE" "$STATE_FILE" "$IDLE_COUNT_FILE" "$WRAPUP_FILE" "$PID_FILE"
 
   if [ -n "$SESSION_ACTIVITY_SCRIPT" ] && [ -f "$SESSION_ACTIVITY_SCRIPT" ]; then
     "$SESSION_ACTIVITY_SCRIPT" end "$SESSION_ID" 2>/dev/null || true
@@ -107,6 +119,8 @@ is_infinite_mode() {
 
 cd "$PROJECT_DIR"
 log_debug "provider=$PROVIDER project_dir=$PROJECT_DIR session_id=$SESSION_ID"
+
+printf '%s\n' "${CMUX_SESSION_PID:-$PPID}" > "$PID_FILE"
 
 # Clean up stale completed marker from an earlier finished cycle.
 rm -f "$COMPLETED_FILE"
@@ -162,6 +176,12 @@ if [ "$STOP_REQUESTED" -eq 1 ]; then
 elif [ "$INLINE_WRAPUP" = "1" ] && [ "$WRAPUP_SOURCE" = "max-turns" ]; then
   log_debug "allowing stop after max-turn inline wrapup"
   rm -f "$TURN_FILE"
+  cleanup_runtime_state
+  exit 0
+fi
+
+if [ "$PROVIDER" = "codex" ] && [ "$STOP_HOOK_ACTIVE" = "true" ] && [ "$STOP_REQUESTED" -eq 0 ] && [ -z "$WRAPUP_SOURCE" ]; then
+  log_debug "allowing stop because codex stop_hook_active=true"
   cleanup_runtime_state
   exit 0
 fi

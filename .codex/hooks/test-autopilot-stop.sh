@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+unset AUTOPILOT_DELAY AUTOPILOT_IDLE_THRESHOLD AUTOPILOT_MAX_TURNS AUTOPILOT_MONITORING_THRESHOLD
+unset CMUX_AUTOPILOT_DELAY CMUX_AUTOPILOT_IDLE_THRESHOLD CMUX_AUTOPILOT_MAX_TURNS CMUX_AUTOPILOT_MONITORING_THRESHOLD
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 HOOK="$SCRIPT_DIR/autopilot-stop.sh"
@@ -14,6 +17,7 @@ cleanup() {
   rm -f "/tmp/codex-autopilot-blocked-${TEST_SESSION}"
   rm -f "/tmp/codex-autopilot-completed-${TEST_SESSION}"
   rm -f "/tmp/codex-autopilot-idle-${TEST_SESSION}"
+  rm -f "/tmp/codex-autopilot-pid-${TEST_SESSION}"
   rm -f "/tmp/codex-autopilot-state-${TEST_SESSION}"
   rm -f "/tmp/codex-autopilot-stop-${TEST_SESSION}"
   rm -f "/tmp/codex-autopilot-turns-${TEST_SESSION}"
@@ -48,6 +52,7 @@ FIRST_OUTPUT=$(echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
 
 assert "First stop request blocks for inline wrapup" jq -e '.decision == "block"' <<<"$FIRST_OUTPUT"
 assert "Wrapup marker created" test -f "/tmp/codex-autopilot-wrapup-${TEST_SESSION}"
+assert "Pid marker created on block" test -f "/tmp/codex-autopilot-pid-${TEST_SESSION}"
 
 SECOND_OUTPUT=$(echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
   AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
@@ -59,6 +64,7 @@ SECOND_OUTPUT=$(echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
 
 assert "Second stop request allows stop" test -z "$SECOND_OUTPUT"
 assert "Wrapup marker removed after allow" test ! -f "/tmp/codex-autopilot-wrapup-${TEST_SESSION}"
+assert "Pid marker removed after allow" test ! -f "/tmp/codex-autopilot-pid-${TEST_SESSION}"
 
 cleanup
 echo "0" > "/tmp/codex-autopilot-turns-${TEST_SESSION}"
@@ -110,6 +116,15 @@ assert "Legacy CLAUDE_AUTOPILOT_MAX_TURNS still works for Codex when enabled" jq
 assert "Legacy CLAUDE alias creates max-turn wrapup marker" grep -q "max-turns" "/tmp/codex-autopilot-wrapup-${TEST_SESSION}"
 
 cleanup
+
+STOP_ACTIVE_OUTPUT=$(echo "{\"session_id\":\"${TEST_SESSION}\",\"stop_hook_active\":true}" | \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+  AUTOPILOT_ENABLED=1 \
+  AUTOPILOT_DELAY=0 \
+  bash "$HOOK" || true)
+
+assert "Codex repeated stop with stop_hook_active=true allows stop" test -z "$STOP_ACTIVE_OUTPUT"
+assert "Repeated codex stop does not recreate blocked flag" test ! -f "/tmp/codex-autopilot-blocked-${TEST_SESSION}"
 
 DISABLED_BY_DEFAULT_OUTPUT=$(echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
   env -u AUTOPILOT_KEEP_RUNNING_DISABLED \
