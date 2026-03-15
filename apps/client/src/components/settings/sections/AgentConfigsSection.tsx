@@ -70,18 +70,29 @@ export function AgentConfigsSection({ teamSlugOrId }: AgentConfigsSectionProps) 
     [teamSlugOrId, activeAgent, activeScope],
   );
 
-  const { data: config, refetch, isLoading, error } = useQuery({
+  const { data: config, refetch, isLoading, error, isFetching } = useQuery({
     ...convexQuery(api.agentConfigs.get, queryKey),
     retry: false,
-    staleTime: 1000, // Prevent rapid refetches when switching tabs
+    staleTime: 5000, // Cache for 5 seconds to prevent rapid refetches
+    gcTime: 10000, // Keep data in cache for 10 seconds
   });
 
-  // Log errors for debugging
+  // Track last error to persist it across query key changes
+  const [lastError, setLastError] = useState<Error | null>(null);
+
+  // Log and persist errors for debugging
   useEffect(() => {
     if (error) {
       console.error("Failed to fetch agent config:", error);
+      setLastError(error);
+    } else if (!isLoading && !isFetching && config !== undefined) {
+      // Clear error only on successful fetch
+      setLastError(null);
     }
-  }, [error]);
+  }, [error, isLoading, isFetching, config]);
+
+  // Use persisted error or current error
+  const displayError = error ?? lastError;
 
   const upsertMutation = useMutation({
     mutationFn: async (rawConfig: string) => {
@@ -287,13 +298,20 @@ export function AgentConfigsSection({ teamSlugOrId }: AgentConfigsSectionProps) 
             </div>
           </div>
 
-          {error ? (
+          {displayError ? (
             <div className="flex flex-col items-center justify-center gap-2 py-24 text-red-500 dark:text-red-400">
               <AlertCircle className="size-5" />
               <span className="text-sm">Failed to load config</span>
-              <span className="text-xs text-neutral-500">{error.message}</span>
+              <span className="text-xs text-neutral-500">{displayError.message}</span>
+              <button
+                type="button"
+                onClick={() => { setLastError(null); void refetch(); }}
+                className="mt-2 text-xs underline hover:no-underline"
+              >
+                Retry
+              </button>
             </div>
-          ) : isLoading || !hasLoaded ? (
+          ) : isLoading || isFetching || !hasLoaded ? (
             <div className="flex items-center justify-center py-24 text-neutral-500 dark:text-neutral-400">
               <Loader2 className="size-5 animate-spin" />
             </div>
