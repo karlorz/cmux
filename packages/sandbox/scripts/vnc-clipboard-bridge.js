@@ -357,6 +357,31 @@
   // Listen for keyboard events in the iframe
   document.addEventListener('keydown', handleKeyDown, { capture: true });
 
+  /**
+   * Set up clipboard event listener on RFB to sync VNC clipboard to parent.
+   * When user copies text in the VNC session, noVNC fires a 'clipboard' event.
+   * We forward this to the parent window so it can write to the local clipboard.
+   */
+  function setupClipboardListener(rfb) {
+    if (!rfb) return;
+
+    rfb.addEventListener('clipboard', function(event) {
+      var text = event.detail && event.detail.text;
+      if (text && window.parent && window.parent !== window) {
+        console.log('[VNC Clipboard Bridge] Remote clipboard changed, sending to parent');
+        window.parent.postMessage({
+          type: 'vnc-clipboard-sync',
+          text: text
+        }, '*');
+      }
+    });
+
+    console.log('[VNC Clipboard Bridge] Clipboard sync listener attached to RFB');
+  }
+
+  // Attach clipboard listener once RFB is available
+  withRfbInstance(setupClipboardListener);
+
   // Log initialization (debug)
-  console.log('[VNC Clipboard Bridge] Initialized with keyboard listener');
+  console.log('[VNC Clipboard Bridge] Initialized with keyboard listener and clipboard sync');
 })();

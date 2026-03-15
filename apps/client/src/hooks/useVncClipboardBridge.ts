@@ -26,6 +26,12 @@ const VNC_CLIPBOARD_MESSAGE_TYPE = "vnc-clipboard-paste" as const;
 const VNC_CLIPBOARD_REQUEST_TYPE = "vnc-clipboard-request" as const;
 
 /**
+ * Message type for clipboard sync from VNC to parent.
+ * The iframe sends this when the remote VNC clipboard changes.
+ */
+const VNC_CLIPBOARD_SYNC_TYPE = "vnc-clipboard-sync" as const;
+
+/**
  * Message type sent to the iframe for clipboard paste
  */
 interface VncClipboardPasteMessage {
@@ -196,24 +202,22 @@ export function useVncClipboardBridge({
      * to read the clipboard and send it back.
      */
     const handleMessage = (event: MessageEvent): void => {
-      // Check if this is a clipboard request from the VNC iframe
-      if (
-        typeof event.data === "object" &&
-        event.data !== null &&
-        event.data.type === VNC_CLIPBOARD_REQUEST_TYPE
-      ) {
-        const iframe = persistentIframeManager.getIframeElement(persistKey);
-        if (!iframe?.contentWindow) {
-          console.debug("[VncClipboardBridge] Clipboard request received but iframe not found");
-          return;
-        }
+      if (typeof event.data !== "object" || event.data === null) {
+        return;
+      }
 
-        // Verify the request came from our iframe
-        if (event.source !== iframe.contentWindow) {
-          console.debug("[VncClipboardBridge] Clipboard request from unknown source, ignoring");
-          return;
-        }
+      const iframe = persistentIframeManager.getIframeElement(persistKey);
+      if (!iframe?.contentWindow) {
+        return;
+      }
 
+      // Verify the message came from our iframe
+      if (event.source !== iframe.contentWindow) {
+        return;
+      }
+
+      // Handle clipboard request (VNC -> parent wants clipboard content)
+      if (event.data.type === VNC_CLIPBOARD_REQUEST_TYPE) {
         console.log("[VncClipboardBridge] Clipboard request received from iframe, reading clipboard...");
 
         // Read clipboard and send to iframe
@@ -230,6 +234,24 @@ export function useVncClipboardBridge({
             console.error("[VncClipboardBridge] Failed to read clipboard:", error);
           }
         );
+        return;
+      }
+
+      // Handle clipboard sync (VNC clipboard changed, write to local clipboard)
+      if (event.data.type === VNC_CLIPBOARD_SYNC_TYPE && typeof event.data.text === "string") {
+        const text = event.data.text;
+        if (text) {
+          console.log("[VncClipboardBridge] VNC clipboard sync received, writing to local clipboard:", text.slice(0, 50) + (text.length > 50 ? "..." : ""));
+          navigator.clipboard.writeText(text).then(
+            () => {
+              console.log("[VncClipboardBridge] Local clipboard updated from VNC");
+            },
+            (error) => {
+              console.error("[VncClipboardBridge] Failed to write to local clipboard:", error);
+            }
+          );
+        }
+        return;
       }
     };
 
