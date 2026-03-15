@@ -110,7 +110,8 @@ export function AgentConfigsSection({ teamSlugOrId }: AgentConfigsSectionProps) 
 
   // Initialize editor content when config loads
   useEffect(() => {
-    if (isLoading) {
+    // Wait for both initial loading and any background fetch to complete
+    if (isLoading || isFetching) {
       return;
     }
 
@@ -118,7 +119,7 @@ export function AgentConfigsSection({ teamSlugOrId }: AgentConfigsSectionProps) 
     setConfigText(loadedConfig);
     setOriginalConfigText(loadedConfig);
     setHasLoaded(true);
-  }, [config, isLoading, activeAgent]);
+  }, [config, isLoading, isFetching, activeAgent]);
 
   // Reset when changing agent/scope
   useEffect(() => {

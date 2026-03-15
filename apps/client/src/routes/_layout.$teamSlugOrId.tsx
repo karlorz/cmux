@@ -109,6 +109,7 @@ function LayoutComponent() {
     sectionFromSearch === "model-catalog" ? "model-catalog" :
     sectionFromSearch === "mcp-servers" ? "mcp-servers" :
     sectionFromSearch === "policy-rules" ? "policy-rules" :
+    sectionFromSearch === "agent-configs" ? "agent-configs" :
     sectionFromSearch === "git" ? "git" :
     sectionFromSearch === "worktrees" ? "worktrees" :
     sectionFromSearch === "archived" ? "archived" : "general";
