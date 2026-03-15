@@ -34,11 +34,40 @@ Use bun to install dependencies and run the project.
 `./scripts/dev.sh` will start the project. Optional flags:
 
 - `--force-docker-build`: Rebuild worker image even if cached.
+- `--fast`: Skip waiting for OpenAPI client (frontend hot-reloads when ready).
 
-If you make code changes, run `bun check` and fix errors after completing a task.
-After `bun check`, if there are code changes or codex review progress, explicitly invoke a simplify tool/workflow rather than doing only an informal manual review:
-- First check whether the current agent/runtime supports the `/simplify` command; if it does, run `/simplify`.
-- Otherwise, run the portable `$simplify` skill or the agent's equivalent simplify workflow.
+# Dev Cycle (IMPORTANT)
+
+**All agents MUST follow this workflow after code changes:**
+
+1. Run `bun check` (or `make check`) and fix any errors
+2. If changes exist after check, run `/simplify` to review code quality
+3. Commit only after both check and simplify pass
+
+**Available tools:**
+
+| Command | Purpose |
+|---------|---------|
+| `bun check` | Run lint + typecheck |
+| `make check` | Same as `bun check` |
+| `make check-simplify` | Run check + prompt for simplify |
+| `/simplify` | Full 3-pass code review (reuse, quality, efficiency) |
+| `/simplify --quick` | Fast single-pass review |
+| `/simplify --staged-only` | Review only staged files |
+| `./scripts/check-and-simplify.sh` | Combined workflow script |
+
+**Simplify invocation:**
+
+- **Claude Code**: Use `/simplify` directly (built-in since v2.1.63)
+- **Codex/Other agents**: Use portable skill at `.agents/skills/simplify/SKILL.md`
+
+**Pre-commit hook:**
+
+The `.githooks/pre-commit` hook automatically runs `bun check` on commit. Enable with:
+```bash
+git config core.hooksPath .githooks
+```
+This is auto-configured on `bun install` via the `prepare` script.
 
 # Backend
 
