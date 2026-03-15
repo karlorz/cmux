@@ -1604,6 +1604,96 @@ const convexSchema = defineSchema({
     .index("by_rule", ["ruleId", "createdAt"])
     .index("by_team_created", ["teamId", "createdAt"]),
 
+  // Orchestration-specific rules for head-agent learning (S15 orchestration layer)
+  // Distinct from agentBehaviorRules: uses "lane" instead of "namespace",
+  // links to orchestration runs, and focuses on orchestration strategy learning.
+  agentOrchestrationRules: defineTable({
+    teamId: v.string(),
+    userId: v.optional(v.string()),
+    projectFullName: v.optional(v.string()),
+    lane: v.union(
+      v.literal("hot"), // Always-loaded orchestration rules
+      v.literal("orchestration"), // Orchestration-specific rules
+      v.literal("project") // Project-specific orchestration rules
+    ),
+    status: v.union(
+      v.literal("candidate"),
+      v.literal("active"),
+      v.literal("suppressed"),
+      v.literal("archived")
+    ),
+    text: v.string(),
+    sourceType: v.union(
+      v.literal("user_correction"),
+      v.literal("run_review"), // From post-run review
+      v.literal("manual_promotion"),
+      v.literal("manual_import")
+    ),
+    sourceTaskRunId: v.optional(v.id("taskRuns")),
+    sourceSnapshotId: v.optional(v.id("agentMemorySnapshots")),
+    linkedOrchestrationId: v.optional(v.string()), // Links to orchestration run
+    confidence: v.number(),
+    timesSeen: v.number(),
+    timesUsed: v.number(),
+    lastUsedAt: v.optional(v.number()),
+    lastConfirmedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_team_status", ["teamId", "status", "updatedAt"])
+    .index("by_team_lane_status", ["teamId", "lane", "status"])
+    .index("by_team_project_status", ["teamId", "projectFullName", "status"])
+    .index("by_team_updated", ["teamId", "updatedAt"]),
+
+  // Orchestration learning events log (append-only)
+  // Captures orchestrator-specific learnings separate from generic behavior corrections
+  agentOrchestrationLearningEvents: defineTable({
+    teamId: v.string(),
+    userId: v.optional(v.string()),
+    taskRunId: v.optional(v.id("taskRuns")),
+    ruleId: v.optional(v.id("agentOrchestrationRules")),
+    orchestrationId: v.optional(v.string()),
+    eventType: v.union(
+      v.literal("learning_logged"),
+      v.literal("error_logged"),
+      v.literal("feature_request_logged"),
+      v.literal("rule_promoted"),
+      v.literal("rule_suppressed"),
+      v.literal("rule_forgotten"),
+      v.literal("rule_used")
+    ),
+    text: v.string(),
+    metadataJson: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_team_type", ["teamId", "eventType", "createdAt"])
+    .index("by_task_run", ["taskRunId", "createdAt"])
+    .index("by_rule", ["ruleId", "createdAt"])
+    .index("by_orchestration", ["orchestrationId", "createdAt"])
+    .index("by_team_created", ["teamId", "createdAt"]),
+
+  // Orchestration skill candidates - repeated patterns that could become reusable skills
+  agentOrchestrationSkillCandidates: defineTable({
+    teamId: v.string(),
+    projectFullName: v.optional(v.string()),
+    patternKey: v.string(), // Hash/key identifying the repeated pattern
+    title: v.string(),
+    summary: v.string(),
+    sourceRuleIds: v.array(v.id("agentOrchestrationRules")),
+    recurrenceCount: v.number(),
+    status: v.union(
+      v.literal("candidate"),
+      v.literal("approved"),
+      v.literal("extracted"), // Converted to a real skill
+      v.literal("rejected")
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_team_status", ["teamId", "status", "updatedAt"])
+    .index("by_team_pattern", ["teamId", "patternKey"])
+    .index("by_team_recurrence", ["teamId", "recurrenceCount"]),
+
   // Provider health tracking for circuit breaker and resilience patterns
   // Tracks latency, success rate, and circuit state per provider
   providerHealth: defineTable({

@@ -13,6 +13,7 @@ import type * as agentBehaviorMutations from "../agentBehaviorMutations.js";
 import type * as agentConfigs from "../agentConfigs.js";
 import type * as agentMemoryQueries from "../agentMemoryQueries.js";
 import type * as agentMemory_http from "../agentMemory_http.js";
+import type * as agentOrchestrationLearning from "../agentOrchestrationLearning.js";
 import type * as agentPolicyRules from "../agentPolicyRules.js";
 import type * as agentPolicyRules_http from "../agentPolicyRules_http.js";
 import type * as analytics from "../analytics.js";
@@ -139,6 +140,7 @@ declare const fullApi: ApiFromModules<{
   agentConfigs: typeof agentConfigs;
   agentMemoryQueries: typeof agentMemoryQueries;
   agentMemory_http: typeof agentMemory_http;
+  agentOrchestrationLearning: typeof agentOrchestrationLearning;
   agentPolicyRules: typeof agentPolicyRules;
   agentPolicyRules_http: typeof agentPolicyRules_http;
   analytics: typeof analytics;

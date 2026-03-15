@@ -857,9 +857,10 @@ type TaskRunWithJWT struct {
 
 // CreateTaskResult represents the result of creating a task
 type CreateTaskResult struct {
-	TaskID   string           `json:"taskId"`
-	TaskRuns []TaskRunWithJWT `json:"taskRuns"`
-	Status   string           `json:"status"`
+	TaskID              string           `json:"taskId"`
+	TaskRuns            []TaskRunWithJWT `json:"taskRuns"`
+	OrchestrationTaskId string           `json:"orchestrationTaskId,omitempty"`
+	Status              string           `json:"status"`
 }
 
 // StartSandboxOptions represents options for starting a sandbox

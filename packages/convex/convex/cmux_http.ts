@@ -1951,6 +1951,9 @@ export const createTask = httpAction(async (ctx, req) => {
     githubProjectOwnerType?: string;
     // Agent Teams (D4) - parent-child task relationships
     parentTaskRunId?: string;
+    // Orchestration dependency management
+    dependsOn?: string[]; // Orchestration task IDs this task depends on
+    priority?: number; // Task priority (0=highest, 10=lowest)
   };
 
   try {
@@ -2072,9 +2075,33 @@ export const createTask = httpAction(async (ctx, req) => {
       }
     }
 
+    // Create orchestration task record when dependencies or priority are specified
+    let orchestrationTaskId: string | undefined;
+    if (body.dependsOn || (body.priority && body.priority > 0)) {
+      const dependencies = body.dependsOn
+        ? (body.dependsOn as Id<"orchestrationTasks">[])
+        : undefined;
+
+      orchestrationTaskId = await ctx.runMutation(
+        internal.orchestrationQueries.createTaskInternal,
+        {
+          teamId,
+          userId,
+          prompt: taskText,
+          priority: body.priority ?? 5,
+          dependencies,
+          taskId: taskResult.taskId,
+          taskRunId: taskRuns.length > 0
+            ? (taskRuns[0].taskRunId as Id<"taskRuns">)
+            : undefined,
+        }
+      ) as string;
+    }
+
     return jsonResponse({
       taskId: taskResult.taskId,
       taskRuns,
+      orchestrationTaskId,
       status: "pending",
     });
   } catch (err) {
