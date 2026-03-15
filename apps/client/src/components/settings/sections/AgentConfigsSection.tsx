@@ -73,6 +73,7 @@ export function AgentConfigsSection({ teamSlugOrId }: AgentConfigsSectionProps) 
   const { data: config, refetch, isLoading, error } = useQuery({
     ...convexQuery(api.agentConfigs.get, queryKey),
     retry: false,
+    staleTime: 1000, // Prevent rapid refetches when switching tabs
   });
 
   // Log errors for debugging
