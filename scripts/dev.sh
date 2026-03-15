@@ -13,6 +13,7 @@
 #   --electron              Start Electron app
 #   --electron-debug[=PORT] Enable Chrome DevTools remote debugging (default port: 9222)
 #   --convex-agent          Run convex dev in agent mode
+#   --fast                  Fast startup: skip waiting for OpenAPI client, start frontend immediately
 #
 # Environment variables:
 #   SKIP_DOCKER_BUILD       Set to "false" to build Docker image (default: true)
@@ -215,6 +216,7 @@ ELECTRON_DEBUG=false
 ELECTRON_DEBUG_PORT=9222
 SKIP_DOCKER_BUILD="${SKIP_DOCKER_BUILD:-true}"
 CONVEX_AGENT_MODE=false
+FAST_MODE=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -313,6 +315,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --convex-agent)
             CONVEX_AGENT_MODE=true
+            shift
+            ;;
+        --fast)
+            FAST_MODE=true
             shift
             ;;
         *)
@@ -657,7 +663,13 @@ OPENAPI_CLIENT_PID=$!
 check_process $OPENAPI_CLIENT_PID "OpenAPI Client Generator"
 OPENAPI_LOG_FILE="$LOG_DIR/openapi-client.log"
 OPENAPI_READY_MARKER="initial client generation complete"
-wait_for_log_message "$OPENAPI_LOG_FILE" "$OPENAPI_READY_MARKER" "$OPENAPI_CLIENT_PID" "OpenAPI Client Generator"
+
+# In fast mode, skip waiting for OpenAPI client (frontend will hot-reload when ready)
+if [ "$FAST_MODE" = "true" ]; then
+    echo -e "${YELLOW}Fast mode: skipping OpenAPI client wait (frontend will hot-reload)${NC}"
+else
+    wait_for_log_message "$OPENAPI_LOG_FILE" "$OPENAPI_READY_MARKER" "$OPENAPI_CLIENT_PID" "OpenAPI Client Generator"
+fi
 
 # Start the frontend
 echo -e "${GREEN}Starting frontend on port 5173...${NC}"

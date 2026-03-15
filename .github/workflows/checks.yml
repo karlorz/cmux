@@ -75,3 +75,79 @@ jobs:
             echo "At least one task failed"
             exit 1
           fi
+
+  # Simplify review for PRs (optional, runs in report-only mode)
+  simplify-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history for diff
+
+      - name: Get changed files
+        id: changed
+        run: |
+          # Get list of changed TypeScript/JavaScript files
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- '*.ts' '*.tsx' '*.js' '*.jsx' | head -20)
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGED" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          # Count files for summary
+          COUNT=$(echo "$CHANGED" | grep -c . || echo 0)
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
+
+      - name: Generate simplify summary
+        if: steps.changed.outputs.count > 0
+        id: summary
+        run: |
+          echo "## Code Quality Summary" > /tmp/simplify-summary.md
+          echo "" >> /tmp/simplify-summary.md
+          echo "The following files were changed in this PR:" >> /tmp/simplify-summary.md
+          echo "" >> /tmp/simplify-summary.md
+          echo '```' >> /tmp/simplify-summary.md
+          echo "${{ steps.changed.outputs.files }}" >> /tmp/simplify-summary.md
+          echo '```' >> /tmp/simplify-summary.md
+          echo "" >> /tmp/simplify-summary.md
+          echo "**Tip**: Run \`/simplify\` locally to review these changes for:" >> /tmp/simplify-summary.md
+          echo "- Code reuse opportunities" >> /tmp/simplify-summary.md
+          echo "- Quality improvements" >> /tmp/simplify-summary.md
+          echo "- Efficiency optimizations" >> /tmp/simplify-summary.md
+
+      - name: Post PR comment
+        if: steps.changed.outputs.count > 0
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('/tmp/simplify-summary.md', 'utf8');
+
+            // Find existing comment to update
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+
+            const marker = '<!-- simplify-review -->';
+            const body = `${marker}\n${summary}`;
+            const existingComment = comments.find(c => c.body.includes(marker));
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body
+              });
+            }
