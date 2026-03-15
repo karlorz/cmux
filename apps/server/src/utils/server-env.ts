@@ -1,4 +1,4 @@
-import { normalizeOrigin } from "@cmux/shared";
+import { DEFAULT_SANDBOX_TIMEZONE, normalizeOrigin } from "@cmux/shared";
 import { createEnv } from "@t3-oss/env-core";
 import { z } from "zod";
 
@@ -27,8 +27,8 @@ export const env = createEnv({
     // JWT secret for task-run tokens (used for sub-agent spawning)
     CMUX_TASK_RUN_JWT_SECRET: z.string().optional(),
     // Default timezone for sandboxes when TZ is not set in workspace env vars
-    // Defaults to Asia/Hong_Kong if not specified
-    DEFAULT_SANDBOX_TIMEZONE: z.string().optional().default("Asia/Hong_Kong"),
+    // Defaults to DEFAULT_SANDBOX_TIMEZONE constant if not specified
+    DEFAULT_SANDBOX_TIMEZONE: z.string().optional().default(DEFAULT_SANDBOX_TIMEZONE),
   },
   // Handle both Node and Vite/Bun
   runtimeEnv: { ...import.meta.env, ...process.env },

@@ -90,10 +90,12 @@ FROM oven/bun:1-slim AS production
 
 WORKDIR /app
 
-# Install minimal runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install minimal runtime dependencies including tzdata for timezone support
+# DEBIAN_FRONTEND=noninteractive prevents tzdata from prompting
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates \
     git \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
@@ -159,6 +161,9 @@ USER cmux
 
 ENV NODE_ENV=production
 ENV PORT=9776
+# Default timezone (can be overridden via docker-compose or runtime)
+# TZ env var is recognized by glibc/tzdata for timezone resolution
+ENV TZ=Asia/Hong_Kong
 
 EXPOSE 9776
 
