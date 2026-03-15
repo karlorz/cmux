@@ -279,6 +279,17 @@ export function AgentConfigsSection({ teamSlugOrId }: AgentConfigsSectionProps) 
               <span className="text-xs">
                 ({activeScope === "global" ? "All workspaces" : "Workspace-specific"})
               </span>
+              {!isLoading && loadedKey === currentKey && (
+                config?.rawConfig ? (
+                  <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                    Custom
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
+                    Default
+                  </span>
+                )
+              )}
             </div>
             <div className="flex items-center gap-2">
               <Button
