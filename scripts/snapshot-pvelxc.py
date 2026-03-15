@@ -3351,7 +3351,13 @@ with open(bridge_script_path, "r") as f:
 with open(vnc_html_path, "r") as f:
     html = f.read()
 
-script_tag = f'''<script id="vnc-clipboard-bridge">
+script_tag = f'''<script type="module" id="vnc-clipboard-bridge-init">
+// Expose UI to window for clipboard bridge access
+// noVNC loads UI as ES module, not exposed globally by default
+import UI from './app/ui.js';
+window.UI = UI;
+</script>
+<script id="vnc-clipboard-bridge">
 {{bridge_js}}
 </script>
 '''
