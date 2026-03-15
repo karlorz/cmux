@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { convexQuery } from "@convex-dev/react-query";
@@ -9,6 +9,11 @@ import { Loader2, X, Check, Settings } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { Id } from "@cmux/convex/dataModel";
 import { STATUS_CONFIG, type TaskStatus } from "./status-config";
+
+/** Statuses that represent incomplete tasks that can be dependencies */
+const DEPENDENCY_ELIGIBLE_STATUSES: ReadonlySet<TaskStatus> = new Set(["pending", "assigned", "running"]);
+/** Maximum characters to show for task prompts in the dependency selector */
+const PROMPT_PREVIEW_MAX_LENGTH = 60;
 
 interface OrchestrationSpawnDialogProps {
   teamSlugOrId: string;
@@ -27,7 +32,17 @@ export function OrchestrationSpawnDialog({
   const [prompt, setPrompt] = useState("");
   const [priority, setPriority] = useState(5);
   const [selectedModel, setSelectedModel] = useState("");
-  const [selectedDependencies, setSelectedDependencies] = useState<Id<"orchestrationTasks">[]>([]);
+  const [selectedDependencies, setSelectedDependencies] = useState<Set<Id<"orchestrationTasks">>>(new Set());
+
+  // Reset form state when dialog closes
+  useEffect(() => {
+    if (!open) {
+      setPrompt("");
+      setPriority(5);
+      setSelectedModel("");
+      setSelectedDependencies(new Set());
+    }
+  }, [open]);
 
   // Fetch available models
   const { data: models } = useQuery(
@@ -46,7 +61,7 @@ export function OrchestrationSpawnDialog({
   const dependencyOptions = useMemo(() => {
     if (!existingTasks) return [];
     return existingTasks.filter((t) =>
-      ["pending", "assigned", "running"].includes(t.status)
+      DEPENDENCY_ELIGIBLE_STATUSES.has(t.status as TaskStatus)
     );
   }, [existingTasks]);
 
@@ -75,13 +90,17 @@ export function OrchestrationSpawnDialog({
     }));
   }, [models]);
 
-  const toggleDependency = (taskId: Id<"orchestrationTasks">) => {
-    setSelectedDependencies((prev) =>
-      prev.includes(taskId)
-        ? prev.filter((id) => id !== taskId)
-        : [...prev, taskId]
-    );
-  };
+  const toggleDependency = useCallback((taskId: Id<"orchestrationTasks">) => {
+    setSelectedDependencies((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) {
+        next.delete(taskId);
+      } else {
+        next.add(taskId);
+      }
+      return next;
+    });
+  }, []);
 
   const createTaskMutation = useMutation({
     mutationFn: async () => {
@@ -89,17 +108,13 @@ export function OrchestrationSpawnDialog({
         teamSlugOrId,
         prompt,
         priority,
-        dependencies: selectedDependencies.length > 0 ? selectedDependencies : undefined,
+        dependencies: selectedDependencies.size > 0 ? Array.from(selectedDependencies) : undefined,
         metadata: selectedModel ? { agentName: selectedModel } : undefined,
       });
       return taskId;
     },
     onSuccess: () => {
       toast.success("Task created successfully");
-      setPrompt("");
-      setPriority(5);
-      setSelectedModel("");
-      setSelectedDependencies([]);
       onOpenChange(false);
       void queryClient.invalidateQueries();
     },
@@ -231,7 +246,7 @@ export function OrchestrationSpawnDialog({
                 </p>
                 <div className="mt-2 max-h-40 overflow-y-auto rounded-md border border-neutral-300 dark:border-neutral-700">
                   {dependencyOptions.map((task) => {
-                    const isSelected = selectedDependencies.includes(task._id);
+                    const isSelected = selectedDependencies.has(task._id);
                     const status = task.status as TaskStatus;
                     const config = STATUS_CONFIG[status];
                     return (
@@ -266,8 +281,8 @@ export function OrchestrationSpawnDialog({
                             )}
                           </div>
                           <div className="mt-0.5 truncate text-xs text-neutral-700 dark:text-neutral-300">
-                            {task.prompt.length > 60
-                              ? task.prompt.slice(0, 60) + "..."
+                            {task.prompt.length > PROMPT_PREVIEW_MAX_LENGTH
+                              ? task.prompt.slice(0, PROMPT_PREVIEW_MAX_LENGTH) + "..."
                               : task.prompt}
                           </div>
                         </div>
@@ -275,9 +290,9 @@ export function OrchestrationSpawnDialog({
                     );
                   })}
                 </div>
-                {selectedDependencies.length > 0 && (
+                {selectedDependencies.size > 0 && (
                   <p className="mt-1 text-xs text-blue-600 dark:text-blue-400">
-                    {selectedDependencies.length} task{selectedDependencies.length !== 1 ? "s" : ""} selected
+                    {selectedDependencies.size} task{selectedDependencies.size !== 1 ? "s" : ""} selected
                   </p>
                 )}
               </div>
