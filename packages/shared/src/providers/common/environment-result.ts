@@ -84,4 +84,12 @@ export type EnvironmentContext = {
    * Rules are injected into agent instruction files (e.g., ~/.claude/CLAUDE.md).
    */
   policyRules?: PolicyRuleForInstructions[];
+  /**
+   * Custom agent configs from Convex (raw JSON for Claude, raw TOML for Codex).
+   * These are user-provided configs that get merged with cmux defaults.
+   */
+  agentConfigs?: {
+    claude?: string;  // Raw JSON config
+    codex?: string;   // Raw TOML config
+  };
 };

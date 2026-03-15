@@ -438,8 +438,15 @@ log "Autopilot completed after \$ITER turns"
 
   const codexMcpConfigs = ctx.mcpServerConfigs ?? [];
 
+  // Merge user custom config with host config
+  // User config (from Convex) takes precedence over host config
+  const userConfigToml = ctx.agentConfigs?.codex ?? "";
+  const mergedHostConfig = userConfigToml
+    ? `${hostConfigToml}\n\n${userConfigToml}`
+    : hostConfigToml;
+
   let toml = buildMergedCodexConfigToml({
-    hostConfigText: hostConfigToml,
+    hostConfigText: mergedHostConfig,
     mcpServerConfigs: codexMcpConfigs,
     agentName: ctx.agentName,
   });
