@@ -70,9 +70,29 @@ export function AgentConfigsSection({ teamSlugOrId }: AgentConfigsSectionProps) 
     [teamSlugOrId, activeAgent, activeScope],
   );
 
-  const { data: config, refetch, isLoading } = useQuery(
-    convexQuery(api.agentConfigs.get, queryKey),
-  );
+  const { data: config, refetch, isLoading, error, isFetching } = useQuery({
+    ...convexQuery(api.agentConfigs.get, queryKey),
+    retry: false,
+    staleTime: 5000, // Cache for 5 seconds to prevent rapid refetches
+    gcTime: 10000, // Keep data in cache for 10 seconds
+  });
+
+  // Track last error to persist it across query key changes
+  const [lastError, setLastError] = useState<Error | null>(null);
+
+  // Log and persist errors for debugging
+  useEffect(() => {
+    if (error) {
+      console.error("Failed to fetch agent config:", error);
+      setLastError(error);
+    } else if (!isLoading && !isFetching && config !== undefined && lastError !== null) {
+      // Clear error only on successful fetch (guard prevents no-op updates)
+      setLastError(null);
+    }
+  }, [error, isLoading, isFetching, config, lastError]);
+
+  // Use persisted error or current error
+  const displayError = error ?? lastError;
 
   const upsertMutation = useMutation({
     mutationFn: async (rawConfig: string) => {
@@ -103,6 +123,7 @@ export function AgentConfigsSection({ teamSlugOrId }: AgentConfigsSectionProps) 
   // Reset when changing agent/scope
   useEffect(() => {
     setHasLoaded(false);
+    setLastError(null); // Clear stale error on tab switch
   }, [activeAgent, activeScope]);
 
   const hasChanges = configText !== originalConfigText;
@@ -278,7 +299,20 @@ export function AgentConfigsSection({ teamSlugOrId }: AgentConfigsSectionProps) 
             </div>
           </div>
 
-          {isLoading || !hasLoaded ? (
+          {displayError ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-24 text-red-500 dark:text-red-400">
+              <AlertCircle className="size-5" />
+              <span className="text-sm">Failed to load config</span>
+              <span className="text-xs text-neutral-500">{displayError.message}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { setLastError(null); void refetch(); }}
+              >
+                Retry
+              </Button>
+            </div>
+          ) : isLoading || !hasLoaded ? (
             <div className="flex items-center justify-center py-24 text-neutral-500 dark:text-neutral-400">
               <Loader2 className="size-5 animate-spin" />
             </div>
