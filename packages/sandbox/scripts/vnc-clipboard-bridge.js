@@ -50,6 +50,7 @@
   /**
    * Get the RFB instance from noVNC.
    * noVNC stores the RFB instance on the UI object after connection.
+   * Note: UI.rfb is only set AFTER VNC connects, so this may return null initially.
    */
   function getRfbInstance() {
     // noVNC's vnc.html stores the RFB instance in window.rfb after connection
@@ -59,11 +60,37 @@
     }
 
     // Check if noVNC's UI module stored the instance
+    // UI is exposed by our module script: import UI from './app/ui.js'; window.UI = UI;
     if (typeof window.UI !== 'undefined' && window.UI && window.UI.rfb) {
       return window.UI.rfb;
     }
 
     return null;
+  }
+
+  /**
+   * Wait for RFB instance to be available, then call callback.
+   * RFB is only created after VNC connection is established.
+   */
+  function withRfbInstance(callback, maxRetries) {
+    maxRetries = maxRetries || 50; // 5 seconds max
+    var retries = 0;
+
+    function tryGetRfb() {
+      var rfb = getRfbInstance();
+      if (rfb) {
+        callback(rfb);
+        return;
+      }
+      retries++;
+      if (retries < maxRetries) {
+        setTimeout(tryGetRfb, 100);
+      } else {
+        console.warn('[VNC Clipboard Bridge] RFB instance not available after ' + maxRetries + ' retries');
+      }
+    }
+
+    tryGetRfb();
   }
 
   /**
@@ -182,11 +209,12 @@
    * @param {string} text - The text to paste
    */
   function injectClipboard(text) {
-    var rfb = getRfbInstance();
-    if (!rfb) {
-      console.warn('[VNC Clipboard Bridge] RFB instance not available');
-      return;
-    }
+    withRfbInstance(function(rfb) {
+      doInjectClipboard(rfb, text);
+    });
+  }
+
+  function doInjectClipboard(rfb, text) {
 
     // If fallback mode is enabled and text is short, type directly
     if (useSendKeyFallback && text.length <= SENDKEY_FALLBACK_MAX_LENGTH) {
