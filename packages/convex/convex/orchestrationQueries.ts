@@ -28,6 +28,8 @@ export const DEFAULT_TASK_LIST_LIMIT = 50;
 const MAX_TASK_LIST_LIMIT = 100;
 const DEFAULT_RECENT_LIMIT = 10;
 const MAX_RECENT_LIMIT = 50;
+/** Cap for counting queries to prevent unbounded document reads */
+const MAX_COUNT_LIMIT = 1000;
 
 type OrchestrationStatus = (typeof ORCHESTRATION_STATUSES)[number];
 type OrchestrationTask = Doc<"orchestrationTasks">;
@@ -76,7 +78,7 @@ async function countOrchestrationTasksByStatus(
         .withIndex("by_team_status", (q) =>
           q.eq("teamId", teamId).eq("status", status),
         )
-        .collect()
+        .take(MAX_COUNT_LIMIT)
     ),
   );
 
@@ -1426,14 +1428,14 @@ export const getOrchestrationSummary = authQuery({
           q.eq("teamId", teamId).eq("status", "assigned")
         )
         .order("desc")
-        .collect(),
+        .take(MAX_COUNT_LIMIT),
       ctx.db
         .query("orchestrationTasks")
         .withIndex("by_team_status", (q) =>
           q.eq("teamId", teamId).eq("status", "running")
         )
         .order("desc")
-        .collect(),
+        .take(MAX_COUNT_LIMIT),
       ctx.db
         .query("orchestrationTasks")
         .withIndex("by_team_status", (q) =>
