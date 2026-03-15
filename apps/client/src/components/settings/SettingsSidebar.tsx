@@ -7,7 +7,7 @@ import {
 import { isElectron } from "@/lib/electron";
 import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
-import { Archive, ArrowLeft, FileCode2, FolderGit2, GitBranch, KeyRound, Layers, Plug, Settings, Shield, ShieldBan } from "lucide-react";
+import { Archive, ArrowLeft, BrainCircuit, FileCode2, FolderGit2, GitBranch, KeyRound, Layers, Plug, Settings, Shield, ShieldBan } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -28,6 +28,7 @@ export type SettingsSection =
   | "policy-rules"
   | "permission-rules"
   | "agent-configs"
+  | "orchestration-rules"
   | "git"
   | "worktrees"
   | "archived";
@@ -86,6 +87,11 @@ const allNavItems: SettingsSidebarNavItem[] = [
     label: "Agent Configs",
     section: "agent-configs",
     icon: FileCode2,
+  },
+  {
+    label: "Orchestration Rules",
+    section: "orchestration-rules",
+    icon: BrainCircuit,
   },
   {
     label: "Git",
