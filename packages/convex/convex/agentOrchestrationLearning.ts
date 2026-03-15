@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { getTeamId } from "../_shared/team";
 import { authMutation, authQuery } from "./users/utils";
+import { internalQuery } from "./_generated/server";
 
 const laneValidator = v.union(
   v.literal("hot"),
@@ -391,5 +392,38 @@ export const upsertSkillCandidate = authMutation({
       createdAt: now,
       updatedAt: now,
     });
+  },
+});
+
+// --- Internal Queries (for httpAction / spawn-config path) ---
+
+/**
+ * Get active orchestration rules for a team (internal, no auth required).
+ * Used by orchestration_http.ts spawn-config endpoint.
+ */
+export const getActiveRulesInternal = internalQuery({
+  args: {
+    teamId: v.string(),
+    projectFullName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    if (args.projectFullName) {
+      return ctx.db
+        .query("agentOrchestrationRules")
+        .withIndex("by_team_project_status", (q) =>
+          q
+            .eq("teamId", args.teamId)
+            .eq("projectFullName", args.projectFullName!)
+            .eq("status", "active")
+        )
+        .take(100);
+    }
+
+    return ctx.db
+      .query("agentOrchestrationRules")
+      .withIndex("by_team_status", (q) =>
+        q.eq("teamId", args.teamId).eq("status", "active")
+      )
+      .take(100);
   },
 });

@@ -9,6 +9,7 @@ import {
   getProjectContextFile,
   getCrossToolSymlinkCommands,
   getPolicyRulesInstructions,
+  getOrchestrationRulesInstructions,
 } from "../../agent-memory-protocol";
 import { buildMergedCodexConfigToml } from "../../mcp-preview";
 export { stripFilteredConfigKeys } from "../../mcp-preview";
@@ -415,10 +416,14 @@ log "Autopilot completed after \$ITER turns"
   const policyRulesSection = ctx.policyRules && ctx.policyRules.length > 0
     ? getPolicyRulesInstructions(ctx.policyRules) + "\n\n"
     : "";
+  const orchestrationRulesSection = ctx.orchestrationRules && ctx.orchestrationRules.length > 0
+    ? getOrchestrationRulesInstructions(ctx.orchestrationRules) + "\n\n"
+    : "";
   const fullInstructions =
     instructionsContent +
     (instructionsContent ? "\n\n" : "") +
     policyRulesSection +
+    orchestrationRulesSection +
     getMemoryProtocolInstructions();
   files.push({
     destinationPath: "$HOME/.codex/instructions.md",

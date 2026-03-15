@@ -42,6 +42,13 @@ export interface SpawnConfigData {
   previousKnowledge: string | null;
   previousMailbox: string | null;
   previousBehavior: string | null;
+  orchestrationRules?: Array<{
+    ruleId: string;
+    text: string;
+    lane: "hot" | "orchestration" | "project";
+    confidence: number;
+    projectFullName?: string;
+  }>;
 }
 
 const CreateTaskAndRunSchema = z.object({
@@ -443,6 +450,7 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
       previousKnowledge,
       previousMailbox,
       previousBehavior,
+      orchestrationRulesRaw,
     ] = await Promise.all([
       ctx.runQuery(internal.apiKeys.getAllForAgentsInternal, { teamId, userId }),
       ctx.runQuery(internal.workspaceSettings.getByTeamAndUserInternal, { teamId, userId }),
@@ -470,6 +478,10 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
       ctx.runQuery(internal.agentMemoryQueries.getLatestTeamKnowledgeInternal, { teamId }),
       ctx.runQuery(internal.agentMemoryQueries.getLatestTeamMailboxInternal, { teamId }),
       ctx.runQuery(internal.agentMemoryQueries.getLatestTeamBehaviorHotInternal, { teamId }),
+      ctx.runQuery(internal.agentOrchestrationLearning.getActiveRulesInternal, {
+        teamId,
+        ...(projectFullName ? { projectFullName } : {}),
+      }),
     ]);
 
     const config: SpawnConfigData = {
@@ -495,6 +507,13 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
       previousKnowledge,
       previousMailbox,
       previousBehavior,
+      orchestrationRules: orchestrationRulesRaw.map((r) => ({
+        ruleId: r._id,
+        text: r.text,
+        lane: r.lane,
+        confidence: r.confidence,
+        projectFullName: r.projectFullName,
+      })),
     };
 
     return jsonResponse(config);

@@ -8,6 +8,7 @@ import {
   getMemoryProtocolInstructions,
   getProjectContextFile,
   getPolicyRulesInstructions,
+  getOrchestrationRulesInstructions,
 } from "../../agent-memory-protocol";
 import { getTaskSandboxWrapperFiles } from "../common/task-sandbox-wrappers";
 
@@ -140,8 +141,11 @@ export async function getCursorEnvironment(
   const policyRulesSection = ctx.policyRules && ctx.policyRules.length > 0
     ? `\n${getPolicyRulesInstructions(ctx.policyRules)}\n`
     : "";
+  const orchestrationRulesSection = ctx.orchestrationRules && ctx.orchestrationRules.length > 0
+    ? `\n${getOrchestrationRulesInstructions(ctx.orchestrationRules)}\n`
+    : "";
   const cursorMdContent = `# cmux Project Instructions
-${policyRulesSection}
+${policyRulesSection}${orchestrationRulesSection}
 ${getMemoryProtocolInstructions()}
 `;
   files.push({
