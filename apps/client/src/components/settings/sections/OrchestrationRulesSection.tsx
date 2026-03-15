@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { api } from "@cmux/convex/api";
 import type { Doc } from "@cmux/convex/dataModel";
+import * as Dialog from "@radix-ui/react-dialog";
 import { convexQuery } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useConvex } from "convex/react";
@@ -38,6 +39,12 @@ const STATUS_BADGE_STYLES: Record<RuleStatus, string> = {
   archived: "bg-neutral-100 text-neutral-400 dark:bg-neutral-800 dark:text-neutral-500",
 };
 
+const TAB_DEFINITIONS: { key: TabView; label: string }[] = [
+  { key: "active", label: "Active" },
+  { key: "candidates", label: "Candidates" },
+  { key: "skills", label: "Skill Candidates" },
+];
+
 type TabView = "active" | "candidates" | "skills";
 
 export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSectionProps) {
@@ -47,17 +54,20 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addForm, setAddForm] = useState({ text: "", lane: "hot" as RuleLane });
 
-  const { data: activeRules, refetch: refetchActive, isLoading: loadingActive } = useQuery(
-    convexQuery(api.agentOrchestrationLearning.getActiveRules, { teamSlugOrId })
-  );
+  const { data: activeRules, refetch: refetchActive, isLoading: loadingActive } = useQuery({
+    ...convexQuery(api.agentOrchestrationLearning.getActiveRules, { teamSlugOrId }),
+    enabled: activeTab === "active" || activeTab === "candidates",
+  });
 
-  const { data: candidateRules, refetch: refetchCandidates, isLoading: loadingCandidates } = useQuery(
-    convexQuery(api.agentOrchestrationLearning.getCandidateRules, { teamSlugOrId })
-  );
+  const { data: candidateRules, refetch: refetchCandidates, isLoading: loadingCandidates } = useQuery({
+    ...convexQuery(api.agentOrchestrationLearning.getCandidateRules, { teamSlugOrId }),
+    enabled: activeTab === "candidates",
+  });
 
-  const { data: skillCandidates, isLoading: loadingSkills } = useQuery(
-    convexQuery(api.agentOrchestrationLearning.getSkillCandidates, { teamSlugOrId })
-  );
+  const { data: skillCandidates, isLoading: loadingSkills } = useQuery({
+    ...convexQuery(api.agentOrchestrationLearning.getSkillCandidates, { teamSlugOrId }),
+    enabled: activeTab === "skills",
+  });
 
   const promoteMutation = useMutation({
     mutationFn: async ({ ruleId, lane }: { ruleId: string; lane?: RuleLane }) => {
@@ -149,11 +159,7 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
       {/* Tab bar */}
       <div className="border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
         <div className="flex gap-1">
-          {([
-            { key: "active" as const, label: "Active" },
-            { key: "candidates" as const, label: "Candidates" },
-            { key: "skills" as const, label: "Skill Candidates" },
-          ]).map(({ key, label }) => (
+          {TAB_DEFINITIONS.map(({ key, label }) => (
             <button
               key={key}
               onClick={() => setActiveTab(key)}
@@ -182,8 +188,9 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
             emptyMessage="No active rules. Rules learned from orchestration runs will appear here."
           />
         ) : activeTab === "candidates" ? (
-          <CandidatesList
+          <RulesList
             rules={candidateRules ?? []}
+            variant="candidate"
             onPromote={(ruleId) => promoteMutation.mutate({ ruleId })}
             onSuppress={setSuppressTarget}
             emptyMessage="No candidate rules. Candidates are auto-detected from orchestration runs."
@@ -209,18 +216,18 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
       />
 
       {/* Add rule dialog */}
-      {addDialogOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl dark:bg-neutral-900">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
-                Add Orchestration Rule
-              </h3>
-              <button onClick={() => setAddDialogOpen(false)}>
-                <X className="h-5 w-5 text-neutral-400" />
-              </button>
-            </div>
-            <div className="space-y-4">
+      <Dialog.Root open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/50" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white p-6 shadow-xl dark:bg-neutral-900">
+            <Dialog.Title className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+              Add Orchestration Rule
+            </Dialog.Title>
+            <Dialog.Close className="absolute right-4 top-4 text-neutral-400 hover:text-neutral-600">
+              <X className="h-5 w-5" />
+            </Dialog.Close>
+
+            <div className="mt-4 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
                   Rule Text
@@ -263,19 +270,23 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
                 </Button>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </SettingSection>
   );
 }
 
 function RulesList({
   rules,
+  variant,
+  onPromote,
   onSuppress,
   emptyMessage,
 }: {
   rules: OrchestrationRule[];
+  variant?: "candidate";
+  onPromote?: (ruleId: string) => void;
   onSuppress: (rule: OrchestrationRule) => void;
   emptyMessage: string;
 }) {
@@ -292,17 +303,22 @@ function RulesList({
       {rules.map((rule) => (
         <div key={rule._id} className="flex items-start justify-between gap-4 px-4 py-3">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-neutral-900 dark:text-neutral-100">
-                {rule.text}
-              </span>
-            </div>
+            <span className="text-sm text-neutral-900 dark:text-neutral-100">
+              {rule.text}
+            </span>
             <div className="mt-1 flex items-center gap-2">
               <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${LANE_BADGE_STYLES[rule.lane]}`}>
                 {LANE_LABELS[rule.lane]}
               </span>
+              {variant === "candidate" && (
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_BADGE_STYLES.candidate}`}>
+                  Candidate
+                </span>
+              )}
               <span className="text-[11px] text-neutral-400">
-                used {rule.timesUsed ?? 0}x
+                {variant === "candidate"
+                  ? `seen ${rule.timesSeen ?? 1}x`
+                  : `used ${rule.timesUsed ?? 0}x`}
               </span>
               {rule.projectFullName && (
                 <span className="text-[11px] text-neutral-400">
@@ -311,78 +327,24 @@ function RulesList({
               )}
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-neutral-400 hover:text-red-600"
-            onClick={() => onSuppress(rule)}
-            title="Suppress rule"
-          >
-            <Ban className="h-4 w-4" />
-          </Button>
-        </div>
-      ))}
-    </>
-  );
-}
-
-function CandidatesList({
-  rules,
-  onPromote,
-  onSuppress,
-  emptyMessage,
-}: {
-  rules: OrchestrationRule[];
-  onPromote: (ruleId: string) => void;
-  onSuppress: (rule: OrchestrationRule) => void;
-  emptyMessage: string;
-}) {
-  if (rules.length === 0) {
-    return (
-      <div className="px-4 py-8 text-center text-sm text-neutral-500">
-        {emptyMessage}
-      </div>
-    );
-  }
-
-  return (
-    <>
-      {rules.map((rule) => (
-        <div key={rule._id} className="flex items-start justify-between gap-4 px-4 py-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-neutral-900 dark:text-neutral-100">
-                {rule.text}
-              </span>
-            </div>
-            <div className="mt-1 flex items-center gap-2">
-              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${LANE_BADGE_STYLES[rule.lane]}`}>
-                {LANE_LABELS[rule.lane]}
-              </span>
-              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_BADGE_STYLES.candidate}`}>
-                Candidate
-              </span>
-              <span className="text-[11px] text-neutral-400">
-                seen {rule.timesSeen ?? 1}x
-              </span>
-            </div>
-          </div>
           <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-emerald-600 hover:text-emerald-700"
-              onClick={() => onPromote(rule._id)}
-              title="Promote to active"
-            >
-              <ArrowUp className="h-4 w-4" />
-            </Button>
+            {onPromote && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-emerald-600 hover:text-emerald-700"
+                onClick={() => onPromote(rule._id)}
+                title="Promote to active"
+              >
+                <ArrowUp className="h-4 w-4" />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"
               className="h-8 w-8 text-neutral-400 hover:text-red-600"
               onClick={() => onSuppress(rule)}
-              title="Suppress"
+              title="Suppress rule"
             >
               <Ban className="h-4 w-4" />
             </Button>
