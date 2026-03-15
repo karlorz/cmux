@@ -637,10 +637,10 @@ ARG NODE_VERSION
 ARG NVM_VERSION
 ARG CODE_RELEASE
 
-# Install runtime dependencies only
+# Install runtime dependencies only (including tzdata for timezone support)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   --mount=type=cache,target=/var/lib/apt,sharing=locked \
-  apt-get update && apt-get install -y --no-install-recommends \
+  apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   ca-certificates \
   curl \
   wget \
@@ -665,6 +665,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   dbus \
   kmod \
   util-linux \
+  tzdata \
   tigervnc-standalone-server \
   tigervnc-common \
   xvfb \
@@ -697,6 +698,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   libxss1 \
   libxtst6 \
   zram-tools
+
+# Default timezone (can be overridden via TZ env var at runtime)
+ENV TZ=Asia/Hong_Kong
 
 ENV RUSTUP_HOME=/usr/local/rustup \
   CARGO_HOME=/usr/local/cargo \
