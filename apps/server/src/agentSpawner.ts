@@ -911,7 +911,8 @@ export async function spawnAgent(
       }
     }
 
-    const timezone = envVars.TZ;
+    // Apply timezone: prefer workspace TZ env var, fall back to server default
+    const timezone = envVars.TZ || env.DEFAULT_SANDBOX_TIMEZONE;
     if (timezone) {
       const timezoneStartupCommand = buildSystemTimezoneStartupCommand(
         timezone
@@ -919,7 +920,7 @@ export async function spawnAgent(
       if (timezoneStartupCommand) {
         startupCommands.unshift(timezoneStartupCommand);
         serverLogger.info(
-          `[AgentSpawner] Will apply system timezone from TZ=${timezone}`
+          `[AgentSpawner] Will apply system timezone from TZ=${timezone}${!envVars.TZ ? " (default)" : ""}`
         );
       } else {
         serverLogger.warn(

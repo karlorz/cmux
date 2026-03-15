@@ -26,6 +26,9 @@ export const env = createEnv({
     CMUX_SERVER_URL: z.string().optional(),
     // JWT secret for task-run tokens (used for sub-agent spawning)
     CMUX_TASK_RUN_JWT_SECRET: z.string().optional(),
+    // Default timezone for sandboxes when TZ is not set in workspace env vars
+    // Defaults to Asia/Hong_Kong if not specified
+    DEFAULT_SANDBOX_TIMEZONE: z.string().optional().default("Asia/Hong_Kong"),
   },
   // Handle both Node and Vite/Bun
   runtimeEnv: { ...import.meta.env, ...process.env },
