@@ -85,11 +85,11 @@ export function AgentConfigsSection({ teamSlugOrId }: AgentConfigsSectionProps) 
     if (error) {
       console.error("Failed to fetch agent config:", error);
       setLastError(error);
-    } else if (!isLoading && !isFetching && config !== undefined) {
-      // Clear error only on successful fetch
+    } else if (!isLoading && !isFetching && config !== undefined && lastError !== null) {
+      // Clear error only on successful fetch (guard prevents no-op updates)
       setLastError(null);
     }
-  }, [error, isLoading, isFetching, config]);
+  }, [error, isLoading, isFetching, config, lastError]);
 
   // Use persisted error or current error
   const displayError = error ?? lastError;
@@ -123,6 +123,7 @@ export function AgentConfigsSection({ teamSlugOrId }: AgentConfigsSectionProps) 
   // Reset when changing agent/scope
   useEffect(() => {
     setHasLoaded(false);
+    setLastError(null); // Clear stale error on tab switch
   }, [activeAgent, activeScope]);
 
   const hasChanges = configText !== originalConfigText;
@@ -303,15 +304,15 @@ export function AgentConfigsSection({ teamSlugOrId }: AgentConfigsSectionProps) 
               <AlertCircle className="size-5" />
               <span className="text-sm">Failed to load config</span>
               <span className="text-xs text-neutral-500">{displayError.message}</span>
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => { setLastError(null); void refetch(); }}
-                className="mt-2 text-xs underline hover:no-underline"
               >
                 Retry
-              </button>
+              </Button>
             </div>
-          ) : isLoading || isFetching || !hasLoaded ? (
+          ) : isLoading || !hasLoaded ? (
             <div className="flex items-center justify-center py-24 text-neutral-500 dark:text-neutral-400">
               <Loader2 className="size-5 animate-spin" />
             </div>
