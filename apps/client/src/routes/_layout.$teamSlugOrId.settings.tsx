@@ -10,6 +10,7 @@ import { ArchivedTasksSection } from "@/components/settings/sections/ArchivedTas
 import { GitSection } from "@/components/settings/sections/GitSection";
 import { McpServersSection } from "@/components/settings/sections/McpServersSection";
 import { PolicyRulesSection } from "@/components/settings/sections/PolicyRulesSection";
+import { PermissionRulesSection } from "@/components/settings/sections/PermissionRulesSection";
 import { AgentConfigsSection } from "@/components/settings/sections/AgentConfigsSection";
 import { ModelCatalogSection } from "@/components/settings/sections/ModelCatalogSection";
 import { ModelManagementSection } from "@/components/settings/sections/ModelManagementSection";
@@ -50,6 +51,7 @@ export const settingsSectionSchema = z.enum([
   "model-catalog",
   "mcp-servers",
   "policy-rules",
+  "permission-rules",
   "agent-configs",
   "git",
   "worktrees",
@@ -884,6 +886,8 @@ function SettingsComponent() {
             <McpServersSection teamSlugOrId={teamSlugOrId} />
           ) : activeSection === "policy-rules" ? (
             <PolicyRulesSection teamSlugOrId={teamSlugOrId} />
+          ) : activeSection === "permission-rules" ? (
+            <PermissionRulesSection teamSlugOrId={teamSlugOrId} />
           ) : activeSection === "agent-configs" ? (
             <AgentConfigsSection teamSlugOrId={teamSlugOrId} />
           ) : activeSection === "git" ? (

@@ -2104,6 +2104,48 @@ const convexSchema = defineSchema({
     .index("by_team_project", ["teamId", "projectFullName", "status"]) // Workspace scope with team isolation
     .index("by_user", ["userId", "status"])
     .index("by_ruleId", ["ruleId"]), // For upsert lookups
+
+  // Permission deny rules for Claude Code settings.json
+  // These are the "deny" patterns in permissions.deny that restrict tool access
+  // Separate from policy rules which are markdown instructions injected into CLAUDE.md
+  permissionDenyRules: defineTable({
+    // Identity
+    ruleId: v.string(), // "pdr_xxx" format for stable external references
+    pattern: v.string(), // e.g., "Bash(gh pr create:*)"
+    description: v.string(), // Human-readable explanation
+
+    // Scope hierarchy: system > team > workspace
+    scope: v.union(
+      v.literal("system"), // cmux-managed defaults
+      v.literal("team"), // Team-wide override
+      v.literal("workspace") // Repo-specific
+    ),
+
+    // Targeting fields (set based on scope)
+    teamId: v.optional(v.string()), // For team/workspace scope
+    projectFullName: v.optional(v.string()), // For workspace scope (owner/repo)
+
+    // Environment context targeting (when this rule applies)
+    contexts: v.array(
+      v.union(
+        v.literal("task_sandbox"), // Regular task spawns
+        v.literal("cloud_workspace") // Head agent / cloud workspaces
+      )
+    ),
+
+    // Status
+    enabled: v.boolean(),
+    priority: v.number(), // Lower = higher priority (for ordering/conflict resolution)
+
+    // Audit fields
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    createdBy: v.optional(v.string()), // userId who created the rule
+  })
+    .index("by_scope", ["scope", "enabled"])
+    .index("by_team", ["teamId", "enabled"])
+    .index("by_team_scope", ["teamId", "scope", "enabled"])
+    .index("by_ruleId", ["ruleId"]),
 });
 
 export default convexSchema;

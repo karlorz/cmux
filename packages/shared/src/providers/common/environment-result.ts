@@ -92,4 +92,15 @@ export type EnvironmentContext = {
     claude?: string;  // Raw JSON config
     codex?: string;   // Raw TOML config
   };
+  /**
+   * When true, this is a head agent (cloud workspace) - skip sandbox deny rules.
+   * Head agents need full capabilities for orchestration and PR management.
+   */
+  isOrchestrationHead?: boolean;
+  /**
+   * Permission deny patterns fetched from Convex.
+   * These are injected into Claude's settings.json permissions.deny array.
+   * When empty/undefined and taskRunJwt is set, no deny rules are applied.
+   */
+  permissionDenyRules?: string[];
 };
