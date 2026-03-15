@@ -9,6 +9,7 @@ import {
 import { agentStopped } from "./notifications_http";
 import { syncMemory } from "./agentMemory_http";
 import { getPolicyRules } from "./agentPolicyRules_http";
+import { getPermissionDenyRules } from "./permissionDenyRules_http";
 import { createScreenshotUploadUrl, uploadScreenshot } from "./screenshots_http";
 import {
   codeReviewFileCallback,
@@ -148,6 +149,12 @@ http.route({
   path: "/api/agent/policy-rules",
   method: "GET",
   handler: getPolicyRules,
+});
+
+http.route({
+  path: "/api/agent/permission-deny-rules",
+  method: "GET",
+  handler: getPermissionDenyRules,
 });
 
 http.route({

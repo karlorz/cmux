@@ -24,13 +24,14 @@ export const CLAUDE_KEY_ENV_VARS_TO_UNSET = [
 ];
 
 /**
- * Deny rules applied to Claude Code's permissions.deny when running inside a
- * cmux task sandbox (CMUX_TASK_RUN_JWT is set). These prevent the agent from
- * bypassing the platform-managed PR/merge workflow or mutating cloud infra.
+ * @deprecated Use permissionDenyRules from Convex instead.
+ * Kept as fallback if Convex fetch fails during migration period.
  *
- * Pattern format: Bash(<command-prefix>:*)
+ * These deny rules were previously hardcoded and are now stored in Convex
+ * as system-level permissionDenyRules with contexts: ["task_sandbox"].
+ * They do NOT apply to head agents (cloud workspaces) which need full capabilities.
  */
-const TASK_SANDBOX_DENY_RULES = [
+const FALLBACK_DENY_RULES = [
   // PR lifecycle — cmux manages PR creation/merging automatically
   "Bash(gh pr create:*)",
   "Bash(gh pr merge:*)",
@@ -341,14 +342,26 @@ exit 0`;
   // Create settings.json with hooks configuration
   // When OAuth token is present, we don't use the cmux proxy (user pays directly via their subscription)
   // When only API key is present, we route through cmux proxy for tracking/rate limiting
+
+  // Determine deny rules to apply:
+  // 1. Head agents (isOrchestrationHead) get NO deny rules - they need full capabilities
+  // 2. Task sandboxes use permissionDenyRules from Convex if available
+  // 3. Fall back to FALLBACK_DENY_RULES if no Convex rules provided (migration period)
+  const shouldApplyDenyRules = hasTaskRunJwt && !ctx.isOrchestrationHead;
+  const denyRules = shouldApplyDenyRules
+    ? (ctx.permissionDenyRules?.length
+        ? ctx.permissionDenyRules
+        : FALLBACK_DENY_RULES)
+    : undefined;
+
   const settingsConfig: Record<string, unknown> = {
     alwaysThinkingEnabled: true,
     // Always use apiKeyHelper when not using OAuth (helper outputs correct key based on user config)
     ...(hasOAuthToken ? {} : { apiKeyHelper: claudeApiKeyHelperPath }),
-    ...(hasTaskRunJwt
+    ...(denyRules?.length
       ? {
           permissions: {
-            deny: TASK_SANDBOX_DENY_RULES,
+            deny: denyRules,
           },
         }
       : {}),
