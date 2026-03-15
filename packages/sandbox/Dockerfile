@@ -322,7 +322,7 @@ RUN bun add -g \
   find /usr/local/lib/bun/node_modules -type d -name 'tests' -exec rm -rf {} + 2>/dev/null || true && \
   find /usr/local/lib/bun/node_modules -name '*.md' -type f -delete 2>/dev/null || true && \
   find /usr/local/lib/bun/node_modules -type d -name 'docs' -exec rm -rf {} + 2>/dev/null || true && \
-  find /usr/local/lib/bun/node_modules -type d -name 'doc' -exec rm -rf {} + 2>/dev/null || true && \
+  find /usr/local/lib/bun/node_modules -type d -name 'doc' ! -path '*/yaml/*' -exec rm -rf {} + 2>/dev/null || true && \
   find /usr/local/lib/bun/node_modules -type d -name 'example' -exec rm -rf {} + 2>/dev/null || true && \
   find /usr/local/lib/bun/node_modules -type d -name 'examples' -exec rm -rf {} + 2>/dev/null || true && \
   find /usr/local/lib/bun/node_modules -name '*.d.ts' -type f -delete 2>/dev/null || true && \
