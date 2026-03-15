@@ -6,7 +6,6 @@ import { authMutation, authQuery } from "./users/utils";
 
 async function getUnreadRunIdSet(
   db: DatabaseReader,
-  teamId: string,
   userId: string,
   runIds: readonly Id<"taskRuns">[],
 ): Promise<Set<Id<"taskRuns">>> {
@@ -15,15 +14,21 @@ async function getUnreadRunIdSet(
     return new Set<Id<"taskRuns">>();
   }
 
-  const unreadRows = await db
-    .query("unreadTaskRuns")
-    .withIndex("by_team_user", (q) => q.eq("teamId", teamId).eq("userId", userId))
-    .collect();
+  // Use by_run_user index for targeted lookups instead of collecting all unread rows
+  const uniqueRunIds = Array.from(targetRunIds);
+  const results = await Promise.all(
+    uniqueRunIds.map((runId) =>
+      db
+        .query("unreadTaskRuns")
+        .withIndex("by_run_user", (q) => q.eq("taskRunId", runId).eq("userId", userId))
+        .first()
+    )
+  );
 
   const unreadRunIds = new Set<Id<"taskRuns">>();
-  for (const unreadRow of unreadRows) {
-    if (targetRunIds.has(unreadRow.taskRunId)) {
-      unreadRunIds.add(unreadRow.taskRunId);
+  for (let i = 0; i < uniqueRunIds.length; i++) {
+    if (results[i]) {
+      unreadRunIds.add(uniqueRunIds[i]);
     }
   }
 
@@ -77,7 +82,7 @@ export const list = authQuery({
       }
     }
 
-    const unreadRunIds = await getUnreadRunIdSet(ctx.db, teamId, userId, runIds);
+    const unreadRunIds = await getUnreadRunIdSet(ctx.db, userId, runIds);
 
     return notifications.map((n) => ({
       ...n,

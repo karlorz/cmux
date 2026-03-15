@@ -390,6 +390,45 @@ function buildOpenAiProviderConfig(
   );
 }
 
+async function getSandboxAgentConfigs(
+  convex: ReturnType<typeof getConvex>,
+  options: {
+    teamSlugOrId: string;
+    projectFullName?: string;
+    logPrefix: string;
+  },
+): Promise<{
+  claude?: string;
+  codex?: string;
+}> {
+  const getAgentConfig = (agentType: "claude" | "codex") =>
+    convex
+      .query(api.agentConfigs.getForSandbox, {
+        teamSlugOrId: options.teamSlugOrId,
+        agentType,
+        ...(options.projectFullName
+          ? { projectFullName: options.projectFullName }
+          : {}),
+      })
+      .catch((err: unknown) => {
+        console.error(
+          `[${options.logPrefix}] Failed to fetch ${agentType} agent config`,
+          err,
+        );
+        return null;
+      });
+
+  const [claudeConfig, codexConfig] = await Promise.all([
+    getAgentConfig("claude"),
+    getAgentConfig("codex"),
+  ]);
+
+  return {
+    ...(claudeConfig ? { claude: claudeConfig } : {}),
+    ...(codexConfig ? { codex: codexConfig } : {}),
+  };
+}
+
 async function getSandboxMcpConfigs(
   convex: ReturnType<typeof getConvex>,
   options: {
@@ -503,8 +542,8 @@ async function setupProviderAuth(
 ): Promise<{ providers: string[] }> {
   const configuredProviders: string[] = [];
 
-  // Fetch API keys, provider overrides, and workspace settings in parallel
-  const [apiKeys, providerOverrides, workspaceSettings, mcpConfigs] = await Promise.all([
+  // Fetch API keys, provider overrides, workspace settings, MCP configs, and agent configs in parallel
+  const [apiKeys, providerOverrides, workspaceSettings, mcpConfigs, agentConfigs] = await Promise.all([
     convex.query(api.apiKeys.getAllForAgents, {
       teamSlugOrId: options.teamSlugOrId,
     }),
@@ -531,6 +570,11 @@ async function setupProviderAuth(
         return null;
       }),
     getSandboxMcpConfigs(convex, {
+      teamSlugOrId: options.teamSlugOrId,
+      projectFullName: options.projectFullName,
+      logPrefix: "setupProviderAuth",
+    }),
+    getSandboxAgentConfigs(convex, {
       teamSlugOrId: options.teamSlugOrId,
       projectFullName: options.projectFullName,
       logPrefix: "setupProviderAuth",
@@ -586,6 +630,7 @@ async function setupProviderAuth(
               isOverridden: true,
             }
           : undefined,
+        agentConfigs,
       });
 
       await applyEnvironmentResult(
@@ -638,6 +683,7 @@ async function setupProviderAuth(
         previousKnowledge: options.previousKnowledge ?? undefined,
         previousMailbox: options.previousMailbox ?? undefined,
         providerConfig: openaiProviderConfig,
+        agentConfigs,
       });
 
       await applyEnvironmentResult(

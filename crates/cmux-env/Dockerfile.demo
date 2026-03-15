@@ -13,8 +13,10 @@ RUN cargo build --release --locked
 
 FROM debian:bookworm-slim AS runtime
 ENV DEBIAN_FRONTEND=noninteractive
+# Default timezone (can be overridden via TZ env var at runtime)
+ENV TZ=Asia/Hong_Kong
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      bash zsh fish ca-certificates tini tmux && \
+      bash zsh fish ca-certificates tini tmux tzdata && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/envd /usr/local/bin/envd

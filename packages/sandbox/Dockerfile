@@ -202,6 +202,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   openssh-server \
   jq \
   findutils \
+  tzdata \
   tigervnc-standalone-server \
   openbox \
   xterm \
@@ -232,6 +233,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   && apt-get update \
   && apt-get install -y --no-install-recommends gh \
   && rm -rf /var/lib/apt/lists/*
+
+# Default timezone (can be overridden via TZ env var at runtime)
+ENV TZ=Asia/Hong_Kong
 
 # Install Google Chrome (optional, may not be available on ARM64)
 RUN arch="$(uname -m)"; \
@@ -318,7 +322,7 @@ RUN bun add -g \
   find /usr/local/lib/bun/node_modules -type d -name 'tests' -exec rm -rf {} + 2>/dev/null || true && \
   find /usr/local/lib/bun/node_modules -name '*.md' -type f -delete 2>/dev/null || true && \
   find /usr/local/lib/bun/node_modules -type d -name 'docs' -exec rm -rf {} + 2>/dev/null || true && \
-  find /usr/local/lib/bun/node_modules -type d -name 'doc' -exec rm -rf {} + 2>/dev/null || true && \
+  find /usr/local/lib/bun/node_modules -type d -name 'doc' ! -path '*/yaml/*' -exec rm -rf {} + 2>/dev/null || true && \
   find /usr/local/lib/bun/node_modules -type d -name 'example' -exec rm -rf {} + 2>/dev/null || true && \
   find /usr/local/lib/bun/node_modules -type d -name 'examples' -exec rm -rf {} + 2>/dev/null || true && \
   find /usr/local/lib/bun/node_modules -name '*.d.ts' -type f -delete 2>/dev/null || true && \
