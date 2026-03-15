@@ -3601,6 +3601,10 @@ export type GetApiOrchestrateTasksByTaskIdErrors = {
      */
     401: unknown;
     /**
+     * Forbidden: task does not belong to this team
+     */
+    403: unknown;
+    /**
      * Task not found
      */
     404: unknown;
@@ -3645,6 +3649,10 @@ export type PostApiOrchestrateTasksByTaskIdCancelErrors = {
      * Unauthorized
      */
     401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
     /**
      * Task not found
      */
