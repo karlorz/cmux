@@ -301,6 +301,7 @@ export const upsert = authMutation({
     enabledCodex: v.boolean(),
     enabledGemini: v.boolean(),
     enabledOpencode: v.boolean(),
+    sourcePresetId: v.optional(v.string()),
     scope: scopeValidator,
     projectFullName: v.optional(v.string()),
   },
@@ -344,6 +345,7 @@ export const upsert = authMutation({
         enabledCodex: args.enabledCodex,
         enabledGemini: args.enabledGemini,
         enabledOpencode: args.enabledOpencode,
+        sourcePresetId: args.sourcePresetId,
         updatedAt: now,
         userId,
       });
@@ -362,6 +364,7 @@ export const upsert = authMutation({
       enabledCodex: args.enabledCodex,
       enabledGemini: args.enabledGemini,
       enabledOpencode: args.enabledOpencode,
+      sourcePresetId: args.sourcePresetId,
       scope,
       projectFullName,
       createdAt: now,

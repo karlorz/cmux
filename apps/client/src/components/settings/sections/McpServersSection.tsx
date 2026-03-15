@@ -357,6 +357,7 @@ export function McpServersSection({
         description: config.description,
         tags: config.tags,
         ...buildEnabledAgentState(config, field, nextValue),
+        sourcePresetId: config.sourcePresetId,
         scope: config.scope,
         projectFullName: config.projectFullName,
       });
@@ -503,6 +504,15 @@ export function McpServersSection({
                             <h3 className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
                               {config.displayName}
                             </h3>
+                            {config.sourcePresetId ? (
+                              <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                                Preset
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                                Custom
+                              </span>
+                            )}
                             <span className="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
                               {config.scope === "global" ? "Global" : "Workspace"}
                             </span>

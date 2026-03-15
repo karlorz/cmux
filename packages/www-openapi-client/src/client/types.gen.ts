@@ -1918,6 +1918,7 @@ export type UpsertMcpServerBody = {
     enabledCodex: boolean;
     enabledGemini: boolean;
     enabledOpencode: boolean;
+    sourcePresetId?: string;
     scope: McpServerScope;
     projectFullName?: string;
 } | {
@@ -1937,6 +1938,7 @@ export type UpsertMcpServerBody = {
     enabledCodex: boolean;
     enabledGemini: boolean;
     enabledOpencode: boolean;
+    sourcePresetId?: string;
     scope: McpServerScope;
     projectFullName?: string;
 } | {
@@ -1956,6 +1958,7 @@ export type UpsertMcpServerBody = {
     enabledCodex: boolean;
     enabledGemini: boolean;
     enabledOpencode: boolean;
+    sourcePresetId?: string;
     scope: McpServerScope;
     projectFullName?: string;
 };
