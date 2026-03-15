@@ -70,9 +70,17 @@ export function AgentConfigsSection({ teamSlugOrId }: AgentConfigsSectionProps) 
     [teamSlugOrId, activeAgent, activeScope],
   );
 
-  const { data: config, refetch, isLoading } = useQuery(
-    convexQuery(api.agentConfigs.get, queryKey),
-  );
+  const { data: config, refetch, isLoading, error } = useQuery({
+    ...convexQuery(api.agentConfigs.get, queryKey),
+    retry: false,
+  });
+
+  // Log errors for debugging
+  useEffect(() => {
+    if (error) {
+      console.error("Failed to fetch agent config:", error);
+    }
+  }, [error]);
 
   const upsertMutation = useMutation({
     mutationFn: async (rawConfig: string) => {
