@@ -109,7 +109,7 @@ export function AgentConfigsSection({ teamSlugOrId }: AgentConfigsSectionProps) 
 
   // Track which agent/scope combo we've loaded for
   const [loadedKey, setLoadedKey] = useState<string>("");
-  const currentKey = `${activeAgent}-${activeScope}`;
+  const currentKey = useMemo(() => `${activeAgent}-${activeScope}`, [activeAgent, activeScope]);
 
   // Initialize editor content when config loads for current key
   useEffect(() => {
