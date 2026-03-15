@@ -286,7 +286,13 @@ export function AgentConfigsSection({ teamSlugOrId }: AgentConfigsSectionProps) 
             </div>
           </div>
 
-          {isLoading || !hasLoaded ? (
+          {error ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-24 text-red-500 dark:text-red-400">
+              <AlertCircle className="size-5" />
+              <span className="text-sm">Failed to load config</span>
+              <span className="text-xs text-neutral-500">{error.message}</span>
+            </div>
+          ) : isLoading || !hasLoaded ? (
             <div className="flex items-center justify-center py-24 text-neutral-500 dark:text-neutral-400">
               <Loader2 className="size-5 animate-spin" />
             </div>
