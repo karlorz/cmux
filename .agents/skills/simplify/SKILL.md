@@ -1,7 +1,7 @@
 ---
 name: simplify
 description: Review and simplify recently changed code for reuse, clarity, and efficiency while preserving behavior. Use when the user asks to simplify, refine, polish, clean up, or make code clearer, or after finishing a logical chunk of implementation that should be tightened before commit.
-args: "[options] [<base-ref>]"
+argument-hint: "[options] [focus] [<base-ref>]"
 ---
 
 # Simplify
@@ -11,10 +11,12 @@ Use this skill to improve recently changed code without changing what it does.
 ## Usage
 
 ```
-/simplify              # Review current uncommitted changes
-/simplify HEAD~3       # Review changes from 3 commits ago to HEAD
-/simplify main         # Review changes from main branch to HEAD
-/simplify abc123       # Review changes from commit abc123 to HEAD
+/simplify                              # Review current uncommitted changes
+/simplify HEAD~3                       # Review changes from 3 commits ago to HEAD
+/simplify main                         # Review changes from main branch to HEAD
+/simplify abc123                       # Review changes from commit abc123 to HEAD
+/simplify focus on error handling      # Focus review on specific concerns
+/simplify focus on memory efficiency   # Focus review on memory efficiency
 ```
 
 ## Modes
