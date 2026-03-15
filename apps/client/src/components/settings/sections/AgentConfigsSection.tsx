@@ -62,7 +62,6 @@ export function AgentConfigsSection({ teamSlugOrId }: AgentConfigsSectionProps) 
   const [activeScope, setActiveScope] = useState<Scope>("global");
   const [configText, setConfigText] = useState<string>("");
   const [originalConfigText, setOriginalConfigText] = useState<string>("");
-  const [hasLoaded, setHasLoaded] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   const queryKey = useMemo(
@@ -108,24 +107,28 @@ export function AgentConfigsSection({ teamSlugOrId }: AgentConfigsSectionProps) 
     },
   });
 
-  // Initialize editor content when config loads
+  // Track which agent/scope combo we've loaded for
+  const [loadedKey, setLoadedKey] = useState<string>("");
+  const currentKey = `${activeAgent}-${activeScope}`;
+
+  // Initialize editor content when config loads for current key
   useEffect(() => {
-    // Wait for both initial loading and any background fetch to complete
+    // Wait for query to settle
     if (isLoading || isFetching) {
+      return;
+    }
+
+    // Only initialize if we haven't loaded this key yet
+    if (loadedKey === currentKey) {
       return;
     }
 
     const loadedConfig = config?.rawConfig ?? getDefaultConfig(activeAgent);
     setConfigText(loadedConfig);
     setOriginalConfigText(loadedConfig);
-    setHasLoaded(true);
-  }, [config, isLoading, isFetching, activeAgent]);
-
-  // Reset when changing agent/scope
-  useEffect(() => {
-    setHasLoaded(false);
-    setLastError(null); // Clear stale error on tab switch
-  }, [activeAgent, activeScope]);
+    setLoadedKey(currentKey);
+    setLastError(null); // Clear any stale error
+  }, [config, isLoading, isFetching, activeAgent, activeScope, loadedKey, currentKey]);
 
   const hasChanges = configText !== originalConfigText;
 
@@ -313,7 +316,7 @@ export function AgentConfigsSection({ teamSlugOrId }: AgentConfigsSectionProps) 
                 Retry
               </Button>
             </div>
-          ) : isLoading || !hasLoaded ? (
+          ) : isLoading || loadedKey !== currentKey ? (
             <div className="flex items-center justify-center py-24 text-neutral-500 dark:text-neutral-400">
               <Loader2 className="size-5 animate-spin" />
             </div>
