@@ -538,12 +538,14 @@ async function setupProviderAuth(
     previousKnowledge?: string | null;
     previousMailbox?: string | null;
     agentName?: string;
+    /** When true, this is a head agent (cloud workspace) - skip deny rules */
+    isOrchestrationHead?: boolean;
   },
 ): Promise<{ providers: string[] }> {
   const configuredProviders: string[] = [];
 
-  // Fetch API keys, provider overrides, workspace settings, MCP configs, and agent configs in parallel
-  const [apiKeys, providerOverrides, workspaceSettings, mcpConfigs, agentConfigs] = await Promise.all([
+  // Fetch API keys, provider overrides, workspace settings, MCP configs, agent configs, and permission deny rules in parallel
+  const [apiKeys, providerOverrides, workspaceSettings, mcpConfigs, agentConfigs, permissionDenyRules] = await Promise.all([
     convex.query(api.apiKeys.getAllForAgents, {
       teamSlugOrId: options.teamSlugOrId,
     }),
@@ -579,6 +581,23 @@ async function setupProviderAuth(
       projectFullName: options.projectFullName,
       logPrefix: "setupProviderAuth",
     }),
+    // Fetch permission deny rules for task sandboxes
+    // Skip for head agents (they need full capabilities) - determined by isOrchestrationHead flag
+    options.isOrchestrationHead
+      ? Promise.resolve([])
+      : convex
+          .query(api.permissionDenyRules.getForSandbox, {
+            teamSlugOrId: options.teamSlugOrId,
+            context: "task_sandbox",
+            projectFullName: options.projectFullName,
+          })
+          .catch((err: unknown) => {
+            console.error(
+              "[setupProviderAuth] Failed to fetch permission deny rules, using defaults",
+              err,
+            );
+            return [] as string[];
+          }),
   ]);
 
   const mcpConfigCounts = {
@@ -631,6 +650,9 @@ async function setupProviderAuth(
             }
           : undefined,
         agentConfigs,
+        // Permission deny rules from Convex - head agents skip these
+        isOrchestrationHead: options.isOrchestrationHead,
+        permissionDenyRules,
       });
 
       await applyEnvironmentResult(
