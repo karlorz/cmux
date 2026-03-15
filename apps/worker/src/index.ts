@@ -1586,7 +1586,45 @@ async function createTerminal(
       log("INFO", `[createTerminal] Using cmux-pty backend for ${terminalId}`);
 
       try {
-        // 1. Merge environment variables
+        // 1. Run system-level startup commands (like timezone) BEFORE creating the PTY session
+        // These run as separate processes, not as PTY input, to ensure they complete
+        const isSystemCommand = (cmd: string) =>
+          cmd.includes("timedatectl") || cmd.includes("/etc/localtime") || cmd.includes("/etc/timezone");
+        const systemCommands: string[] = [];
+        const shellCommands: string[] = [];
+        for (const cmd of startupCommands) {
+          (isSystemCommand(cmd) ? systemCommands : shellCommands).push(cmd);
+        }
+
+        if (systemCommands.length > 0) {
+          log("INFO", `[createTerminal] Running ${systemCommands.length} system command(s) before PTY creation`);
+          for (const cmd of systemCommands) {
+            log("INFO", `[createTerminal] Running system command: ${cmd}`);
+            await new Promise<void>((resolve) => {
+              const p = spawn("bash", ["-lc", cmd], {
+                cwd: cwd || "/root/workspace",
+                env: { ...process.env, ...env },
+                stdio: ["ignore", "pipe", "pipe"],
+              });
+              let stderr = "";
+              p.stderr.on("data", (d) => { stderr += d.toString(); });
+              p.on("exit", (code) => {
+                if (code === 0) {
+                  log("INFO", `[createTerminal] System command succeeded: ${cmd.slice(0, 50)}...`);
+                } else {
+                  log("WARN", `[createTerminal] System command failed (${code}): ${cmd.slice(0, 50)}...`, new Error(stderr));
+                }
+                resolve();
+              });
+              p.on("error", (e) => {
+                log("ERROR", `[createTerminal] System command error: ${cmd.slice(0, 50)}...`, e);
+                resolve();
+              });
+            });
+          }
+        }
+
+        // 2. Merge environment variables
         const inheritedEnvEntries = Object.entries(process.env).filter(
           (entry): entry is [string, string] => typeof entry[1] === "string"
         );
@@ -1627,19 +1665,25 @@ async function createTerminal(
           pid: session.pid,
         });
 
-        // 3. Send startup commands as input
-        for (const cmd of startupCommands) {
-          log("INFO", `[createTerminal] Sending startup command: ${cmd}`);
-          await ptyClient.sendInput(session.id, cmd + "\n");
+        // 4. Send non-system startup commands as PTY input
+        // Wait briefly for shell to initialize before sending commands
+        if (shellCommands.length > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          for (const cmd of shellCommands) {
+            log("INFO", `[createTerminal] Sending startup command: ${cmd}`);
+            await ptyClient.sendInput(session.id, cmd + "\n");
+          }
+          // Small delay after startup commands to let them execute before agent starts
+          await new Promise((resolve) => setTimeout(resolve, 100));
         }
 
-        // 4. Send the agent command (uses ptyCommand which is the clean command for cmux-pty)
+        // 5. Send the agent command (uses ptyCommand which is the clean command for cmux-pty)
         if (ptyCommand) {
           log("INFO", `[createTerminal] Sending agent command: ${ptyCommand}`);
           await ptyClient.sendInput(session.id, ptyCommand + "\n");
         }
 
-        // 5. Send post-start commands after a delay
+        // 6. Send post-start commands after a delay
         if (postStartCommands.length > 0) {
           setTimeout(async () => {
             for (const cmd of postStartCommands) {
@@ -1656,7 +1700,7 @@ async function createTerminal(
           }, 1000);
         }
 
-        // 6. Set up completion detection (same as tmux backend)
+        // 7. Set up completion detection (same as tmux backend)
         const processStartTime = Date.now();
         const agentConfig = options.agentModel
           ? AGENT_CONFIGS.find((c) => c.name === options.agentModel)
@@ -1827,21 +1871,58 @@ async function createTerminal(
     delete ptyEnv.NODE_ENV;
   }
 
-  // Run optional startup commands prior to spawning the agent process
-  // Commands execute SEQUENTIALLY in BACKGROUND to preserve dependencies without blocking spawn
-  if (startupCommands && startupCommands.length > 0) {
+  // 1. Run system-level startup commands (like timezone) SYNCHRONOUSLY before spawn
+  // These must complete before the agent starts to ensure correct system state
+  const isSystemCommand = (cmd: string) =>
+    cmd.includes("timedatectl") || cmd.includes("/etc/localtime") || cmd.includes("/etc/timezone");
+  const systemCommands: string[] = [];
+  const shellCommands: string[] = [];
+  for (const cmd of startupCommands) {
+    (isSystemCommand(cmd) ? systemCommands : shellCommands).push(cmd);
+  }
+
+  if (systemCommands.length > 0) {
+    log("INFO", `[tmux] Running ${systemCommands.length} system command(s) synchronously before spawn`);
+    for (const cmd of systemCommands) {
+      log("INFO", `[tmux] Running system command: ${cmd}`);
+      await new Promise<void>((resolve) => {
+        const p = spawn("bash", ["-lc", cmd], {
+          cwd,
+          env: ptyEnv,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        let stderr = "";
+        p.stderr.on("data", (d) => { stderr += d.toString(); });
+        p.on("exit", (code) => {
+          if (code === 0) {
+            log("INFO", `[tmux] System command succeeded: ${cmd.slice(0, 50)}...`);
+          } else {
+            log("WARN", `[tmux] System command failed (${code}): ${cmd.slice(0, 50)}...`, new Error(stderr));
+          }
+          resolve();
+        });
+        p.on("error", (e) => {
+          log("ERROR", `[tmux] System command error: ${cmd.slice(0, 50)}...`, e);
+          resolve();
+        });
+      });
+    }
+  }
+
+  // 2. Run remaining startup commands in BACKGROUND to preserve dependencies without blocking spawn
+  if (shellCommands.length > 0) {
     log(
       "INFO",
-      `Launching ${startupCommands.length} startup command(s) in background (sequential)`,
-      { startupCommands }
+      `Launching ${shellCommands.length} startup command(s) in background (sequential)`,
+      { shellCommands }
     );
 
     // Execute commands sequentially in background (don't await)
     (async () => {
-      for (let i = 0; i < startupCommands.length; i++) {
-        const cmd = startupCommands[i]!;
+      for (let i = 0; i < shellCommands.length; i++) {
+        const cmd = shellCommands[i]!;
         try {
-          log("INFO", `[Startup ${i + 1}/${startupCommands.length}] Running: ${cmd}`);
+          log("INFO", `[Startup ${i + 1}/${shellCommands.length}] Running: ${cmd}`);
 
           await new Promise<void>((resolve, reject) => {
             const p = spawn("bash", ["-lc", cmd], {
@@ -1855,26 +1936,26 @@ async function createTerminal(
             });
             p.on("exit", (code) => {
               if (code === 0) {
-                log("INFO", `[Startup ${i + 1}/${startupCommands.length}] ✓ Completed: ${cmd}`);
+                log("INFO", `[Startup ${i + 1}/${shellCommands.length}] Completed: ${cmd}`);
                 resolve();
               } else {
                 log(
                   "ERROR",
-                  `[Startup ${i + 1}/${startupCommands.length}] ✗ Failed (${code}): ${cmd}`,
+                  `[Startup ${i + 1}/${shellCommands.length}] Failed (${code}): ${cmd}`,
                   new Error(stderr)
                 );
                 reject(new Error(`Command failed with exit code ${code}`));
               }
             });
             p.on("error", (e) => {
-              log("ERROR", `[Startup ${i + 1}/${startupCommands.length}] ✗ Error: ${cmd}`, e);
+              log("ERROR", `[Startup ${i + 1}/${shellCommands.length}] Error: ${cmd}`, e);
               reject(e);
             });
           });
         } catch (e) {
           log(
             "ERROR",
-            `[Startup ${i + 1}/${startupCommands.length}] Failed, stopping remaining commands`,
+            `[Startup ${i + 1}/${shellCommands.length}] Failed, stopping remaining commands`,
             e instanceof Error ? e : new Error(String(e))
           );
           // Stop executing remaining commands on error
