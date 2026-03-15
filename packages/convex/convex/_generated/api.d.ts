@@ -79,6 +79,8 @@ import type * as orchestrationEvents from "../orchestrationEvents.js";
 import type * as orchestrationQueries from "../orchestrationQueries.js";
 import type * as orchestrationWorker from "../orchestrationWorker.js";
 import type * as orchestration_http from "../orchestration_http.js";
+import type * as permissionDenyRules from "../permissionDenyRules.js";
+import type * as permissionDenyRules_http from "../permissionDenyRules_http.js";
 import type * as previewConfigs from "../previewConfigs.js";
 import type * as previewRuns from "../previewRuns.js";
 import type * as previewScreenshots from "../previewScreenshots.js";
@@ -97,6 +99,7 @@ import type * as sandboxInstanceMaintenance from "../sandboxInstanceMaintenance.
 import type * as sandboxInstances from "../sandboxInstances.js";
 import type * as screenshots_http from "../screenshots_http.js";
 import type * as seed from "../seed.js";
+import type * as seedPermissionDenyRules from "../seedPermissionDenyRules.js";
 import type * as seedPolicyRules from "../seedPolicyRules.js";
 import type * as sessionActivity from "../sessionActivity.js";
 import type * as sessionActivity_http from "../sessionActivity_http.js";
@@ -202,6 +205,8 @@ declare const fullApi: ApiFromModules<{
   orchestrationQueries: typeof orchestrationQueries;
   orchestrationWorker: typeof orchestrationWorker;
   orchestration_http: typeof orchestration_http;
+  permissionDenyRules: typeof permissionDenyRules;
+  permissionDenyRules_http: typeof permissionDenyRules_http;
   previewConfigs: typeof previewConfigs;
   previewRuns: typeof previewRuns;
   previewScreenshots: typeof previewScreenshots;
@@ -220,6 +225,7 @@ declare const fullApi: ApiFromModules<{
   sandboxInstances: typeof sandboxInstances;
   screenshots_http: typeof screenshots_http;
   seed: typeof seed;
+  seedPermissionDenyRules: typeof seedPermissionDenyRules;
   seedPolicyRules: typeof seedPolicyRules;
   sessionActivity: typeof sessionActivity;
   sessionActivity_http: typeof sessionActivity_http;
