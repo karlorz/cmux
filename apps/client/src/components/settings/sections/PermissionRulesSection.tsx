@@ -1,4 +1,11 @@
 import { SettingSection } from "@/components/settings/SettingSection";
+import {
+  ScopeBadge,
+  ScopeFilterTabs,
+  ContextBadges,
+  CONTEXT_LABELS,
+  type ScopeValue,
+} from "@/components/settings/scope-utils";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { api } from "@cmux/convex/api";
@@ -27,23 +34,6 @@ interface FormState {
   priority: number;
   enabled: boolean;
 }
-
-const SCOPE_LABELS: Record<PermissionScope, string> = {
-  system: "System",
-  team: "Team",
-  workspace: "Workspace",
-};
-
-const CONTEXT_LABELS: Record<PermissionContext, string> = {
-  task_sandbox: "Task Sandbox",
-  cloud_workspace: "Cloud Workspace",
-};
-
-const SCOPE_BADGE_STYLES: Record<PermissionScope, string> = {
-  system: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
-  team: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
-  workspace: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
-};
 
 function buildEmptyForm(): FormState {
   return {
@@ -207,23 +197,12 @@ export function PermissionRulesSection({ teamSlugOrId }: PermissionRulesSectionP
       }
     >
       {/* Scope filter tabs */}
-      <div className="border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
-        <div className="flex gap-1">
-          {(["all", "system", "team", "workspace"] as const).map((scope) => (
-            <button
-              key={scope}
-              onClick={() => setActiveScope(scope)}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                activeScope === scope
-                  ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
-                  : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
-              }`}
-            >
-              {scope === "all" ? "All" : SCOPE_LABELS[scope]} ({scopeCounts[scope]})
-            </button>
-          ))}
-        </div>
-      </div>
+      <ScopeFilterTabs
+        scopes={["system", "team", "workspace"] as const}
+        activeScope={activeScope}
+        onScopeChange={setActiveScope}
+        scopeCounts={scopeCounts}
+      />
 
       {/* Rules list */}
       <div className="divide-y divide-neutral-200 dark:divide-neutral-800">
@@ -248,11 +227,7 @@ export function PermissionRulesSection({ teamSlugOrId }: PermissionRulesSectionP
                   <code className="text-sm font-mono text-neutral-900 dark:text-neutral-100 bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded">
                     {rule.pattern}
                   </code>
-                  <span
-                    className={`rounded px-1.5 py-0.5 text-xs ${SCOPE_BADGE_STYLES[rule.scope]}`}
-                  >
-                    {SCOPE_LABELS[rule.scope]}
-                  </span>
+                  <ScopeBadge scope={rule.scope as ScopeValue} />
                   {!rule.enabled && (
                     <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
                       Disabled
@@ -262,18 +237,7 @@ export function PermissionRulesSection({ teamSlugOrId }: PermissionRulesSectionP
                 <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 line-clamp-2">
                   {rule.description}
                 </p>
-                {rule.contexts && rule.contexts.length > 0 && (
-                  <div className="mt-1.5 flex gap-1">
-                    {rule.contexts.map((ctx) => (
-                      <span
-                        key={ctx}
-                        className="rounded bg-neutral-50 px-1.5 py-0.5 text-xs text-neutral-500 dark:bg-neutral-900 dark:text-neutral-500"
-                      >
-                        {CONTEXT_LABELS[ctx as PermissionContext]}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                <ContextBadges contexts={rule.contexts ?? []} />
               </div>
               <div className="flex items-center gap-1">
                 {/* Toggle button - available for all rules including system */}
