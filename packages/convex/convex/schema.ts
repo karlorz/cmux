@@ -1947,6 +1947,29 @@ const convexSchema = defineSchema({
     .index("by_team_scope", ["teamId", "scope"])
     .index("by_team_project", ["teamId", "projectFullName"]),
 
+  // Raw agent config storage for Claude Code and Codex CLI
+  agentConfigs: defineTable({
+    // Agent type: claude or codex
+    agentType: v.union(v.literal("claude"), v.literal("codex")),
+    // Scope: global applies to all tasks, workspace scopes to a specific repo
+    scope: v.union(v.literal("global"), v.literal("workspace")),
+    // For workspace scope: the repo full name (e.g. "owner/repo")
+    projectFullName: v.optional(v.string()),
+    // Raw config content (JSON for Claude, TOML for Codex)
+    rawConfig: v.string(),
+    // Validation status
+    isValid: v.boolean(),
+    validationError: v.optional(v.string()),
+    // Ownership
+    userId: v.string(),
+    teamId: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_team", ["teamId"])
+    .index("by_team_agent", ["teamId", "agentType"])
+    .index("by_team_agent_scope", ["teamId", "agentType", "scope"]),
+
   // Session activity tracking for visual change dashboards
   sessionActivity: defineTable({
     // Link to task run

@@ -83,13 +83,35 @@ export async function getClaudeEnvironment(
   const claudeSecretsDir = `${claudeLifecycleDir}/secrets`;
   const claudeApiKeyHelperPath = `${claudeSecretsDir}/anthropic_key_helper.sh`;
   // Prepare .claude.json
+  // Merge user custom config with host config (user config from Convex takes precedence)
   try {
+    // Parse user config if provided
+    let userConfig: Record<string, unknown> = {};
+    if (ctx.agentConfigs?.claude) {
+      try {
+        userConfig = JSON.parse(ctx.agentConfigs.claude) as Record<string, unknown>;
+      } catch {
+        console.warn("Failed to parse user Claude config, ignoring");
+      }
+    }
+
+    // Build base config from host + MCP servers
+    const baseConfig = buildMergedClaudeConfig({
+      hostConfigText,
+      mcpServerConfigs: ctx.mcpServerConfigs ?? [],
+      agentName: ctx.agentName,
+    });
+
+    // Deep merge user config (user config takes precedence)
     const config = {
-      ...buildMergedClaudeConfig({
-        hostConfigText,
-        mcpServerConfigs: ctx.mcpServerConfigs ?? [],
-        agentName: ctx.agentName,
-      }),
+      ...baseConfig,
+      ...userConfig,
+      // Preserve mcpServers from base config and merge with user config
+      mcpServers: {
+        ...(baseConfig.mcpServers as Record<string, unknown> ?? {}),
+        ...(userConfig.mcpServers as Record<string, unknown> ?? {}),
+      },
+      // cmux-managed workspace trust (always override)
       projects: {
         "/root/workspace": {
           allowedTools: [],

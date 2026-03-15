@@ -720,6 +720,24 @@ export function ensureManagedMemoryMcpServerConfig(
   return `${normalizedToml}\n\n${managedMemoryBlock}\n`;
 }
 
+const CODEX_WORKSPACE_TRUST_SECTION = `[projects."/root/workspace"]
+trust_level = "trusted"`;
+
+function generateWorkspaceTrustSection(): string {
+  return CODEX_WORKSPACE_TRUST_SECTION;
+}
+
+function hasWorkspaceTrustSection(toml: string): boolean {
+  return /\[projects\.["']?\/root\/workspace["']?\]/.test(toml);
+}
+
+function ensureWorkspaceTrust(toml: string): string {
+  if (hasWorkspaceTrustSection(toml)) {
+    return toml;
+  }
+  return `${toml.trimEnd()}\n\n${generateWorkspaceTrustSection()}\n`;
+}
+
 export function buildMergedCodexConfigToml(
   options: BuildMergedPreviewOptions,
 ): string {
@@ -741,16 +759,18 @@ export function buildMergedCodexConfigToml(
   const cloudManagedConfigs = managedConfigs.filter(
     (config) => !hostMcpServerNames.has(config.name),
   );
-  if (cloudManagedConfigs.length === 0) {
-    return toml;
+
+  if (cloudManagedConfigs.length > 0) {
+    const cloudMcpToml = buildCodexMcpToml(cloudManagedConfigs);
+    if (cloudMcpToml) {
+      toml = `${toml.trimEnd()}\n\n${cloudMcpToml}\n`;
+    }
   }
 
-  const cloudMcpToml = buildCodexMcpToml(cloudManagedConfigs);
-  if (!cloudMcpToml) {
-    return toml;
-  }
+  // Ensure workspace trust is always present for automated sandbox execution
+  toml = ensureWorkspaceTrust(toml);
 
-  return `${toml.trimEnd()}\n\n${cloudMcpToml}\n`;
+  return toml;
 }
 
 export function buildMergedCodexPreview(
