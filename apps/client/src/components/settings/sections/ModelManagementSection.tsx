@@ -9,6 +9,7 @@ import { useAction, useConvex } from "convex/react";
 import { Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { getVendorDisplayName, groupModelsByVendor } from "@/lib/model-vendor-utils";
 
 // Model entry from Convex database
 interface ModelEntry {
@@ -28,18 +29,6 @@ interface ModelEntry {
 interface ModelManagementSectionProps {
   teamSlugOrId: string;
 }
-
-const VENDOR_DISPLAY_NAMES: Record<AgentVendor, string> = {
-  anthropic: "Claude",
-  openai: "OpenAI / Codex",
-  google: "Gemini",
-  opencode: "OpenCode",
-  qwen: "Qwen",
-  cursor: "Cursor",
-  amp: "Amp",
-  xai: "xAI",
-  openrouter: "OpenRouter",
-};
 
 export function ModelManagementSection({
   teamSlugOrId,
@@ -142,7 +131,7 @@ export function ModelManagementSection({
 
   // Filter and group models by vendor
   const filteredAndGroupedModels = useMemo(() => {
-    if (!convexModels) return new Map<AgentVendor, ModelEntry[]>();
+    if (!convexModels) return new Map<string, ModelEntry[]>();
 
     const searchLower = searchQuery.toLowerCase();
 
@@ -167,19 +156,8 @@ export function ModelManagementSection({
       return true;
     });
 
-    // Group by vendor preserving sortOrder
-    const grouped = new Map<AgentVendor, ModelEntry[]>();
-    for (const entry of filtered) {
-      const vendor = entry.vendor as AgentVendor;
-      const existing = grouped.get(vendor);
-      if (existing) {
-        existing.push(entry);
-      } else {
-        grouped.set(vendor, [entry]);
-      }
-    }
-
-    return grouped;
+    // Group by vendor using shared utility (preserves sort order within vendor)
+    return groupModelsByVendor(filtered);
   }, [convexModels, searchQuery, showHiddenOnly, isModelAvailable, isVisibleForTeam]);
 
   // Count only available models (with API keys configured)
@@ -225,7 +203,7 @@ export function ModelManagementSection({
                 <div key={vendor} className="space-y-2">
                   {/* Vendor header */}
                   <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                    {VENDOR_DISPLAY_NAMES[vendor]}
+                    {getVendorDisplayName(vendor)}
                   </h3>
 
                   {/* Model rows */}

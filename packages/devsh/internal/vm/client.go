@@ -830,6 +830,9 @@ type CreateTaskOptions struct {
 	PRTitle          string
 	EnvironmentID    string
 	IsCloudWorkspace bool
+	// Orchestration dependency tracking
+	DependsOn []string
+	Priority  int
 	// GitHub Projects v2 linkage (Phase 2)
 	GithubProjectId             string
 	GithubProjectItemId         string
@@ -1001,6 +1004,13 @@ func (c *Client) CreateTask(ctx context.Context, opts CreateTaskOptions) (*Creat
 	}
 	if opts.ParentTaskRunID != "" {
 		body["parentTaskRunId"] = opts.ParentTaskRunID
+	}
+	// Orchestration dependency tracking
+	if len(opts.DependsOn) > 0 {
+		body["dependsOn"] = opts.DependsOn
+	}
+	if opts.Priority > 0 {
+		body["priority"] = opts.Priority
 	}
 	// Autopilot mode (Phase 6)
 	if opts.Autopilot {

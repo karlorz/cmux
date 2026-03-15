@@ -26,6 +26,8 @@ var (
 	taskCreatePRTitle        string
 	taskCreateEnv            string
 	taskCreateCloudWorkspace bool
+	taskCreateDependsOn      []string
+	taskCreatePriority       int
 	// GitHub Projects v2 linkage
 	taskCreateGHProjectId             string
 	taskCreateGHProjectItemId         string
@@ -241,6 +243,8 @@ Examples:
 			PRTitle:                     taskCreatePRTitle,
 			EnvironmentID:               environmentID,
 			IsCloudWorkspace:            taskCreateCloudWorkspace,
+			DependsOn:                   taskCreateDependsOn,
+			Priority:                    taskCreatePriority,
 			GithubProjectId:             taskCreateGHProjectId,
 			GithubProjectItemId:         taskCreateGHProjectItemId,
 			GithubProjectInstallationId: taskCreateGHProjectInstallationId,
@@ -558,6 +562,9 @@ func init() {
 	taskCreateCmd.Flags().BoolVar(&taskCreateLocal, "local", false, "Use local workspace mode (codex-style worktrees)")
 	taskCreateCmd.Flags().StringVar(&taskCreatePRTitle, "pr-title", "", "Optional pull request title to save on the task")
 	taskCreateCmd.Flags().BoolVar(&taskCreateCloudWorkspace, "cloud-workspace", false, "Create as a cloud workspace (appears in Workspaces section)")
+	// Orchestration dependency tracking
+	taskCreateCmd.Flags().StringSliceVar(&taskCreateDependsOn, "depends-on", nil, "Orchestration task IDs this task depends on (can be specified multiple times)")
+	taskCreateCmd.Flags().IntVar(&taskCreatePriority, "priority", 0, "Task priority (1=highest, 10=lowest, 0=default)")
 	// GitHub Projects v2 linkage flags
 	taskCreateCmd.Flags().StringVar(&taskCreateGHProjectId, "gh-project-id", "", "GitHub Project node ID (PVT_xxx)")
 	taskCreateCmd.Flags().StringVar(&taskCreateGHProjectItemId, "gh-project-item-id", "", "GitHub Project item node ID (PVTI_xxx)")

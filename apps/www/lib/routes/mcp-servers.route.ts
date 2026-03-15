@@ -107,6 +107,7 @@ const UpsertMcpServerStdioBody = z.object({
   enabledCodex: z.boolean(),
   enabledGemini: z.boolean(),
   enabledOpencode: z.boolean(),
+  sourcePresetId: z.string().optional(),
   scope: ScopeSchema,
   projectFullName: z.string().optional(),
 });
@@ -123,6 +124,7 @@ const UpsertMcpServerRemoteFieldsSchema = {
   enabledCodex: z.boolean(),
   enabledGemini: z.boolean(),
   enabledOpencode: z.boolean(),
+  sourcePresetId: z.string().optional(),
   scope: ScopeSchema,
   projectFullName: z.string().optional(),
 };
@@ -301,6 +303,7 @@ mcpServersRouter.openapi(
       enabledCodex: body.enabledCodex,
       enabledGemini: body.enabledGemini,
       enabledOpencode: body.enabledOpencode,
+      sourcePresetId: body.sourcePresetId,
       scope: body.scope,
       projectFullName: body.projectFullName,
     });

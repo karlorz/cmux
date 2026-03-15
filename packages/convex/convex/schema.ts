@@ -1933,6 +1933,8 @@ const convexSchema = defineSchema({
     enabledCodex: v.boolean(),
     enabledGemini: v.boolean(),
     enabledOpencode: v.boolean(),
+    // If created from a preset, stores the preset name for UI distinction
+    sourcePresetId: v.optional(v.string()),
     // Scope: global applies to all tasks, workspace scopes to a specific repo
     scope: v.union(v.literal("global"), v.literal("workspace")),
     // For workspace scope: the repo full name (e.g. "owner/repo")
