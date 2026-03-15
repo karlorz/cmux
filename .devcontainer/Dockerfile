@@ -4,7 +4,10 @@ FROM node:24-bookworm
 ARG IDE_DEPS_CHANNEL=stable
 ENV IDE_DEPS_CHANNEL=${IDE_DEPS_CHANNEL}
 
-RUN apt-get update && apt-get install -y \
+# Default timezone (can be overridden via TZ env var at runtime)
+ENV TZ=Asia/Hong_Kong
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     python3 \
     make \
     g++ \
@@ -14,6 +17,7 @@ RUN apt-get update && apt-get install -y \
     wget \
     sudo \
     docker.io \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
