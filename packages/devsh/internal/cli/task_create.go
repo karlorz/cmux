@@ -437,6 +437,9 @@ Examples:
 				"taskId": result.TaskID,
 				"status": result.Status,
 			}
+			if result.OrchestrationTaskId != "" {
+				output["orchestrationTaskId"] = result.OrchestrationTaskId
+			}
 			if len(agents) > 0 {
 				output["agents"] = agents
 			} else if len(result.TaskRuns) > 0 {
@@ -451,6 +454,9 @@ Examples:
 		if len(agents) == 0 {
 			fmt.Println("Task created successfully")
 			fmt.Printf("  Task ID: %s\n", result.TaskID)
+			if result.OrchestrationTaskId != "" {
+				fmt.Printf("  Orchestration Task ID: %s\n", result.OrchestrationTaskId)
+			}
 			if len(result.TaskRuns) > 0 {
 				fmt.Println("  Task Runs:")
 				for _, run := range result.TaskRuns {
