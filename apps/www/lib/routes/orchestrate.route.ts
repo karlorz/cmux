@@ -2,9 +2,9 @@ import {
   getAccessTokenFromRequest,
   getUserFromRequest,
 } from "@/lib/utils/auth";
-import { getConvex } from "@/lib/utils/get-convex";
+import { getConvex, getConvexAdmin } from "@/lib/utils/get-convex";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
-import { api } from "@cmux/convex/api";
+import { api, internal } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { streamSSE } from "hono/streaming";
@@ -1086,13 +1086,36 @@ orchestrateRouter.get("/orchestrate/events/:orchestrationId", async (c) => {
  * Events are emitted in AgentCommEvent format.
  */
 orchestrateRouter.get("/orchestrate/v2/events/:orchestrationId", async (c) => {
-  const accessToken = await getAccessTokenFromRequest(c.req.raw);
+  // Support both Stack Auth and JWT auth (for head agents)
+  const authHeader = c.req.header("Authorization");
+  let accessToken = await getAccessTokenFromRequest(c.req.raw);
+  let teamSlugOrId = c.req.query("teamSlugOrId");
+  let jwtAuth = false;
+
+  // Try JWT auth if no Stack Auth token
+  if (!accessToken && authHeader?.startsWith("Bearer ")) {
+    const jwt = authHeader.slice(7);
+    try {
+      const parts = jwt.split(".");
+      if (parts.length === 3) {
+        const payload = JSON.parse(
+          Buffer.from(parts[1], "base64url").toString("utf-8")
+        );
+        // For JWT auth, use the JWT itself as a pseudo-token and extract team
+        teamSlugOrId = payload.teamSlugOrId;
+        accessToken = jwt; // Use JWT as token for this request
+        jwtAuth = true;
+      }
+    } catch {
+      return c.text("Invalid JWT", 401);
+    }
+  }
+
   if (!accessToken) {
     return c.text("Unauthorized", 401);
   }
 
   const orchestrationId = c.req.param("orchestrationId");
-  const teamSlugOrId = c.req.query("teamSlugOrId");
   const sinceTimestamp = c.req.query("since");
   const replayAll = c.req.query("replay") === "true";
 
@@ -1100,13 +1123,66 @@ orchestrateRouter.get("/orchestrate/v2/events/:orchestrationId", async (c) => {
     return c.text("teamSlugOrId query parameter required", 400);
   }
 
-  try {
-    await verifyTeamAccess({ req: c.req.raw, teamSlugOrId });
-  } catch {
-    return c.text("Unauthorized", 401);
+  // Skip Stack Auth verification for JWT-authenticated requests
+  if (!jwtAuth) {
+    try {
+      await verifyTeamAccess({ req: c.req.raw, teamSlugOrId });
+    } catch {
+      return c.text("Unauthorized", 401);
+    }
   }
 
-  const convex = getConvex({ accessToken });
+  // For JWT auth, use admin Convex client; for Stack Auth, use user-scoped client
+  const adminClient = jwtAuth ? getConvexAdmin() : null;
+  const userClient = !jwtAuth ? getConvex({ accessToken }) : null;
+
+  if (jwtAuth && !adminClient) {
+    return c.text("Server configuration error: CONVEX_DEPLOY_KEY not set", 500);
+  }
+
+  // Event type returned by both queries
+  interface OrchestrationEvent {
+    eventId: string;
+    orchestrationId: string;
+    eventType: string;
+    teamId: string;
+    taskId?: string;
+    taskRunId?: string;
+    correlationId?: string;
+    payload: unknown;
+    createdAt: number;
+  }
+
+  // Helper to fetch events using appropriate client and query
+  async function fetchEvents(opts: {
+    afterTimestamp?: number;
+    limit: number;
+  }): Promise<OrchestrationEvent[]> {
+    if (jwtAuth && adminClient) {
+      // Use internal query for JWT auth (admin client)
+      return adminClient.query(
+        internal.orchestrationEvents.getByOrchestrationInternal,
+        {
+          teamId: teamSlugOrId!, // For JWT, teamSlugOrId is the teamId from JWT payload
+          orchestrationId,
+          limit: opts.limit,
+          afterTimestamp: opts.afterTimestamp,
+        }
+      ) as Promise<OrchestrationEvent[]>;
+    } else if (userClient) {
+      // Use public authQuery for Stack Auth
+      return userClient.query(
+        api.orchestrationEvents.getByOrchestration,
+        {
+          teamSlugOrId: teamSlugOrId!,
+          orchestrationId,
+          limit: opts.limit,
+          afterTimestamp: opts.afterTimestamp,
+        }
+      ) as unknown as Promise<OrchestrationEvent[]>;
+    }
+    return [];
+  }
 
   return streamSSE(c, async (stream) => {
     let lastTimestamp = sinceTimestamp ? parseInt(sinceTimestamp, 10) : 0;
@@ -1125,14 +1201,7 @@ orchestrateRouter.get("/orchestrate/v2/events/:orchestrationId", async (c) => {
     // If replay requested, fetch all historical events first
     if (replayAll) {
       try {
-        const historicalEvents = await convex.query(
-          api.orchestrationEvents.getByOrchestration,
-          {
-            teamSlugOrId,
-            orchestrationId,
-            limit: 500,
-          }
-        );
+        const historicalEvents = await fetchEvents({ limit: 500 });
 
         for (const event of historicalEvents) {
           await stream.writeSSE({
@@ -1166,15 +1235,10 @@ orchestrateRouter.get("/orchestrate/v2/events/:orchestrationId", async (c) => {
     while (isConnected) {
       try {
         // Fetch new events since last timestamp
-        const newEvents = await convex.query(
-          api.orchestrationEvents.getByOrchestration,
-          {
-            teamSlugOrId,
-            orchestrationId,
-            afterTimestamp: lastTimestamp,
-            limit: 100,
-          }
-        );
+        const newEvents = await fetchEvents({
+          afterTimestamp: lastTimestamp,
+          limit: 100,
+        });
 
         // Emit new events
         for (const event of newEvents) {
