@@ -321,6 +321,8 @@ export function McpServersSection({
           nextForm.scope,
           nextForm.projectFullName,
         ),
+        // Preserve preset linkage on edit
+        sourcePresetId: editingConfig?.sourcePresetId,
       });
       toast.success("MCP server updated");
       resetDialog();

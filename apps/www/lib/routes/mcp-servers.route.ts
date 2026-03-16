@@ -47,6 +47,7 @@ const McpServerBaseSchema = z.object({
   enabledOpencode: z.boolean(),
   scope: ScopeSchema,
   projectFullName: z.string().optional(),
+  sourcePresetId: z.string().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
@@ -211,6 +212,7 @@ mcpServersRouter.openapi(
           enabledOpencode: config.enabledOpencode,
           scope: config.scope,
           projectFullName: config.projectFullName,
+          sourcePresetId: config.sourcePresetId,
           createdAt: config.createdAt,
           updatedAt: config.updatedAt,
         };

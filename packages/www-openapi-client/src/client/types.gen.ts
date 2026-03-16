@@ -1814,6 +1814,7 @@ export type McpServerStdioConfig = {
     enabledOpencode: boolean;
     scope: McpServerScope;
     projectFullName?: string;
+    sourcePresetId?: string;
     createdAt: number;
     updatedAt: number;
     type: 'stdio';
@@ -1835,6 +1836,7 @@ export type McpServerHttpConfig = {
     enabledOpencode: boolean;
     scope: McpServerScope;
     projectFullName?: string;
+    sourcePresetId?: string;
     createdAt: number;
     updatedAt: number;
     type: 'http';
@@ -1858,6 +1860,7 @@ export type McpServerSseConfig = {
     enabledOpencode: boolean;
     scope: McpServerScope;
     projectFullName?: string;
+    sourcePresetId?: string;
     createdAt: number;
     updatedAt: number;
     type: 'sse';
