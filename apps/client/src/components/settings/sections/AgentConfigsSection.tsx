@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SegmentedTabs } from "@/components/mcp/McpFormSections";
+import { SourceBadge } from "@/components/settings/scope-utils";
 import { useTheme } from "@/components/theme/use-theme";
 import { api } from "@cmux/convex/api";
 import { convexQuery } from "@convex-dev/react-query";
@@ -279,6 +280,13 @@ export function AgentConfigsSection({ teamSlugOrId }: AgentConfigsSectionProps) 
               <span className="text-xs">
                 ({activeScope === "global" ? "All workspaces" : "Workspace-specific"})
               </span>
+              {!isLoading && loadedKey === currentKey && (
+                config?.rawConfig ? (
+                  <SourceBadge source="custom" />
+                ) : (
+                  <SourceBadge source="default" />
+                )
+              )}
             </div>
             <div className="flex items-center gap-2">
               <Button

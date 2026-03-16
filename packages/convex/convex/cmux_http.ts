@@ -1951,6 +1951,9 @@ export const createTask = httpAction(async (ctx, req) => {
     githubProjectOwnerType?: string;
     // Agent Teams (D4) - parent-child task relationships
     parentTaskRunId?: string;
+    // Orchestration dependency management
+    dependsOn?: string[]; // Orchestration task IDs this task depends on
+    priority?: number; // Task priority (0=highest, 10=lowest)
   };
 
   try {
@@ -2072,9 +2075,54 @@ export const createTask = httpAction(async (ctx, req) => {
       }
     }
 
+    // Create orchestration task record when dependencies or priority are specified
+    let orchestrationTaskId: string | undefined;
+    if (body.dependsOn || (body.priority !== undefined && body.priority >= 0)) {
+      // Validate dependency IDs exist and belong to same team
+      let dependencies: Id<"orchestrationTasks">[] | undefined;
+      if (body.dependsOn && body.dependsOn.length > 0) {
+        dependencies = [];
+        for (const depId of body.dependsOn) {
+          const dep = await ctx.runQuery(
+            internal.orchestrationQueries.getTaskInternal,
+            { taskId: depId as Id<"orchestrationTasks"> }
+          );
+          if (!dep) {
+            return jsonResponse(
+              { error: `Dependency task not found: ${depId}` },
+              400
+            );
+          }
+          if (dep.teamId !== teamId) {
+            return jsonResponse(
+              { error: "Dependency task belongs to another team" },
+              403
+            );
+          }
+          dependencies.push(depId as Id<"orchestrationTasks">);
+        }
+      }
+
+      orchestrationTaskId = await ctx.runMutation(
+        internal.orchestrationQueries.createTaskInternal,
+        {
+          teamId,
+          userId,
+          prompt: taskText,
+          priority: body.priority ?? 5,
+          dependencies,
+          taskId: taskResult.taskId,
+          taskRunId: taskRuns.length > 0
+            ? (taskRuns[0].taskRunId as Id<"taskRuns">)
+            : undefined,
+        }
+      ) as string;
+    }
+
     return jsonResponse({
       taskId: taskResult.taskId,
       taskRuns,
+      orchestrationTaskId,
       status: "pending",
     });
   } catch (err) {

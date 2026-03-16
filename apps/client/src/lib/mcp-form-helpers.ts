@@ -556,6 +556,7 @@ export function getPresetPayload(
     enabledCodex: preset.supportedAgents.codex,
     enabledGemini: preset.supportedAgents.gemini,
     enabledOpencode: preset.supportedAgents.opencode,
+    sourcePresetId: preset.name,
     scope,
     projectFullName: scope === "workspace" ? projectFullName.trim() : undefined,
   };

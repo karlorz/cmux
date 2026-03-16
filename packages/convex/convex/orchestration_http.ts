@@ -42,6 +42,13 @@ export interface SpawnConfigData {
   previousKnowledge: string | null;
   previousMailbox: string | null;
   previousBehavior: string | null;
+  orchestrationRules?: Array<{
+    ruleId: string;
+    text: string;
+    lane: "hot" | "orchestration" | "project";
+    confidence: number;
+    projectFullName?: string;
+  }>;
 }
 
 const CreateTaskAndRunSchema = z.object({
@@ -235,6 +242,31 @@ export const createOrchestrationTask = httpAction(async (ctx, req) => {
   }
 
   try {
+    // Validate dependency IDs exist and belong to same team
+    let validatedDependencies: Id<"orchestrationTasks">[] | undefined;
+    if (payload.dependencies && payload.dependencies.length > 0) {
+      validatedDependencies = [];
+      for (const depId of payload.dependencies) {
+        const dep = await ctx.runQuery(
+          internal.orchestrationQueries.getTaskInternal,
+          { taskId: depId as Id<"orchestrationTasks"> }
+        );
+        if (!dep) {
+          return jsonResponse(
+            { code: 400, message: `Dependency task not found: ${depId}` },
+            400
+          );
+        }
+        if (dep.teamId !== teamId) {
+          return jsonResponse(
+            { code: 403, message: "Dependency task belongs to another team" },
+            403
+          );
+        }
+        validatedDependencies.push(depId as Id<"orchestrationTasks">);
+      }
+    }
+
     const orchestrationTaskId = await ctx.runMutation(
       internal.orchestrationQueries.createTaskInternal,
       {
@@ -244,9 +276,7 @@ export const createOrchestrationTask = httpAction(async (ctx, req) => {
         taskId: payload.taskId as Id<"tasks">,
         taskRunId: payload.taskRunId as Id<"taskRuns">,
         priority: payload.priority ?? 5,
-        dependencies: payload.dependencies?.map(
-          (id) => id as Id<"orchestrationTasks">
-        ),
+        dependencies: validatedDependencies,
         metadata: payload.orchestrationId
           ? { orchestrationId: payload.orchestrationId }
           : undefined,
@@ -443,6 +473,7 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
       previousKnowledge,
       previousMailbox,
       previousBehavior,
+      orchestrationRulesRaw,
     ] = await Promise.all([
       ctx.runQuery(internal.apiKeys.getAllForAgentsInternal, { teamId, userId }),
       ctx.runQuery(internal.workspaceSettings.getByTeamAndUserInternal, { teamId, userId }),
@@ -470,6 +501,10 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
       ctx.runQuery(internal.agentMemoryQueries.getLatestTeamKnowledgeInternal, { teamId }),
       ctx.runQuery(internal.agentMemoryQueries.getLatestTeamMailboxInternal, { teamId }),
       ctx.runQuery(internal.agentMemoryQueries.getLatestTeamBehaviorHotInternal, { teamId }),
+      ctx.runQuery(internal.agentOrchestrationLearning.getActiveRulesInternal, {
+        teamId,
+        ...(projectFullName ? { projectFullName } : {}),
+      }),
     ]);
 
     const config: SpawnConfigData = {
@@ -495,6 +530,13 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
       previousKnowledge,
       previousMailbox,
       previousBehavior,
+      orchestrationRules: orchestrationRulesRaw.map((r) => ({
+        ruleId: r._id,
+        text: r.text,
+        lane: r.lane,
+        confidence: r.confidence,
+        projectFullName: r.projectFullName,
+      })),
     };
 
     return jsonResponse(config);

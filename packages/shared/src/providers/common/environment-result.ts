@@ -1,6 +1,6 @@
 import type { AuthFile } from "../../worker-schemas";
 import type { McpServerConfig } from "../../mcp-server-config";
-import type { PolicyRuleForInstructions } from "../../agent-memory-protocol";
+import type { PolicyRuleForInstructions, OrchestrationRuleForInstructions } from "../../agent-memory-protocol";
 
 export interface EnvironmentResult {
   files: AuthFile[];
@@ -103,4 +103,9 @@ export type EnvironmentContext = {
    * When empty/undefined and taskRunJwt is set, no deny rules are applied.
    */
   permissionDenyRules?: string[];
+  /**
+   * Orchestration rules learned from previous runs (PR 4 of self-improving memory).
+   * Injected into agent instruction files alongside policy rules.
+   */
+  orchestrationRules?: OrchestrationRuleForInstructions[];
 };

@@ -2586,3 +2586,69 @@ export function getPolicyRulesInstructions(
 
   return output;
 }
+
+/**
+ * Orchestration rule for injection into agent instructions.
+ * Fetched from agentOrchestrationRules table in Convex.
+ */
+export interface OrchestrationRuleForInstructions {
+  ruleId: string;
+  text: string;
+  lane: "hot" | "orchestration" | "project";
+  confidence: number;
+  projectFullName?: string;
+}
+
+const LANE_DISPLAY: Record<OrchestrationRuleForInstructions["lane"], { label: string; order: number }> = {
+  hot: { label: "Hot Rules (Always Apply)", order: 1 },
+  orchestration: { label: "Orchestration Rules", order: 2 },
+  project: { label: "Project Rules", order: 3 },
+};
+
+/**
+ * Generate markdown instructions from orchestration rules.
+ * Groups rules by lane and renders them for injection into agent instruction files.
+ */
+export function getOrchestrationRulesInstructions(
+  rules: OrchestrationRuleForInstructions[],
+): string {
+  if (!rules || rules.length === 0) {
+    return "";
+  }
+
+  const byLane = new Map<OrchestrationRuleForInstructions["lane"], OrchestrationRuleForInstructions[]>();
+  for (const rule of rules) {
+    const existing = byLane.get(rule.lane) ?? [];
+    existing.push(rule);
+    byLane.set(rule.lane, existing);
+  }
+
+  // Sort by confidence descending within each lane
+  for (const laneRules of byLane.values()) {
+    laneRules.sort((a, b) => b.confidence - a.confidence);
+  }
+
+  let output = "# Orchestration Rules (Team-Learned)\n\n";
+  output += "> These rules were learned from previous orchestration runs and confirmed by team leads.\n\n";
+
+  const sortedLanes = Array.from(byLane.keys()).sort(
+    (a, b) => LANE_DISPLAY[a].order - LANE_DISPLAY[b].order,
+  );
+
+  for (const lane of sortedLanes) {
+    const laneRules = byLane.get(lane);
+    if (!laneRules || laneRules.length === 0) continue;
+
+    const { label } = LANE_DISPLAY[lane];
+    output += `## ${label}\n\n`;
+
+    for (const rule of laneRules) {
+      // Indent continuation lines for multi-line text to preserve markdown list formatting
+      const indentedText = rule.text.replace(/\n/g, "\n  ");
+      output += `- ${indentedText}\n`;
+    }
+    output += "\n";
+  }
+
+  return output;
+}

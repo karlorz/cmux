@@ -4,6 +4,7 @@ import {
   McpCustomEditor,
   SegmentedTabs,
 } from "@/components/mcp/McpFormSections";
+import { SourceBadge } from "@/components/settings/scope-utils";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -320,6 +321,8 @@ export function McpServersSection({
           nextForm.scope,
           nextForm.projectFullName,
         ),
+        // Preserve preset linkage on edit
+        sourcePresetId: editingConfig?.sourcePresetId,
       });
       toast.success("MCP server updated");
       resetDialog();
@@ -357,6 +360,7 @@ export function McpServersSection({
         description: config.description,
         tags: config.tags,
         ...buildEnabledAgentState(config, field, nextValue),
+        sourcePresetId: config.sourcePresetId,
         scope: config.scope,
         projectFullName: config.projectFullName,
       });
@@ -503,6 +507,11 @@ export function McpServersSection({
                             <h3 className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
                               {config.displayName}
                             </h3>
+                            {config.sourcePresetId ? (
+                              <SourceBadge source="preset" />
+                            ) : (
+                              <SourceBadge source="custom" />
+                            )}
                             <span className="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
                               {config.scope === "global" ? "Global" : "Workspace"}
                             </span>

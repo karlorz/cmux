@@ -17,6 +17,7 @@ import {
   consumeGitHubAppInstallIntent,
   setGitHubAppInstallIntent,
 } from "@/lib/github-oauth-flow";
+import { getVendorDisplayName, sortModelsByVendor } from "@/lib/model-vendor-utils";
 import { WWW_ORIGIN } from "@/lib/wwwOrigin";
 import { api } from "@cmux/convex/api";
 import type { ProviderStatusResponse } from "@cmux/shared";
@@ -200,45 +201,10 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       (entry) => entry.disabled !== true
     );
 
-    const vendorHeadingLabel: Record<AgentVendor | "other", string> = {
-      openai: "OpenAI / Codex",
-      anthropic: "Claude",
-      google: "Gemini",
-      opencode: "OpenCode",
-      qwen: "Qwen",
-      cursor: "Cursor",
-      amp: "Amp",
-      xai: "xAI",
-      openrouter: "OpenRouter",
-      other: "Other",
-    };
-
-    // Define vendor order for consistent grouping
-    // This matches the order in AGENT_CATALOG: anthropic, openai, amp, opencode, google, qwen, cursor
-    const vendorOrder: Record<string, number> = {
-      anthropic: 0,
-      openai: 1,
-      amp: 2,
-      opencode: 3,
-      google: 4,
-      qwen: 5,
-      cursor: 6,
-      xai: 7,
-      openrouter: 8,
-      other: 99,
-    };
-
     // Sort models by vendor group first, then by sortOrder within each vendor
-    // This ensures models are grouped by vendor but respects the catalog order within each group
-    const sortedModels = [...activeModels].sort((a, b) => {
-      const vendorA = vendorOrder[a.vendor] ?? 99;
-      const vendorB = vendorOrder[b.vendor] ?? 99;
-      if (vendorA !== vendorB) return vendorA - vendorB;
-      // Within same vendor, sort by sortOrder (from database)
-      const orderA = "sortOrder" in a ? (a as ConvexModelEntry).sortOrder : 999;
-      const orderB = "sortOrder" in b ? (b as ConvexModelEntry).sortOrder : 999;
-      return orderA - orderB;
-    });
+    const sortedModels = sortModelsByVendor(activeModels, (m) =>
+      "sortOrder" in m ? (m as ConvexModelEntry).sortOrder : 999
+    );
 
     const options = sortedModels.map((entry) => {
       return {
@@ -256,7 +222,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       const vendor = option.iconKey ?? "other";
       if (vendor !== lastVendor) {
         lastVendor = vendor;
-        const headingLabel = vendorHeadingLabel[vendor as keyof typeof vendorHeadingLabel] ?? vendor;
+        const headingLabel = getVendorDisplayName(vendor);
         grouped.push({
           label: headingLabel,
           displayLabel: headingLabel,

@@ -6,7 +6,7 @@ import {
   type EnvironmentResult,
 } from "@cmux/shared/agentConfig";
 import type { McpServerConfig } from "@cmux/shared";
-import type { PolicyRuleForInstructions } from "@cmux/shared/agent-memory-protocol";
+import type { PolicyRuleForInstructions, OrchestrationRuleForInstructions } from "@cmux/shared/agent-memory-protocol";
 import {
   getProviderIdFromAgentName,
   getProviderRegistry,
@@ -137,6 +137,8 @@ export interface PreFetchedSpawnConfig {
   previousBehavior: string | null;
   /** Centralized policy rules (Agent Policy Management) */
   policyRules?: PolicyRuleForInstructions[];
+  /** Orchestration rules learned from previous runs (self-improving memory) */
+  orchestrationRules?: OrchestrationRuleForInstructions[];
 }
 
 /** Autopilot mode configuration for long-running agent sessions (Phase 6) */
@@ -568,6 +570,7 @@ export async function spawnAgent(
     let previousMailbox: string | null;
     let previousBehavior: string | null;
     let policyRules: PolicyRuleForInstructions[] | undefined;
+    let orchestrationRules: OrchestrationRuleForInstructions[] | undefined;
 
     if (options.preFetchedConfig) {
       // Use pre-fetched config (JWT auth path - Stack Auth not available)
@@ -580,6 +583,7 @@ export async function spawnAgent(
       previousMailbox = options.preFetchedConfig.previousMailbox;
       previousBehavior = options.preFetchedConfig.previousBehavior;
       policyRules = options.preFetchedConfig.policyRules;
+      orchestrationRules = options.preFetchedConfig.orchestrationRules;
     } else {
       // Fetch from Convex (Stack Auth available)
       const results = await Promise.all([
@@ -687,6 +691,25 @@ export async function spawnAgent(
               return undefined;
             });
         })(),
+        // Query orchestration rules (self-improving memory PR 4/7)
+        getConvex()
+          .query(api.agentOrchestrationLearning.getActiveRules, {
+            teamSlugOrId,
+            ...(task?.projectFullName ? { projectFullName: task.projectFullName } : {}),
+          })
+          .then((rules) =>
+            rules.map((r): OrchestrationRuleForInstructions => ({
+              ruleId: r._id,
+              text: r.text,
+              lane: r.lane,
+              confidence: r.confidence,
+              projectFullName: r.projectFullName,
+            }))
+          )
+          .catch((error) => {
+            serverLogger.warn("[AgentSpawner] Failed to fetch orchestration rules", error);
+            return undefined;
+          }),
       ]);
       userApiKeys = results[0];
       workspaceSettings = results[1];
@@ -696,6 +719,7 @@ export async function spawnAgent(
       previousMailbox = results[5];
       previousBehavior = results[6];
       policyRules = results[7];
+      orchestrationRules = results[8];
     }
 
     if (previousKnowledge) {
@@ -716,6 +740,11 @@ export async function spawnAgent(
     if (policyRules && policyRules.length > 0) {
       serverLogger.info(
         `[AgentSpawner] Loaded ${policyRules.length} centralized policy rules`
+      );
+    }
+    if (orchestrationRules && orchestrationRules.length > 0) {
+      serverLogger.info(
+        `[AgentSpawner] Loaded ${orchestrationRules.length} orchestration rules for injection`
       );
     }
 
@@ -813,6 +842,8 @@ export async function spawnAgent(
         orchestrationOptions: options.orchestrationOptions,
         // Centralized policy rules (Agent Policy Management)
         policyRules,
+        // Orchestration rules (self-improving memory)
+        orchestrationRules,
         // GitHub Projects v2 context (Phase 5: Sandbox Project Integration)
         githubProjectContext:
           task?.githubProjectId &&

@@ -10,6 +10,7 @@ import { GripVertical, RefreshCw, Search, Database, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { cachedGetUser } from "@/lib/cachedGetUser";
+import { getVendorDisplayName, groupModelsByVendor } from "@/lib/model-vendor-utils";
 import { stackClientApp } from "@/lib/stack";
 import { WWW_ORIGIN } from "@/lib/wwwOrigin";
 
@@ -35,18 +36,6 @@ interface Model {
   createdAt: number;
   updatedAt: number;
 }
-
-const VENDOR_DISPLAY_NAMES: Record<AgentVendor, string> = {
-  anthropic: "Claude",
-  openai: "OpenAI / Codex",
-  google: "Gemini",
-  opencode: "OpenCode",
-  qwen: "Qwen",
-  cursor: "Cursor",
-  amp: "Amp",
-  xai: "xAI",
-  openrouter: "OpenRouter",
-};
 
 const SOURCE_FILTER_OPTIONS = [
   { value: "all", label: "All Sources" },
@@ -341,18 +330,8 @@ export function ModelCatalogSection({
       return true;
     });
 
-    // Group by vendor preserving sort order
-    const grouped = new Map<string, Model[]>();
-    for (const entry of filtered) {
-      const existing = grouped.get(entry.vendor);
-      if (existing) {
-        existing.push(entry);
-      } else {
-        grouped.set(entry.vendor, [entry]);
-      }
-    }
-
-    return grouped;
+    // Group by vendor using shared utility (preserves sort order within vendor)
+    return groupModelsByVendor(filtered);
   }, [models, searchQuery, sourceFilter, showDisabledOnly, isModelAvailable]);
 
   const enabledCount = models?.filter((m) => m.enabled).length ?? 0;
@@ -474,7 +453,7 @@ export function ModelCatalogSection({
                 <div key={vendor} className="space-y-2">
                   {/* Vendor header */}
                   <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                    {VENDOR_DISPLAY_NAMES[vendor as AgentVendor] ?? vendor}
+                    {getVendorDisplayName(vendor)}
                   </h3>
 
                   {/* Model rows */}

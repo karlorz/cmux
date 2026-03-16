@@ -830,6 +830,9 @@ type CreateTaskOptions struct {
 	PRTitle          string
 	EnvironmentID    string
 	IsCloudWorkspace bool
+	// Orchestration dependency tracking
+	DependsOn []string
+	Priority  int
 	// GitHub Projects v2 linkage (Phase 2)
 	GithubProjectId             string
 	GithubProjectItemId         string
@@ -854,9 +857,10 @@ type TaskRunWithJWT struct {
 
 // CreateTaskResult represents the result of creating a task
 type CreateTaskResult struct {
-	TaskID   string           `json:"taskId"`
-	TaskRuns []TaskRunWithJWT `json:"taskRuns"`
-	Status   string           `json:"status"`
+	TaskID              string           `json:"taskId"`
+	TaskRuns            []TaskRunWithJWT `json:"taskRuns"`
+	OrchestrationTaskId string           `json:"orchestrationTaskId,omitempty"`
+	Status              string           `json:"status"`
 }
 
 // StartSandboxOptions represents options for starting a sandbox
@@ -1001,6 +1005,13 @@ func (c *Client) CreateTask(ctx context.Context, opts CreateTaskOptions) (*Creat
 	}
 	if opts.ParentTaskRunID != "" {
 		body["parentTaskRunId"] = opts.ParentTaskRunID
+	}
+	// Orchestration dependency tracking
+	if len(opts.DependsOn) > 0 {
+		body["dependsOn"] = opts.DependsOn
+	}
+	if opts.Priority >= 0 {
+		body["priority"] = opts.Priority
 	}
 	// Autopilot mode (Phase 6)
 	if opts.Autopilot {
