@@ -171,7 +171,10 @@ describe("getGeminiEnvironment", () => {
   });
 
   it("injects gh and git wrappers for task-backed sandboxes", async () => {
-    const result = await getGeminiEnvironment(BASE_CONTEXT);
+    const result = await getGeminiEnvironment({
+      ...BASE_CONTEXT,
+      enableShellWrappers: true,
+    });
 
     const ghWrapper = result.files.find(
       (file) => file.destinationPath === "/usr/local/bin/gh"
@@ -196,7 +199,33 @@ describe("getGeminiEnvironment", () => {
     const result = await getGeminiEnvironment({
       ...BASE_CONTEXT,
       taskRunJwt: "",
+      enableShellWrappers: true,
     });
+
+    expect(
+      result.files.find((f) => f.destinationPath === "/usr/local/bin/gh")
+    ).toBeUndefined();
+    expect(
+      result.files.find((f) => f.destinationPath === "/usr/local/bin/git")
+    ).toBeUndefined();
+  });
+
+  it("does not inject wrappers when enableShellWrappers is false", async () => {
+    const result = await getGeminiEnvironment({
+      ...BASE_CONTEXT,
+      enableShellWrappers: false,
+    });
+
+    expect(
+      result.files.find((f) => f.destinationPath === "/usr/local/bin/gh")
+    ).toBeUndefined();
+    expect(
+      result.files.find((f) => f.destinationPath === "/usr/local/bin/git")
+    ).toBeUndefined();
+  });
+
+  it("does not inject wrappers when enableShellWrappers is not set", async () => {
+    const result = await getGeminiEnvironment(BASE_CONTEXT);
 
     expect(
       result.files.find((f) => f.destinationPath === "/usr/local/bin/gh")
