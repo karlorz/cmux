@@ -687,6 +687,44 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         },
       },
       {
+        name: "bind_provider_session",
+        description:
+          "Bind a provider-specific session ID to the current task. Use to enable session resume on task retry. " +
+          "Claude agents should call this with their session ID, Codex agents with their thread ID.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            providerSessionId: {
+              type: "string",
+              description: "Claude session ID or equivalent for the provider",
+            },
+            providerThreadId: {
+              type: "string",
+              description: "Codex thread ID or equivalent for thread-based providers",
+            },
+            replyChannel: {
+              type: "string",
+              enum: ["mailbox", "sse", "pty", "ui"],
+              description: "Preferred communication channel for receiving messages",
+            },
+          },
+        },
+      },
+      {
+        name: "get_provider_session",
+        description:
+          "Get the provider session binding for a task. Use to check if a session can be resumed.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            taskId: {
+              type: "string",
+              description: "The orchestration task ID to get session for (optional, uses current task)",
+            },
+          },
+        },
+      },
+      {
         name: "wait_for_events",
         description:
           "Wait for orchestration events using SSE streaming. Returns when a matching event arrives or timeout. " +
@@ -1894,6 +1932,172 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
             content: [{
               type: "text",
               text: `Error getting orchestration summary: ${errorMsg}`,
+            }],
+          };
+        }
+      }
+
+      case "bind_provider_session": {
+        const { providerSessionId, providerThreadId, replyChannel } = args as {
+          providerSessionId?: string;
+          providerThreadId?: string;
+          replyChannel?: "mailbox" | "sse" | "pty" | "ui";
+        };
+
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux.sh";
+        const orchestrationId = process.env.CMUX_ORCHESTRATION_ID;
+        const taskRunId = process.env.CMUX_TASK_RUN_ID;
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "CMUX_TASK_RUN_JWT environment variable not set.",
+            }],
+          };
+        }
+
+        if (!orchestrationId) {
+          return {
+            content: [{
+              type: "text",
+              text: "CMUX_ORCHESTRATION_ID environment variable not set.",
+            }],
+          };
+        }
+
+        try {
+          const url = `${apiBaseUrl}/api/v1/cmux/orchestration/sessions/bind`;
+          const response = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              orchestrationId,
+              taskRunId,
+              providerSessionId,
+              providerThreadId,
+              replyChannel,
+              agentName,
+            }),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            return {
+              content: [{
+                type: "text",
+                text: `Failed to bind session: ${response.status} ${errorText}`,
+              }],
+            };
+          }
+
+          const result = await response.json();
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                message: "Provider session bound successfully",
+                bindingId: result.bindingId,
+                updated: result.updated,
+              }, null, 2),
+            }],
+          };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{
+              type: "text",
+              text: `Error binding provider session: ${errorMsg}`,
+            }],
+          };
+        }
+      }
+
+      case "get_provider_session": {
+        const { taskId: providedTaskId } = args as { taskId?: string };
+
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux.sh";
+        const taskId = providedTaskId ?? process.env.CMUX_TASK_RUN_ID;
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "CMUX_TASK_RUN_JWT environment variable not set.",
+            }],
+          };
+        }
+
+        if (!taskId) {
+          return {
+            content: [{
+              type: "text",
+              text: "No task ID provided and CMUX_TASK_RUN_ID not set.",
+            }],
+          };
+        }
+
+        try {
+          const url = `${apiBaseUrl}/api/v1/cmux/orchestration/sessions/${taskId}`;
+          const response = await fetch(url, {
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${jwt}`,
+            },
+          });
+
+          if (!response.ok) {
+            if (response.status === 404) {
+              return {
+                content: [{
+                  type: "text",
+                  text: JSON.stringify({
+                    found: false,
+                    message: "No provider session binding found for this task",
+                  }, null, 2),
+                }],
+              };
+            }
+            const errorText = await response.text();
+            return {
+              content: [{
+                type: "text",
+                text: `Failed to get session: ${response.status} ${errorText}`,
+              }],
+            };
+          }
+
+          const session = await response.json();
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                found: true,
+                taskId: session.taskId,
+                orchestrationId: session.orchestrationId,
+                provider: session.provider,
+                agentName: session.agentName,
+                mode: session.mode,
+                providerSessionId: session.providerSessionId,
+                providerThreadId: session.providerThreadId,
+                replyChannel: session.replyChannel,
+                status: session.status,
+                lastActiveAt: session.lastActiveAt,
+              }, null, 2),
+            }],
+          };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{
+              type: "text",
+              text: `Error getting provider session: ${errorMsg}`,
             }],
           };
         }

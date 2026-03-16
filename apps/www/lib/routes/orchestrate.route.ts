@@ -931,6 +931,252 @@ orchestrateRouter.openapi(
 );
 
 // ============================================================================
+// Provider Session Binding Endpoints
+// ============================================================================
+
+const BindSessionRequestSchema = z
+  .object({
+    orchestrationId: z.string().openapi({ description: "Orchestration ID" }),
+    taskRunId: z.string().optional().openapi({ description: "Task run ID" }),
+    providerSessionId: z.string().optional().openapi({ description: "Claude session ID" }),
+    providerThreadId: z.string().optional().openapi({ description: "Codex thread ID" }),
+    replyChannel: z.enum(["mailbox", "sse", "pty", "ui"]).optional().openapi({
+      description: "Preferred communication channel",
+    }),
+    agentName: z.string().optional().openapi({ description: "Agent name" }),
+  })
+  .openapi("BindSessionRequest");
+
+/**
+ * POST /api/v1/cmux/orchestration/sessions/bind
+ * Bind a provider session to the current task.
+ */
+orchestrateRouter.openapi(
+  createRoute({
+    method: "post" as const,
+    path: "/v1/cmux/orchestration/sessions/bind",
+    tags: ["Orchestration"],
+    summary: "Bind provider session",
+    description: "Bind a provider-specific session ID to the current task for session resume support.",
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: BindSessionRequestSchema,
+          },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              bindingId: z.string(),
+              updated: z.boolean(),
+            }),
+          },
+        },
+        description: "Session bound successfully",
+      },
+      401: { description: "Unauthorized" },
+      500: { description: "Server error" },
+    },
+  }),
+  async (c) => {
+    // Support JWT auth for agents
+    const authHeader = c.req.header("Authorization");
+    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+    let teamSlugOrId: string | undefined;
+
+    if (!accessToken && authHeader?.startsWith("Bearer ")) {
+      const jwt = authHeader.slice(7);
+      try {
+        const parts = jwt.split(".");
+        if (parts.length === 3) {
+          const payload = JSON.parse(
+            Buffer.from(parts[1], "base64url").toString("utf-8")
+          );
+          teamSlugOrId = payload.teamSlugOrId;
+        }
+      } catch {
+        return c.text("Invalid JWT", 401);
+      }
+    }
+
+    if (!teamSlugOrId) {
+      return c.text("Unauthorized - no team context", 401);
+    }
+
+    const body = c.req.valid("json");
+
+    try {
+      const adminClient = getConvexAdmin();
+      if (!adminClient) {
+        return c.text("Server configuration error", 500);
+      }
+
+      // Extract task ID from JWT
+      const jwt = authHeader?.slice(7) ?? "";
+      let taskId: string | undefined;
+      try {
+        const parts = jwt.split(".");
+        if (parts.length === 3) {
+          const payload = JSON.parse(
+            Buffer.from(parts[1], "base64url").toString("utf-8")
+          );
+          taskId = payload.taskRunId;
+        }
+      } catch {
+        // Continue without taskId
+      }
+
+      if (!taskId) {
+        return c.text("Task ID not found in JWT", 400);
+      }
+
+      // Determine provider from agent name
+      const agentName = body.agentName ?? "unknown";
+      const provider = agentName.split("/")[0] as
+        | "claude"
+        | "codex"
+        | "gemini"
+        | "opencode"
+        | "amp"
+        | "grok"
+        | "cursor"
+        | "qwen";
+
+      const result = await adminClient.mutation(
+        internal.providerSessions.bindSessionInternal,
+        {
+          teamId: teamSlugOrId,
+          orchestrationId: body.orchestrationId,
+          taskId,
+          taskRunId: body.taskRunId as Id<"taskRuns"> | undefined,
+          agentName,
+          provider,
+          mode: "worker" as const,
+          providerSessionId: body.providerSessionId,
+          providerThreadId: body.providerThreadId,
+        }
+      );
+
+      return c.json({
+        bindingId: String(result),
+        updated: false, // bindSessionInternal always returns the ID
+      });
+    } catch (error) {
+      console.error("[orchestrate] Failed to bind session:", error);
+      return c.text("Failed to bind session", 500);
+    }
+  }
+);
+
+/**
+ * GET /api/v1/cmux/orchestration/sessions/:taskId
+ * Get the provider session binding for a task.
+ */
+orchestrateRouter.openapi(
+  createRoute({
+    method: "get" as const,
+    path: "/v1/cmux/orchestration/sessions/{taskId}",
+    tags: ["Orchestration"],
+    summary: "Get provider session",
+    description: "Get the provider session binding for a task.",
+    request: {
+      params: z.object({
+        taskId: z.string().openapi({ description: "Task ID" }),
+      }),
+    },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              taskId: z.string(),
+              orchestrationId: z.string(),
+              provider: z.string(),
+              agentName: z.string(),
+              mode: z.string(),
+              providerSessionId: z.string().optional(),
+              providerThreadId: z.string().optional(),
+              replyChannel: z.string().optional(),
+              status: z.string(),
+              lastActiveAt: z.number().optional(),
+            }),
+          },
+        },
+        description: "Session found",
+      },
+      401: { description: "Unauthorized" },
+      404: { description: "Session not found" },
+      500: { description: "Server error" },
+    },
+  }),
+  async (c) => {
+    // Support JWT auth for agents
+    const authHeader = c.req.header("Authorization");
+    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+    let teamSlugOrId: string | undefined;
+
+    if (!accessToken && authHeader?.startsWith("Bearer ")) {
+      const jwt = authHeader.slice(7);
+      try {
+        const parts = jwt.split(".");
+        if (parts.length === 3) {
+          const payload = JSON.parse(
+            Buffer.from(parts[1], "base64url").toString("utf-8")
+          );
+          teamSlugOrId = payload.teamSlugOrId;
+        }
+      } catch {
+        return c.text("Invalid JWT", 401);
+      }
+    }
+
+    if (!teamSlugOrId) {
+      return c.text("Unauthorized - no team context", 401);
+    }
+
+    const { taskId } = c.req.valid("param");
+
+    try {
+      const adminClient = getConvexAdmin();
+      if (!adminClient) {
+        return c.text("Server configuration error", 500);
+      }
+
+      const session = await adminClient.query(
+        internal.providerSessions.getForResume,
+        { taskId }
+      );
+
+      if (!session || session.teamId !== teamSlugOrId) {
+        return c.text("Session not found", 404);
+      }
+
+      return c.json({
+        taskId: session.taskId,
+        orchestrationId: session.orchestrationId,
+        provider: session.provider,
+        agentName: session.agentName,
+        mode: session.mode,
+        providerSessionId: session.providerSessionId,
+        providerThreadId: session.providerThreadId,
+        replyChannel: session.replyChannel,
+        status: session.status,
+        lastActiveAt: session.lastActiveAt,
+      });
+    } catch (error) {
+      console.error("[orchestrate] Failed to get session:", error);
+      return c.text("Failed to get session", 500);
+    }
+  }
+);
+
+// ============================================================================
 // Orchestration Events SSE Endpoint (for real-time watch mode)
 // ============================================================================
 

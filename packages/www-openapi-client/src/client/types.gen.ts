@@ -806,6 +806,33 @@ export type OrchestrationPushRequest = {
     message?: string;
 };
 
+export type BindSessionRequest = {
+    /**
+     * Orchestration ID
+     */
+    orchestrationId: string;
+    /**
+     * Task run ID
+     */
+    taskRunId?: string;
+    /**
+     * Claude session ID
+     */
+    providerSessionId?: string;
+    /**
+     * Codex thread ID
+     */
+    providerThreadId?: string;
+    /**
+     * Preferred communication channel
+     */
+    replyChannel?: 'mailbox' | 'sse' | 'pty' | 'ui';
+    /**
+     * Agent name
+     */
+    agentName?: string;
+};
+
 export type ApprovalRequest = {
     /**
      * Approval request ID (apr_xxx format)
@@ -3820,6 +3847,83 @@ export type PostApiV1CmuxOrchestrationByOrchestrationIdSyncResponses = {
 };
 
 export type PostApiV1CmuxOrchestrationByOrchestrationIdSyncResponse = PostApiV1CmuxOrchestrationByOrchestrationIdSyncResponses[keyof PostApiV1CmuxOrchestrationByOrchestrationIdSyncResponses];
+
+export type PostApiV1CmuxOrchestrationSessionsBindData = {
+    body: BindSessionRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/cmux/orchestration/sessions/bind';
+};
+
+export type PostApiV1CmuxOrchestrationSessionsBindErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiV1CmuxOrchestrationSessionsBindResponses = {
+    /**
+     * Session bound successfully
+     */
+    200: {
+        bindingId: string;
+        updated: boolean;
+    };
+};
+
+export type PostApiV1CmuxOrchestrationSessionsBindResponse = PostApiV1CmuxOrchestrationSessionsBindResponses[keyof PostApiV1CmuxOrchestrationSessionsBindResponses];
+
+export type GetApiV1CmuxOrchestrationSessionsByTaskIdData = {
+    body?: never;
+    path: {
+        /**
+         * Task ID
+         */
+        taskId: string;
+    };
+    query?: never;
+    url: '/api/v1/cmux/orchestration/sessions/{taskId}';
+};
+
+export type GetApiV1CmuxOrchestrationSessionsByTaskIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Session not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiV1CmuxOrchestrationSessionsByTaskIdResponses = {
+    /**
+     * Session found
+     */
+    200: {
+        taskId: string;
+        orchestrationId: string;
+        provider: string;
+        agentName: string;
+        mode: string;
+        providerSessionId?: string;
+        providerThreadId?: string;
+        replyChannel?: string;
+        status: string;
+        lastActiveAt?: number;
+    };
+};
+
+export type GetApiV1CmuxOrchestrationSessionsByTaskIdResponse = GetApiV1CmuxOrchestrationSessionsByTaskIdResponses[keyof GetApiV1CmuxOrchestrationSessionsByTaskIdResponses];
 
 export type GetApiOrchestrateApprovalsByOrchestrationIdPendingData = {
     body?: never;
