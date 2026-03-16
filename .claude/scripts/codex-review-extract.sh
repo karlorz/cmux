@@ -135,6 +135,7 @@ run_batch() {
   local status_file="$4"
   python3 - "$batch_file" "$output_file" "$log_file" "$MODE" "$BASE_BRANCH" "$CODEX_REVIEW_TIMEOUT_SECONDS" "$CODEX_REVIEW_MODEL" "$status_file" <<'PY'
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -177,6 +178,10 @@ command = [
     str(output_path),
     prompt,
 ]
+# Disable autopilot for the subprocess to prevent infinite hook loops
+env = os.environ.copy()
+env["CMUX_AUTOPILOT_ENABLED"] = "0"
+env["AUTOPILOT_KEEP_RUNNING_DISABLED"] = "1"
 with log_path.open("wb") as log_file:
     try:
         completed = subprocess.run(
@@ -185,6 +190,7 @@ with log_path.open("wb") as log_file:
             stderr=subprocess.STDOUT,
             timeout=timeout_seconds,
             check=False,
+            env=env,
         )
     except subprocess.TimeoutExpired:
         output_path.write_text(
