@@ -612,7 +612,8 @@ orchestrateRouter.openapi(
             Buffer.from(parts[1], "base64url").toString("utf-8")
           );
           taskRunId = payload.taskRunId;
-          teamSlugOrId = payload.teamSlugOrId;
+          // Support both teamSlugOrId and teamId (JWTs use teamId)
+          teamSlugOrId = payload.teamSlugOrId ?? payload.teamId;
         }
       } catch {
         return c.text("Invalid JWT", 401);
@@ -810,7 +811,8 @@ orchestrateRouter.openapi(
           const payload = JSON.parse(
             Buffer.from(parts[1], "base64url").toString("utf-8")
           );
-          teamSlugOrId = payload.teamSlugOrId;
+          // Support both teamSlugOrId and teamId (JWTs use teamId)
+          teamSlugOrId = payload.teamSlugOrId ?? payload.teamId;
         }
       } catch {
         return c.text("Invalid JWT", 401);
@@ -1006,7 +1008,8 @@ orchestrateRouter.openapi(
           const payload = JSON.parse(
             Buffer.from(parts[1], "base64url").toString("utf-8")
           );
-          teamSlugOrId = payload.teamSlugOrId;
+          // Support both teamSlugOrId and teamId (JWTs use teamId)
+          teamSlugOrId = payload.teamSlugOrId ?? payload.teamId;
         }
       } catch {
         return c.text("Invalid JWT", 401);
@@ -1144,7 +1147,8 @@ orchestrateRouter.openapi(
           const payload = JSON.parse(
             Buffer.from(parts[1], "base64url").toString("utf-8")
           );
-          teamSlugOrId = payload.teamSlugOrId;
+          // Support both teamSlugOrId and teamId (JWTs use teamId)
+          teamSlugOrId = payload.teamSlugOrId ?? payload.teamId;
         }
       } catch {
         return c.text("Invalid JWT", 401);
@@ -1363,7 +1367,8 @@ orchestrateRouter.get("/orchestrate/v2/events/:orchestrationId", async (c) => {
           Buffer.from(parts[1], "base64url").toString("utf-8")
         );
         // For JWT auth, use the JWT itself as a pseudo-token and extract team
-        teamSlugOrId = payload.teamSlugOrId;
+        // Support both teamSlugOrId and teamId (JWTs use teamId)
+          teamSlugOrId = payload.teamSlugOrId ?? payload.teamId;
         accessToken = jwt; // Use JWT as token for this request
         jwtAuth = true;
       }
