@@ -242,6 +242,31 @@ export const createOrchestrationTask = httpAction(async (ctx, req) => {
   }
 
   try {
+    // Validate dependency IDs exist and belong to same team
+    let validatedDependencies: Id<"orchestrationTasks">[] | undefined;
+    if (payload.dependencies && payload.dependencies.length > 0) {
+      validatedDependencies = [];
+      for (const depId of payload.dependencies) {
+        const dep = await ctx.runQuery(
+          internal.orchestrationQueries.getTaskInternal,
+          { taskId: depId as Id<"orchestrationTasks"> }
+        );
+        if (!dep) {
+          return jsonResponse(
+            { code: 400, message: `Dependency task not found: ${depId}` },
+            400
+          );
+        }
+        if (dep.teamId !== teamId) {
+          return jsonResponse(
+            { code: 403, message: "Dependency task belongs to another team" },
+            403
+          );
+        }
+        validatedDependencies.push(depId as Id<"orchestrationTasks">);
+      }
+    }
+
     const orchestrationTaskId = await ctx.runMutation(
       internal.orchestrationQueries.createTaskInternal,
       {
@@ -251,9 +276,7 @@ export const createOrchestrationTask = httpAction(async (ctx, req) => {
         taskId: payload.taskId as Id<"tasks">,
         taskRunId: payload.taskRunId as Id<"taskRuns">,
         priority: payload.priority ?? 5,
-        dependencies: payload.dependencies?.map(
-          (id) => id as Id<"orchestrationTasks">
-        ),
+        dependencies: validatedDependencies,
         metadata: payload.orchestrationId
           ? { orchestrationId: payload.orchestrationId }
           : undefined,

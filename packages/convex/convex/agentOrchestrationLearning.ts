@@ -116,7 +116,14 @@ export const getLearningEventsForTaskRun = authQuery({
     taskRunId: v.id("taskRuns"),
   },
   handler: async (ctx, args) => {
-    await getTeamId(ctx, args.teamSlugOrId);
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+
+    // Verify task run belongs to caller's team
+    const taskRun = await ctx.db.get(args.taskRunId);
+    if (!taskRun || taskRun.teamId !== teamId) {
+      throw new Error("Task run not found or unauthorized");
+    }
+
     return ctx.db
       .query("agentOrchestrationLearningEvents")
       .withIndex("by_task_run", (q) => q.eq("taskRunId", args.taskRunId))
@@ -133,13 +140,19 @@ export const getLearningEventsForOrchestration = authQuery({
     orchestrationId: v.string(),
   },
   handler: async (ctx, args) => {
-    await getTeamId(ctx, args.teamSlugOrId);
-    return ctx.db
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+
+    // Verify orchestration belongs to caller's team by checking any event
+    // (orchestrationId is a string reference, not a doc ID)
+    const events = await ctx.db
       .query("agentOrchestrationLearningEvents")
       .withIndex("by_orchestration", (q) =>
         q.eq("orchestrationId", args.orchestrationId)
       )
       .take(200);
+
+    // Filter to only events belonging to caller's team
+    return events.filter((e) => e.teamId === teamId);
   },
 });
 
@@ -234,6 +247,21 @@ export const logLearningEvent = authMutation({
   handler: async (ctx, args) => {
     const teamId = await getTeamId(ctx, args.teamSlugOrId);
     const userId = ctx.identity.subject;
+
+    // Validate referenced records belong to caller's team
+    if (args.taskRunId) {
+      const taskRun = await ctx.db.get(args.taskRunId);
+      if (!taskRun || taskRun.teamId !== teamId) {
+        throw new Error("Task run not found or unauthorized");
+      }
+    }
+
+    if (args.ruleId) {
+      const rule = await ctx.db.get(args.ruleId);
+      if (!rule || rule.teamId !== teamId) {
+        throw new Error("Rule not found or unauthorized");
+      }
+    }
 
     return ctx.db.insert("agentOrchestrationLearningEvents", {
       teamId,

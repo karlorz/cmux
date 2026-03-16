@@ -2077,10 +2077,31 @@ export const createTask = httpAction(async (ctx, req) => {
 
     // Create orchestration task record when dependencies or priority are specified
     let orchestrationTaskId: string | undefined;
-    if (body.dependsOn || (body.priority && body.priority > 0)) {
-      const dependencies = body.dependsOn
-        ? (body.dependsOn as Id<"orchestrationTasks">[])
-        : undefined;
+    if (body.dependsOn || (body.priority !== undefined && body.priority >= 0)) {
+      // Validate dependency IDs exist and belong to same team
+      let dependencies: Id<"orchestrationTasks">[] | undefined;
+      if (body.dependsOn && body.dependsOn.length > 0) {
+        dependencies = [];
+        for (const depId of body.dependsOn) {
+          const dep = await ctx.runQuery(
+            internal.orchestrationQueries.getTaskInternal,
+            { taskId: depId as Id<"orchestrationTasks"> }
+          );
+          if (!dep) {
+            return jsonResponse(
+              { error: `Dependency task not found: ${depId}` },
+              400
+            );
+          }
+          if (dep.teamId !== teamId) {
+            return jsonResponse(
+              { error: "Dependency task belongs to another team" },
+              403
+            );
+          }
+          dependencies.push(depId as Id<"orchestrationTasks">);
+        }
+      }
 
       orchestrationTaskId = await ctx.runMutation(
         internal.orchestrationQueries.createTaskInternal,
