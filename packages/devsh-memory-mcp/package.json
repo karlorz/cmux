@@ -1,6 +1,6 @@
 {
   "name": "devsh-memory-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "MCP server for devsh/cmux agent memory - enables Claude Desktop and external clients to access sandbox memory and orchestrate multi-agent workflows",
   "type": "module",
   "main": "dist/index.js",

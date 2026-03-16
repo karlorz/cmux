@@ -3879,6 +3879,82 @@ export type GetApiOrchestrateApprovalsTeamByTeamSlugOrIdResponses = {
 
 export type GetApiOrchestrateApprovalsTeamByTeamSlugOrIdResponse = GetApiOrchestrateApprovalsTeamByTeamSlugOrIdResponses[keyof GetApiOrchestrateApprovalsTeamByTeamSlugOrIdResponses];
 
+export type PostApiLearningLogData = {
+    body: {
+        eventType: 'learning_logged' | 'error_logged' | 'feature_request_logged';
+        text: string;
+        lane?: 'hot' | 'orchestration' | 'project';
+        confidence?: number;
+        metadata?: {
+            [key: string]: unknown;
+        };
+    };
+    path?: never;
+    query?: never;
+    url: '/api/learning/log';
+};
+
+export type PostApiLearningLogErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiLearningLogResponses = {
+    /**
+     * Learning logged successfully
+     */
+    200: {
+        eventId: string;
+        ruleId?: string;
+        message: string;
+    };
+};
+
+export type PostApiLearningLogResponse = PostApiLearningLogResponses[keyof PostApiLearningLogResponses];
+
+export type GetApiRulesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        lane?: 'hot' | 'orchestration' | 'project';
+    };
+    url: '/api/rules';
+};
+
+export type GetApiRulesErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiRulesResponses = {
+    /**
+     * Rules fetched successfully
+     */
+    200: {
+        rules: Array<{
+            _id: string;
+            text: string;
+            lane: 'hot' | 'orchestration' | 'project';
+            confidence: number;
+            projectFullName?: string;
+        }>;
+    };
+};
+
+export type GetApiRulesResponse = GetApiRulesResponses[keyof GetApiRulesResponses];
+
 export type GetApiProjectsData = {
     body?: never;
     path?: never;

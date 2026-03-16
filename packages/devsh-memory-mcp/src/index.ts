@@ -737,6 +737,58 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
           properties: {},
         },
       },
+      {
+        name: "log_learning",
+        description:
+          "Log an orchestration learning, error, or feature request to the server. " +
+          "Learnings captured here are reviewed by team leads and may be promoted to active orchestration rules. " +
+          "Requires CMUX_TASK_RUN_JWT.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            type: {
+              type: "string",
+              enum: ["learning", "error", "feature_request"],
+              description: "Type of event to log",
+            },
+            text: {
+              type: "string",
+              description: "The learning, error description, or feature request text",
+            },
+            lane: {
+              type: "string",
+              enum: ["hot", "orchestration", "project"],
+              description: "Suggested lane for the rule (default: orchestration)",
+            },
+            confidence: {
+              type: "number",
+              description: "Confidence score 0.0-1.0 (default: 0.5 for learnings, 0.8 for errors)",
+            },
+            metadata: {
+              type: "object",
+              description: "Optional metadata (e.g., error stack, related task IDs)",
+            },
+          },
+          required: ["type", "text"],
+        },
+      },
+      {
+        name: "get_active_orchestration_rules",
+        description:
+          "Fetch the currently active orchestration rules for this team. " +
+          "Returns rules that are injected into agent instruction files. " +
+          "Requires CMUX_TASK_RUN_JWT.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            lane: {
+              type: "string",
+              enum: ["hot", "orchestration", "project"],
+              description: "Filter by lane (optional)",
+            },
+          },
+        },
+      },
     ],
   }));
 
@@ -2176,6 +2228,159 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
             content: [{
               type: "text",
               text: `Error refreshing policy rules: ${errorMsg}`,
+            }],
+          };
+        }
+      }
+
+      case "log_learning": {
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        const apiBase = process.env.CMUX_API_BASE_URL ?? "https://cmux.sh";
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "Error: CMUX_TASK_RUN_JWT not set. This tool requires authentication.",
+            }],
+          };
+        }
+
+        const { type, text, lane, confidence, metadata } = args as {
+          type: "learning" | "error" | "feature_request";
+          text: string;
+          lane?: "hot" | "orchestration" | "project";
+          confidence?: number;
+          metadata?: Record<string, unknown>;
+        };
+
+        try {
+          const eventType = type === "learning" ? "learning_logged"
+            : type === "error" ? "error_logged"
+            : "feature_request_logged";
+
+          const response = await fetch(`${apiBase}/api/v1/cmux/orchestration/learning/log`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${jwt}`,
+            },
+            body: JSON.stringify({
+              eventType,
+              text,
+              lane: lane ?? "orchestration",
+              confidence: confidence ?? (type === "error" ? 0.8 : 0.5),
+              metadata,
+            }),
+          });
+
+          if (!response.ok) {
+            const errText = await response.text();
+            return {
+              content: [{
+                type: "text",
+                text: `Error logging ${type}: ${response.status} ${errText}`,
+              }],
+            };
+          }
+
+          const result = await response.json();
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                logged: true,
+                eventType,
+                eventId: result.eventId,
+                ruleId: result.ruleId,
+                message: `Successfully logged ${type}. It will be reviewed for promotion to active rules.`,
+              }, null, 2),
+            }],
+          };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{
+              type: "text",
+              text: `Error logging ${type}: ${errorMsg}`,
+            }],
+          };
+        }
+      }
+
+      case "get_active_orchestration_rules": {
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        const apiBase = process.env.CMUX_API_BASE_URL ?? "https://cmux.sh";
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "Error: CMUX_TASK_RUN_JWT not set. This tool requires authentication.",
+            }],
+          };
+        }
+
+        const { lane } = args as { lane?: "hot" | "orchestration" | "project" };
+
+        try {
+          const url = new URL(`${apiBase}/api/v1/cmux/orchestration/rules`);
+          if (lane) {
+            url.searchParams.set("lane", lane);
+          }
+
+          const response = await fetch(url.toString(), {
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${jwt}`,
+            },
+          });
+
+          if (!response.ok) {
+            const errText = await response.text();
+            return {
+              content: [{
+                type: "text",
+                text: `Error fetching orchestration rules: ${response.status} ${errText}`,
+              }],
+            };
+          }
+
+          const result = await response.json();
+          const rules = result.rules ?? [];
+
+          // Group by lane for display
+          const byLane = new Map<string, Array<{ text: string; confidence: number }>>();
+          for (const rule of rules) {
+            const laneRules = byLane.get(rule.lane) ?? [];
+            laneRules.push({ text: rule.text, confidence: rule.confidence });
+            byLane.set(rule.lane, laneRules);
+          }
+
+          let output = `# Active Orchestration Rules (${rules.length} total)\n\n`;
+          for (const [ruleLane, laneRules] of byLane.entries()) {
+            const laneLabel = ruleLane === "hot" ? "Hot (High Priority)"
+              : ruleLane === "orchestration" ? "Orchestration"
+              : "Project-Specific";
+            output += `## ${laneLabel}\n\n`;
+            for (const rule of laneRules.sort((a, b) => b.confidence - a.confidence)) {
+              output += `- ${rule.text}\n`;
+            }
+            output += "\n";
+          }
+
+          return {
+            content: [{
+              type: "text",
+              text: output,
+            }],
+          };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{
+              type: "text",
+              text: `Error fetching orchestration rules: ${errorMsg}`,
             }],
           };
         }

@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import { getTeamId } from "../_shared/team";
 import { authMutation, authQuery } from "./users/utils";
 import { internalQuery } from "./_generated/server";
@@ -274,6 +275,71 @@ export const logLearningEvent = authMutation({
       metadataJson: args.metadataJson,
       createdAt: Date.now(),
     });
+  },
+});
+
+/**
+ * Log an orchestration event from an agent (via MCP tool or HTTP API).
+ * Creates a candidate rule and logs the event.
+ */
+export const logEvent = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    eventType: eventTypeValidator,
+    payload: v.object({
+      text: v.string(),
+      lane: v.optional(laneValidator),
+      confidence: v.optional(v.number()),
+      metadata: v.optional(v.any()),
+      sourceTaskRunId: v.optional(v.string()),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+    const userId = ctx.identity.subject;
+    const now = Date.now();
+
+    const { text, lane, confidence, metadata, sourceTaskRunId } = args.payload;
+
+    // For learnings and errors, create a candidate rule
+    let ruleId: string | undefined;
+    if (
+      args.eventType === "learning_logged" ||
+      args.eventType === "error_logged"
+    ) {
+      ruleId = await ctx.db.insert("agentOrchestrationRules", {
+        teamId,
+        userId,
+        lane: lane ?? "orchestration",
+        status: "candidate",
+        text,
+        sourceType:
+          args.eventType === "learning_logged"
+            ? "run_review"
+            : "user_correction",
+        sourceTaskRunId: sourceTaskRunId
+          ? (sourceTaskRunId as Id<"taskRuns">)
+          : undefined,
+        confidence: confidence ?? (args.eventType === "error_logged" ? 0.8 : 0.5),
+        timesSeen: 1,
+        timesUsed: 0,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    // Log the event
+    const eventId = await ctx.db.insert("agentOrchestrationLearningEvents", {
+      teamId,
+      userId,
+      ruleId: ruleId ? (ruleId as Id<"agentOrchestrationRules">) : undefined,
+      eventType: args.eventType,
+      text,
+      metadataJson: metadata ? JSON.stringify(metadata) : undefined,
+      createdAt: now,
+    });
+
+    return { eventId, ruleId };
   },
 });
 

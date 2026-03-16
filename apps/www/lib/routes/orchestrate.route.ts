@@ -1269,3 +1269,196 @@ orchestrateRouter.openapi(
     }
   }
 );
+
+// ============================================================================
+// Orchestration Learning Routes
+// ============================================================================
+
+const LogLearningRequestSchema = z.object({
+  eventType: z.enum(["learning_logged", "error_logged", "feature_request_logged"]),
+  text: z.string().min(1),
+  lane: z.enum(["hot", "orchestration", "project"]).default("orchestration"),
+  confidence: z.number().min(0).max(1).default(0.5),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+const LogLearningResponseSchema = z.object({
+  eventId: z.string(),
+  ruleId: z.string().optional(),
+  message: z.string(),
+});
+
+/**
+ * POST /api/v1/cmux/orchestration/learning/log
+ * Log an orchestration learning, error, or feature request.
+ * Requires JWT auth (from sandbox agent).
+ */
+orchestrateRouter.openapi(
+  createRoute({
+    method: "post",
+    path: "/learning/log",
+    tags: ["orchestration-learning"],
+    summary: "Log an orchestration learning event",
+    description:
+      "Log a learning, error, or feature request that may be promoted to an orchestration rule",
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: LogLearningRequestSchema,
+          },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        description: "Learning logged successfully",
+        content: {
+          "application/json": {
+            schema: LogLearningResponseSchema,
+          },
+        },
+      },
+      401: { description: "Unauthorized" },
+      500: { description: "Server error" },
+    },
+  }),
+  async (c) => {
+    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+    if (!accessToken) {
+      return c.text("Unauthorized", 401);
+    }
+
+    const body = c.req.valid("json");
+
+    try {
+      const convex = getConvex({ accessToken });
+
+      // Decode JWT to get teamSlugOrId and taskRunId
+      const user = await getUserFromRequest(c.req.raw);
+      if (!user) {
+        return c.text("Unauthorized", 401);
+      }
+
+      // Extract team context from JWT claims or user context
+      const jwtPayload = JSON.parse(
+        Buffer.from(accessToken.split(".")[1], "base64").toString()
+      );
+      const teamSlugOrId = jwtPayload.teamSlugOrId ?? jwtPayload.team_id;
+      const taskRunId = jwtPayload.taskRunId;
+
+      if (!teamSlugOrId) {
+        return c.text("Missing team context in JWT", 400);
+      }
+
+      // Log the event
+      const result = await convex.mutation(api.agentOrchestrationLearning.logEvent, {
+        teamSlugOrId,
+        eventType: body.eventType,
+        payload: {
+          text: body.text,
+          lane: body.lane,
+          confidence: body.confidence,
+          metadata: body.metadata,
+          sourceTaskRunId: taskRunId,
+        },
+      });
+
+      return c.json({
+        eventId: result.eventId,
+        ruleId: result.ruleId,
+        message: "Learning logged successfully",
+      });
+    } catch (error) {
+      console.error("[orchestrate] Failed to log learning:", error);
+      return c.text("Failed to log learning", 500);
+    }
+  }
+);
+
+const GetRulesQuerySchema = z.object({
+  lane: z.enum(["hot", "orchestration", "project"]).optional(),
+});
+
+const OrchestrationRuleSchema = z.object({
+  _id: z.string(),
+  text: z.string(),
+  lane: z.enum(["hot", "orchestration", "project"]),
+  confidence: z.number(),
+  projectFullName: z.string().optional(),
+});
+
+const GetRulesResponseSchema = z.object({
+  rules: z.array(OrchestrationRuleSchema),
+});
+
+/**
+ * GET /api/v1/cmux/orchestration/rules
+ * Get active orchestration rules for the team.
+ * Requires JWT auth (from sandbox agent).
+ */
+orchestrateRouter.openapi(
+  createRoute({
+    method: "get",
+    path: "/rules",
+    tags: ["orchestration-learning"],
+    summary: "Get active orchestration rules",
+    description: "Fetch active orchestration rules for the team that are injected into agent prompts",
+    request: {
+      query: GetRulesQuerySchema,
+    },
+    responses: {
+      200: {
+        description: "Rules fetched successfully",
+        content: {
+          "application/json": {
+            schema: GetRulesResponseSchema,
+          },
+        },
+      },
+      401: { description: "Unauthorized" },
+      500: { description: "Server error" },
+    },
+  }),
+  async (c) => {
+    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+    if (!accessToken) {
+      return c.text("Unauthorized", 401);
+    }
+
+    const { lane } = c.req.valid("query");
+
+    try {
+      const convex = getConvex({ accessToken });
+
+      // Extract team context from JWT
+      const jwtPayload = JSON.parse(
+        Buffer.from(accessToken.split(".")[1], "base64").toString()
+      );
+      const teamSlugOrId = jwtPayload.teamSlugOrId ?? jwtPayload.team_id;
+
+      if (!teamSlugOrId) {
+        return c.text("Missing team context in JWT", 400);
+      }
+
+      const rules = await convex.query(api.agentOrchestrationLearning.getActiveRules, {
+        teamSlugOrId,
+        lane,
+      });
+
+      return c.json({
+        rules: rules.map((r) => ({
+          _id: r._id,
+          text: r.text,
+          lane: r.lane,
+          confidence: r.confidence,
+          projectFullName: r.projectFullName,
+        })),
+      });
+    } catch (error) {
+      console.error("[orchestrate] Failed to get orchestration rules:", error);
+      return c.text("Failed to get orchestration rules", 500);
+    }
+  }
+);
