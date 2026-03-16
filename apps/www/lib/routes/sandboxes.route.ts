@@ -614,6 +614,9 @@ async function setupProviderAuth(
   const registry = getProviderRegistry();
   const overrideMapped = mapProviderOverrides(providerOverrides);
 
+  // Shell wrappers disabled by default - must be explicitly enabled in workspace settings
+  const enableShellWrappers = workspaceSettings?.enableShellWrappers ?? false;
+
   // --- Claude (Anthropic) auth ---
   try {
     const hasClaudeKeys =
@@ -653,8 +656,7 @@ async function setupProviderAuth(
         // Permission deny rules from Convex - head agents skip these
         isOrchestrationHead: options.isOrchestrationHead,
         permissionDenyRules,
-        // Shell wrappers disabled by default - must be explicitly enabled in settings
-        enableShellWrappers: workspaceSettings?.enableShellWrappers ?? false,
+        enableShellWrappers,
       });
 
       await applyEnvironmentResult(
@@ -708,8 +710,7 @@ async function setupProviderAuth(
         previousMailbox: options.previousMailbox ?? undefined,
         providerConfig: openaiProviderConfig,
         agentConfigs,
-        // Shell wrappers disabled by default - must be explicitly enabled in settings
-        enableShellWrappers: workspaceSettings?.enableShellWrappers ?? false,
+        enableShellWrappers,
       });
 
       await applyEnvironmentResult(
@@ -751,8 +752,7 @@ async function setupProviderAuth(
         callbackUrl: options.callbackUrl,
         previousKnowledge: options.previousKnowledge ?? undefined,
         previousMailbox: options.previousMailbox ?? undefined,
-        // Shell wrappers disabled by default - must be explicitly enabled in settings
-        enableShellWrappers: workspaceSettings?.enableShellWrappers ?? false,
+        enableShellWrappers,
       });
 
       await applyEnvironmentResult(
