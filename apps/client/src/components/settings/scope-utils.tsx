@@ -1,15 +1,26 @@
 /**
- * Shared scope badge and filter components for settings sections.
- * Used by PolicyRulesSection and PermissionRulesSection.
+ * Shared scope/source badge and filter components for settings sections.
+ * Used by PolicyRulesSection, PermissionRulesSection, McpServersSection, AgentConfigsSection.
  */
 import {
   SCOPE_LABELS,
   SCOPE_BADGE_STYLES,
   CONTEXT_LABELS,
+  SOURCE_LABELS,
+  SOURCE_BADGE_STYLES,
   type ScopeValue,
+  type SourceValue,
 } from "./scope-constants";
 
-export { SCOPE_LABELS, SCOPE_BADGE_STYLES, CONTEXT_LABELS, type ScopeValue };
+export {
+  SCOPE_LABELS,
+  SCOPE_BADGE_STYLES,
+  CONTEXT_LABELS,
+  SOURCE_LABELS,
+  SOURCE_BADGE_STYLES,
+  type ScopeValue,
+  type SourceValue,
+};
 
 export function ScopeBadge({ scope }: { scope: ScopeValue }) {
   return (
@@ -17,6 +28,16 @@ export function ScopeBadge({ scope }: { scope: ScopeValue }) {
       className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${SCOPE_BADGE_STYLES[scope]}`}
     >
       {SCOPE_LABELS[scope]}
+    </span>
+  );
+}
+
+export function SourceBadge({ source }: { source: SourceValue }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${SOURCE_BADGE_STYLES[source]}`}
+    >
+      {SOURCE_LABELS[source]}
     </span>
   );
 }
