@@ -96,6 +96,20 @@ With custom options:
 | `append_event` | Append an orchestration event to EVENTS.jsonl |
 | `update_plan_task` | Update task status in PLAN.json |
 
+### Orchestration Learning Tools
+
+| Tool | Description |
+|------|-------------|
+| `log_learning` | Log an orchestration learning, error, or feature request to the server |
+| `get_active_orchestration_rules` | Fetch active orchestration rules for the team |
+
+**log_learning types:**
+- `learning` - Discovered a better orchestration pattern
+- `error` - Found an error pattern to avoid
+- `feature_request` - Missing capability that would help
+
+Logged items are reviewed by team leads and may be promoted to active orchestration rules.
+
 ### Environment Variables (Orchestration)
 
 | Variable | Description |
@@ -109,15 +123,22 @@ With custom options:
 ```
 /root/lifecycle/memory/
 ├── knowledge/
-│   └── MEMORY.md         # Long-term insights (P0/P1/P2 sections)
+│   └── MEMORY.md              # Long-term insights (P0/P1/P2 sections)
 ├── daily/
-│   └── {date}.md         # Daily session logs
+│   └── {date}.md              # Daily session logs
 ├── orchestration/
-│   ├── PLAN.json         # Orchestration task plan
-│   ├── AGENTS.json       # Agent registry
-│   └── EVENTS.jsonl      # Orchestration event log
-├── TASKS.json            # Task registry
-└── MAILBOX.json          # Inter-agent messages
+│   ├── PLAN.json              # Orchestration task plan
+│   ├── AGENTS.json            # Agent registry
+│   └── EVENTS.jsonl           # Orchestration event log
+├── behavior/
+│   ├── HOT.md                 # Active workflow preferences
+│   ├── corrections.jsonl      # User corrections log
+│   ├── LEARNINGS.jsonl        # Orchestration learnings
+│   ├── ERRORS.jsonl           # Error patterns
+│   ├── FEATURE_REQUESTS.jsonl # Feature requests
+│   └── skill-candidates.json  # Repeated patterns
+├── TASKS.json                 # Task registry
+└── MAILBOX.json               # Inter-agent messages
 ```
 
 ## Priority Tiers (MEMORY.md)
