@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Users, Plus, List, GitBranch } from "lucide-react";
+import { Users, Plus, List, GitBranch, Radio } from "lucide-react";
 import { OrchestrationSummaryCards } from "./OrchestrationSummaryCards";
 import { OrchestrationTaskList } from "./OrchestrationTaskList";
 import { OrchestrationSpawnDialog } from "./OrchestrationSpawnDialog";
 import { OrchestrationDependencyGraph } from "./OrchestrationDependencyGraph";
+import { OrchestrationEventStream } from "./OrchestrationEventStream";
 import { STATUS_CONFIG, type TaskStatus } from "./status-config";
 import type { Doc, Id } from "@cmux/convex/dataModel";
 
@@ -48,6 +49,7 @@ interface OrchestrationDashboardProps {
   tasks?: OrchestrationTaskWithDeps[];
   tasksLoading: boolean;
   statusFilter: string;
+  orchestrationId?: string;
 }
 
 export function OrchestrationDashboard({
@@ -57,10 +59,12 @@ export function OrchestrationDashboard({
   tasks,
   tasksLoading,
   statusFilter,
+  orchestrationId,
 }: OrchestrationDashboardProps) {
   const navigate = useNavigate();
   const [spawnDialogOpen, setSpawnDialogOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "graph">("list");
+  const [showEventStream, setShowEventStream] = useState(!!orchestrationId);
 
   const handleStatusFilterChange = (status: string) => {
     void navigate({
@@ -108,6 +112,27 @@ export function OrchestrationDashboard({
             onFilterChange={handleStatusFilterChange}
             activeFilter={statusFilter}
           />
+
+          {/* Event Stream (when orchestrationId provided) */}
+          {orchestrationId && showEventStream && (
+            <OrchestrationEventStream
+              orchestrationId={orchestrationId}
+              teamSlugOrId={teamSlugOrId}
+              onClose={() => setShowEventStream(false)}
+            />
+          )}
+
+          {/* Event Stream toggle (when orchestrationId provided but stream hidden) */}
+          {orchestrationId && !showEventStream && (
+            <button
+              type="button"
+              onClick={() => setShowEventStream(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-neutral-300 bg-neutral-50 py-2 text-sm text-neutral-500 transition-colors hover:border-neutral-400 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-neutral-600 dark:hover:bg-neutral-800"
+            >
+              <Radio className="size-4" />
+              Show Event Stream
+            </button>
+          )}
 
           {/* Active Agents */}
           {summary && summary.activeAgents.length > 0 && (
