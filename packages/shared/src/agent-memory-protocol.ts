@@ -216,6 +216,47 @@ export function getBehaviorIndexSeedContent(): string {
   return JSON.stringify(index, null, 2);
 }
 
+// Orchestration learning file paths
+export const MEMORY_BEHAVIOR_LEARNINGS_PATH = `${MEMORY_BEHAVIOR_DIR}/LEARNINGS.jsonl`;
+export const MEMORY_BEHAVIOR_ERRORS_PATH = `${MEMORY_BEHAVIOR_DIR}/ERRORS.jsonl`;
+export const MEMORY_BEHAVIOR_FEATURE_REQUESTS_PATH = `${MEMORY_BEHAVIOR_DIR}/FEATURE_REQUESTS.jsonl`;
+export const MEMORY_BEHAVIOR_SKILL_CANDIDATES_PATH = `${MEMORY_BEHAVIOR_DIR}/skill-candidates.json`;
+
+/**
+ * Seed content for behavior/LEARNINGS.jsonl (orchestration learnings log)
+ */
+export function getBehaviorLearningsSeedContent(): string {
+  // Empty file - learnings are appended as JSONL
+  return "";
+}
+
+/**
+ * Seed content for behavior/ERRORS.jsonl (orchestration errors log)
+ */
+export function getBehaviorErrorsSeedContent(): string {
+  // Empty file - errors are appended as JSONL
+  return "";
+}
+
+/**
+ * Seed content for behavior/FEATURE_REQUESTS.jsonl (feature requests log)
+ */
+export function getBehaviorFeatureRequestsSeedContent(): string {
+  // Empty file - feature requests are appended as JSONL
+  return "";
+}
+
+/**
+ * Seed content for behavior/skill-candidates.json
+ */
+export function getBehaviorSkillCandidatesSeedContent(): string {
+  return JSON.stringify({
+    version: 1,
+    candidates: [],
+    lastUpdated: new Date().toISOString(),
+  }, null, 2);
+}
+
 /**
  * Generate unique behavior rule ID
  */
@@ -2450,6 +2491,27 @@ export function getMemorySeedFiles(
     {
       destinationPath: `${MEMORY_BEHAVIOR_ARCHIVE_DIR}/.keep`,
       contentBase64: Buffer.from("").toString("base64"),
+      mode: "644",
+    },
+    // Orchestration learning JSONL files
+    {
+      destinationPath: MEMORY_BEHAVIOR_LEARNINGS_PATH,
+      contentBase64: Buffer.from(getBehaviorLearningsSeedContent()).toString("base64"),
+      mode: "644",
+    },
+    {
+      destinationPath: MEMORY_BEHAVIOR_ERRORS_PATH,
+      contentBase64: Buffer.from(getBehaviorErrorsSeedContent()).toString("base64"),
+      mode: "644",
+    },
+    {
+      destinationPath: MEMORY_BEHAVIOR_FEATURE_REQUESTS_PATH,
+      contentBase64: Buffer.from(getBehaviorFeatureRequestsSeedContent()).toString("base64"),
+      mode: "644",
+    },
+    {
+      destinationPath: MEMORY_BEHAVIOR_SKILL_CANDIDATES_PATH,
+      contentBase64: Buffer.from(getBehaviorSkillCandidatesSeedContent()).toString("base64"),
       mode: "644",
     },
     // Include sync script for memory sync to Convex
