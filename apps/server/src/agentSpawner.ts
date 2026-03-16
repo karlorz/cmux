@@ -48,7 +48,7 @@ import {
   getEditorSettingsUpload,
   type UserUploadedEditorSettings,
 } from "./utils/editorSettings";
-import { env } from "./utils/server-env";
+import { env, getWwwBaseUrl } from "./utils/server-env";
 import { getWwwClient } from "./utils/wwwClient";
 import { getWwwOpenApiModule } from "./utils/wwwOpenApiModule";
 import { buildSystemTimezoneStartupCommand } from "./utils/timezone";
@@ -464,6 +464,7 @@ export async function spawnAgent(
       CMUX_TASK_RUN_JWT: taskRunJwt,
       CMUX_CALLBACK_URL: callbackUrl,
       CMUX_SERVER_URL: cmuxServerUrl, // devsh CLI target (apps/server HTTP API)
+      CMUX_API_BASE_URL: getWwwBaseUrl(), // MCP orchestration API target (apps/www HTTP API)
       CMUX_AGENT_NAME: agent.name,
       PROMPT: processedTaskDescription,
     };
