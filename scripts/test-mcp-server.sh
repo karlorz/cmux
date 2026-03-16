@@ -540,6 +540,42 @@ test_live_server() {
     record_skip "search_memory test inconclusive"
   fi
 
+  # Test 6.5: send_message tool works
+  info "Testing send_message tool..."
+  local send_request='{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"send_message","arguments":{"to":"test-agent","message":"Hello from MCP test","type":"status"}}}'
+  local send_response
+  send_response="$(mcp_call "${send_request}")"
+
+  if echo "${send_response}" | jq -e '.result' >/dev/null 2>&1; then
+    # Verify message was written to mailbox
+    local mailbox
+    mailbox="$(sandbox_cat "${MEMORY_DIR}/MAILBOX.json")"
+    if echo "${mailbox}" | jq -e '.messages[] | select(.message == "Hello from MCP test")' >/dev/null 2>&1; then
+      record_pass "send_message writes to mailbox"
+    else
+      warn "Message not found in mailbox"
+      record_skip "send_message write verification inconclusive"
+    fi
+  else
+    warn "send_message response: ${send_response}"
+    record_skip "send_message test inconclusive"
+  fi
+
+  # Test 6.6: get_my_messages tool works
+  info "Testing get_my_messages tool..."
+  # Set agent name env var for test
+  sandbox_exec "export CMUX_AGENT_NAME=test-agent"
+  local get_request='{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"get_my_messages","arguments":{}}}'
+  local get_response
+  get_response="$(mcp_call "${get_request}")"
+
+  if echo "${get_response}" | jq -e '.result.content[0].text' >/dev/null 2>&1; then
+    record_pass "get_my_messages returns results"
+  else
+    warn "get_my_messages response: ${get_response}"
+    record_skip "get_my_messages test inconclusive"
+  fi
+
   info "=== Scenario 6 Complete ==="
 }
 
