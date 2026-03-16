@@ -43,6 +43,7 @@ import { Route as LayoutTeamSlugOrIdSettingsAddMcpServerRouteImport } from './ro
 import { Route as LayoutTeamSlugOrIdProjectsGithubRouteImport } from './routes/_layout.$teamSlugOrId.projects.github'
 import { Route as LayoutTeamSlugOrIdProjectsDashboardRouteImport } from './routes/_layout.$teamSlugOrId.projects.dashboard'
 import { Route as LayoutTeamSlugOrIdProjectsProjectIdRouteImport } from './routes/_layout.$teamSlugOrId.projects.$projectId'
+import { Route as LayoutTeamSlugOrIdOrchestrationOrchestrationIdRouteImport } from './routes/_layout.$teamSlugOrId.orchestration.$orchestrationId'
 import { Route as LayoutTeamSlugOrIdEnvironmentsNewVersionRouteImport } from './routes/_layout.$teamSlugOrId.environments.new-version'
 import { Route as LayoutTeamSlugOrIdEnvironmentsNewRouteImport } from './routes/_layout.$teamSlugOrId.environments.new'
 import { Route as LayoutTeamSlugOrIdEnvironmentsEnvironmentIdRouteImport } from './routes/_layout.$teamSlugOrId.environments.$environmentId'
@@ -245,6 +246,12 @@ const LayoutTeamSlugOrIdProjectsProjectIdRoute =
     path: '/$projectId',
     getParentRoute: () => LayoutTeamSlugOrIdProjectsRoute,
   } as any)
+const LayoutTeamSlugOrIdOrchestrationOrchestrationIdRoute =
+  LayoutTeamSlugOrIdOrchestrationOrchestrationIdRouteImport.update({
+    id: '/$orchestrationId',
+    path: '/$orchestrationId',
+    getParentRoute: () => LayoutTeamSlugOrIdOrchestrationRoute,
+  } as any)
 const LayoutTeamSlugOrIdEnvironmentsNewVersionRoute =
   LayoutTeamSlugOrIdEnvironmentsNewVersionRouteImport.update({
     id: '/new-version',
@@ -363,7 +370,7 @@ export interface FileRoutesByFullPath {
   '/$teamSlugOrId/environments': typeof LayoutTeamSlugOrIdEnvironmentsRouteWithChildren
   '/$teamSlugOrId/logs': typeof LayoutTeamSlugOrIdLogsRoute
   '/$teamSlugOrId/notifications': typeof LayoutTeamSlugOrIdNotificationsRoute
-  '/$teamSlugOrId/orchestration': typeof LayoutTeamSlugOrIdOrchestrationRoute
+  '/$teamSlugOrId/orchestration': typeof LayoutTeamSlugOrIdOrchestrationRouteWithChildren
   '/$teamSlugOrId/previews': typeof LayoutTeamSlugOrIdPreviewsRoute
   '/$teamSlugOrId/projects': typeof LayoutTeamSlugOrIdProjectsRouteWithChildren
   '/$teamSlugOrId/prs': typeof LayoutTeamSlugOrIdPrsRouteWithChildren
@@ -372,6 +379,7 @@ export interface FileRoutesByFullPath {
   '/$teamSlugOrId/environments/$environmentId': typeof LayoutTeamSlugOrIdEnvironmentsEnvironmentIdRoute
   '/$teamSlugOrId/environments/new': typeof LayoutTeamSlugOrIdEnvironmentsNewRoute
   '/$teamSlugOrId/environments/new-version': typeof LayoutTeamSlugOrIdEnvironmentsNewVersionRoute
+  '/$teamSlugOrId/orchestration/$orchestrationId': typeof LayoutTeamSlugOrIdOrchestrationOrchestrationIdRoute
   '/$teamSlugOrId/projects/$projectId': typeof LayoutTeamSlugOrIdProjectsProjectIdRoute
   '/$teamSlugOrId/projects/dashboard': typeof LayoutTeamSlugOrIdProjectsDashboardRoute
   '/$teamSlugOrId/projects/github': typeof LayoutTeamSlugOrIdProjectsGithubRoute
@@ -413,7 +421,7 @@ export interface FileRoutesByTo {
   '/$teamSlugOrId/diff': typeof LayoutTeamSlugOrIdDiffRoute
   '/$teamSlugOrId/logs': typeof LayoutTeamSlugOrIdLogsRoute
   '/$teamSlugOrId/notifications': typeof LayoutTeamSlugOrIdNotificationsRoute
-  '/$teamSlugOrId/orchestration': typeof LayoutTeamSlugOrIdOrchestrationRoute
+  '/$teamSlugOrId/orchestration': typeof LayoutTeamSlugOrIdOrchestrationRouteWithChildren
   '/$teamSlugOrId/previews': typeof LayoutTeamSlugOrIdPreviewsRoute
   '/$teamSlugOrId/prs': typeof LayoutTeamSlugOrIdPrsRouteWithChildren
   '/$teamSlugOrId/settings': typeof LayoutTeamSlugOrIdSettingsRouteWithChildren
@@ -421,6 +429,7 @@ export interface FileRoutesByTo {
   '/$teamSlugOrId/environments/$environmentId': typeof LayoutTeamSlugOrIdEnvironmentsEnvironmentIdRoute
   '/$teamSlugOrId/environments/new': typeof LayoutTeamSlugOrIdEnvironmentsNewRoute
   '/$teamSlugOrId/environments/new-version': typeof LayoutTeamSlugOrIdEnvironmentsNewVersionRoute
+  '/$teamSlugOrId/orchestration/$orchestrationId': typeof LayoutTeamSlugOrIdOrchestrationOrchestrationIdRoute
   '/$teamSlugOrId/projects/$projectId': typeof LayoutTeamSlugOrIdProjectsProjectIdRoute
   '/$teamSlugOrId/projects/dashboard': typeof LayoutTeamSlugOrIdProjectsDashboardRoute
   '/$teamSlugOrId/projects/github': typeof LayoutTeamSlugOrIdProjectsGithubRoute
@@ -464,7 +473,7 @@ export interface FileRoutesById {
   '/_layout/$teamSlugOrId/environments': typeof LayoutTeamSlugOrIdEnvironmentsRouteWithChildren
   '/_layout/$teamSlugOrId/logs': typeof LayoutTeamSlugOrIdLogsRoute
   '/_layout/$teamSlugOrId/notifications': typeof LayoutTeamSlugOrIdNotificationsRoute
-  '/_layout/$teamSlugOrId/orchestration': typeof LayoutTeamSlugOrIdOrchestrationRoute
+  '/_layout/$teamSlugOrId/orchestration': typeof LayoutTeamSlugOrIdOrchestrationRouteWithChildren
   '/_layout/$teamSlugOrId/previews': typeof LayoutTeamSlugOrIdPreviewsRoute
   '/_layout/$teamSlugOrId/projects': typeof LayoutTeamSlugOrIdProjectsRouteWithChildren
   '/_layout/$teamSlugOrId/prs': typeof LayoutTeamSlugOrIdPrsRouteWithChildren
@@ -473,6 +482,7 @@ export interface FileRoutesById {
   '/_layout/$teamSlugOrId/environments/$environmentId': typeof LayoutTeamSlugOrIdEnvironmentsEnvironmentIdRoute
   '/_layout/$teamSlugOrId/environments/new': typeof LayoutTeamSlugOrIdEnvironmentsNewRoute
   '/_layout/$teamSlugOrId/environments/new-version': typeof LayoutTeamSlugOrIdEnvironmentsNewVersionRoute
+  '/_layout/$teamSlugOrId/orchestration/$orchestrationId': typeof LayoutTeamSlugOrIdOrchestrationOrchestrationIdRoute
   '/_layout/$teamSlugOrId/projects/$projectId': typeof LayoutTeamSlugOrIdProjectsProjectIdRoute
   '/_layout/$teamSlugOrId/projects/dashboard': typeof LayoutTeamSlugOrIdProjectsDashboardRoute
   '/_layout/$teamSlugOrId/projects/github': typeof LayoutTeamSlugOrIdProjectsGithubRoute
@@ -526,6 +536,7 @@ export interface FileRouteTypes {
     | '/$teamSlugOrId/environments/$environmentId'
     | '/$teamSlugOrId/environments/new'
     | '/$teamSlugOrId/environments/new-version'
+    | '/$teamSlugOrId/orchestration/$orchestrationId'
     | '/$teamSlugOrId/projects/$projectId'
     | '/$teamSlugOrId/projects/dashboard'
     | '/$teamSlugOrId/projects/github'
@@ -575,6 +586,7 @@ export interface FileRouteTypes {
     | '/$teamSlugOrId/environments/$environmentId'
     | '/$teamSlugOrId/environments/new'
     | '/$teamSlugOrId/environments/new-version'
+    | '/$teamSlugOrId/orchestration/$orchestrationId'
     | '/$teamSlugOrId/projects/$projectId'
     | '/$teamSlugOrId/projects/dashboard'
     | '/$teamSlugOrId/projects/github'
@@ -626,6 +638,7 @@ export interface FileRouteTypes {
     | '/_layout/$teamSlugOrId/environments/$environmentId'
     | '/_layout/$teamSlugOrId/environments/new'
     | '/_layout/$teamSlugOrId/environments/new-version'
+    | '/_layout/$teamSlugOrId/orchestration/$orchestrationId'
     | '/_layout/$teamSlugOrId/projects/$projectId'
     | '/_layout/$teamSlugOrId/projects/dashboard'
     | '/_layout/$teamSlugOrId/projects/github'
@@ -902,6 +915,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutTeamSlugOrIdProjectsProjectIdRouteImport
       parentRoute: typeof LayoutTeamSlugOrIdProjectsRoute
     }
+    '/_layout/$teamSlugOrId/orchestration/$orchestrationId': {
+      id: '/_layout/$teamSlugOrId/orchestration/$orchestrationId'
+      path: '/$orchestrationId'
+      fullPath: '/$teamSlugOrId/orchestration/$orchestrationId'
+      preLoaderRoute: typeof LayoutTeamSlugOrIdOrchestrationOrchestrationIdRouteImport
+      parentRoute: typeof LayoutTeamSlugOrIdOrchestrationRoute
+    }
     '/_layout/$teamSlugOrId/environments/new-version': {
       id: '/_layout/$teamSlugOrId/environments/new-version'
       path: '/new-version'
@@ -1041,6 +1061,21 @@ const LayoutTeamSlugOrIdEnvironmentsRouteWithChildren =
     LayoutTeamSlugOrIdEnvironmentsRouteChildren,
   )
 
+interface LayoutTeamSlugOrIdOrchestrationRouteChildren {
+  LayoutTeamSlugOrIdOrchestrationOrchestrationIdRoute: typeof LayoutTeamSlugOrIdOrchestrationOrchestrationIdRoute
+}
+
+const LayoutTeamSlugOrIdOrchestrationRouteChildren: LayoutTeamSlugOrIdOrchestrationRouteChildren =
+  {
+    LayoutTeamSlugOrIdOrchestrationOrchestrationIdRoute:
+      LayoutTeamSlugOrIdOrchestrationOrchestrationIdRoute,
+  }
+
+const LayoutTeamSlugOrIdOrchestrationRouteWithChildren =
+  LayoutTeamSlugOrIdOrchestrationRoute._addFileChildren(
+    LayoutTeamSlugOrIdOrchestrationRouteChildren,
+  )
+
 interface LayoutTeamSlugOrIdProjectsRouteChildren {
   LayoutTeamSlugOrIdProjectsProjectIdRoute: typeof LayoutTeamSlugOrIdProjectsProjectIdRoute
   LayoutTeamSlugOrIdProjectsDashboardRoute: typeof LayoutTeamSlugOrIdProjectsDashboardRoute
@@ -1145,7 +1180,7 @@ interface LayoutTeamSlugOrIdRouteChildren {
   LayoutTeamSlugOrIdEnvironmentsRoute: typeof LayoutTeamSlugOrIdEnvironmentsRouteWithChildren
   LayoutTeamSlugOrIdLogsRoute: typeof LayoutTeamSlugOrIdLogsRoute
   LayoutTeamSlugOrIdNotificationsRoute: typeof LayoutTeamSlugOrIdNotificationsRoute
-  LayoutTeamSlugOrIdOrchestrationRoute: typeof LayoutTeamSlugOrIdOrchestrationRoute
+  LayoutTeamSlugOrIdOrchestrationRoute: typeof LayoutTeamSlugOrIdOrchestrationRouteWithChildren
   LayoutTeamSlugOrIdPreviewsRoute: typeof LayoutTeamSlugOrIdPreviewsRoute
   LayoutTeamSlugOrIdProjectsRoute: typeof LayoutTeamSlugOrIdProjectsRouteWithChildren
   LayoutTeamSlugOrIdPrsRoute: typeof LayoutTeamSlugOrIdPrsRouteWithChildren
@@ -1164,7 +1199,8 @@ const LayoutTeamSlugOrIdRouteChildren: LayoutTeamSlugOrIdRouteChildren = {
     LayoutTeamSlugOrIdEnvironmentsRouteWithChildren,
   LayoutTeamSlugOrIdLogsRoute: LayoutTeamSlugOrIdLogsRoute,
   LayoutTeamSlugOrIdNotificationsRoute: LayoutTeamSlugOrIdNotificationsRoute,
-  LayoutTeamSlugOrIdOrchestrationRoute: LayoutTeamSlugOrIdOrchestrationRoute,
+  LayoutTeamSlugOrIdOrchestrationRoute:
+    LayoutTeamSlugOrIdOrchestrationRouteWithChildren,
   LayoutTeamSlugOrIdPreviewsRoute: LayoutTeamSlugOrIdPreviewsRoute,
   LayoutTeamSlugOrIdProjectsRoute: LayoutTeamSlugOrIdProjectsRouteWithChildren,
   LayoutTeamSlugOrIdPrsRoute: LayoutTeamSlugOrIdPrsRouteWithChildren,

@@ -5,3 +5,4 @@ export { OrchestrationTaskList } from "./OrchestrationTaskList";
 export { OrchestrationTaskRow } from "./OrchestrationTaskRow";
 export { OrchestrationSpawnDialog } from "./OrchestrationSpawnDialog";
 export { OrchestrationMessageDialog } from "./OrchestrationMessageDialog";
+export { OrchestrationEventStream } from "./OrchestrationEventStream";
