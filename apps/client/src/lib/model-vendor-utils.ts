@@ -67,14 +67,19 @@ export interface HasVendor {
   vendor: string;
 }
 
+interface HasVendorAndSortOrder extends HasVendor {
+  sortOrder?: number;
+}
+
 /**
  * Group models by vendor, preserving the order of models within each vendor.
- * Returns a Map with vendors as keys in display order.
+ * Returns a Map with vendors as keys, ordered by the minimum sortOrder of
+ * models within each vendor (respects cross-vendor reordering).
  *
- * @param models Array of models with a vendor field
- * @returns Map of vendor -> models[], ordered by VENDOR_DISPLAY_ORDER
+ * @param models Array of models with vendor and optional sortOrder fields
+ * @returns Map of vendor -> models[], ordered by minimum sortOrder per vendor
  */
-export function groupModelsByVendor<T extends HasVendor>(
+export function groupModelsByVendor<T extends HasVendorAndSortOrder>(
   models: T[]
 ): Map<string, T[]> {
   const grouped = new Map<string, T[]>();
@@ -89,10 +94,16 @@ export function groupModelsByVendor<T extends HasVendor>(
     }
   }
 
-  // Sort the map entries by vendor display order
+  // Sort vendor groups by minimum sortOrder of models within each group
+  // This respects cross-vendor reordering (e.g., if an admin moves a model
+  // from vendor B to position 1, vendor B's group should appear first)
+  const getMinSortOrder = (models: T[]): number => {
+    return Math.min(...models.map((m) => m.sortOrder ?? Infinity));
+  };
+
   const sorted = new Map(
     [...grouped.entries()].sort(
-      ([a], [b]) => getVendorOrder(a) - getVendorOrder(b)
+      ([, modelsA], [, modelsB]) => getMinSortOrder(modelsA) - getMinSortOrder(modelsB)
     )
   );
 
