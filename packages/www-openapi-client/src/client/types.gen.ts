@@ -773,6 +773,7 @@ export type OrchestrationSyncResponse = {
 export type OrchestrationPushResponse = {
     success: boolean;
     tasksUpdated: number;
+    heartbeatUpdated?: boolean;
     message?: string;
 };
 

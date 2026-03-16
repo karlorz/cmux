@@ -2979,6 +2979,71 @@ export const updateCodexThreadId = internalMutation({
 });
 
 /**
+ * Update orchestration head agent heartbeat.
+ * Called by push_orchestration_updates MCP tool.
+ */
+export const updateOrchestrationHeartbeat = internalMutation({
+  args: {
+    id: v.id("taskRuns"),
+    status: v.optional(
+      v.union(
+        v.literal("running"),
+        v.literal("completed"),
+        v.literal("failed")
+      )
+    ),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.id);
+    if (!doc) {
+      throw new Error("Task run not found");
+    }
+
+    const now = Date.now();
+    const patch: Record<string, unknown> = {
+      orchestrationHeartbeat: now,
+      updatedAt: now,
+    };
+
+    if (args.status) {
+      patch.orchestrationStatus = args.status;
+    }
+
+    await ctx.db.patch(args.id, patch);
+
+    return { ok: true, heartbeat: now, status: args.status };
+  },
+});
+
+/**
+ * Get task run by orchestration ID (for head agent lookup).
+ */
+export const getByOrchestrationId = authQuery({
+  args: {
+    orchestrationId: v.string(),
+    teamSlugOrId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+
+    // Look for head agent task run with this orchestration ID
+    // Note: No direct index on orchestrationId, so we filter
+    const run = await ctx.db
+      .query("taskRuns")
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("teamId"), teamId),
+          q.eq(q.field("orchestrationId"), args.orchestrationId),
+          q.eq(q.field("isOrchestrationHead"), true)
+        )
+      )
+      .first();
+
+    return run;
+  },
+});
+
+/**
  * Initialize autopilot config when starting an autopilot session.
  * Called by agentSpawner when task is created with --autopilot flag.
  */
