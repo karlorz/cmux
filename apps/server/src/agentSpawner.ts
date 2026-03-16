@@ -178,6 +178,10 @@ export async function spawnAgent(
     preFetchedConfig?: PreFetchedSpawnConfig;
     /** Autopilot mode options (Phase 6: Long-Running Sessions) */
     autopilotOptions?: AutopilotOptions;
+    /** Mark as cloud workspace (long-lived, not auto-paused) */
+    isCloudWorkspace?: boolean;
+    /** Mark as orchestration head agent (can spawn sub-agents via env JWT) */
+    isOrchestrationHead?: boolean;
   },
   teamSlugOrId: string,
   /** Optional pre-provided JWT (for JWT-based auth when Stack Auth is not available) */
@@ -473,6 +477,16 @@ export async function spawnAgent(
       serverLogger.info(
         `[AgentSpawner] Autopilot mode enabled: ${options.autopilotOptions.totalMinutes}min total, ${options.autopilotOptions.turnMinutes}min/turn`
       );
+    }
+
+    // Add orchestration head agent environment variables
+    if (options.isOrchestrationHead) {
+      systemEnvVars.CMUX_IS_ORCHESTRATION_HEAD = "1";
+      serverLogger.info("[AgentSpawner] Orchestration head mode enabled");
+    }
+    if (options.isCloudWorkspace) {
+      systemEnvVars.CMUX_IS_CLOUD_WORKSPACE = "1";
+      serverLogger.info("[AgentSpawner] Cloud workspace mode enabled");
     }
 
     let envVars: Record<string, string> = { ...systemEnvVars };

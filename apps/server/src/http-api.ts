@@ -705,6 +705,8 @@ interface OrchestrationSpawnRequest {
   dependsOn?: string[];  // Orchestration task IDs this task depends on
   priority?: number;     // Task priority (1=highest, 10=lowest, default 5)
   orchestrationId?: string; // Orchestration ID for grouping tasks
+  isCloudWorkspace?: boolean; // Mark as cloud workspace (long-lived, not auto-paused)
+  isOrchestrationHead?: boolean; // Mark as orchestration head agent (can spawn sub-agents)
 }
 
 interface OrchestrationSpawnResponse {
@@ -776,7 +778,7 @@ async function handleOrchestrationSpawn(
     return;
   }
 
-  const { teamSlugOrId, prompt, agent, repo, branch, prTitle, environmentId, isCloudMode = true, dependsOn, priority, orchestrationId } = body;
+  const { teamSlugOrId, prompt, agent, repo, branch, prTitle, environmentId, isCloudMode = true, dependsOn, priority, orchestrationId, isCloudWorkspace, isOrchestrationHead } = body;
 
   if (!teamSlugOrId || !prompt || !agent) {
     jsonResponse(res, 400, { error: "Missing required fields: teamSlugOrId, prompt, agent" });
@@ -900,6 +902,8 @@ async function handleOrchestrationSpawn(
               environmentId: environmentId as Id<"environments"> | undefined,
               taskRunId: taskRunId as Id<"taskRuns">,
               preFetchedConfig,
+              isCloudWorkspace,
+              isOrchestrationHead,
             },
             teamSlugOrId,
             newJwt
@@ -1009,6 +1013,8 @@ async function handleOrchestrationSpawn(
           isCloudMode,
           environmentId: environmentId as Id<"environments"> | undefined,
           taskRunId: result.taskRunId as Id<"taskRuns">,
+          isCloudWorkspace,
+          isOrchestrationHead,
         },
         teamSlugOrId
       );
