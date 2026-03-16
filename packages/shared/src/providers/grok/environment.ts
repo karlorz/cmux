@@ -121,9 +121,10 @@ ${getMemoryProtocolInstructions()}
     mode: "644",
   });
 
-  // Block dangerous commands in task sandboxes
+  // Block dangerous commands in task sandboxes (when enabled via settings)
+  // Disabled by default - use permission deny rules or policy rules instead
   const hasTaskRunJwt = ctx.taskRunJwt.trim().length > 0;
-  if (hasTaskRunJwt) {
+  if (hasTaskRunJwt && ctx.enableShellWrappers) {
     files.push(...getTaskSandboxWrapperFiles(Buffer));
   }
 

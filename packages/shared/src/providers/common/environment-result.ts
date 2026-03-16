@@ -108,4 +108,11 @@ export type EnvironmentContext = {
    * Injected into agent instruction files alongside policy rules.
    */
   orchestrationRules?: OrchestrationRuleForInstructions[];
+  /**
+   * When true, inject shell wrapper scripts that block dangerous commands
+   * (gh pr create, git push --force, etc.) in task sandboxes.
+   * This is a defense-in-depth for agents that don't support native permissions.deny.
+   * @default false
+   */
+  enableShellWrappers?: boolean;
 };

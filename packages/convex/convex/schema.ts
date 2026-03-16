@@ -692,6 +692,8 @@ const convexSchema = defineSchema({
         token: v.object({ start: v.string(), end: v.string() }), // Token highlight gradient colors
       })
     ),
+    // Shell wrapper settings for task sandboxes
+    enableShellWrappers: v.optional(v.boolean()), // When true, inject gh/git wrappers to block dangerous commands (default: false)
     createdAt: v.number(),
     updatedAt: v.number(),
     userId: v.string(),
