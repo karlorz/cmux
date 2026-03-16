@@ -204,7 +204,9 @@ exit 1
     mode: "755",
   });
 
-  if (hasTaskRunJwt) {
+  // Block dangerous commands in task sandboxes (when enabled via settings)
+  // Disabled by default - use permission deny rules or policy rules instead
+  if (hasTaskRunJwt && ctx.enableShellWrappers) {
     files.push(...getTaskSandboxWrapperFiles(Buffer));
   }
 

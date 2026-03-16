@@ -650,6 +650,7 @@ foo = "bar"
   it("injects gh and git wrappers for task-backed sandboxes", async () => {
     const result = await getOpenAIEnvironment({
       taskRunJwt: "test-jwt",
+      enableShellWrappers: true,
     } as never);
 
     const ghWrapper = decodeEnvironmentFile(result, "/usr/local/bin/gh");
@@ -729,6 +730,7 @@ foo = "bar"
   it("git wrapper blocks force push in task sandboxes", async () => {
     const result = await getOpenAIEnvironment({
       taskRunJwt: "test-jwt",
+      enableShellWrappers: true,
     } as never);
 
     const gitWrapper = decodeEnvironmentFile(result, "/usr/local/bin/git");

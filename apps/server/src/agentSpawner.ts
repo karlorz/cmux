@@ -116,6 +116,7 @@ export interface PreFetchedSpawnConfig {
   apiKeys: Record<string, string>;
   workspaceSettings: {
     bypassAnthropicProxy: boolean;
+    enableShellWrappers?: boolean;
   } | null;
   providerOverrides: Array<{
     providerId: string;
@@ -562,7 +563,7 @@ export async function spawnAgent(
     // BEFORE calling agent.environment() so agents can access them in their environment configuration
     // If pre-fetched config is provided (JWT auth path), use it instead of querying Convex
     let userApiKeys: Record<string, string>;
-    let workspaceSettings: { bypassAnthropicProxy?: boolean } | null;
+    let workspaceSettings: { bypassAnthropicProxy?: boolean; enableShellWrappers?: boolean } | null;
     let providerOverrides: Array<{
       teamId?: string;
       providerId: string;
@@ -859,6 +860,8 @@ export async function spawnAgent(
         policyRules,
         // Orchestration rules (self-improving memory)
         orchestrationRules,
+        // Shell wrappers disabled by default - must be explicitly enabled in settings
+        enableShellWrappers: workspaceSettings?.enableShellWrappers ?? false,
         // GitHub Projects v2 context (Phase 5: Sandbox Project Integration)
         githubProjectContext:
           task?.githubProjectId &&

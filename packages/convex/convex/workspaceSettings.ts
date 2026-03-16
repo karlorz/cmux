@@ -53,6 +53,7 @@ export const update = authMutation({
         token: v.object({ start: v.string(), end: v.string() }),
       })
     ),
+    enableShellWrappers: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
@@ -81,6 +82,7 @@ export const update = authMutation({
           line: { start: string; end: string };
           token: { start: string; end: string };
         };
+        enableShellWrappers?: boolean;
         updatedAt: number;
       } = { updatedAt: now };
 
@@ -117,6 +119,9 @@ export const update = authMutation({
       if (args.heatmapColors !== undefined) {
         updates.heatmapColors = args.heatmapColors;
       }
+      if (args.enableShellWrappers !== undefined) {
+        updates.enableShellWrappers = args.enableShellWrappers;
+      }
 
       await ctx.db.patch(existing._id, updates);
     } else {
@@ -132,6 +137,7 @@ export const update = authMutation({
         heatmapThreshold: args.heatmapThreshold,
         heatmapTooltipLanguage: args.heatmapTooltipLanguage,
         heatmapColors: args.heatmapColors,
+        enableShellWrappers: args.enableShellWrappers,
         nextLocalWorkspaceSequence: 0,
         createdAt: now,
         updatedAt: now,

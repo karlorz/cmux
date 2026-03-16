@@ -8,9 +8,17 @@ import type { AuthFile } from "../../worker-schemas";
  * wrappers only intercept when CMUX_TASK_RUN_JWT is set; otherwise they pass
  * through to the real binary.
  *
- * Use this for providers that don't support native permissions.deny (Gemini,
- * Amp, Grok, Qwen, Cursor). Claude and OpenCode use native deny rules instead;
- * Codex already has its own wrapper scripts that are maintained inline.
+ * IMPORTANT: Shell wrappers are DISABLED by default. They can be enabled via
+ * the `enableShellWrappers` setting in workspace settings. The preferred
+ * approach is to use permission deny rules (for Claude Code) or policy rules
+ * (for all agents) instead of shell wrappers.
+ *
+ * Shell wrappers are a defense-in-depth option for agents that:
+ * 1. Don't support native permissions.deny (Gemini, Amp, Grok, Qwen, Cursor)
+ * 2. Where policy rule instructions might not be followed reliably
+ *
+ * Note: Claude and OpenCode use native deny rules; Codex has its own wrapper
+ * scripts maintained inline.
  */
 
 const GH_WRAPPER = `#!/usr/bin/env sh
