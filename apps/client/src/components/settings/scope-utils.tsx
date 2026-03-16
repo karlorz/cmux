@@ -12,7 +12,15 @@ import {
   type SourceValue,
 } from "./scope-constants";
 
-export { SCOPE_LABELS, SCOPE_BADGE_STYLES, CONTEXT_LABELS, SOURCE_LABELS, SOURCE_BADGE_STYLES, type ScopeValue, type SourceValue };
+export {
+  SCOPE_LABELS,
+  SCOPE_BADGE_STYLES,
+  CONTEXT_LABELS,
+  SOURCE_LABELS,
+  SOURCE_BADGE_STYLES,
+  type ScopeValue,
+  type SourceValue,
+};
 
 export function ScopeBadge({ scope }: { scope: ScopeValue }) {
   return (
