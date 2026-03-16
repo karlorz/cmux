@@ -2525,6 +2525,53 @@ func (c *Client) OrchestrationMetrics(ctx context.Context) (*OrchestrationMetric
 }
 
 // ============================================================================
+// Provider Session API
+// ============================================================================
+
+// ProviderSession represents a provider session binding for task resume
+type ProviderSession struct {
+	TaskID            string  `json:"taskId"`
+	OrchestrationID   string  `json:"orchestrationId"`
+	Provider          string  `json:"provider"`
+	AgentName         string  `json:"agentName"`
+	Mode              string  `json:"mode"`
+	ProviderSessionID *string `json:"providerSessionId,omitempty"`
+	ProviderThreadID  *string `json:"providerThreadId,omitempty"`
+	ReplyChannel      *string `json:"replyChannel,omitempty"`
+	Status            string  `json:"status"`
+	LastActiveAt      *int64  `json:"lastActiveAt,omitempty"`
+}
+
+// GetProviderSession retrieves the provider session binding for a task
+func (c *Client) GetProviderSession(ctx context.Context, taskID string) (*ProviderSession, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	path := fmt.Sprintf("/api/v1/cmux/orchestration/sessions/%s", taskID)
+
+	resp, err := c.doServerRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("no session found for task %s", taskID)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("get provider session failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result ProviderSession
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// ============================================================================
 // Autopilot API
 // ============================================================================
 
