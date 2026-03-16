@@ -1010,7 +1010,7 @@ func (c *Client) CreateTask(ctx context.Context, opts CreateTaskOptions) (*Creat
 	if len(opts.DependsOn) > 0 {
 		body["dependsOn"] = opts.DependsOn
 	}
-	if opts.Priority > 0 {
+	if opts.Priority >= 0 {
 		body["priority"] = opts.Priority
 	}
 	// Autopilot mode (Phase 6)

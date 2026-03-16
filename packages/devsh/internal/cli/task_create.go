@@ -570,7 +570,7 @@ func init() {
 	taskCreateCmd.Flags().BoolVar(&taskCreateCloudWorkspace, "cloud-workspace", false, "Create as a cloud workspace (appears in Workspaces section)")
 	// Orchestration dependency tracking
 	taskCreateCmd.Flags().StringSliceVar(&taskCreateDependsOn, "depends-on", nil, "Orchestration task IDs this task depends on (can be specified multiple times)")
-	taskCreateCmd.Flags().IntVar(&taskCreatePriority, "priority", 0, "Task priority (1=highest, 10=lowest, 0=default)")
+	taskCreateCmd.Flags().IntVar(&taskCreatePriority, "priority", -1, "Task priority (0=highest, 10=lowest; omit for default=5)")
 	// GitHub Projects v2 linkage flags
 	taskCreateCmd.Flags().StringVar(&taskCreateGHProjectId, "gh-project-id", "", "GitHub Project node ID (PVT_xxx)")
 	taskCreateCmd.Flags().StringVar(&taskCreateGHProjectItemId, "gh-project-item-id", "", "GitHub Project item node ID (PVTI_xxx)")
