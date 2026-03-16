@@ -54,19 +54,17 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addForm, setAddForm] = useState({ text: "", lane: "hot" as RuleLane });
 
+  // All queries run unconditionally to maintain accurate tab counts
   const { data: activeRules, refetch: refetchActive, isLoading: loadingActive } = useQuery({
     ...convexQuery(api.agentOrchestrationLearning.getActiveRules, { teamSlugOrId }),
-    enabled: activeTab === "active" || activeTab === "candidates",
   });
 
   const { data: candidateRules, refetch: refetchCandidates, isLoading: loadingCandidates } = useQuery({
     ...convexQuery(api.agentOrchestrationLearning.getCandidateRules, { teamSlugOrId }),
-    enabled: activeTab === "candidates",
   });
 
   const { data: skillCandidates, isLoading: loadingSkills } = useQuery({
     ...convexQuery(api.agentOrchestrationLearning.getSkillCandidates, { teamSlugOrId }),
-    enabled: activeTab === "skills",
   });
 
   const promoteMutation = useMutation({

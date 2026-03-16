@@ -58,15 +58,26 @@ export const getActiveRules = authQuery({
     }
 
     if (args.projectFullName) {
-      return ctx.db
-        .query("agentOrchestrationRules")
-        .withIndex("by_team_project_status", (q) =>
-          q
-            .eq("teamId", teamId)
-            .eq("projectFullName", args.projectFullName!)
-            .eq("status", "active")
-        )
-        .take(100);
+      // Return both project-specific rules AND global team rules (no projectFullName)
+      const [projectRules, globalRules] = await Promise.all([
+        ctx.db
+          .query("agentOrchestrationRules")
+          .withIndex("by_team_project_status", (q) =>
+            q
+              .eq("teamId", teamId)
+              .eq("projectFullName", args.projectFullName!)
+              .eq("status", "active")
+          )
+          .take(100),
+        ctx.db
+          .query("agentOrchestrationRules")
+          .withIndex("by_team_status", (q) =>
+            q.eq("teamId", teamId).eq("status", "active")
+          )
+          .filter((q) => q.eq(q.field("projectFullName"), undefined))
+          .take(100),
+      ]);
+      return [...globalRules, ...projectRules];
     }
 
     return ctx.db
@@ -408,15 +419,26 @@ export const getActiveRulesInternal = internalQuery({
   },
   handler: async (ctx, args) => {
     if (args.projectFullName) {
-      return ctx.db
-        .query("agentOrchestrationRules")
-        .withIndex("by_team_project_status", (q) =>
-          q
-            .eq("teamId", args.teamId)
-            .eq("projectFullName", args.projectFullName!)
-            .eq("status", "active")
-        )
-        .take(100);
+      // Return both project-specific rules AND global team rules (no projectFullName)
+      const [projectRules, globalRules] = await Promise.all([
+        ctx.db
+          .query("agentOrchestrationRules")
+          .withIndex("by_team_project_status", (q) =>
+            q
+              .eq("teamId", args.teamId)
+              .eq("projectFullName", args.projectFullName!)
+              .eq("status", "active")
+          )
+          .take(100),
+        ctx.db
+          .query("agentOrchestrationRules")
+          .withIndex("by_team_status", (q) =>
+            q.eq("teamId", args.teamId).eq("status", "active")
+          )
+          .filter((q) => q.eq(q.field("projectFullName"), undefined))
+          .take(100),
+      ]);
+      return [...globalRules, ...projectRules];
     }
 
     return ctx.db
