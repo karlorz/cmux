@@ -18,6 +18,7 @@ import {
   generateBehaviorRuleId,
   generateCorrectionId,
   formatBehaviorCorrection,
+  extractBehaviorRulesSection,
 } from "./agent-memory-protocol";
 import { execSync } from "node:child_process";
 import { writeFileSync, unlinkSync } from "node:fs";
@@ -300,6 +301,46 @@ describe("agent-memory-protocol", () => {
       expect(id1).toMatch(/^corr_[a-z0-9]+$/);
       expect(id2).toMatch(/^corr_[a-z0-9]+$/);
       expect(id1).not.toBe(id2);
+    });
+
+    it("extractBehaviorRulesSection extracts rules from HOT.md content", () => {
+      const hotMdContent = `# HOT Behavior Rules
+
+## Format
+Each rule should be on its own line.
+
+## Rules
+
+- [confirmed] Always use bun instead of npm
+- Use vitest, not jest
+- [domain:testing] Mock external APIs in unit tests
+
+---
+*Add rules here*
+`;
+      const section = extractBehaviorRulesSection(hotMdContent);
+      expect(section).toContain("## Active Behavior Rules");
+      expect(section).toContain("- [confirmed] Always use bun instead of npm");
+      expect(section).toContain("- Use vitest, not jest");
+      expect(section).toContain("- [domain:testing] Mock external APIs in unit tests");
+    });
+
+    it("extractBehaviorRulesSection returns empty for content without rules", () => {
+      const hotMdContent = `# HOT Behavior Rules
+
+## Rules
+
+<!-- Add rules below this line -->
+
+---
+`;
+      const section = extractBehaviorRulesSection(hotMdContent);
+      expect(section).toBe("");
+    });
+
+    it("extractBehaviorRulesSection returns empty for empty content", () => {
+      expect(extractBehaviorRulesSection("")).toBe("");
+      expect(extractBehaviorRulesSection("   ")).toBe("");
     });
 
     it("formatBehaviorCorrection returns valid JSONL", () => {

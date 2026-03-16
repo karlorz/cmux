@@ -13,6 +13,7 @@ import {
   getProjectContextFile,
   getPolicyRulesInstructions,
   getOrchestrationRulesInstructions,
+  extractBehaviorRulesSection,
 } from "../../agent-memory-protocol";
 import { getTaskSandboxWrapperFiles } from "../common/task-sandbox-wrappers";
 
@@ -131,8 +132,11 @@ export async function getAmpEnvironment(
   const orchestrationRulesSection = ctx.orchestrationRules && ctx.orchestrationRules.length > 0
     ? `\n${getOrchestrationRulesInstructions(ctx.orchestrationRules)}\n`
     : "";
+  const behaviorRulesSection = ctx.previousBehavior
+    ? `\n${extractBehaviorRulesSection(ctx.previousBehavior)}\n`
+    : "";
   const ampMdContent = `# cmux Project Instructions
-${policyRulesSection}${orchestrationRulesSection}
+${policyRulesSection}${orchestrationRulesSection}${behaviorRulesSection}
 ${getMemoryProtocolInstructions()}
 `;
   files.push({

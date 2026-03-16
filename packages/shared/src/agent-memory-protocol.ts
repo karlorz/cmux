@@ -258,6 +258,41 @@ export function getBehaviorSkillCandidatesSeedContent(): string {
 }
 
 /**
+ * Extract active rules from HOT.md content for injection into agent instructions.
+ * Parses the ## Rules section and returns formatted rules.
+ */
+export function extractBehaviorRulesSection(hotMdContent: string): string {
+  if (!hotMdContent || hotMdContent.trim().length === 0) {
+    return "";
+  }
+
+  // Find the ## Rules section
+  const rulesMatch = hotMdContent.match(/## Rules\s*([\s\S]*?)(?:---|\n#|$)/i);
+  if (!rulesMatch || !rulesMatch[1]) {
+    return "";
+  }
+
+  // Extract rules (lines starting with -)
+  const rulesSection = rulesMatch[1];
+  const rules = rulesSection
+    .split("\n")
+    .filter((line) => line.trim().startsWith("-"))
+    .map((line) => line.trim())
+    .filter((line) => !line.includes("<!--")); // Skip template comments
+
+  if (rules.length === 0) {
+    return "";
+  }
+
+  return `## Active Behavior Rules
+
+The following rules were learned from previous sessions. Follow them unless explicitly overridden:
+
+${rules.join("\n")}
+`;
+}
+
+/**
  * Generate unique behavior rule ID
  */
 export function generateBehaviorRuleId(): string {
