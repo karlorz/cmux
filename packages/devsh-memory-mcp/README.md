@@ -88,7 +88,8 @@ With custom options:
 | `spawn_agent` | Spawn a sub-agent to work on a task |
 | `get_agent_status` | Get status of a spawned agent |
 | `list_spawned_agents` | List all agents in current orchestration |
-| `wait_for_agent` | Wait for agent to complete (blocking) |
+| `wait_for_agent` | Wait for agent to complete (polling) |
+| `wait_for_events` | Wait for events via SSE (event-driven, recommended) |
 | `cancel_agent` | Cancel a running/pending agent |
 | `get_orchestration_summary` | Get dashboard-style orchestration summary |
 | `pull_orchestration_updates` | Sync local PLAN.json with server (read) |
@@ -96,6 +97,13 @@ With custom options:
 | `read_orchestration` | Read PLAN.json, AGENTS.json, or EVENTS.jsonl |
 | `append_event` | Append an orchestration event to EVENTS.jsonl |
 | `update_plan_task` | Update task status in PLAN.json |
+
+### Provider Session Tools
+
+| Tool | Description |
+|------|-------------|
+| `bind_provider_session` | Bind a Claude session ID or Codex thread ID to task |
+| `get_provider_session` | Get provider session binding for task resume |
 
 ### Orchestration Learning Tools
 
