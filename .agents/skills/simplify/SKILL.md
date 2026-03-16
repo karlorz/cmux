@@ -94,8 +94,10 @@ Use parallel sub-agents when available. Give each pass the full diff or exact ch
 - Remove repeated work, duplicate I/O, N+1 patterns, and redundant computation.
 - Parallelize independent operations when the codebase and runtime make that safe.
 - Keep hot paths lean: startup code, request handlers, render paths, tight loops, and frequently called helpers.
+- Flag recurring no-op updates: state/store updates inside polling loops, intervals, or event handlers that fire unconditionally without change-detection guards.
 - Avoid pre-checking file or resource existence when it is cleaner to perform the operation and handle the error directly.
 - Watch for unbounded collections, missing cleanup, leaked listeners, and long-lived resources that never get released.
+- Flag overly broad operations: reading entire files when only a portion is needed, loading all items when filtering for one.
 
 ### 3. Fix or report issues
 
