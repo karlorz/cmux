@@ -129,4 +129,12 @@ crons.daily(
   internal.orchestrationWorker.cleanupOrphanTasks
 );
 
+// Detect orchestration learning patterns and create skill candidates
+// Runs daily at 23:00 UTC (7:00 AM HKT)
+crons.daily(
+  "detect orchestration learning patterns",
+  { hourUTC: 23, minuteUTC: 0 },
+  internal.agentOrchestrationLearning.detectPatternsAllTeams
+);
+
 export default crons;
