@@ -2643,7 +2643,9 @@ export function getOrchestrationRulesInstructions(
     output += `## ${label}\n\n`;
 
     for (const rule of laneRules) {
-      output += `- ${rule.text}\n`;
+      // Indent continuation lines for multi-line text to preserve markdown list formatting
+      const indentedText = rule.text.replace(/\n/g, "\n  ");
+      output += `- ${indentedText}\n`;
     }
     output += "\n";
   }
