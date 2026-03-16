@@ -19,7 +19,8 @@ Examples:
   devsh orchestrate list --status running
   devsh orchestrate status <orch-task-id>
   devsh orchestrate wait <orch-task-id> --timeout 10m
-  devsh orchestrate cancel <orch-task-id>`,
+  devsh orchestrate cancel <orch-task-id>
+  devsh orchestrate resume <task-id>`,
 }
 
 func init() {
