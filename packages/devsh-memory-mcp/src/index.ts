@@ -553,6 +553,33 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         },
       },
       {
+        name: "push_orchestration_updates",
+        description: "Push local orchestration state to the server. Reports task completion/failure and head agent status. Used for heartbeats and signaling orchestration completion. Requires CMUX_TASK_RUN_JWT environment variable.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            orchestrationId: {
+              type: "string",
+              description: "The orchestration ID to push updates for. Uses CMUX_ORCHESTRATION_ID env var if not provided.",
+            },
+            headAgentStatus: {
+              type: "string",
+              enum: ["running", "completed", "failed"],
+              description: "Head agent's overall status (optional, for heartbeat/completion signal)",
+            },
+            message: {
+              type: "string",
+              description: "Optional status message from head agent",
+            },
+            taskIds: {
+              type: "array",
+              items: { type: "string" },
+              description: "Optional list of local task IDs to push (default: all completed/failed tasks)",
+            },
+          },
+        },
+      },
+      {
         name: "spawn_agent",
         description: "Spawn a sub-agent to work on a task. Requires CMUX_TASK_RUN_JWT for authentication. The sub-agent runs in a new sandbox and works on the specified prompt.",
         inputSchema: {
@@ -1205,6 +1232,142 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
             content: [{
               type: "text",
               text: `Error syncing orchestration updates: ${errorMsg}`,
+            }],
+          };
+        }
+      }
+
+      case "push_orchestration_updates": {
+        const { orchestrationId: argOrchId, headAgentStatus, message, taskIds } = args as {
+          orchestrationId?: string;
+          headAgentStatus?: "running" | "completed" | "failed";
+          message?: string;
+          taskIds?: string[];
+        };
+        const orchestrationId = argOrchId ?? process.env.CMUX_ORCHESTRATION_ID;
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux.sh";
+
+        if (!orchestrationId) {
+          return {
+            content: [{
+              type: "text",
+              text: "No orchestration ID provided. Pass orchestrationId parameter or set CMUX_ORCHESTRATION_ID env var.",
+            }],
+          };
+        }
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "CMUX_TASK_RUN_JWT environment variable not set. This tool requires JWT authentication.",
+            }],
+          };
+        }
+
+        try {
+          // Read local PLAN.json
+          const plan = readPlan();
+          if (!plan && !headAgentStatus) {
+            return {
+              content: [{
+                type: "text",
+                text: "No PLAN.json found and no headAgentStatus provided. Nothing to push.",
+              }],
+            };
+          }
+
+          // Build tasks to push (completed/failed tasks, or specific taskIds)
+          const tasksToPush: Array<{
+            id: string;
+            status: string;
+            result?: string;
+            errorMessage?: string;
+          }> = [];
+
+          if (plan) {
+            for (const task of plan.tasks) {
+              // If taskIds specified, only push those
+              if (taskIds && taskIds.length > 0 && !taskIds.includes(task.id)) {
+                continue;
+              }
+              // By default, push completed/failed tasks
+              if (task.status === "completed" || task.status === "failed") {
+                tasksToPush.push({
+                  id: task.id,
+                  status: task.status,
+                  result: task.result,
+                  errorMessage: task.errorMessage,
+                });
+              }
+            }
+          }
+
+          // POST to server
+          const url = `${apiBaseUrl}/api/v1/cmux/orchestration/${orchestrationId}/sync`;
+          const response = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              orchestrationId,
+              headAgentStatus,
+              message,
+              tasks: tasksToPush.length > 0 ? tasksToPush : undefined,
+            }),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            return {
+              content: [{
+                type: "text",
+                text: `Failed to push orchestration updates: ${response.status} ${errorText}`,
+              }],
+            };
+          }
+
+          const result = await response.json() as {
+            success: boolean;
+            tasksUpdated: number;
+            message?: string;
+          };
+
+          // Append push event
+          appendEvent({
+            timestamp: new Date().toISOString(),
+            event: "orchestration_pushed",
+            message: result.message ?? `Pushed ${tasksToPush.length} tasks`,
+            metadata: {
+              orchestrationId,
+              headAgentStatus,
+              tasksPushed: tasksToPush.length,
+              tasksUpdated: result.tasksUpdated,
+            },
+          });
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                orchestrationId,
+                headAgentStatus,
+                tasksPushed: tasksToPush.length,
+                tasksUpdated: result.tasksUpdated,
+                message: result.message,
+              }, null, 2),
+            }],
+          };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{
+              type: "text",
+              text: `Error pushing orchestration updates: ${errorMsg}`,
             }],
           };
         }

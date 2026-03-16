@@ -770,6 +770,41 @@ export type OrchestrationSyncResponse = {
     };
 };
 
+export type OrchestrationPushResponse = {
+    success: boolean;
+    tasksUpdated: number;
+    message?: string;
+};
+
+export type OrchestrationPushTask = {
+    /**
+     * Local task ID from PLAN.json
+     */
+    id: string;
+    status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+    result?: string;
+    errorMessage?: string;
+};
+
+export type OrchestrationPushRequest = {
+    /**
+     * Orchestration session ID
+     */
+    orchestrationId: string;
+    /**
+     * Head agent's overall status (for heartbeat/completion signal)
+     */
+    headAgentStatus?: 'running' | 'completed' | 'failed';
+    /**
+     * Task status updates to push to server
+     */
+    tasks?: Array<OrchestrationPushTask>;
+    /**
+     * Optional status message from head agent
+     */
+    message?: string;
+};
+
 export type ApprovalRequest = {
     /**
      * Approval request ID (apr_xxx format)
@@ -3748,6 +3783,42 @@ export type GetApiV1CmuxOrchestrationByOrchestrationIdSyncResponses = {
 };
 
 export type GetApiV1CmuxOrchestrationByOrchestrationIdSyncResponse = GetApiV1CmuxOrchestrationByOrchestrationIdSyncResponses[keyof GetApiV1CmuxOrchestrationByOrchestrationIdSyncResponses];
+
+export type PostApiV1CmuxOrchestrationByOrchestrationIdSyncData = {
+    body: OrchestrationPushRequest;
+    path: {
+        /**
+         * Orchestration ID
+         */
+        orchestrationId: string;
+    };
+    query?: never;
+    url: '/api/v1/cmux/orchestration/{orchestrationId}/sync';
+};
+
+export type PostApiV1CmuxOrchestrationByOrchestrationIdSyncErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Orchestration not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiV1CmuxOrchestrationByOrchestrationIdSyncResponses = {
+    /**
+     * Push successful
+     */
+    200: OrchestrationPushResponse;
+};
+
+export type PostApiV1CmuxOrchestrationByOrchestrationIdSyncResponse = PostApiV1CmuxOrchestrationByOrchestrationIdSyncResponses[keyof PostApiV1CmuxOrchestrationByOrchestrationIdSyncResponses];
 
 export type GetApiOrchestrateApprovalsByOrchestrationIdPendingData = {
     body?: never;

@@ -91,7 +91,8 @@ With custom options:
 | `wait_for_agent` | Wait for agent to complete (blocking) |
 | `cancel_agent` | Cancel a running/pending agent |
 | `get_orchestration_summary` | Get dashboard-style orchestration summary |
-| `pull_orchestration_updates` | Sync local PLAN.json with server |
+| `pull_orchestration_updates` | Sync local PLAN.json with server (read) |
+| `push_orchestration_updates` | Push task status/completion to server (write) |
 | `read_orchestration` | Read PLAN.json, AGENTS.json, or EVENTS.jsonl |
 | `append_event` | Append an orchestration event to EVENTS.jsonl |
 | `update_plan_task` | Update task status in PLAN.json |

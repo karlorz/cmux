@@ -718,6 +718,192 @@ orchestrateRouter.openapi(
 );
 
 // ============================================================================
+// Orchestration Push Sync (Head Agent → Server)
+// ============================================================================
+
+const OrchestrationPushTaskSchema = z
+  .object({
+    id: z.string().openapi({ description: "Local task ID from PLAN.json" }),
+    status: z.enum(["pending", "running", "completed", "failed", "cancelled"]),
+    result: z.string().optional(),
+    errorMessage: z.string().optional(),
+  })
+  .openapi("OrchestrationPushTask");
+
+const OrchestrationPushRequestSchema = z
+  .object({
+    orchestrationId: z.string().openapi({ description: "Orchestration session ID" }),
+    headAgentStatus: z.enum(["running", "completed", "failed"]).optional().openapi({
+      description: "Head agent's overall status (for heartbeat/completion signal)",
+    }),
+    tasks: z.array(OrchestrationPushTaskSchema).optional().openapi({
+      description: "Task status updates to push to server",
+    }),
+    message: z.string().optional().openapi({
+      description: "Optional status message from head agent",
+    }),
+  })
+  .openapi("OrchestrationPushRequest");
+
+const OrchestrationPushResponseSchema = z
+  .object({
+    success: z.boolean(),
+    tasksUpdated: z.number(),
+    message: z.string().optional(),
+  })
+  .openapi("OrchestrationPushResponse");
+
+/**
+ * POST /api/v1/cmux/orchestration/:orchestrationId/sync
+ * Push endpoint for head agents to report status updates to the server.
+ * Supports JWT auth from CMUX_TASK_RUN_JWT for agent-to-server communication.
+ */
+orchestrateRouter.openapi(
+  createRoute({
+    method: "post" as const,
+    path: "/v1/cmux/orchestration/{orchestrationId}/sync",
+    tags: ["Orchestration"],
+    summary: "Push orchestration updates",
+    description:
+      "Push orchestration task status updates from head agent to server. Used for heartbeats and task completion reporting.",
+    request: {
+      params: z.object({
+        orchestrationId: z.string().openapi({ description: "Orchestration ID" }),
+      }),
+      body: {
+        content: {
+          "application/json": {
+            schema: OrchestrationPushRequestSchema,
+          },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: OrchestrationPushResponseSchema,
+          },
+        },
+        description: "Push successful",
+      },
+      401: { description: "Unauthorized" },
+      404: { description: "Orchestration not found" },
+      500: { description: "Server error" },
+    },
+  }),
+  async (c) => {
+    // Support JWT auth for head agents
+    const authHeader = c.req.header("Authorization");
+    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+
+    let teamSlugOrId: string | undefined;
+
+    if (!accessToken && authHeader?.startsWith("Bearer ")) {
+      // Parse JWT to extract team info
+      const jwt = authHeader.slice(7);
+      try {
+        const parts = jwt.split(".");
+        if (parts.length === 3) {
+          const payload = JSON.parse(
+            Buffer.from(parts[1], "base64url").toString("utf-8")
+          );
+          teamSlugOrId = payload.teamSlugOrId;
+        }
+      } catch {
+        return c.text("Invalid JWT", 401);
+      }
+    } else if (accessToken) {
+      const queryParams = c.req.query();
+      teamSlugOrId = queryParams.teamSlugOrId;
+    }
+
+    if (!teamSlugOrId) {
+      return c.text("Unauthorized - no team context", 401);
+    }
+
+    if (!accessToken) {
+      return c.text("Unauthorized - OAuth token required", 401);
+    }
+
+    const { orchestrationId } = c.req.valid("param");
+    const body = c.req.valid("json");
+
+    // Validate orchestrationId matches
+    if (body.orchestrationId && body.orchestrationId !== orchestrationId) {
+      return c.text("Orchestration ID mismatch", 400);
+    }
+
+    try {
+      const convex = getConvex({ accessToken });
+      let tasksUpdated = 0;
+
+      // Update task statuses if provided
+      if (body.tasks && body.tasks.length > 0) {
+        // Get existing tasks for this orchestration
+        const allTasks = await convex.query(api.orchestrationQueries.listTasksByTeam, {
+          teamSlugOrId,
+          limit: 100,
+        });
+
+        // Filter to tasks in this orchestration
+        const orchTasks = allTasks.filter((t) => {
+          const meta = t.metadata as { orchestrationId?: string; localTaskId?: string } | undefined;
+          return meta?.orchestrationId === orchestrationId;
+        });
+
+        for (const pushTask of body.tasks) {
+          // Find matching task by local ID stored in metadata
+          const serverTask = orchTasks.find((t) => {
+            const meta = t.metadata as { localTaskId?: string } | undefined;
+            return meta?.localTaskId === pushTask.id;
+          });
+
+          if (serverTask) {
+            // Map status to Convex mutation
+            if (pushTask.status === "completed") {
+              await convex.mutation(api.orchestrationQueries.completeTask, {
+                taskId: serverTask._id as Id<"orchestrationTasks">,
+                result: pushTask.result,
+              });
+              tasksUpdated++;
+            } else if (pushTask.status === "failed") {
+              await convex.mutation(api.orchestrationQueries.failTask, {
+                taskId: serverTask._id as Id<"orchestrationTasks">,
+                errorMessage: pushTask.errorMessage ?? "Task failed",
+              });
+              tasksUpdated++;
+            }
+            // running/pending status changes handled automatically by spawn flow
+          }
+        }
+      }
+
+      // Log head agent status if provided (heartbeat/completion)
+      if (body.headAgentStatus) {
+        console.log(`[orchestrate] Head agent status update: ${body.headAgentStatus}`, {
+          orchestrationId,
+          message: body.message,
+        });
+        // Future: Update head agent record in Convex for heartbeat tracking
+      }
+
+      return c.json({
+        success: true,
+        tasksUpdated,
+        message: body.headAgentStatus
+          ? `Head agent status: ${body.headAgentStatus}`
+          : `Updated ${tasksUpdated} task(s)`,
+      });
+    } catch (error) {
+      console.error("[orchestrate] Failed to push orchestration updates:", error);
+      return c.text("Failed to push orchestration updates", 500);
+    }
+  }
+);
+
+// ============================================================================
 // Orchestration Events SSE Endpoint (for real-time watch mode)
 // ============================================================================
 
