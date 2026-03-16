@@ -2980,10 +2980,11 @@ export const updateCodexThreadId = internalMutation({
 
 /**
  * Update orchestration head agent heartbeat.
- * Called by push_orchestration_updates MCP tool.
+ * Called by push_orchestration_updates MCP tool via POST /sync endpoint.
  */
-export const updateOrchestrationHeartbeat = internalMutation({
+export const updateOrchestrationHeartbeat = authMutation({
   args: {
+    teamSlugOrId: v.string(),
     id: v.id("taskRuns"),
     status: v.optional(
       v.union(
@@ -2994,9 +2995,13 @@ export const updateOrchestrationHeartbeat = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
     const doc = await ctx.db.get(args.id);
     if (!doc) {
       throw new Error("Task run not found");
+    }
+    if (doc.teamId !== teamId) {
+      throw new Error("Task run not found or unauthorized");
     }
 
     const now = Date.now();
@@ -3040,6 +3045,57 @@ export const getByOrchestrationId = authQuery({
       .first();
 
     return run;
+  },
+});
+
+// Head agent heartbeat timeout: 30 minutes without heartbeat = stale
+const HEAD_AGENT_HEARTBEAT_TIMEOUT_MS = 30 * 60 * 1000;
+
+/**
+ * Check for stale orchestration head agents.
+ * Head agents are considered stale if:
+ * - isOrchestrationHead is true
+ * - orchestrationStatus is "running"
+ * - orchestrationHeartbeat is older than 30 minutes (or never set)
+ *
+ * Called by cron job to detect and mark stale head agents.
+ */
+export const checkStaleHeadAgents = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const cutoff = now - HEAD_AGENT_HEARTBEAT_TIMEOUT_MS;
+
+    // Find running head agents with stale heartbeats
+    const staleRuns = await ctx.db
+      .query("taskRuns")
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("isOrchestrationHead"), true),
+          q.eq(q.field("orchestrationStatus"), "running")
+        )
+      )
+      .collect();
+
+    let staleCount = 0;
+    for (const run of staleRuns) {
+      const lastHeartbeat = run.orchestrationHeartbeat ?? run.createdAt;
+      if (lastHeartbeat < cutoff) {
+        // Mark as failed due to timeout
+        await ctx.db.patch(run._id, {
+          orchestrationStatus: "failed",
+          updatedAt: now,
+        });
+        console.log(`[taskRuns] Marked stale head agent as failed: ${run._id}`, {
+          orchestrationId: run.orchestrationId,
+          lastHeartbeat: new Date(lastHeartbeat).toISOString(),
+          staleMinutes: Math.round((now - lastHeartbeat) / 60000),
+        });
+        staleCount++;
+      }
+    }
+
+    return { checkedCount: staleRuns.length, staleCount };
   },
 });
 

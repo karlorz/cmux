@@ -892,9 +892,13 @@ orchestrateRouter.openapi(
           });
 
           if (headAgentRun) {
-            // Update heartbeat via internal mutation (requires admin client)
-            // For now, log and track - full heartbeat update requires internal mutation access
-            console.log(`[orchestrate] Head agent heartbeat: ${body.headAgentStatus}`, {
+            // Update heartbeat in Convex
+            await convex.mutation(api.taskRuns.updateOrchestrationHeartbeat, {
+              teamSlugOrId,
+              id: headAgentRun._id as Id<"taskRuns">,
+              status: body.headAgentStatus,
+            });
+            console.log(`[orchestrate] Head agent heartbeat updated: ${body.headAgentStatus}`, {
               orchestrationId,
               taskRunId: headAgentRun._id,
               message: body.message,
