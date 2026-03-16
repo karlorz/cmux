@@ -808,9 +808,9 @@ export type OrchestrationPushRequest = {
 
 export type BindSessionRequest = {
     /**
-     * Orchestration ID
+     * Orchestration ID (optional - uses taskRunId from JWT if not provided)
      */
-    orchestrationId: string;
+    orchestrationId?: string;
     /**
      * Task run ID
      */
@@ -831,6 +831,14 @@ export type BindSessionRequest = {
      * Agent name
      */
     agentName?: string;
+    /**
+     * Generic session ID (alias for providerSessionId)
+     */
+    sessionId?: string;
+    /**
+     * Provider name (claude, codex, etc.)
+     */
+    provider?: string;
 };
 
 export type ApprovalRequest = {

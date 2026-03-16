@@ -936,7 +936,9 @@ orchestrateRouter.openapi(
 
 const BindSessionRequestSchema = z
   .object({
-    orchestrationId: z.string().openapi({ description: "Orchestration ID" }),
+    orchestrationId: z.string().optional().openapi({
+      description: "Orchestration ID (optional - uses taskRunId from JWT if not provided)",
+    }),
     taskRunId: z.string().optional().openapi({ description: "Task run ID" }),
     providerSessionId: z.string().optional().openapi({ description: "Claude session ID" }),
     providerThreadId: z.string().optional().openapi({ description: "Codex thread ID" }),
@@ -944,6 +946,12 @@ const BindSessionRequestSchema = z
       description: "Preferred communication channel",
     }),
     agentName: z.string().optional().openapi({ description: "Agent name" }),
+    sessionId: z.string().optional().openapi({
+      description: "Generic session ID (alias for providerSessionId)",
+    }),
+    provider: z.string().optional().openapi({
+      description: "Provider name (claude, codex, etc.)",
+    }),
   })
   .openapi("BindSessionRequest");
 
@@ -1036,9 +1044,9 @@ orchestrateRouter.openapi(
         return c.text("Task ID not found in JWT", 400);
       }
 
-      // Determine provider from agent name
+      // Determine provider from agent name or explicit provider field
       const agentName = body.agentName ?? "unknown";
-      const provider = agentName.split("/")[0] as
+      const provider = (body.provider ?? agentName.split("/")[0]) as
         | "claude"
         | "codex"
         | "gemini"
@@ -1048,17 +1056,24 @@ orchestrateRouter.openapi(
         | "cursor"
         | "qwen";
 
+      // Use orchestrationId if provided, otherwise use taskId as the binding key
+      // This allows both orchestration heads and regular task sandboxes to bind sessions
+      const bindingKey = body.orchestrationId ?? taskId;
+
+      // Support sessionId alias for providerSessionId
+      const providerSessionId = body.providerSessionId ?? body.sessionId;
+
       const result = await adminClient.mutation(
         internal.providerSessions.bindSessionInternal,
         {
           teamId: teamSlugOrId,
-          orchestrationId: body.orchestrationId,
+          orchestrationId: bindingKey,
           taskId,
           taskRunId: body.taskRunId as Id<"taskRuns"> | undefined,
           agentName,
           provider,
           mode: "worker" as const,
-          providerSessionId: body.providerSessionId,
+          providerSessionId,
           providerThreadId: body.providerThreadId,
         }
       );

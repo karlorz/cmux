@@ -1958,15 +1958,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
           };
         }
 
-        if (!orchestrationId) {
-          return {
-            content: [{
-              type: "text",
-              text: "CMUX_ORCHESTRATION_ID environment variable not set.",
-            }],
-          };
-        }
-
+        // orchestrationId is optional - API will use taskRunId from JWT as fallback
         try {
           const url = `${apiBaseUrl}/api/v1/cmux/orchestration/sessions/bind`;
           const response = await fetch(url, {
@@ -1976,7 +1968,8 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              orchestrationId,
+              // Only include orchestrationId if set, otherwise API uses taskRunId from JWT
+              ...(orchestrationId && { orchestrationId }),
               taskRunId,
               providerSessionId,
               providerThreadId,
