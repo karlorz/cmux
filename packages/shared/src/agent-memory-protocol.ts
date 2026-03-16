@@ -670,6 +670,23 @@ Each line is a JSON object:
 - Archive rules that haven't been used in 30+ days
 - Don't mix facts (knowledge) with preferences (behavior)
 - When in doubt, log to corrections.jsonl first before creating a rule
+
+### Orchestration Learning (Team-Shared)
+
+When you discover orchestration insights, errors, or missing capabilities, use the MCP tools to share them with your team:
+
+| Tool | When to Use |
+|------|-------------|
+| \`log_learning(type="learning", text="...")\` | Discovered a better orchestration pattern |
+| \`log_learning(type="error", text="...")\` | Found an error pattern to avoid |
+| \`log_learning(type="feature_request", text="...")\` | Missing capability that would help |
+
+**Examples:**
+- Learning: "Always run bun check before spawning review agents to catch type errors early"
+- Error: "Spawning 5+ parallel agents on the same file causes merge conflicts"
+- Feature request: "Need a way to pause sub-agents when CI fails"
+
+Logged items are reviewed by team leads and may be promoted to active orchestration rules that are automatically injected into future agent spawns.
 `;
 }
 
