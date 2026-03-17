@@ -25,7 +25,7 @@ export const env = createEnv({
     // Server URL for internal worker communication (defaults to localhost:9779)
     CMUX_SERVER_URL: z.string().optional(),
     // Internal URL for server→www API calls on the same machine (bypasses Cloudflare tunnel).
-    // Falls back to NEXT_PUBLIC_WWW_ORIGIN → http://localhost:9779.
+    // Falls back to http://localhost:9779.
     WWW_INTERNAL_URL: z.string().optional(),
     // JWT secret for task-run tokens (used for sub-agent spawning)
     CMUX_TASK_RUN_JWT_SECRET: z.string().optional(),
