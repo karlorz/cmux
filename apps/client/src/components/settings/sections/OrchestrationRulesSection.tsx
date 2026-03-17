@@ -7,7 +7,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { convexQuery } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useConvex } from "convex/react";
-import { Ban, Loader2, Pencil, Plus, X } from "lucide-react";
+import { Ban, Check, Loader2, Pencil, Plus, X } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -65,6 +65,7 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
   const [laneFilter, setLaneFilter] = useState<RuleLane | "all">("all");
   const [promoteTarget, setPromoteTarget] = useState<OrchestrationRule | null>(null);
   const [promoteForm, setPromoteForm] = useState({ text: "", lane: "hot" as RuleLane });
+  const [selectedRuleIds, setSelectedRuleIds] = useState<Set<string>>(new Set());
 
   // All queries run unconditionally to maintain accurate tab counts
   const { data: activeRules, refetch: refetchActive, isLoading: loadingActive } = useQuery({
@@ -96,6 +97,25 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
     },
     onError: (error) => {
       toast.error(`Failed to promote: ${error.message}`);
+    },
+  });
+
+  const bulkPromoteMutation = useMutation({
+    mutationFn: async ({ ruleIds, lane }: { ruleIds: string[]; lane?: RuleLane }) => {
+      return await convex.mutation(api.agentOrchestrationLearning.bulkPromoteRules, {
+        teamSlugOrId,
+        ruleIds: ruleIds as OrchestrationRule["_id"][],
+        lane,
+      });
+    },
+    onSuccess: (result) => {
+      void refetchActive();
+      void refetchCandidates();
+      setSelectedRuleIds(new Set());
+      toast.success(`Promoted ${result.promoted} rule(s) to active`);
+    },
+    onError: (error) => {
+      toast.error(`Failed to bulk promote: ${error.message}`);
     },
   });
 
@@ -210,19 +230,38 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
               </button>
             ))}
           </div>
-          {/* Lane filter - only show for rules tabs */}
-          {activeTab !== "skills" && (
-            <select
-              value={laneFilter}
-              onChange={(e) => setLaneFilter(e.target.value as RuleLane | "all")}
-              className="rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-800"
-            >
-              <option value="all">All lanes</option>
-              <option value="hot">Hot</option>
-              <option value="orchestration">Orchestration</option>
-              <option value="project">Project</option>
-            </select>
-          )}
+          <div className="flex items-center gap-2">
+            {/* Bulk promote button - only show for candidates with selections */}
+            {activeTab === "candidates" && selectedRuleIds.size > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => bulkPromoteMutation.mutate({ ruleIds: Array.from(selectedRuleIds) })}
+                disabled={bulkPromoteMutation.isPending}
+                className="text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:border-emerald-700 dark:hover:bg-emerald-900/20"
+              >
+                {bulkPromoteMutation.isPending ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Check className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                Promote {selectedRuleIds.size}
+              </Button>
+            )}
+            {/* Lane filter - only show for rules tabs */}
+            {activeTab !== "skills" && (
+              <select
+                value={laneFilter}
+                onChange={(e) => setLaneFilter(e.target.value as RuleLane | "all")}
+                className="rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-800"
+              >
+                <option value="all">All lanes</option>
+                <option value="hot">Hot</option>
+                <option value="orchestration">Orchestration</option>
+                <option value="project">Project</option>
+              </select>
+            )}
+          </div>
         </div>
       </div>
 
@@ -244,6 +283,18 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
             variant="candidate"
             onPromote={handleOpenPromote}
             onSuppress={setSuppressTarget}
+            selectedIds={selectedRuleIds}
+            onToggleSelect={(id) => {
+              setSelectedRuleIds((prev) => {
+                const next = new Set(prev);
+                if (next.has(id)) {
+                  next.delete(id);
+                } else {
+                  next.add(id);
+                }
+                return next;
+              });
+            }}
             emptyMessage="No candidate rules. Candidates are auto-detected from orchestration runs."
           />
         ) : (
@@ -391,12 +442,16 @@ function RulesList({
   variant,
   onPromote,
   onSuppress,
+  selectedIds,
+  onToggleSelect,
   emptyMessage,
 }: {
   rules: OrchestrationRule[];
   variant?: "candidate";
   onPromote?: (rule: OrchestrationRule) => void;
   onSuppress: (rule: OrchestrationRule) => void;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
   emptyMessage: string;
 }) {
   if (rules.length === 0) {
@@ -411,6 +466,15 @@ function RulesList({
     <>
       {rules.map((rule) => (
         <div key={rule._id} className="flex items-start justify-between gap-4 px-4 py-3">
+          {/* Checkbox for bulk selection (candidates only) */}
+          {variant === "candidate" && onToggleSelect && (
+            <input
+              type="checkbox"
+              checked={selectedIds?.has(rule._id) ?? false}
+              onChange={() => onToggleSelect(rule._id)}
+              className="mt-1 h-4 w-4 rounded border-neutral-300 text-emerald-600 focus:ring-emerald-500"
+            />
+          )}
           <div className="min-w-0 flex-1">
             <span className="text-sm text-neutral-900 dark:text-neutral-100">
               {rule.text}

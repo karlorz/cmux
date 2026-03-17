@@ -450,6 +450,52 @@ export const promoteRule = authMutation({
 });
 
 /**
+ * Bulk promote multiple orchestration rules to active status.
+ */
+export const bulkPromoteRules = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    ruleIds: v.array(v.id("agentOrchestrationRules")),
+    lane: v.optional(laneValidator),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+    const userId = ctx.identity.subject;
+    const now = Date.now();
+
+    let promoted = 0;
+    for (const ruleId of args.ruleIds) {
+      const rule = await ctx.db.get(ruleId);
+      if (!rule || rule.teamId !== teamId) {
+        continue; // Skip invalid rules
+      }
+
+      const newLane = args.lane ?? rule.lane;
+      await ctx.db.patch(ruleId, {
+        status: "active",
+        lane: newLane,
+        confidence: 1.0,
+        lastConfirmedAt: now,
+        updatedAt: now,
+      });
+
+      await ctx.db.insert("agentOrchestrationLearningEvents", {
+        teamId,
+        userId,
+        ruleId,
+        eventType: "rule_promoted",
+        text: `Bulk promoted to active (lane: ${newLane})`,
+        createdAt: now,
+      });
+
+      promoted++;
+    }
+
+    return { promoted, total: args.ruleIds.length };
+  },
+});
+
+/**
  * Suppress an orchestration rule.
  */
 export const suppressRule = authMutation({
