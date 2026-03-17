@@ -381,6 +381,8 @@ Examples:
 					AutopilotMinutes:     taskCreateAutopilotMinutes,
 					AutopilotTurnMinutes: taskCreateAutopilotTurnMinutes,
 					AutopilotWrapUp:      taskCreateAutopilotWrapUp,
+					IsCloudWorkspace:    taskCreateCloudWorkspace,
+					IsOrchestrationHead: taskCreateCloudWorkspace, // Cloud workspaces are orchestration heads
 				})
 
 				if err != nil {
