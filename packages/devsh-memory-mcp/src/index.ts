@@ -1423,7 +1423,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
 
         const jwt = process.env.CMUX_TASK_RUN_JWT;
         // spawn_agent uses apps/server API, not apps/www
-        const serverUrl = process.env.CMUX_SERVER_URL ?? "https://cmux-server.cmux.sh";
+        const serverUrl = process.env.CMUX_SERVER_URL ?? "https://cmux-server.karldigi.dev";
         const orchestrationId = process.env.CMUX_ORCHESTRATION_ID;
 
         if (!jwt) {
