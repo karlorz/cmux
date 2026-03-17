@@ -1422,7 +1422,8 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         };
 
         const jwt = process.env.CMUX_TASK_RUN_JWT;
-        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux.sh";
+        // spawn_agent uses apps/server API, not apps/www
+        const serverUrl = process.env.CMUX_SERVER_URL ?? "https://cmux-server.cmux.sh";
         const orchestrationId = process.env.CMUX_ORCHESTRATION_ID;
 
         if (!jwt) {
@@ -1435,7 +1436,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         }
 
         try {
-          const url = `${apiBaseUrl}/api/v1/cmux/orchestration/spawn`;
+          const url = `${serverUrl}/api/orchestrate/spawn`;
           const response = await fetch(url, {
             method: "POST",
             headers: {
