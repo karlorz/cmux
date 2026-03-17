@@ -25,7 +25,18 @@ const GH_WRAPPER = `#!/usr/bin/env sh
 set -eu
 
 # Wrapper to block dangerous gh commands in cmux task sandboxes.
-REAL_GH="/usr/bin/gh"
+# Find the real gh binary (this wrapper is at /usr/local/bin/gh, so skip that)
+REAL_GH=""
+for p in /usr/bin/gh /opt/homebrew/bin/gh; do
+  if [ -x "$p" ]; then
+    REAL_GH="$p"
+    break
+  fi
+done
+if [ -z "$REAL_GH" ]; then
+  echo "ERROR: gh not found in /usr/bin or /opt/homebrew/bin" >&2
+  exit 1
+fi
 
 if [ -n "\${CMUX_TASK_RUN_JWT:-}" ]; then
   case "\${1:-}:\${2:-}" in
@@ -58,7 +69,18 @@ exec "$REAL_GH" "$@"
 const GIT_WRAPPER = `#!/usr/bin/env sh
 set -eu
 
-REAL_GIT="/usr/bin/git"
+# Find the real git binary (this wrapper is at /usr/local/bin/git, so skip that)
+REAL_GIT=""
+for p in /usr/bin/git /opt/homebrew/bin/git; do
+  if [ -x "$p" ]; then
+    REAL_GIT="$p"
+    break
+  fi
+done
+if [ -z "$REAL_GIT" ]; then
+  echo "ERROR: git not found in /usr/bin or /opt/homebrew/bin" >&2
+  exit 1
+fi
 
 if [ -n "\${CMUX_TASK_RUN_JWT:-}" ]; then
   case "\${1:-}" in
