@@ -54,6 +54,7 @@ describe("CmuxVSCodeInstance basic lifecycle via local API stub", () => {
     if (addr && typeof addr === "object" && addr.port) {
       baseUrl = `http://localhost:${addr.port}`;
       process.env.NEXT_PUBLIC_WWW_ORIGIN = baseUrl;
+      process.env.WWW_INTERNAL_URL = baseUrl;
     } else {
       throw new Error("Failed to get test server port");
     }

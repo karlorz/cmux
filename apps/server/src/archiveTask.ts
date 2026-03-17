@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import { getConvex } from "./utils/convexClient";
 import { serverLogger } from "./utils/fileLogger";
 import { getAuthHeaderJson, getAuthToken } from "./utils/requestContext";
-import { getWwwBaseUrl } from "./utils/server-env";
+import { getWwwInternalUrl } from "./utils/server-env";
 
 const execAsync = promisify(exec);
 
@@ -57,7 +57,7 @@ async function stopDockerContainer(containerName: string): Promise<void> {
 }
 
 async function stopCmuxSandbox(instanceId: string): Promise<void> {
-  const baseUrl = getWwwBaseUrl();
+  const baseUrl = getWwwInternalUrl();
   const url = `${baseUrl}/api/sandboxes/${encodeURIComponent(instanceId)}/stop`;
   const token = getAuthToken();
   const headers: Record<string, string> = {};
@@ -176,7 +176,7 @@ async function resumeCmuxSandbox(
   instanceId: string,
   teamSlugOrId: string
 ): Promise<void> {
-  const baseUrl = getWwwBaseUrl();
+  const baseUrl = getWwwInternalUrl();
   const url = `${baseUrl}/api/sandboxes/${encodeURIComponent(instanceId)}/resume?teamSlugOrId=${encodeURIComponent(teamSlugOrId)}`;
   const token = getAuthToken();
   const headers: Record<string, string> = {};
