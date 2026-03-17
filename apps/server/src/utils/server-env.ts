@@ -24,6 +24,9 @@ export const env = createEnv({
     CMUX_INTERNAL_SECRET: z.string().optional(),
     // Server URL for internal worker communication (defaults to localhost:9779)
     CMUX_SERVER_URL: z.string().optional(),
+    // Internal URL for server→www API calls on the same machine (bypasses Cloudflare tunnel).
+    // Falls back to NEXT_PUBLIC_WWW_ORIGIN → http://localhost:9779.
+    WWW_INTERNAL_URL: z.string().optional(),
     // JWT secret for task-run tokens (used for sub-agent spawning)
     CMUX_TASK_RUN_JWT_SECRET: z.string().optional(),
     // Default timezone for sandboxes when TZ is not set in workspace env vars
@@ -35,12 +38,29 @@ export const env = createEnv({
   emptyStringAsUndefined: true,
 });
 
+/**
+ * Public URL for the www app — used for URLs passed to sandboxes / external callers.
+ * Goes through Cloudflare tunnel when configured.
+ */
 export function getWwwBaseUrl(): string {
   // Read from live process.env first to support tests that mutate env at runtime
   const rawOrigin =
     // Prefer the public origin for the WWW app when available
     process.env.NEXT_PUBLIC_WWW_ORIGIN ||
     env.NEXT_PUBLIC_WWW_ORIGIN ||
+    "http://localhost:9779";
+  return normalizeOrigin(rawOrigin);
+}
+
+/**
+ * Internal URL for server→www API calls on the same machine.
+ * Bypasses Cloudflare tunnel to avoid 524 timeout on long-running requests
+ * (e.g. PVE-LXC sandbox provisioning that takes >100s).
+ */
+export function getWwwInternalUrl(): string {
+  const rawOrigin =
+    process.env.WWW_INTERNAL_URL ||
+    env.WWW_INTERNAL_URL ||
     "http://localhost:9779";
   return normalizeOrigin(rawOrigin);
 }

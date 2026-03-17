@@ -1,5 +1,5 @@
 import { getAuthHeaderJson, getAuthToken } from "./requestContext";
-import { getWwwBaseUrl } from "./server-env";
+import { getWwwInternalUrl } from "./server-env";
 import { getWwwOpenApiClientModule } from "./wwwOpenApiModule";
 
 const { createClient } = await getWwwOpenApiClientModule();
@@ -31,7 +31,7 @@ export function getWwwClient() {
   // Create an isolated client per call to avoid cross-test baseUrl bleed-through
   const client = createClient();
   client.setConfig({
-    baseUrl: getWwwBaseUrl(),
+    baseUrl: getWwwInternalUrl(),
     fetch: wrappedFetch,
   });
   return client;

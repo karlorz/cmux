@@ -1,5 +1,5 @@
 import { getAuthHeaderJson } from "./requestContext";
-import { getWwwBaseUrl } from "./server-env";
+import { getWwwInternalUrl } from "./server-env";
 
 /**
  * Get GitHub OAuth token from Stack Auth via the www API.
@@ -12,7 +12,7 @@ export async function getGitHubOAuthToken(): Promise<string | null> {
   }
 
   try {
-    const baseUrl = getWwwBaseUrl();
+    const baseUrl = getWwwInternalUrl();
     const response = await fetch(`${baseUrl}/api/integrations/github/oauth-token`, {
       method: "GET",
       headers: {
