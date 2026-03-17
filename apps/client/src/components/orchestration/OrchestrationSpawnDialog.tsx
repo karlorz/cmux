@@ -23,19 +23,28 @@ export function OrchestrationSpawnDialog({
   const [prompt, setPrompt] = useState("");
   const [priority, setPriority] = useState(5);
   const [selectedModel, setSelectedModel] = useState("");
+  const [selectedProfile, setSelectedProfile] = useState("");
 
   // Fetch available models
   const { data: models } = useQuery(
     convexQuery(api.models.listAvailable, { teamSlugOrId })
   );
 
+  // Fetch supervisor profiles
+  const { data: profiles } = useQuery(
+    convexQuery(api.supervisorProfiles.list, { teamSlugOrId })
+  );
+
   const createTaskMutation = useMutation({
     mutationFn: async () => {
+      const metadata: Record<string, string> = {};
+      if (selectedModel) metadata.agentName = selectedModel;
+      if (selectedProfile) metadata.supervisorProfileId = selectedProfile;
       const taskId = await convex.mutation(api.orchestrationQueries.createTask, {
         teamSlugOrId,
         prompt,
         priority,
-        metadata: selectedModel ? { agentName: selectedModel } : undefined,
+        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
       });
       return taskId;
     },
@@ -44,6 +53,7 @@ export function OrchestrationSpawnDialog({
       setPrompt("");
       setPriority(5);
       setSelectedModel("");
+      setSelectedProfile("");
       onOpenChange(false);
       void queryClient.invalidateQueries();
     },
@@ -116,6 +126,34 @@ export function OrchestrationSpawnDialog({
           Leave empty to let the worker select the best available agent
         </p>
       </div>
+
+      {/* Supervisor Profile */}
+      {profiles && profiles.length > 0 && (
+        <div>
+          <label
+            htmlFor="profile"
+            className="block text-sm font-medium text-neutral-700 dark:text-neutral-300"
+          >
+            Supervisor Profile (Optional)
+          </label>
+          <select
+            id="profile"
+            value={selectedProfile}
+            onChange={(e) => setSelectedProfile(e.target.value)}
+            className="mt-1 block w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
+          >
+            <option value="">None (default behavior)</option>
+            {profiles.map((profile) => (
+              <option key={profile._id} value={profile._id}>
+                {profile.name} ({profile.reasoningLevel}/{profile.reviewPosture}/{profile.delegationStyle})
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-neutral-500">
+            Controls head agent reasoning, review, and delegation style
+          </p>
+        </div>
+      )}
 
       {/* Priority */}
       <div>
