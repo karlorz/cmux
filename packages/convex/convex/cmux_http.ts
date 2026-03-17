@@ -1938,6 +1938,7 @@ export const createTask = httpAction(async (ctx, req) => {
     prTitle?: string;
     environmentId?: string;
     isCloudWorkspace?: boolean;
+    isOrchestrationHead?: boolean; // Whether this is a head agent for multi-agent orchestration
     images?: Array<{
       storageId: string;
       fileName?: string;
@@ -2065,6 +2066,7 @@ export const createTask = httpAction(async (ctx, req) => {
           agentName,
           environmentId,
           parentRunId,
+          isOrchestrationHead: body.isOrchestrationHead,
         }) as { taskRunId: Id<"taskRuns">; jwt: string };
 
         taskRuns.push({

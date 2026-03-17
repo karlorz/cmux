@@ -530,6 +530,7 @@ export const createInternal = internalMutation({
     newBranch: v.optional(v.string()),
     environmentId: v.optional(v.id("environments")),
     parentRunId: v.optional(v.id("taskRuns")), // Agent Teams (D4) - parent-child relationships
+    isOrchestrationHead: v.optional(v.boolean()), // Whether this is a head agent for orchestration
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -564,6 +565,7 @@ export const createInternal = internalMutation({
       environmentId: args.environmentId,
       isLocalWorkspace: task.isLocalWorkspace,
       isCloudWorkspace: task.isCloudWorkspace,
+      isOrchestrationHead: args.isOrchestrationHead,
     });
 
     // Update task's lastActivityAt and selectedTaskRunId
