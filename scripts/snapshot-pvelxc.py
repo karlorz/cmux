@@ -3548,7 +3548,8 @@ async def task_build_worker(ctx: PveTaskContext) -> None:
           --target node \\
           --outdir ./apps/worker/build \\
           --external @cmux/convex \\
-          --external 'node:*'
+          --external 'node:*' \\
+          --external path-to-regexp
         if [ ! -f ./apps/worker/build/index.js ]; then
           echo "Worker build output missing at ./apps/worker/build/index.js" >&2
           exit 1
