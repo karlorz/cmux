@@ -372,7 +372,7 @@ export const logEventInternal = internalMutation({
       args.eventType === "error_logged"
     ) {
       ruleId = await ctx.db.insert("agentOrchestrationRules", {
-        teamId: args.teamId as Id<"teams">,
+        teamId: args.teamId,
         userId: args.userId,
         lane: lane ?? "orchestration",
         status: "candidate",
@@ -394,7 +394,7 @@ export const logEventInternal = internalMutation({
 
     // Log the event
     const eventId = await ctx.db.insert("agentOrchestrationLearningEvents", {
-      teamId: args.teamId as Id<"teams">,
+      teamId: args.teamId,
       userId: args.userId,
       ruleId: ruleId ? (ruleId as Id<"agentOrchestrationRules">) : undefined,
       eventType: args.eventType,
