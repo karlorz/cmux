@@ -2,9 +2,9 @@ import {
   getAccessTokenFromRequest,
   getUserFromRequest,
 } from "@/lib/utils/auth";
-import { getConvex } from "@/lib/utils/get-convex";
+import { getConvex, getConvexAdmin } from "@/lib/utils/get-convex";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
-import { api } from "@cmux/convex/api";
+import { api, internal } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { streamSSE } from "hono/streaming";
@@ -612,7 +612,8 @@ orchestrateRouter.openapi(
             Buffer.from(parts[1], "base64url").toString("utf-8")
           );
           taskRunId = payload.taskRunId;
-          teamSlugOrId = payload.teamSlugOrId;
+          // Support both teamSlugOrId and teamId (JWTs use teamId)
+          teamSlugOrId = payload.teamSlugOrId ?? payload.teamId;
         }
       } catch {
         return c.text("Invalid JWT", 401);
@@ -713,6 +714,483 @@ orchestrateRouter.openapi(
     } catch (error) {
       console.error("[orchestrate] Failed to sync orchestration:", error);
       return c.text("Failed to sync orchestration", 500);
+    }
+  }
+);
+
+// ============================================================================
+// Orchestration Push Sync (Head Agent → Server)
+// ============================================================================
+
+const OrchestrationPushTaskSchema = z
+  .object({
+    id: z.string().openapi({ description: "Local task ID from PLAN.json" }),
+    status: z.enum(["pending", "running", "completed", "failed", "cancelled"]),
+    result: z.string().optional(),
+    errorMessage: z.string().optional(),
+  })
+  .openapi("OrchestrationPushTask");
+
+const OrchestrationPushRequestSchema = z
+  .object({
+    orchestrationId: z.string().openapi({ description: "Orchestration session ID" }),
+    headAgentStatus: z.enum(["running", "completed", "failed"]).optional().openapi({
+      description: "Head agent's overall status (for heartbeat/completion signal)",
+    }),
+    tasks: z.array(OrchestrationPushTaskSchema).optional().openapi({
+      description: "Task status updates to push to server",
+    }),
+    message: z.string().optional().openapi({
+      description: "Optional status message from head agent",
+    }),
+  })
+  .openapi("OrchestrationPushRequest");
+
+const OrchestrationPushResponseSchema = z
+  .object({
+    success: z.boolean(),
+    tasksUpdated: z.number(),
+    heartbeatUpdated: z.boolean().optional(),
+    message: z.string().optional(),
+  })
+  .openapi("OrchestrationPushResponse");
+
+/**
+ * POST /api/v1/cmux/orchestration/:orchestrationId/sync
+ * Push endpoint for head agents to report status updates to the server.
+ * Supports JWT auth from CMUX_TASK_RUN_JWT for agent-to-server communication.
+ */
+orchestrateRouter.openapi(
+  createRoute({
+    method: "post" as const,
+    path: "/v1/cmux/orchestration/{orchestrationId}/sync",
+    tags: ["Orchestration"],
+    summary: "Push orchestration updates",
+    description:
+      "Push orchestration task status updates from head agent to server. Used for heartbeats and task completion reporting.",
+    request: {
+      params: z.object({
+        orchestrationId: z.string().openapi({ description: "Orchestration ID" }),
+      }),
+      body: {
+        content: {
+          "application/json": {
+            schema: OrchestrationPushRequestSchema,
+          },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: OrchestrationPushResponseSchema,
+          },
+        },
+        description: "Push successful",
+      },
+      401: { description: "Unauthorized" },
+      404: { description: "Orchestration not found" },
+      500: { description: "Server error" },
+    },
+  }),
+  async (c) => {
+    // Support JWT auth for head agents
+    const authHeader = c.req.header("Authorization");
+    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+
+    let teamSlugOrId: string | undefined;
+
+    if (!accessToken && authHeader?.startsWith("Bearer ")) {
+      // Parse JWT to extract team info
+      const jwt = authHeader.slice(7);
+      try {
+        const parts = jwt.split(".");
+        if (parts.length === 3) {
+          const payload = JSON.parse(
+            Buffer.from(parts[1], "base64url").toString("utf-8")
+          );
+          // Support both teamSlugOrId and teamId (JWTs use teamId)
+          teamSlugOrId = payload.teamSlugOrId ?? payload.teamId;
+        }
+      } catch {
+        return c.text("Invalid JWT", 401);
+      }
+    } else if (accessToken) {
+      const queryParams = c.req.query();
+      teamSlugOrId = queryParams.teamSlugOrId;
+    }
+
+    if (!teamSlugOrId) {
+      return c.text("Unauthorized - no team context", 401);
+    }
+
+    if (!accessToken) {
+      return c.text("Unauthorized - OAuth token required", 401);
+    }
+
+    const { orchestrationId } = c.req.valid("param");
+    const body = c.req.valid("json");
+
+    // Validate orchestrationId matches
+    if (body.orchestrationId && body.orchestrationId !== orchestrationId) {
+      return c.text("Orchestration ID mismatch", 400);
+    }
+
+    try {
+      const convex = getConvex({ accessToken });
+      let tasksUpdated = 0;
+
+      // Update task statuses if provided
+      if (body.tasks && body.tasks.length > 0) {
+        // Get existing tasks for this orchestration
+        const allTasks = await convex.query(api.orchestrationQueries.listTasksByTeam, {
+          teamSlugOrId,
+          limit: 100,
+        });
+
+        // Filter to tasks in this orchestration
+        const orchTasks = allTasks.filter((t) => {
+          const meta = t.metadata as { orchestrationId?: string; localTaskId?: string } | undefined;
+          return meta?.orchestrationId === orchestrationId;
+        });
+
+        for (const pushTask of body.tasks) {
+          // Find matching task by local ID stored in metadata
+          const serverTask = orchTasks.find((t) => {
+            const meta = t.metadata as { localTaskId?: string } | undefined;
+            return meta?.localTaskId === pushTask.id;
+          });
+
+          if (serverTask) {
+            // Map status to Convex mutation
+            if (pushTask.status === "completed") {
+              await convex.mutation(api.orchestrationQueries.completeTask, {
+                taskId: serverTask._id as Id<"orchestrationTasks">,
+                result: pushTask.result,
+              });
+              tasksUpdated++;
+            } else if (pushTask.status === "failed") {
+              await convex.mutation(api.orchestrationQueries.failTask, {
+                taskId: serverTask._id as Id<"orchestrationTasks">,
+                errorMessage: pushTask.errorMessage ?? "Task failed",
+              });
+              tasksUpdated++;
+            }
+            // running/pending status changes handled automatically by spawn flow
+          }
+        }
+      }
+
+      // Update head agent heartbeat if headAgentStatus is provided
+      let heartbeatUpdated = false;
+      if (body.headAgentStatus) {
+        try {
+          // Find head agent task run by orchestration ID
+          const headAgentRun = await convex.query(api.taskRuns.getByOrchestrationId, {
+            orchestrationId,
+            teamSlugOrId,
+          });
+
+          if (headAgentRun) {
+            // Update heartbeat in Convex
+            await convex.mutation(api.taskRuns.updateOrchestrationHeartbeat, {
+              teamSlugOrId,
+              id: headAgentRun._id as Id<"taskRuns">,
+              status: body.headAgentStatus,
+            });
+            console.log(`[orchestrate] Head agent heartbeat updated: ${body.headAgentStatus}`, {
+              orchestrationId,
+              taskRunId: headAgentRun._id,
+              message: body.message,
+            });
+            heartbeatUpdated = true;
+          } else {
+            console.log(`[orchestrate] Head agent status update (no matching task run): ${body.headAgentStatus}`, {
+              orchestrationId,
+              message: body.message,
+            });
+          }
+        } catch (err) {
+          console.error("[orchestrate] Failed to update head agent heartbeat:", err);
+        }
+      }
+
+      return c.json({
+        success: true,
+        tasksUpdated,
+        heartbeatUpdated,
+        message: body.headAgentStatus
+          ? `Head agent status: ${body.headAgentStatus}`
+          : `Updated ${tasksUpdated} task(s)`,
+      });
+    } catch (error) {
+      console.error("[orchestrate] Failed to push orchestration updates:", error);
+      return c.text("Failed to push orchestration updates", 500);
+    }
+  }
+);
+
+// ============================================================================
+// Provider Session Binding Endpoints
+// ============================================================================
+
+const BindSessionRequestSchema = z
+  .object({
+    orchestrationId: z.string().optional().openapi({
+      description: "Orchestration ID (optional - uses taskRunId from JWT if not provided)",
+    }),
+    taskRunId: z.string().optional().openapi({ description: "Task run ID" }),
+    providerSessionId: z.string().optional().openapi({ description: "Claude session ID" }),
+    providerThreadId: z.string().optional().openapi({ description: "Codex thread ID" }),
+    replyChannel: z.enum(["mailbox", "sse", "pty", "ui"]).optional().openapi({
+      description: "Preferred communication channel",
+    }),
+    agentName: z.string().optional().openapi({ description: "Agent name" }),
+    sessionId: z.string().optional().openapi({
+      description: "Generic session ID (alias for providerSessionId)",
+    }),
+    provider: z.string().optional().openapi({
+      description: "Provider name (claude, codex, etc.)",
+    }),
+  })
+  .openapi("BindSessionRequest");
+
+/**
+ * POST /api/v1/cmux/orchestration/sessions/bind
+ * Bind a provider session to the current task.
+ */
+orchestrateRouter.openapi(
+  createRoute({
+    method: "post" as const,
+    path: "/v1/cmux/orchestration/sessions/bind",
+    tags: ["Orchestration"],
+    summary: "Bind provider session",
+    description: "Bind a provider-specific session ID to the current task for session resume support.",
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: BindSessionRequestSchema,
+          },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              bindingId: z.string(),
+              updated: z.boolean(),
+            }),
+          },
+        },
+        description: "Session bound successfully",
+      },
+      401: { description: "Unauthorized" },
+      500: { description: "Server error" },
+    },
+  }),
+  async (c) => {
+    // Support JWT auth for agents
+    const authHeader = c.req.header("Authorization");
+    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+    let teamSlugOrId: string | undefined;
+
+    if (!accessToken && authHeader?.startsWith("Bearer ")) {
+      const jwt = authHeader.slice(7);
+      try {
+        const parts = jwt.split(".");
+        if (parts.length === 3) {
+          const payload = JSON.parse(
+            Buffer.from(parts[1], "base64url").toString("utf-8")
+          );
+          // Support both teamSlugOrId and teamId (JWTs use teamId)
+          teamSlugOrId = payload.teamSlugOrId ?? payload.teamId;
+        }
+      } catch {
+        return c.text("Invalid JWT", 401);
+      }
+    }
+
+    if (!teamSlugOrId) {
+      return c.text("Unauthorized - no team context", 401);
+    }
+
+    const body = c.req.valid("json");
+
+    try {
+      const adminClient = getConvexAdmin();
+      if (!adminClient) {
+        return c.text("Server configuration error", 500);
+      }
+
+      // Extract task ID from JWT
+      const jwt = authHeader?.slice(7) ?? "";
+      let taskId: string | undefined;
+      try {
+        const parts = jwt.split(".");
+        if (parts.length === 3) {
+          const payload = JSON.parse(
+            Buffer.from(parts[1], "base64url").toString("utf-8")
+          );
+          taskId = payload.taskRunId;
+        }
+      } catch {
+        // Continue without taskId
+      }
+
+      if (!taskId) {
+        return c.text("Task ID not found in JWT", 400);
+      }
+
+      // Determine provider from agent name or explicit provider field
+      const agentName = body.agentName ?? "unknown";
+      const provider = (body.provider ?? agentName.split("/")[0]) as
+        | "claude"
+        | "codex"
+        | "gemini"
+        | "opencode"
+        | "amp"
+        | "grok"
+        | "cursor"
+        | "qwen";
+
+      // Use orchestrationId if provided, otherwise use taskId as the binding key
+      // This allows both orchestration heads and regular task sandboxes to bind sessions
+      const bindingKey = body.orchestrationId ?? taskId;
+
+      // Support sessionId alias for providerSessionId
+      const providerSessionId = body.providerSessionId ?? body.sessionId;
+
+      const result = await adminClient.mutation(
+        internal.providerSessions.bindSessionInternal,
+        {
+          teamId: teamSlugOrId,
+          orchestrationId: bindingKey,
+          taskId,
+          taskRunId: body.taskRunId as Id<"taskRuns"> | undefined,
+          agentName,
+          provider,
+          mode: "worker" as const,
+          providerSessionId,
+          providerThreadId: body.providerThreadId,
+        }
+      );
+
+      return c.json({
+        bindingId: String(result),
+        updated: false, // bindSessionInternal always returns the ID
+      });
+    } catch (error) {
+      console.error("[orchestrate] Failed to bind session:", error);
+      return c.text("Failed to bind session", 500);
+    }
+  }
+);
+
+/**
+ * GET /api/v1/cmux/orchestration/sessions/:taskId
+ * Get the provider session binding for a task.
+ */
+orchestrateRouter.openapi(
+  createRoute({
+    method: "get" as const,
+    path: "/v1/cmux/orchestration/sessions/{taskId}",
+    tags: ["Orchestration"],
+    summary: "Get provider session",
+    description: "Get the provider session binding for a task.",
+    request: {
+      params: z.object({
+        taskId: z.string().openapi({ description: "Task ID" }),
+      }),
+    },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              taskId: z.string(),
+              orchestrationId: z.string(),
+              provider: z.string(),
+              agentName: z.string(),
+              mode: z.string(),
+              providerSessionId: z.string().optional(),
+              providerThreadId: z.string().optional(),
+              replyChannel: z.string().optional(),
+              status: z.string(),
+              lastActiveAt: z.number().optional(),
+            }),
+          },
+        },
+        description: "Session found",
+      },
+      401: { description: "Unauthorized" },
+      404: { description: "Session not found" },
+      500: { description: "Server error" },
+    },
+  }),
+  async (c) => {
+    // Support JWT auth for agents
+    const authHeader = c.req.header("Authorization");
+    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+    let teamSlugOrId: string | undefined;
+
+    if (!accessToken && authHeader?.startsWith("Bearer ")) {
+      const jwt = authHeader.slice(7);
+      try {
+        const parts = jwt.split(".");
+        if (parts.length === 3) {
+          const payload = JSON.parse(
+            Buffer.from(parts[1], "base64url").toString("utf-8")
+          );
+          // Support both teamSlugOrId and teamId (JWTs use teamId)
+          teamSlugOrId = payload.teamSlugOrId ?? payload.teamId;
+        }
+      } catch {
+        return c.text("Invalid JWT", 401);
+      }
+    }
+
+    if (!teamSlugOrId) {
+      return c.text("Unauthorized - no team context", 401);
+    }
+
+    const { taskId } = c.req.valid("param");
+
+    try {
+      const adminClient = getConvexAdmin();
+      if (!adminClient) {
+        return c.text("Server configuration error", 500);
+      }
+
+      const session = await adminClient.query(
+        internal.providerSessions.getForResume,
+        { taskId }
+      );
+
+      if (!session || session.teamId !== teamSlugOrId) {
+        return c.text("Session not found", 404);
+      }
+
+      return c.json({
+        taskId: session.taskId,
+        orchestrationId: session.orchestrationId,
+        provider: session.provider,
+        agentName: session.agentName,
+        mode: session.mode,
+        providerSessionId: session.providerSessionId,
+        providerThreadId: session.providerThreadId,
+        replyChannel: session.replyChannel,
+        status: session.status,
+        lastActiveAt: session.lastActiveAt,
+      });
+    } catch (error) {
+      console.error("[orchestrate] Failed to get session:", error);
+      return c.text("Failed to get session", 500);
     }
   }
 );
@@ -873,13 +1351,37 @@ orchestrateRouter.get("/orchestrate/events/:orchestrationId", async (c) => {
  * Events are emitted in AgentCommEvent format.
  */
 orchestrateRouter.get("/orchestrate/v2/events/:orchestrationId", async (c) => {
-  const accessToken = await getAccessTokenFromRequest(c.req.raw);
+  // Support both Stack Auth and JWT auth (for head agents)
+  const authHeader = c.req.header("Authorization");
+  let accessToken = await getAccessTokenFromRequest(c.req.raw);
+  let teamSlugOrId = c.req.query("teamSlugOrId");
+  let jwtAuth = false;
+
+  // Try JWT auth if no Stack Auth token
+  if (!accessToken && authHeader?.startsWith("Bearer ")) {
+    const jwt = authHeader.slice(7);
+    try {
+      const parts = jwt.split(".");
+      if (parts.length === 3) {
+        const payload = JSON.parse(
+          Buffer.from(parts[1], "base64url").toString("utf-8")
+        );
+        // For JWT auth, use the JWT itself as a pseudo-token and extract team
+        // Support both teamSlugOrId and teamId (JWTs use teamId)
+          teamSlugOrId = payload.teamSlugOrId ?? payload.teamId;
+        accessToken = jwt; // Use JWT as token for this request
+        jwtAuth = true;
+      }
+    } catch {
+      return c.text("Invalid JWT", 401);
+    }
+  }
+
   if (!accessToken) {
     return c.text("Unauthorized", 401);
   }
 
   const orchestrationId = c.req.param("orchestrationId");
-  const teamSlugOrId = c.req.query("teamSlugOrId");
   const sinceTimestamp = c.req.query("since");
   const replayAll = c.req.query("replay") === "true";
 
@@ -887,13 +1389,66 @@ orchestrateRouter.get("/orchestrate/v2/events/:orchestrationId", async (c) => {
     return c.text("teamSlugOrId query parameter required", 400);
   }
 
-  try {
-    await verifyTeamAccess({ req: c.req.raw, teamSlugOrId });
-  } catch {
-    return c.text("Unauthorized", 401);
+  // Skip Stack Auth verification for JWT-authenticated requests
+  if (!jwtAuth) {
+    try {
+      await verifyTeamAccess({ req: c.req.raw, teamSlugOrId });
+    } catch {
+      return c.text("Unauthorized", 401);
+    }
   }
 
-  const convex = getConvex({ accessToken });
+  // For JWT auth, use admin Convex client; for Stack Auth, use user-scoped client
+  const adminClient = jwtAuth ? getConvexAdmin() : null;
+  const userClient = !jwtAuth ? getConvex({ accessToken }) : null;
+
+  if (jwtAuth && !adminClient) {
+    return c.text("Server configuration error: CONVEX_DEPLOY_KEY not set", 500);
+  }
+
+  // Event type returned by both queries
+  interface OrchestrationEvent {
+    eventId: string;
+    orchestrationId: string;
+    eventType: string;
+    teamId: string;
+    taskId?: string;
+    taskRunId?: string;
+    correlationId?: string;
+    payload: unknown;
+    createdAt: number;
+  }
+
+  // Helper to fetch events using appropriate client and query
+  async function fetchEvents(opts: {
+    afterTimestamp?: number;
+    limit: number;
+  }): Promise<OrchestrationEvent[]> {
+    if (jwtAuth && adminClient) {
+      // Use internal query for JWT auth (admin client)
+      return adminClient.query(
+        internal.orchestrationEvents.getByOrchestrationInternal,
+        {
+          teamId: teamSlugOrId!, // For JWT, teamSlugOrId is the teamId from JWT payload
+          orchestrationId,
+          limit: opts.limit,
+          afterTimestamp: opts.afterTimestamp,
+        }
+      ) as Promise<OrchestrationEvent[]>;
+    } else if (userClient) {
+      // Use public authQuery for Stack Auth
+      return userClient.query(
+        api.orchestrationEvents.getByOrchestration,
+        {
+          teamSlugOrId: teamSlugOrId!,
+          orchestrationId,
+          limit: opts.limit,
+          afterTimestamp: opts.afterTimestamp,
+        }
+      ) as unknown as Promise<OrchestrationEvent[]>;
+    }
+    return [];
+  }
 
   return streamSSE(c, async (stream) => {
     let lastTimestamp = sinceTimestamp ? parseInt(sinceTimestamp, 10) : 0;
@@ -912,14 +1467,7 @@ orchestrateRouter.get("/orchestrate/v2/events/:orchestrationId", async (c) => {
     // If replay requested, fetch all historical events first
     if (replayAll) {
       try {
-        const historicalEvents = await convex.query(
-          api.orchestrationEvents.getByOrchestration,
-          {
-            teamSlugOrId,
-            orchestrationId,
-            limit: 500,
-          }
-        );
+        const historicalEvents = await fetchEvents({ limit: 500 });
 
         for (const event of historicalEvents) {
           await stream.writeSSE({
@@ -953,15 +1501,10 @@ orchestrateRouter.get("/orchestrate/v2/events/:orchestrationId", async (c) => {
     while (isConnected) {
       try {
         // Fetch new events since last timestamp
-        const newEvents = await convex.query(
-          api.orchestrationEvents.getByOrchestration,
-          {
-            teamSlugOrId,
-            orchestrationId,
-            afterTimestamp: lastTimestamp,
-            limit: 100,
-          }
-        );
+        const newEvents = await fetchEvents({
+          afterTimestamp: lastTimestamp,
+          limit: 100,
+        });
 
         // Emit new events
         for (const event of newEvents) {
@@ -1266,6 +1809,199 @@ orchestrateRouter.openapi(
     } catch (error) {
       console.error("[orchestrate] Failed to get team approvals:", error);
       return c.text("Failed to get team approvals", 500);
+    }
+  }
+);
+
+// ============================================================================
+// Orchestration Learning Routes
+// ============================================================================
+
+const LogLearningRequestSchema = z.object({
+  eventType: z.enum(["learning_logged", "error_logged", "feature_request_logged"]),
+  text: z.string().min(1),
+  lane: z.enum(["hot", "orchestration", "project"]).default("orchestration"),
+  confidence: z.number().min(0).max(1).default(0.5),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+const LogLearningResponseSchema = z.object({
+  eventId: z.string(),
+  ruleId: z.string().optional(),
+  message: z.string(),
+});
+
+/**
+ * POST /api/v1/cmux/orchestration/learning/log
+ * Log an orchestration learning, error, or feature request.
+ * Requires JWT auth (from sandbox agent).
+ */
+orchestrateRouter.openapi(
+  createRoute({
+    method: "post",
+    path: "/learning/log",
+    tags: ["orchestration-learning"],
+    summary: "Log an orchestration learning event",
+    description:
+      "Log a learning, error, or feature request that may be promoted to an orchestration rule",
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: LogLearningRequestSchema,
+          },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        description: "Learning logged successfully",
+        content: {
+          "application/json": {
+            schema: LogLearningResponseSchema,
+          },
+        },
+      },
+      401: { description: "Unauthorized" },
+      500: { description: "Server error" },
+    },
+  }),
+  async (c) => {
+    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+    if (!accessToken) {
+      return c.text("Unauthorized", 401);
+    }
+
+    const body = c.req.valid("json");
+
+    try {
+      const convex = getConvex({ accessToken });
+
+      // Decode JWT to get teamSlugOrId and taskRunId
+      const user = await getUserFromRequest(c.req.raw);
+      if (!user) {
+        return c.text("Unauthorized", 401);
+      }
+
+      // Extract team context from JWT claims or user context
+      const jwtPayload = JSON.parse(
+        Buffer.from(accessToken.split(".")[1], "base64").toString()
+      );
+      const teamSlugOrId = jwtPayload.teamSlugOrId ?? jwtPayload.team_id;
+      const taskRunId = jwtPayload.taskRunId;
+
+      if (!teamSlugOrId) {
+        return c.text("Missing team context in JWT", 400);
+      }
+
+      // Log the event
+      const result = await convex.mutation(api.agentOrchestrationLearning.logEvent, {
+        teamSlugOrId,
+        eventType: body.eventType,
+        payload: {
+          text: body.text,
+          lane: body.lane,
+          confidence: body.confidence,
+          metadata: body.metadata,
+          sourceTaskRunId: taskRunId,
+        },
+      });
+
+      return c.json({
+        eventId: result.eventId,
+        ruleId: result.ruleId,
+        message: "Learning logged successfully",
+      });
+    } catch (error) {
+      console.error("[orchestrate] Failed to log learning:", error);
+      return c.text("Failed to log learning", 500);
+    }
+  }
+);
+
+const GetRulesQuerySchema = z.object({
+  lane: z.enum(["hot", "orchestration", "project"]).optional(),
+});
+
+const OrchestrationRuleSchema = z.object({
+  _id: z.string(),
+  text: z.string(),
+  lane: z.enum(["hot", "orchestration", "project"]),
+  confidence: z.number(),
+  projectFullName: z.string().optional(),
+});
+
+const GetRulesResponseSchema = z.object({
+  rules: z.array(OrchestrationRuleSchema),
+});
+
+/**
+ * GET /api/v1/cmux/orchestration/rules
+ * Get active orchestration rules for the team.
+ * Requires JWT auth (from sandbox agent).
+ */
+orchestrateRouter.openapi(
+  createRoute({
+    method: "get",
+    path: "/rules",
+    tags: ["orchestration-learning"],
+    summary: "Get active orchestration rules",
+    description: "Fetch active orchestration rules for the team that are injected into agent prompts",
+    request: {
+      query: GetRulesQuerySchema,
+    },
+    responses: {
+      200: {
+        description: "Rules fetched successfully",
+        content: {
+          "application/json": {
+            schema: GetRulesResponseSchema,
+          },
+        },
+      },
+      401: { description: "Unauthorized" },
+      500: { description: "Server error" },
+    },
+  }),
+  async (c) => {
+    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+    if (!accessToken) {
+      return c.text("Unauthorized", 401);
+    }
+
+    const { lane } = c.req.valid("query");
+
+    try {
+      const convex = getConvex({ accessToken });
+
+      // Extract team context from JWT
+      const jwtPayload = JSON.parse(
+        Buffer.from(accessToken.split(".")[1], "base64").toString()
+      );
+      const teamSlugOrId = jwtPayload.teamSlugOrId ?? jwtPayload.team_id;
+
+      if (!teamSlugOrId) {
+        return c.text("Missing team context in JWT", 400);
+      }
+
+      const rules = await convex.query(api.agentOrchestrationLearning.getActiveRules, {
+        teamSlugOrId,
+        lane,
+      });
+
+      return c.json({
+        rules: rules.map((r) => ({
+          _id: r._id,
+          text: r.text,
+          lane: r.lane,
+          confidence: r.confidence,
+          projectFullName: r.projectFullName,
+        })),
+      });
+    } catch (error) {
+      console.error("[orchestrate] Failed to get orchestration rules:", error);
+      return c.text("Failed to get orchestration rules", 500);
     }
   }
 );

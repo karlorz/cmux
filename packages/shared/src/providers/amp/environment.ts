@@ -13,6 +13,7 @@ import {
   getProjectContextFile,
   getPolicyRulesInstructions,
   getOrchestrationRulesInstructions,
+  extractBehaviorRulesSection,
 } from "../../agent-memory-protocol";
 import { getTaskSandboxWrapperFiles } from "../common/task-sandbox-wrappers";
 
@@ -131,8 +132,11 @@ export async function getAmpEnvironment(
   const orchestrationRulesSection = ctx.orchestrationRules && ctx.orchestrationRules.length > 0
     ? `\n${getOrchestrationRulesInstructions(ctx.orchestrationRules)}\n`
     : "";
+  const behaviorRulesSection = ctx.previousBehavior
+    ? `\n${extractBehaviorRulesSection(ctx.previousBehavior)}\n`
+    : "";
   const ampMdContent = `# cmux Project Instructions
-${policyRulesSection}${orchestrationRulesSection}
+${policyRulesSection}${orchestrationRulesSection}${behaviorRulesSection}
 ${getMemoryProtocolInstructions()}
 `;
   files.push({
@@ -141,9 +145,10 @@ ${getMemoryProtocolInstructions()}
     mode: "644",
   });
 
-  // Block dangerous commands in task sandboxes
+  // Block dangerous commands in task sandboxes (when enabled via settings)
+  // Disabled by default - use permission deny rules or policy rules instead
   const hasTaskRunJwt = ctx.taskRunJwt.trim().length > 0;
-  if (hasTaskRunJwt) {
+  if (hasTaskRunJwt && ctx.enableShellWrappers) {
     files.push(...getTaskSandboxWrapperFiles(Buffer));
   }
 

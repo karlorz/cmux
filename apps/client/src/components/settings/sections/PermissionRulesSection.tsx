@@ -1,4 +1,5 @@
 import { SettingSection } from "@/components/settings/SettingSection";
+import { SettingSwitch } from "@/components/settings/SettingSwitch";
 import {
   ScopeBadge,
   ScopeFilterTabs,
@@ -24,6 +25,8 @@ type PermissionContext = "task_sandbox" | "cloud_workspace";
 
 interface PermissionRulesSectionProps {
   teamSlugOrId: string;
+  enableShellWrappers?: boolean;
+  onEnableShellWrappersChange?: (value: boolean) => void;
 }
 
 interface FormState {
@@ -57,7 +60,7 @@ function buildFormFromRule(rule: PermissionRule): FormState {
   };
 }
 
-export function PermissionRulesSection({ teamSlugOrId }: PermissionRulesSectionProps) {
+export function PermissionRulesSection({ teamSlugOrId, enableShellWrappers, onEnableShellWrappersChange }: PermissionRulesSectionProps) {
   const convex = useConvex();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<PermissionRule | null>(null);
@@ -186,18 +189,36 @@ export function PermissionRulesSection({ teamSlugOrId }: PermissionRulesSectionP
   }, []);
 
   return (
-    <SettingSection
-      title="Permission Deny Rules"
-      description="Claude Code permissions.deny patterns that restrict tool access in sandboxes. System rules cannot be modified but can be toggled."
-      headerAction={
-        <Button size="sm" onClick={openCreateDialog}>
-          <Plus className="mr-1.5 h-4 w-4" />
-          Add Rule
-        </Button>
-      }
-    >
-      {/* Scope filter tabs */}
-      <ScopeFilterTabs
+    <div className="space-y-4">
+      {/* Shell Wrappers Toggle - shown if props provided */}
+      {onEnableShellWrappersChange && (
+        <SettingSection
+          title="Shell Wrappers"
+          description="Defense-in-depth for agents without native permission systems (Gemini, Amp, Grok, etc.)."
+        >
+          <SettingSwitch
+            label="Enable gh/git shell wrappers"
+            description="Inject wrapper scripts to block dangerous commands (gh pr create, git push --force). Disabled by default - use permission deny rules or policy rules instead."
+            isSelected={enableShellWrappers ?? false}
+            onValueChange={onEnableShellWrappersChange}
+            ariaLabel="Enable shell wrappers for task sandboxes"
+            noBorder
+          />
+        </SettingSection>
+      )}
+
+      <SettingSection
+        title="Permission Deny Rules"
+        description="Claude Code permissions.deny patterns that restrict tool access in sandboxes. System rules cannot be modified but can be toggled."
+        headerAction={
+          <Button size="sm" onClick={openCreateDialog}>
+            <Plus className="mr-1.5 h-4 w-4" />
+            Add Rule
+          </Button>
+        }
+      >
+        {/* Scope filter tabs */}
+        <ScopeFilterTabs
         scopes={["system", "team", "workspace"] as const}
         activeScope={activeScope}
         onScopeChange={setActiveScope}
@@ -420,19 +441,20 @@ export function PermissionRulesSection({ teamSlugOrId }: PermissionRulesSectionP
         </Dialog.Portal>
       </Dialog.Root>
 
-      {/* Delete Confirmation */}
-      <ConfirmDialog
-        open={!!deleteTarget}
-        onOpenChange={(open) => !open && setDeleteTarget(null)}
-        title="Delete Permission Rule"
-        description={`Are you sure you want to delete the rule "${deleteTarget?.pattern}"? This action cannot be undone.`}
-        confirmLabel="Delete"
-        onConfirm={() => {
-          if (deleteTarget) {
-            deleteMutation.mutate(deleteTarget._id);
-          }
-        }}
-      />
-    </SettingSection>
+        {/* Delete Confirmation */}
+        <ConfirmDialog
+          open={!!deleteTarget}
+          onOpenChange={(open) => !open && setDeleteTarget(null)}
+          title="Delete Permission Rule"
+          description={`Are you sure you want to delete the rule "${deleteTarget?.pattern}"? This action cannot be undone.`}
+          confirmLabel="Delete"
+          onConfirm={() => {
+            if (deleteTarget) {
+              deleteMutation.mutate(deleteTarget._id);
+            }
+          }}
+        />
+      </SettingSection>
+    </div>
   );
 }

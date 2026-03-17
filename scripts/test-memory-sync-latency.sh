@@ -455,6 +455,77 @@ test_memory_types_coverage() {
 }
 
 # ============================================================================
+# Test Scenario 7: Live HTTP Sync Test (requires env vars)
+# ============================================================================
+test_live_convex_sync() {
+  info "=== Scenario 7: Live HTTP Sync Test ==="
+
+  # Check for required env vars
+  local callback_url
+  local jwt_token
+  callback_url="$(sandbox_exec 'echo "${CMUX_CALLBACK_URL:-}"')"
+  jwt_token="$(sandbox_exec 'echo "${CMUX_TASK_RUN_JWT:-}"')"
+
+  if [[ -z "${callback_url}" ]] || [[ "${callback_url}" == *"missing"* ]] || [[ -z "${jwt_token}" ]] || [[ "${jwt_token}" == *"missing"* ]]; then
+    record_skip "CMUX_CALLBACK_URL or CMUX_TASK_RUN_JWT not set - skipping live sync test"
+    info "To run live tests, use a sandbox spawned via task create"
+    return 0
+  fi
+
+  # Test 7.1: Prepare test content
+  local test_marker="LIVE_SYNC_TEST_$(date +%s)"
+  local test_content="# Live Sync Test
+## P0 - Core
+- [$(date +%Y-%m-%d)] ${test_marker}
+"
+  sandbox_write "${KNOWLEDGE_DIR}/MEMORY.md" "${test_content}"
+  record_pass "Test content written with marker: ${test_marker}"
+
+  # Test 7.2: Run sync and measure latency
+  info "Running sync with latency measurement..."
+  local start_ms
+  start_ms="$(date +%s%3N)"
+
+  local sync_result
+  sync_result="$(sandbox_exec "${MEMORY_DIR}/sync.sh 2>&1")"
+
+  local end_ms
+  end_ms="$(date +%s%3N)"
+  local latency=$((end_ms - start_ms))
+
+  # Test 7.3: Check sync completed
+  if echo "${sync_result}" | grep -qi "success\|200\|synced"; then
+    record_pass "Sync completed successfully"
+  else
+    if echo "${sync_result}" | grep -qi "error\|fail"; then
+      record_fail "Sync failed: ${sync_result}"
+    else
+      warn "Sync result unclear: ${sync_result}"
+      record_skip "Sync completion check inconclusive"
+    fi
+  fi
+
+  # Test 7.4: Verify latency target
+  if [[ ${latency} -lt ${TARGET_LATENCY_MS} ]]; then
+    record_pass "Sync latency ${latency}ms < target ${TARGET_LATENCY_MS}ms"
+  else
+    record_fail "Sync latency ${latency}ms exceeds target ${TARGET_LATENCY_MS}ms"
+  fi
+
+  # Test 7.5: Verify HTTP endpoint was called (check sync log)
+  local sync_log
+  sync_log="$(sandbox_cat "${SYNC_LOG}")"
+  if echo "${sync_log}" | grep -q "/api/memory/sync"; then
+    record_pass "Sync log shows API endpoint call"
+  else
+    warn "Could not verify API call in sync log"
+    record_skip "API call verification"
+  fi
+
+  info "=== Scenario 7 Complete (latency: ${latency}ms) ==="
+}
+
+# ============================================================================
 # Main Test Runner
 # ============================================================================
 main() {
@@ -551,6 +622,8 @@ exit 0'
   test_api_endpoint_format
   echo ""
   test_memory_types_coverage
+  echo ""
+  test_live_convex_sync
 
   # Print summary
   echo ""

@@ -139,6 +139,9 @@ function SettingsComponent() {
     useState<boolean>(false);
   const [originalBypassAnthropicProxy, setOriginalBypassAnthropicProxy] =
     useState<boolean>(false);
+  const [enableShellWrappers, setEnableShellWrappers] = useState<boolean>(false);
+  const [originalEnableShellWrappers, setOriginalEnableShellWrappers] =
+    useState<boolean>(false);
   const [isTestingConnection, setIsTestingConnection] = useState<
     Record<string, boolean>
   >({});
@@ -306,6 +309,15 @@ function SettingsComponent() {
     );
     setOriginalBypassAnthropicProxy((prev) =>
       prev === nextBypassAnthropicProxy ? prev : nextBypassAnthropicProxy
+    );
+
+    const nextEnableShellWrappers =
+      workspaceSettings?.enableShellWrappers ?? false;
+    setEnableShellWrappers((prev) =>
+      prev === nextEnableShellWrappers ? prev : nextEnableShellWrappers
+    );
+    setOriginalEnableShellWrappers((prev) =>
+      prev === nextEnableShellWrappers ? prev : nextEnableShellWrappers
     );
 
     // Default to shared constant for new users, but respect explicit empty string (no prefix)
@@ -588,6 +600,8 @@ function SettingsComponent() {
     const autoPrChanged = autoPrEnabled !== originalAutoPrEnabled;
     const bypassAnthropicProxyChanged =
       bypassAnthropicProxy !== originalBypassAnthropicProxy;
+    const enableShellWrappersChanged =
+      enableShellWrappers !== originalEnableShellWrappers;
 
     // Git settings changes
     const branchPrefixChanged = branchPrefix !== originalBranchPrefix;
@@ -607,6 +621,7 @@ function SettingsComponent() {
       worktreePathChanged ||
       autoPrChanged ||
       bypassAnthropicProxyChanged ||
+      enableShellWrappersChanged ||
       branchPrefixChanged ||
       worktreeModeChanged ||
       codexPatternChanged ||
@@ -634,6 +649,7 @@ function SettingsComponent() {
         worktreePath !== originalWorktreePath ||
         autoPrEnabled !== originalAutoPrEnabled ||
         bypassAnthropicProxy !== originalBypassAnthropicProxy ||
+        enableShellWrappers !== originalEnableShellWrappers ||
         branchPrefix !== originalBranchPrefix ||
         worktreeMode !== originalWorktreeMode ||
         codexWorktreePathPattern !== originalCodexWorktreePathPattern ||
@@ -648,6 +664,7 @@ function SettingsComponent() {
           worktreePath: worktreePath || undefined,
           autoPrEnabled,
           bypassAnthropicProxy,
+          enableShellWrappers,
           branchPrefix,
           worktreeMode,
           codexWorktreePathPattern,
@@ -659,6 +676,7 @@ function SettingsComponent() {
         setOriginalWorktreePath(worktreePath);
         setOriginalAutoPrEnabled(autoPrEnabled);
         setOriginalBypassAnthropicProxy(bypassAnthropicProxy);
+        setOriginalEnableShellWrappers(enableShellWrappers);
         setOriginalBranchPrefix(branchPrefix);
         setOriginalWorktreeMode(worktreeMode);
         setOriginalCodexWorktreePathPattern(codexWorktreePathPattern);
@@ -889,7 +907,11 @@ function SettingsComponent() {
           ) : activeSection === "policy-rules" ? (
             <PolicyRulesSection teamSlugOrId={teamSlugOrId} />
           ) : activeSection === "permission-rules" ? (
-            <PermissionRulesSection teamSlugOrId={teamSlugOrId} />
+            <PermissionRulesSection
+              teamSlugOrId={teamSlugOrId}
+              enableShellWrappers={enableShellWrappers}
+              onEnableShellWrappersChange={setEnableShellWrappers}
+            />
           ) : activeSection === "agent-configs" ? (
             <AgentConfigsSection teamSlugOrId={teamSlugOrId} />
           ) : activeSection === "orchestration-rules" ? (

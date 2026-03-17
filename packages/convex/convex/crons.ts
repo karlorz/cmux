@@ -129,4 +129,20 @@ crons.daily(
   internal.orchestrationWorker.cleanupOrphanTasks
 );
 
+// Detect orchestration learning patterns and create skill candidates
+// Runs daily at 23:00 UTC (7:00 AM HKT)
+crons.daily(
+  "detect orchestration learning patterns",
+  { hourUTC: 23, minuteUTC: 0 },
+  internal.agentOrchestrationLearning.detectPatternsAllTeams
+);
+
+// Check for stale orchestration head agents (no heartbeat for 30+ minutes)
+// Runs every 15 minutes to detect head agents that stopped sending heartbeats
+crons.interval(
+  "check stale head agents",
+  { minutes: 15 },
+  internal.taskRuns.checkStaleHeadAgents
+);
+
 export default crons;

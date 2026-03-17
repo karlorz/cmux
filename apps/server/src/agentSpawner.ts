@@ -48,7 +48,7 @@ import {
   getEditorSettingsUpload,
   type UserUploadedEditorSettings,
 } from "./utils/editorSettings";
-import { env } from "./utils/server-env";
+import { env, getWwwBaseUrl } from "./utils/server-env";
 import { getWwwClient } from "./utils/wwwClient";
 import { getWwwOpenApiModule } from "./utils/wwwOpenApiModule";
 import { buildSystemTimezoneStartupCommand } from "./utils/timezone";
@@ -116,6 +116,7 @@ export interface PreFetchedSpawnConfig {
   apiKeys: Record<string, string>;
   workspaceSettings: {
     bypassAnthropicProxy: boolean;
+    enableShellWrappers?: boolean;
   } | null;
   providerOverrides: Array<{
     providerId: string;
@@ -178,6 +179,10 @@ export async function spawnAgent(
     preFetchedConfig?: PreFetchedSpawnConfig;
     /** Autopilot mode options (Phase 6: Long-Running Sessions) */
     autopilotOptions?: AutopilotOptions;
+    /** Mark as cloud workspace (long-lived, not auto-paused) */
+    isCloudWorkspace?: boolean;
+    /** Mark as orchestration head agent (can spawn sub-agents via env JWT) */
+    isOrchestrationHead?: boolean;
   },
   teamSlugOrId: string,
   /** Optional pre-provided JWT (for JWT-based auth when Stack Auth is not available) */
@@ -460,6 +465,7 @@ export async function spawnAgent(
       CMUX_TASK_RUN_JWT: taskRunJwt,
       CMUX_CALLBACK_URL: callbackUrl,
       CMUX_SERVER_URL: cmuxServerUrl, // devsh CLI target (apps/server HTTP API)
+      CMUX_API_BASE_URL: getWwwBaseUrl(), // MCP orchestration API target (apps/www HTTP API)
       CMUX_AGENT_NAME: agent.name,
       PROMPT: processedTaskDescription,
     };
@@ -473,6 +479,16 @@ export async function spawnAgent(
       serverLogger.info(
         `[AgentSpawner] Autopilot mode enabled: ${options.autopilotOptions.totalMinutes}min total, ${options.autopilotOptions.turnMinutes}min/turn`
       );
+    }
+
+    // Add orchestration head agent environment variables
+    if (options.isOrchestrationHead) {
+      systemEnvVars.CMUX_IS_ORCHESTRATION_HEAD = "1";
+      serverLogger.info("[AgentSpawner] Orchestration head mode enabled");
+    }
+    if (options.isCloudWorkspace) {
+      systemEnvVars.CMUX_IS_CLOUD_WORKSPACE = "1";
+      serverLogger.info("[AgentSpawner] Cloud workspace mode enabled");
     }
 
     let envVars: Record<string, string> = { ...systemEnvVars };
@@ -547,7 +563,7 @@ export async function spawnAgent(
     // BEFORE calling agent.environment() so agents can access them in their environment configuration
     // If pre-fetched config is provided (JWT auth path), use it instead of querying Convex
     let userApiKeys: Record<string, string>;
-    let workspaceSettings: { bypassAnthropicProxy?: boolean } | null;
+    let workspaceSettings: { bypassAnthropicProxy?: boolean; enableShellWrappers?: boolean } | null;
     let providerOverrides: Array<{
       teamId?: string;
       providerId: string;
@@ -844,6 +860,8 @@ export async function spawnAgent(
         policyRules,
         // Orchestration rules (self-improving memory)
         orchestrationRules,
+        // Shell wrappers disabled by default - must be explicitly enabled in settings
+        enableShellWrappers: workspaceSettings?.enableShellWrappers ?? false,
         // GitHub Projects v2 context (Phase 5: Sandbox Project Integration)
         githubProjectContext:
           task?.githubProjectId &&

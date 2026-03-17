@@ -7,8 +7,10 @@ import {
   XCircle,
   ChevronDown,
   ChevronUp,
+  Radio,
 } from "lucide-react";
 import clsx from "clsx";
+import { Link } from "@tanstack/react-router";
 import { STATUS_CONFIG, type TaskStatus } from "./status-config";
 import type { OrchestrationTaskWithDeps } from "./OrchestrationDashboard";
 import { OrchestrationMessageDialog } from "./OrchestrationMessageDialog";
@@ -36,6 +38,7 @@ export function OrchestrationTaskRow({ task, teamSlugOrId }: OrchestrationTaskRo
   const isBlocked = hasDependencies && task.dependencyInfo && task.dependencyInfo.pendingDeps > 0;
   const canCancel = status === "pending" || status === "assigned";
   const canMessage = status === "running" && task.taskRunId;
+  const orchestrationId = (task.metadata as { orchestrationId?: string } | undefined)?.orchestrationId;
 
   const cancelMutation = useMutation({
     mutationFn: async () => {
@@ -147,6 +150,17 @@ export function OrchestrationTaskRow({ task, teamSlugOrId }: OrchestrationTaskRo
             <span className={isBlocked ? "text-amber-500" : "text-green-500"}>
               {task.dependencyInfo?.completedDeps}/{task.dependencyInfo?.totalDeps} deps complete
             </span>
+          )}
+          {orchestrationId && (
+            <Link
+              to="/$teamSlugOrId/orchestration/$orchestrationId"
+              params={{ teamSlugOrId, orchestrationId }}
+              className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-600 hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Radio className="size-3" />
+              {orchestrationId.slice(0, 8)}...
+            </Link>
           )}
         </div>
 

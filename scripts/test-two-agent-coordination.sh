@@ -355,10 +355,87 @@ test_broadcast_messages() {
 }
 
 # ============================================================================
-# Test Scenario 5: MCP Server Message Tools (if available)
+# Test Scenario 5: Concurrent Write Collision Test
+# ============================================================================
+test_concurrent_collision() {
+  info "=== Scenario 5: Concurrent Write Collision Test ==="
+
+  # Reset mailbox
+  init_mailbox
+
+  # Test 5.1: Simulate rapid concurrent writes from multiple agents
+  info "Simulating 6 rapid concurrent writes..."
+
+  # Launch background writes in sandbox
+  sandbox_exec "mkdir -p /tmp/concurrent_test"
+
+  # Create concurrent write script
+  local write_script='#!/bin/bash
+MAILBOX="/root/lifecycle/memory/MAILBOX.json"
+AGENT="$1"
+MSG="Message from ${AGENT}"
+LOCK="/tmp/mailbox.lock"
+
+# Simple locking mechanism
+(
+  flock -w 5 200 || exit 1
+  CONTENT=$(cat "$MAILBOX")
+  TIMESTAMP=$(date -Iseconds)
+  MSGID="msg_${AGENT}_$$"
+  NEW_MSG="{\"id\":\"${MSGID}\",\"from\":\"${AGENT}\",\"to\":\"*\",\"type\":\"status\",\"message\":\"${MSG}\",\"timestamp\":\"${TIMESTAMP}\",\"read\":false}"
+  echo "$CONTENT" | jq --argjson msg "$NEW_MSG" ".messages += [\$msg]" > "${MAILBOX}.tmp"
+  mv "${MAILBOX}.tmp" "$MAILBOX"
+) 200>"$LOCK"
+'
+
+  local script_b64
+  script_b64="$(echo "${write_script}" | base64)"
+  sandbox_exec "echo '${script_b64}' | base64 -d > /tmp/concurrent_test/write.sh && chmod +x /tmp/concurrent_test/write.sh"
+
+  # Launch 6 concurrent writes
+  for i in {1..6}; do
+    sandbox_exec "/tmp/concurrent_test/write.sh agent-${i} &"
+  done
+
+  # Wait for writes to complete
+  sleep 3
+
+  # Test 5.2: Verify mailbox is still valid JSON
+  local content
+  content="$(sandbox_cat "${MAILBOX_PATH}")"
+  if echo "${content}" | jq . >/dev/null 2>&1; then
+    record_pass "Mailbox remains valid JSON after concurrent writes"
+  else
+    record_fail "Mailbox corrupted after concurrent writes"
+    return 1
+  fi
+
+  # Test 5.3: Count preserved messages (expect 5-6 out of 6)
+  local msg_count
+  msg_count="$(echo "${content}" | jq '.messages | length')"
+  if [[ "${msg_count}" -ge 5 ]]; then
+    record_pass "Preserved ${msg_count}/6 messages after concurrent writes"
+  else
+    record_fail "Only ${msg_count}/6 messages preserved (expected 5+)"
+  fi
+
+  # Test 5.4: All messages have valid structure
+  local valid_msgs
+  valid_msgs="$(echo "${content}" | jq '[.messages[] | select(.id and .from and .to and .message)] | length')"
+  if [[ "${valid_msgs}" -eq "${msg_count}" ]]; then
+    record_pass "All ${valid_msgs} messages have valid structure"
+  else
+    record_fail "Only ${valid_msgs}/${msg_count} messages have valid structure"
+  fi
+
+  info "=== Scenario 5 Complete ==="
+}
+
+# ============================================================================
+# Test Scenario 6: MCP Server Message Tools (if available)
 # ============================================================================
 test_mcp_message_tools() {
-  info "=== Scenario 5: MCP Server Message Tools ==="
+  info "=== Scenario 6: MCP Server Message Tools ==="
 
   # Check if MCP server exists
   local mcp_exists
@@ -465,6 +542,8 @@ main() {
   test_message_types
   echo ""
   test_broadcast_messages
+  echo ""
+  test_concurrent_collision
   echo ""
   test_mcp_message_tools
 

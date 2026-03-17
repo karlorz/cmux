@@ -239,6 +239,51 @@ export const getEventsSince = internalQuery({
 });
 
 /**
+ * Get events for an orchestration (internal, no auth required).
+ * Used by server-side SSE endpoint for JWT-authenticated head agents.
+ * Returns events in chronological order.
+ */
+export const getByOrchestrationInternal = internalQuery({
+  args: {
+    teamId: v.string(),
+    orchestrationId: v.string(),
+    eventType: v.optional(eventTypeValidator),
+    limit: v.optional(v.number()),
+    afterTimestamp: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 100;
+
+    let query;
+    if (args.eventType) {
+      query = ctx.db
+        .query("orchestrationEvents")
+        .withIndex("by_orchestration_type", (q) =>
+          q
+            .eq("orchestrationId", args.orchestrationId)
+            .eq("eventType", args.eventType!)
+        );
+    } else {
+      query = ctx.db
+        .query("orchestrationEvents")
+        .withIndex("by_orchestration", (q) =>
+          q.eq("orchestrationId", args.orchestrationId)
+        );
+    }
+
+    let events = await query.order("asc").take(limit * 2);
+
+    // Filter by team (security) and timestamp
+    events = events.filter((e) => e.teamId === args.teamId);
+    if (args.afterTimestamp) {
+      events = events.filter((e) => e.createdAt > args.afterTimestamp!);
+    }
+
+    return events.slice(0, limit);
+  },
+});
+
+/**
  * Check if an event already exists (for deduplication).
  */
 export const eventExists = internalQuery({

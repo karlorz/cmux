@@ -88,13 +88,36 @@ With custom options:
 | `spawn_agent` | Spawn a sub-agent to work on a task |
 | `get_agent_status` | Get status of a spawned agent |
 | `list_spawned_agents` | List all agents in current orchestration |
-| `wait_for_agent` | Wait for agent to complete (blocking) |
+| `wait_for_agent` | Wait for agent to complete (polling) |
+| `wait_for_events` | Wait for events via SSE (event-driven, recommended) |
 | `cancel_agent` | Cancel a running/pending agent |
 | `get_orchestration_summary` | Get dashboard-style orchestration summary |
-| `pull_orchestration_updates` | Sync local PLAN.json with server |
+| `pull_orchestration_updates` | Sync local PLAN.json with server (read) |
+| `push_orchestration_updates` | Push task status/completion to server (write) |
 | `read_orchestration` | Read PLAN.json, AGENTS.json, or EVENTS.jsonl |
 | `append_event` | Append an orchestration event to EVENTS.jsonl |
 | `update_plan_task` | Update task status in PLAN.json |
+
+### Provider Session Tools
+
+| Tool | Description |
+|------|-------------|
+| `bind_provider_session` | Bind a Claude session ID or Codex thread ID to task |
+| `get_provider_session` | Get provider session binding for task resume |
+
+### Orchestration Learning Tools
+
+| Tool | Description |
+|------|-------------|
+| `log_learning` | Log an orchestration learning, error, or feature request to the server |
+| `get_active_orchestration_rules` | Fetch active orchestration rules for the team |
+
+**log_learning types:**
+- `learning` - Discovered a better orchestration pattern
+- `error` - Found an error pattern to avoid
+- `feature_request` - Missing capability that would help
+
+Logged items are reviewed by team leads and may be promoted to active orchestration rules.
 
 ### Environment Variables (Orchestration)
 
@@ -109,15 +132,22 @@ With custom options:
 ```
 /root/lifecycle/memory/
 ├── knowledge/
-│   └── MEMORY.md         # Long-term insights (P0/P1/P2 sections)
+│   └── MEMORY.md              # Long-term insights (P0/P1/P2 sections)
 ├── daily/
-│   └── {date}.md         # Daily session logs
+│   └── {date}.md              # Daily session logs
 ├── orchestration/
-│   ├── PLAN.json         # Orchestration task plan
-│   ├── AGENTS.json       # Agent registry
-│   └── EVENTS.jsonl      # Orchestration event log
-├── TASKS.json            # Task registry
-└── MAILBOX.json          # Inter-agent messages
+│   ├── PLAN.json              # Orchestration task plan
+│   ├── AGENTS.json            # Agent registry
+│   └── EVENTS.jsonl           # Orchestration event log
+├── behavior/
+│   ├── HOT.md                 # Active workflow preferences
+│   ├── corrections.jsonl      # User corrections log
+│   ├── LEARNINGS.jsonl        # Orchestration learnings
+│   ├── ERRORS.jsonl           # Error patterns
+│   ├── FEATURE_REQUESTS.jsonl # Feature requests
+│   └── skill-candidates.json  # Repeated patterns
+├── TASKS.json                 # Task registry
+└── MAILBOX.json               # Inter-agent messages
 ```
 
 ## Priority Tiers (MEMORY.md)

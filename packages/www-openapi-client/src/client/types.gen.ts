@@ -770,6 +770,77 @@ export type OrchestrationSyncResponse = {
     };
 };
 
+export type OrchestrationPushResponse = {
+    success: boolean;
+    tasksUpdated: number;
+    heartbeatUpdated?: boolean;
+    message?: string;
+};
+
+export type OrchestrationPushTask = {
+    /**
+     * Local task ID from PLAN.json
+     */
+    id: string;
+    status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+    result?: string;
+    errorMessage?: string;
+};
+
+export type OrchestrationPushRequest = {
+    /**
+     * Orchestration session ID
+     */
+    orchestrationId: string;
+    /**
+     * Head agent's overall status (for heartbeat/completion signal)
+     */
+    headAgentStatus?: 'running' | 'completed' | 'failed';
+    /**
+     * Task status updates to push to server
+     */
+    tasks?: Array<OrchestrationPushTask>;
+    /**
+     * Optional status message from head agent
+     */
+    message?: string;
+};
+
+export type BindSessionRequest = {
+    /**
+     * Orchestration ID (optional - uses taskRunId from JWT if not provided)
+     */
+    orchestrationId?: string;
+    /**
+     * Task run ID
+     */
+    taskRunId?: string;
+    /**
+     * Claude session ID
+     */
+    providerSessionId?: string;
+    /**
+     * Codex thread ID
+     */
+    providerThreadId?: string;
+    /**
+     * Preferred communication channel
+     */
+    replyChannel?: 'mailbox' | 'sse' | 'pty' | 'ui';
+    /**
+     * Agent name
+     */
+    agentName?: string;
+    /**
+     * Generic session ID (alias for providerSessionId)
+     */
+    sessionId?: string;
+    /**
+     * Provider name (claude, codex, etc.)
+     */
+    provider?: string;
+};
+
 export type ApprovalRequest = {
     /**
      * Approval request ID (apr_xxx format)
@@ -3749,6 +3820,119 @@ export type GetApiV1CmuxOrchestrationByOrchestrationIdSyncResponses = {
 
 export type GetApiV1CmuxOrchestrationByOrchestrationIdSyncResponse = GetApiV1CmuxOrchestrationByOrchestrationIdSyncResponses[keyof GetApiV1CmuxOrchestrationByOrchestrationIdSyncResponses];
 
+export type PostApiV1CmuxOrchestrationByOrchestrationIdSyncData = {
+    body: OrchestrationPushRequest;
+    path: {
+        /**
+         * Orchestration ID
+         */
+        orchestrationId: string;
+    };
+    query?: never;
+    url: '/api/v1/cmux/orchestration/{orchestrationId}/sync';
+};
+
+export type PostApiV1CmuxOrchestrationByOrchestrationIdSyncErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Orchestration not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiV1CmuxOrchestrationByOrchestrationIdSyncResponses = {
+    /**
+     * Push successful
+     */
+    200: OrchestrationPushResponse;
+};
+
+export type PostApiV1CmuxOrchestrationByOrchestrationIdSyncResponse = PostApiV1CmuxOrchestrationByOrchestrationIdSyncResponses[keyof PostApiV1CmuxOrchestrationByOrchestrationIdSyncResponses];
+
+export type PostApiV1CmuxOrchestrationSessionsBindData = {
+    body: BindSessionRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/cmux/orchestration/sessions/bind';
+};
+
+export type PostApiV1CmuxOrchestrationSessionsBindErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiV1CmuxOrchestrationSessionsBindResponses = {
+    /**
+     * Session bound successfully
+     */
+    200: {
+        bindingId: string;
+        updated: boolean;
+    };
+};
+
+export type PostApiV1CmuxOrchestrationSessionsBindResponse = PostApiV1CmuxOrchestrationSessionsBindResponses[keyof PostApiV1CmuxOrchestrationSessionsBindResponses];
+
+export type GetApiV1CmuxOrchestrationSessionsByTaskIdData = {
+    body?: never;
+    path: {
+        /**
+         * Task ID
+         */
+        taskId: string;
+    };
+    query?: never;
+    url: '/api/v1/cmux/orchestration/sessions/{taskId}';
+};
+
+export type GetApiV1CmuxOrchestrationSessionsByTaskIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Session not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiV1CmuxOrchestrationSessionsByTaskIdResponses = {
+    /**
+     * Session found
+     */
+    200: {
+        taskId: string;
+        orchestrationId: string;
+        provider: string;
+        agentName: string;
+        mode: string;
+        providerSessionId?: string;
+        providerThreadId?: string;
+        replyChannel?: string;
+        status: string;
+        lastActiveAt?: number;
+    };
+};
+
+export type GetApiV1CmuxOrchestrationSessionsByTaskIdResponse = GetApiV1CmuxOrchestrationSessionsByTaskIdResponses[keyof GetApiV1CmuxOrchestrationSessionsByTaskIdResponses];
+
 export type GetApiOrchestrateApprovalsByOrchestrationIdPendingData = {
     body?: never;
     path: {
@@ -3878,6 +4062,82 @@ export type GetApiOrchestrateApprovalsTeamByTeamSlugOrIdResponses = {
 };
 
 export type GetApiOrchestrateApprovalsTeamByTeamSlugOrIdResponse = GetApiOrchestrateApprovalsTeamByTeamSlugOrIdResponses[keyof GetApiOrchestrateApprovalsTeamByTeamSlugOrIdResponses];
+
+export type PostApiLearningLogData = {
+    body: {
+        eventType: 'learning_logged' | 'error_logged' | 'feature_request_logged';
+        text: string;
+        lane?: 'hot' | 'orchestration' | 'project';
+        confidence?: number;
+        metadata?: {
+            [key: string]: unknown;
+        };
+    };
+    path?: never;
+    query?: never;
+    url: '/api/learning/log';
+};
+
+export type PostApiLearningLogErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiLearningLogResponses = {
+    /**
+     * Learning logged successfully
+     */
+    200: {
+        eventId: string;
+        ruleId?: string;
+        message: string;
+    };
+};
+
+export type PostApiLearningLogResponse = PostApiLearningLogResponses[keyof PostApiLearningLogResponses];
+
+export type GetApiRulesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        lane?: 'hot' | 'orchestration' | 'project';
+    };
+    url: '/api/rules';
+};
+
+export type GetApiRulesErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiRulesResponses = {
+    /**
+     * Rules fetched successfully
+     */
+    200: {
+        rules: Array<{
+            _id: string;
+            text: string;
+            lane: 'hot' | 'orchestration' | 'project';
+            confidence: number;
+            projectFullName?: string;
+        }>;
+    };
+};
+
+export type GetApiRulesResponse = GetApiRulesResponses[keyof GetApiRulesResponses];
 
 export type GetApiProjectsData = {
     body?: never;

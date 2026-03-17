@@ -6,6 +6,8 @@ import {
   getApiOrchestrateTasksByTaskId,
   postApiOrchestrateMessage,
   postApiOrchestrateTasksByTaskIdCancel,
+  postApiV1CmuxOrchestrationSessionsBind,
+  getApiV1CmuxOrchestrationSessionsByTaskId,
 } from "@cmux/www-openapi-client";
 import { describe, expect, it } from "vitest";
 
@@ -313,6 +315,45 @@ describe("orchestrateRouter via SDK", () => {
           headers: { "x-stack-auth": JSON.stringify(tokens) },
         });
         // Should handle cascade flag without error
+        expect([401, 404, 500]).toContain(res.response.status);
+      }
+    );
+  });
+
+  // ============================================================================
+  // Provider Session Binding Tests
+  // ============================================================================
+  describe("provider session binding", () => {
+    it("POST /v1/cmux/orchestration/sessions/bind rejects unauthenticated requests", async () => {
+      const res = await postApiV1CmuxOrchestrationSessionsBind({
+        client: testApiClient,
+        body: {
+          orchestrationId: "test_orch_id",
+          providerSessionId: "test_session_id",
+        },
+      });
+      expect(res.response.status).toBe(401);
+    });
+
+    it("GET /v1/cmux/orchestration/sessions/:taskId rejects unauthenticated requests", async () => {
+      const res = await getApiV1CmuxOrchestrationSessionsByTaskId({
+        client: testApiClient,
+        path: { taskId: "test_task_id" },
+      });
+      expect(res.response.status).toBe(401);
+    });
+
+    it(
+      "GET /v1/cmux/orchestration/sessions/:taskId returns 404 for nonexistent task",
+      { timeout: 60_000 },
+      async () => {
+        const tokens = await __TEST_INTERNAL_ONLY_GET_STACK_TOKENS();
+        const res = await getApiV1CmuxOrchestrationSessionsByTaskId({
+          client: testApiClient,
+          path: { taskId: "nonexistent_task_id_12345" },
+          headers: { "x-stack-auth": JSON.stringify(tokens) },
+        });
+        // 404 for not found, 401 if auth rejected
         expect([401, 404, 500]).toContain(res.response.status);
       }
     );

@@ -350,6 +350,14 @@ const convexSchema = defineSchema({
     // Orchestration head agent fields (Phase 1)
     isOrchestrationHead: v.optional(v.boolean()), // Whether this run is an orchestration head agent
     orchestrationId: v.optional(v.string()), // Unique orchestration ID for this head agent session
+    orchestrationHeartbeat: v.optional(v.number()), // Last heartbeat from head agent (epoch ms)
+    orchestrationStatus: v.optional(
+      v.union(
+        v.literal("running"),
+        v.literal("completed"),
+        v.literal("failed")
+      )
+    ), // Head agent's reported status
     // PTY session tracking for terminal attachment/reconnection
     ptySessionId: v.optional(v.string()), // cmux-pty session ID or tmux session name
     ptyBackend: v.optional(v.union(v.literal("cmux-pty"), v.literal("tmux"))), // Which backend manages the terminal
@@ -684,6 +692,8 @@ const convexSchema = defineSchema({
         token: v.object({ start: v.string(), end: v.string() }), // Token highlight gradient colors
       })
     ),
+    // Shell wrapper settings for task sandboxes
+    enableShellWrappers: v.optional(v.boolean()), // When true, inject gh/git wrappers to block dangerous commands (default: false)
     createdAt: v.number(),
     updatedAt: v.number(),
     userId: v.string(),

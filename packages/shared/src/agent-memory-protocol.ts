@@ -216,6 +216,82 @@ export function getBehaviorIndexSeedContent(): string {
   return JSON.stringify(index, null, 2);
 }
 
+// Orchestration learning file paths
+export const MEMORY_BEHAVIOR_LEARNINGS_PATH = `${MEMORY_BEHAVIOR_DIR}/LEARNINGS.jsonl`;
+export const MEMORY_BEHAVIOR_ERRORS_PATH = `${MEMORY_BEHAVIOR_DIR}/ERRORS.jsonl`;
+export const MEMORY_BEHAVIOR_FEATURE_REQUESTS_PATH = `${MEMORY_BEHAVIOR_DIR}/FEATURE_REQUESTS.jsonl`;
+export const MEMORY_BEHAVIOR_SKILL_CANDIDATES_PATH = `${MEMORY_BEHAVIOR_DIR}/skill-candidates.json`;
+
+/**
+ * Seed content for behavior/LEARNINGS.jsonl (orchestration learnings log)
+ */
+export function getBehaviorLearningsSeedContent(): string {
+  // Empty file - learnings are appended as JSONL
+  return "";
+}
+
+/**
+ * Seed content for behavior/ERRORS.jsonl (orchestration errors log)
+ */
+export function getBehaviorErrorsSeedContent(): string {
+  // Empty file - errors are appended as JSONL
+  return "";
+}
+
+/**
+ * Seed content for behavior/FEATURE_REQUESTS.jsonl (feature requests log)
+ */
+export function getBehaviorFeatureRequestsSeedContent(): string {
+  // Empty file - feature requests are appended as JSONL
+  return "";
+}
+
+/**
+ * Seed content for behavior/skill-candidates.json
+ */
+export function getBehaviorSkillCandidatesSeedContent(): string {
+  return JSON.stringify({
+    version: 1,
+    candidates: [],
+    lastUpdated: new Date().toISOString(),
+  }, null, 2);
+}
+
+/**
+ * Extract active rules from HOT.md content for injection into agent instructions.
+ * Parses the ## Rules section and returns formatted rules.
+ */
+export function extractBehaviorRulesSection(hotMdContent: string): string {
+  if (!hotMdContent || hotMdContent.trim().length === 0) {
+    return "";
+  }
+
+  // Find the ## Rules section
+  const rulesMatch = hotMdContent.match(/## Rules\s*([\s\S]*?)(?:---|\n#|$)/i);
+  if (!rulesMatch || !rulesMatch[1]) {
+    return "";
+  }
+
+  // Extract rules (lines starting with -)
+  const rulesSection = rulesMatch[1];
+  const rules = rulesSection
+    .split("\n")
+    .filter((line) => line.trim().startsWith("-"))
+    .map((line) => line.trim())
+    .filter((line) => !line.includes("<!--")); // Skip template comments
+
+  if (rules.length === 0) {
+    return "";
+  }
+
+  return `## Active Behavior Rules
+
+The following rules were learned from previous sessions. Follow them unless explicitly overridden:
+
+${rules.join("\n")}
+`;
+}
+
 /**
  * Generate unique behavior rule ID
  */
@@ -629,6 +705,23 @@ Each line is a JSON object:
 - Archive rules that haven't been used in 30+ days
 - Don't mix facts (knowledge) with preferences (behavior)
 - When in doubt, log to corrections.jsonl first before creating a rule
+
+### Orchestration Learning (Team-Shared)
+
+When you discover orchestration insights, errors, or missing capabilities, use the MCP tools to share them with your team:
+
+| Tool | When to Use |
+|------|-------------|
+| \`log_learning(type="learning", text="...")\` | Discovered a better orchestration pattern |
+| \`log_learning(type="error", text="...")\` | Found an error pattern to avoid |
+| \`log_learning(type="feature_request", text="...")\` | Missing capability that would help |
+
+**Examples:**
+- Learning: "Always run bun check before spawning review agents to catch type errors early"
+- Error: "Spawning 5+ parallel agents on the same file causes merge conflicts"
+- Feature request: "Need a way to pause sub-agents when CI fails"
+
+Logged items are reviewed by team leads and may be promoted to active orchestration rules that are automatically injected into future agent spawns.
 `;
 }
 
@@ -2450,6 +2543,27 @@ export function getMemorySeedFiles(
     {
       destinationPath: `${MEMORY_BEHAVIOR_ARCHIVE_DIR}/.keep`,
       contentBase64: Buffer.from("").toString("base64"),
+      mode: "644",
+    },
+    // Orchestration learning JSONL files
+    {
+      destinationPath: MEMORY_BEHAVIOR_LEARNINGS_PATH,
+      contentBase64: Buffer.from(getBehaviorLearningsSeedContent()).toString("base64"),
+      mode: "644",
+    },
+    {
+      destinationPath: MEMORY_BEHAVIOR_ERRORS_PATH,
+      contentBase64: Buffer.from(getBehaviorErrorsSeedContent()).toString("base64"),
+      mode: "644",
+    },
+    {
+      destinationPath: MEMORY_BEHAVIOR_FEATURE_REQUESTS_PATH,
+      contentBase64: Buffer.from(getBehaviorFeatureRequestsSeedContent()).toString("base64"),
+      mode: "644",
+    },
+    {
+      destinationPath: MEMORY_BEHAVIOR_SKILL_CANDIDATES_PATH,
+      contentBase64: Buffer.from(getBehaviorSkillCandidatesSeedContent()).toString("base64"),
       mode: "644",
     },
     // Include sync script for memory sync to Convex

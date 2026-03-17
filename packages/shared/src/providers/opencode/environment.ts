@@ -9,6 +9,7 @@ import {
   getProjectContextFile,
   getPolicyRulesInstructions,
   getOrchestrationRulesInstructions,
+  extractBehaviorRulesSection,
 } from "../../agent-memory-protocol";
 import { buildOpencodeMcpConfig } from "../../mcp-injection";
 
@@ -495,8 +496,11 @@ log "Post-start script end"
   const orchestrationRulesSection = ctx.orchestrationRules && ctx.orchestrationRules.length > 0
     ? `\n${getOrchestrationRulesInstructions(ctx.orchestrationRules)}\n`
     : "";
+  const behaviorRulesSection = ctx.previousBehavior
+    ? `\n${extractBehaviorRulesSection(ctx.previousBehavior)}\n`
+    : "";
   const opencodeAgentsContent = `# cmux Project Instructions
-${policyRulesSection}${orchestrationRulesSection}
+${policyRulesSection}${orchestrationRulesSection}${behaviorRulesSection}
 ${getMemoryProtocolInstructions()}
 `;
   files.push({

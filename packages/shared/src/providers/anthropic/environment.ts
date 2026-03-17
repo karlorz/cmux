@@ -14,6 +14,7 @@ import {
   getCrossToolSymlinkCommands,
   getPolicyRulesInstructions,
   getOrchestrationRulesInstructions,
+  extractBehaviorRulesSection,
 } from "../../agent-memory-protocol";
 import { buildMergedClaudeConfig } from "../../mcp-preview";
 
@@ -495,8 +496,13 @@ echo ${apiKeyToOutput}`;
   const orchestrationRulesSection = ctx.orchestrationRules && ctx.orchestrationRules.length > 0
     ? `\n${getOrchestrationRulesInstructions(ctx.orchestrationRules)}\n`
     : "";
+  // Extract and inject behavior rules from previous session's HOT.md
+  // This makes behavior rules "always-loaded" without requiring agent to read the file
+  const behaviorRulesSection = ctx.previousBehavior
+    ? `\n${extractBehaviorRulesSection(ctx.previousBehavior)}\n`
+    : "";
   const claudeMdContent = `# cmux Agent Instructions
-${policyRulesSection}${orchestrationRulesSection}
+${policyRulesSection}${orchestrationRulesSection}${behaviorRulesSection}
 ${getMemoryProtocolInstructions()}
 `;
   files.push({

@@ -10,6 +10,7 @@ import {
   getCrossToolSymlinkCommands,
   getPolicyRulesInstructions,
   getOrchestrationRulesInstructions,
+  extractBehaviorRulesSection,
 } from "../../agent-memory-protocol";
 import { buildMergedCodexConfigToml } from "../../mcp-preview";
 export { stripFilteredConfigKeys } from "../../mcp-preview";
@@ -203,7 +204,9 @@ exit 1
     mode: "755",
   });
 
-  if (hasTaskRunJwt) {
+  // Block dangerous commands in task sandboxes (when enabled via settings)
+  // Disabled by default - use permission deny rules or policy rules instead
+  if (hasTaskRunJwt && ctx.enableShellWrappers) {
     files.push(...getTaskSandboxWrapperFiles(Buffer));
   }
 
@@ -419,11 +422,15 @@ log "Autopilot completed after \$ITER turns"
   const orchestrationRulesSection = ctx.orchestrationRules && ctx.orchestrationRules.length > 0
     ? getOrchestrationRulesInstructions(ctx.orchestrationRules) + "\n\n"
     : "";
+  const behaviorRulesSection = ctx.previousBehavior
+    ? extractBehaviorRulesSection(ctx.previousBehavior) + "\n\n"
+    : "";
   const fullInstructions =
     instructionsContent +
     (instructionsContent ? "\n\n" : "") +
     policyRulesSection +
     orchestrationRulesSection +
+    behaviorRulesSection +
     getMemoryProtocolInstructions();
   files.push({
     destinationPath: "$HOME/.codex/instructions.md",

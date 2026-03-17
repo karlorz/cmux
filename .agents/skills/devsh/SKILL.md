@@ -84,6 +84,7 @@ devsh start .                 # Auto-selects pve-lxc when PVE env vars are set
 ### Task Management
 Tasks are the same as in the web app dashboard. CLI and web sync through Convex.
 
+**Core Commands:**
 - `devsh task list` - List active tasks
 - `devsh task list --archived` - List archived tasks
 - `devsh task create --repo owner/repo --agent claude-code "prompt"` - Create task
@@ -91,6 +92,17 @@ Tasks are the same as in the web app dashboard. CLI and web sync through Convex.
 - `devsh task show <task-id>` - Get task details and runs
 - `devsh task stop <task-id>` - Stop/archive task
 - `devsh task memory <task-run-id>` - View agent memory for a task run
+
+**Additional Task Commands:**
+- `devsh task attach <task-run-id>` - Attach to a running task's PTY stream
+- `devsh task autopilot <task-id>` - Enable/disable autopilot mode for task
+- `devsh task pin <task-id>` - Pin task to dashboard
+- `devsh task unpin <task-id>` - Unpin task from dashboard
+- `devsh task resume <task-run-id>` - Resume a paused or failed task run with session context
+- `devsh task retry <task-run-id>` - Retry a failed task run
+- `devsh task runs <task-id>` - List all runs for a task
+- `devsh task unarchive <task-id>` - Restore an archived task
+- `devsh task status <task-id>` - Show task status with run details
 
 Notes:
 - `devsh task create` uses a positional prompt argument. `--prompt` is not a valid flag.
@@ -144,6 +156,16 @@ devsh task memory <task-id> --json       # JSON output
 Accepts either task ID (`p17...`) or task run ID (`ns7...`).
 Memory types: `knowledge`, `daily`, `tasks`, `mailbox`
 
+### Configuration and Discovery
+- `devsh config show` - Show current configuration
+- `devsh models list` - List available agent models
+- `devsh models list --json` - List models as JSON
+- `devsh providers list` - List available sandbox providers
+
+### PTY (Pseudo-Terminal)
+- `devsh pty <task-run-id>` - Connect to a task run's PTY
+- `devsh pty-list` - List active PTY connections
+
 ### Team Management
 - `devsh team list` - List your teams
 - `devsh team switch <team-slug>` - Switch to a different team
@@ -165,11 +187,71 @@ gh project list --owner <org> --format json | jq '.projects[].id'
 devsh project import ./plan.md --project-id PVT_xxx --installation-id 12345
 ```
 
+### Orchestration (Multi-Agent)
+Head agent orchestration commands for spawning and coordinating sub-agents.
+
+| Command | Description |
+|---------|-------------|
+| `devsh orchestrate spawn --agent <agent> "prompt"` | Spawn a sub-agent task |
+| `devsh orchestrate status <task-id>` | Get sub-agent status |
+| `devsh orchestrate list` | List all orchestration tasks |
+| `devsh orchestrate list --status running` | Filter by status |
+| `devsh orchestrate wait <task-id>` | Wait for sub-agent completion |
+| `devsh orchestrate wait <task-id> --timeout 300` | Wait with timeout (seconds) |
+| `devsh orchestrate cancel <task-id>` | Cancel a running sub-agent |
+| `devsh orchestrate cancel <task-id> --cascade` | Cancel with dependent tasks |
+| `devsh orchestrate resume <task-id>` | Resume a paused orchestration |
+| `devsh orchestrate migrate <plan-file>` | Migrate local PLAN.json to sandbox |
+| `devsh orchestrate message <task-id> "message"` | Send message to sub-agent |
+| `devsh orchestrate debug <task-id>` | Show debug info for orchestration |
+| `devsh orchestrate results <task-id>` | Get results from completed sub-agent |
+
+**Example: Parallel task execution**
+```bash
+# Spawn multiple sub-agents
+devsh orchestrate spawn --agent claude/sonnet-4.5 "Implement auth middleware"
+devsh orchestrate spawn --agent codex/gpt-5.1-codex-mini "Write tests for auth" --depends-on <task-id>
+
+# Monitor progress
+devsh orchestrate list --status running
+
+# Wait for all to complete
+devsh orchestrate wait <task-id>
+```
+
 ### Browser Automation
-- `devsh computer snapshot <id>` - Get accessibility tree
-- `devsh computer open <id> <url>` - Navigate browser
-- `devsh computer click <id> @e1` - Click element
-- `devsh computer screenshot <id>` - Take screenshot
+Full browser control via CDP (Chrome DevTools Protocol).
+
+| Command | Description |
+|---------|-------------|
+| `devsh computer snapshot <id>` | Get accessibility tree with element refs |
+| `devsh computer open <id> <url>` | Navigate browser to URL |
+| `devsh computer click <id> <selector>` | Click element (@ref or CSS) |
+| `devsh computer dblclick <id> <selector>` | Double-click element |
+| `devsh computer type <id> <text>` | Type text into focused element |
+| `devsh computer fill <id> <selector> <value>` | Clear and fill input field |
+| `devsh computer press <id> <key>` | Press keyboard key (enter, tab, escape) |
+| `devsh computer scroll <id> <direction>` | Scroll page (up, down, left, right) |
+| `devsh computer screenshot <id> [file]` | Take screenshot (file or base64) |
+| `devsh computer back <id>` | Navigate back in history |
+| `devsh computer forward <id>` | Navigate forward |
+| `devsh computer reload <id>` | Reload current page |
+| `devsh computer url <id>` | Get current page URL |
+| `devsh computer title <id>` | Get current page title |
+| `devsh computer wait <id> <selector>` | Wait for element |
+| `devsh computer hover <id> <selector>` | Hover over element |
+| `devsh computer eval <id> "<js>"` | Evaluate JavaScript in page context |
+
+**Example: Form automation**
+```bash
+devsh computer open cmux_abc "https://example.com/login"
+devsh computer snapshot cmux_abc
+devsh computer fill cmux_abc @e1 "user@example.com"
+devsh computer fill cmux_abc @e2 "password123"
+devsh computer click cmux_abc @e3
+devsh computer wait cmux_abc ".dashboard"
+devsh computer screenshot cmux_abc result.png
+```
 
 ## Building from Source
 
@@ -194,6 +276,42 @@ cp bin/devsh ~/.local/bin/
 | `PVE_VERIFY_TLS` | Set to `1` to verify PVE TLS certs (optional) |
 | `MORPH_API_KEY` | Morph Cloud API key |
 | `DEVSH_DEV=1` | Use development backend defaults |
+
+## Advanced Workflows
+
+### Task Retry with Session Resume
+When a task fails, you can resume with preserved session context:
+```bash
+# View failed run details
+devsh task show <task-id>
+
+# Resume with session context preserved
+devsh task resume <task-run-id>
+
+# Or retry without session context
+devsh task retry <task-run-id>
+```
+
+### Multi-Repo Orchestration
+Spawn agents across multiple repositories:
+```bash
+# Spawn agents in different repos
+devsh orchestrate spawn --repo karlorz/repo-a --agent claude/opus-4.5 "Fix API bug"
+devsh orchestrate spawn --repo karlorz/repo-b --agent claude/opus-4.5 "Update client"
+
+# Track progress across repos
+devsh orchestrate list
+```
+
+### Autopilot Patterns
+Enable autonomous task execution:
+```bash
+# Enable autopilot for a task
+devsh task autopilot <task-id> --enable
+
+# Create task with autopilot
+devsh task create --repo owner/repo --agent claude-code --autopilot "Fix all lint errors"
+```
 
 ## Create Symlinks for Other Agents
 

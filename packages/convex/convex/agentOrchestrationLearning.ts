@@ -1,7 +1,9 @@
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
 import { getTeamId } from "../_shared/team";
 import { authMutation, authQuery } from "./users/utils";
-import { internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 
 const laneValidator = v.union(
   v.literal("hot"),
@@ -278,6 +280,71 @@ export const logLearningEvent = authMutation({
 });
 
 /**
+ * Log an orchestration event from an agent (via MCP tool or HTTP API).
+ * Creates a candidate rule and logs the event.
+ */
+export const logEvent = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    eventType: eventTypeValidator,
+    payload: v.object({
+      text: v.string(),
+      lane: v.optional(laneValidator),
+      confidence: v.optional(v.number()),
+      metadata: v.optional(v.any()),
+      sourceTaskRunId: v.optional(v.string()),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+    const userId = ctx.identity.subject;
+    const now = Date.now();
+
+    const { text, lane, confidence, metadata, sourceTaskRunId } = args.payload;
+
+    // For learnings and errors, create a candidate rule
+    let ruleId: string | undefined;
+    if (
+      args.eventType === "learning_logged" ||
+      args.eventType === "error_logged"
+    ) {
+      ruleId = await ctx.db.insert("agentOrchestrationRules", {
+        teamId,
+        userId,
+        lane: lane ?? "orchestration",
+        status: "candidate",
+        text,
+        sourceType:
+          args.eventType === "learning_logged"
+            ? "run_review"
+            : "user_correction",
+        sourceTaskRunId: sourceTaskRunId
+          ? (sourceTaskRunId as Id<"taskRuns">)
+          : undefined,
+        confidence: confidence ?? (args.eventType === "error_logged" ? 0.8 : 0.5),
+        timesSeen: 1,
+        timesUsed: 0,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    // Log the event
+    const eventId = await ctx.db.insert("agentOrchestrationLearningEvents", {
+      teamId,
+      userId,
+      ruleId: ruleId ? (ruleId as Id<"agentOrchestrationRules">) : undefined,
+      eventType: args.eventType,
+      text,
+      metadataJson: metadata ? JSON.stringify(metadata) : undefined,
+      createdAt: now,
+    });
+
+    return { eventId, ruleId };
+  },
+});
+
+/**
  * Promote an orchestration rule to active status.
  */
 export const promoteRule = authMutation({
@@ -475,5 +542,140 @@ export const getActiveRulesInternal = internalQuery({
         q.eq("teamId", args.teamId).eq("status", "active")
       )
       .take(100);
+  },
+});
+
+/**
+ * Analyze active rules to detect patterns and create skill candidates.
+ * Looks for rules with similar text/intent that appear multiple times.
+ *
+ * Called by a scheduled job or after rules reach a threshold count.
+ */
+export const detectPatterns = internalMutation({
+  args: {
+    teamId: v.string(),
+    minOccurrences: v.optional(v.number()), // Default: 3
+  },
+  handler: async (ctx, args) => {
+    const minOccurrences = args.minOccurrences ?? 3;
+    const now = Date.now();
+
+    // Get all active rules for the team
+    const activeRules = await ctx.db
+      .query("agentOrchestrationRules")
+      .withIndex("by_team_status", (q) =>
+        q.eq("teamId", args.teamId).eq("status", "active")
+      )
+      .take(500);
+
+    if (activeRules.length < minOccurrences) {
+      return { patternsFound: 0, candidatesCreated: 0 };
+    }
+
+    // Simple pattern detection: group rules by normalized text
+    // (lowercase, remove extra whitespace, remove common stop words)
+    const normalizeText = (text: string): string => {
+      return text
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .replace(/\b(the|a|an|is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|could|should|may|might|must|shall|can|need|dare|ought|used|to|of|in|for|on|with|at|by|from|as|into|through|during|before|after|above|below|between|under|again|further|then|once|here|there|when|where|why|how|all|each|every|both|few|more|most|other|some|such|no|nor|not|only|own|same|so|than|too|very|just|also|now|always|never)\b/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    };
+
+    const generatePatternKey = (text: string): string => {
+      const normalized = normalizeText(text);
+      // Simple hash: take first 50 chars and create a key
+      return `pattern_${normalized.slice(0, 50).replace(/\s/g, "_")}`;
+    };
+
+    // Group rules by pattern key
+    const patternGroups = new Map<string, typeof activeRules>();
+    for (const rule of activeRules) {
+      const key = generatePatternKey(rule.text);
+      const group = patternGroups.get(key) ?? [];
+      group.push(rule);
+      patternGroups.set(key, group);
+    }
+
+    // Create skill candidates for patterns that appear >= minOccurrences times
+    let candidatesCreated = 0;
+    for (const [patternKey, rules] of patternGroups.entries()) {
+      if (rules.length >= minOccurrences) {
+        // Check if candidate already exists
+        const existing = await ctx.db
+          .query("agentOrchestrationSkillCandidates")
+          .withIndex("by_team_pattern", (q) =>
+            q.eq("teamId", args.teamId).eq("patternKey", patternKey)
+          )
+          .first();
+
+        const ruleIds = rules.map((r) => r._id);
+        const title = `Repeated Pattern: ${rules[0].text.slice(0, 50)}...`;
+        const summary = `This pattern appeared ${rules.length} times across orchestration rules:\n\n${rules.map((r) => `- ${r.text}`).join("\n")}`;
+
+        if (existing) {
+          // Update existing candidate
+          await ctx.db.patch(existing._id, {
+            sourceRuleIds: ruleIds,
+            recurrenceCount: rules.length,
+            summary,
+            updatedAt: now,
+          });
+        } else {
+          // Create new candidate
+          await ctx.db.insert("agentOrchestrationSkillCandidates", {
+            teamId: args.teamId,
+            patternKey,
+            title,
+            summary,
+            sourceRuleIds: ruleIds,
+            recurrenceCount: rules.length,
+            status: "candidate",
+            createdAt: now,
+            updatedAt: now,
+          });
+          candidatesCreated++;
+        }
+      }
+    }
+
+    return {
+      patternsFound: patternGroups.size,
+      candidatesCreated,
+      rulesAnalyzed: activeRules.length,
+    };
+  },
+});
+
+/**
+ * Run pattern detection across all teams.
+ * Called by cron job to periodically extract skill candidates.
+ */
+export const detectPatternsAllTeams = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    // Get distinct team IDs from active rules
+    const rules = await ctx.db
+      .query("agentOrchestrationRules")
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .take(1000);
+
+    const teamIds = [...new Set(rules.map((r) => r.teamId))];
+
+    let totalCandidates = 0;
+    for (const teamId of teamIds) {
+      const result = await ctx.runMutation(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (internal as any).agentOrchestrationLearning.detectPatterns,
+        { teamId, minOccurrences: 3 }
+      );
+      totalCandidates += result.candidatesCreated;
+    }
+
+    return {
+      teamsProcessed: teamIds.length,
+      totalCandidatesCreated: totalCandidates,
+    };
   },
 });

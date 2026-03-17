@@ -553,6 +553,33 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         },
       },
       {
+        name: "push_orchestration_updates",
+        description: "Push local orchestration state to the server. Reports task completion/failure and head agent status. Used for heartbeats and signaling orchestration completion. Requires CMUX_TASK_RUN_JWT environment variable.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            orchestrationId: {
+              type: "string",
+              description: "The orchestration ID to push updates for. Uses CMUX_ORCHESTRATION_ID env var if not provided.",
+            },
+            headAgentStatus: {
+              type: "string",
+              enum: ["running", "completed", "failed"],
+              description: "Head agent's overall status (optional, for heartbeat/completion signal)",
+            },
+            message: {
+              type: "string",
+              description: "Optional status message from head agent",
+            },
+            taskIds: {
+              type: "array",
+              items: { type: "string" },
+              description: "Optional list of local task IDs to push (default: all completed/failed tasks)",
+            },
+          },
+        },
+      },
+      {
         name: "spawn_agent",
         description: "Spawn a sub-agent to work on a task. Requires CMUX_TASK_RUN_JWT for authentication. The sub-agent runs in a new sandbox and works on the specified prompt.",
         inputSchema: {
@@ -660,6 +687,44 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         },
       },
       {
+        name: "bind_provider_session",
+        description:
+          "Bind a provider-specific session ID to the current task. Use to enable session resume on task retry. " +
+          "Claude agents should call this with their session ID, Codex agents with their thread ID.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            providerSessionId: {
+              type: "string",
+              description: "Claude session ID or equivalent for the provider",
+            },
+            providerThreadId: {
+              type: "string",
+              description: "Codex thread ID or equivalent for thread-based providers",
+            },
+            replyChannel: {
+              type: "string",
+              enum: ["mailbox", "sse", "pty", "ui"],
+              description: "Preferred communication channel for receiving messages",
+            },
+          },
+        },
+      },
+      {
+        name: "get_provider_session",
+        description:
+          "Get the provider session binding for a task. Use to check if a session can be resumed.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            taskId: {
+              type: "string",
+              description: "The orchestration task ID to get session for (optional, uses current task)",
+            },
+          },
+        },
+      },
+      {
         name: "wait_for_events",
         description:
           "Wait for orchestration events using SSE streaming. Returns when a matching event arrives or timeout. " +
@@ -735,6 +800,58 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         inputSchema: {
           type: "object" as const,
           properties: {},
+        },
+      },
+      {
+        name: "log_learning",
+        description:
+          "Log an orchestration learning, error, or feature request to the server. " +
+          "Learnings captured here are reviewed by team leads and may be promoted to active orchestration rules. " +
+          "Requires CMUX_TASK_RUN_JWT.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            type: {
+              type: "string",
+              enum: ["learning", "error", "feature_request"],
+              description: "Type of event to log",
+            },
+            text: {
+              type: "string",
+              description: "The learning, error description, or feature request text",
+            },
+            lane: {
+              type: "string",
+              enum: ["hot", "orchestration", "project"],
+              description: "Suggested lane for the rule (default: orchestration)",
+            },
+            confidence: {
+              type: "number",
+              description: "Confidence score 0.0-1.0 (default: 0.5 for learnings, 0.8 for errors)",
+            },
+            metadata: {
+              type: "object",
+              description: "Optional metadata (e.g., error stack, related task IDs)",
+            },
+          },
+          required: ["type", "text"],
+        },
+      },
+      {
+        name: "get_active_orchestration_rules",
+        description:
+          "Fetch the currently active orchestration rules for this team. " +
+          "Returns rules that are injected into agent instruction files. " +
+          "Requires CMUX_TASK_RUN_JWT.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            lane: {
+              type: "string",
+              enum: ["hot", "orchestration", "project"],
+              description: "Filter by lane (optional)",
+            },
+          },
         },
       },
     ],
@@ -1153,6 +1270,142 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
             content: [{
               type: "text",
               text: `Error syncing orchestration updates: ${errorMsg}`,
+            }],
+          };
+        }
+      }
+
+      case "push_orchestration_updates": {
+        const { orchestrationId: argOrchId, headAgentStatus, message, taskIds } = args as {
+          orchestrationId?: string;
+          headAgentStatus?: "running" | "completed" | "failed";
+          message?: string;
+          taskIds?: string[];
+        };
+        const orchestrationId = argOrchId ?? process.env.CMUX_ORCHESTRATION_ID;
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux.sh";
+
+        if (!orchestrationId) {
+          return {
+            content: [{
+              type: "text",
+              text: "No orchestration ID provided. Pass orchestrationId parameter or set CMUX_ORCHESTRATION_ID env var.",
+            }],
+          };
+        }
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "CMUX_TASK_RUN_JWT environment variable not set. This tool requires JWT authentication.",
+            }],
+          };
+        }
+
+        try {
+          // Read local PLAN.json
+          const plan = readPlan();
+          if (!plan && !headAgentStatus) {
+            return {
+              content: [{
+                type: "text",
+                text: "No PLAN.json found and no headAgentStatus provided. Nothing to push.",
+              }],
+            };
+          }
+
+          // Build tasks to push (completed/failed tasks, or specific taskIds)
+          const tasksToPush: Array<{
+            id: string;
+            status: string;
+            result?: string;
+            errorMessage?: string;
+          }> = [];
+
+          if (plan) {
+            for (const task of plan.tasks) {
+              // If taskIds specified, only push those
+              if (taskIds && taskIds.length > 0 && !taskIds.includes(task.id)) {
+                continue;
+              }
+              // By default, push completed/failed tasks
+              if (task.status === "completed" || task.status === "failed") {
+                tasksToPush.push({
+                  id: task.id,
+                  status: task.status,
+                  result: task.result,
+                  errorMessage: task.errorMessage,
+                });
+              }
+            }
+          }
+
+          // POST to server
+          const url = `${apiBaseUrl}/api/v1/cmux/orchestration/${orchestrationId}/sync`;
+          const response = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              orchestrationId,
+              headAgentStatus,
+              message,
+              tasks: tasksToPush.length > 0 ? tasksToPush : undefined,
+            }),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            return {
+              content: [{
+                type: "text",
+                text: `Failed to push orchestration updates: ${response.status} ${errorText}`,
+              }],
+            };
+          }
+
+          const result = await response.json() as {
+            success: boolean;
+            tasksUpdated: number;
+            message?: string;
+          };
+
+          // Append push event
+          appendEvent({
+            timestamp: new Date().toISOString(),
+            event: "orchestration_pushed",
+            message: result.message ?? `Pushed ${tasksToPush.length} tasks`,
+            metadata: {
+              orchestrationId,
+              headAgentStatus,
+              tasksPushed: tasksToPush.length,
+              tasksUpdated: result.tasksUpdated,
+            },
+          });
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                orchestrationId,
+                headAgentStatus,
+                tasksPushed: tasksToPush.length,
+                tasksUpdated: result.tasksUpdated,
+                message: result.message,
+              }, null, 2),
+            }],
+          };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{
+              type: "text",
+              text: `Error pushing orchestration updates: ${errorMsg}`,
             }],
           };
         }
@@ -1684,6 +1937,165 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         }
       }
 
+      case "bind_provider_session": {
+        const { providerSessionId, providerThreadId, replyChannel } = args as {
+          providerSessionId?: string;
+          providerThreadId?: string;
+          replyChannel?: "mailbox" | "sse" | "pty" | "ui";
+        };
+
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux.sh";
+        const orchestrationId = process.env.CMUX_ORCHESTRATION_ID;
+        const taskRunId = process.env.CMUX_TASK_RUN_ID;
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "CMUX_TASK_RUN_JWT environment variable not set.",
+            }],
+          };
+        }
+
+        // orchestrationId is optional - API will use taskRunId from JWT as fallback
+        try {
+          const url = `${apiBaseUrl}/api/v1/cmux/orchestration/sessions/bind`;
+          const response = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              // Only include orchestrationId if set, otherwise API uses taskRunId from JWT
+              ...(orchestrationId && { orchestrationId }),
+              taskRunId,
+              providerSessionId,
+              providerThreadId,
+              replyChannel,
+              agentName,
+            }),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            return {
+              content: [{
+                type: "text",
+                text: `Failed to bind session: ${response.status} ${errorText}`,
+              }],
+            };
+          }
+
+          const result = await response.json();
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                message: "Provider session bound successfully",
+                bindingId: result.bindingId,
+                updated: result.updated,
+              }, null, 2),
+            }],
+          };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{
+              type: "text",
+              text: `Error binding provider session: ${errorMsg}`,
+            }],
+          };
+        }
+      }
+
+      case "get_provider_session": {
+        const { taskId: providedTaskId } = args as { taskId?: string };
+
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux.sh";
+        const taskId = providedTaskId ?? process.env.CMUX_TASK_RUN_ID;
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "CMUX_TASK_RUN_JWT environment variable not set.",
+            }],
+          };
+        }
+
+        if (!taskId) {
+          return {
+            content: [{
+              type: "text",
+              text: "No task ID provided and CMUX_TASK_RUN_ID not set.",
+            }],
+          };
+        }
+
+        try {
+          const url = `${apiBaseUrl}/api/v1/cmux/orchestration/sessions/${taskId}`;
+          const response = await fetch(url, {
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${jwt}`,
+            },
+          });
+
+          if (!response.ok) {
+            if (response.status === 404) {
+              return {
+                content: [{
+                  type: "text",
+                  text: JSON.stringify({
+                    found: false,
+                    message: "No provider session binding found for this task",
+                  }, null, 2),
+                }],
+              };
+            }
+            const errorText = await response.text();
+            return {
+              content: [{
+                type: "text",
+                text: `Failed to get session: ${response.status} ${errorText}`,
+              }],
+            };
+          }
+
+          const session = await response.json();
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                found: true,
+                taskId: session.taskId,
+                orchestrationId: session.orchestrationId,
+                provider: session.provider,
+                agentName: session.agentName,
+                mode: session.mode,
+                providerSessionId: session.providerSessionId,
+                providerThreadId: session.providerThreadId,
+                replyChannel: session.replyChannel,
+                status: session.status,
+                lastActiveAt: session.lastActiveAt,
+              }, null, 2),
+            }],
+          };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{
+              type: "text",
+              text: `Error getting provider session: ${errorMsg}`,
+            }],
+          };
+        }
+      }
+
       case "wait_for_events": {
         const { orchestrationId, eventTypes = [], timeout = 30000 } = args as {
           orchestrationId: string;
@@ -2176,6 +2588,159 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
             content: [{
               type: "text",
               text: `Error refreshing policy rules: ${errorMsg}`,
+            }],
+          };
+        }
+      }
+
+      case "log_learning": {
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        const apiBase = process.env.CMUX_API_BASE_URL ?? "https://cmux.sh";
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "Error: CMUX_TASK_RUN_JWT not set. This tool requires authentication.",
+            }],
+          };
+        }
+
+        const { type, text, lane, confidence, metadata } = args as {
+          type: "learning" | "error" | "feature_request";
+          text: string;
+          lane?: "hot" | "orchestration" | "project";
+          confidence?: number;
+          metadata?: Record<string, unknown>;
+        };
+
+        try {
+          const eventType = type === "learning" ? "learning_logged"
+            : type === "error" ? "error_logged"
+            : "feature_request_logged";
+
+          const response = await fetch(`${apiBase}/api/v1/cmux/orchestration/learning/log`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${jwt}`,
+            },
+            body: JSON.stringify({
+              eventType,
+              text,
+              lane: lane ?? "orchestration",
+              confidence: confidence ?? (type === "error" ? 0.8 : 0.5),
+              metadata,
+            }),
+          });
+
+          if (!response.ok) {
+            const errText = await response.text();
+            return {
+              content: [{
+                type: "text",
+                text: `Error logging ${type}: ${response.status} ${errText}`,
+              }],
+            };
+          }
+
+          const result = await response.json();
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                logged: true,
+                eventType,
+                eventId: result.eventId,
+                ruleId: result.ruleId,
+                message: `Successfully logged ${type}. It will be reviewed for promotion to active rules.`,
+              }, null, 2),
+            }],
+          };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{
+              type: "text",
+              text: `Error logging ${type}: ${errorMsg}`,
+            }],
+          };
+        }
+      }
+
+      case "get_active_orchestration_rules": {
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        const apiBase = process.env.CMUX_API_BASE_URL ?? "https://cmux.sh";
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "Error: CMUX_TASK_RUN_JWT not set. This tool requires authentication.",
+            }],
+          };
+        }
+
+        const { lane } = args as { lane?: "hot" | "orchestration" | "project" };
+
+        try {
+          const url = new URL(`${apiBase}/api/v1/cmux/orchestration/rules`);
+          if (lane) {
+            url.searchParams.set("lane", lane);
+          }
+
+          const response = await fetch(url.toString(), {
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${jwt}`,
+            },
+          });
+
+          if (!response.ok) {
+            const errText = await response.text();
+            return {
+              content: [{
+                type: "text",
+                text: `Error fetching orchestration rules: ${response.status} ${errText}`,
+              }],
+            };
+          }
+
+          const result = await response.json();
+          const rules = result.rules ?? [];
+
+          // Group by lane for display
+          const byLane = new Map<string, Array<{ text: string; confidence: number }>>();
+          for (const rule of rules) {
+            const laneRules = byLane.get(rule.lane) ?? [];
+            laneRules.push({ text: rule.text, confidence: rule.confidence });
+            byLane.set(rule.lane, laneRules);
+          }
+
+          let output = `# Active Orchestration Rules (${rules.length} total)\n\n`;
+          for (const [ruleLane, laneRules] of byLane.entries()) {
+            const laneLabel = ruleLane === "hot" ? "Hot (High Priority)"
+              : ruleLane === "orchestration" ? "Orchestration"
+              : "Project-Specific";
+            output += `## ${laneLabel}\n\n`;
+            for (const rule of laneRules.sort((a, b) => b.confidence - a.confidence)) {
+              output += `- ${rule.text}\n`;
+            }
+            output += "\n";
+          }
+
+          return {
+            content: [{
+              type: "text",
+              text: output,
+            }],
+          };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{
+              type: "text",
+              text: `Error fetching orchestration rules: ${errorMsg}`,
             }],
           };
         }
