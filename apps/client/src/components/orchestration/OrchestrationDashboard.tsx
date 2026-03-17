@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Users, Plus, List, GitBranch, Radio } from "lucide-react";
+import { Users, Plus, List, GitBranch, Radio, Download } from "lucide-react";
 import { OrchestrationSummaryCards } from "./OrchestrationSummaryCards";
 import { OrchestrationTaskList } from "./OrchestrationTaskList";
 import { OrchestrationSpawnDialog } from "./OrchestrationSpawnDialog";
@@ -65,6 +65,55 @@ export function OrchestrationDashboard({
   const [spawnDialogOpen, setSpawnDialogOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "graph">("list");
   const [showEventStream, setShowEventStream] = useState(!!orchestrationId);
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportBundle = useCallback(async () => {
+    if (!orchestrationId || exporting) return;
+    setExporting(true);
+    try {
+      const response = await fetch(
+        `/api/orchestrate/results/${orchestrationId}?teamSlugOrId=${teamSlugOrId}`,
+        { credentials: "include" }
+      );
+      if (!response.ok) {
+        throw new Error(`Export failed: ${response.status}`);
+      }
+      const results = await response.json();
+
+      // Build export bundle matching CLI format
+      const bundle = {
+        exportedAt: new Date().toISOString(),
+        version: "1.0.0",
+        orchestration: {
+          id: orchestrationId,
+          status: results.status,
+        },
+        tasks: results.results,
+        summary: {
+          totalTasks: results.totalTasks,
+          completedTasks: results.completedTasks,
+          failedTasks: results.results.filter((t: { status: string }) => t.status === "failed").length,
+          runningTasks: results.results.filter((t: { status: string }) => t.status === "running" || t.status === "assigned").length,
+          pendingTasks: results.results.filter((t: { status: string }) => t.status === "pending").length,
+        },
+      };
+
+      // Download as JSON file
+      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `orchestration-${orchestrationId.slice(0, 8)}-bundle.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to export bundle:", error);
+    } finally {
+      setExporting(false);
+    }
+  }, [orchestrationId, teamSlugOrId, exporting]);
 
   const handleStatusFilterChange = (status: string) => {
     void navigate({
@@ -91,6 +140,17 @@ export function OrchestrationDashboard({
         </div>
 
         <div className="flex items-center gap-2">
+          {orchestrationId && (
+            <button
+              type="button"
+              onClick={() => void handleExportBundle()}
+              disabled={exporting}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+            >
+              <Download className="size-4" />
+              {exporting ? "Exporting..." : "Export Bundle"}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setSpawnDialogOpen(true)}
