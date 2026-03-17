@@ -30,7 +30,7 @@ import {
 import { validateBranchName } from "./utils/gitUrl";
 import { getConvex } from "./utils/convexClient";
 import { serverLogger } from "./utils/fileLogger";
-import { extractTaskRunJwt } from "./utils/jwt-helper";
+import { extractTaskRunJwt, verifyTaskRunJwt } from "./utils/jwt-helper";
 import {
   aggregateByVendor,
   checkAllProvidersStatusWebMode,
@@ -810,6 +810,15 @@ async function handleOrchestrationSpawn(
   try {
     // JWT-based auth path (for sub-agent spawning)
     if (taskRunJwt) {
+      // Extract teamId from JWT - needed for spawnAgent calls
+      const jwtSecret = env.CMUX_TASK_RUN_JWT_SECRET;
+      if (!jwtSecret) {
+        jsonResponse(res, 500, { error: "Server misconfigured: CMUX_TASK_RUN_JWT_SECRET not set" });
+        return;
+      }
+      const jwtPayload = await verifyTaskRunJwt(taskRunJwt, jwtSecret);
+      const jwtTeamId = jwtPayload.teamId;
+
       // Find the agent config
       const agentConfig = AGENT_CONFIGS.find((a) => a.name === agent);
       if (!agentConfig) {
@@ -912,7 +921,7 @@ async function handleOrchestrationSpawn(
               isCloudWorkspace,
               isOrchestrationHead,
             },
-            teamSlugOrId,
+            jwtTeamId,  // Use teamId extracted from JWT
             newJwt
           );
 
