@@ -822,14 +822,15 @@ type Environment struct {
 
 // CreateTaskOptions represents options for creating a task
 type CreateTaskOptions struct {
-	Prompt           string
-	Repository       string
-	BaseBranch       string
-	Agents           []string
-	Images           []TaskImage
-	PRTitle          string
-	EnvironmentID    string
-	IsCloudWorkspace bool
+	Prompt              string
+	Repository          string
+	BaseBranch          string
+	Agents              []string
+	Images              []TaskImage
+	PRTitle             string
+	EnvironmentID       string
+	IsCloudWorkspace    bool
+	IsOrchestrationHead bool // Whether this is a head agent for orchestration
 	// Orchestration dependency tracking
 	DependsOn []string
 	Priority  int
@@ -987,6 +988,9 @@ func (c *Client) CreateTask(ctx context.Context, opts CreateTaskOptions) (*Creat
 	}
 	if opts.IsCloudWorkspace {
 		body["isCloudWorkspace"] = true
+	}
+	if opts.IsOrchestrationHead {
+		body["isOrchestrationHead"] = true
 	}
 	if opts.GithubProjectId != "" {
 		body["githubProjectId"] = opts.GithubProjectId
