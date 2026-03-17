@@ -99,10 +99,20 @@ export async function getClaudeEnvironment(
     }
 
     // Build base config from host + MCP servers
+    // Pass orchestration env vars for MCP server passthrough (spawn_agent needs JWT)
     const baseConfig = buildMergedClaudeConfig({
       hostConfigText,
       mcpServerConfigs: ctx.mcpServerConfigs ?? [],
       agentName: ctx.agentName,
+      orchestrationEnv: ctx.isOrchestrationHead
+        ? {
+            CMUX_TASK_RUN_JWT: ctx.taskRunJwt,
+            CMUX_SERVER_URL: ctx.orchestrationEnv?.CMUX_SERVER_URL,
+            CMUX_API_BASE_URL: ctx.orchestrationEnv?.CMUX_API_BASE_URL,
+            CMUX_IS_ORCHESTRATION_HEAD: "1",
+            CMUX_ORCHESTRATION_ID: ctx.orchestrationOptions?.orchestrationId,
+          }
+        : undefined,
     });
 
     // Deep merge user config (user config takes precedence)

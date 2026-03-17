@@ -115,4 +115,15 @@ export type EnvironmentContext = {
    * @default false
    */
   enableShellWrappers?: boolean;
+  /**
+   * Orchestration environment variables for MCP server passthrough.
+   * These are passed to the devsh-memory MCP server to enable spawn_agent
+   * and other orchestration tools to authenticate.
+   */
+  orchestrationEnv?: {
+    CMUX_SERVER_URL?: string;
+    CMUX_API_BASE_URL?: string;
+    CMUX_IS_ORCHESTRATION_HEAD?: string;
+    CMUX_ORCHESTRATION_ID?: string;
+  };
 };
