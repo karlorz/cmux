@@ -243,6 +243,7 @@ Examples:
 			PRTitle:                     taskCreatePRTitle,
 			EnvironmentID:               environmentID,
 			IsCloudWorkspace:            taskCreateCloudWorkspace,
+			IsOrchestrationHead:         taskCreateCloudWorkspace, // Cloud workspaces are orchestration heads
 			DependsOn:                   taskCreateDependsOn,
 			Priority:                    taskCreatePriority,
 			GithubProjectId:             taskCreateGHProjectId,
