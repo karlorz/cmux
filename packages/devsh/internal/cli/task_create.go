@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -187,7 +188,7 @@ Examples:
 				if strings.TrimSpace(imagePath) == "" {
 					continue
 				}
-				fileName := filepath.Base(imagePath)
+				fileName := sanitizeFileName(filepath.Base(imagePath))
 				storageID, err := client.UploadFileToStorage(ctx, imagePath)
 				if err != nil {
 					return fmt.Errorf("failed to upload image %q: %w", imagePath, err)
@@ -558,6 +559,32 @@ type agentInfo struct {
 	VSCodeURL string `json:"vscodeUrl,omitempty"`
 	Status    string `json:"status"`
 	Error     string `json:"error,omitempty"`
+}
+
+// sanitizeFileName strips special characters and limits the length of a filename
+// for safe upload. The backend has its own sanitization, but validating early
+// avoids surprising upload failures.
+func sanitizeFileName(name string) string {
+	// Keep only alphanumerics, hyphens, underscores, dots
+	re := regexp.MustCompile(`[^a-zA-Z0-9._-]`)
+	clean := re.ReplaceAllString(name, "_")
+
+	// Collapse multiple underscores
+	clean = regexp.MustCompile(`_+`).ReplaceAllString(clean, "_")
+
+	// Limit to 128 characters
+	if len(clean) > 128 {
+		// Preserve the extension
+		ext := filepath.Ext(clean)
+		base := clean[:128-len(ext)]
+		clean = base + ext
+	}
+
+	if clean == "" || clean == "." || clean == ".." {
+		clean = "image"
+	}
+
+	return clean
 }
 
 func init() {

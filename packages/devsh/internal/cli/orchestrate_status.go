@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/karlorz/devsh/internal/auth"
@@ -73,68 +72,35 @@ Examples:
 // watchOrchestrationStatus continuously polls for status changes until terminal state
 func watchOrchestrationStatus(client *vm.Client, orchTaskID string) error {
 	interval := time.Duration(orchestrateStatusInterval) * time.Second
-	if interval < time.Second {
-		interval = 3 * time.Second // Default to 3 seconds
-	}
+	config := WatchPollConfig(interval, fmt.Sprintf("Watching orchestration task: %s", orchTaskID))
 
-	var lastStatus string
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	// Check immediately first
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	result, err := client.OrchestrationStatus(ctx, orchTaskID)
-	cancel()
-	if err != nil {
-		return fmt.Errorf("failed to get orchestration status: %w", err)
-	}
-
-	// Clear screen and print initial status
-	fmt.Print("\033[H\033[2J") // ANSI escape codes to clear screen
-	fmt.Printf("[%s] Watching orchestration task: %s\n", time.Now().Format("15:04:05"), orchTaskID)
-	fmt.Println("Press Ctrl+C to stop watching")
-	fmt.Println()
-	printOrchestrationStatus(result)
-	lastStatus = result.Task.Status
-
-	// Check if already in terminal state
-	if isTerminalStatus(lastStatus) {
-		fmt.Printf("\nTask reached terminal state: %s\n", lastStatus)
-		return nil
-	}
-
-	for {
-		select {
-		case <-ticker.C:
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			result, err := client.OrchestrationStatus(ctx, orchTaskID)
-			cancel()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "[%s] Error polling status: %v\n", time.Now().Format("15:04:05"), err)
-				continue
+	return PollUntil(
+		context.Background(),
+		config,
+		// fetch
+		func(ctx context.Context) (interface{}, error) {
+			fetchCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			return client.OrchestrationStatus(fetchCtx, orchTaskID)
+		},
+		// shouldStop
+		func(result interface{}, lastValue string) (bool, string, error) {
+			r := result.(*vm.OrchestrationStatusResult)
+			status := r.Task.Status
+			if isTerminalStatus(status) {
+				return true, status, nil
 			}
-
-			// Only update display if status changed
-			if result.Task.Status != lastStatus {
-				fmt.Print("\033[H\033[2J") // Clear screen
-				fmt.Printf("[%s] Watching orchestration task: %s (status changed: %s -> %s)\n",
-					time.Now().Format("15:04:05"), orchTaskID, lastStatus, result.Task.Status)
-				fmt.Println("Press Ctrl+C to stop watching")
-				fmt.Println()
-				printOrchestrationStatus(result)
-				lastStatus = result.Task.Status
-
-				// Exit if terminal state reached
-				if isTerminalStatus(lastStatus) {
-					fmt.Printf("\nTask reached terminal state: %s\n", lastStatus)
-					return nil
-				}
-			} else {
-				// Update timestamp without clearing screen
-				fmt.Printf("\r[%s] Status: %s (polling...)", time.Now().Format("15:04:05"), lastStatus)
+			return false, status, nil
+		},
+		// display
+		func(result interface{}, isInitial bool) {
+			r := result.(*vm.OrchestrationStatusResult)
+			printOrchestrationStatus(r)
+			if isTerminalStatus(r.Task.Status) {
+				fmt.Printf("\nTask reached terminal state: %s\n", r.Task.Status)
 			}
-		}
-	}
+		},
+	)
 }
 
 // isTerminalStatus checks if the status is a terminal state

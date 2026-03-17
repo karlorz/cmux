@@ -50,49 +50,62 @@ Examples:
 
 		fmt.Printf("Waiting for orchestration task %s...\n", orchTaskID)
 
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
+		config := DefaultPollConfig(5 * time.Second)
+		var finalResult *vm.OrchestrationStatusResult
 
-		var lastStatus string
-		for {
-			select {
-			case <-ctx.Done():
-				return fmt.Errorf("timeout waiting for task to complete")
-			case <-ticker.C:
-				result, err := client.OrchestrationStatus(ctx, orchTaskID)
-				if err != nil {
-					fmt.Printf("  Error checking status: %v\n", err)
-					continue
-				}
-
-				status := result.Task.Status
-				if status != lastStatus {
+		err = PollUntil(
+			ctx,
+			config,
+			// fetch
+			func(ctx context.Context) (interface{}, error) {
+				return client.OrchestrationStatus(ctx, orchTaskID)
+			},
+			// shouldStop
+			func(result interface{}, lastValue string) (bool, string, error) {
+				r := result.(*vm.OrchestrationStatusResult)
+				status := r.Task.Status
+				if status != lastValue {
 					fmt.Printf("  Status: %s\n", status)
-					lastStatus = status
 				}
-
-				// Check for terminal states
+				finalResult = r
 				switch status {
 				case "completed", "failed", "cancelled":
-					if flagJSON {
-						data, _ := json.MarshalIndent(result, "", "  ")
-						fmt.Println(string(data))
-					} else {
-						fmt.Printf("\nTask finished with status: %s\n", status)
-						if result.Task.ErrorMessage != nil {
-							fmt.Printf("Error: %s\n", *result.Task.ErrorMessage)
-						}
-						if result.Task.Result != nil {
-							fmt.Printf("Result: %s\n", *result.Task.Result)
-						}
-					}
-					if status == "failed" || status == "cancelled" {
-						return fmt.Errorf("task %s", status)
-					}
-					return nil
+					return true, status, nil
 				}
+				return false, status, nil
+			},
+			// display (no-op for wait, status is printed in shouldStop)
+			func(result interface{}, isInitial bool) {},
+		)
+
+		if err != nil {
+			if ctx.Err() != nil {
+				return fmt.Errorf("timeout waiting for task to complete")
+			}
+			return err
+		}
+
+		if finalResult == nil {
+			return fmt.Errorf("no result received")
+		}
+
+		if flagJSON {
+			data, _ := json.MarshalIndent(finalResult, "", "  ")
+			fmt.Println(string(data))
+		} else {
+			fmt.Printf("\nTask finished with status: %s\n", finalResult.Task.Status)
+			if finalResult.Task.ErrorMessage != nil {
+				fmt.Printf("Error: %s\n", *finalResult.Task.ErrorMessage)
+			}
+			if finalResult.Task.Result != nil {
+				fmt.Printf("Result: %s\n", *finalResult.Task.Result)
 			}
 		}
+
+		if finalResult.Task.Status == "failed" || finalResult.Task.Status == "cancelled" {
+			return fmt.Errorf("task %s", finalResult.Task.Status)
+		}
+		return nil
 	},
 }
 
