@@ -40,6 +40,7 @@ describe("stopContainersForRunsFromTree - cmux sandbox path", () => {
     if (addr && typeof addr === "object" && addr.port) {
       serverUrl = `http://localhost:${addr.port}`;
       process.env.NEXT_PUBLIC_WWW_ORIGIN = serverUrl;
+      process.env.WWW_INTERNAL_URL = serverUrl;
     } else {
       throw new Error("Failed to get test server port");
     }
