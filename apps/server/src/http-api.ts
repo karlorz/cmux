@@ -902,6 +902,10 @@ async function handleOrchestrationSpawn(
 
       const preFetchedConfig = await spawnConfigResponse.json() as PreFetchedSpawnConfig;
 
+      // Generate branch name synchronously (JWT path can't call auth-required www API)
+      // This avoids the "No auth header json found" error in branch name generation
+      const [newBranch] = generateBranchNamesFromDescription(prompt, 1, DEFAULT_BRANCH_PREFIX);
+
       // Return 202 immediately to avoid Cloudflare 524 timeout on slow providers
       jsonResponse(res, 202, {
         orchestrationTaskId,
@@ -920,6 +924,7 @@ async function handleOrchestrationSpawn(
             {
               repoUrl: repo,
               branch,
+              newBranch,  // Pre-generated branch name (JWT path can't use API-based generation)
               taskDescription: prompt,
               isCloudMode,
               environmentId: environmentId as Id<"environments"> | undefined,
