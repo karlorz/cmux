@@ -73,6 +73,9 @@ interface StartTaskRequest {
   autopilotMinutes?: number;
   autopilotTurnMinutes?: number;
   autopilotWrapUp?: number;
+  // Cloud workspace and orchestration head flags
+  isCloudWorkspace?: boolean;
+  isOrchestrationHead?: boolean;
 }
 
 interface StartTaskResponse {
@@ -212,6 +215,8 @@ async function handleStartTask(
     autopilotMinutes,
     autopilotTurnMinutes,
     autopilotWrapUp,
+    isCloudWorkspace,
+    isOrchestrationHead,
   } = body;
 
   // taskDescription can be empty string for cloud workspaces (interactive TUI session)
@@ -434,6 +439,8 @@ async function handleStartTask(
                 wrapUpMinutes: autopilotWrapUp ?? 3,
               }
             : undefined,
+          isCloudWorkspace,
+          isOrchestrationHead,
         },
         teamSlugOrId
       );

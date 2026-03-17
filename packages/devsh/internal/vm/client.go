@@ -1630,6 +1630,9 @@ type StartTaskAgentsOptions struct {
 	AutopilotMinutes     int
 	AutopilotTurnMinutes int
 	AutopilotWrapUp      int
+	// Cloud workspace and orchestration head flags
+	IsCloudWorkspace    bool
+	IsOrchestrationHead bool
 }
 
 // StartTaskAgentsResult represents the result of starting task agents
@@ -1750,6 +1753,13 @@ func (c *Client) StartTaskAgents(ctx context.Context, opts StartTaskAgentsOption
 		body["autopilotMinutes"] = opts.AutopilotMinutes
 		body["autopilotTurnMinutes"] = opts.AutopilotTurnMinutes
 		body["autopilotWrapUp"] = opts.AutopilotWrapUp
+	}
+	// Cloud workspace and orchestration head flags
+	if opts.IsCloudWorkspace {
+		body["isCloudWorkspace"] = true
+	}
+	if opts.IsOrchestrationHead {
+		body["isOrchestrationHead"] = true
 	}
 
 	resp, err := c.doServerRequest(ctx, "POST", "/api/start-task", body)

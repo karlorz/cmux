@@ -1940,6 +1940,8 @@ export async function spawnAllAgents(
     }>;
     theme?: "dark" | "light" | "system";
     autopilotOptions?: AutopilotOptions;
+    isCloudWorkspace?: boolean;
+    isOrchestrationHead?: boolean;
   },
   teamSlugOrId: string
 ): Promise<AgentSpawnResult[]> {
