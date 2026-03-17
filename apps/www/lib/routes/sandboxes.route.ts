@@ -2,13 +2,13 @@ import {
   getAccessTokenFromRequest,
   getUserFromRequest,
 } from "@/lib/utils/auth";
-import { getConvex } from "@/lib/utils/get-convex";
+import { getConvex, getConvexAdmin, type ConvexAdminClient } from "@/lib/utils/get-convex";
 import { generateGitHubInstallationToken } from "@/lib/utils/github-app-token";
 import { selectGitIdentity } from "@/lib/utils/gitIdentity";
 import { stackServerAppJs } from "@/lib/utils/stack";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { env } from "@/lib/utils/www-env";
-import { api } from "@cmux/convex/api";
+import { api, internal } from "@cmux/convex/api";
 import type { Doc, Id } from "@cmux/convex/dataModel";
 import { DEFAULT_MORPH_SNAPSHOT_ID } from "@/lib/utils/morph-defaults";
 import { RESERVED_CMUX_PORT_SET } from "@cmux/shared/utils/reserved-cmux-ports";
@@ -1000,17 +1000,56 @@ sandboxesRouter.openapi(
     try {
       // For JWT auth, use admin client; for Stack Auth, use user's access token
       // The admin client has same query/mutation interface, just cast for type compatibility
-      const { getConvexAdmin } = await import("@/lib/utils/get-convex");
+      // Keep raw admin client reference for internal queries (preserves `any` types)
+      let rawAdminClient: ConvexAdminClient | null = null;
       const convex = isJwtAuth
         ? (() => {
             const admin = getConvexAdmin();
             if (!admin) {
               throw new Error("Admin client not available for JWT auth");
             }
+            rawAdminClient = admin;
             // Cast admin client to match expected interface (same query/mutation methods)
             return admin as unknown as ReturnType<typeof getConvex>;
           })()
         : getConvex({ accessToken: accessToken! });
+
+      // For JWT auth, we need to verify team exists and get team info via admin client
+      // The JWT already contains teamId which we trust after verification
+      let preVerifiedTeam: { uuid: string; slug: string | null; displayName: string | null; name: string | null } | undefined;
+      if (isJwtAuth && _jwtPayload && rawAdminClient) {
+        // Fetch team info using admin client (internal query)
+        // The teamSlugOrId from body should match JWT's teamId for security
+        // Use raw admin client which has `any` types to avoid TS errors with internal queries
+        const teamInfo = await rawAdminClient.query(internal.teams.getBySlugOrIdInternal, {
+          slugOrId: body.teamSlugOrId,
+        }) as { teamId: string; slug: string | null; displayName: string | null; name: string | null; profileImageUrl: string | null } | null;
+        if (!teamInfo) {
+          console.error("[sandboxes.start] Team not found for JWT auth", {
+            teamSlugOrId: body.teamSlugOrId,
+            jwtTeamId: _jwtPayload.teamId,
+          });
+          return c.text("Team not found", 404);
+        }
+        // Verify the team matches what's in the JWT
+        if (teamInfo.teamId !== _jwtPayload.teamId) {
+          console.error("[sandboxes.start] Team mismatch with JWT", {
+            requestTeamId: teamInfo.teamId,
+            jwtTeamId: _jwtPayload.teamId,
+          });
+          return c.text("Forbidden: Team mismatch", 403);
+        }
+        preVerifiedTeam = {
+          uuid: teamInfo.teamId,
+          slug: teamInfo.slug,
+          displayName: teamInfo.displayName,
+          name: teamInfo.name,
+        };
+        console.log("[sandboxes.start] JWT auth team verified", {
+          teamId: preVerifiedTeam.uuid,
+          slug: preVerifiedTeam.slug,
+        });
+      }
 
       const {
         team,
@@ -1027,6 +1066,7 @@ sandboxesRouter.openapi(
         teamSlugOrId: body.teamSlugOrId,
         environmentId: body.environmentId,
         snapshotId: body.snapshotId,
+        preVerifiedTeam,
       });
 
       const environmentEnvVarsPromise = environmentDataVaultKey
@@ -1495,11 +1535,19 @@ sandboxesRouter.openapi(
 
       const { githubAccessToken, githubAccessTokenError } =
         await githubAccessTokenPromise;
-      if (githubAccessTokenError) {
+      // For JWT auth without repo URL, GitHub credentials are not required
+      // The sub-agent sandbox will have the workspace pre-configured by the head agent
+      const needsGitHubToken = parsedRepoUrl != null;
+      if (githubAccessTokenError && needsGitHubToken) {
         console.error(
           `[sandboxes.start] GitHub access token error: ${githubAccessTokenError}`,
         );
         return c.text("Failed to resolve GitHub credentials", 401);
+      }
+      if (githubAccessTokenError) {
+        console.log(
+          `[sandboxes.start] GitHub access token not available (${githubAccessTokenError}), but no repo URL specified - continuing`,
+        );
       }
 
       // Try to use GitHub App installation token for better permission scope.
@@ -1550,7 +1598,13 @@ sandboxesRouter.openapi(
         }
       }
 
-      await configureGithubAccess(instance, gitAuthToken);
+      // Configure GitHub access only if we have a token
+      // For JWT auth without repo URL, GitHub token may not be available
+      if (gitAuthToken) {
+        await configureGithubAccess(instance, gitAuthToken);
+      } else {
+        console.log(`[sandboxes.start] Skipping GitHub access configuration - no token available`);
+      }
 
       // Only skip hydration if both repo URL and branch match the warm pool instance
       // This ensures we don't use wrong branch when user prewarmed with different branch

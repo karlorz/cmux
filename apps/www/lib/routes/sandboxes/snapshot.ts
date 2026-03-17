@@ -117,14 +117,18 @@ export const resolveTeamAndSnapshot = async ({
   teamSlugOrId,
   environmentId,
   snapshotId,
+  preVerifiedTeam,
 }: {
   req: Request;
   convex: ConvexClient;
   teamSlugOrId: string;
   environmentId?: string;
   snapshotId?: string;
+  /** Pre-verified team from JWT auth path - skips verifyTeamAccess call */
+  preVerifiedTeam?: SnapshotResolution["team"];
 }): Promise<SnapshotResolution> => {
-  const team = await verifyTeamAccess({ req, teamSlugOrId });
+  // For JWT auth path, use pre-verified team; otherwise verify via Stack Auth
+  const team = preVerifiedTeam ?? (await verifyTeamAccess({ req, teamSlugOrId }));
 
   const provider = (() => {
     try {
