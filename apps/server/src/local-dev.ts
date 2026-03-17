@@ -10,16 +10,21 @@ const criticalSharedExports = [
   "@cmux/shared/resilience",
 ];
 
-for (const exportPath of criticalSharedExports) {
-  try {
-    await import(exportPath);
-  } catch (e) {
-    console.error(`[STARTUP] Failed to resolve ${exportPath}`);
-    console.error(`[STARTUP] This usually means package.json exports are stale.`);
-    console.error(`[STARTUP] Fix: Restart the dev server with ./scripts/dev.sh`);
-    process.exit(1);
-  }
-}
+await Promise.all(
+  criticalSharedExports.map(async (exportPath) => {
+    try {
+      await import(exportPath);
+    } catch (e) {
+      console.error(
+        `[STARTUP] Failed to resolve ${exportPath}\n` +
+          `  This usually means package.json exports are stale.\n` +
+          `  Fix: Restart the dev server with ./scripts/dev.sh\n` +
+          `  Error: ${e instanceof Error ? e.message : String(e)}`
+      );
+      process.exit(1);
+    }
+  })
+);
 
 await startServer({
   port: parseInt(process.env.PORT || "9776"),
