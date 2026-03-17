@@ -780,14 +780,21 @@ async function handleOrchestrationSpawn(
 
   const { teamSlugOrId, prompt, agent, repo, branch, prTitle, environmentId, isCloudMode = true, dependsOn, priority, orchestrationId, isCloudWorkspace, isOrchestrationHead } = body;
 
-  if (!teamSlugOrId || !prompt || !agent) {
-    jsonResponse(res, 400, { error: "Missing required fields: teamSlugOrId, prompt, agent" });
-    return;
-  }
-
   // Check for JWT auth first (allows agents to spawn sub-agents)
   const taskRunJwt = extractTaskRunJwt(req.headers as Record<string, string | string[] | undefined>);
   const authToken = parseAuthHeader(req);
+
+  // For JWT auth, teamSlugOrId is embedded in the token, so only require prompt and agent
+  // For Bearer auth, all three are required
+  if (!prompt || !agent) {
+    jsonResponse(res, 400, { error: "Missing required fields: prompt, agent" });
+    return;
+  }
+
+  if (!taskRunJwt && !teamSlugOrId) {
+    jsonResponse(res, 400, { error: "Missing required field: teamSlugOrId (required for Bearer auth)" });
+    return;
+  }
 
   if (!taskRunJwt && !authToken) {
     jsonResponse(res, 401, { error: "Unauthorized: Missing Bearer token or X-Task-Run-JWT header" });

@@ -1440,7 +1440,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
           const response = await fetch(url, {
             method: "POST",
             headers: {
-              "Authorization": `Bearer ${jwt}`,
+              "X-Task-Run-JWT": jwt,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
