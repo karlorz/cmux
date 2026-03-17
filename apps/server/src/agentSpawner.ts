@@ -254,10 +254,14 @@ export async function spawnAgent(
     const runId = taskRunId;
 
     // Fetch the task to get image storage IDs
-    const task = await getConvex().query(api.tasks.getById, {
-      teamSlugOrId,
-      id: taskId,
-    });
+    // Skip for JWT-auth path (sub-agent spawning) since there's no Stack Auth context
+    const hasAuthContext = !!capturedAuthToken;
+    const task = hasAuthContext
+      ? await getConvex().query(api.tasks.getById, {
+          teamSlugOrId,
+          id: taskId,
+        })
+      : null;
 
     // Process prompt to handle images
     let processedTaskDescription = options.taskDescription;
@@ -1894,7 +1898,8 @@ exit $EXIT_CODE
       error instanceof Error ? error.message : "Unknown error";
 
     // Mark the task run as failed in Convex so the UI shows the failure
-    if (taskRunId) {
+    // Skip if no auth context (JWT-auth path handles failure reporting via http-api)
+    if (taskRunId && getAuthToken()) {
       const failedRunId = taskRunId; // Capture for TypeScript narrowing
       try {
         await retryOnOptimisticConcurrency(() =>
