@@ -10,7 +10,7 @@ import {
   createOpencodeRequirementsChecker,
 } from "./check-requirements";
 import { startOpenCodeCompletionDetector } from "./completion-detector";
-import { OPENCODE_FREE_MODEL_IDS } from "./free-models";
+import { isOpencodeFreeModel, OPENCODE_FREE_MODEL_IDS } from "./free-models";
 
 import {
   getOpencodeEnvironment,
@@ -21,7 +21,7 @@ import {
 } from "./environment";
 
 // Common args for all opencode configs - starts HTTP server for prompt submission
-const OPENCODE_BASE_ARGS = [
+export const OPENCODE_BASE_ARGS = [
   "--hostname",
   OPENCODE_HTTP_HOST,
   "--port",
@@ -192,3 +192,38 @@ export const OPENCODE_AGENT_CONFIGS: AgentConfig[] = [
     : [nanoConfig]),
   ...afterNano,
 ];
+
+/**
+ * Creates an AgentConfig dynamically for discovered OpenCode free models.
+ * Used when a model is discovered via OpenCode's API but not in the static AGENT_CONFIGS.
+ *
+ * @param modelName - Full model name (e.g., "opencode/nemotron-3-super-free")
+ * @returns AgentConfig if the model is a valid OpenCode free model, null otherwise
+ */
+export function createOpencodeFreeDynamicConfig(
+  modelName: string
+): AgentConfig | null {
+  // Only handle opencode/* models
+  if (!modelName.startsWith("opencode/")) {
+    return null;
+  }
+
+  const modelId = modelName.slice("opencode/".length); // e.g., "nemotron-3-super-free"
+
+  // Only generate config for free models (those with -free suffix or in known free list)
+  if (!isOpencodeFreeModel(modelId)) {
+    return null;
+  }
+
+  return {
+    name: modelName,
+    command: "opencode",
+    args: [...OPENCODE_BASE_ARGS, "--model", `opencode/${modelId}`],
+    environment: getOpencodeEnvironmentSkipAuth,
+    checkRequirements: createOpencodeRequirementsChecker({
+      requireAuth: false,
+    }),
+    apiKeys: [],
+    completionDetector: startOpenCodeCompletionDetector,
+  };
+}

@@ -5,6 +5,7 @@ import {
   type AgentConfig,
   type EnvironmentResult,
 } from "@cmux/shared/agentConfig";
+import { createOpencodeFreeDynamicConfig } from "@cmux/shared/providers/opencode/configs";
 import type { McpServerConfig } from "@cmux/shared";
 import type { PolicyRuleForInstructions, OrchestrationRuleForInstructions } from "@cmux/shared/agent-memory-protocol";
 import {
@@ -1945,8 +1946,26 @@ export async function spawnAllAgents(
   // If selectedAgents is provided, map each entry to an AgentConfig to preserve duplicates
   const agentsToSpawn = options.selectedAgents
     ? options.selectedAgents
-      .map((name) => AGENT_CONFIGS.find((agent) => agent.name === name))
-      .filter((a): a is AgentConfig => Boolean(a))
+        .map((name) => {
+          // First try static configs
+          const staticConfig = AGENT_CONFIGS.find(
+            (agent) => agent.name === name
+          );
+          if (staticConfig) return staticConfig;
+
+          // Try dynamic OpenCode free model config for discovered models
+          const dynamicConfig = createOpencodeFreeDynamicConfig(name);
+          if (dynamicConfig) {
+            serverLogger.info(
+              `[AgentSpawner] Using dynamic config for discovered model: ${name}`
+            );
+            return dynamicConfig;
+          }
+
+          serverLogger.warn(`[AgentSpawner] No config found for agent: ${name}`);
+          return null;
+        })
+        .filter((a): a is AgentConfig => Boolean(a))
     : AGENT_CONFIGS;
 
   // Validate taskRunIds count matches agents count if provided

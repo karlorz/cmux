@@ -69,6 +69,12 @@ git config core.hooksPath .githooks
 ```
 This is auto-configured on `bun install` via the `prepare` script.
 
+**After adding new package.json exports:**
+
+New exports in `packages/*/package.json` require a dev server restart. Bun caches module resolution at startup and does NOT watch `package.json` files. If you add a new export and see `Cannot find module` errors:
+1. Stop the dev server (Ctrl+C)
+2. Run `./scripts/dev.sh` again to pick up new exports
+
 # Backend
 
 This project uses Convex and Hono.
