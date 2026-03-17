@@ -345,6 +345,69 @@ export const logEvent = authMutation({
 });
 
 /**
+ * Internal version of logEvent for JWT-auth calls from www routes.
+ * Takes teamId and userId directly instead of requiring auth context.
+ */
+export const logEventInternal = internalMutation({
+  args: {
+    teamId: v.string(),
+    userId: v.string(),
+    eventType: eventTypeValidator,
+    payload: v.object({
+      text: v.string(),
+      lane: v.optional(laneValidator),
+      confidence: v.optional(v.number()),
+      metadata: v.optional(v.any()),
+      sourceTaskRunId: v.optional(v.string()),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const { text, lane, confidence, metadata, sourceTaskRunId } = args.payload;
+
+    // For learnings and errors, create a candidate rule
+    let ruleId: string | undefined;
+    if (
+      args.eventType === "learning_logged" ||
+      args.eventType === "error_logged"
+    ) {
+      ruleId = await ctx.db.insert("agentOrchestrationRules", {
+        teamId: args.teamId as Id<"teams">,
+        userId: args.userId,
+        lane: lane ?? "orchestration",
+        status: "candidate",
+        text,
+        sourceType:
+          args.eventType === "learning_logged"
+            ? "run_review"
+            : "user_correction",
+        sourceTaskRunId: sourceTaskRunId
+          ? (sourceTaskRunId as Id<"taskRuns">)
+          : undefined,
+        confidence: confidence ?? (args.eventType === "error_logged" ? 0.8 : 0.5),
+        timesSeen: 1,
+        timesUsed: 0,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    // Log the event
+    const eventId = await ctx.db.insert("agentOrchestrationLearningEvents", {
+      teamId: args.teamId as Id<"teams">,
+      userId: args.userId,
+      ruleId: ruleId ? (ruleId as Id<"agentOrchestrationRules">) : undefined,
+      eventType: args.eventType,
+      text,
+      metadataJson: metadata ? JSON.stringify(metadata) : undefined,
+      createdAt: now,
+    });
+
+    return { eventId, ruleId };
+  },
+});
+
+/**
  * Promote an orchestration rule to active status.
  */
 export const promoteRule = authMutation({
@@ -505,14 +568,25 @@ export const upsertSkillCandidate = authMutation({
 
 /**
  * Get active orchestration rules for a team (internal, no auth required).
- * Used by orchestration_http.ts spawn-config endpoint.
+ * Used by orchestration_http.ts spawn-config endpoint and www JWT-auth routes.
  */
 export const getActiveRulesInternal = internalQuery({
   args: {
     teamId: v.string(),
+    lane: v.optional(laneValidator),
     projectFullName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // Filter by lane if specified
+    if (args.lane) {
+      return ctx.db
+        .query("agentOrchestrationRules")
+        .withIndex("by_team_lane_status", (q) =>
+          q.eq("teamId", args.teamId).eq("lane", args.lane!).eq("status", "active")
+        )
+        .take(100);
+    }
+
     if (args.projectFullName) {
       // Return both project-specific rules AND global team rules (no projectFullName)
       const [projectRules, globalRules] = await Promise.all([

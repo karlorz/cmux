@@ -1839,7 +1839,7 @@ const LogLearningResponseSchema = z.object({
 orchestrateRouter.openapi(
   createRoute({
     method: "post",
-    path: "/learning/log",
+    path: "/v1/cmux/orchestration/learning/log",
     tags: ["orchestration-learning"],
     summary: "Log an orchestration learning event",
     description:
@@ -1868,43 +1868,40 @@ orchestrateRouter.openapi(
     },
   }),
   async (c) => {
-    const accessToken = await getAccessTokenFromRequest(c.req.raw);
-    if (!accessToken) {
-      return c.text("Unauthorized", 401);
+    // Use task-run JWT auth from x-cmux-token header
+    const { extractTaskRunJwtFromRequest, verifyTaskRunJwt } = await import("@/lib/utils/jwt-task-run");
+    const jwtToken = extractTaskRunJwtFromRequest(c.req.raw);
+    if (!jwtToken) {
+      return c.text("Unauthorized - missing x-cmux-token header", 401);
+    }
+
+    const jwtPayload = await verifyTaskRunJwt(jwtToken);
+    if (!jwtPayload) {
+      return c.text("Unauthorized - invalid JWT", 401);
     }
 
     const body = c.req.valid("json");
 
     try {
-      const convex = getConvex({ accessToken });
-
-      // Decode JWT to get teamSlugOrId and taskRunId
-      const user = await getUserFromRequest(c.req.raw);
-      if (!user) {
-        return c.text("Unauthorized", 401);
+      // Use admin client since we're authenticating via task-run JWT
+      const adminClient = getConvexAdmin();
+      if (!adminClient) {
+        return c.text("Server configuration error", 500);
       }
 
-      // Extract team context from JWT claims or user context
-      const jwtPayload = JSON.parse(
-        Buffer.from(accessToken.split(".")[1], "base64").toString()
-      );
-      const teamSlugOrId = jwtPayload.teamSlugOrId ?? jwtPayload.team_id;
-      const taskRunId = jwtPayload.taskRunId;
-
-      if (!teamSlugOrId) {
-        return c.text("Missing team context in JWT", 400);
-      }
-
-      // Log the event
-      const result = await convex.mutation(api.agentOrchestrationLearning.logEvent, {
-        teamSlugOrId,
+      // Log the event using internal mutation (bypasses auth context requirement)
+      // Only include sourceTaskRunId if it looks like a valid Convex taskRuns ID
+      const sourceTaskRunId = jwtPayload.taskRunId?.startsWith("ns7") ? jwtPayload.taskRunId : undefined;
+      const result = await adminClient.mutation(internal.agentOrchestrationLearning.logEventInternal, {
+        teamId: jwtPayload.teamId,
+        userId: jwtPayload.userId,
         eventType: body.eventType,
         payload: {
           text: body.text,
           lane: body.lane,
           confidence: body.confidence,
           metadata: body.metadata,
-          sourceTaskRunId: taskRunId,
+          sourceTaskRunId,
         },
       });
 
@@ -1944,7 +1941,7 @@ const GetRulesResponseSchema = z.object({
 orchestrateRouter.openapi(
   createRoute({
     method: "get",
-    path: "/rules",
+    path: "/v1/cmux/orchestration/rules",
     tags: ["orchestration-learning"],
     summary: "Get active orchestration rules",
     description: "Fetch active orchestration rules for the team that are injected into agent prompts",
@@ -1965,33 +1962,34 @@ orchestrateRouter.openapi(
     },
   }),
   async (c) => {
-    const accessToken = await getAccessTokenFromRequest(c.req.raw);
-    if (!accessToken) {
-      return c.text("Unauthorized", 401);
+    // Use task-run JWT auth from x-cmux-token header
+    const { extractTaskRunJwtFromRequest, verifyTaskRunJwt } = await import("@/lib/utils/jwt-task-run");
+    const jwtToken = extractTaskRunJwtFromRequest(c.req.raw);
+    if (!jwtToken) {
+      return c.text("Unauthorized - missing x-cmux-token header", 401);
+    }
+
+    const jwtPayload = await verifyTaskRunJwt(jwtToken);
+    if (!jwtPayload) {
+      return c.text("Unauthorized - invalid JWT", 401);
     }
 
     const { lane } = c.req.valid("query");
 
     try {
-      const convex = getConvex({ accessToken });
-
-      // Extract team context from JWT
-      const jwtPayload = JSON.parse(
-        Buffer.from(accessToken.split(".")[1], "base64").toString()
-      );
-      const teamSlugOrId = jwtPayload.teamSlugOrId ?? jwtPayload.team_id;
-
-      if (!teamSlugOrId) {
-        return c.text("Missing team context in JWT", 400);
+      // Use admin client since we're authenticating via task-run JWT
+      const adminClient = getConvexAdmin();
+      if (!adminClient) {
+        return c.text("Server configuration error", 500);
       }
 
-      const rules = await convex.query(api.agentOrchestrationLearning.getActiveRules, {
-        teamSlugOrId,
+      const rules = await adminClient.query(internal.agentOrchestrationLearning.getActiveRulesInternal, {
+        teamId: jwtPayload.teamId,
         lane,
       });
 
       return c.json({
-        rules: rules.map((r) => ({
+        rules: rules.map((r: { _id: string; text: string; lane: string; confidence: number; projectFullName?: string }) => ({
           _id: r._id,
           text: r.text,
           lane: r.lane,

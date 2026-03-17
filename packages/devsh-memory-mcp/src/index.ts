@@ -2624,7 +2624,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "Authorization": `Bearer ${jwt}`,
+              "x-cmux-token": jwt,
             },
             body: JSON.stringify({
               eventType,
@@ -2693,7 +2693,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
           const response = await fetch(url.toString(), {
             method: "GET",
             headers: {
-              "Authorization": `Bearer ${jwt}`,
+              "x-cmux-token": jwt,
             },
           });
 

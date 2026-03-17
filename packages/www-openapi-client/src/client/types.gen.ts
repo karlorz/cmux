@@ -4063,7 +4063,7 @@ export type GetApiOrchestrateApprovalsTeamByTeamSlugOrIdResponses = {
 
 export type GetApiOrchestrateApprovalsTeamByTeamSlugOrIdResponse = GetApiOrchestrateApprovalsTeamByTeamSlugOrIdResponses[keyof GetApiOrchestrateApprovalsTeamByTeamSlugOrIdResponses];
 
-export type PostApiLearningLogData = {
+export type PostApiV1CmuxOrchestrationLearningLogData = {
     body: {
         eventType: 'learning_logged' | 'error_logged' | 'feature_request_logged';
         text: string;
@@ -4075,10 +4075,10 @@ export type PostApiLearningLogData = {
     };
     path?: never;
     query?: never;
-    url: '/api/learning/log';
+    url: '/api/v1/cmux/orchestration/learning/log';
 };
 
-export type PostApiLearningLogErrors = {
+export type PostApiV1CmuxOrchestrationLearningLogErrors = {
     /**
      * Unauthorized
      */
@@ -4089,7 +4089,7 @@ export type PostApiLearningLogErrors = {
     500: unknown;
 };
 
-export type PostApiLearningLogResponses = {
+export type PostApiV1CmuxOrchestrationLearningLogResponses = {
     /**
      * Learning logged successfully
      */
@@ -4100,18 +4100,18 @@ export type PostApiLearningLogResponses = {
     };
 };
 
-export type PostApiLearningLogResponse = PostApiLearningLogResponses[keyof PostApiLearningLogResponses];
+export type PostApiV1CmuxOrchestrationLearningLogResponse = PostApiV1CmuxOrchestrationLearningLogResponses[keyof PostApiV1CmuxOrchestrationLearningLogResponses];
 
-export type GetApiRulesData = {
+export type GetApiV1CmuxOrchestrationRulesData = {
     body?: never;
     path?: never;
     query?: {
         lane?: 'hot' | 'orchestration' | 'project';
     };
-    url: '/api/rules';
+    url: '/api/v1/cmux/orchestration/rules';
 };
 
-export type GetApiRulesErrors = {
+export type GetApiV1CmuxOrchestrationRulesErrors = {
     /**
      * Unauthorized
      */
@@ -4122,7 +4122,7 @@ export type GetApiRulesErrors = {
     500: unknown;
 };
 
-export type GetApiRulesResponses = {
+export type GetApiV1CmuxOrchestrationRulesResponses = {
     /**
      * Rules fetched successfully
      */
@@ -4137,7 +4137,7 @@ export type GetApiRulesResponses = {
     };
 };
 
-export type GetApiRulesResponse = GetApiRulesResponses[keyof GetApiRulesResponses];
+export type GetApiV1CmuxOrchestrationRulesResponse = GetApiV1CmuxOrchestrationRulesResponses[keyof GetApiV1CmuxOrchestrationRulesResponses];
 
 export type GetApiProjectsData = {
     body?: never;
