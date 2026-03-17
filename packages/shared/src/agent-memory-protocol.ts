@@ -763,6 +763,45 @@ Your orchestration state is stored in \`${MEMORY_ORCHESTRATION_DIR}/\`:
 - **AGENTS.json**: Registry of spawned sub-agents
 - **EVENTS.jsonl**: Event stream of orchestration activity
 
+### MCP Orchestration Tools (Preferred)
+
+You have access to MCP tools for orchestration. **Use these tools instead of CLI commands when possible** as they provide better integration and error handling.
+
+| MCP Tool | Description |
+|----------|-------------|
+| \`spawn_agent\` | Spawn a sub-agent with prompt, agent name, repo, and optional dependencies |
+| \`get_agent_status\` | Check status of a spawned sub-agent by orchestration task ID |
+| \`wait_for_agent\` | Block until a sub-agent completes (with timeout) |
+| \`list_spawned_agents\` | List all sub-agents spawned by this orchestration |
+| \`cancel_agent\` | Cancel a running or pending sub-agent |
+| \`pull_orchestration_updates\` | Sync local PLAN.json with server state |
+| \`push_orchestration_updates\` | Report completion/failure and heartbeat to server |
+| \`wait_for_events\` | Subscribe to SSE events for real-time task updates |
+
+**Example: Spawn two sub-agents and wait for completion**
+\`\`\`
+// Spawn first sub-agent
+spawn_agent({
+  prompt: "Create hello.txt with Hello World",
+  agentName: "claude/haiku-4.5",
+  repo: "owner/repo"
+})  // Returns orchestrationTaskId
+
+// Spawn second sub-agent
+spawn_agent({
+  prompt: "Create goodbye.txt with Goodbye World",
+  agentName: "claude/haiku-4.5",
+  repo: "owner/repo"
+})
+
+// Wait for both to complete
+wait_for_agent({ orchestrationTaskId: "orch_task_1" })
+wait_for_agent({ orchestrationTaskId: "orch_task_2" })
+
+// Report completion
+push_orchestration_updates({ headAgentStatus: "completed" })
+\`\`\`
+
 ### Bi-directional Sync
 
 Use the \`pull_orchestration_updates\` MCP tool to sync remote state:
