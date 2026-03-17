@@ -96,8 +96,12 @@ jobs:
           echo "files<<EOF" >> $GITHUB_OUTPUT
           echo "$CHANGED" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-          # Count files for summary
-          COUNT=$(echo "$CHANGED" | grep -c . || echo 0)
+          # Count files for summary (handle empty case properly)
+          if [ -n "$CHANGED" ]; then
+            COUNT=$(echo "$CHANGED" | grep -c . || echo 0)
+          else
+            COUNT=0
+          fi
           echo "count=$COUNT" >> $GITHUB_OUTPUT
 
       - name: Generate simplify summary
