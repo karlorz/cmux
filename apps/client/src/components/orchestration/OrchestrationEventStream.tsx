@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Radio,
   CheckCircle,
@@ -7,6 +7,7 @@ import {
   Wifi,
   WifiOff,
   X,
+  Filter,
 } from "lucide-react";
 import clsx from "clsx";
 import {
@@ -19,6 +20,8 @@ interface OrchestrationEventStreamProps {
   teamSlugOrId: string;
   onClose?: () => void;
 }
+
+type EventFilter = "all" | "status" | "completion" | "errors";
 
 const eventIcons: Record<string, typeof CheckCircle> = {
   connected: Wifi,
@@ -46,18 +49,42 @@ function formatTime(timestamp: string): string {
   });
 }
 
+const EVENT_FILTERS: { key: EventFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "status", label: "Status" },
+  { key: "completion", label: "Completions" },
+  { key: "errors", label: "Errors" },
+];
+
 export function OrchestrationEventStream({
   orchestrationId,
   teamSlugOrId,
   onClose,
 }: OrchestrationEventStreamProps) {
   const [expanded, setExpanded] = useState(false);
+  const [eventFilter, setEventFilter] = useState<EventFilter>("all");
 
   const { connected, events, error } = useOrchestrationEvents({
     orchestrationId,
     teamSlugOrId,
     enabled: true,
   });
+
+  const filteredEvents = useMemo(() => {
+    if (eventFilter === "all") return events;
+    return events.filter((e) => {
+      switch (eventFilter) {
+        case "status":
+          return e.event === "task_status" || e.event === "heartbeat";
+        case "completion":
+          return e.event === "task_completed" || e.event === "orchestration_completed";
+        case "errors":
+          return e.event === "error" || e.status === "failed" || e.errorMessage;
+        default:
+          return true;
+      }
+    });
+  }, [events, eventFilter]);
 
   return (
     <div
@@ -99,7 +126,20 @@ export function OrchestrationEventStream({
             )}
           </span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
+          {/* Event type filter */}
+          <div className="flex items-center gap-1">
+            <Filter className="size-3 text-neutral-400" />
+            <select
+              value={eventFilter}
+              onChange={(e) => setEventFilter(e.target.value as EventFilter)}
+              className="rounded border-0 bg-transparent py-0.5 text-xs text-neutral-600 focus:ring-0 dark:text-neutral-400"
+            >
+              {EVENT_FILTERS.map(({ key, label }) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
+            </select>
+          </div>
           <button
             type="button"
             onClick={() => setExpanded(!expanded)}
@@ -129,13 +169,15 @@ export function OrchestrationEventStream({
 
       {/* Events list */}
       <div className="overflow-auto" style={{ maxHeight: expanded ? "calc(24rem - 3rem)" : "calc(12rem - 3rem)" }}>
-        {events.length === 0 ? (
+        {filteredEvents.length === 0 ? (
           <div className="flex items-center justify-center py-6 text-xs text-neutral-400">
-            {connected ? "Waiting for events..." : "Connect to see events"}
+            {events.length === 0
+              ? (connected ? "Waiting for events..." : "Connect to see events")
+              : `No ${eventFilter} events`}
           </div>
         ) : (
           <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
-            {events.map((event, idx) => (
+            {filteredEvents.map((event, idx) => (
               <EventRow key={`${event.timestamp}-${idx}`} event={event} />
             ))}
           </div>
