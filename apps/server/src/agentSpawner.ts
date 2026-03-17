@@ -256,6 +256,9 @@ export async function spawnAgent(
     // Fetch the task to get image storage IDs
     // Skip for JWT-auth path (sub-agent spawning) since there's no Stack Auth context
     const hasAuthContext = !!capturedAuthToken;
+    serverLogger.info(
+      `[AgentSpawner] Auth context: hasAuthContext=${hasAuthContext}, hasPreProvidedJwt=${!!preProvidedJwt}`
+    );
     const task = hasAuthContext
       ? await getConvex().query(api.tasks.getById, {
           teamSlugOrId,
@@ -926,25 +929,28 @@ export async function spawnAgent(
     }
 
     // Fetch user-uploaded editor settings from Convex (for web mode users)
+    // Skip for JWT-auth path (sub-agent spawning) since there's no Stack Auth context
     let userUploadedSettings: UserUploadedEditorSettings | null = null;
-    try {
-      const userEditorSettingsFromDb = await getConvex().query(
-        api.userEditorSettings.get,
-        { teamSlugOrId }
-      );
-      if (userEditorSettingsFromDb) {
-        userUploadedSettings = {
-          settingsJson: userEditorSettingsFromDb.settingsJson ?? undefined,
-          keybindingsJson: userEditorSettingsFromDb.keybindingsJson ?? undefined,
-          snippets: userEditorSettingsFromDb.snippets ?? undefined,
-          extensions: userEditorSettingsFromDb.extensions ?? undefined,
-        };
+    if (hasAuthContext) {
+      try {
+        const userEditorSettingsFromDb = await getConvex().query(
+          api.userEditorSettings.get,
+          { teamSlugOrId }
+        );
+        if (userEditorSettingsFromDb) {
+          userUploadedSettings = {
+            settingsJson: userEditorSettingsFromDb.settingsJson ?? undefined,
+            keybindingsJson: userEditorSettingsFromDb.keybindingsJson ?? undefined,
+            snippets: userEditorSettingsFromDb.snippets ?? undefined,
+            extensions: userEditorSettingsFromDb.extensions ?? undefined,
+          };
+        }
+      } catch (error) {
+        serverLogger.warn(
+          "[AgentSpawner] Failed to fetch user editor settings from Convex",
+          error
+        );
       }
-    } catch (error) {
-      serverLogger.warn(
-        "[AgentSpawner] Failed to fetch user editor settings from Convex",
-        error
-      );
     }
 
     // Get editor settings (user-uploaded overrides auto-detected)
@@ -1088,13 +1094,16 @@ export async function spawnAgent(
     }
 
     // Update the task run with the worktree path (retry on OCC)
-    await retryOnOptimisticConcurrency(() =>
-      getConvex().mutation(api.taskRuns.updateWorktreePath, {
-        teamSlugOrId,
-        id: runId,
-        worktreePath: worktreePath,
-      })
-    );
+    // Skip if no auth context (JWT-auth path handles task state via http-api)
+    if (hasAuthContext) {
+      await retryOnOptimisticConcurrency(() =>
+        getConvex().mutation(api.taskRuns.updateWorktreePath, {
+          teamSlugOrId,
+          id: runId,
+          worktreePath: worktreePath,
+        })
+      );
+    }
 
     // Store the VSCode instance
     // VSCodeInstance.getInstances().set(vscodeInstance.getInstanceId(), vscodeInstance);
@@ -1257,7 +1266,8 @@ export async function spawnAgent(
 
     // Update VSCode instance information in Convex (retry on OCC)
     // Skip if www already persisted the VSCode info (cloud mode optimization)
-    if (!vscodeInfo.vscodePersisted) {
+    // Skip if no auth context (JWT-auth path handles task state via http-api)
+    if (hasAuthContext && !vscodeInfo.vscodePersisted) {
       await retryOnOptimisticConcurrency(() =>
         getConvex().mutation(api.taskRuns.updateVSCodeInstance, {
           teamSlugOrId,
@@ -1273,6 +1283,10 @@ export async function spawnAgent(
           },
         })
       );
+    } else if (!hasAuthContext) {
+      serverLogger.info(
+        `[AgentSpawner] Skipping updateVSCodeInstance - JWT auth path`
+      );
     } else {
       serverLogger.info(
         `[AgentSpawner] Skipping updateVSCodeInstance - already persisted by www`
@@ -1281,13 +1295,26 @@ export async function spawnAgent(
 
     // Update task run status to "running" now that sandbox is ready
     // This matches the behavior of http-api.ts create-cloud-workspace endpoint
-    await retryOnOptimisticConcurrency(() =>
-      getConvex().mutation(api.taskRuns.updateStatusPublic, {
-        teamSlugOrId,
-        id: runId,
-        status: "running",
-      })
-    );
+    // Skip if no auth context (JWT-auth path handles task state via http-api)
+    if (hasAuthContext) {
+      serverLogger.info(
+        `[AgentSpawner] Updating task run ${runId} status to running`
+      );
+      await retryOnOptimisticConcurrency(() =>
+        getConvex().mutation(api.taskRuns.updateStatusPublic, {
+          teamSlugOrId,
+          id: runId,
+          status: "running",
+        })
+      );
+      serverLogger.info(
+        `[AgentSpawner] Successfully updated task run ${runId} status to running`
+      );
+    } else {
+      serverLogger.info(
+        `[AgentSpawner] Skipping status update to running - no auth context (JWT path)`
+      );
+    }
 
     // Use runId as terminal ID for compatibility
     const terminalId = runId;
@@ -1432,23 +1459,29 @@ chmod +x ${maintenanceScriptPath}`;
               `[AgentSpawner] Failed to send maintenance script to PTY`,
               { exitCode: sendResult.exitCode, stdout: sendResult.stdout, stderr: sendResult.stderr }
             );
-            await getConvex().mutation(api.taskRuns.updateEnvironmentError, {
-              teamSlugOrId,
-              id: runId,
-              maintenanceError: `Failed to send maintenance script: ${sendResult.stderr || sendResult.stdout}`,
-              devError: undefined,
-            });
+            // Skip Convex update if no auth context (JWT-auth path)
+            if (hasAuthContext) {
+              await getConvex().mutation(api.taskRuns.updateEnvironmentError, {
+                teamSlugOrId,
+                id: runId,
+                maintenanceError: `Failed to send maintenance script: ${sendResult.stderr || sendResult.stdout}`,
+                devError: undefined,
+              });
+            }
           } else {
             serverLogger.info(
               `[AgentSpawner] Maintenance script sent to PTY for ${projectFullName}`
             );
             // Clear any previous error (script is now running in PTY)
-            await getConvex().mutation(api.taskRuns.updateEnvironmentError, {
-              teamSlugOrId,
-              id: runId,
-              maintenanceError: undefined,
-              devError: undefined,
-            });
+            // Skip Convex update if no auth context (JWT-auth path)
+            if (hasAuthContext) {
+              await getConvex().mutation(api.taskRuns.updateEnvironmentError, {
+                teamSlugOrId,
+                id: runId,
+                maintenanceError: undefined,
+                devError: undefined,
+              });
+            }
           }
         } catch (error) {
           serverLogger.error(
@@ -1815,7 +1848,8 @@ exit $EXIT_CODE
             const ptySessionId = ptyData.ptySessionId;
             const ptyBackend = ptyData.ptyBackend;
             // Skip if worker didn't report PTY session info (avoid wrong defaults)
-            if (ptySessionId && ptyBackend) {
+            // Skip if no auth context (JWT-auth path handles task state via http-api)
+            if (ptySessionId && ptyBackend && hasAuthContext) {
               // Capture taskRunId for TypeScript narrowing in async closure
               const capturedTaskRunId = taskRunId;
               runWithAuth(capturedAuthToken, capturedAuthHeaderJson, async () => {
@@ -1835,14 +1869,19 @@ exit $EXIT_CODE
                   err
                 );
               });
-            } else {
+            } else if (!ptySessionId || !ptyBackend) {
               serverLogger.info(
                 `[AgentSpawner] Worker did not report PTY session info, skipping persistence`
+              );
+            } else {
+              serverLogger.info(
+                `[AgentSpawner] Skipping PTY session persistence - JWT auth path`
               );
             }
 
             // Initialize autopilot config if enabled (Phase 6: Long-Running Sessions)
-            if (options.autopilotOptions?.enabled) {
+            // Skip if no auth context (JWT-auth path handles task state via http-api)
+            if (options.autopilotOptions?.enabled && hasAuthContext) {
               const capturedTaskRunId = taskRunId;
               const { totalMinutes, turnMinutes, wrapUpMinutes } = options.autopilotOptions;
               runWithAuth(capturedAuthToken, capturedAuthHeaderJson, async () => {
