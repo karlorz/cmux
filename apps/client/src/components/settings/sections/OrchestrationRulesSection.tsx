@@ -62,6 +62,7 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
   const [suppressTarget, setSuppressTarget] = useState<OrchestrationRule | null>(null);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addForm, setAddForm] = useState({ text: "", lane: "hot" as RuleLane });
+  const [laneFilter, setLaneFilter] = useState<RuleLane | "all">("all");
 
   // All queries run unconditionally to maintain accurate tab counts
   const { data: activeRules, refetch: refetchActive, isLoading: loadingActive } = useQuery({
@@ -138,11 +139,21 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
     createMutation.mutate({ text: addForm.text.trim(), lane: addForm.lane });
   }, [addForm, createMutation]);
 
+  const filteredActiveRules = useMemo(() => {
+    if (!activeRules || laneFilter === "all") return activeRules ?? [];
+    return activeRules.filter((r) => r.lane === laneFilter);
+  }, [activeRules, laneFilter]);
+
+  const filteredCandidateRules = useMemo(() => {
+    if (!candidateRules || laneFilter === "all") return candidateRules ?? [];
+    return candidateRules.filter((r) => r.lane === laneFilter);
+  }, [candidateRules, laneFilter]);
+
   const tabCounts = useMemo(() => ({
-    active: activeRules?.length ?? 0,
-    candidates: candidateRules?.length ?? 0,
+    active: filteredActiveRules.length,
+    candidates: filteredCandidateRules.length,
     skills: skillCandidates?.length ?? 0,
-  }), [activeRules, candidateRules, skillCandidates]);
+  }), [filteredActiveRules, filteredCandidateRules, skillCandidates]);
 
   const isLoading = activeTab === "active" ? loadingActive
     : activeTab === "candidates" ? loadingCandidates
@@ -165,20 +176,35 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
     >
       {/* Tab bar */}
       <div className="border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
-        <div className="flex gap-1">
-          {TAB_DEFINITIONS.map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => setActiveTab(key)}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                activeTab === key
-                  ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
-                  : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
-              }`}
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex gap-1">
+            {TAB_DEFINITIONS.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setActiveTab(key)}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  activeTab === key
+                    ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
+                    : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                }`}
+              >
+                {label} ({tabCounts[key]})
+              </button>
+            ))}
+          </div>
+          {/* Lane filter - only show for rules tabs */}
+          {activeTab !== "skills" && (
+            <select
+              value={laneFilter}
+              onChange={(e) => setLaneFilter(e.target.value as RuleLane | "all")}
+              className="rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-800"
             >
-              {label} ({tabCounts[key]})
-            </button>
-          ))}
+              <option value="all">All lanes</option>
+              <option value="hot">Hot</option>
+              <option value="orchestration">Orchestration</option>
+              <option value="project">Project</option>
+            </select>
+          )}
         </div>
       </div>
 
@@ -190,13 +216,13 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
           </div>
         ) : activeTab === "active" ? (
           <RulesList
-            rules={activeRules ?? []}
+            rules={filteredActiveRules}
             onSuppress={setSuppressTarget}
             emptyMessage="No active rules. Rules learned from orchestration runs will appear here."
           />
         ) : activeTab === "candidates" ? (
           <RulesList
-            rules={candidateRules ?? []}
+            rules={filteredCandidateRules}
             variant="candidate"
             onPromote={(ruleId) => promoteMutation.mutate({ ruleId })}
             onSuppress={setSuppressTarget}
@@ -327,6 +353,11 @@ function RulesList({
                   ? `seen ${rule.timesSeen ?? 1}x`
                   : `used ${rule.timesUsed ?? 0}x`}
               </span>
+              {rule.confidence != null && (
+                <span className="text-[11px] text-neutral-400" title="Confidence score">
+                  {Math.round(rule.confidence * 100)}%
+                </span>
+              )}
               {rule.projectFullName && (
                 <span className="text-[11px] text-neutral-400">
                   {rule.projectFullName}
