@@ -415,6 +415,7 @@ export const promoteRule = authMutation({
     teamSlugOrId: v.string(),
     ruleId: v.id("agentOrchestrationRules"),
     lane: v.optional(laneValidator),
+    text: v.optional(v.string()), // Allow editing rule text during promotion
   },
   handler: async (ctx, args) => {
     const teamId = await getTeamId(ctx, args.teamSlugOrId);
@@ -425,9 +426,13 @@ export const promoteRule = authMutation({
       throw new Error("Rule not found or unauthorized");
     }
 
+    const newText = args.text?.trim() || rule.text;
+    const newLane = args.lane ?? rule.lane;
+
     await ctx.db.patch(args.ruleId, {
       status: "active",
-      lane: args.lane ?? rule.lane,
+      lane: newLane,
+      text: newText,
       confidence: 1.0,
       lastConfirmedAt: Date.now(),
       updatedAt: Date.now(),
@@ -438,7 +443,7 @@ export const promoteRule = authMutation({
       userId,
       ruleId: args.ruleId,
       eventType: "rule_promoted",
-      text: `Promoted rule to active (lane: ${args.lane ?? rule.lane})`,
+      text: `Promoted rule to active (lane: ${newLane})`,
       createdAt: Date.now(),
     });
   },

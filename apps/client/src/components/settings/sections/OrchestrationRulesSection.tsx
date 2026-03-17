@@ -7,7 +7,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { convexQuery } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useConvex } from "convex/react";
-import { ArrowUp, Ban, Loader2, Plus, X } from "lucide-react";
+import { Ban, Loader2, Pencil, Plus, X } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -63,6 +63,8 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addForm, setAddForm] = useState({ text: "", lane: "hot" as RuleLane });
   const [laneFilter, setLaneFilter] = useState<RuleLane | "all">("all");
+  const [promoteTarget, setPromoteTarget] = useState<OrchestrationRule | null>(null);
+  const [promoteForm, setPromoteForm] = useState({ text: "", lane: "hot" as RuleLane });
 
   // All queries run unconditionally to maintain accurate tab counts
   const { data: activeRules, refetch: refetchActive, isLoading: loadingActive } = useQuery({
@@ -78,16 +80,18 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
   });
 
   const promoteMutation = useMutation({
-    mutationFn: async ({ ruleId, lane }: { ruleId: string; lane?: RuleLane }) => {
+    mutationFn: async ({ ruleId, lane, text }: { ruleId: string; lane?: RuleLane; text?: string }) => {
       return await convex.mutation(api.agentOrchestrationLearning.promoteRule, {
         teamSlugOrId,
         ruleId: ruleId as OrchestrationRule["_id"],
         lane,
+        text,
       });
     },
     onSuccess: () => {
       void refetchActive();
       void refetchCandidates();
+      setPromoteTarget(null);
       toast.success("Rule promoted to active");
     },
     onError: (error) => {
@@ -138,6 +142,20 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
     if (!addForm.text.trim()) return;
     createMutation.mutate({ text: addForm.text.trim(), lane: addForm.lane });
   }, [addForm, createMutation]);
+
+  const handleOpenPromote = useCallback((rule: OrchestrationRule) => {
+    setPromoteTarget(rule);
+    setPromoteForm({ text: rule.text, lane: rule.lane });
+  }, []);
+
+  const handlePromote = useCallback(() => {
+    if (!promoteTarget || !promoteForm.text.trim()) return;
+    promoteMutation.mutate({
+      ruleId: promoteTarget._id,
+      lane: promoteForm.lane,
+      text: promoteForm.text.trim(),
+    });
+  }, [promoteTarget, promoteForm, promoteMutation]);
 
   const filteredActiveRules = useMemo(() => {
     if (!activeRules || laneFilter === "all") return activeRules ?? [];
@@ -224,7 +242,7 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
           <RulesList
             rules={filteredCandidateRules}
             variant="candidate"
-            onPromote={(ruleId) => promoteMutation.mutate({ ruleId })}
+            onPromote={handleOpenPromote}
             onSuppress={setSuppressTarget}
             emptyMessage="No candidate rules. Candidates are auto-detected from orchestration runs."
           />
@@ -306,6 +324,64 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
+
+      {/* Promote rule dialog (edit before promoting) */}
+      <Dialog.Root open={!!promoteTarget} onOpenChange={(open) => !open && setPromoteTarget(null)}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/50" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white p-6 shadow-xl dark:bg-neutral-900">
+            <Dialog.Title className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+              Promote Rule
+            </Dialog.Title>
+            <Dialog.Close className="absolute right-4 top-4 text-neutral-400 hover:text-neutral-600">
+              <X className="h-5 w-5" />
+            </Dialog.Close>
+
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                  Rule Text
+                </label>
+                <textarea
+                  value={promoteForm.text}
+                  onChange={(e) => setPromoteForm((f) => ({ ...f, text: e.target.value }))}
+                  className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
+                  rows={4}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                  Lane
+                </label>
+                <select
+                  value={promoteForm.lane}
+                  onChange={(e) => setPromoteForm((f) => ({ ...f, lane: e.target.value as RuleLane }))}
+                  className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
+                >
+                  <option value="hot">Hot (Always Apply)</option>
+                  <option value="orchestration">Orchestration</option>
+                  <option value="project">Project</option>
+                </select>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => setPromoteTarget(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handlePromote}
+                  disabled={!promoteForm.text.trim() || promoteMutation.isPending}
+                >
+                  {promoteMutation.isPending && (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  )}
+                  Promote to Active
+                </Button>
+              </div>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </SettingSection>
   );
 }
@@ -319,7 +395,7 @@ function RulesList({
 }: {
   rules: OrchestrationRule[];
   variant?: "candidate";
-  onPromote?: (ruleId: string) => void;
+  onPromote?: (rule: OrchestrationRule) => void;
   onSuppress: (rule: OrchestrationRule) => void;
   emptyMessage: string;
 }) {
@@ -371,10 +447,10 @@ function RulesList({
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 text-emerald-600 hover:text-emerald-700"
-                onClick={() => onPromote(rule._id)}
-                title="Promote to active"
+                onClick={() => onPromote(rule)}
+                title="Edit and promote to active"
               >
-                <ArrowUp className="h-4 w-4" />
+                <Pencil className="h-4 w-4" />
               </Button>
             )}
             <Button
