@@ -8,12 +8,14 @@ import {
   ChevronDown,
   ChevronUp,
   Radio,
+  Layers,
 } from "lucide-react";
 import clsx from "clsx";
 import { Link } from "@tanstack/react-router";
 import { STATUS_CONFIG, type TaskStatus } from "./status-config";
 import type { OrchestrationTaskWithDeps } from "./OrchestrationDashboard";
 import { OrchestrationMessageDialog } from "./OrchestrationMessageDialog";
+import { OrchestrationTaskDetail } from "./OrchestrationTaskDetail";
 import { useMutation } from "@tanstack/react-query";
 import { useConvex } from "convex/react";
 import { api } from "@cmux/convex/api";
@@ -26,6 +28,7 @@ interface OrchestrationTaskRowProps {
 
 export function OrchestrationTaskRow({ task, teamSlugOrId }: OrchestrationTaskRowProps) {
   const [expanded, setExpanded] = useState(false);
+  const [detailView, setDetailView] = useState(false);
   const [messageDialogOpen, setMessageDialogOpen] = useState(false);
   const convex = useConvex();
 
@@ -121,6 +124,19 @@ export function OrchestrationTaskRow({ task, teamSlugOrId }: OrchestrationTaskRo
             )}
             <button
               type="button"
+              onClick={() => setDetailView(!detailView)}
+              className={clsx(
+                "rounded p-1 transition-colors",
+                detailView
+                  ? "bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+                  : "text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+              )}
+              title="3-surface detail view"
+            >
+              <Layers className="size-3.5" />
+            </button>
+            <button
+              type="button"
               onClick={() => setExpanded(!expanded)}
               className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
             >
@@ -172,8 +188,15 @@ export function OrchestrationTaskRow({ task, teamSlugOrId }: OrchestrationTaskRo
           </div>
         )}
 
-        {/* Expanded details */}
-        {expanded && (
+        {/* 3-Surface Detail View */}
+        {detailView && (
+          <div className="mt-3">
+            <OrchestrationTaskDetail task={task} teamSlugOrId={teamSlugOrId} />
+          </div>
+        )}
+
+        {/* Expanded details (simple view) */}
+        {expanded && !detailView && (
           <div className="mt-3 space-y-2 border-t border-neutral-100 pt-3 dark:border-neutral-800">
             {/* Full prompt */}
             <div>
