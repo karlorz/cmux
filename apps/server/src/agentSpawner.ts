@@ -397,7 +397,16 @@ export async function spawnAgent(
     const cmuxServerUrl = getServerBaseUrl();
 
     // Start loading workspace config early so it runs in parallel with other setup work.
+    // Skip for JWT-auth path since getWwwClient() requires Stack Auth headers
     const workspaceConfigPromise = (async (): Promise<WorkspaceConfigLayer[]> => {
+      // Skip www API calls for JWT-auth path (no Stack Auth context)
+      if (!capturedAuthHeaderJson) {
+        serverLogger.info(
+          `[AgentSpawner] Skipping workspace config loading - no auth headers (JWT path)`
+        );
+        return [];
+      }
+
       const projectFullNames: string[] = [];
 
       if (options.isCloudMode && options.environmentId) {
@@ -528,7 +537,8 @@ export async function spawnAgent(
       );
     }
 
-    if (options.environmentId) {
+    // Skip www API calls for JWT-auth path (no Stack Auth context)
+    if (options.environmentId && capturedAuthHeaderJson) {
       try {
         const envRes = await getApiEnvironmentsByIdVars({
           client: getWwwClient(),
@@ -559,6 +569,10 @@ export async function spawnAgent(
           error
         );
       }
+    } else if (options.environmentId && !capturedAuthHeaderJson) {
+      serverLogger.info(
+        `[AgentSpawner] Skipping environment env vars - no auth headers (JWT path)`
+      );
     }
 
     let authFiles: EnvironmentResult["files"] = [];

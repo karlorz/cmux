@@ -33,9 +33,10 @@ export interface ConvexAdminClient {
 let adminClient: ConvexAdminClient | null = null;
 
 export function getConvexAdmin(): ConvexAdminClient | null {
-  const deployKey = process.env.CONVEX_DEPLOY_KEY;
+  // Support both cloud (CONVEX_DEPLOY_KEY) and self-hosted (CONVEX_SELF_HOSTED_ADMIN_KEY)
+  const deployKey = process.env.CONVEX_DEPLOY_KEY || process.env.CONVEX_SELF_HOSTED_ADMIN_KEY;
   if (!deployKey) {
-    console.warn("[getConvexAdmin] CONVEX_DEPLOY_KEY not set");
+    console.warn("[getConvexAdmin] Neither CONVEX_DEPLOY_KEY nor CONVEX_SELF_HOSTED_ADMIN_KEY set");
     return null;
   }
 

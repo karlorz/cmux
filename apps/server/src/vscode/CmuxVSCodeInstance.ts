@@ -1,6 +1,7 @@
 import { dockerLogger } from "../utils/fileLogger";
+import { getAuthHeaderJson } from "../utils/requestContext";
 import { extractSandboxStartError } from "../utils/sandboxErrors";
-import { getWwwClient } from "../utils/wwwClient";
+import { getWwwClient, getWwwClientWithJwt } from "../utils/wwwClient";
 import { getWwwOpenApiModule } from "../utils/wwwOpenApiModule";
 import {
   VSCodeInstance,
@@ -46,8 +47,23 @@ export class CmuxVSCodeInstance extends VSCodeInstance {
     dockerLogger.info(
       `[CmuxVSCodeInstance ${this.instanceId}] Requesting sandbox start via www API`
     );
+
+    // Choose client based on available auth:
+    // - Stack Auth available: use getWwwClient() with x-stack-auth header
+    // - Only JWT available: use getWwwClientWithJwt() with x-cmux-token header
+    const hasStackAuth = !!getAuthHeaderJson();
+    const client = hasStackAuth
+      ? getWwwClient()
+      : this.taskRunJwt
+        ? getWwwClientWithJwt(this.taskRunJwt)
+        : getWwwClient(); // Will throw if no auth - expected behavior
+
+    dockerLogger.info(
+      `[CmuxVSCodeInstance ${this.instanceId}] Using ${hasStackAuth ? "Stack Auth" : "JWT"} for www API`
+    );
+
     const startRes = await postApiSandboxesStart({
-      client: getWwwClient(),
+      client,
       body: {
         teamSlugOrId: this.teamSlugOrId,
         ttlSeconds: 60 * 60,

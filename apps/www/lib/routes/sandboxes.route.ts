@@ -921,33 +921,66 @@ sandboxesRouter.openapi(
     },
   }),
   async (c) => {
-    // Support both cookie-based (web) and Bearer token (CLI) authentication
+    // Support both Stack Auth (web/CLI) and JWT authentication (agent spawning)
     const user = await getUserFromRequest(c.req.raw);
-    if (!user) {
-      return c.text("Unauthorized", 401);
+    let accessToken: string | null = null;
+    let isJwtAuth = false;
+    let _jwtPayload: { taskRunId: string; teamId: string; userId: string } | null = null;
+
+    if (user) {
+      // Stack Auth flow - use user's access token
+      const authJson = await user.getAuthJson();
+      accessToken = authJson.accessToken || null;
     }
-    const { accessToken } = await user.getAuthJson();
+
+    // Fall back to JWT auth if Stack Auth not available
     if (!accessToken) {
+      const { extractTaskRunJwtFromRequest, verifyTaskRunJwt } = await import("@/lib/utils/jwt-task-run");
+      const jwtToken = extractTaskRunJwtFromRequest(c.req.raw);
+      if (jwtToken) {
+        const payload = await verifyTaskRunJwt(jwtToken);
+        if (payload) {
+          isJwtAuth = true;
+          _jwtPayload = payload;
+          console.log("[sandboxes.start] Using JWT auth", {
+            taskRunId: payload.taskRunId,
+            teamId: payload.teamId,
+          });
+        }
+      }
+    }
+
+    if (!accessToken && !isJwtAuth) {
       return c.text("Unauthorized", 401);
     }
+
     const githubAccessTokenPromise = (async () => {
-      const githubAccount = await user.getConnectedAccount("github");
-      if (!githubAccount) {
-        return {
-          githubAccessTokenError: "GitHub account not found",
-          githubAccessToken: null,
-        } as const;
-      }
-      const { accessToken: githubAccessToken } =
-        await githubAccount.getAccessToken();
-      if (!githubAccessToken) {
-        return {
-          githubAccessTokenError: "GitHub access token not found",
-          githubAccessToken: null,
-        } as const;
+      if (user) {
+        const githubAccount = await user.getConnectedAccount("github");
+        if (!githubAccount) {
+          return {
+            githubAccessTokenError: "GitHub account not found",
+            githubAccessToken: null,
+          } as const;
+        }
+        const { accessToken: githubAccessToken } =
+          await githubAccount.getAccessToken();
+        if (!githubAccessToken) {
+          return {
+            githubAccessTokenError: "GitHub access token not found",
+            githubAccessToken: null,
+          } as const;
+        }
+
+        return { githubAccessTokenError: null, githubAccessToken } as const;
       }
 
-      return { githubAccessTokenError: null, githubAccessToken } as const;
+      // JWT auth path - look up GitHub token from Convex via team/user
+      // For now, return null - sub-agents don't need GitHub write access
+      return {
+        githubAccessTokenError: "JWT auth - GitHub token not available",
+        githubAccessToken: null,
+      } as const;
     })();
 
     const body = c.req.valid("json");
@@ -958,13 +991,26 @@ sandboxesRouter.openapi(
         hasSnapshotId: Boolean(body.snapshotId),
         repoUrl: body.repoUrl,
         branch: body.branch,
+        authMethod: isJwtAuth ? "jwt" : "stack-auth",
       });
     } catch {
       /* noop */
     }
 
     try {
-      const convex = getConvex({ accessToken });
+      // For JWT auth, use admin client; for Stack Auth, use user's access token
+      // The admin client has same query/mutation interface, just cast for type compatibility
+      const { getConvexAdmin } = await import("@/lib/utils/get-convex");
+      const convex = isJwtAuth
+        ? (() => {
+            const admin = getConvexAdmin();
+            if (!admin) {
+              throw new Error("Admin client not available for JWT auth");
+            }
+            // Cast admin client to match expected interface (same query/mutation methods)
+            return admin as unknown as ReturnType<typeof getConvex>;
+          })()
+        : getConvex({ accessToken: accessToken! });
 
       const {
         team,
@@ -1102,7 +1148,7 @@ sandboxesRouter.openapi(
           metadata: {
             app: "cmux",
             teamId: team.uuid,
-            userId: user.id,
+            userId: user?.id ?? _jwtPayload?.userId ?? "unknown",
             ...(body.environmentId ? { environmentId: body.environmentId } : {}),
             ...(body.metadata || {}),
           },
@@ -1466,7 +1512,7 @@ sandboxesRouter.openapi(
             teamSlugOrId: body.teamSlugOrId,
           });
           const targetConnection = connections.find(
-            (co) =>
+            (co: { isActive?: boolean; accountLogin?: string | null }) =>
               co.isActive &&
               co.accountLogin?.toLowerCase() === parsedRepoUrl.owner.toLowerCase()
           );
