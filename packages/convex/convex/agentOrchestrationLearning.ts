@@ -37,6 +37,55 @@ const eventTypeValidator = v.union(
 
 // --- Queries ---
 
+// Shared query logic for fetching active rules by team, lane, and project.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function fetchActiveRules(
+  db: any,
+  teamId: string,
+  lane?: string,
+  projectFullName?: string,
+) {
+  if (lane) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return db
+      .query("agentOrchestrationRules")
+      .withIndex("by_team_lane_status", (q: any) =>
+        q.eq("teamId", teamId).eq("lane", lane).eq("status", "active")
+      )
+      .take(100);
+  }
+
+  if (projectFullName) {
+    const [projectRules, globalRules] = await Promise.all([
+      db
+        .query("agentOrchestrationRules")
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .withIndex("by_team_project_status", (q: any) =>
+          q.eq("teamId", teamId).eq("projectFullName", projectFullName).eq("status", "active")
+        )
+        .take(100),
+      db
+        .query("agentOrchestrationRules")
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .withIndex("by_team_status", (q: any) =>
+          q.eq("teamId", teamId).eq("status", "active")
+        )
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .filter((q: any) => q.eq(q.field("projectFullName"), undefined))
+        .take(100),
+    ]);
+    return [...globalRules, ...projectRules];
+  }
+
+  return db
+    .query("agentOrchestrationRules")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .withIndex("by_team_status", (q: any) =>
+      q.eq("teamId", teamId).eq("status", "active")
+    )
+    .take(100);
+}
+
 /**
  * List active orchestration rules for a team.
  * Used to seed rules into head-agent spawn context.
@@ -49,45 +98,7 @@ export const getActiveRules = authQuery({
   },
   handler: async (ctx, args) => {
     const teamId = await getTeamId(ctx, args.teamSlugOrId);
-
-    if (args.lane) {
-      return ctx.db
-        .query("agentOrchestrationRules")
-        .withIndex("by_team_lane_status", (q) =>
-          q.eq("teamId", teamId).eq("lane", args.lane!).eq("status", "active")
-        )
-        .take(100);
-    }
-
-    if (args.projectFullName) {
-      // Return both project-specific rules AND global team rules (no projectFullName)
-      const [projectRules, globalRules] = await Promise.all([
-        ctx.db
-          .query("agentOrchestrationRules")
-          .withIndex("by_team_project_status", (q) =>
-            q
-              .eq("teamId", teamId)
-              .eq("projectFullName", args.projectFullName!)
-              .eq("status", "active")
-          )
-          .take(100),
-        ctx.db
-          .query("agentOrchestrationRules")
-          .withIndex("by_team_status", (q) =>
-            q.eq("teamId", teamId).eq("status", "active")
-          )
-          .filter((q) => q.eq(q.field("projectFullName"), undefined))
-          .take(100),
-      ]);
-      return [...globalRules, ...projectRules];
-    }
-
-    return ctx.db
-      .query("agentOrchestrationRules")
-      .withIndex("by_team_status", (q) =>
-        q.eq("teamId", teamId).eq("status", "active")
-      )
-      .take(100);
+    return fetchActiveRules(ctx.db, teamId, args.lane, args.projectFullName);
   },
 });
 
@@ -279,6 +290,70 @@ export const logLearningEvent = authMutation({
   },
 });
 
+// Shared handler for logEvent and logEventInternal to avoid duplication.
+async function logEventHandler(
+  ctx: { db: { insert: (table: string, doc: Record<string, unknown>) => Promise<string> } },
+  teamId: string,
+  userId: string,
+  eventType: string,
+  payload: {
+    text: string;
+    lane?: string;
+    confidence?: number;
+    metadata?: unknown;
+    sourceTaskRunId?: string;
+  },
+): Promise<{ eventId: string; ruleId: string | undefined }> {
+  const now = Date.now();
+  const { text, lane, confidence, metadata, sourceTaskRunId } = payload;
+
+  // For learnings and errors, create a candidate rule
+  let ruleId: string | undefined;
+  if (eventType === "learning_logged" || eventType === "error_logged") {
+    ruleId = await ctx.db.insert("agentOrchestrationRules", {
+      teamId,
+      userId,
+      lane: lane ?? "orchestration",
+      status: "candidate",
+      text,
+      sourceType:
+        eventType === "learning_logged" ? "run_review" : "user_correction",
+      sourceTaskRunId: sourceTaskRunId
+        ? (sourceTaskRunId as Id<"taskRuns">)
+        : undefined,
+      confidence:
+        confidence ?? (eventType === "error_logged" ? 0.8 : 0.5),
+      timesSeen: 1,
+      timesUsed: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  // Log the event
+  const eventId = await ctx.db.insert("agentOrchestrationLearningEvents", {
+    teamId,
+    userId,
+    ruleId: ruleId
+      ? (ruleId as Id<"agentOrchestrationRules">)
+      : undefined,
+    eventType,
+    text,
+    metadataJson: metadata ? JSON.stringify(metadata) : undefined,
+    createdAt: now,
+  });
+
+  return { eventId, ruleId };
+}
+
+const logEventPayloadValidator = v.object({
+  text: v.string(),
+  lane: v.optional(laneValidator),
+  confidence: v.optional(v.number()),
+  metadata: v.optional(v.any()),
+  sourceTaskRunId: v.optional(v.string()),
+});
+
 /**
  * Log an orchestration event from an agent (via MCP tool or HTTP API).
  * Creates a candidate rule and logs the event.
@@ -287,60 +362,13 @@ export const logEvent = authMutation({
   args: {
     teamSlugOrId: v.string(),
     eventType: eventTypeValidator,
-    payload: v.object({
-      text: v.string(),
-      lane: v.optional(laneValidator),
-      confidence: v.optional(v.number()),
-      metadata: v.optional(v.any()),
-      sourceTaskRunId: v.optional(v.string()),
-    }),
+    payload: logEventPayloadValidator,
   },
   handler: async (ctx, args) => {
     const teamId = await getTeamId(ctx, args.teamSlugOrId);
     const userId = ctx.identity.subject;
-    const now = Date.now();
-
-    const { text, lane, confidence, metadata, sourceTaskRunId } = args.payload;
-
-    // For learnings and errors, create a candidate rule
-    let ruleId: string | undefined;
-    if (
-      args.eventType === "learning_logged" ||
-      args.eventType === "error_logged"
-    ) {
-      ruleId = await ctx.db.insert("agentOrchestrationRules", {
-        teamId,
-        userId,
-        lane: lane ?? "orchestration",
-        status: "candidate",
-        text,
-        sourceType:
-          args.eventType === "learning_logged"
-            ? "run_review"
-            : "user_correction",
-        sourceTaskRunId: sourceTaskRunId
-          ? (sourceTaskRunId as Id<"taskRuns">)
-          : undefined,
-        confidence: confidence ?? (args.eventType === "error_logged" ? 0.8 : 0.5),
-        timesSeen: 1,
-        timesUsed: 0,
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
-
-    // Log the event
-    const eventId = await ctx.db.insert("agentOrchestrationLearningEvents", {
-      teamId,
-      userId,
-      ruleId: ruleId ? (ruleId as Id<"agentOrchestrationRules">) : undefined,
-      eventType: args.eventType,
-      text,
-      metadataJson: metadata ? JSON.stringify(metadata) : undefined,
-      createdAt: now,
-    });
-
-    return { eventId, ruleId };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return logEventHandler(ctx as any, teamId, userId, args.eventType, args.payload);
   },
 });
 
@@ -353,57 +381,11 @@ export const logEventInternal = internalMutation({
     teamId: v.string(),
     userId: v.string(),
     eventType: eventTypeValidator,
-    payload: v.object({
-      text: v.string(),
-      lane: v.optional(laneValidator),
-      confidence: v.optional(v.number()),
-      metadata: v.optional(v.any()),
-      sourceTaskRunId: v.optional(v.string()),
-    }),
+    payload: logEventPayloadValidator,
   },
   handler: async (ctx, args) => {
-    const now = Date.now();
-    const { text, lane, confidence, metadata, sourceTaskRunId } = args.payload;
-
-    // For learnings and errors, create a candidate rule
-    let ruleId: string | undefined;
-    if (
-      args.eventType === "learning_logged" ||
-      args.eventType === "error_logged"
-    ) {
-      ruleId = await ctx.db.insert("agentOrchestrationRules", {
-        teamId: args.teamId,
-        userId: args.userId,
-        lane: lane ?? "orchestration",
-        status: "candidate",
-        text,
-        sourceType:
-          args.eventType === "learning_logged"
-            ? "run_review"
-            : "user_correction",
-        sourceTaskRunId: sourceTaskRunId
-          ? (sourceTaskRunId as Id<"taskRuns">)
-          : undefined,
-        confidence: confidence ?? (args.eventType === "error_logged" ? 0.8 : 0.5),
-        timesSeen: 1,
-        timesUsed: 0,
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
-
-    // Log the event
-    const eventId = await ctx.db.insert("agentOrchestrationLearningEvents", {
-      teamId: args.teamId,
-      userId: args.userId,
-      ruleId: ruleId ? (ruleId as Id<"agentOrchestrationRules">) : undefined,
-      eventType: args.eventType,
-      text,
-      metadataJson: metadata ? JSON.stringify(metadata) : undefined,
-      createdAt: now,
-    });
-
-    return { eventId, ruleId };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return logEventHandler(ctx as any, args.teamId, args.userId, args.eventType, args.payload);
   },
 });
 
@@ -628,45 +610,7 @@ export const getActiveRulesInternal = internalQuery({
     projectFullName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // Filter by lane if specified
-    if (args.lane) {
-      return ctx.db
-        .query("agentOrchestrationRules")
-        .withIndex("by_team_lane_status", (q) =>
-          q.eq("teamId", args.teamId).eq("lane", args.lane!).eq("status", "active")
-        )
-        .take(100);
-    }
-
-    if (args.projectFullName) {
-      // Return both project-specific rules AND global team rules (no projectFullName)
-      const [projectRules, globalRules] = await Promise.all([
-        ctx.db
-          .query("agentOrchestrationRules")
-          .withIndex("by_team_project_status", (q) =>
-            q
-              .eq("teamId", args.teamId)
-              .eq("projectFullName", args.projectFullName!)
-              .eq("status", "active")
-          )
-          .take(100),
-        ctx.db
-          .query("agentOrchestrationRules")
-          .withIndex("by_team_status", (q) =>
-            q.eq("teamId", args.teamId).eq("status", "active")
-          )
-          .filter((q) => q.eq(q.field("projectFullName"), undefined))
-          .take(100),
-      ]);
-      return [...globalRules, ...projectRules];
-    }
-
-    return ctx.db
-      .query("agentOrchestrationRules")
-      .withIndex("by_team_status", (q) =>
-        q.eq("teamId", args.teamId).eq("status", "active")
-      )
-      .take(100);
+    return fetchActiveRules(ctx.db, args.teamId, args.lane, args.projectFullName);
   },
 });
 

@@ -532,7 +532,8 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
       previousKnowledge,
       previousMailbox,
       previousBehavior,
-      orchestrationRules: orchestrationRulesRaw.map((r) => ({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      orchestrationRules: orchestrationRulesRaw.map((r: any) => ({
         ruleId: r._id,
         text: r.text,
         lane: r.lane,

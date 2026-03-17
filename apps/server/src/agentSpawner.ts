@@ -734,7 +734,8 @@ export async function spawnAgent(
             teamSlugOrId,
             ...(task?.projectFullName ? { projectFullName: task.projectFullName } : {}),
           })
-          .then((rules) =>
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .then((rules: any[]) =>
             rules.map((r): OrchestrationRuleForInstructions => ({
               ruleId: r._id,
               text: r.text,
