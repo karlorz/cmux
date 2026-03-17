@@ -71,6 +71,17 @@ export type BuildMergedPreviewOptions = {
   hostConfigText?: string;
   mcpServerConfigs: McpServerConfig[];
   agentName?: string;
+  /**
+   * Orchestration environment variables to pass to the managed devsh-memory MCP server.
+   * These are needed for spawn_agent and other orchestration tools to authenticate.
+   */
+  orchestrationEnv?: {
+    CMUX_TASK_RUN_JWT?: string;
+    CMUX_SERVER_URL?: string;
+    CMUX_API_BASE_URL?: string;
+    CMUX_IS_ORCHESTRATION_HEAD?: string;
+    CMUX_ORCHESTRATION_ID?: string;
+  };
 };
 
 export type WebPreviewAgent = "claude" | "codex" | "opencode";
@@ -329,18 +340,79 @@ function getManagedMemoryArgs(agentName?: string): string[] {
     : ["-y", "devsh-memory-mcp@latest"];
 }
 
-function getManagedClaudeMemoryServer(agentName?: string): JsonObject {
-  return {
+function getManagedClaudeMemoryServer(
+  agentName?: string,
+  orchestrationEnv?: BuildMergedPreviewOptions["orchestrationEnv"],
+): JsonObject {
+  const server: JsonObject = {
     command: "npx",
     args: getManagedMemoryArgs(agentName),
   };
+
+  // Pass orchestration env vars to the MCP server process
+  // These are needed for spawn_agent and other orchestration tools
+  if (orchestrationEnv) {
+    const env: Record<string, string> = {};
+    if (orchestrationEnv.CMUX_TASK_RUN_JWT) {
+      env.CMUX_TASK_RUN_JWT = orchestrationEnv.CMUX_TASK_RUN_JWT;
+    }
+    if (orchestrationEnv.CMUX_SERVER_URL) {
+      env.CMUX_SERVER_URL = orchestrationEnv.CMUX_SERVER_URL;
+    }
+    if (orchestrationEnv.CMUX_API_BASE_URL) {
+      env.CMUX_API_BASE_URL = orchestrationEnv.CMUX_API_BASE_URL;
+    }
+    if (orchestrationEnv.CMUX_IS_ORCHESTRATION_HEAD) {
+      env.CMUX_IS_ORCHESTRATION_HEAD = orchestrationEnv.CMUX_IS_ORCHESTRATION_HEAD;
+    }
+    if (orchestrationEnv.CMUX_ORCHESTRATION_ID) {
+      env.CMUX_ORCHESTRATION_ID = orchestrationEnv.CMUX_ORCHESTRATION_ID;
+    }
+    if (Object.keys(env).length > 0) {
+      server.env = env;
+    }
+  }
+
+  return server;
 }
 
-function getManagedCodexMemoryBlock(agentName?: string): string {
-  return `[mcp_servers.${MANAGED_MEMORY_SERVER_NAME}]
-type = "stdio"
-command = "npx"
-args = ${JSON.stringify(getManagedMemoryArgs(agentName))}`;
+function getManagedCodexMemoryBlock(
+  agentName?: string,
+  orchestrationEnv?: BuildMergedPreviewOptions["orchestrationEnv"],
+): string {
+  const lines = [
+    `[mcp_servers.${MANAGED_MEMORY_SERVER_NAME}]`,
+    `type = "stdio"`,
+    `command = "npx"`,
+    `args = ${JSON.stringify(getManagedMemoryArgs(agentName))}`,
+  ];
+
+  // Pass orchestration env vars to the MCP server process
+  if (orchestrationEnv) {
+    const envEntries: string[] = [];
+    if (orchestrationEnv.CMUX_TASK_RUN_JWT) {
+      envEntries.push(`CMUX_TASK_RUN_JWT = ${JSON.stringify(orchestrationEnv.CMUX_TASK_RUN_JWT)}`);
+    }
+    if (orchestrationEnv.CMUX_SERVER_URL) {
+      envEntries.push(`CMUX_SERVER_URL = ${JSON.stringify(orchestrationEnv.CMUX_SERVER_URL)}`);
+    }
+    if (orchestrationEnv.CMUX_API_BASE_URL) {
+      envEntries.push(`CMUX_API_BASE_URL = ${JSON.stringify(orchestrationEnv.CMUX_API_BASE_URL)}`);
+    }
+    if (orchestrationEnv.CMUX_IS_ORCHESTRATION_HEAD) {
+      envEntries.push(`CMUX_IS_ORCHESTRATION_HEAD = ${JSON.stringify(orchestrationEnv.CMUX_IS_ORCHESTRATION_HEAD)}`);
+    }
+    if (orchestrationEnv.CMUX_ORCHESTRATION_ID) {
+      envEntries.push(`CMUX_ORCHESTRATION_ID = ${JSON.stringify(orchestrationEnv.CMUX_ORCHESTRATION_ID)}`);
+    }
+    if (envEntries.length > 0) {
+      lines.push("");
+      lines.push(`[mcp_servers.${MANAGED_MEMORY_SERVER_NAME}.env]`);
+      lines.push(...envEntries);
+    }
+  }
+
+  return lines.join("\n");
 }
 
 function parseHostJsonConfig(hostConfigText?: string): JsonObject {
@@ -612,7 +684,10 @@ export function buildMergedClaudeConfig(
     mcpServers: {
       ...buildClaudeMcpServers(options.mcpServerConfigs),
       ...existingMcpServers,
-      [MANAGED_MEMORY_SERVER_NAME]: getManagedClaudeMemoryServer(options.agentName),
+      [MANAGED_MEMORY_SERVER_NAME]: getManagedClaudeMemoryServer(
+        options.agentName,
+        options.orchestrationEnv,
+      ),
     },
   };
 }
@@ -709,9 +784,10 @@ export function stripMcpServerBlocksByName(toml: string, names: string[]): strin
 export function ensureManagedMemoryMcpServerConfig(
   toml: string,
   agentName?: string,
+  orchestrationEnv?: BuildMergedPreviewOptions["orchestrationEnv"],
 ): string {
   const normalizedToml = stripManagedMemoryMcpBlock(toml);
-  const managedMemoryBlock = getManagedCodexMemoryBlock(agentName);
+  const managedMemoryBlock = getManagedCodexMemoryBlock(agentName, orchestrationEnv);
 
   if (!normalizedToml) {
     return `${managedMemoryBlock}\n`;
@@ -744,7 +820,7 @@ export function buildMergedCodexConfigToml(
   const filteredToml = stripFilteredConfigKeys(options.hostConfigText ?? "");
   let toml = ensureCodexDefaults(filteredToml);
   toml = stripModelMigrations(toml) + generateModelMigrations();
-  toml = ensureManagedMemoryMcpServerConfig(toml, options.agentName);
+  toml = ensureManagedMemoryMcpServerConfig(toml, options.agentName, options.orchestrationEnv);
 
   const managedConfigs = options.mcpServerConfigs.filter(
     (config) => config.name !== MANAGED_MEMORY_SERVER_NAME,

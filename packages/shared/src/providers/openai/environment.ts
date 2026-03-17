@@ -457,10 +457,20 @@ log "Autopilot completed after \$ITER turns"
     ? `${hostConfigToml}\n\n${userConfigToml}`
     : hostConfigToml;
 
+  // Pass orchestration env vars for MCP server passthrough (spawn_agent needs JWT)
   let toml = buildMergedCodexConfigToml({
     hostConfigText: mergedHostConfig,
     mcpServerConfigs: codexMcpConfigs,
     agentName: ctx.agentName,
+    orchestrationEnv: ctx.isOrchestrationHead
+      ? {
+          CMUX_TASK_RUN_JWT: ctx.taskRunJwt,
+          CMUX_SERVER_URL: ctx.orchestrationEnv?.CMUX_SERVER_URL,
+          CMUX_API_BASE_URL: ctx.orchestrationEnv?.CMUX_API_BASE_URL,
+          CMUX_IS_ORCHESTRATION_HEAD: "1",
+          CMUX_ORCHESTRATION_ID: ctx.orchestrationOptions?.orchestrationId,
+        }
+      : undefined,
   });
 
   // Inject custom provider config if user has a custom base URL

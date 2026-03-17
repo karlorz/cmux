@@ -863,6 +863,13 @@ export async function spawnAgent(
         orchestrationRules,
         // Shell wrappers disabled by default - must be explicitly enabled in settings
         enableShellWrappers: workspaceSettings?.enableShellWrappers ?? false,
+        // Orchestration environment for MCP server passthrough (spawn_agent needs these)
+        isOrchestrationHead: options.isOrchestrationHead,
+        orchestrationEnv: {
+          CMUX_SERVER_URL: cmuxServerUrl,
+          CMUX_API_BASE_URL: getWwwBaseUrl(),
+          CMUX_ORCHESTRATION_ID: options.orchestrationOptions?.orchestrationId,
+        },
         // GitHub Projects v2 context (Phase 5: Sandbox Project Integration)
         githubProjectContext:
           task?.githubProjectId &&
