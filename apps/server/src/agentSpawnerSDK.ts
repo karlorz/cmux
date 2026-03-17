@@ -30,7 +30,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import { unstable_v2_createSession } from "@anthropic-ai/claude-agent-sdk";
 import { serverLogger } from "./utils/fileLogger";
-import { env, getWwwBaseUrl } from "./utils/server-env";
+import { getServerBaseUrl, getWwwBaseUrl } from "./utils/server-env";
 
 /**
  * Tool usage record for observability
@@ -164,10 +164,8 @@ export async function spawnAgentWithSDK(
     };
   };
 
-  const cmuxServerUrl =
-    env.CMUX_SERVER_URL
-    ?? process.env.BASE_APP_URL
-    ?? "http://localhost:9776";
+  // Server URL for agent-to-server API calls (spawn_agent, etc.)
+  const cmuxServerUrl = getServerBaseUrl();
 
   // Create SDK session with hooks
   const session = unstable_v2_createSession({

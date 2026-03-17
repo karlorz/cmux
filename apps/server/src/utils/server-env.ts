@@ -64,3 +64,33 @@ export function getWwwInternalUrl(): string {
     "http://localhost:9779";
   return normalizeOrigin(rawOrigin);
 }
+
+/**
+ * Public URL for the server app (apps/server on port 9776).
+ * Used for agent-to-server API calls (e.g., spawn_agent MCP tool).
+ * Derives from www URL by replacing port 9779 with 9776 in proxy format.
+ */
+export function getServerBaseUrl(): string {
+  // If explicit CMUX_SERVER_URL is set, use it directly
+  if (process.env.CMUX_SERVER_URL || env.CMUX_SERVER_URL) {
+    return normalizeOrigin(process.env.CMUX_SERVER_URL || env.CMUX_SERVER_URL || "");
+  }
+
+  // Derive from www URL by replacing port in proxy hostname
+  const wwwUrl = getWwwBaseUrl();
+
+  // Handle proxy format: port-9779-{hostId}.{domain} -> port-9776-{hostId}.{domain}
+  // This covers PVE-LXC (alphasolves.com) and Morph (http.cloud.morph.so) proxies
+  const proxyPattern = /port-9779-/;
+  if (proxyPattern.test(wwwUrl)) {
+    return wwwUrl.replace(proxyPattern, "port-9776-");
+  }
+
+  // Handle localhost: http://localhost:9779 -> http://localhost:9776
+  if (wwwUrl.includes("localhost:9779") || wwwUrl.includes("127.0.0.1:9779")) {
+    return wwwUrl.replace(":9779", ":9776");
+  }
+
+  // Fallback to localhost:9776
+  return "http://localhost:9776";
+}

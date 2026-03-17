@@ -49,7 +49,7 @@ import {
   getEditorSettingsUpload,
   type UserUploadedEditorSettings,
 } from "./utils/editorSettings";
-import { env, getWwwBaseUrl } from "./utils/server-env";
+import { env, getServerBaseUrl, getWwwBaseUrl } from "./utils/server-env";
 import { getWwwClient } from "./utils/wwwClient";
 import { getWwwOpenApiModule } from "./utils/wwwOpenApiModule";
 import { buildSystemTimezoneStartupCommand } from "./utils/timezone";
@@ -385,10 +385,9 @@ export async function spawnAgent(
     // For Convex Cloud, transform api URL to site URL
     const callbackUrl = env.CONVEX_SITE_URL
       ?? env.NEXT_PUBLIC_CONVEX_URL.replace('.convex.cloud', '.convex.site');
-    const cmuxServerUrl =
-      env.CMUX_SERVER_URL
-      ?? process.env.BASE_APP_URL
-      ?? "http://localhost:9776";
+    // Server URL for agent-to-server API calls (spawn_agent, etc.)
+    // Uses getServerBaseUrl() which derives port 9776 from www URL
+    const cmuxServerUrl = getServerBaseUrl();
 
     // Start loading workspace config early so it runs in parallel with other setup work.
     const workspaceConfigPromise = (async (): Promise<WorkspaceConfigLayer[]> => {
