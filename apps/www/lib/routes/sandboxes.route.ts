@@ -108,7 +108,8 @@ async function waitForVSCodeReady(
   vscodeUrl: string,
   options: { timeoutMs?: number; intervalMs?: number } = {}
 ): Promise<boolean> {
-  const { timeoutMs = 15_000, intervalMs = 500 } = options;
+  // PVE-LXC containers need more time for services to start after clone
+  const { timeoutMs = 45_000, intervalMs = 500 } = options;
   const start = Date.now();
 
   while (Date.now() - start < timeoutMs) {
@@ -140,7 +141,8 @@ async function waitForWorkerReady(
   workerUrl: string,
   options: { timeoutMs?: number; intervalMs?: number } = {}
 ): Promise<boolean> {
-  const { timeoutMs = 15_000, intervalMs = 500 } = options;
+  // PVE-LXC containers need more time for services to start after clone
+  const { timeoutMs = 45_000, intervalMs = 500 } = options;
   const start = Date.now();
 
   while (Date.now() - start < timeoutMs) {
