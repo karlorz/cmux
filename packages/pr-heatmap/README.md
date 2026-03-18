@@ -22,6 +22,10 @@ export OPENAI_API_KEY=your-key
 # Generate heatmap for changes against origin/main
 bunx pr-heatmap
 
+# Analyze a specific GitHub PR (requires gh CLI)
+bunx pr-heatmap 123
+bunx pr-heatmap -p 456
+
 # Custom base branch
 bunx pr-heatmap -b main
 
@@ -36,6 +40,7 @@ bunx pr-heatmap -o ./review-output
 
 ```bash
 devsh review                    # Review changes against origin/main
+devsh review 123                # Review PR #123 via gh CLI
 devsh review -b main -v         # Custom base, verbose
 devsh review -m gpt-4o          # Use GPT-4o model
 devsh review --json             # JSON output for scripting
@@ -45,6 +50,7 @@ devsh review --json             # JSON output for scripting
 
 | Flag | Description | Default |
 |------|-------------|---------|
+| `-p, --pr <number>` | GitHub PR number (requires gh CLI) | - |
 | `-b, --base <ref>` | Base ref to diff against | `origin/main` |
 | `-c, --concurrency <n>` | Parallel AI calls | `3` |
 | `-m, --model <model>` | OpenAI model | `gpt-4o-mini` |

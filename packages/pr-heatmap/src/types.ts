@@ -105,4 +105,14 @@ export interface HeatmapOptions {
   model?: string;
   verbose?: boolean;
   outputDir?: string;
+  /**
+   * Raw diff text to analyze instead of computing via git diff.
+   * When provided, `base` is ignored for diff generation.
+   */
+  diffText?: string;
+  /**
+   * Label for the diff source (e.g., "PR #123" or "origin/main").
+   * Used in output metadata when diffText is provided.
+   */
+  diffLabel?: string;
 }
