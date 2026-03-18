@@ -4,17 +4,28 @@ import { internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { env } from "../_shared/convex-env";
 import { DEFAULT_E2B_TEMPLATE_ID } from "@cmux/shared/e2b-templates";
-import { E2BClient, type E2BInstance } from "@cmux/e2b-client";
+import { E2BClient, type E2BInstance, E2B_SANDBOX_RETRY_OPTIONS } from "@cmux/e2b-client";
 
 /**
- * Get E2B client with API key from env
+ * Get E2B client with API key from env.
+ * Includes retry logic with exponential backoff for resilience.
  */
 function getE2BClient(): E2BClient {
   const apiKey = env.E2B_API_KEY;
   if (!apiKey) {
     throw new Error("E2B_API_KEY not configured");
   }
-  return new E2BClient({ apiKey });
+  return new E2BClient({
+    apiKey,
+    retryOptions: {
+      ...E2B_SANDBOX_RETRY_OPTIONS,
+      onRetry: (attempt, error, delayMs) => {
+        console.log(
+          `[e2b_actions] Retry attempt ${attempt} after error: ${error instanceof Error ? error.message : error}. Waiting ${delayMs}ms`
+        );
+      },
+    },
+  });
 }
 
 /**
