@@ -20,8 +20,11 @@ var (
 
 var orchestrateServeLocalCmd = &cobra.Command{
 	Use:   "serve-local <run-id>",
-	Short: "Serve a local run dashboard with live updates",
+	Short: "Serve a local run dashboard with live updates (deprecated: use 'view --live')",
 	Long: `Start a local HTTP server to monitor a local orchestration run.
+
+DEPRECATED: This command is deprecated. Use 'devsh orchestrate view <run-id> --live' instead,
+which provides the same functionality plus the full 3-surface viewer (Operator/Tasks/Events/Logs).
 
 This provides a browser-based dashboard for monitoring local runs created
 with 'devsh orchestrate run-local --persist'. The dashboard auto-refreshes
@@ -44,6 +47,10 @@ Examples:
   devsh orchestrate serve-local ~/.devsh/orchestrations/local_abc123`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Show deprecation warning
+		fmt.Fprintln(os.Stderr, "DEPRECATED: serve-local is deprecated. Use 'devsh orchestrate view <run-id> --live' instead.")
+		fmt.Fprintln(os.Stderr, "")
+
 		runID := args[0]
 
 		// Resolve run directory

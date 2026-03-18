@@ -283,3 +283,156 @@ func TestExportBundleWithoutLogs(t *testing.T) {
 		}
 	}
 }
+
+func TestLiveModeVariableExists(t *testing.T) {
+	// Verify the live mode variable is declared and can be set
+	origLive := orchestrateViewLive
+	defer func() { orchestrateViewLive = origLive }()
+
+	orchestrateViewLive = true
+	if !orchestrateViewLive {
+		t.Error("failed to set orchestrateViewLive to true")
+	}
+
+	orchestrateViewLive = false
+	if orchestrateViewLive {
+		t.Error("failed to set orchestrateViewLive to false")
+	}
+}
+
+func TestSynthesizeBundleFromRunDir(t *testing.T) {
+	// Create a temp run directory with config and state files
+	tmpDir := t.TempDir()
+
+	// Write config.json
+	config := LocalRunConfig{
+		OrchestrationID: "local_test_123",
+		Agent:           "claude/opus-4.6",
+		Prompt:          "Test the authentication flow",
+		Workspace:       "/tmp/workspace",
+		CreatedAt:       "2026-03-18T10:00:00Z",
+	}
+	configData, _ := json.Marshal(config)
+	os.WriteFile(filepath.Join(tmpDir, "config.json"), configData, 0644)
+
+	// Write state.json
+	result := "Task completed successfully"
+	state := LocalState{
+		OrchestrationID: "local_test_123",
+		Status:          "completed",
+		Agent:           "claude/opus-4.6",
+		Prompt:          "Test the authentication flow",
+		Result:          &result,
+	}
+	stateData, _ := json.Marshal(state)
+	os.WriteFile(filepath.Join(tmpDir, "state.json"), stateData, 0644)
+
+	// Write events.jsonl
+	events := []LocalEvent{
+		{Timestamp: "2026-03-18T10:00:01Z", Type: "started", Message: "Task started"},
+		{Timestamp: "2026-03-18T10:05:00Z", Type: "completed", Message: "Task completed"},
+	}
+	var eventsData string
+	for _, e := range events {
+		line, _ := json.Marshal(e)
+		eventsData += string(line) + "\n"
+	}
+	os.WriteFile(filepath.Join(tmpDir, "events.jsonl"), []byte(eventsData), 0644)
+
+	// Write logs
+	os.WriteFile(filepath.Join(tmpDir, "stdout.log"), []byte("stdout content"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "stderr.log"), []byte("stderr content"), 0644)
+
+	// Test synthesis
+	bundle := synthesizeBundleFromRunDir(tmpDir)
+
+	if bundle.Version != "1.0" {
+		t.Errorf("expected version 1.0, got %s", bundle.Version)
+	}
+
+	if bundle.Orchestration.ID != "local_test_123" {
+		t.Errorf("expected orchestration ID local_test_123, got %s", bundle.Orchestration.ID)
+	}
+
+	if bundle.Orchestration.Status != "completed" {
+		t.Errorf("expected status completed, got %s", bundle.Orchestration.Status)
+	}
+
+	if len(bundle.Tasks) != 1 {
+		t.Errorf("expected 1 task, got %d", len(bundle.Tasks))
+	}
+
+	if len(bundle.Events) != 2 {
+		t.Errorf("expected 2 events, got %d", len(bundle.Events))
+	}
+
+	if bundle.Logs == nil {
+		t.Error("expected logs to be present")
+	} else {
+		if bundle.Logs.Stdout != "stdout content" {
+			t.Errorf("expected stdout content, got %q", bundle.Logs.Stdout)
+		}
+		if bundle.Logs.Stderr != "stderr content" {
+			t.Errorf("expected stderr content, got %q", bundle.Logs.Stderr)
+		}
+	}
+
+	if bundle.Summary.TotalTasks != 1 {
+		t.Errorf("expected 1 total task, got %d", bundle.Summary.TotalTasks)
+	}
+
+	if bundle.Summary.CompletedTasks != 1 {
+		t.Errorf("expected 1 completed task, got %d", bundle.Summary.CompletedTasks)
+	}
+}
+
+func TestSynthesizeBundleFromRunningDir(t *testing.T) {
+	// Test synthesis when only config.json exists (in-progress run)
+	tmpDir := t.TempDir()
+
+	config := LocalRunConfig{
+		OrchestrationID: "local_running_456",
+		Agent:           "codex/gpt-5.1-codex-mini",
+		Prompt:          "In progress task",
+		CreatedAt:       "2026-03-18T11:00:00Z",
+	}
+	configData, _ := json.Marshal(config)
+	os.WriteFile(filepath.Join(tmpDir, "config.json"), configData, 0644)
+
+	bundle := synthesizeBundleFromRunDir(tmpDir)
+
+	if bundle.Orchestration.ID != "local_running_456" {
+		t.Errorf("expected orchestration ID local_running_456, got %s", bundle.Orchestration.ID)
+	}
+
+	if bundle.Orchestration.Status != "running" {
+		t.Errorf("expected status running, got %s", bundle.Orchestration.Status)
+	}
+
+	if bundle.Summary.RunningTasks != 1 {
+		t.Errorf("expected 1 running task, got %d", bundle.Summary.RunningTasks)
+	}
+}
+
+func TestResolveRunDirForView(t *testing.T) {
+	// Create a valid run directory
+	tmpDir := t.TempDir()
+	config := LocalRunConfig{OrchestrationID: "test"}
+	configData, _ := json.Marshal(config)
+	os.WriteFile(filepath.Join(tmpDir, "config.json"), configData, 0644)
+
+	// Test direct path
+	resolved, err := resolveRunDirForView(tmpDir)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if resolved != tmpDir {
+		t.Errorf("expected %s, got %s", tmpDir, resolved)
+	}
+
+	// Test non-existent path (should error)
+	_, err = resolveRunDirForView("/nonexistent/path/local_abc")
+	if err == nil {
+		t.Error("expected error for non-existent path")
+	}
+}

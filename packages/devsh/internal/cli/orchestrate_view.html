@@ -392,25 +392,27 @@
       try {
         const res = await fetch('/api/watch');
         const data = await res.json();
-        if (data.watch) {
+        if (data.watch || data.live) {
           // Show watch mode indicator
           const header = document.querySelector('header > div');
           const indicator = document.createElement('span');
-          indicator.style.cssText = 'display: inline-block; background: #1e40af; color: #bfdbfe; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 12px; vertical-align: middle;';
-          indicator.textContent = 'LIVE';
+          const isLive = data.live;
+          indicator.style.cssText = 'display: inline-block; background: ' + (isLive ? '#166534' : '#1e40af') + '; color: ' + (isLive ? '#bbf7d0' : '#bfdbfe') + '; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 12px; vertical-align: middle;';
+          indicator.textContent = isLive ? 'LIVE' : 'WATCH';
           indicator.id = 'live-indicator';
           header.querySelector('h1').appendChild(indicator);
 
-          // Auto-refresh every 5 seconds
+          // Auto-refresh: 2s for live mode, 5s for watch mode
+          const interval = data.interval || (isLive ? 2000 : 5000);
           setInterval(async () => {
             await loadBundle();
             // Flash the indicator
             const ind = document.getElementById('live-indicator');
             if (ind) {
               ind.style.background = '#22c55e';
-              setTimeout(() => ind.style.background = '#1e40af', 200);
+              setTimeout(() => ind.style.background = isLive ? '#166534' : '#1e40af', 200);
             }
-          }, 5000);
+          }, interval);
         }
       } catch (e) {
         console.error('Failed to check watch mode:', e);
