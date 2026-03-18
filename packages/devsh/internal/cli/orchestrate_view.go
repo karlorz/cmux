@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -36,15 +37,26 @@ exported bundle data.
 Examples:
   devsh orchestrate view ./debug-bundle.json
   devsh orchestrate view ./debug-bundle.json --port 8080
-  devsh orchestrate view ./debug-bundle.json --no-browser`,
+  devsh orchestrate view ./debug-bundle.json --no-browser
+  cat bundle.json | devsh orchestrate view -`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		bundlePath := args[0]
 
-		// Read and validate bundle
-		data, err := os.ReadFile(bundlePath)
-		if err != nil {
-			return fmt.Errorf("failed to read bundle file: %w", err)
+		// Read bundle from file or stdin
+		var data []byte
+		var err error
+		if bundlePath == "-" {
+			data, err = io.ReadAll(os.Stdin)
+			if err != nil {
+				return fmt.Errorf("failed to read from stdin: %w", err)
+			}
+			bundlePath = "(stdin)"
+		} else {
+			data, err = os.ReadFile(bundlePath)
+			if err != nil {
+				return fmt.Errorf("failed to read bundle file: %w", err)
+			}
 		}
 
 		var bundle ExportBundle
