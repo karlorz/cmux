@@ -286,3 +286,31 @@ func TestExportPlanState(t *testing.T) {
 		t.Error("export file is empty")
 	}
 }
+
+func TestPlanParallelFlagExists(t *testing.T) {
+	// Verify the planParallel flag variable is declared
+	origParallel := planParallel
+	defer func() { planParallel = origParallel }()
+
+	planParallel = true
+	if !planParallel {
+		t.Error("failed to set planParallel to true")
+	}
+
+	planParallel = false
+	if planParallel {
+		t.Error("failed to set planParallel to false")
+	}
+}
+
+func TestRunAgentForTaskUnsupported(t *testing.T) {
+	// Test that unsupported agents return an error
+	state := &LocalState{Events: []LocalEvent{}}
+	err := runAgentForTask(nil, state, "unknown/agent", "test", "/tmp")
+	if err == nil {
+		t.Error("expected error for unsupported agent")
+	}
+	if err.Error() != "unsupported agent: unknown/agent" {
+		t.Errorf("unexpected error: %v", err)
+	}
+}

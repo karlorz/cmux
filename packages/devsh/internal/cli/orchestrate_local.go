@@ -570,6 +570,130 @@ func runAmpLocal(ctx context.Context, state *LocalState, prompt, workspace strin
 	return nil
 }
 
+// Thread-safe agent runners that take agent as parameter (for parallel execution)
+func runClaudeLocalWithAgent(ctx context.Context, state *LocalState, agent, prompt, workspace string) error {
+	state.addEvent("agent_invoked", fmt.Sprintf("Spawning claude CLI (%s)", agent))
+
+	claudePath, err := exec.LookPath("claude")
+	if err != nil {
+		return fmt.Errorf("claude CLI not found in PATH: %w", err)
+	}
+
+	args := []string{"-p", "--dangerously-skip-permissions"}
+	args = append(args, prompt)
+
+	cmd := exec.CommandContext(ctx, claudePath, args...)
+	cmd.Dir = workspace
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	state.addEvent("agent_running", "Claude CLI executing in print mode")
+
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("claude CLI timed out")
+		}
+		return fmt.Errorf("claude CLI failed: %w", err)
+	}
+	return nil
+}
+
+func runCodexLocalWithAgent(ctx context.Context, state *LocalState, agent, prompt, workspace string) error {
+	state.addEvent("agent_invoked", fmt.Sprintf("Spawning codex CLI (%s)", agent))
+
+	codexPath, err := exec.LookPath("codex")
+	if err != nil {
+		return fmt.Errorf("codex CLI not found in PATH: %w", err)
+	}
+
+	cmd := exec.CommandContext(ctx, codexPath, prompt)
+	cmd.Dir = workspace
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	state.addEvent("agent_running", "Codex CLI executing")
+
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("codex CLI timed out")
+		}
+		return fmt.Errorf("codex CLI failed: %w", err)
+	}
+	return nil
+}
+
+func runGeminiLocalWithAgent(ctx context.Context, state *LocalState, agent, prompt, workspace string) error {
+	state.addEvent("agent_invoked", fmt.Sprintf("Spawning gemini CLI (%s)", agent))
+
+	geminiPath, err := exec.LookPath("gemini")
+	if err != nil {
+		return fmt.Errorf("gemini CLI not found in PATH: %w", err)
+	}
+
+	cmd := exec.CommandContext(ctx, geminiPath, "-p", prompt)
+	cmd.Dir = workspace
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	state.addEvent("agent_running", "Gemini CLI executing")
+
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("gemini CLI timed out")
+		}
+		return fmt.Errorf("gemini CLI failed: %w", err)
+	}
+	return nil
+}
+
+func runOpencodeLocalWithAgent(ctx context.Context, state *LocalState, agent, prompt, workspace string) error {
+	state.addEvent("agent_invoked", fmt.Sprintf("Spawning opencode CLI (%s)", agent))
+
+	opencodePath, err := exec.LookPath("opencode")
+	if err != nil {
+		return fmt.Errorf("opencode CLI not found in PATH: %w", err)
+	}
+
+	cmd := exec.CommandContext(ctx, opencodePath, prompt)
+	cmd.Dir = workspace
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	state.addEvent("agent_running", "Opencode CLI executing")
+
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("opencode CLI timed out")
+		}
+		return fmt.Errorf("opencode CLI failed: %w", err)
+	}
+	return nil
+}
+
+func runAmpLocalWithAgent(ctx context.Context, state *LocalState, agent, prompt, workspace string) error {
+	state.addEvent("agent_invoked", fmt.Sprintf("Spawning amp CLI (%s)", agent))
+
+	ampPath, err := exec.LookPath("amp")
+	if err != nil {
+		return fmt.Errorf("amp CLI not found in PATH: %w", err)
+	}
+
+	cmd := exec.CommandContext(ctx, ampPath, prompt)
+	cmd.Dir = workspace
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	state.addEvent("agent_running", "Amp CLI executing")
+
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("amp CLI timed out")
+		}
+		return fmt.Errorf("amp CLI failed: %w", err)
+	}
+	return nil
+}
+
 func exportLocalState(state *LocalState, outputPath string) error {
 	return exportLocalStateWithOptions(state, outputPath, false)
 }

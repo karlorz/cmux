@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -90,8 +91,14 @@ Plan file format:
       workspace: /other/repo  # Override workspace
       timeout: 2h             # Override timeout
 
+Parallel Execution (--parallel):
+  By default, tasks run sequentially. With --parallel, tasks without
+  dependencies run concurrently, and tasks wait only for their explicit
+  dependencies to complete before starting.
+
 Examples:
   devsh orchestrate run-plan tasks.yaml
+  devsh orchestrate run-plan tasks.yaml --parallel
   devsh orchestrate run-plan tasks.yaml --export results.json
   devsh orchestrate run-plan tasks.yaml --dry-run
   devsh orchestrate run-plan tasks.yaml --verbose`,
@@ -170,7 +177,12 @@ Examples:
 			return nil
 		}
 
-		// Build dependency graph
+		// Execute tasks - parallel or sequential mode
+		if planParallel {
+			return runPlanParallel(plan, planState, defaultWorkspace, defaultTimeout, startTime)
+		}
+
+		// Sequential execution: Build dependency graph
 		completed := make(map[string]bool)
 		failed := make(map[string]bool)
 
@@ -336,6 +348,208 @@ Examples:
 	},
 }
 
+// runPlanParallel executes tasks in parallel, respecting dependencies
+func runPlanParallel(plan *PlanFile, planState *PlanState, defaultWorkspace, defaultTimeout string, startTime time.Time) error {
+	var mu sync.Mutex
+	completed := make(map[string]bool)
+	failed := make(map[string]bool)
+	taskStates := make(map[string]*LocalState)
+	taskDone := make(map[string]chan struct{})
+
+	// Initialize done channels for each task
+	for _, task := range plan.Tasks {
+		taskDone[task.ID] = make(chan struct{})
+	}
+
+	var wg sync.WaitGroup
+	errChan := make(chan error, len(plan.Tasks))
+
+	// Launch all tasks as goroutines
+	for _, task := range plan.Tasks {
+		wg.Add(1)
+		go func(task PlanTask) {
+			defer wg.Done()
+			defer close(taskDone[task.ID])
+
+			// Wait for dependencies
+			for _, dep := range task.DependsOn {
+				<-taskDone[dep]
+				mu.Lock()
+				depFailed := failed[dep]
+				mu.Unlock()
+				if depFailed {
+					mu.Lock()
+					failed[task.ID] = true
+					planState.TasksFailed++
+					planState.addEvent("task_skipped", fmt.Sprintf("Skipping task '%s' - dependency '%s' failed", task.ID, dep))
+					mu.Unlock()
+					if !flagJSON {
+						fmt.Printf("\n[SKIP] Task %s - dependency %s failed\n", task.ID, dep)
+					}
+					return
+				}
+			}
+
+			// Resolve task workspace and timeout
+			taskWorkspace := task.Workspace
+			if taskWorkspace == "" {
+				taskWorkspace = defaultWorkspace
+			}
+			taskWorkspace, _ = filepath.Abs(taskWorkspace)
+
+			taskTimeout := task.Timeout
+			if taskTimeout == "" {
+				taskTimeout = defaultTimeout
+			}
+
+			timeout, err := time.ParseDuration(taskTimeout)
+			if err != nil {
+				mu.Lock()
+				planState.addEvent("task_error", fmt.Sprintf("Invalid timeout for task '%s': %v", task.ID, err))
+				failed[task.ID] = true
+				planState.TasksFailed++
+				mu.Unlock()
+				return
+			}
+
+			// Create task state
+			taskStartTime := time.Now()
+			taskState := &LocalState{
+				OrchestrationID: fmt.Sprintf("%s_%s", plan.Name, task.ID),
+				StartedAt:       taskStartTime.UTC().Format(time.RFC3339),
+				Status:          "running",
+				Agent:           task.Agent,
+				Prompt:          task.Prompt,
+				Workspace:       taskWorkspace,
+				Events:          []LocalEvent{},
+			}
+
+			mu.Lock()
+			taskStates[task.ID] = taskState
+			planState.addEvent("task_started", fmt.Sprintf("Starting task '%s' with agent %s", task.ID, task.Agent))
+			mu.Unlock()
+
+			if !flagJSON {
+				fmt.Printf("\n--- Task: %s (parallel) ---\n", task.ID)
+				fmt.Printf("Agent: %s\n", task.Agent)
+				fmt.Printf("Workspace: %s\n", taskWorkspace)
+				fmt.Printf("Prompt: %s\n", truncateString(task.Prompt, 80))
+				fmt.Println()
+			}
+
+			// Create context with timeout
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			defer cancel()
+
+			// Run the task using a copy of agent config
+			runErr := runAgentForTask(ctx, taskState, task.Agent, task.Prompt, taskWorkspace)
+
+			// Update task state
+			taskEndTime := time.Now()
+			taskState.CompletedAt = taskEndTime.UTC().Format(time.RFC3339)
+			taskState.DurationMs = taskEndTime.Sub(taskStartTime).Milliseconds()
+
+			mu.Lock()
+			if runErr != nil {
+				taskState.Status = "failed"
+				errStr := runErr.Error()
+				taskState.Error = &errStr
+				taskState.addEvent("task_failed", runErr.Error())
+				planState.addEvent("task_failed", fmt.Sprintf("Task '%s' failed: %v", task.ID, runErr))
+				failed[task.ID] = true
+				planState.TasksFailed++
+
+				if !flagJSON {
+					fmt.Printf("\n[FAIL] Task %s failed: %v\n", task.ID, runErr)
+				}
+			} else {
+				taskState.Status = "completed"
+				result := "Task completed successfully"
+				taskState.Result = &result
+				taskState.addEvent("task_completed", "Task finished successfully")
+				planState.addEvent("task_completed", fmt.Sprintf("Task '%s' completed in %s", task.ID, formatDuration(taskState.DurationMs)))
+				completed[task.ID] = true
+				planState.TasksComplete++
+
+				if !flagJSON {
+					fmt.Printf("\n[DONE] Task %s completed in %s\n", task.ID, formatDuration(taskState.DurationMs))
+				}
+			}
+			mu.Unlock()
+		}(task)
+	}
+
+	// Wait for all tasks to complete
+	wg.Wait()
+	close(errChan)
+
+	// Collect task states in order
+	for _, task := range plan.Tasks {
+		if ts, ok := taskStates[task.ID]; ok {
+			planState.TaskStates = append(planState.TaskStates, *ts)
+		}
+	}
+
+	// Finalize plan state
+	endTime := time.Now()
+	planState.CompletedAt = endTime.UTC().Format(time.RFC3339)
+	planState.DurationMs = endTime.Sub(startTime).Milliseconds()
+
+	if planState.TasksFailed > 0 {
+		planState.Status = "failed"
+		planState.addEvent("plan_failed", fmt.Sprintf("Plan completed with %d failures", planState.TasksFailed))
+	} else {
+		planState.Status = "completed"
+		planState.addEvent("plan_completed", fmt.Sprintf("Plan completed successfully in %s", formatDuration(planState.DurationMs)))
+	}
+
+	// Export if requested
+	if localExport != "" {
+		if err := exportPlanState(planState, localExport); err != nil {
+			if !flagJSON {
+				fmt.Printf("Warning: failed to export state: %v\n", err)
+			}
+		} else if !flagJSON {
+			fmt.Printf("\nExported to: %s\n", localExport)
+		}
+	}
+
+	// Print summary
+	if flagJSON {
+		output, _ := json.MarshalIndent(planState, "", "  ")
+		fmt.Println(string(output))
+	} else {
+		fmt.Printf("\n=== Plan Summary (Parallel Mode) ===\n")
+		fmt.Printf("Status: %s\n", planState.Status)
+		fmt.Printf("Duration: %s\n", formatDuration(planState.DurationMs))
+		fmt.Printf("Tasks: %d/%d completed, %d failed\n",
+			planState.TasksComplete, planState.TasksTotal, planState.TasksFailed)
+	}
+
+	if planState.TasksFailed > 0 {
+		return fmt.Errorf("plan failed with %d task failures", planState.TasksFailed)
+	}
+	return nil
+}
+
+// runAgentForTask runs a specific agent for a task (thread-safe version)
+func runAgentForTask(ctx context.Context, state *LocalState, agent, prompt, workspace string) error {
+	switch agent {
+	case "claude/haiku-4.5", "claude/haiku-4.6", "claude/sonnet-4.5", "claude/sonnet-4.6", "claude/opus-4.5", "claude/opus-4.6":
+		return runClaudeLocalWithAgent(ctx, state, agent, prompt, workspace)
+	case "codex/gpt-5.1-codex-mini", "codex/gpt-5.4-xhigh":
+		return runCodexLocalWithAgent(ctx, state, agent, prompt, workspace)
+	case "gemini/gemini-2.5-pro", "gemini/gemini-2.5-flash":
+		return runGeminiLocalWithAgent(ctx, state, agent, prompt, workspace)
+	case "opencode/big-pickle", "opencode/small-pickle":
+		return runOpencodeLocalWithAgent(ctx, state, agent, prompt, workspace)
+	case "amp/amp-1":
+		return runAmpLocalWithAgent(ctx, state, agent, prompt, workspace)
+	default:
+		return fmt.Errorf("unsupported agent: %s", agent)
+	}
+}
+
 func loadPlanFile(path string) (*PlanFile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -463,5 +677,6 @@ func init() {
 	orchestratePlanCmd.Flags().StringVar(&localExport, "export", "", "Export results to JSON file when done")
 	orchestratePlanCmd.Flags().BoolVar(&localTUI, "tui", false, "Show live terminal UI for each task")
 	orchestratePlanCmd.Flags().BoolVar(&localDryRun, "dry-run", false, "Show what would be executed without running")
+	orchestratePlanCmd.Flags().BoolVar(&planParallel, "parallel", false, "Execute independent tasks in parallel")
 	orchestrateCmd.AddCommand(orchestratePlanCmd)
 }
