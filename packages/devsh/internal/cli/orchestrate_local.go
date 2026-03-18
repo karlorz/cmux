@@ -122,6 +122,10 @@ Examples:
 				}
 			case "codex/gpt-5.1-codex-mini", "codex/gpt-5.4-xhigh":
 				fmt.Printf("  codex \"%s\"\n", prompt)
+			case "gemini/gemini-2.5-pro", "gemini/gemini-2.5-flash":
+				fmt.Printf("  gemini -p \"%s\"\n", prompt)
+			case "opencode/big-pickle", "opencode/small-pickle":
+				fmt.Printf("  opencode \"%s\"\n", prompt)
 			default:
 				fmt.Printf("  (unsupported agent: %s)\n", localAgent)
 			}
@@ -143,8 +147,12 @@ Examples:
 			runErr = runClaudeLocal(state, prompt, absWorkspace)
 		case "codex/gpt-5.1-codex-mini", "codex/gpt-5.4-xhigh":
 			runErr = runCodexLocal(state, prompt, absWorkspace)
+		case "gemini/gemini-2.5-pro", "gemini/gemini-2.5-flash":
+			runErr = runGeminiLocal(state, prompt, absWorkspace)
+		case "opencode/big-pickle", "opencode/small-pickle":
+			runErr = runOpencodeLocal(state, prompt, absWorkspace)
 		default:
-			return fmt.Errorf("unsupported local agent: %s (supported: claude/*, codex/*)", localAgent)
+			return fmt.Errorf("unsupported local agent: %s (supported: claude/*, codex/*, gemini/*, opencode/*)", localAgent)
 		}
 
 		// Update final state
@@ -256,6 +264,55 @@ func runCodexLocal(state *LocalState, prompt, workspace string) error {
 
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("codex CLI failed: %w", err)
+	}
+
+	return nil
+}
+
+func runGeminiLocal(state *LocalState, prompt, workspace string) error {
+	state.addEvent("agent_invoked", "Spawning gemini CLI")
+
+	// Check if gemini CLI is available
+	geminiPath, err := exec.LookPath("gemini")
+	if err != nil {
+		return fmt.Errorf("gemini CLI not found in PATH: %w", err)
+	}
+
+	// Use -p for print mode (non-interactive)
+	cmd := exec.Command(geminiPath, "-p", prompt)
+	cmd.Dir = workspace
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	state.addEvent("agent_running", "Gemini CLI executing")
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("gemini CLI failed: %w", err)
+	}
+
+	return nil
+}
+
+func runOpencodeLocal(state *LocalState, prompt, workspace string) error {
+	state.addEvent("agent_invoked", "Spawning opencode CLI")
+
+	// Check if opencode CLI is available
+	opencodePath, err := exec.LookPath("opencode")
+	if err != nil {
+		return fmt.Errorf("opencode CLI not found in PATH: %w", err)
+	}
+
+	cmd := exec.Command(opencodePath, prompt)
+	cmd.Dir = workspace
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	state.addEvent("agent_running", "Opencode CLI executing")
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("opencode CLI failed: %w", err)
 	}
 
 	return nil
