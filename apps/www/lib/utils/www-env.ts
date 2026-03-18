@@ -1,6 +1,9 @@
 import { createEnv } from "@t3-oss/env-core";
 import { z } from "zod";
 
+// Skip validation in test environment - tests mock the env module
+const isTest = process.env.VITEST === "true" || process.env.NODE_ENV === "test";
+
 // Helper to conditionally require fields based on SANDBOX_PROVIDER
 const getSandboxProviderSchema = () => {
   const provider = process.env.SANDBOX_PROVIDER;
@@ -24,7 +27,26 @@ const getSandboxProviderSchema = () => {
 
 const sandboxProviderSchema = getSandboxProviderSchema();
 
-export const env = createEnv({
+// In test mode, provide minimal mock env to avoid validation errors
+const testEnv = {
+  STACK_SECRET_SERVER_KEY: "test",
+  STACK_SUPER_SECRET_ADMIN_KEY: "test",
+  STACK_DATA_VAULT_SECRET: "a".repeat(32),
+  CMUX_GITHUB_APP_ID: "test",
+  CMUX_GITHUB_APP_PRIVATE_KEY: "test",
+  CMUX_TASK_RUN_JWT_SECRET: "test",
+  NEXT_PUBLIC_STACK_PROJECT_ID: "test",
+  NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY: "test",
+  NEXT_PUBLIC_CONVEX_URL: "https://test.convex.cloud",
+  MORPH_API_KEY: "test",
+  SANDBOX_PROVIDER: "morph",
+  // API keys for testing LLM features (branch name generation)
+  GEMINI_API_KEY: "test-gemini-key",
+  OPENAI_API_KEY: undefined,
+  ANTHROPIC_API_KEY: undefined,
+};
+
+export const env = isTest ? (testEnv as unknown as ReturnType<typeof createEnv>) : createEnv({
   clientPrefix: "NEXT_PUBLIC_",
   server: {
     // Stack server-side env

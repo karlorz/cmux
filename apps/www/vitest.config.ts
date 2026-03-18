@@ -24,6 +24,8 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    // Setup file runs before tests to load env vars
+    setupFiles: ["./vitest.setup.ts"],
   },
   envPrefix: "NEXT_PUBLIC_",
 });
