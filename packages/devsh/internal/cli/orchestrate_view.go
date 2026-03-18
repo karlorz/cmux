@@ -411,13 +411,22 @@ func synthesizeBundleFromRunDir(runDir string) ExportBundle {
 			bundle.Orchestration.Prompt = config.Prompt
 
 			// Populate metadata from config
+			// Prefer git info from config (captured at creation time), fall back to live
+			gitBranch := config.GitBranch
+			gitCommit := config.GitCommit
+			if gitBranch == "" {
+				gitBranch = getGitBranch(config.Workspace)
+			}
+			if gitCommit == "" {
+				gitCommit = getGitCommit(config.Workspace)
+			}
 			bundle.Metadata = &ExportMetadata{
 				Workspace:    config.Workspace,
 				DevshVersion: config.DevshVersion,
 				AgentCLI:     config.Agent,
 				Source:       "local",
-				GitBranch:    getGitBranch(config.Workspace),
-				GitCommit:    getGitCommit(config.Workspace),
+				GitBranch:    gitBranch,
+				GitCommit:    gitCommit,
 			}
 		}
 	}

@@ -52,6 +52,8 @@ type LocalRunConfig struct {
 	Model           string `json:"model,omitempty"`
 	CreatedAt       string `json:"createdAt"`
 	DevshVersion    string `json:"devshVersion"`
+	GitBranch       string `json:"gitBranch,omitempty"`
+	GitCommit       string `json:"gitCommit,omitempty"`
 }
 
 // LocalEvent represents an event in the local orchestration
@@ -149,6 +151,8 @@ Examples:
 				Model:           localModel,
 				CreatedAt:       startTime.UTC().Format(time.RFC3339),
 				DevshVersion:    GetVersion(),
+				GitBranch:       getGitBranch(absWorkspace),
+				GitCommit:       getGitCommit(absWorkspace),
 			}
 			var err error
 			runDir, err = createRunDirectory(orchID, config)
