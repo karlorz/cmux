@@ -29,6 +29,17 @@ type ExportBundle struct {
 	Events        []EventExportInfo           `json:"events,omitempty"`
 	Logs          *ExportLogs                 `json:"logs,omitempty"`
 	Summary       ExportSummary               `json:"summary"`
+	Metadata      *ExportMetadata             `json:"metadata,omitempty"`
+}
+
+// ExportMetadata contains optional environment and workspace context
+type ExportMetadata struct {
+	Workspace     string `json:"workspace,omitempty"`      // Working directory
+	GitBranch     string `json:"gitBranch,omitempty"`      // Current git branch
+	GitCommit     string `json:"gitCommit,omitempty"`      // HEAD commit SHA
+	DevshVersion  string `json:"devshVersion,omitempty"`   // devsh CLI version
+	AgentCLI      string `json:"agentCli,omitempty"`       // Agent CLI used (claude, codex, etc)
+	Source        string `json:"source,omitempty"`         // "local" or "cloud"
 }
 
 // ExportLogs contains stdout/stderr logs when --include-logs is used

@@ -52,6 +52,8 @@ type LocalRunConfig struct {
 	Model           string `json:"model,omitempty"`
 	CreatedAt       string `json:"createdAt"`
 	DevshVersion    string `json:"devshVersion"`
+	GitBranch       string `json:"gitBranch,omitempty"`
+	GitCommit       string `json:"gitCommit,omitempty"`
 }
 
 // LocalEvent represents an event in the local orchestration
@@ -73,15 +75,15 @@ This is useful for:
 
 The agent runs directly on your machine using its native CLI (claude, codex, etc.).
 
-Persistent Run Directory (--persist):
-  With --persist, all run artifacts are saved to ~/.devsh/orchestrations/<run-id>/:
+Persistent Run Directory (default):
+  By default, all run artifacts are saved to ~/.devsh/orchestrations/<run-id>/:
   - config.json   Initial run configuration
   - state.json    Final state with result/error
   - events.jsonl  Event timeline (appended during run)
   - bundle.json   Export bundle compatible with 'devsh orchestrate view'
 
   This enables disk-first observability: even if the process crashes, you have
-  partial state and events up to that point.
+  partial state and events up to that point. Use --persist=false to disable.
 
 Supported agents:
   claude/*    - Claude Code CLI (haiku-4.5, haiku-4.6, sonnet-4.5, sonnet-4.6, opus-4.5, opus-4.6)
@@ -95,7 +97,7 @@ Examples:
   devsh orchestrate run-local --agent codex/gpt-5.1-codex-mini --workspace ./my-repo "Add tests"
   devsh orchestrate run-local --agent gemini/gemini-2.5-pro --export ./debug.json "Refactor"
   devsh orchestrate run-local --agent claude/haiku-4.5 --timeout 1h "Long running task"
-  devsh orchestrate run-local --persist "Task with full artifact trail"
+  devsh orchestrate run-local --persist=false "Skip artifact persistence"
   devsh orchestrate run-local --dry-run "Check setup"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -149,6 +151,8 @@ Examples:
 				Model:           localModel,
 				CreatedAt:       startTime.UTC().Format(time.RFC3339),
 				DevshVersion:    GetVersion(),
+				GitBranch:       getGitBranch(absWorkspace),
+				GitCommit:       getGitCommit(absWorkspace),
 			}
 			var err error
 			runDir, err = createRunDirectory(orchID, config)
@@ -792,7 +796,7 @@ func init() {
 	orchestrateLocalCmd.Flags().BoolVar(&localTUI, "tui", false, "Show live terminal UI with spinner, events, and scrollable output")
 	orchestrateLocalCmd.Flags().BoolVar(&localDryRun, "dry-run", false, "Show what would be executed without running")
 	orchestrateLocalCmd.Flags().StringVar(&localModel, "model", "", "Override model for Claude (e.g., claude-sonnet-4-5-20250514)")
-	orchestrateLocalCmd.Flags().BoolVar(&localPersist, "persist", false, "Save run artifacts to ~/.devsh/orchestrations/<run-id>/")
+	orchestrateLocalCmd.Flags().BoolVar(&localPersist, "persist", true, "Save run artifacts to ~/.devsh/orchestrations/<run-id>/ (default: true, use --persist=false to disable)")
 	orchestrateLocalCmd.Flags().StringVar(&localRunDir, "run-dir", "", "Custom base directory for run artifacts (default: ~/.devsh/orchestrations)")
 	orchestrateLocalCmd.Flags().BoolVar(&localIncludeLogs, "include-logs", false, "Include stdout/stderr logs in --export bundle (always included with --persist)")
 	orchestrateCmd.AddCommand(orchestrateLocalCmd)
