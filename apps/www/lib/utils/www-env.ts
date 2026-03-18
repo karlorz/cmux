@@ -28,6 +28,7 @@ const getSandboxProviderSchema = () => {
 const sandboxProviderSchema = getSandboxProviderSchema();
 
 // In test mode, provide minimal mock env to avoid validation errors
+// Note: NEXT_PUBLIC_STACK_PROJECT_ID must be a valid UUID (Stack SDK validates format)
 const testEnv = {
   STACK_SECRET_SERVER_KEY: "test",
   STACK_SUPER_SECRET_ADMIN_KEY: "test",
@@ -35,7 +36,7 @@ const testEnv = {
   CMUX_GITHUB_APP_ID: "test",
   CMUX_GITHUB_APP_PRIVATE_KEY: "test",
   CMUX_TASK_RUN_JWT_SECRET: "test",
-  NEXT_PUBLIC_STACK_PROJECT_ID: "test",
+  NEXT_PUBLIC_STACK_PROJECT_ID: "00000000-0000-0000-0000-000000000000",
   NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY: "test",
   NEXT_PUBLIC_CONVEX_URL: "https://test.convex.cloud",
   MORPH_API_KEY: "test",
