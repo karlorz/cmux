@@ -2683,3 +2683,52 @@ func (c *Client) GetAutopilotInfo(ctx context.Context, jwt string) (*AutopilotIn
 
 	return &result, nil
 }
+
+// UploadBundleResult represents the response from uploading a bundle
+type UploadBundleResult struct {
+	BundleID        string `json:"bundleId"`
+	OrchestrationID string `json:"orchestrationId"`
+}
+
+// UploadBundle uploads an orchestration export bundle to Convex
+// Uses JWT auth if provided, otherwise uses Bearer token
+func (c *Client) UploadBundle(ctx context.Context, bundleJSON []byte, taskRunJwt string) (*UploadBundleResult, error) {
+	cfg := auth.GetConfig()
+	url := cfg.ConvexSiteURL + "/api/orchestration/bundles"
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bundleJSON))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	// Use JWT auth if provided, otherwise use Bearer token from auth
+	if taskRunJwt != "" {
+		req.Header.Set("Authorization", "Bearer "+taskRunJwt)
+	} else {
+		token, err := auth.GetAccessToken()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get auth token: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("upload bundle failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result UploadBundleResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}

@@ -1698,3 +1698,142 @@ export const getMessagesForTaskRunInternal = internalQuery({
       .collect();
   },
 });
+
+// ============================================================================
+// Bundle Queries and Mutations (Phase 3a - Local Captain Mode Integration)
+// ============================================================================
+
+/**
+ * Create an orchestration bundle record.
+ * Used by the uploadBundle HTTP action.
+ */
+export const createBundleInternal = internalMutation({
+  args: {
+    orchestrationId: v.string(),
+    teamId: v.string(),
+    userId: v.string(),
+    bundleVersion: v.string(),
+    exportedAt: v.string(),
+    prompt: v.optional(v.string()),
+    status: v.string(),
+    summary: v.object({
+      totalTasks: v.number(),
+      completedTasks: v.number(),
+      failedTasks: v.number(),
+      pendingTasks: v.number(),
+      runningTasks: v.number(),
+    }),
+    tasksJson: v.string(),
+    eventsJson: v.optional(v.string()),
+    source: v.union(v.literal("local"), v.literal("cloud")),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    return ctx.db.insert("orchestrationBundles", {
+      orchestrationId: args.orchestrationId,
+      teamId: args.teamId,
+      userId: args.userId,
+      bundleVersion: args.bundleVersion,
+      exportedAt: args.exportedAt,
+      prompt: args.prompt,
+      status: args.status,
+      summary: args.summary,
+      tasksJson: args.tasksJson,
+      eventsJson: args.eventsJson,
+      source: args.source,
+      createdAt: now,
+    });
+  },
+});
+
+/**
+ * Get a bundle by ID (internal).
+ */
+export const getBundleInternal = internalQuery({
+  args: {
+    bundleId: v.id("orchestrationBundles"),
+  },
+  handler: async (ctx, { bundleId }) => {
+    return ctx.db.get(bundleId);
+  },
+});
+
+/**
+ * List bundles for a team (internal).
+ */
+export const listBundlesInternal = internalQuery({
+  args: {
+    teamId: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, { teamId, limit }) => {
+    const take = clampTaskListLimit(limit);
+    return ctx.db
+      .query("orchestrationBundles")
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
+      .order("desc")
+      .take(take);
+  },
+});
+
+/**
+ * Get a bundle by orchestration ID (internal).
+ */
+export const getBundleByOrchestrationIdInternal = internalQuery({
+  args: {
+    orchestrationId: v.string(),
+  },
+  handler: async (ctx, { orchestrationId }) => {
+    return ctx.db
+      .query("orchestrationBundles")
+      .withIndex("by_orchestration", (q) => q.eq("orchestrationId", orchestrationId))
+      .first();
+  },
+});
+
+/**
+ * List bundles for a team (authenticated).
+ */
+export const listBundles = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, { teamSlugOrId, limit = 50 }) => {
+    const teamId = await getTeamId(ctx, teamSlugOrId);
+    const clampedLimit = Math.max(1, Math.min(limit, MAX_TASK_LIST_LIMIT));
+
+    return ctx.db
+      .query("orchestrationBundles")
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
+      .order("desc")
+      .take(clampedLimit);
+  },
+});
+
+/**
+ * Get a specific bundle by ID (authenticated).
+ */
+export const getBundle = authQuery({
+  args: {
+    bundleId: v.id("orchestrationBundles"),
+    teamSlugOrId: v.optional(v.string()),
+  },
+  handler: async (ctx, { bundleId, teamSlugOrId }) => {
+    const bundle = await ctx.db.get(bundleId);
+    if (!bundle) return null;
+
+    // If teamSlugOrId provided, verify membership
+    if (teamSlugOrId) {
+      const teamId = await getTeamId(ctx, teamSlugOrId);
+      if (bundle.teamId !== teamId) {
+        throw new Error("Forbidden: Bundle does not belong to this team");
+      }
+    } else {
+      // Without explicit team, verify user has access to bundle's team
+      await getTeamId(ctx, bundle.teamId);
+    }
+
+    return bundle;
+  },
+});

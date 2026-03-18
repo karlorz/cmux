@@ -818,3 +818,150 @@ export const getOrchestrationResults = httpAction(async (ctx, req) => {
     );
   }
 });
+
+// ============================================================================
+// Bundle Upload API (Phase 3a - Local Captain Mode Integration)
+// ============================================================================
+
+const BundleSummarySchema = z.object({
+  totalTasks: z.number(),
+  completedTasks: z.number(),
+  failedTasks: z.number(),
+  pendingTasks: z.number(),
+  runningTasks: z.number(),
+});
+
+const TaskExportInfoSchema = z.object({
+  taskId: z.string(),
+  status: z.string(),
+  agentName: z.string().nullable().optional(),
+  prompt: z.string(),
+  result: z.string().nullable().optional(),
+  errorMessage: z.string().nullable().optional(),
+  taskRunId: z.string().nullable().optional(),
+});
+
+const EventExportInfoSchema = z.object({
+  timestamp: z.string(),
+  type: z.string(),
+  taskId: z.string().optional(),
+  message: z.string(),
+});
+
+const OrchestrationExportInfoSchema = z.object({
+  id: z.string(),
+  status: z.string(),
+  createdAt: z.string().optional(),
+  prompt: z.string().optional(),
+});
+
+const ExportBundleSchema = z.object({
+  exportedAt: z.string(),
+  version: z.string(),
+  orchestration: OrchestrationExportInfoSchema,
+  tasks: z.array(TaskExportInfoSchema),
+  events: z.array(EventExportInfoSchema).optional(),
+  summary: BundleSummarySchema,
+});
+
+type ExportBundleInput = z.infer<typeof ExportBundleSchema>;
+
+/**
+ * HTTP action to upload an orchestration bundle (debug case file).
+ *
+ * Authenticates via task-run JWT or Bearer token.
+ * POST /api/orchestration/bundles
+ *
+ * Returns: { bundleId, orchestrationId }
+ */
+export const uploadBundle = httpAction(async (ctx, req) => {
+  const taskRunJwt = req.headers.get("x-task-run-jwt");
+  const authHeader = req.headers.get("authorization");
+  const bearerToken = extractBearerToken(authHeader);
+  const token = taskRunJwt ?? bearerToken;
+
+  if (!token) {
+    return jsonResponse(
+      {
+        code: 401,
+        message: "Unauthorized: Missing X-Task-Run-JWT header or Bearer token",
+      },
+      401
+    );
+  }
+
+  const contentType = req.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    return jsonResponse(
+      { code: 415, message: "Content-Type must be application/json" },
+      415
+    );
+  }
+
+  let bundle: ExportBundleInput;
+  try {
+    const parsed = await req.json();
+    const validation = ExportBundleSchema.safeParse(parsed);
+    if (!validation.success) {
+      console.warn(
+        "[orchestration_http.uploadBundle] Invalid bundle schema",
+        validation.error.flatten()
+      );
+      return jsonResponse(
+        { code: 400, message: "Invalid bundle format", errors: validation.error.flatten() },
+        400
+      );
+    }
+    bundle = validation.data;
+  } catch (error) {
+    console.error("[orchestration_http.uploadBundle] Failed to parse JSON", error);
+    return jsonResponse({ code: 400, message: "Invalid JSON" }, 400);
+  }
+
+  // Verify the JWT
+  let teamId: string;
+  let userId: string;
+
+  try {
+    const tokenPayload = await verifyTaskRunToken(
+      token,
+      env.CMUX_TASK_RUN_JWT_SECRET
+    );
+    teamId = tokenPayload.teamId;
+    userId = tokenPayload.userId;
+  } catch (error) {
+    console.error("[orchestration_http.uploadBundle] Failed to verify JWT", error);
+    return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+  }
+
+  try {
+    // Insert into orchestrationBundles table
+    const bundleId = await ctx.runMutation(
+      internal.orchestrationQueries.createBundleInternal,
+      {
+        orchestrationId: bundle.orchestration.id,
+        teamId,
+        userId,
+        bundleVersion: bundle.version,
+        exportedAt: bundle.exportedAt,
+        prompt: bundle.orchestration.prompt,
+        status: bundle.orchestration.status,
+        summary: bundle.summary,
+        tasksJson: JSON.stringify(bundle.tasks),
+        eventsJson: bundle.events ? JSON.stringify(bundle.events) : undefined,
+        source: "local", // Bundles uploaded via this endpoint are from local runs
+      }
+    );
+
+    return jsonResponse({
+      bundleId,
+      orchestrationId: bundle.orchestration.id,
+    });
+  } catch (error) {
+    console.error("[orchestration_http.uploadBundle] Failed to create bundle", error);
+    return jsonResponse(
+      { code: 500, message: "Failed to upload bundle" },
+      500
+    );
+  }
+});

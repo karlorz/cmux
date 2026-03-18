@@ -1774,6 +1774,31 @@ const convexSchema = defineSchema({
     .index("by_status_started", ["status", "startedAt"])
     .index("by_status", ["status", "createdAt"]),
 
+  // Uploaded orchestration bundles (debug case files)
+  // Stores exported orchestration runs for sharing and analysis
+  orchestrationBundles: defineTable({
+    orchestrationId: v.string(), // The orchestration ID from the bundle
+    teamId: v.string(),
+    userId: v.string(),
+    bundleVersion: v.string(), // Version of the export format (e.g., "1.0.0")
+    exportedAt: v.string(), // ISO timestamp when bundle was exported
+    prompt: v.optional(v.string()), // Original orchestration prompt
+    status: v.string(), // Final status: completed, failed, partial, running
+    summary: v.object({
+      totalTasks: v.number(),
+      completedTasks: v.number(),
+      failedTasks: v.number(),
+      pendingTasks: v.number(),
+      runningTasks: v.number(),
+    }),
+    tasksJson: v.string(), // JSON array of task info
+    eventsJson: v.optional(v.string()), // JSON array of events (optional)
+    source: v.union(v.literal("local"), v.literal("cloud")), // Where the bundle originated
+    createdAt: v.number(), // When uploaded to Convex
+  })
+    .index("by_orchestration", ["orchestrationId"])
+    .index("by_team", ["teamId", "createdAt"]),
+
   // Agent orchestration messages for inter-agent communication
   // Messages sent via orchestrate sendMessage mutation are stored here
   // and synced to running sandboxes via MAILBOX.json updates

@@ -77,6 +77,7 @@ import {
   getSpawnConfig as orchestrationGetSpawnConfig,
   pullOrchestrationState,
   getOrchestrationResults,
+  uploadBundle as orchestrationUploadBundle,
 } from "./orchestration_http";
 import {
   autopilotHeartbeat,
@@ -486,6 +487,12 @@ http.route({
   path: "/api/orchestration/results",
   method: "GET",
   handler: getOrchestrationResults,
+});
+
+http.route({
+  path: "/api/orchestration/bundles",
+  method: "POST",
+  handler: orchestrationUploadBundle,
 });
 
 // =============================================================================
