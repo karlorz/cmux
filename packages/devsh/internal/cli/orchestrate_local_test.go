@@ -121,6 +121,53 @@ func TestExportLocalState(t *testing.T) {
 	}
 }
 
+func TestLocalStateJSONSerialization(t *testing.T) {
+	state := &LocalState{
+		OrchestrationID: "local_json_test",
+		StartedAt:       "2026-03-18T10:00:00Z",
+		Status:          "completed",
+		Agent:           "claude/haiku-4.5",
+		Prompt:          "Test prompt with \"quotes\" and special chars",
+		Workspace:       "/test/workspace",
+		Events: []LocalEvent{
+			{
+				Timestamp: "2026-03-18T10:00:01Z",
+				Type:      "task_started",
+				Message:   "Starting task",
+			},
+		},
+	}
+
+	// Marshal to JSON
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatalf("failed to marshal LocalState: %v", err)
+	}
+
+	// Unmarshal back
+	var parsed LocalState
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("failed to unmarshal LocalState: %v", err)
+	}
+
+	// Verify fields
+	if parsed.OrchestrationID != "local_json_test" {
+		t.Errorf("expected orchestrationId 'local_json_test', got '%s'", parsed.OrchestrationID)
+	}
+
+	if parsed.Status != "completed" {
+		t.Errorf("expected status 'completed', got '%s'", parsed.Status)
+	}
+
+	if parsed.Prompt != "Test prompt with \"quotes\" and special chars" {
+		t.Errorf("prompt not preserved correctly: %s", parsed.Prompt)
+	}
+
+	if len(parsed.Events) != 1 {
+		t.Errorf("expected 1 event, got %d", len(parsed.Events))
+	}
+}
+
 func TestExportLocalStateStatusMapping(t *testing.T) {
 	tests := []struct {
 		status          string
