@@ -157,3 +157,23 @@ Logged items are reviewed by team leads and may be promoted to active orchestrat
 - **P2 - Reference**: 30-day TTL. Temporary findings, debug notes.
 
 Format: `- [YYYY-MM-DD] Your insight here`
+
+## Development
+
+### Running Tests
+
+```bash
+cd packages/devsh-memory-mcp
+bun test
+```
+
+### Test Coverage
+
+The package includes 81 unit tests covering:
+
+- **JWT Helper** (5 tests): Token extraction, edge cases, UUID handling
+- **Orchestration Tools** (24 tests): spawn_agent, get_agent_status, wait_for_agent schemas and URL construction
+- **Memory Tools** (27 tests): Task/message structures, file paths, agent name validation
+- **Learning Tools** (30 tests): log_learning, get_active_orchestration_rules, error handling
+
+All tests run without external dependencies, suitable for CI environments
