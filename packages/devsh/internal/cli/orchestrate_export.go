@@ -27,7 +27,14 @@ type ExportBundle struct {
 	Orchestration OrchestrationExportInfo     `json:"orchestration"`
 	Tasks         []TaskExportInfo            `json:"tasks"`
 	Events        []EventExportInfo           `json:"events,omitempty"`
+	Logs          *ExportLogs                 `json:"logs,omitempty"`
 	Summary       ExportSummary               `json:"summary"`
+}
+
+// ExportLogs contains stdout/stderr logs when --include-logs is used
+type ExportLogs struct {
+	Stdout string `json:"stdout,omitempty"`
+	Stderr string `json:"stderr,omitempty"`
 }
 
 type OrchestrationExportInfo struct {

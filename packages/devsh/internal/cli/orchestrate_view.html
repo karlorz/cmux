@@ -151,6 +151,7 @@
       <button class="tab active" data-surface="operator">Operator Brief</button>
       <button class="tab" data-surface="tasks">Tasks</button>
       <button class="tab" data-surface="events">Events</button>
+      <button class="tab" data-surface="logs" id="logs-tab" style="display: none;">Logs</button>
     </div>
 
     <div id="operator" class="surface active">
@@ -186,6 +187,19 @@
 
     <div id="events" class="surface">
       <div class="events-timeline" id="events-list"></div>
+    </div>
+
+    <div id="logs" class="surface">
+      <div class="detail-panel">
+        <div class="detail-section" id="stdout-section">
+          <div class="detail-label">Stdout</div>
+          <div class="detail-content" id="logs-stdout" style="max-height: 400px;"></div>
+        </div>
+        <div class="detail-section" id="stderr-section">
+          <div class="detail-label">Stderr</div>
+          <div class="detail-content" id="logs-stderr" style="max-height: 400px; color: #fca5a5;"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -242,6 +256,34 @@
 
       renderTasks();
       renderEvents();
+      renderLogs();
+    }
+
+    function renderLogs() {
+      const logsTab = document.getElementById('logs-tab');
+      const stdoutSection = document.getElementById('stdout-section');
+      const stderrSection = document.getElementById('stderr-section');
+
+      if (!bundle.logs || (!bundle.logs.stdout && !bundle.logs.stderr)) {
+        logsTab.style.display = 'none';
+        return;
+      }
+
+      logsTab.style.display = 'inline-block';
+
+      if (bundle.logs.stdout) {
+        stdoutSection.style.display = 'block';
+        document.getElementById('logs-stdout').textContent = bundle.logs.stdout;
+      } else {
+        stdoutSection.style.display = 'none';
+      }
+
+      if (bundle.logs.stderr) {
+        stderrSection.style.display = 'block';
+        document.getElementById('logs-stderr').textContent = bundle.logs.stderr;
+      } else {
+        stderrSection.style.display = 'none';
+      }
     }
 
     function renderTasks() {

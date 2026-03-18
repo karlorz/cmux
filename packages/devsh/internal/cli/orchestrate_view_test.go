@@ -227,3 +227,59 @@ func TestWatchModeVariableExists(t *testing.T) {
 		t.Error("failed to set orchestrateViewWatch to false")
 	}
 }
+
+func TestExportBundleWithLogs(t *testing.T) {
+	// Test that ExportBundle correctly includes logs
+	bundle := ExportBundle{
+		Version: "1.0.0",
+		Summary: ExportSummary{TotalTasks: 1},
+		Logs: &ExportLogs{
+			Stdout: "Hello world\nTask completed",
+			Stderr: "Warning: deprecated API",
+		},
+	}
+
+	data, err := json.Marshal(bundle)
+	if err != nil {
+		t.Fatalf("failed to marshal bundle with logs: %v", err)
+	}
+
+	var parsed ExportBundle
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("failed to unmarshal bundle: %v", err)
+	}
+
+	if parsed.Logs == nil {
+		t.Fatal("logs should not be nil")
+	}
+	if parsed.Logs.Stdout != "Hello world\nTask completed" {
+		t.Errorf("stdout mismatch: %q", parsed.Logs.Stdout)
+	}
+	if parsed.Logs.Stderr != "Warning: deprecated API" {
+		t.Errorf("stderr mismatch: %q", parsed.Logs.Stderr)
+	}
+}
+
+func TestExportBundleWithoutLogs(t *testing.T) {
+	// Test that ExportBundle correctly omits logs when nil
+	bundle := ExportBundle{
+		Version: "1.0.0",
+		Summary: ExportSummary{TotalTasks: 1},
+		Logs:    nil,
+	}
+
+	data, err := json.Marshal(bundle)
+	if err != nil {
+		t.Fatalf("failed to marshal bundle: %v", err)
+	}
+
+	// Logs should be omitted from JSON
+	if string(data) != `{"exportedAt":"","version":"1.0.0","orchestration":{"id":"","status":"","createdAt":""},"tasks":null,"summary":{"totalTasks":1,"completedTasks":0,"failedTasks":0,"pendingTasks":0,"runningTasks":0}}` {
+		// Just verify logs key is not present
+		var m map[string]any
+		json.Unmarshal(data, &m)
+		if _, exists := m["logs"]; exists {
+			t.Error("logs should be omitted when nil")
+		}
+	}
+}

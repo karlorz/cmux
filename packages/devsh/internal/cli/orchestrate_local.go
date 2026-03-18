@@ -14,15 +14,16 @@ import (
 )
 
 var (
-	localAgent     string
-	localWorkspace string
-	localTimeout   string
-	localExport    string
-	localTUI       bool
-	localDryRun    bool
-	localModel     string
-	localPersist   bool
-	localRunDir    string
+	localAgent       string
+	localWorkspace   string
+	localTimeout     string
+	localExport      string
+	localTUI         bool
+	localDryRun      bool
+	localModel       string
+	localPersist     bool
+	localRunDir      string
+	localIncludeLogs bool
 )
 
 // LocalState represents the state of a local orchestration run
@@ -264,9 +265,9 @@ Examples:
 					fmt.Printf("Warning: failed to save final state: %v\n", err)
 				}
 			}
-			// Auto-export bundle to run directory
+			// Auto-export bundle to run directory (always include logs for persist mode)
 			bundlePath := filepath.Join(runDir, "bundle.json")
-			if err := exportLocalState(state, bundlePath); err != nil {
+			if err := exportLocalStateWithOptions(state, bundlePath, true); err != nil {
 				if !flagJSON {
 					fmt.Printf("Warning: failed to export bundle: %v\n", err)
 				}
@@ -275,7 +276,7 @@ Examples:
 
 		// Export to custom path if requested
 		if localExport != "" {
-			if err := exportLocalState(state, localExport); err != nil {
+			if err := exportLocalStateWithOptions(state, localExport, localIncludeLogs); err != nil {
 				if !flagJSON {
 					fmt.Printf("Warning: failed to export state: %v\n", err)
 				}
@@ -570,6 +571,10 @@ func runAmpLocal(ctx context.Context, state *LocalState, prompt, workspace strin
 }
 
 func exportLocalState(state *LocalState, outputPath string) error {
+	return exportLocalStateWithOptions(state, outputPath, false)
+}
+
+func exportLocalStateWithOptions(state *LocalState, outputPath string, includeLogs bool) error {
 	// Convert to export bundle format for compatibility with view command
 	agentName := state.Agent
 	bundle := ExportBundle{
@@ -618,6 +623,20 @@ func exportLocalState(state *LocalState, outputPath string) error {
 		})
 	}
 
+	// Include logs if requested and run directory exists
+	if includeLogs && state.RunDir != "" {
+		logs := &ExportLogs{}
+		if stdout, err := os.ReadFile(filepath.Join(state.RunDir, "stdout.log")); err == nil {
+			logs.Stdout = string(stdout)
+		}
+		if stderr, err := os.ReadFile(filepath.Join(state.RunDir, "stderr.log")); err == nil {
+			logs.Stderr = string(stderr)
+		}
+		if logs.Stdout != "" || logs.Stderr != "" {
+			bundle.Logs = logs
+		}
+	}
+
 	// Write to file
 	data, err := json.MarshalIndent(bundle, "", "  ")
 	if err != nil {
@@ -641,5 +660,6 @@ func init() {
 	orchestrateLocalCmd.Flags().StringVar(&localModel, "model", "", "Override model for Claude (e.g., claude-sonnet-4-5-20250514)")
 	orchestrateLocalCmd.Flags().BoolVar(&localPersist, "persist", false, "Save run artifacts to ~/.devsh/orchestrations/<run-id>/")
 	orchestrateLocalCmd.Flags().StringVar(&localRunDir, "run-dir", "", "Custom base directory for run artifacts (default: ~/.devsh/orchestrations)")
+	orchestrateLocalCmd.Flags().BoolVar(&localIncludeLogs, "include-logs", false, "Include stdout/stderr logs in --export bundle (always included with --persist)")
 	orchestrateCmd.AddCommand(orchestrateLocalCmd)
 }
