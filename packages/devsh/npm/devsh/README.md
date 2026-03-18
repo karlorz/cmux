@@ -50,6 +50,33 @@ devsh ls
 | `devsh resume <id>` | Resume VM |
 | `devsh delete <id>` | Delete VM |
 
+## Local Orchestration
+
+Run agents locally without cloud infrastructure:
+
+```bash
+# Run a task with Claude
+devsh orchestrate run-local --agent claude/haiku-4.5 "Fix the bug in auth.ts"
+
+# Dry-run to see what would execute
+devsh orchestrate run-local --dry-run "Add unit tests"
+
+# Override the model
+devsh orchestrate run-local --model claude-sonnet-4-5-20250514 "Complex refactor"
+
+# Export state for debugging
+devsh orchestrate run-local --export ./debug.json "Investigate issue"
+
+# JSON output for scripting
+devsh orchestrate run-local --json "Quick task" | jq .status
+```
+
+View exported orchestration bundles offline:
+
+```bash
+devsh orchestrate view ./debug-bundle.json
+```
+
 ## Browser Automation
 
 Control Chrome in the VNC desktop:
