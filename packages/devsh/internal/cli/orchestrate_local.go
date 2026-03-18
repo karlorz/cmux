@@ -19,6 +19,7 @@ var (
 	localExport    string
 	localTUI       bool
 	localDryRun    bool
+	localModel     string
 )
 
 // LocalState represents the state of a local orchestration run
@@ -112,7 +113,11 @@ Examples:
 			fmt.Printf("\n[DRY RUN] Would execute:\n")
 			switch localAgent {
 			case "claude/haiku-4.5", "claude/sonnet-4.5", "claude/opus-4.5", "claude/opus-4.6":
-				fmt.Printf("  claude -p --dangerously-skip-permissions \"%s\"\n", prompt)
+				if localModel != "" {
+					fmt.Printf("  claude -p --dangerously-skip-permissions --model %s \"%s\"\n", localModel, prompt)
+				} else {
+					fmt.Printf("  claude -p --dangerously-skip-permissions \"%s\"\n", prompt)
+				}
 			case "codex/gpt-5.1-codex-mini", "codex/gpt-5.4-xhigh":
 				fmt.Printf("  codex \"%s\"\n", prompt)
 			default:
@@ -192,9 +197,20 @@ func runClaudeLocal(state *LocalState, prompt, workspace string) error {
 		return fmt.Errorf("claude CLI not found in PATH: %w", err)
 	}
 
+	// Build command args
 	// Use -p (print mode) for non-interactive execution
 	// --dangerously-skip-permissions for automated runs (use with caution)
-	cmd := exec.Command(claudePath, "-p", "--dangerously-skip-permissions", prompt)
+	args := []string{"-p", "--dangerously-skip-permissions"}
+
+	// Add model override if specified
+	if localModel != "" {
+		args = append(args, "--model", localModel)
+		state.addEvent("model_override", fmt.Sprintf("Using model: %s", localModel))
+	}
+
+	args = append(args, prompt)
+
+	cmd := exec.Command(claudePath, args...)
 	cmd.Dir = workspace
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -302,5 +318,6 @@ func init() {
 	orchestrateLocalCmd.Flags().StringVar(&localExport, "export", "", "Export state to JSON file when done")
 	orchestrateLocalCmd.Flags().BoolVar(&localTUI, "tui", false, "Show live terminal UI (not yet implemented)")
 	orchestrateLocalCmd.Flags().BoolVar(&localDryRun, "dry-run", false, "Show what would be executed without running")
+	orchestrateLocalCmd.Flags().StringVar(&localModel, "model", "", "Override model for Claude (e.g., claude-sonnet-4-5-20250514)")
 	orchestrateCmd.AddCommand(orchestrateLocalCmd)
 }
