@@ -126,6 +126,8 @@ Examples:
 				fmt.Printf("  gemini -p \"%s\"\n", prompt)
 			case "opencode/big-pickle", "opencode/small-pickle":
 				fmt.Printf("  opencode \"%s\"\n", prompt)
+			case "amp/amp-1":
+				fmt.Printf("  amp \"%s\"\n", prompt)
 			default:
 				fmt.Printf("  (unsupported agent: %s)\n", localAgent)
 			}
@@ -151,8 +153,10 @@ Examples:
 			runErr = runGeminiLocal(state, prompt, absWorkspace)
 		case "opencode/big-pickle", "opencode/small-pickle":
 			runErr = runOpencodeLocal(state, prompt, absWorkspace)
+		case "amp/amp-1":
+			runErr = runAmpLocal(state, prompt, absWorkspace)
 		default:
-			return fmt.Errorf("unsupported local agent: %s (supported: claude/*, codex/*, gemini/*, opencode/*)", localAgent)
+			return fmt.Errorf("unsupported local agent: %s (supported: claude/*, codex/*, gemini/*, opencode/*, amp/*)", localAgent)
 		}
 
 		// Update final state
@@ -313,6 +317,30 @@ func runOpencodeLocal(state *LocalState, prompt, workspace string) error {
 
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("opencode CLI failed: %w", err)
+	}
+
+	return nil
+}
+
+func runAmpLocal(state *LocalState, prompt, workspace string) error {
+	state.addEvent("agent_invoked", "Spawning amp CLI")
+
+	// Check if amp CLI is available
+	ampPath, err := exec.LookPath("amp")
+	if err != nil {
+		return fmt.Errorf("amp CLI not found in PATH: %w", err)
+	}
+
+	cmd := exec.Command(ampPath, prompt)
+	cmd.Dir = workspace
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	state.addEvent("agent_running", "Amp CLI executing")
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("amp CLI failed: %w", err)
 	}
 
 	return nil
