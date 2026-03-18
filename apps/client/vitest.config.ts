@@ -32,6 +32,8 @@ export default defineConfig({
     // Setup file runs before any test imports, which is critical for
     // @t3-oss/env-core validation that happens at import time
     setupFiles: ["./vitest.setup.ts"],
+    // Use jsdom for DOM tests (files ending in .dom.test.ts or .dom.test.tsx)
+    environmentMatchGlobs: [["**/*.dom.test.{ts,tsx}", "jsdom"]],
   },
   define: {
     "import.meta.env": JSON.stringify(testImportMetaEnv),
