@@ -44,6 +44,7 @@ import {
   type TaskCompletedEvent,
   type TaskStatusChangedEvent,
 } from "@cmux/shared/convex-safe";
+import type { Id } from "./_generated/dataModel";
 
 // Configuration
 const MAX_CONCURRENT_SPAWNS = 3; // Per-team concurrent spawn limit
@@ -223,6 +224,31 @@ export const dispatchSpawn = internalAction({
       const serverUrl = process.env.CMUX_SERVER_URL ?? "http://localhost:9779";
       const internalSecret = process.env.CMUX_INTERNAL_SECRET ?? "";
 
+      // Read supervisor profile if specified in task metadata
+      let supervisorProfile: {
+        reasoningLevel: string;
+        reviewPosture: string;
+        delegationStyle: string;
+        name: string;
+        model?: string;
+      } | undefined;
+      const profileId = task.metadata?.supervisorProfileId as string | undefined;
+      if (profileId) {
+        const profile = await ctx.runQuery(
+          internal.supervisorProfiles.getByIdInternal,
+          { profileId: profileId as Id<"supervisorProfiles"> }
+        );
+        if (profile && profile.teamId === args.teamId) {
+          supervisorProfile = {
+            reasoningLevel: profile.reasoningLevel,
+            reviewPosture: profile.reviewPosture,
+            delegationStyle: profile.delegationStyle,
+            name: profile.name,
+            model: profile.model,
+          };
+        }
+      }
+
       const response = await fetch(
         `${serverUrl}/api/orchestrate/internal/spawn`,
         {
@@ -241,6 +267,8 @@ export const dispatchSpawn = internalAction({
             // Pass JWT and user info for auth context
             taskRunJwt: jwtResult.jwt,
             userId: jwtResult.userId,
+            // Pass supervisor profile settings if configured
+            supervisorProfile,
           }),
         }
       );
