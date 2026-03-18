@@ -1,14 +1,15 @@
 ## Living plan
 
-### Active: 80/20 PR heatmap experiment
-- Goal: produce a quick local-only PR review flow that never provisions Morph VMs or Docker containers.
-- Output: per-file “heatmap” JSON generated via the Vercel AI SDK (`generateObject`) using the schema  
-  `{ lines: { line: string, hasChanged: boolean, shouldBeReviewedScore?: boolean, shouldReviewWhy?: string, mostImportantCharacterIndex: number }[] }`.
-- Constraints: run entirely on the caller’s machine, reuse existing git diff info, parallelize the AI calls for speed, keep prompts simple (focus on changed lines + context).
-- Next steps:
-  1. Build a CLI that shells out to `git diff` (configurable base, default `origin/main`) and prepares prompts for each touched file.
-  2. Wire the CLI to `generateObject` (OpenAI via Vercel AI SDK for now), fan out the calls with a small concurrency limit (≈3) and collect results.
-  3. Emit structured artifacts (pretty JSON per file + combined summary) so the UI can later visualize the heatmap.
+### Completed: PR heatmap experiment (PR #607)
+- packages/pr-heatmap: AI-powered code review with Vercel AI SDK generateObject
+- devsh review command (hidden): wraps pr-heatmap for CLI usage
+- Unified view --live mode (D5.5): replaces serve-local
+- --persist default true: disk-first observability
+
+### Active: Local captain polish
+- D5.6: Active instruction handling (blocked on upstream CLI support for mid-run input)
+- D5.7: Document local captain as default orchestration prototyping lane
+- D5.8: Tighten local-to-cloud bridge (improve bundle metadata, workspace info)
 
 ### Backlog / future launches
 - linear interface for main thing

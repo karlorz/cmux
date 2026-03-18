@@ -436,3 +436,46 @@ func TestResolveRunDirForView(t *testing.T) {
 		t.Error("expected error for non-existent path")
 	}
 }
+
+func TestSynthesizeBundleMetadata(t *testing.T) {
+	// Test that metadata is populated from config
+	tmpDir := t.TempDir()
+
+	config := LocalRunConfig{
+		OrchestrationID: "local_meta_789",
+		Agent:           "claude/haiku-4.5",
+		Prompt:          "Test metadata",
+		Workspace:       tmpDir, // Use tmpDir so git commands have a valid dir
+		DevshVersion:    "0.1.23",
+		CreatedAt:       "2026-03-18T12:00:00Z",
+	}
+	configData, _ := json.Marshal(config)
+	os.WriteFile(filepath.Join(tmpDir, "config.json"), configData, 0644)
+
+	bundle := synthesizeBundleFromRunDir(tmpDir)
+
+	if bundle.Metadata == nil {
+		t.Fatal("expected metadata to be present")
+	}
+
+	if bundle.Metadata.Workspace != tmpDir {
+		t.Errorf("expected workspace %s, got %s", tmpDir, bundle.Metadata.Workspace)
+	}
+
+	if bundle.Metadata.DevshVersion != "0.1.23" {
+		t.Errorf("expected devsh version 0.1.23, got %s", bundle.Metadata.DevshVersion)
+	}
+
+	if bundle.Metadata.AgentCLI != "claude/haiku-4.5" {
+		t.Errorf("expected agent CLI claude/haiku-4.5, got %s", bundle.Metadata.AgentCLI)
+	}
+
+	if bundle.Metadata.Source != "local" {
+		t.Errorf("expected source local, got %s", bundle.Metadata.Source)
+	}
+
+	// Git fields may be empty if not in a git repo - that's OK
+	// Just verify they're accessible
+	_ = bundle.Metadata.GitBranch
+	_ = bundle.Metadata.GitCommit
+}

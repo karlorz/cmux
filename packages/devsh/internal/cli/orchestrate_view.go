@@ -10,7 +10,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -407,6 +409,16 @@ func synthesizeBundleFromRunDir(runDir string) ExportBundle {
 			bundle.Orchestration.ID = config.OrchestrationID
 			bundle.Orchestration.CreatedAt = config.CreatedAt
 			bundle.Orchestration.Prompt = config.Prompt
+
+			// Populate metadata from config
+			bundle.Metadata = &ExportMetadata{
+				Workspace:    config.Workspace,
+				DevshVersion: config.DevshVersion,
+				AgentCLI:     config.Agent,
+				Source:       "local",
+				GitBranch:    getGitBranch(config.Workspace),
+				GitCommit:    getGitCommit(config.Workspace),
+			}
 		}
 	}
 
@@ -485,6 +497,28 @@ func synthesizeBundleFromRunDir(runDir string) ExportBundle {
 	}
 
 	return bundle
+}
+
+// getGitBranch returns the current git branch name in the given directory
+func getGitBranch(dir string) string {
+	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// getGitCommit returns the current HEAD commit SHA in the given directory
+func getGitCommit(dir string) string {
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func init() {
