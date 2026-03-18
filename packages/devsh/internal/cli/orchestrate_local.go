@@ -27,6 +27,8 @@ var (
 type LocalState struct {
 	OrchestrationID string       `json:"orchestrationId"`
 	StartedAt       string       `json:"startedAt"`
+	CompletedAt     string       `json:"completedAt,omitempty"`
+	DurationMs      int64        `json:"durationMs,omitempty"`
 	Status          string       `json:"status"`
 	Agent           string       `json:"agent"`
 	Prompt          string       `json:"prompt"`
@@ -96,11 +98,12 @@ Examples:
 
 		// Generate orchestration ID
 		orchID := fmt.Sprintf("local_%d", time.Now().UnixNano())
+		startTime := time.Now()
 
 		// Initialize state
 		state := &LocalState{
 			OrchestrationID: orchID,
-			StartedAt:       time.Now().UTC().Format(time.RFC3339),
+			StartedAt:       startTime.UTC().Format(time.RFC3339),
 			Status:          "running",
 			Agent:           localAgent,
 			Prompt:          prompt,
@@ -184,7 +187,11 @@ Examples:
 			return fmt.Errorf("unsupported local agent: %s (supported: claude/*, codex/*, gemini/*, opencode/*, amp/*)", localAgent)
 		}
 
-		// Update final state
+		// Update final state with timing
+		endTime := time.Now()
+		state.CompletedAt = endTime.UTC().Format(time.RFC3339)
+		state.DurationMs = endTime.Sub(startTime).Milliseconds()
+
 		if runErr != nil {
 			state.Status = "failed"
 			errStr := runErr.Error()
@@ -216,6 +223,7 @@ Examples:
 		} else {
 			fmt.Printf("\n--- Summary ---\n")
 			fmt.Printf("Status: %s\n", state.Status)
+			fmt.Printf("Duration: %s\n", formatDuration(state.DurationMs))
 			fmt.Printf("Events: %d\n", len(state.Events))
 			if state.Error != nil {
 				fmt.Printf("Error: %s\n", *state.Error)
@@ -239,6 +247,20 @@ func (s *LocalState) addEvent(eventType, message string) {
 	if flagVerbose && !flagJSON {
 		fmt.Printf("[%s] %s: %s\n", ts, eventType, message)
 	}
+}
+
+func formatDuration(ms int64) string {
+	d := time.Duration(ms) * time.Millisecond
+	if d < time.Second {
+		return fmt.Sprintf("%dms", ms)
+	}
+	if d < time.Minute {
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm%ds", int(d.Minutes()), int(d.Seconds())%60)
+	}
+	return fmt.Sprintf("%dh%dm%ds", int(d.Hours()), int(d.Minutes())%60, int(d.Seconds())%60)
 }
 
 func runClaudeLocal(ctx context.Context, state *LocalState, prompt, workspace string) error {

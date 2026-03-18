@@ -222,6 +222,29 @@ func TestExportLocalStateStatusMapping(t *testing.T) {
 	}
 }
 
+func TestFormatDuration(t *testing.T) {
+	tests := []struct {
+		ms       int64
+		expected string
+	}{
+		{500, "500ms"},
+		{1500, "1.5s"},
+		{30000, "30.0s"},
+		{65000, "1m5s"},
+		{3665000, "1h1m5s"},
+		{7200000, "2h0m0s"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.expected, func(t *testing.T) {
+			result := formatDuration(tt.ms)
+			if result != tt.expected {
+				t.Errorf("formatDuration(%d) = %q, want %q", tt.ms, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestTimeoutParsing(t *testing.T) {
 	tests := []struct {
 		input    string
