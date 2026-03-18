@@ -1,6 +1,6 @@
 import { useId, useMemo } from "react";
 import { Users } from "lucide-react";
-import { STATUS_CONFIG, type TaskStatus } from "./status-config";
+import { STATUS_CONFIG, STATUS_GRAPH_COLORS, type TaskStatus } from "./status-config";
 import type { OrchestrationTaskWithDeps } from "./OrchestrationDashboard";
 
 interface OrchestrationDependencyGraphProps {
@@ -101,14 +101,6 @@ function computeLevels(tasks: OrchestrationTaskWithDeps[]): TaskNode[] {
   return nodes;
 }
 
-const STATUS_COLORS: Record<string, { bg: string; border: string; dot: string }> = {
-  pending: { bg: "bg-neutral-50 dark:bg-neutral-800/50", border: "border-neutral-300 dark:border-neutral-600", dot: "bg-neutral-400" },
-  assigned: { bg: "bg-blue-50 dark:bg-blue-900/20", border: "border-blue-300 dark:border-blue-700", dot: "bg-blue-500" },
-  running: { bg: "bg-blue-50 dark:bg-blue-900/20", border: "border-blue-400 dark:border-blue-600", dot: "bg-blue-500 animate-pulse" },
-  completed: { bg: "bg-green-50 dark:bg-green-900/15", border: "border-green-300 dark:border-green-700", dot: "bg-green-500" },
-  failed: { bg: "bg-red-50 dark:bg-red-900/15", border: "border-red-300 dark:border-red-700", dot: "bg-red-500" },
-  cancelled: { bg: "bg-neutral-100 dark:bg-neutral-800", border: "border-neutral-300 dark:border-neutral-600", dot: "bg-neutral-400" },
-};
 
 // Layout constants
 const CARD_WIDTH = 220;
@@ -119,7 +111,7 @@ const PADDING = 24;
 
 function TaskCard({ node }: { node: TaskNode }) {
   const { task } = node;
-  const colors = STATUS_COLORS[task.status] ?? STATUS_COLORS.pending;
+  const colors = STATUS_GRAPH_COLORS[task.status as TaskStatus] ?? STATUS_GRAPH_COLORS.pending;
   const statusConf = STATUS_CONFIG[task.status as TaskStatus];
   const label = truncatePrompt(task.prompt);
   const agent = task.assignedAgentName;
@@ -256,8 +248,8 @@ export function OrchestrationDependencyGraph({
     <div className="flex flex-col">
       {/* Legend */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-neutral-100 px-4 py-2 text-[11px] text-neutral-500 dark:border-neutral-800 dark:text-neutral-400">
-        {(Object.entries(STATUS_COLORS) as Array<[string, { dot: string }]>).map(([status, { dot }]) => {
-          const conf = STATUS_CONFIG[status as TaskStatus];
+        {(Object.entries(STATUS_GRAPH_COLORS) as Array<[TaskStatus, { dot: string }]>).map(([status, { dot }]) => {
+          const conf = STATUS_CONFIG[status];
           if (!conf) return null;
           return (
             <span key={status} className="flex items-center gap-1.5">

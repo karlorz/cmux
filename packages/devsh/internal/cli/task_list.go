@@ -88,44 +88,43 @@ func runTaskListWatch() error {
 	client.SetTeamSlug(teamSlug)
 
 	interval := time.Duration(taskListInterval) * time.Second
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	header := fmt.Sprintf("Task List (watching, interval: %ds, Ctrl+C to stop)", taskListInterval)
+	config := WatchPollConfig(interval, header)
 
-	// Initial fetch
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	result, err := client.ListTasks(ctx, taskListArchived)
-	cancel()
-	if err != nil {
-		return fmt.Errorf("failed to list tasks: %w", err)
-	}
+	// Create a cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	// Clear screen and print
-	fmt.Print("\033[H\033[2J")
-	fmt.Printf("Task List (watching, interval: %ds, Ctrl+C to stop)\n", taskListInterval)
-	fmt.Printf("Updated: %s\n\n", time.Now().Format("15:04:05"))
-	printTaskList(result)
+	// Handle signals in a separate goroutine
+	go func() {
+		<-sigChan
+		fmt.Println("\nStopped watching.")
+		cancel()
+	}()
 
-	for {
-		select {
-		case <-sigChan:
-			fmt.Println("\nStopped watching.")
-			return nil
-		case <-ticker.C:
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			result, err := client.ListTasks(ctx, taskListArchived)
-			cancel()
-			if err != nil {
-				fmt.Printf("\nError: %v\n", err)
-				continue
-			}
-
-			// Clear screen and print
-			fmt.Print("\033[H\033[2J")
-			fmt.Printf("Task List (watching, interval: %ds, Ctrl+C to stop)\n", taskListInterval)
+	return PollUntil(
+		ctx,
+		config,
+		// fetch
+		func(ctx context.Context) (interface{}, error) {
+			fetchCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			return client.ListTasks(fetchCtx, taskListArchived)
+		},
+		// shouldStop - never stop unless cancelled
+		func(result interface{}, lastValue string) (bool, string, error) {
+			r := result.(*vm.ListTasksResult)
+			// Use task count as change detection value
+			value := fmt.Sprintf("%d", len(r.Tasks))
+			return false, value, nil
+		},
+		// display
+		func(result interface{}, isInitial bool) {
+			r := result.(*vm.ListTasksResult)
 			fmt.Printf("Updated: %s\n\n", time.Now().Format("15:04:05"))
-			printTaskList(result)
-		}
-	}
+			printTaskList(r)
+		},
+	)
 }
 
 func printTaskList(result *vm.ListTasksResult) {
