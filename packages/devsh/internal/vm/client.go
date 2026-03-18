@@ -31,6 +31,33 @@ func readErrorBody(body io.Reader) string {
 	return string(data)
 }
 
+// formatAPIError creates a user-friendly error message based on HTTP status code
+// This provides actionable guidance for common authentication and authorization errors
+func formatAPIError(statusCode int, body string, endpoint string) error {
+	switch statusCode {
+	case http.StatusUnauthorized: // 401
+		return fmt.Errorf("authentication failed (401): %s\n\nPossible causes:\n"+
+			"  - Session expired: run 'devsh login' to re-authenticate\n"+
+			"  - Invalid or missing API token\n"+
+			"  - CMUX_TASK_RUN_JWT is invalid or expired (for sub-agent operations)", body)
+	case http.StatusForbidden: // 403
+		return fmt.Errorf("access denied (403): %s\n\nPossible causes:\n"+
+			"  - You don't have permission to access this resource\n"+
+			"  - The resource belongs to a different team\n"+
+			"  - Your team subscription may have expired", body)
+	case http.StatusNotFound: // 404
+		return fmt.Errorf("not found (404): %s\n\nThe requested resource does not exist or you don't have access to it", body)
+	case http.StatusTooManyRequests: // 429
+		return fmt.Errorf("rate limited (429): %s\n\nToo many requests. Please wait a moment and try again", body)
+	case http.StatusInternalServerError: // 500
+		return fmt.Errorf("server error (500): %s\n\nThe server encountered an error. If this persists, please report it", body)
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout: // 502, 503, 504
+		return fmt.Errorf("service unavailable (%d): %s\n\nThe service is temporarily unavailable. Please try again later", statusCode, body)
+	default:
+		return fmt.Errorf("API error (%d): %s", statusCode, body)
+	}
+}
+
 // Instance represents a VM instance
 type Instance struct {
 	ID              string `json:"id"`              // Our cmux ID (Convex doc ID)
@@ -900,7 +927,7 @@ func (c *Client) ListTasks(ctx context.Context, archived bool) (*ListTasksResult
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+		return nil, formatAPIError(resp.StatusCode, readErrorBody(resp.Body), "list tasks")
 	}
 
 	var result ListTasksResult
@@ -1503,7 +1530,7 @@ func (c *Client) GetTask(ctx context.Context, taskID string) (*TaskDetail, error
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+		return nil, formatAPIError(resp.StatusCode, readErrorBody(resp.Body), "get task")
 	}
 
 	var result TaskDetail
@@ -1531,7 +1558,7 @@ func (c *Client) StopTask(ctx context.Context, taskID string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+		return formatAPIError(resp.StatusCode, readErrorBody(resp.Body), "stop task")
 	}
 
 	return nil
@@ -2125,7 +2152,7 @@ func (c *Client) OrchestrationSpawn(ctx context.Context, opts OrchestrationSpawn
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
-		return nil, fmt.Errorf("orchestration spawn failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+		return nil, formatAPIError(resp.StatusCode, readErrorBody(resp.Body), "orchestration spawn")
 	}
 
 	var result OrchestrationSpawnResult
@@ -2154,7 +2181,7 @@ func (c *Client) OrchestrationList(ctx context.Context, status string) (*Orchest
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("orchestration list failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+		return nil, formatAPIError(resp.StatusCode, readErrorBody(resp.Body), "orchestration list")
 	}
 
 	var result OrchestrationListResult
@@ -2180,7 +2207,7 @@ func (c *Client) OrchestrationStatus(ctx context.Context, orchTaskID string) (*O
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("orchestration status failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+		return nil, formatAPIError(resp.StatusCode, readErrorBody(resp.Body), "orchestration status")
 	}
 
 	var result OrchestrationStatusResult
@@ -2208,7 +2235,7 @@ func (c *Client) OrchestrationCancel(ctx context.Context, orchTaskID string) err
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("orchestration cancel failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+		return formatAPIError(resp.StatusCode, readErrorBody(resp.Body), "orchestration cancel")
 	}
 
 	return nil
@@ -2230,7 +2257,7 @@ func (c *Client) SendOrchestrateMessage(ctx context.Context, taskRunID string, m
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
-		return fmt.Errorf("orchestrate message failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+		return formatAPIError(resp.StatusCode, readErrorBody(resp.Body), "orchestrate message")
 	}
 
 	return nil
