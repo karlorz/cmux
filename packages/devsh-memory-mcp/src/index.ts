@@ -1542,7 +1542,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         }
 
         try {
-          const url = `${apiBaseUrl}/api/v1/cmux/orchestration/tasks/${orchestrationTaskId}`;
+          const url = `${apiBaseUrl}/api/orchestrate/tasks/${orchestrationTaskId}`;
           const response = await fetch(url, {
             method: "GET",
             headers: {
@@ -1602,11 +1602,11 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
 
         try {
           while (Date.now() - startTime < timeout) {
-            const url = `${apiBaseUrl}/api/orchestrate/status/${orchestrationTaskId}`;
+            const url = `${apiBaseUrl}/api/orchestrate/tasks/${orchestrationTaskId}`;
             const response = await fetch(url, {
               method: "GET",
               headers: {
-                "X-Task-Run-JWT": jwt,
+                "Authorization": `Bearer ${jwt}`,
                 "Content-Type": "application/json",
               },
             });
