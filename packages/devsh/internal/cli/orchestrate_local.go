@@ -170,21 +170,25 @@ Examples:
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 
-		// Run the agent
+		// Run the agent (with TUI if requested)
 		var runErr error
-		switch localAgent {
-		case "claude/haiku-4.5", "claude/haiku-4.6", "claude/sonnet-4.5", "claude/sonnet-4.6", "claude/opus-4.5", "claude/opus-4.6":
-			runErr = runClaudeLocal(ctx, state, prompt, absWorkspace)
-		case "codex/gpt-5.1-codex-mini", "codex/gpt-5.4-xhigh":
-			runErr = runCodexLocal(ctx, state, prompt, absWorkspace)
-		case "gemini/gemini-2.5-pro", "gemini/gemini-2.5-flash":
-			runErr = runGeminiLocal(ctx, state, prompt, absWorkspace)
-		case "opencode/big-pickle", "opencode/small-pickle":
-			runErr = runOpencodeLocal(ctx, state, prompt, absWorkspace)
-		case "amp/amp-1":
-			runErr = runAmpLocal(ctx, state, prompt, absWorkspace)
-		default:
-			return fmt.Errorf("unsupported local agent: %s (supported: claude/*, codex/*, gemini/*, opencode/*, amp/*)", localAgent)
+		if localTUI {
+			runErr = runLocalWithTUI(ctx, state, prompt, absWorkspace)
+		} else {
+			switch localAgent {
+			case "claude/haiku-4.5", "claude/haiku-4.6", "claude/sonnet-4.5", "claude/sonnet-4.6", "claude/opus-4.5", "claude/opus-4.6":
+				runErr = runClaudeLocal(ctx, state, prompt, absWorkspace)
+			case "codex/gpt-5.1-codex-mini", "codex/gpt-5.4-xhigh":
+				runErr = runCodexLocal(ctx, state, prompt, absWorkspace)
+			case "gemini/gemini-2.5-pro", "gemini/gemini-2.5-flash":
+				runErr = runGeminiLocal(ctx, state, prompt, absWorkspace)
+			case "opencode/big-pickle", "opencode/small-pickle":
+				runErr = runOpencodeLocal(ctx, state, prompt, absWorkspace)
+			case "amp/amp-1":
+				runErr = runAmpLocal(ctx, state, prompt, absWorkspace)
+			default:
+				return fmt.Errorf("unsupported local agent: %s (supported: claude/*, codex/*, gemini/*, opencode/*, amp/*)", localAgent)
+			}
 		}
 
 		// Update final state with timing
@@ -479,7 +483,7 @@ func init() {
 	orchestrateLocalCmd.Flags().StringVar(&localWorkspace, "workspace", "", "Workspace directory (default: current directory)")
 	orchestrateLocalCmd.Flags().StringVar(&localTimeout, "timeout", "30m", "Task timeout")
 	orchestrateLocalCmd.Flags().StringVar(&localExport, "export", "", "Export state to JSON file when done")
-	orchestrateLocalCmd.Flags().BoolVar(&localTUI, "tui", false, "Show live terminal UI (not yet implemented)")
+	orchestrateLocalCmd.Flags().BoolVar(&localTUI, "tui", false, "Show live terminal UI with spinner, events, and scrollable output")
 	orchestrateLocalCmd.Flags().BoolVar(&localDryRun, "dry-run", false, "Show what would be executed without running")
 	orchestrateLocalCmd.Flags().StringVar(&localModel, "model", "", "Override model for Claude (e.g., claude-sonnet-4-5-20250514)")
 	orchestrateCmd.AddCommand(orchestrateLocalCmd)

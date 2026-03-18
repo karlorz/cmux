@@ -277,3 +277,83 @@ func TestTimeoutParsing(t *testing.T) {
 		})
 	}
 }
+
+func TestTUIModelInit(t *testing.T) {
+	state := &LocalState{
+		OrchestrationID: "test_tui",
+		StartedAt:       time.Now().UTC().Format(time.RFC3339),
+		Status:          "running",
+		Agent:           "claude/haiku-4.5",
+		Prompt:          "Test prompt",
+		Workspace:       "/test",
+		Events:          []LocalEvent{},
+	}
+
+	model := initialTUIModel(state)
+
+	// Verify initial state
+	if model.state.OrchestrationID != "test_tui" {
+		t.Errorf("expected orchestrationId 'test_tui', got '%s'", model.state.OrchestrationID)
+	}
+
+	if model.done {
+		t.Error("expected done to be false initially")
+	}
+
+	if model.ready {
+		t.Error("expected ready to be false initially")
+	}
+
+	if len(model.outputLines) != 0 {
+		t.Errorf("expected 0 output lines, got %d", len(model.outputLines))
+	}
+}
+
+func TestParseTime(t *testing.T) {
+	tests := []struct {
+		input string
+		valid bool
+	}{
+		{"2026-03-18T10:00:00Z", true},
+		{"2026-03-18T10:00:00+00:00", true},
+		{"invalid", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := parseTime(tt.input)
+			if tt.valid {
+				// For valid inputs, the result should be close to the parsed time
+				expected, _ := time.Parse(time.RFC3339, tt.input)
+				if !result.Equal(expected) {
+					t.Errorf("expected %v, got %v", expected, result)
+				}
+			} else {
+				// For invalid inputs, parseTime returns time.Now(), so just verify it's not zero
+				if result.IsZero() {
+					t.Error("expected non-zero time for invalid input")
+				}
+			}
+		})
+	}
+}
+
+func TestLocalStateGetError(t *testing.T) {
+	// Test with no error
+	state := &LocalState{Error: nil}
+	if state.getError() != nil {
+		t.Error("expected nil error when Error is nil")
+	}
+
+	// Test with error
+	errMsg := "test error message"
+	state.Error = &errMsg
+	err := state.getError()
+	if err == nil {
+		t.Error("expected non-nil error when Error is set")
+	}
+	if err.Error() != errMsg {
+		t.Errorf("expected error message '%s', got '%s'", errMsg, err.Error())
+	}
+}
