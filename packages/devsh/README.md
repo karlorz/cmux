@@ -113,6 +113,51 @@ devsh ls                        # List all your VMs
 | `devsh computer wait <id> <selector>` | Wait for element |
 | `devsh computer hover <id> <selector>` | Hover over element |
 
+### Local Orchestration (Local Captain Mode)
+
+Run agent tasks locally without cloud infrastructure. Useful for prototyping, debugging, and validating orchestration patterns before cloud deployment.
+
+| Command | Description |
+|---------|-------------|
+| `devsh orchestrate run-local` | Run an agent task locally |
+| `devsh orchestrate run-plan <file>` | Run tasks from YAML plan file |
+| `devsh orchestrate supervise-local` | Run with supervisor/executor split |
+| `devsh orchestrate list-local` | List local runs |
+| `devsh orchestrate show-local <id>` | Show run details |
+| `devsh orchestrate tail-local <id>` | Follow run logs |
+| `devsh orchestrate view <path>` | View bundle in browser |
+| `devsh orchestrate stop-local <id>` | Stop a running task |
+| `devsh orchestrate append-local <id>` | Append instructions to running task |
+| `devsh orchestrate replay <bundle>` | Replay tasks from bundle |
+| `devsh orchestrate upload <bundle>` | Upload bundle to cloud |
+
+**Quick start:**
+
+```bash
+# Run a task locally (artifacts saved to ~/.devsh/orchestrations/)
+devsh orchestrate run-local --agent claude/haiku-4.5 "Fix the bug in auth.ts"
+
+# View results in browser
+devsh orchestrate view ~/.devsh/orchestrations/local_abc123 --live
+
+# Run multiple tasks from a plan
+devsh orchestrate run-plan tasks.yaml --parallel
+```
+
+### Cloud Orchestration
+
+Spawn and manage agent tasks in cloud sandboxes.
+
+| Command | Description |
+|---------|-------------|
+| `devsh orchestrate spawn` | Spawn agent task in cloud sandbox |
+| `devsh orchestrate list` | List orchestration tasks |
+| `devsh orchestrate status <id>` | Get task status |
+| `devsh orchestrate wait <id>` | Wait for task completion |
+| `devsh orchestrate cancel <id>` | Cancel running task |
+| `devsh orchestrate export <id>` | Export orchestration as bundle |
+| `devsh orchestrate results <id>` | Get orchestration results |
+
 ### GitHub Projects
 
 | Command | Description |
