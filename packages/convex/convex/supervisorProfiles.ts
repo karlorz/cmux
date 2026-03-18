@@ -1,5 +1,7 @@
 import { v } from "convex/values";
 import { resolveTeamIdLoose } from "../_shared/team";
+import { internalQuery } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { authMutation, authQuery } from "./users/utils";
 
 const reasoningLevelValidator = v.union(
@@ -117,5 +119,18 @@ export const remove = authMutation({
       throw new Error("Profile not found");
     }
     await ctx.db.delete(args.profileId);
+  },
+});
+
+/**
+ * Internal query to get a supervisor profile by ID.
+ * Used by the orchestration worker to read profile settings during spawn.
+ */
+export const getByIdInternal = internalQuery({
+  args: {
+    profileId: v.id("supervisorProfiles"),
+  },
+  handler: async (ctx, args) => {
+    return ctx.db.get(args.profileId);
   },
 });
