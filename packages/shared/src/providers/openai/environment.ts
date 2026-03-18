@@ -420,7 +420,7 @@ log "Autopilot completed after \$ITER turns"
     ? getPolicyRulesInstructions(ctx.policyRules) + "\n\n"
     : "";
   const orchestrationRulesSection = ctx.orchestrationRules && ctx.orchestrationRules.length > 0
-    ? getOrchestrationRulesInstructions(ctx.orchestrationRules) + "\n\n"
+    ? getOrchestrationRulesInstructions(ctx.orchestrationRules, { isOrchestrationHead: ctx.isOrchestrationHead }) + "\n\n"
     : "";
   const behaviorRulesSection = ctx.previousBehavior
     ? extractBehaviorRulesSection(ctx.previousBehavior) + "\n\n"
