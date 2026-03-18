@@ -38,6 +38,10 @@ var (
 	taskCreateFromProjectItem         string // convenience: auto-fetch item content as prompt
 	// Agent Teams (D4) - parent-child task relationships
 	taskCreateParentTaskRun string
+
+	// Pre-compiled regexps for sanitizeFileName
+	reNonAlphaNum    = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
+	reMultiUnderscore = regexp.MustCompile(`_+`)
 	// Autopilot mode (Phase 6)
 	taskCreateAutopilot            bool
 	taskCreateAutopilotMinutes     int
@@ -566,11 +570,10 @@ type agentInfo struct {
 // avoids surprising upload failures.
 func sanitizeFileName(name string) string {
 	// Keep only alphanumerics, hyphens, underscores, dots
-	re := regexp.MustCompile(`[^a-zA-Z0-9._-]`)
-	clean := re.ReplaceAllString(name, "_")
+	clean := reNonAlphaNum.ReplaceAllString(name, "_")
 
 	// Collapse multiple underscores
-	clean = regexp.MustCompile(`_+`).ReplaceAllString(clean, "_")
+	clean = reMultiUnderscore.ReplaceAllString(clean, "_")
 
 	// Limit to 128 characters
 	if len(clean) > 128 {

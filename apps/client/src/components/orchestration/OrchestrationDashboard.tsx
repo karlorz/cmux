@@ -80,6 +80,14 @@ export function OrchestrationDashboard({
       }
       const results = await response.json();
 
+      // Single-pass status counting
+      const counts = { failed: 0, running: 0, pending: 0 };
+      for (const t of results.results as { status: string }[]) {
+        if (t.status === "failed") counts.failed++;
+        else if (t.status === "running" || t.status === "assigned") counts.running++;
+        else if (t.status === "pending") counts.pending++;
+      }
+
       // Build export bundle matching CLI format
       const bundle = {
         exportedAt: new Date().toISOString(),
@@ -92,9 +100,9 @@ export function OrchestrationDashboard({
         summary: {
           totalTasks: results.totalTasks,
           completedTasks: results.completedTasks,
-          failedTasks: results.results.filter((t: { status: string }) => t.status === "failed").length,
-          runningTasks: results.results.filter((t: { status: string }) => t.status === "running" || t.status === "assigned").length,
-          pendingTasks: results.results.filter((t: { status: string }) => t.status === "pending").length,
+          failedTasks: counts.failed,
+          runningTasks: counts.running,
+          pendingTasks: counts.pending,
         },
       };
 
