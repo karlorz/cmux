@@ -56,13 +56,16 @@ Run agents locally without cloud infrastructure:
 
 ```bash
 # Run a task with Claude
-devsh orchestrate run-local --agent claude/haiku-4.5 "Fix the bug in auth.ts"
+devsh orchestrate run-local --agent claude/opus-4.6 "Fix the bug in auth.ts"
 
 # Use different agent providers
 devsh orchestrate run-local --agent codex/gpt-5.1-codex-mini "Add tests"
 devsh orchestrate run-local --agent gemini/gemini-2.5-pro "Refactor code"
 devsh orchestrate run-local --agent opencode/big-pickle "Review changes"
 devsh orchestrate run-local --agent amp/amp-1 "Quick fix"
+
+# Set a timeout for long tasks
+devsh orchestrate run-local --timeout 1h "Complex migration"
 
 # Dry-run to see what would execute
 devsh orchestrate run-local --dry-run "Add unit tests"
@@ -75,6 +78,9 @@ devsh orchestrate run-local --export ./debug.json "Investigate issue"
 
 # JSON output for scripting
 devsh orchestrate run-local --json "Quick task" | jq .status
+
+# Verbose mode shows event timestamps
+devsh orchestrate run-local --verbose "Debug task"
 ```
 
 Supported agents: `claude/*`, `codex/*`, `gemini/*`, `opencode/*`, `amp/*`
@@ -83,6 +89,9 @@ View exported orchestration bundles offline:
 
 ```bash
 devsh orchestrate view ./debug-bundle.json
+
+# Pipe JSON directly from run-local
+devsh orchestrate run-local --json "task" | devsh orchestrate view -
 ```
 
 ## Browser Automation
