@@ -156,3 +156,74 @@ func TestFindAvailablePortSequential(t *testing.T) {
 		t.Errorf("port2 out of range: %d", port2)
 	}
 }
+
+func TestResolveBundlePath(t *testing.T) {
+	// Create a temp directory with a bundle.json
+	tmpDir := t.TempDir()
+	bundlePath := filepath.Join(tmpDir, "bundle.json")
+	bundle := ExportBundle{
+		Version: "1.0.0",
+		Summary: ExportSummary{TotalTasks: 1},
+	}
+	data, _ := json.Marshal(bundle)
+	os.WriteFile(bundlePath, data, 0644)
+
+	// Test: direct file path
+	resolved, isDir := resolveBundlePath(bundlePath)
+	if resolved != bundlePath {
+		t.Errorf("expected %s, got %s", bundlePath, resolved)
+	}
+	if isDir {
+		t.Error("expected isDir=false for file path")
+	}
+
+	// Test: directory path
+	resolved, isDir = resolveBundlePath(tmpDir)
+	if resolved != bundlePath {
+		t.Errorf("expected %s, got %s", bundlePath, resolved)
+	}
+	if !isDir {
+		t.Error("expected isDir=true for directory path")
+	}
+
+	// Test: stdin marker
+	resolved, isDir = resolveBundlePath("-")
+	if resolved != "-" {
+		t.Errorf("expected -, got %s", resolved)
+	}
+	if isDir {
+		t.Error("expected isDir=false for stdin")
+	}
+
+	// Test: non-existent path
+	resolved, _ = resolveBundlePath("/nonexistent/path")
+	if resolved != "" {
+		t.Errorf("expected empty string for non-existent path, got %s", resolved)
+	}
+
+	// Test: directory without bundle.json
+	emptyDir := t.TempDir()
+	resolved, isDir = resolveBundlePath(emptyDir)
+	if resolved != "" {
+		t.Errorf("expected empty string for dir without bundle, got %s", resolved)
+	}
+	if !isDir {
+		t.Error("expected isDir=true for directory path even without bundle")
+	}
+}
+
+func TestWatchModeVariableExists(t *testing.T) {
+	// Verify the watch mode variable is declared and can be set
+	origWatch := orchestrateViewWatch
+	defer func() { orchestrateViewWatch = origWatch }()
+
+	orchestrateViewWatch = true
+	if !orchestrateViewWatch {
+		t.Error("failed to set orchestrateViewWatch to true")
+	}
+
+	orchestrateViewWatch = false
+	if orchestrateViewWatch {
+		t.Error("failed to set orchestrateViewWatch to false")
+	}
+}
