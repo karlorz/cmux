@@ -58,10 +58,16 @@ Run agents locally without cloud infrastructure:
 # Run a task with Claude
 devsh orchestrate run-local --agent claude/haiku-4.5 "Fix the bug in auth.ts"
 
+# Use different agent providers
+devsh orchestrate run-local --agent codex/gpt-5.1-codex-mini "Add tests"
+devsh orchestrate run-local --agent gemini/gemini-2.5-pro "Refactor code"
+devsh orchestrate run-local --agent opencode/big-pickle "Review changes"
+devsh orchestrate run-local --agent amp/amp-1 "Quick fix"
+
 # Dry-run to see what would execute
 devsh orchestrate run-local --dry-run "Add unit tests"
 
-# Override the model
+# Override the model (Claude only)
 devsh orchestrate run-local --model claude-sonnet-4-5-20250514 "Complex refactor"
 
 # Export state for debugging
@@ -70,6 +76,8 @@ devsh orchestrate run-local --export ./debug.json "Investigate issue"
 # JSON output for scripting
 devsh orchestrate run-local --json "Quick task" | jq .status
 ```
+
+Supported agents: `claude/*`, `codex/*`, `gemini/*`, `opencode/*`, `amp/*`
 
 View exported orchestration bundles offline:
 
