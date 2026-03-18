@@ -19,6 +19,7 @@ import {
   generateCorrectionId,
   formatBehaviorCorrection,
   extractBehaviorRulesSection,
+  getOrchestrationRulesInstructions,
 } from "./agent-memory-protocol";
 import { execSync } from "node:child_process";
 import { writeFileSync, unlinkSync } from "node:fs";
@@ -391,6 +392,51 @@ Each rule should be on its own line.
       expect(instructions).toContain("HOT.md Format");
       expect(instructions).toContain("corrections.jsonl Format");
       expect(instructions).toContain("[confirmed]");
+    });
+  });
+
+  describe("getOrchestrationRulesInstructions", () => {
+    const hotRule = { ruleId: "r1", text: "Always run tests", lane: "hot" as const, confidence: 0.9 };
+    const orchRule = { ruleId: "r2", text: "Use parallel delegation", lane: "orchestration" as const, confidence: 0.8 };
+    const projectRule = { ruleId: "r3", text: "Use bun not npm", lane: "project" as const, confidence: 0.7, projectFullName: "org/repo" };
+
+    it("returns empty string for empty input", () => {
+      expect(getOrchestrationRulesInstructions([])).toBe("");
+    });
+
+    it("renders all lanes when no options provided", () => {
+      const result = getOrchestrationRulesInstructions([hotRule, orchRule, projectRule]);
+      expect(result).toContain("Hot Rules");
+      expect(result).toContain("Orchestration Rules");
+      expect(result).toContain("Project Rules");
+      expect(result).toContain("Always run tests");
+      expect(result).toContain("Use parallel delegation");
+      expect(result).toContain("Use bun not npm");
+    });
+
+    it("renders all lanes for head agents", () => {
+      const result = getOrchestrationRulesInstructions([hotRule, orchRule, projectRule], { isOrchestrationHead: true });
+      expect(result).toContain("Hot Rules");
+      expect(result).toContain("Orchestration Rules");
+      expect(result).toContain("Project Rules");
+    });
+
+    it("excludes orchestration lane for non-head agents", () => {
+      const result = getOrchestrationRulesInstructions([hotRule, orchRule, projectRule], { isOrchestrationHead: false });
+      expect(result).toContain("Hot Rules");
+      expect(result).not.toContain("## Orchestration Rules");
+      expect(result).not.toContain("Use parallel delegation");
+      expect(result).toContain("Project Rules");
+    });
+
+    it("returns empty string when only orchestration rules exist for non-head agent", () => {
+      const result = getOrchestrationRulesInstructions([orchRule], { isOrchestrationHead: false });
+      expect(result).toBe("");
+    });
+
+    it("includes orchestration rules when isOrchestrationHead is undefined", () => {
+      const result = getOrchestrationRulesInstructions([orchRule], { isOrchestrationHead: undefined });
+      expect(result).toContain("Orchestration Rules");
     });
   });
 });
