@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Clock, User, Bot, Wrench, ChevronDown, ChevronUp } from "lucide-react";
 import clsx from "clsx";
 import { STATUS_CONFIG, type TaskStatus } from "./status-config";
@@ -10,6 +10,18 @@ interface OrchestrationTaskDetailProps {
 }
 
 type SurfaceTab = "operator" | "supervisor" | "worker";
+
+/** Reusable section wrapper with consistent label styling */
+function DetailSection({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
 
 /**
  * 3-Surface Task Detail View
@@ -124,21 +136,15 @@ function OperatorBrief({ task }: { task: OrchestrationTaskWithDeps }) {
   return (
     <div className="space-y-4">
       {/* Original Request */}
-      <div>
-        <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-          Original Request
-        </div>
+      <DetailSection label="Original Request">
         <div className="rounded-lg bg-neutral-50 p-3 text-sm text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
           {task.prompt}
         </div>
-      </div>
+      </DetailSection>
 
       {/* Context / Metadata */}
       {task.metadata && Object.keys(task.metadata).length > 0 && (
-        <div>
-          <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-            Context
-          </div>
+        <DetailSection label="Context">
           <div className="rounded-lg bg-neutral-50 p-3 dark:bg-neutral-800">
             <dl className="grid grid-cols-2 gap-2 text-xs">
               {Object.entries(task.metadata).map(([key, value]) => (
@@ -151,7 +157,7 @@ function OperatorBrief({ task }: { task: OrchestrationTaskWithDeps }) {
               ))}
             </dl>
           </div>
-        </div>
+        </DetailSection>
       )}
 
       {/* Timeline */}
@@ -173,10 +179,7 @@ function SupervisorView({ task }: { task: OrchestrationTaskWithDeps }) {
   return (
     <div className="space-y-4">
       {/* Delegation Decision */}
-      <div>
-        <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-          Delegation
-        </div>
+      <DetailSection label="Delegation">
         <div className="rounded-lg bg-blue-50 p-3 text-sm dark:bg-blue-900/20">
           {task.assignedAgentName ? (
             <div className="flex items-center gap-2">
@@ -191,14 +194,11 @@ function SupervisorView({ task }: { task: OrchestrationTaskWithDeps }) {
             </span>
           )}
         </div>
-      </div>
+      </DetailSection>
 
       {/* Dependencies */}
       {hasDependencies && task.dependencyInfo && (
-        <div>
-          <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-            Dependency Chain
-          </div>
+        <DetailSection label="Dependency Chain">
           <div className="rounded-lg bg-amber-50 p-3 dark:bg-amber-900/20">
             <div className="mb-2 text-sm text-amber-700 dark:text-amber-300">
               {task.dependencyInfo.completedDeps} of {task.dependencyInfo.totalDeps} dependencies complete
@@ -223,26 +223,20 @@ function SupervisorView({ task }: { task: OrchestrationTaskWithDeps }) {
               </ul>
             )}
           </div>
-        </div>
+        </DetailSection>
       )}
 
       {/* Planning Notes (from metadata if available) */}
       {task.metadata?.planningNotes && (
-        <div>
-          <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-            Planning Notes
-          </div>
+        <DetailSection label="Planning Notes">
           <div className="rounded-lg bg-neutral-50 p-3 text-sm text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
             {String(task.metadata.planningNotes)}
           </div>
-        </div>
+        </DetailSection>
       )}
 
       {/* Status Timeline */}
-      <div>
-        <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-          Status Timeline
-        </div>
+      <DetailSection label="Status Timeline">
         <div className="space-y-1 text-xs">
           <div className="flex items-center gap-2">
             <span className="w-20 text-neutral-500">Created</span>
@@ -275,7 +269,7 @@ function SupervisorView({ task }: { task: OrchestrationTaskWithDeps }) {
             </div>
           )}
         </div>
-      </div>
+      </DetailSection>
     </div>
   );
 }
@@ -291,10 +285,7 @@ function WorkerView({ task, teamSlugOrId }: { task: OrchestrationTaskWithDeps; t
     <div className="space-y-4">
       {/* Task Run Link */}
       {task.taskRunId && (
-        <div>
-          <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-            Task Run
-          </div>
+        <DetailSection label="Task Run">
           <div className="rounded-lg bg-neutral-50 p-3 dark:bg-neutral-800">
             <a
               href={`/${teamSlugOrId}/tasks/${task.taskId}`}
@@ -303,43 +294,34 @@ function WorkerView({ task, teamSlugOrId }: { task: OrchestrationTaskWithDeps; t
               View task run {String(task.taskRunId).slice(0, 12)}...
             </a>
           </div>
-        </div>
+        </DetailSection>
       )}
 
       {/* Result (if completed) */}
       {status === "completed" && task.result && (
-        <div>
-          <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-            Result
-          </div>
+        <DetailSection label="Result">
           <div className="rounded-lg bg-green-50 p-3 text-sm text-green-700 dark:bg-green-900/20 dark:text-green-400">
             {task.result}
           </div>
-        </div>
+        </DetailSection>
       )}
 
       {/* Error (if failed) */}
       {status === "failed" && task.errorMessage && (
-        <div>
-          <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-            Error
-          </div>
+        <DetailSection label="Error">
           <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-400">
             {task.errorMessage}
           </div>
-        </div>
+        </DetailSection>
       )}
 
       {/* Sandbox Info */}
       {task.assignedSandboxId && (
-        <div>
-          <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-            Sandbox
-          </div>
+        <DetailSection label="Sandbox">
           <div className="rounded-lg bg-neutral-50 p-3 text-xs font-mono text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
             {task.assignedSandboxId}
           </div>
-        </div>
+        </DetailSection>
       )}
 
       {/* Empty state */}
