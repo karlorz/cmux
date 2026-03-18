@@ -714,6 +714,7 @@ interface OrchestrationSpawnRequest {
   orchestrationId?: string; // Orchestration ID for grouping tasks
   isCloudWorkspace?: boolean; // Mark as cloud workspace (long-lived, not auto-paused)
   isOrchestrationHead?: boolean; // Mark as orchestration head agent (can spawn sub-agents)
+  supervisorProfileId?: string; // Supervisor profile ID for head agent behavior settings
 }
 
 interface OrchestrationSpawnResponse {
@@ -785,7 +786,7 @@ async function handleOrchestrationSpawn(
     return;
   }
 
-  const { teamSlugOrId, prompt, agent, repo, branch, prTitle, environmentId, isCloudMode = true, dependsOn, priority, orchestrationId, isCloudWorkspace, isOrchestrationHead } = body;
+  const { teamSlugOrId, prompt, agent, repo, branch, prTitle, environmentId, isCloudMode = true, dependsOn, priority, orchestrationId, isCloudWorkspace, isOrchestrationHead, supervisorProfileId } = body;
 
   // Check for JWT auth first (allows agents to spawn sub-agents)
   const taskRunJwt = extractTaskRunJwt(req.headers as Record<string, string | string[] | undefined>);
@@ -1009,6 +1010,7 @@ async function handleOrchestrationSpawn(
         taskRunId,
         priority: priority ?? 5,
         dependencies: dependencyIds,
+        metadata: supervisorProfileId ? { supervisorProfileId } : undefined,
       });
 
       return {
@@ -1914,6 +1916,13 @@ interface InternalSpawnRequest {
   taskRunId: string;
   taskRunJwt?: string; // JWT for auth context (provided by worker)
   userId?: string; // User ID for auth context
+  supervisorProfile?: {
+    reasoningLevel: string;
+    reviewPosture: string;
+    delegationStyle: string;
+    name: string;
+    model?: string;
+  };
 }
 
 /**
@@ -1942,7 +1951,7 @@ async function handleOrchestrationInternalSpawn(
     return;
   }
 
-  const { orchestrationTaskId, agentName, prompt, taskId, taskRunId, taskRunJwt, teamId } = body;
+  const { orchestrationTaskId, agentName, prompt, taskId, taskRunId, taskRunJwt, teamId, supervisorProfile } = body;
 
   if (!orchestrationTaskId || !agentName || !prompt || !taskId || !taskRunId) {
     jsonResponse(res, 400, { error: "Missing required fields" });
@@ -1994,6 +2003,7 @@ async function handleOrchestrationInternalSpawn(
         isCloudMode: true,
         taskRunId: taskRunId as Id<"taskRuns">,
         preFetchedConfig,
+        supervisorProfile,
       },
       teamId,
       taskRunJwt

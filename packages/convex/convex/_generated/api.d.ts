@@ -109,6 +109,7 @@ import type * as stack from "../stack.js";
 import type * as stack_webhook from "../stack_webhook.js";
 import type * as stack_webhook_actions from "../stack_webhook_actions.js";
 import type * as storage from "../storage.js";
+import type * as supervisorProfiles from "../supervisorProfiles.js";
 import type * as sync from "../sync.js";
 import type * as taskComments from "../taskComments.js";
 import type * as taskNotifications from "../taskNotifications.js";
@@ -236,6 +237,7 @@ declare const fullApi: ApiFromModules<{
   stack_webhook: typeof stack_webhook;
   stack_webhook_actions: typeof stack_webhook_actions;
   storage: typeof storage;
+  supervisorProfiles: typeof supervisorProfiles;
   sync: typeof sync;
   taskComments: typeof taskComments;
   taskNotifications: typeof taskNotifications;

@@ -2072,6 +2072,42 @@ const convexSchema = defineSchema({
     .index("by_team_agent", ["teamId", "agentType"])
     .index("by_team_agent_scope", ["teamId", "agentType", "scope"]),
 
+  // Supervisor profiles for head-agent orchestration behavior
+  // Standardizes how head agents plan, delegate, and review sub-agent work
+  supervisorProfiles: defineTable({
+    name: v.string(), // e.g. "Careful Reviewer", "Fast Delegator"
+    description: v.optional(v.string()),
+    // Model selection for the supervisor agent
+    model: v.string(), // e.g. "claude/opus-4.6", "claude/sonnet-4.6"
+    // Reasoning level: how much thinking the supervisor does before delegating
+    reasoningLevel: v.union(
+      v.literal("low"), // Quick decisions, minimal planning
+      v.literal("medium"), // Balanced analysis before delegation
+      v.literal("high") // Deep reasoning, detailed planning
+    ),
+    // Review posture: how strictly the supervisor reviews sub-agent output
+    reviewPosture: v.union(
+      v.literal("permissive"), // Accept most results
+      v.literal("balanced"), // Standard review
+      v.literal("strict") // Thorough review, may reject and retry
+    ),
+    // Delegation style: how the supervisor distributes work
+    delegationStyle: v.union(
+      v.literal("parallel"), // Maximize parallel execution
+      v.literal("sequential"), // One task at a time
+      v.literal("adaptive") // Choose based on task dependencies
+    ),
+    // Whether this is a built-in preset or user-created
+    isPreset: v.optional(v.boolean()),
+    // Ownership
+    userId: v.string(),
+    teamId: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_team", ["teamId"])
+    .index("by_team_name", ["teamId", "name"]),
+
   // Session activity tracking for visual change dashboards
   sessionActivity: defineTable({
     // Link to task run

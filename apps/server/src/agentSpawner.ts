@@ -184,6 +184,14 @@ export async function spawnAgent(
     isCloudWorkspace?: boolean;
     /** Mark as orchestration head agent (can spawn sub-agents via env JWT) */
     isOrchestrationHead?: boolean;
+    /** Supervisor profile settings for head agent behavior */
+    supervisorProfile?: {
+      reasoningLevel: string;
+      reviewPosture: string;
+      delegationStyle: string;
+      name: string;
+      model?: string;
+    };
   },
   teamSlugOrId: string,
   /** Optional pre-provided JWT (for JWT-based auth when Stack Auth is not available) */
@@ -506,6 +514,17 @@ export async function spawnAgent(
       systemEnvVars.CMUX_IS_CLOUD_WORKSPACE = "1";
       serverLogger.info("[AgentSpawner] Cloud workspace mode enabled");
     }
+    if (options.supervisorProfile) {
+      const sp = options.supervisorProfile;
+      systemEnvVars.CMUX_SUPERVISOR_PROFILE_NAME = sp.name;
+      systemEnvVars.CMUX_SUPERVISOR_REASONING_LEVEL = sp.reasoningLevel;
+      systemEnvVars.CMUX_SUPERVISOR_REVIEW_POSTURE = sp.reviewPosture;
+      systemEnvVars.CMUX_SUPERVISOR_DELEGATION_STYLE = sp.delegationStyle;
+      if (sp.model) {
+        systemEnvVars.CMUX_SUPERVISOR_MODEL = sp.model;
+      }
+      serverLogger.info(`[AgentSpawner] Supervisor profile: ${sp.name} (${sp.reasoningLevel}/${sp.reviewPosture}/${sp.delegationStyle})`);
+    }
 
     let envVars: Record<string, string> = { ...systemEnvVars };
 
@@ -734,7 +753,8 @@ export async function spawnAgent(
             teamSlugOrId,
             ...(task?.projectFullName ? { projectFullName: task.projectFullName } : {}),
           })
-          .then((rules) =>
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .then((rules: any[]) =>
             rules.map((r): OrchestrationRuleForInstructions => ({
               ruleId: r._id,
               text: r.text,

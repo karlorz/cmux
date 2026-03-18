@@ -506,6 +506,7 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
       ctx.runQuery(internal.agentOrchestrationLearning.getActiveRulesInternal, {
         teamId,
         ...(projectFullName ? { projectFullName } : {}),
+        minConfidence: 0.3, // Only inject rules with at least 30% confidence into agent context
       }),
     ]);
 
@@ -532,7 +533,8 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
       previousKnowledge,
       previousMailbox,
       previousBehavior,
-      orchestrationRules: orchestrationRulesRaw.map((r) => ({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      orchestrationRules: orchestrationRulesRaw.map((r: any) => ({
         ruleId: r._id,
         text: r.text,
         lane: r.lane,
