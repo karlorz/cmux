@@ -221,3 +221,36 @@ func TestExportLocalStateStatusMapping(t *testing.T) {
 		})
 	}
 }
+
+func TestTimeoutParsing(t *testing.T) {
+	tests := []struct {
+		input    string
+		valid    bool
+		expected time.Duration
+	}{
+		{"30m", true, 30 * time.Minute},
+		{"1h", true, time.Hour},
+		{"2h30m", true, 2*time.Hour + 30*time.Minute},
+		{"10s", true, 10 * time.Second},
+		{"invalid", false, 0},
+		{"", false, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			d, err := time.ParseDuration(tt.input)
+			if tt.valid {
+				if err != nil {
+					t.Errorf("expected valid duration, got error: %v", err)
+				}
+				if d != tt.expected {
+					t.Errorf("expected %v, got %v", tt.expected, d)
+				}
+			} else {
+				if err == nil {
+					t.Errorf("expected error for invalid input %q", tt.input)
+				}
+			}
+		})
+	}
+}

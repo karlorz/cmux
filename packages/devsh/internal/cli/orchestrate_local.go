@@ -109,6 +109,12 @@ Examples:
 			fmt.Printf("Agent: %s\n", localAgent)
 			fmt.Printf("Workspace: %s\n", absWorkspace)
 			fmt.Printf("Prompt: %s\n", prompt)
+			if flagVerbose {
+				fmt.Printf("Timeout: %s\n", localTimeout)
+				if localModel != "" {
+					fmt.Printf("Model Override: %s\n", localModel)
+				}
+			}
 		}
 
 		// Dry-run mode: just show what would happen
@@ -216,11 +222,15 @@ Examples:
 }
 
 func (s *LocalState) addEvent(eventType, message string) {
+	ts := time.Now().UTC().Format(time.RFC3339)
 	s.Events = append(s.Events, LocalEvent{
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Timestamp: ts,
 		Type:      eventType,
 		Message:   message,
 	})
+	if flagVerbose && !flagJSON {
+		fmt.Printf("[%s] %s: %s\n", ts, eventType, message)
+	}
 }
 
 func runClaudeLocal(ctx context.Context, state *LocalState, prompt, workspace string) error {
