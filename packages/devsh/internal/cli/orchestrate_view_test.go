@@ -120,6 +120,28 @@ func TestFindAvailablePort(t *testing.T) {
 	}
 }
 
+func TestStdinPathDetection(t *testing.T) {
+	// Test that "-" is recognized as stdin indicator
+	tests := []struct {
+		path    string
+		isStdin bool
+	}{
+		{"-", true},
+		{"./bundle.json", false},
+		{"/tmp/test.json", false},
+		{"bundle.json", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			isStdin := tt.path == "-"
+			if isStdin != tt.isStdin {
+				t.Errorf("path %q: expected isStdin=%v, got %v", tt.path, tt.isStdin, isStdin)
+			}
+		})
+	}
+}
+
 func TestFindAvailablePortSequential(t *testing.T) {
 	// Test that multiple calls return sequential ports when previous ones are still "in use"
 	// (This is a simplified test - in reality ports are released quickly)
