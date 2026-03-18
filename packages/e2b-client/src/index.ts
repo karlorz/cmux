@@ -4,6 +4,9 @@ import { withRetry, E2B_SANDBOX_RETRY_OPTIONS, type RetryOptions } from "./retry
 // Re-export retry utilities
 export * from "./retry";
 
+// Re-export health monitoring utilities
+export * from "./health";
+
 export const DEFAULT_E2B_BASE_URL = "https://api.e2b.dev";
 
 /**
