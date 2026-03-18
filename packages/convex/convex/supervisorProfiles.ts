@@ -1,7 +1,6 @@
 import { v } from "convex/values";
 import { resolveTeamIdLoose } from "../_shared/team";
 import { internalQuery } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
 import { authMutation, authQuery } from "./users/utils";
 
 const reasoningLevelValidator = v.union(
