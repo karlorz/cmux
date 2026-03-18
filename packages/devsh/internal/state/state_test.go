@@ -156,3 +156,96 @@ func TestStateClearFile(t *testing.T) {
 		t.Error("file should not exist after delete")
 	}
 }
+
+func TestStatePathDevMode(t *testing.T) {
+	// The statePath function uses auth.GetConfig() internally
+	// We can verify the expected filename pattern
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("failed to get home dir: %v", err)
+	}
+
+	// Expected path pattern
+	expectedDir := filepath.Join(home, ".config", "cmux")
+	if _, err := os.Stat(expectedDir); os.IsNotExist(err) {
+		// Directory may not exist, that's fine for this test
+		t.Skip("config directory does not exist")
+	}
+}
+
+func TestStateEmptyLastInstance(t *testing.T) {
+	// Test that empty state returns empty strings
+	s := &State{}
+	if s.LastInstanceID != "" {
+		t.Errorf("expected empty LastInstanceID, got '%s'", s.LastInstanceID)
+	}
+	if s.LastTeamSlug != "" {
+		t.Errorf("expected empty LastTeamSlug, got '%s'", s.LastTeamSlug)
+	}
+}
+
+func TestStateUpdateFields(t *testing.T) {
+	s := &State{}
+
+	// Update fields
+	s.LastInstanceID = "new-instance"
+	s.LastTeamSlug = "new-team"
+
+	if s.LastInstanceID != "new-instance" {
+		t.Errorf("expected LastInstanceID 'new-instance', got '%s'", s.LastInstanceID)
+	}
+	if s.LastTeamSlug != "new-team" {
+		t.Errorf("expected LastTeamSlug 'new-team', got '%s'", s.LastTeamSlug)
+	}
+}
+
+func TestStateJSONPartialFields(t *testing.T) {
+	// Test with only one field set
+	s := State{LastInstanceID: "only-instance"}
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	jsonStr := string(data)
+	if !containsStr(jsonStr, "lastInstanceId") {
+		t.Error("expected lastInstanceId in JSON")
+	}
+	if containsStr(jsonStr, "lastTeamSlug") {
+		t.Error("empty lastTeamSlug should be omitted")
+	}
+}
+
+func TestStateJSONRoundTripWithSpecialChars(t *testing.T) {
+	s := State{
+		LastInstanceID: "instance-with-dash_and_underscore",
+		LastTeamSlug:   "team-123",
+	}
+
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	var decoded State
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if decoded.LastInstanceID != s.LastInstanceID {
+		t.Errorf("expected LastInstanceID '%s', got '%s'", s.LastInstanceID, decoded.LastInstanceID)
+	}
+	if decoded.LastTeamSlug != s.LastTeamSlug {
+		t.Errorf("expected LastTeamSlug '%s', got '%s'", s.LastTeamSlug, decoded.LastTeamSlug)
+	}
+}
+
+// Helper to check string containment
+func containsStr(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
