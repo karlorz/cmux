@@ -504,7 +504,7 @@ echo ${apiKeyToOutput}`;
     ? `\n${getPolicyRulesInstructions(ctx.policyRules)}\n`
     : "";
   const orchestrationRulesSection = ctx.orchestrationRules && ctx.orchestrationRules.length > 0
-    ? `\n${getOrchestrationRulesInstructions(ctx.orchestrationRules)}\n`
+    ? `\n${getOrchestrationRulesInstructions(ctx.orchestrationRules, { isOrchestrationHead: ctx.isOrchestrationHead })}\n`
     : "";
   // Extract and inject behavior rules from previous session's HOT.md
   // This makes behavior rules "always-loaded" without requiring agent to read the file
