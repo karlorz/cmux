@@ -124,14 +124,21 @@ async function readJsonBody<T>(req: IncomingMessage): Promise<T | null> {
 
 /**
  * Get the Convex site URL for HTTP API calls.
- * Prefers CONVEX_SITE_URL, falls back to NEXT_PUBLIC_CONVEX_URL.
+ * Prefers CONVEX_SITE_URL, falls back to NEXT_PUBLIC_CONVEX_URL with
+ * automatic .convex.cloud -> .convex.site transformation.
+ *
+ * Convex HTTP actions are served from .convex.site, not .convex.cloud.
  */
 function getConvexSiteUrl(): string {
-  const url = env.CONVEX_SITE_URL ?? env.NEXT_PUBLIC_CONVEX_URL;
+  if (env.CONVEX_SITE_URL) {
+    return env.CONVEX_SITE_URL;
+  }
+  const url = env.NEXT_PUBLIC_CONVEX_URL;
   if (!url) {
     throw new Error("Neither CONVEX_SITE_URL nor NEXT_PUBLIC_CONVEX_URL is configured");
   }
-  return url;
+  // Transform .convex.cloud to .convex.site for HTTP actions
+  return url.replace(".convex.cloud", ".convex.site");
 }
 
 /**
