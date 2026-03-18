@@ -179,6 +179,8 @@ Do not use mocks
 Do not do early returns (eg. skipping tests if we're missing environment variables)
 Make tests resilient
 
+**Running tests**: Use `bun run test` (not `bun test`) to run tests with vitest configuration. The bare `bun test` command uses Bun's built-in test runner which ignores vitest configs like jsdom environments.
+
 ## Logs
 
 When running `./scripts/dev.sh`, service logs are written to `logs/{type}.log`:
