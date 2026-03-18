@@ -21,6 +21,7 @@ var orchestrateSpawnDependsOn []string
 var orchestrateSpawnPriority int
 var orchestrateSpawnUseEnvJwt bool
 var orchestrateSpawnCloudWorkspace bool
+var orchestrateSpawnSupervisorProfile string
 
 var orchestrateSpawnCmd = &cobra.Command{
 	Use:   "spawn <prompt>",
@@ -47,7 +48,8 @@ Examples:
   devsh orchestrate spawn --agent claude/haiku-4.5 --depends-on <orch-task-id> "Task B depends on A"
   devsh orchestrate spawn --agent claude/haiku-4.5 --priority 1 "High priority task"
   devsh orchestrate spawn --agent claude/haiku-4.5 --use-env-jwt "Sub-task from head agent"
-  devsh orchestrate spawn --cloud-workspace --agent claude/opus-4.6 "Coordinate feature implementation"`,
+  devsh orchestrate spawn --cloud-workspace --agent claude/opus-4.6 "Coordinate feature implementation"
+  devsh orchestrate spawn --supervisor-profile <profile-id> --agent claude/opus-4.6 "Supervised task"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		prompt := args[0]
@@ -91,6 +93,7 @@ Examples:
 			TaskRunJwt:          taskRunJwt,
 			IsCloudWorkspace:    orchestrateSpawnCloudWorkspace,
 			IsOrchestrationHead: orchestrateSpawnCloudWorkspace, // Cloud workspaces are orchestration heads
+			SupervisorProfileID: orchestrateSpawnSupervisorProfile,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to spawn agent: %w", err)
@@ -130,5 +133,6 @@ func init() {
 	orchestrateSpawnCmd.Flags().IntVar(&orchestrateSpawnPriority, "priority", 5, "Task priority (0=highest, 10=lowest, default 5)")
 	orchestrateSpawnCmd.Flags().BoolVar(&orchestrateSpawnUseEnvJwt, "use-env-jwt", false, "Use CMUX_TASK_RUN_JWT from environment for authentication (allows agents to spawn sub-agents)")
 	orchestrateSpawnCmd.Flags().BoolVar(&orchestrateSpawnCloudWorkspace, "cloud-workspace", false, "Spawn as an orchestration head agent (cloud workspace for coordinating sub-agents)")
+	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnSupervisorProfile, "supervisor-profile", "", "Supervisor profile ID to use for head agent behavior (Convex doc ID)")
 	orchestrateCmd.AddCommand(orchestrateSpawnCmd)
 }

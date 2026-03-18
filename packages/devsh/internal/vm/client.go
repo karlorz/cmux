@@ -2012,18 +2012,19 @@ func (c *Client) GetTaskRunMemory(ctx context.Context, taskRunID string, memoryT
 
 // OrchestrationSpawnOptions represents options for spawning with orchestration tracking
 type OrchestrationSpawnOptions struct {
-	Prompt              string
-	Agent               string
-	Repo                string
-	Branch              string
-	PRTitle             string
-	EnvironmentID       string
-	IsCloudMode         bool
-	DependsOn           []string // Orchestration task IDs this task depends on
-	Priority            int      // Task priority (1=highest, 10=lowest, default 5)
-	TaskRunJwt          string   // If set, use X-Task-Run-JWT header instead of Bearer token
-	IsCloudWorkspace    bool     // If true, spawn as a cloud workspace (interactive TUI session)
-	IsOrchestrationHead bool     // If true, mark as orchestration head (coordinates sub-agents)
+	Prompt               string
+	Agent                string
+	Repo                 string
+	Branch               string
+	PRTitle              string
+	EnvironmentID        string
+	IsCloudMode          bool
+	DependsOn            []string // Orchestration task IDs this task depends on
+	Priority             int      // Task priority (1=highest, 10=lowest, default 5)
+	TaskRunJwt           string   // If set, use X-Task-Run-JWT header instead of Bearer token
+	IsCloudWorkspace     bool     // If true, spawn as a cloud workspace (interactive TUI session)
+	IsOrchestrationHead  bool     // If true, mark as orchestration head (coordinates sub-agents)
+	SupervisorProfileID  string   // If set, use this supervisor profile for head agent behavior
 }
 
 // OrchestrationSpawnResult represents the result of spawning an agent with orchestration
@@ -2104,6 +2105,9 @@ func (c *Client) OrchestrationSpawn(ctx context.Context, opts OrchestrationSpawn
 	}
 	if opts.IsOrchestrationHead {
 		body["isOrchestrationHead"] = true
+	}
+	if opts.SupervisorProfileID != "" {
+		body["supervisorProfileId"] = opts.SupervisorProfileID
 	}
 
 	var resp *http.Response
