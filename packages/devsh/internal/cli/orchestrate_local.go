@@ -475,7 +475,7 @@ func exportLocalState(state *LocalState, outputPath string) error {
 }
 
 func init() {
-	orchestrateLocalCmd.Flags().StringVar(&localAgent, "agent", "claude/haiku-4.5", "Agent to use (claude/haiku-4.5, claude/opus-4.5, codex/gpt-5.1-codex-mini)")
+	orchestrateLocalCmd.Flags().StringVar(&localAgent, "agent", "claude/haiku-4.5", "Agent to use (claude/*, codex/*, gemini/*, opencode/*, amp/*)")
 	orchestrateLocalCmd.Flags().StringVar(&localWorkspace, "workspace", "", "Workspace directory (default: current directory)")
 	orchestrateLocalCmd.Flags().StringVar(&localTimeout, "timeout", "30m", "Task timeout")
 	orchestrateLocalCmd.Flags().StringVar(&localExport, "export", "", "Export state to JSON file when done")
