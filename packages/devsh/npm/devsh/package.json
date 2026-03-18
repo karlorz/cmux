@@ -1,6 +1,6 @@
 {
   "name": "devsh",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Cloud VMs for development - spawn isolated dev environments instantly",
   "keywords": [
     "cli",

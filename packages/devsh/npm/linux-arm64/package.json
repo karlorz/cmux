@@ -1,6 +1,6 @@
 {
   "name": "devsh-linux-arm64",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "devsh CLI binary for Linux ARM64",
   "os": ["linux"],
   "cpu": ["arm64"],
