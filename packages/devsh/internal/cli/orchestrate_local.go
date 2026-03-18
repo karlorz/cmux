@@ -56,12 +56,19 @@ This is useful for:
 The agent runs directly on your machine using its native CLI (claude, codex, etc.).
 State is stored in local JSON files for later analysis.
 
+Supported agents:
+  claude/*    - Claude Code CLI (haiku-4.5, haiku-4.6, sonnet-4.5, sonnet-4.6, opus-4.5, opus-4.6)
+  codex/*     - Codex CLI (gpt-5.1-codex-mini, gpt-5.4-xhigh)
+  gemini/*    - Gemini CLI (gemini-2.5-pro, gemini-2.5-flash)
+  opencode/*  - Opencode CLI (big-pickle, small-pickle)
+  amp/*       - Amp CLI (amp-1)
+
 Examples:
-  devsh orchestrate run-local --agent claude/haiku-4.5 "Fix the bug in auth.ts"
-  devsh orchestrate run-local --agent claude/haiku-4.5 --workspace ./my-repo "Add tests"
-  devsh orchestrate run-local --agent claude/haiku-4.5 --export ./debug.json "Refactor"
-  devsh orchestrate run-local --agent claude/haiku-4.5 --tui "Interactive task"
-  devsh orchestrate run-local --agent claude/haiku-4.5 --dry-run "Check setup"`,
+  devsh orchestrate run-local --agent claude/opus-4.6 "Fix the bug in auth.ts"
+  devsh orchestrate run-local --agent codex/gpt-5.1-codex-mini --workspace ./my-repo "Add tests"
+  devsh orchestrate run-local --agent gemini/gemini-2.5-pro --export ./debug.json "Refactor"
+  devsh orchestrate run-local --agent claude/haiku-4.5 --timeout 1h "Long running task"
+  devsh orchestrate run-local --dry-run "Check setup"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		prompt := args[0]
@@ -139,6 +146,7 @@ Examples:
 				fmt.Printf("  (unsupported agent: %s)\n", localAgent)
 			}
 			fmt.Printf("  Working directory: %s\n", absWorkspace)
+			fmt.Printf("  Timeout: %s\n", localTimeout)
 			if localExport != "" {
 				fmt.Printf("  Export to: %s\n", localExport)
 			}
