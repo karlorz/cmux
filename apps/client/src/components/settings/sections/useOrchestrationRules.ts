@@ -26,7 +26,7 @@ export function useOrchestrationRules(teamSlugOrId: string) {
     ...convexQuery(api.agentOrchestrationLearning.getCandidateRules, { teamSlugOrId }),
   });
 
-  const { data: skillCandidates, isLoading: loadingSkills } = useQuery({
+  const { data: skillCandidates, refetch: refetchSkills, isLoading: loadingSkills } = useQuery({
     ...convexQuery(api.agentOrchestrationLearning.getSkillCandidates, { teamSlugOrId }),
   });
 
@@ -104,6 +104,23 @@ export function useOrchestrationRules(teamSlugOrId: string) {
     },
   });
 
+  const updateSkillStatusMutation = useMutation({
+    mutationFn: async ({ skillId, status }: { skillId: string; status: "candidate" | "approved" | "rejected" }) => {
+      return await convex.mutation(api.agentOrchestrationLearning.updateSkillCandidateStatus, {
+        teamSlugOrId,
+        skillId: skillId as SkillCandidate["_id"],
+        status,
+      });
+    },
+    onSuccess: () => {
+      void refetchSkills();
+      toast.success("Skill status updated");
+    },
+    onError: (error) => {
+      toast.error(`Failed to update skill: ${error.message}`);
+    },
+  });
+
   const filteredActiveRules = useMemo(() => {
     if (!activeRules || laneFilter === "all") return activeRules ?? [];
     return activeRules.filter((r: OrchestrationRule) => r.lane === laneFilter);
@@ -147,6 +164,7 @@ export function useOrchestrationRules(teamSlugOrId: string) {
     bulkPromoteMutation,
     suppressMutation,
     createMutation,
+    updateSkillStatusMutation,
     // Selection
     selectedRuleIds,
     setSelectedRuleIds,
