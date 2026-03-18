@@ -2761,16 +2761,33 @@ const LANE_DISPLAY: Record<OrchestrationRuleForInstructions["lane"], { label: st
 /**
  * Generate markdown instructions from orchestration rules.
  * Groups rules by lane and renders them for injection into agent instruction files.
+ *
+ * Lane filtering:
+ * - `hot`: Always injected into all agents
+ * - `orchestration`: Only injected into head/orchestration agents
+ * - `project`: Always injected into all agents (scoped by project at fetch time)
  */
 export function getOrchestrationRulesInstructions(
   rules: OrchestrationRuleForInstructions[],
+  options?: { isOrchestrationHead?: boolean },
 ): string {
   if (!rules || rules.length === 0) {
     return "";
   }
 
+  // Filter rules by lane based on agent role:
+  // - hot + project: all agents
+  // - orchestration: head agents only
+  const filtered = options?.isOrchestrationHead === false
+    ? rules.filter((r) => r.lane !== "orchestration")
+    : rules;
+
+  if (filtered.length === 0) {
+    return "";
+  }
+
   const byLane = new Map<OrchestrationRuleForInstructions["lane"], OrchestrationRuleForInstructions[]>();
-  for (const rule of rules) {
+  for (const rule of filtered) {
     const existing = byLane.get(rule.lane) ?? [];
     existing.push(rule);
     byLane.set(rule.lane, existing);
