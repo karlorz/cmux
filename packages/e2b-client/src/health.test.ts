@@ -242,3 +242,76 @@ describe("E2BHealthMonitor", () => {
     });
   });
 });
+
+describe("createE2BHealthCheck", () => {
+  it("should create a health check function", async () => {
+    const { createE2BHealthCheck } = await import("./health");
+    const healthCheck = createE2BHealthCheck("test-api-key");
+    expect(typeof healthCheck).toBe("function");
+  });
+
+  it("should throw on non-ok response", async () => {
+    const { createE2BHealthCheck } = await import("./health");
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mock(() =>
+      Promise.resolve({
+        ok: false,
+        status: 401,
+      } as Response)
+    );
+
+    try {
+      const healthCheck = createE2BHealthCheck("invalid-key");
+      await expect(healthCheck()).rejects.toThrow("E2B API returned 401");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("should succeed on ok response", async () => {
+    const { createE2BHealthCheck } = await import("./health");
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mock(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+      } as Response)
+    );
+
+    try {
+      const healthCheck = createE2BHealthCheck("valid-key");
+      await expect(healthCheck()).resolves.toBeUndefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("should call E2B API with correct headers", async () => {
+    const { createE2BHealthCheck } = await import("./health");
+    const originalFetch = globalThis.fetch;
+    const mockFetch = mock(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+      } as Response)
+    );
+    globalThis.fetch = mockFetch;
+
+    try {
+      const healthCheck = createE2BHealthCheck("my-api-key");
+      await healthCheck();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://api.e2b.dev/sandboxes",
+        {
+          method: "GET",
+          headers: {
+            "X-API-Key": "my-api-key",
+          },
+        }
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
