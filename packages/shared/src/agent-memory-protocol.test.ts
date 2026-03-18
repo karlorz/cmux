@@ -470,5 +470,45 @@ Each rule should be on its own line.
       const result = getOrchestrationRulesInstructions(rules);
       expect(result).toContain("learned from previous orchestration runs");
     });
+
+    // Lane filtering tests for head vs non-head agents
+    const hotRule = makeRule({ ruleId: "r1", text: "Always run tests", lane: "hot", confidence: 0.9 });
+    const orchRule = makeRule({ ruleId: "r2", text: "Use parallel delegation", lane: "orchestration", confidence: 0.8 });
+    const projectRule = makeRule({ ruleId: "r3", text: "Use bun not npm", lane: "project", confidence: 0.7 });
+
+    it("renders all lanes when no options provided", () => {
+      const result = getOrchestrationRulesInstructions([hotRule, orchRule, projectRule]);
+      expect(result).toContain("Hot Rules");
+      expect(result).toContain("Orchestration Rules");
+      expect(result).toContain("Project Rules");
+      expect(result).toContain("Always run tests");
+      expect(result).toContain("Use parallel delegation");
+      expect(result).toContain("Use bun not npm");
+    });
+
+    it("renders all lanes for head agents", () => {
+      const result = getOrchestrationRulesInstructions([hotRule, orchRule, projectRule], { isOrchestrationHead: true });
+      expect(result).toContain("Hot Rules");
+      expect(result).toContain("Orchestration Rules");
+      expect(result).toContain("Project Rules");
+    });
+
+    it("excludes orchestration lane for non-head agents", () => {
+      const result = getOrchestrationRulesInstructions([hotRule, orchRule, projectRule], { isOrchestrationHead: false });
+      expect(result).toContain("Hot Rules");
+      expect(result).not.toContain("## Orchestration Rules");
+      expect(result).not.toContain("Use parallel delegation");
+      expect(result).toContain("Project Rules");
+    });
+
+    it("returns empty string when only orchestration rules exist for non-head agent", () => {
+      const result = getOrchestrationRulesInstructions([orchRule], { isOrchestrationHead: false });
+      expect(result).toBe("");
+    });
+
+    it("includes orchestration rules when isOrchestrationHead is undefined", () => {
+      const result = getOrchestrationRulesInstructions([orchRule], { isOrchestrationHead: undefined });
+      expect(result).toContain("Orchestration Rules");
+    });
   });
 });
