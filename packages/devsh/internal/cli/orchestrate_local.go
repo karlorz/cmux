@@ -21,6 +21,8 @@ var (
 	localTUI       bool
 	localDryRun    bool
 	localModel     string
+	localPersist   bool
+	localRunDir    string
 )
 
 // LocalState represents the state of a local orchestration run
@@ -36,6 +38,19 @@ type LocalState struct {
 	Events          []LocalEvent `json:"events"`
 	Result          *string      `json:"result,omitempty"`
 	Error           *string      `json:"error,omitempty"`
+	RunDir          string       `json:"runDir,omitempty"`
+}
+
+// LocalRunConfig stores the initial configuration for a local run
+type LocalRunConfig struct {
+	OrchestrationID string `json:"orchestrationId"`
+	Agent           string `json:"agent"`
+	Prompt          string `json:"prompt"`
+	Workspace       string `json:"workspace"`
+	Timeout         string `json:"timeout"`
+	Model           string `json:"model,omitempty"`
+	CreatedAt       string `json:"createdAt"`
+	DevshVersion    string `json:"devshVersion"`
 }
 
 // LocalEvent represents an event in the local orchestration
@@ -56,7 +71,16 @@ This is useful for:
 - Testing prompts before cloud deployment
 
 The agent runs directly on your machine using its native CLI (claude, codex, etc.).
-State is stored in local JSON files for later analysis.
+
+Persistent Run Directory (--persist):
+  With --persist, all run artifacts are saved to ~/.devsh/orchestrations/<run-id>/:
+  - config.json   Initial run configuration
+  - state.json    Final state with result/error
+  - events.jsonl  Event timeline (appended during run)
+  - bundle.json   Export bundle compatible with 'devsh orchestrate view'
+
+  This enables disk-first observability: even if the process crashes, you have
+  partial state and events up to that point.
 
 Supported agents:
   claude/*    - Claude Code CLI (haiku-4.5, haiku-4.6, sonnet-4.5, sonnet-4.6, opus-4.5, opus-4.6)
@@ -70,6 +94,7 @@ Examples:
   devsh orchestrate run-local --agent codex/gpt-5.1-codex-mini --workspace ./my-repo "Add tests"
   devsh orchestrate run-local --agent gemini/gemini-2.5-pro --export ./debug.json "Refactor"
   devsh orchestrate run-local --agent claude/haiku-4.5 --timeout 1h "Long running task"
+  devsh orchestrate run-local --persist "Task with full artifact trail"
   devsh orchestrate run-local --dry-run "Check setup"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -111,6 +136,27 @@ Examples:
 			Events:          []LocalEvent{},
 		}
 
+		// Create persistent run directory if enabled
+		var runDir string
+		if localPersist {
+			config := &LocalRunConfig{
+				OrchestrationID: orchID,
+				Agent:           localAgent,
+				Prompt:          prompt,
+				Workspace:       absWorkspace,
+				Timeout:         localTimeout,
+				Model:           localModel,
+				CreatedAt:       startTime.UTC().Format(time.RFC3339),
+				DevshVersion:    GetVersion(),
+			}
+			var err error
+			runDir, err = createRunDirectory(orchID, config)
+			if err != nil {
+				return fmt.Errorf("failed to create run directory: %w", err)
+			}
+			state.RunDir = runDir
+		}
+
 		// Add start event
 		state.addEvent("task_started", fmt.Sprintf("Starting %s in %s", localAgent, absWorkspace))
 
@@ -119,6 +165,9 @@ Examples:
 			fmt.Printf("Agent: %s\n", localAgent)
 			fmt.Printf("Workspace: %s\n", absWorkspace)
 			fmt.Printf("Prompt: %s\n", prompt)
+			if runDir != "" {
+				fmt.Printf("Run Directory: %s\n", runDir)
+			}
 			if flagVerbose {
 				fmt.Printf("Timeout: %s\n", localTimeout)
 				if localModel != "" {
@@ -208,7 +257,23 @@ Examples:
 			state.addEvent("task_completed", "Agent finished successfully")
 		}
 
-		// Export if requested
+		// Save final state to run directory
+		if runDir != "" {
+			if err := updateStateFile(runDir, state); err != nil {
+				if !flagJSON {
+					fmt.Printf("Warning: failed to save final state: %v\n", err)
+				}
+			}
+			// Auto-export bundle to run directory
+			bundlePath := filepath.Join(runDir, "bundle.json")
+			if err := exportLocalState(state, bundlePath); err != nil {
+				if !flagJSON {
+					fmt.Printf("Warning: failed to export bundle: %v\n", err)
+				}
+			}
+		}
+
+		// Export to custom path if requested
 		if localExport != "" {
 			if err := exportLocalState(state, localExport); err != nil {
 				if !flagJSON {
@@ -232,6 +297,11 @@ Examples:
 			if state.Error != nil {
 				fmt.Printf("Error: %s\n", *state.Error)
 			}
+			if runDir != "" {
+				fmt.Printf("Run artifacts: %s\n", runDir)
+				fmt.Printf("  - config.json, state.json, events.jsonl, bundle.json\n")
+				fmt.Printf("View with: devsh orchestrate view %s/bundle.json\n", runDir)
+			}
 		}
 
 		if runErr != nil {
@@ -243,14 +313,97 @@ Examples:
 
 func (s *LocalState) addEvent(eventType, message string) {
 	ts := time.Now().UTC().Format(time.RFC3339)
-	s.Events = append(s.Events, LocalEvent{
+	event := LocalEvent{
 		Timestamp: ts,
 		Type:      eventType,
 		Message:   message,
-	})
+	}
+	s.Events = append(s.Events, event)
 	if flagVerbose && !flagJSON {
 		fmt.Printf("[%s] %s: %s\n", ts, eventType, message)
 	}
+	// Append to events.jsonl if run directory exists
+	if s.RunDir != "" {
+		appendEventToFile(s.RunDir, event)
+	}
+}
+
+// getLocalRunsDir returns the base directory for local orchestration runs
+func getLocalRunsDir() string {
+	if localRunDir != "" {
+		return localRunDir
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".devsh/orchestrations"
+	}
+	return filepath.Join(home, ".devsh", "orchestrations")
+}
+
+// createRunDirectory creates a persistent run directory with initial config
+func createRunDirectory(orchID string, config *LocalRunConfig) (string, error) {
+	baseDir := getLocalRunsDir()
+	runDir := filepath.Join(baseDir, orchID)
+
+	if err := os.MkdirAll(runDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create run directory: %w", err)
+	}
+
+	// Write config.json
+	configData, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal config: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "config.json"), configData, 0644); err != nil {
+		return "", fmt.Errorf("failed to write config: %w", err)
+	}
+
+	// Create empty events.jsonl
+	if _, err := os.Create(filepath.Join(runDir, "events.jsonl")); err != nil {
+		return "", fmt.Errorf("failed to create events file: %w", err)
+	}
+
+	return runDir, nil
+}
+
+// appendEventToFile appends an event to events.jsonl
+func appendEventToFile(runDir string, event LocalEvent) {
+	f, err := os.OpenFile(filepath.Join(runDir, "events.jsonl"), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	data, err := json.Marshal(event)
+	if err != nil {
+		return
+	}
+	f.WriteString(string(data) + "\n")
+}
+
+// updateStateFile writes the current state to state.json
+func updateStateFile(runDir string, state *LocalState) error {
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(runDir, "state.json"), data, 0644)
+}
+
+// createLogWriters creates stdout.log and stderr.log writers
+func createLogWriters(runDir string) (*os.File, *os.File, error) {
+	stdout, err := os.Create(filepath.Join(runDir, "stdout.log"))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create stdout.log: %w", err)
+	}
+
+	stderr, err := os.Create(filepath.Join(runDir, "stderr.log"))
+	if err != nil {
+		stdout.Close()
+		return nil, nil, fmt.Errorf("failed to create stderr.log: %w", err)
+	}
+
+	return stdout, stderr, nil
 }
 
 func formatDuration(ms int64) string {
@@ -486,5 +639,7 @@ func init() {
 	orchestrateLocalCmd.Flags().BoolVar(&localTUI, "tui", false, "Show live terminal UI with spinner, events, and scrollable output")
 	orchestrateLocalCmd.Flags().BoolVar(&localDryRun, "dry-run", false, "Show what would be executed without running")
 	orchestrateLocalCmd.Flags().StringVar(&localModel, "model", "", "Override model for Claude (e.g., claude-sonnet-4-5-20250514)")
+	orchestrateLocalCmd.Flags().BoolVar(&localPersist, "persist", false, "Save run artifacts to ~/.devsh/orchestrations/<run-id>/")
+	orchestrateLocalCmd.Flags().StringVar(&localRunDir, "run-dir", "", "Custom base directory for run artifacts (default: ~/.devsh/orchestrations)")
 	orchestrateCmd.AddCommand(orchestrateLocalCmd)
 }
