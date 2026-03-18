@@ -1164,28 +1164,27 @@ async function handleOrchestrationList(
  * Handle GET /api/orchestrate/status/*
  *
  * Returns status details for a specific orchestration task.
+ * Supports both Bearer token and X-Task-Run-JWT authentication.
  */
 async function handleOrchestrationStatus(
   req: IncomingMessage,
   res: ServerResponse
 ): Promise<void> {
+  // Support both Bearer token and X-Task-Run-JWT
+  const taskRunJwt = extractTaskRunJwt(req.headers as Record<string, string | string[] | undefined>);
   const authToken = parseAuthHeader(req);
-  if (!authToken) {
-    jsonResponse(res, 401, { error: "Unauthorized: Missing Bearer token" });
+
+  if (!taskRunJwt && !authToken) {
+    jsonResponse(res, 401, { error: "Unauthorized: Missing Bearer token or X-Task-Run-JWT header" });
     return;
   }
 
   const url = new URL(req.url || "/", `http://${req.headers.host}`);
-  const teamSlugOrId = url.searchParams.get("teamSlugOrId");
+  let teamSlugOrId = url.searchParams.get("teamSlugOrId");
 
   // Extract orchestration task ID from path: /api/orchestrate/status/<id>
   const pathParts = url.pathname.split("/");
   const orchestrationTaskId = pathParts[pathParts.length - 1];
-
-  if (!teamSlugOrId) {
-    jsonResponse(res, 400, { error: "Missing required query parameter: teamSlugOrId" });
-    return;
-  }
 
   if (!orchestrationTaskId || orchestrationTaskId === "status") {
     jsonResponse(res, 400, { error: "Missing orchestration task ID in path" });
@@ -1193,7 +1192,59 @@ async function handleOrchestrationStatus(
   }
 
   try {
-    const result = await runWithAuthToken(authToken, async () => {
+    // JWT-based auth path (for agents checking status)
+    if (taskRunJwt) {
+      const jwtSecret = env.CMUX_TASK_RUN_JWT_SECRET;
+      if (!jwtSecret) {
+        jsonResponse(res, 500, { error: "Server misconfigured: CMUX_TASK_RUN_JWT_SECRET not set" });
+        return;
+      }
+      const jwtPayload = await verifyTaskRunJwt(taskRunJwt, jwtSecret);
+      if (!jwtPayload) {
+        jsonResponse(res, 401, { error: "Invalid or expired task run JWT" });
+        return;
+      }
+
+      // Extract teamId from JWT if not provided in query
+      if (!teamSlugOrId) {
+        teamSlugOrId = jwtPayload.teamId;
+      }
+
+      // Query directly with internal auth (JWT verified)
+      const task = await getConvex().query(api.orchestrationQueries.getTask, {
+        taskId: orchestrationTaskId as Id<"orchestrationTasks">,
+        teamSlugOrId: teamSlugOrId!,
+      });
+
+      if (!task) {
+        jsonResponse(res, 404, { error: "Orchestration task not found" });
+        return;
+      }
+
+      // Enrich with taskRun details if available
+      let taskRun = null;
+      if (task.taskRunId) {
+        try {
+          taskRun = await getConvex().query(api.taskRuns.get, {
+            teamSlugOrId: teamSlugOrId!,
+            id: task.taskRunId,
+          });
+        } catch {
+          // Task run might not exist, continue without it
+        }
+      }
+
+      jsonResponse(res, 200, { task, taskRun });
+      return;
+    }
+
+    // Bearer token path (standard user auth)
+    if (!teamSlugOrId) {
+      jsonResponse(res, 400, { error: "Missing required query parameter: teamSlugOrId" });
+      return;
+    }
+
+    const result = await runWithAuthToken(authToken!, async () => {
       // Verify team membership first
       const memberships = await getConvex().query(api.teams.listTeamMemberships, {});
       const membership = memberships.find(
@@ -1217,7 +1268,7 @@ async function handleOrchestrationStatus(
       if (task.taskRunId) {
         try {
           taskRun = await getConvex().query(api.taskRuns.get, {
-            teamSlugOrId,
+            teamSlugOrId: membership.team.teamId,
             id: task.taskRunId,
           });
         } catch {

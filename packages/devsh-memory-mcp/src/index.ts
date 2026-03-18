@@ -17,6 +17,28 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
 
+/**
+ * Extract teamId from a CMUX JWT token.
+ * Returns null if the token is invalid or doesn't contain a teamId.
+ */
+function extractTeamIdFromJwt(jwt: string): string | null {
+  try {
+    const parts = jwt.split(".");
+    if (parts.length !== 3) return null;
+
+    let payload = parts[1];
+    // Add base64 padding if needed
+    const paddingNeeded = (4 - (payload.length % 4)) % 4;
+    payload = payload + "=".repeat(paddingNeeded);
+
+    const decoded = Buffer.from(payload, "base64").toString("utf8");
+    const data = JSON.parse(decoded) as { teamId?: string };
+    return data.teamId ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export interface MemoryMcpConfig {
   memoryDir: string;
   agentName?: string;
@@ -1530,7 +1552,8 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         const { orchestrationTaskId } = args as { orchestrationTaskId: string };
 
         const jwt = process.env.CMUX_TASK_RUN_JWT;
-        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux.sh";
+        // Use apps/server API (same as spawn_agent)
+        const serverUrl = process.env.CMUX_SERVER_URL ?? "https://cmux-server.karldigi.dev";
 
         if (!jwt) {
           return {
@@ -1541,12 +1564,22 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
           };
         }
 
+        const teamId = extractTeamIdFromJwt(jwt);
+        if (!teamId) {
+          return {
+            content: [{
+              type: "text",
+              text: "Failed to extract teamId from JWT token.",
+            }],
+          };
+        }
+
         try {
-          const url = `${apiBaseUrl}/api/orchestrate/tasks/${orchestrationTaskId}`;
+          const url = `${serverUrl}/api/orchestrate/status/${orchestrationTaskId}?teamSlugOrId=${encodeURIComponent(teamId)}`;
           const response = await fetch(url, {
             method: "GET",
             headers: {
-              "Authorization": `Bearer ${jwt}`,
+              "X-Task-Run-JWT": jwt,
               "Content-Type": "application/json",
             },
           });
@@ -1586,7 +1619,8 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         };
 
         const jwt = process.env.CMUX_TASK_RUN_JWT;
-        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux.sh";
+        // Use apps/server API (same as spawn_agent)
+        const serverUrl = process.env.CMUX_SERVER_URL ?? "https://cmux-server.karldigi.dev";
 
         if (!jwt) {
           return {
@@ -1597,16 +1631,26 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
           };
         }
 
+        const teamId = extractTeamIdFromJwt(jwt);
+        if (!teamId) {
+          return {
+            content: [{
+              type: "text",
+              text: "Failed to extract teamId from JWT token.",
+            }],
+          };
+        }
+
         const startTime = Date.now();
         const pollInterval = 5000; // 5 seconds
 
         try {
           while (Date.now() - startTime < timeout) {
-            const url = `${apiBaseUrl}/api/orchestrate/tasks/${orchestrationTaskId}`;
+            const url = `${serverUrl}/api/orchestrate/status/${orchestrationTaskId}?teamSlugOrId=${encodeURIComponent(teamId)}`;
             const response = await fetch(url, {
               method: "GET",
               headers: {
-                "Authorization": `Bearer ${jwt}`,
+                "X-Task-Run-JWT": jwt,
                 "Content-Type": "application/json",
               },
             });
@@ -1628,6 +1672,9 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
                 errorMessage?: string;
                 prompt?: string;
               };
+              taskRun?: {
+                status?: string;
+              } | null;
             };
 
             const status = result.task.status;
