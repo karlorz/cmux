@@ -52,15 +52,13 @@ Examples:
 			return fmt.Errorf("OPENAI_API_KEY environment variable is required")
 		}
 
-		// If a PR number is given, we could fetch the PR diff
-		// For now, we use the local git diff
-		if len(args) > 0 {
-			// TODO: Support `gh pr diff` for PR numbers
-			fmt.Fprintf(os.Stderr, "Note: PR number argument not yet supported, using local git diff\n")
-		}
-
 		// Build args for pr-heatmap
 		heatmapArgs := []string{}
+
+		// If a PR number is given, pass it to pr-heatmap
+		if len(args) > 0 && isPRNumber(args[0]) {
+			heatmapArgs = append(heatmapArgs, "-p", args[0])
+		}
 		if reviewBase != "" {
 			heatmapArgs = append(heatmapArgs, "-b", reviewBase)
 		}

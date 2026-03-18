@@ -149,14 +149,28 @@ export async function generatePRHeatmap(
     concurrency = DEFAULT_CONCURRENCY,
     model = DEFAULT_MODEL,
     verbose = false,
+    diffText: providedDiff,
+    diffLabel,
   } = options;
 
-  if (verbose) {
-    console.error(`Fetching diff from ${base}...`);
+  // Use provided diff text or fetch from git
+  let diffText: string;
+  let diffSource: string;
+
+  if (providedDiff) {
+    diffText = providedDiff;
+    diffSource = diffLabel ?? "provided diff";
+    if (verbose) {
+      console.error(`Analyzing ${diffSource}...`);
+    }
+  } else {
+    if (verbose) {
+      console.error(`Fetching diff from ${base}...`);
+    }
+    diffText = getGitDiff(base);
+    diffSource = base;
   }
 
-  // Get and parse the diff
-  const diffText = getGitDiff(base);
   const files = parseDiff(diffText);
 
   if (verbose) {
@@ -192,9 +206,13 @@ export async function generatePRHeatmap(
   const allFocusAreas = fileResults.flatMap((f) => f.heatmap.suggestedFocusAreas);
   const topFocusAreas = [...new Set(allFocusAreas)].slice(0, 5);
 
+  // Use appropriate labels based on diff source
+  const baseLabel = providedDiff ? diffSource : getMergeBase(base);
+  const headLabel = providedDiff ? "HEAD" : getHeadCommit();
+
   return {
-    base: getMergeBase(base),
-    head: getHeadCommit(),
+    base: baseLabel,
+    head: headLabel,
     generatedAt: new Date().toISOString(),
     files: fileResults,
     summary: {

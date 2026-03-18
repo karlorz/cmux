@@ -1,12 +1,18 @@
 #!/usr/bin/env node
+import { execSync } from "node:child_process";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { generatePRHeatmap } from "./heatmap-generator.js";
 import type { HeatmapOptions, PRHeatmapResult } from "./types.js";
 
-function parseArgs(): HeatmapOptions & { help: boolean } {
+interface ParsedArgs extends HeatmapOptions {
+  help: boolean;
+  prNumber?: string;
+}
+
+function parseArgs(): ParsedArgs {
   const args = process.argv.slice(2);
-  const options: HeatmapOptions & { help: boolean } = {
+  const options: ParsedArgs = {
     base: "origin/main",
     concurrency: 3,
     model: "gpt-4o-mini",
@@ -42,6 +48,16 @@ function parseArgs(): HeatmapOptions & { help: boolean } {
       case "--output":
         options.outputDir = args[++i];
         break;
+      case "-p":
+      case "--pr":
+        options.prNumber = args[++i];
+        break;
+      default:
+        // Check if it's a PR number (positional argument)
+        if (/^\d+$/.test(arg)) {
+          options.prNumber = arg;
+        }
+        break;
     }
   }
 
@@ -52,10 +68,11 @@ function printHelp(): void {
   console.log(`
 pr-heatmap - Generate AI-powered code review heatmaps for PR diffs
 
-Usage: pr-heatmap [options]
+Usage: pr-heatmap [options] [pr-number]
 
 Options:
   -h, --help              Show this help message
+  -p, --pr <number>       GitHub PR number to analyze (requires gh CLI)
   -b, --base <ref>        Base ref to diff against (default: origin/main)
   -c, --concurrency <n>   Number of parallel AI calls (default: 3)
   -m, --model <model>     OpenAI model to use (default: gpt-4o-mini)
@@ -67,6 +84,8 @@ Environment:
 
 Examples:
   pr-heatmap                          # Diff against origin/main
+  pr-heatmap 123                      # Analyze PR #123 via gh CLI
+  pr-heatmap -p 456                   # Analyze PR #456 via gh CLI
   pr-heatmap -b main -v               # Diff against local main, verbose
   pr-heatmap -m gpt-4o -c 5           # Use GPT-4o with 5 concurrent calls
 `);
@@ -133,6 +152,24 @@ function writeOutput(result: PRHeatmapResult, outputDir: string): void {
   console.log(`Wrote ${result.files.length} file heatmaps to: ${outputDir}/`);
 }
 
+/**
+ * Fetch PR diff using gh CLI
+ */
+function getPRDiff(prNumber: string): string {
+  try {
+    return execSync(`gh pr diff ${prNumber}`, {
+      encoding: "utf-8",
+      maxBuffer: 50 * 1024 * 1024, // 50MB for large PRs
+    });
+  } catch (error) {
+    throw new Error(
+      `Failed to get PR diff. Ensure gh CLI is installed and authenticated.\n${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+}
+
 async function main(): Promise<void> {
   const options = parseArgs();
 
@@ -144,6 +181,20 @@ async function main(): Promise<void> {
   if (!process.env.OPENAI_API_KEY) {
     console.error("Error: OPENAI_API_KEY environment variable is required");
     process.exit(1);
+  }
+
+  // If PR number provided, fetch diff via gh CLI
+  if (options.prNumber) {
+    if (options.verbose) {
+      console.error(`Fetching diff for PR #${options.prNumber} via gh CLI...`);
+    }
+    try {
+      options.diffText = getPRDiff(options.prNumber);
+      options.diffLabel = `PR #${options.prNumber}`;
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
   }
 
   try {
