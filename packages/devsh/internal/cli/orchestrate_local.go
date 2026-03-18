@@ -158,6 +158,16 @@ Examples:
 			state.RunDir = runDir
 		}
 
+		// Write PID file for stop-local support
+		if runDir != "" {
+			if err := writePidFile(runDir); err != nil {
+				if !flagJSON {
+					fmt.Printf("Warning: failed to write pid file: %v\n", err)
+				}
+			}
+			defer removePidFile(runDir)
+		}
+
 		// Add start event
 		state.addEvent("task_started", fmt.Sprintf("Starting %s in %s", localAgent, absWorkspace))
 
