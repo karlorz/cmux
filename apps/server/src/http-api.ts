@@ -1914,6 +1914,13 @@ interface InternalSpawnRequest {
   taskRunId: string;
   taskRunJwt?: string; // JWT for auth context (provided by worker)
   userId?: string; // User ID for auth context
+  supervisorProfile?: {
+    reasoningLevel: string;
+    reviewPosture: string;
+    delegationStyle: string;
+    name: string;
+    model?: string;
+  };
 }
 
 /**
@@ -1942,7 +1949,7 @@ async function handleOrchestrationInternalSpawn(
     return;
   }
 
-  const { orchestrationTaskId, agentName, prompt, taskId, taskRunId, taskRunJwt, teamId } = body;
+  const { orchestrationTaskId, agentName, prompt, taskId, taskRunId, taskRunJwt, teamId, supervisorProfile } = body;
 
   if (!orchestrationTaskId || !agentName || !prompt || !taskId || !taskRunId) {
     jsonResponse(res, 400, { error: "Missing required fields" });
@@ -1994,6 +2001,7 @@ async function handleOrchestrationInternalSpawn(
         isCloudMode: true,
         taskRunId: taskRunId as Id<"taskRuns">,
         preFetchedConfig,
+        supervisorProfile,
       },
       teamId,
       taskRunJwt
