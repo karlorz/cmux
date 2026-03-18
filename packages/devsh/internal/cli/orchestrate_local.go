@@ -18,6 +18,7 @@ var (
 	localTimeout   string
 	localExport    string
 	localTUI       bool
+	localDryRun    bool
 )
 
 // LocalState represents the state of a local orchestration run
@@ -57,7 +58,8 @@ Examples:
   devsh orchestrate run-local --agent claude/haiku-4.5 "Fix the bug in auth.ts"
   devsh orchestrate run-local --agent claude/haiku-4.5 --workspace ./my-repo "Add tests"
   devsh orchestrate run-local --agent claude/haiku-4.5 --export ./debug.json "Refactor"
-  devsh orchestrate run-local --agent claude/haiku-4.5 --tui "Interactive task"`,
+  devsh orchestrate run-local --agent claude/haiku-4.5 --tui "Interactive task"
+  devsh orchestrate run-local --agent claude/haiku-4.5 --dry-run "Check setup"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		prompt := args[0]
@@ -103,7 +105,27 @@ Examples:
 		fmt.Printf("Local Orchestration: %s\n", orchID)
 		fmt.Printf("Agent: %s\n", localAgent)
 		fmt.Printf("Workspace: %s\n", absWorkspace)
-		fmt.Printf("Prompt: %s\n\n", prompt)
+		fmt.Printf("Prompt: %s\n", prompt)
+
+		// Dry-run mode: just show what would happen
+		if localDryRun {
+			fmt.Printf("\n[DRY RUN] Would execute:\n")
+			switch localAgent {
+			case "claude/haiku-4.5", "claude/sonnet-4.5", "claude/opus-4.5", "claude/opus-4.6":
+				fmt.Printf("  claude -p --dangerously-skip-permissions \"%s\"\n", prompt)
+			case "codex/gpt-5.1-codex-mini", "codex/gpt-5.4-xhigh":
+				fmt.Printf("  codex \"%s\"\n", prompt)
+			default:
+				fmt.Printf("  (unsupported agent: %s)\n", localAgent)
+			}
+			fmt.Printf("  Working directory: %s\n", absWorkspace)
+			if localExport != "" {
+				fmt.Printf("  Export to: %s\n", localExport)
+			}
+			return nil
+		}
+
+		fmt.Println()
 
 		// Run the agent
 		var runErr error
@@ -279,5 +301,6 @@ func init() {
 	orchestrateLocalCmd.Flags().StringVar(&localTimeout, "timeout", "30m", "Task timeout")
 	orchestrateLocalCmd.Flags().StringVar(&localExport, "export", "", "Export state to JSON file when done")
 	orchestrateLocalCmd.Flags().BoolVar(&localTUI, "tui", false, "Show live terminal UI (not yet implemented)")
+	orchestrateLocalCmd.Flags().BoolVar(&localDryRun, "dry-run", false, "Show what would be executed without running")
 	orchestrateCmd.AddCommand(orchestrateLocalCmd)
 }
