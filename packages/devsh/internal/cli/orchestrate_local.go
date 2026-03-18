@@ -114,7 +114,7 @@ Examples:
 		if localDryRun {
 			fmt.Printf("\n[DRY RUN] Would execute:\n")
 			switch localAgent {
-			case "claude/haiku-4.5", "claude/sonnet-4.5", "claude/opus-4.5", "claude/opus-4.6":
+			case "claude/haiku-4.5", "claude/haiku-4.6", "claude/sonnet-4.5", "claude/sonnet-4.6", "claude/opus-4.5", "claude/opus-4.6":
 				if localModel != "" {
 					fmt.Printf("  claude -p --dangerously-skip-permissions --model %s \"%s\"\n", localModel, prompt)
 				} else {
@@ -145,7 +145,7 @@ Examples:
 		// Run the agent
 		var runErr error
 		switch localAgent {
-		case "claude/haiku-4.5", "claude/sonnet-4.5", "claude/opus-4.5", "claude/opus-4.6":
+		case "claude/haiku-4.5", "claude/haiku-4.6", "claude/sonnet-4.5", "claude/sonnet-4.6", "claude/opus-4.5", "claude/opus-4.6":
 			runErr = runClaudeLocal(state, prompt, absWorkspace)
 		case "codex/gpt-5.1-codex-mini", "codex/gpt-5.4-xhigh":
 			runErr = runCodexLocal(state, prompt, absWorkspace)
