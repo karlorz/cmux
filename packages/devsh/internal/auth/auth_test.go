@@ -207,3 +207,176 @@ func TestConstants(t *testing.T) {
 		t.Errorf("expected StackAuthAPIURL 'https://api.stack-auth.com', got '%s'", StackAuthAPIURL)
 	}
 }
+
+func TestDevConstants(t *testing.T) {
+	// Verify dev constants are set (unlike prod which are intentionally empty)
+	if DevProjectID == "" {
+		t.Error("expected DevProjectID to be set")
+	}
+	if DevPublishableKey == "" {
+		t.Error("expected DevPublishableKey to be set")
+	}
+	if DevCmuxURL == "" {
+		t.Error("expected DevCmuxURL to be set")
+	}
+	if DevConvexSiteURL == "" {
+		t.Error("expected DevConvexSiteURL to be set")
+	}
+	if DevServerURL == "" {
+		t.Error("expected DevServerURL to be set")
+	}
+}
+
+func TestProdConstantsEmpty(t *testing.T) {
+	// Verify prod constants are intentionally empty (must be injected at build time)
+	if ProdProjectID != "" {
+		t.Error("expected ProdProjectID to be empty (injected at build time)")
+	}
+	if ProdPublishableKey != "" {
+		t.Error("expected ProdPublishableKey to be empty (injected at build time)")
+	}
+	if ProdCmuxURL != "" {
+		t.Error("expected ProdCmuxURL to be empty (injected at build time)")
+	}
+	if ProdConvexSiteURL != "" {
+		t.Error("expected ProdConvexSiteURL to be empty (injected at build time)")
+	}
+}
+
+func TestConfigStruct(t *testing.T) {
+	cfg := Config{
+		ProjectID:      "proj-123",
+		PublishableKey: "pk_test",
+		CmuxURL:        "https://cmux.example.com",
+		ConvexSiteURL:  "https://convex.example.com",
+		ServerURL:      "https://server.example.com",
+		StackAuthURL:   "https://api.stack-auth.com",
+		IsDev:          true,
+	}
+
+	if cfg.ProjectID != "proj-123" {
+		t.Errorf("expected ProjectID 'proj-123', got '%s'", cfg.ProjectID)
+	}
+	if cfg.IsDev != true {
+		t.Error("expected IsDev true")
+	}
+}
+
+func TestConfigValidateSuccess(t *testing.T) {
+	cfg := Config{
+		ProjectID:      "proj-123",
+		PublishableKey: "pk_test",
+		CmuxURL:        "https://cmux.example.com",
+		ConvexSiteURL:  "https://convex.example.com",
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("expected validation to pass, got error: %v", err)
+	}
+}
+
+func TestConfigValidateMissingProjectID(t *testing.T) {
+	cfg := Config{
+		PublishableKey: "pk_test",
+		CmuxURL:        "https://cmux.example.com",
+		ConvexSiteURL:  "https://convex.example.com",
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("expected validation error for missing ProjectID")
+	}
+	if err != nil && !contains(err.Error(), "STACK_PROJECT_ID") {
+		t.Errorf("expected error to mention STACK_PROJECT_ID, got: %v", err)
+	}
+}
+
+func TestConfigValidateMissingPublishableKey(t *testing.T) {
+	cfg := Config{
+		ProjectID:     "proj-123",
+		CmuxURL:       "https://cmux.example.com",
+		ConvexSiteURL: "https://convex.example.com",
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("expected validation error for missing PublishableKey")
+	}
+	if err != nil && !contains(err.Error(), "STACK_PUBLISHABLE_CLIENT_KEY") {
+		t.Errorf("expected error to mention STACK_PUBLISHABLE_CLIENT_KEY, got: %v", err)
+	}
+}
+
+func TestConfigValidateMissingCmuxURL(t *testing.T) {
+	cfg := Config{
+		ProjectID:      "proj-123",
+		PublishableKey: "pk_test",
+		ConvexSiteURL:  "https://convex.example.com",
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("expected validation error for missing CmuxURL")
+	}
+	if err != nil && !contains(err.Error(), "CMUX_API_URL") {
+		t.Errorf("expected error to mention CMUX_API_URL, got: %v", err)
+	}
+}
+
+func TestConfigValidateMissingConvexSiteURL(t *testing.T) {
+	cfg := Config{
+		ProjectID:      "proj-123",
+		PublishableKey: "pk_test",
+		CmuxURL:        "https://cmux.example.com",
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("expected validation error for missing ConvexSiteURL")
+	}
+	if err != nil && !contains(err.Error(), "CONVEX_SITE_URL") {
+		t.Errorf("expected error to mention CONVEX_SITE_URL, got: %v", err)
+	}
+}
+
+func TestConfigValidateServerURLOptional(t *testing.T) {
+	// ServerURL is optional - should pass without it
+	cfg := Config{
+		ProjectID:      "proj-123",
+		PublishableKey: "pk_test",
+		CmuxURL:        "https://cmux.example.com",
+		ConvexSiteURL:  "https://convex.example.com",
+		// ServerURL intentionally empty
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("expected validation to pass without ServerURL, got error: %v", err)
+	}
+}
+
+func TestConfigValidateMultipleMissing(t *testing.T) {
+	cfg := Config{} // All empty
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("expected validation error for empty config")
+	}
+	// Should mention multiple missing fields
+	errStr := err.Error()
+	if !contains(errStr, "STACK_PROJECT_ID") {
+		t.Error("expected error to mention STACK_PROJECT_ID")
+	}
+	if !contains(errStr, "STACK_PUBLISHABLE_CLIENT_KEY") {
+		t.Error("expected error to mention STACK_PUBLISHABLE_CLIENT_KEY")
+	}
+}
+
+// Helper function
+func contains(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
