@@ -37,6 +37,8 @@ services:
       - NEXT_PUBLIC_WEB_MODE=${NEXT_PUBLIC_WEB_MODE:-true}
       # Optional: Default timezone for sandboxes (defaults to Asia/Hong_Kong)
       - DEFAULT_SANDBOX_TIMEZONE=${DEFAULT_SANDBOX_TIMEZONE:-Asia/Hong_Kong}
+      # Required for orchestration: JWT secret for agent-to-agent auth
+      - CMUX_TASK_RUN_JWT_SECRET=${CMUX_TASK_RUN_JWT_SECRET}
     healthcheck:
       test: ["CMD", "bun", "-e", "const net = require('net'); const s = net.createConnection(9776, 'localhost'); s.on('connect', () => process.exit(0)); s.on('error', () => process.exit(1));"]
       interval: 30s
