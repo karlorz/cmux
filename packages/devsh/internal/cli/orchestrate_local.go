@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -142,19 +143,29 @@ Examples:
 			fmt.Println()
 		}
 
+		// Parse timeout
+		timeout, err := time.ParseDuration(localTimeout)
+		if err != nil {
+			return fmt.Errorf("invalid timeout format: %w", err)
+		}
+
+		// Create context with timeout
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
 		// Run the agent
 		var runErr error
 		switch localAgent {
 		case "claude/haiku-4.5", "claude/haiku-4.6", "claude/sonnet-4.5", "claude/sonnet-4.6", "claude/opus-4.5", "claude/opus-4.6":
-			runErr = runClaudeLocal(state, prompt, absWorkspace)
+			runErr = runClaudeLocal(ctx, state, prompt, absWorkspace)
 		case "codex/gpt-5.1-codex-mini", "codex/gpt-5.4-xhigh":
-			runErr = runCodexLocal(state, prompt, absWorkspace)
+			runErr = runCodexLocal(ctx, state, prompt, absWorkspace)
 		case "gemini/gemini-2.5-pro", "gemini/gemini-2.5-flash":
-			runErr = runGeminiLocal(state, prompt, absWorkspace)
+			runErr = runGeminiLocal(ctx, state, prompt, absWorkspace)
 		case "opencode/big-pickle", "opencode/small-pickle":
-			runErr = runOpencodeLocal(state, prompt, absWorkspace)
+			runErr = runOpencodeLocal(ctx, state, prompt, absWorkspace)
 		case "amp/amp-1":
-			runErr = runAmpLocal(state, prompt, absWorkspace)
+			runErr = runAmpLocal(ctx, state, prompt, absWorkspace)
 		default:
 			return fmt.Errorf("unsupported local agent: %s (supported: claude/*, codex/*, gemini/*, opencode/*, amp/*)", localAgent)
 		}
@@ -212,7 +223,7 @@ func (s *LocalState) addEvent(eventType, message string) {
 	})
 }
 
-func runClaudeLocal(state *LocalState, prompt, workspace string) error {
+func runClaudeLocal(ctx context.Context, state *LocalState, prompt, workspace string) error {
 	state.addEvent("agent_invoked", "Spawning claude CLI")
 
 	// Check if claude CLI is available
@@ -234,7 +245,7 @@ func runClaudeLocal(state *LocalState, prompt, workspace string) error {
 
 	args = append(args, prompt)
 
-	cmd := exec.Command(claudePath, args...)
+	cmd := exec.CommandContext(ctx, claudePath, args...)
 	cmd.Dir = workspace
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -243,13 +254,16 @@ func runClaudeLocal(state *LocalState, prompt, workspace string) error {
 	state.addEvent("agent_running", "Claude CLI executing in print mode")
 
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("claude CLI timed out after %s", localTimeout)
+		}
 		return fmt.Errorf("claude CLI failed: %w", err)
 	}
 
 	return nil
 }
 
-func runCodexLocal(state *LocalState, prompt, workspace string) error {
+func runCodexLocal(ctx context.Context, state *LocalState, prompt, workspace string) error {
 	state.addEvent("agent_invoked", "Spawning codex CLI")
 
 	// Check if codex CLI is available
@@ -258,7 +272,7 @@ func runCodexLocal(state *LocalState, prompt, workspace string) error {
 		return fmt.Errorf("codex CLI not found in PATH: %w", err)
 	}
 
-	cmd := exec.Command(codexPath, prompt)
+	cmd := exec.CommandContext(ctx, codexPath, prompt)
 	cmd.Dir = workspace
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -267,13 +281,16 @@ func runCodexLocal(state *LocalState, prompt, workspace string) error {
 	state.addEvent("agent_running", "Codex CLI executing")
 
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("codex CLI timed out after %s", localTimeout)
+		}
 		return fmt.Errorf("codex CLI failed: %w", err)
 	}
 
 	return nil
 }
 
-func runGeminiLocal(state *LocalState, prompt, workspace string) error {
+func runGeminiLocal(ctx context.Context, state *LocalState, prompt, workspace string) error {
 	state.addEvent("agent_invoked", "Spawning gemini CLI")
 
 	// Check if gemini CLI is available
@@ -283,7 +300,7 @@ func runGeminiLocal(state *LocalState, prompt, workspace string) error {
 	}
 
 	// Use -p for print mode (non-interactive)
-	cmd := exec.Command(geminiPath, "-p", prompt)
+	cmd := exec.CommandContext(ctx, geminiPath, "-p", prompt)
 	cmd.Dir = workspace
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -292,13 +309,16 @@ func runGeminiLocal(state *LocalState, prompt, workspace string) error {
 	state.addEvent("agent_running", "Gemini CLI executing")
 
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("gemini CLI timed out after %s", localTimeout)
+		}
 		return fmt.Errorf("gemini CLI failed: %w", err)
 	}
 
 	return nil
 }
 
-func runOpencodeLocal(state *LocalState, prompt, workspace string) error {
+func runOpencodeLocal(ctx context.Context, state *LocalState, prompt, workspace string) error {
 	state.addEvent("agent_invoked", "Spawning opencode CLI")
 
 	// Check if opencode CLI is available
@@ -307,7 +327,7 @@ func runOpencodeLocal(state *LocalState, prompt, workspace string) error {
 		return fmt.Errorf("opencode CLI not found in PATH: %w", err)
 	}
 
-	cmd := exec.Command(opencodePath, prompt)
+	cmd := exec.CommandContext(ctx, opencodePath, prompt)
 	cmd.Dir = workspace
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -316,13 +336,16 @@ func runOpencodeLocal(state *LocalState, prompt, workspace string) error {
 	state.addEvent("agent_running", "Opencode CLI executing")
 
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("opencode CLI timed out after %s", localTimeout)
+		}
 		return fmt.Errorf("opencode CLI failed: %w", err)
 	}
 
 	return nil
 }
 
-func runAmpLocal(state *LocalState, prompt, workspace string) error {
+func runAmpLocal(ctx context.Context, state *LocalState, prompt, workspace string) error {
 	state.addEvent("agent_invoked", "Spawning amp CLI")
 
 	// Check if amp CLI is available
@@ -331,7 +354,7 @@ func runAmpLocal(state *LocalState, prompt, workspace string) error {
 		return fmt.Errorf("amp CLI not found in PATH: %w", err)
 	}
 
-	cmd := exec.Command(ampPath, prompt)
+	cmd := exec.CommandContext(ctx, ampPath, prompt)
 	cmd.Dir = workspace
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -340,6 +363,9 @@ func runAmpLocal(state *LocalState, prompt, workspace string) error {
 	state.addEvent("agent_running", "Amp CLI executing")
 
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("amp CLI timed out after %s", localTimeout)
+		}
 		return fmt.Errorf("amp CLI failed: %w", err)
 	}
 
