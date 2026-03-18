@@ -130,3 +130,194 @@ func TestExecURLFormat(t *testing.T) {
 		t.Fatalf("buildExecURL(bare host) = %q", execURL2)
 	}
 }
+
+func TestConfigStruct(t *testing.T) {
+	cfg := Config{
+		APIURL:       "https://pve.example.com:8006",
+		APIToken:     "root@pam!token=secret",
+		Node:         "pve1",
+		PublicDomain: "example.com",
+		VerifyTLS:    true,
+	}
+
+	if cfg.APIURL != "https://pve.example.com:8006" {
+		t.Errorf("expected APIURL, got '%s'", cfg.APIURL)
+	}
+	if cfg.APIToken != "root@pam!token=secret" {
+		t.Errorf("expected APIToken, got '%s'", cfg.APIToken)
+	}
+	if cfg.Node != "pve1" {
+		t.Errorf("expected Node 'pve1', got '%s'", cfg.Node)
+	}
+	if cfg.PublicDomain != "example.com" {
+		t.Errorf("expected PublicDomain 'example.com', got '%s'", cfg.PublicDomain)
+	}
+	if !cfg.VerifyTLS {
+		t.Error("expected VerifyTLS true")
+	}
+}
+
+func TestInstanceStruct(t *testing.T) {
+	inst := Instance{
+		ID:        "pvelxc-abc123",
+		VMID:      200,
+		Status:    "running",
+		Hostname:  "cmux-200",
+		FQDN:      "cmux-200.example.com",
+		VSCodeURL: "https://vscode.example.com",
+		WorkerURL: "https://worker.example.com",
+		VNCURL:    "https://vnc.example.com",
+		XTermURL:  "https://xterm.example.com",
+	}
+
+	if inst.ID != "pvelxc-abc123" {
+		t.Errorf("expected ID 'pvelxc-abc123', got '%s'", inst.ID)
+	}
+	if inst.VMID != 200 {
+		t.Errorf("expected VMID 200, got %d", inst.VMID)
+	}
+	if inst.Status != "running" {
+		t.Errorf("expected Status 'running', got '%s'", inst.Status)
+	}
+	if inst.Hostname != "cmux-200" {
+		t.Errorf("expected Hostname 'cmux-200', got '%s'", inst.Hostname)
+	}
+}
+
+func TestStartOptionsStruct(t *testing.T) {
+	opts := StartOptions{
+		SnapshotID:   "snapshot_abc123",
+		TemplateVMID: 9000,
+		InstanceID:   "pvelxc-test",
+	}
+
+	if opts.SnapshotID != "snapshot_abc123" {
+		t.Errorf("expected SnapshotID 'snapshot_abc123', got '%s'", opts.SnapshotID)
+	}
+	if opts.TemplateVMID != 9000 {
+		t.Errorf("expected TemplateVMID 9000, got %d", opts.TemplateVMID)
+	}
+	if opts.InstanceID != "pvelxc-test" {
+		t.Errorf("expected InstanceID 'pvelxc-test', got '%s'", opts.InstanceID)
+	}
+}
+
+func TestStartOptionsDefaults(t *testing.T) {
+	opts := StartOptions{}
+
+	if opts.SnapshotID != "" {
+		t.Errorf("expected empty SnapshotID, got '%s'", opts.SnapshotID)
+	}
+	if opts.TemplateVMID != 0 {
+		t.Errorf("expected TemplateVMID 0, got %d", opts.TemplateVMID)
+	}
+	if opts.InstanceID != "" {
+		t.Errorf("expected empty InstanceID, got '%s'", opts.InstanceID)
+	}
+}
+
+func TestNewClientMissingAPIURL(t *testing.T) {
+	_, err := NewClient(Config{
+		APIToken: "token",
+	})
+	if err == nil {
+		t.Error("expected error for missing APIURL")
+	}
+	if err != nil && !strings.Contains(err.Error(), "apiUrl") {
+		t.Errorf("expected error about apiUrl, got: %v", err)
+	}
+}
+
+func TestNewClientMissingAPIToken(t *testing.T) {
+	_, err := NewClient(Config{
+		APIURL: "https://pve.example.com:8006",
+	})
+	if err == nil {
+		t.Error("expected error for missing APIToken")
+	}
+	if err != nil && !strings.Contains(err.Error(), "apiToken") {
+		t.Errorf("expected error about apiToken, got: %v", err)
+	}
+}
+
+func TestNewClientSuccess(t *testing.T) {
+	client, err := NewClient(Config{
+		APIURL:       "https://pve.example.com:8006",
+		APIToken:     "root@pam!token=secret",
+		Node:         "pve1",
+		PublicDomain: "example.com",
+		VerifyTLS:    false,
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if client == nil {
+		t.Fatal("expected client, got nil")
+	}
+}
+
+func TestNewClientTrimsAPIURL(t *testing.T) {
+	client, err := NewClient(Config{
+		APIURL:   "  https://pve.example.com:8006/  ",
+		APIToken: "token",
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	// URL should be trimmed of whitespace and trailing slash
+	if client.apiURL != "https://pve.example.com:8006" {
+		t.Errorf("expected trimmed URL, got '%s'", client.apiURL)
+	}
+}
+
+func TestRegexPatterns(t *testing.T) {
+	// Test reDigits
+	if !reDigits.MatchString("12345") {
+		t.Error("expected reDigits to match '12345'")
+	}
+	if reDigits.MatchString("abc123") {
+		t.Error("expected reDigits to NOT match 'abc123'")
+	}
+
+	// Test reCmuxVmid
+	if !reCmuxVmid.MatchString("cmux-200") {
+		t.Error("expected reCmuxVmid to match 'cmux-200'")
+	}
+	if reCmuxVmid.MatchString("cmux_200") {
+		t.Error("expected reCmuxVmid to NOT match 'cmux_200'")
+	}
+
+	// Test reSnapshotID
+	if !reSnapshotID.MatchString("snapshot_abc123") {
+		t.Error("expected reSnapshotID to match 'snapshot_abc123'")
+	}
+	if reSnapshotID.MatchString("snapshot-abc123") {
+		t.Error("expected reSnapshotID to NOT match 'snapshot-abc123'")
+	}
+}
+
+func TestParseVMIDVariants(t *testing.T) {
+	tests := []struct {
+		input    string
+		wantVMID int
+		wantOK   bool
+	}{
+		{"200", 200, true},
+		{"cmux-200", 200, true},
+		{"cmux-9999", 9999, true},
+		{"pvelxc-abc", 0, false},
+		{"cmux_200", 0, false},
+		{"", 0, false},
+		{"abc", 0, false},
+	}
+
+	for _, tt := range tests {
+		vmid, ok := ParseVMID(tt.input)
+		if ok != tt.wantOK {
+			t.Errorf("ParseVMID(%q) ok = %v, want %v", tt.input, ok, tt.wantOK)
+		}
+		if vmid != tt.wantVMID {
+			t.Errorf("ParseVMID(%q) = %d, want %d", tt.input, vmid, tt.wantVMID)
+		}
+	}
+}
