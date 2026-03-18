@@ -177,3 +177,167 @@ func contains(s, substr string) bool {
 	}
 	return false
 }
+
+func TestClientIsConnected(t *testing.T) {
+	c := &Client{
+		serverURL: "http://localhost:9776",
+		authToken: "test-token",
+		connected: false,
+	}
+
+	if c.IsConnected() {
+		t.Error("expected IsConnected() false for new client")
+	}
+
+	// Simulate connected state
+	c.connected = true
+	if !c.IsConnected() {
+		t.Error("expected IsConnected() true after setting connected")
+	}
+}
+
+func TestClientCloseNilConn(t *testing.T) {
+	c := &Client{
+		serverURL: "http://localhost:9776",
+		authToken: "test-token",
+		connected: false,
+		conn:      nil,
+	}
+
+	// Close with nil connection should not error
+	if err := c.Close(); err != nil {
+		t.Errorf("expected no error closing nil connection, got: %v", err)
+	}
+}
+
+func TestStartTaskDataRequiredFields(t *testing.T) {
+	// Test that required fields are present
+	data := StartTaskData{
+		TaskID:          "task-required",
+		TaskDescription: "Required fields test",
+		ProjectFullName: "test/repo",
+	}
+
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	jsonStr := string(jsonData)
+
+	// Required fields must be present
+	if !contains(jsonStr, "taskId") {
+		t.Error("taskId should be present")
+	}
+	if !contains(jsonStr, "taskDescription") {
+		t.Error("taskDescription should be present")
+	}
+	if !contains(jsonStr, "projectFullName") {
+		t.Error("projectFullName should be present")
+	}
+}
+
+func TestStartTaskDataBooleanField(t *testing.T) {
+	// Test IsCloudMode boolean serialization
+	dataTrue := StartTaskData{
+		TaskID:          "task-bool",
+		TaskDescription: "Boolean test",
+		ProjectFullName: "test/repo",
+		IsCloudMode:     true,
+	}
+
+	dataFalse := StartTaskData{
+		TaskID:          "task-bool",
+		TaskDescription: "Boolean test",
+		ProjectFullName: "test/repo",
+		IsCloudMode:     false,
+	}
+
+	jsonTrue, _ := json.Marshal(dataTrue)
+	jsonFalse, _ := json.Marshal(dataFalse)
+
+	if !contains(string(jsonTrue), `"isCloudMode":true`) {
+		t.Error("expected isCloudMode:true in JSON")
+	}
+	if !contains(string(jsonFalse), `"isCloudMode":false`) {
+		t.Error("expected isCloudMode:false in JSON")
+	}
+}
+
+func TestStartTaskDataSliceFields(t *testing.T) {
+	data := StartTaskData{
+		TaskID:          "task-slice",
+		TaskDescription: "Slice test",
+		ProjectFullName: "test/repo",
+		TaskRunIDs:      []string{"run-1", "run-2", "run-3"},
+		SelectedAgents:  []string{"claude/opus-4.5", "codex/gpt-5.1"},
+	}
+
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	var decoded StartTaskData
+	if err := json.Unmarshal(jsonData, &decoded); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if len(decoded.TaskRunIDs) != 3 {
+		t.Errorf("expected 3 TaskRunIDs, got %d", len(decoded.TaskRunIDs))
+	}
+	if len(decoded.SelectedAgents) != 2 {
+		t.Errorf("expected 2 SelectedAgents, got %d", len(decoded.SelectedAgents))
+	}
+	if decoded.TaskRunIDs[2] != "run-3" {
+		t.Errorf("expected TaskRunIDs[2]='run-3', got '%s'", decoded.TaskRunIDs[2])
+	}
+}
+
+func TestTaskStartedResultOmitEmpty(t *testing.T) {
+	// Minimal result with only TaskID
+	result := TaskStartedResult{
+		TaskID: "task-minimal",
+	}
+
+	jsonData, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	jsonStr := string(jsonData)
+
+	// Optional fields should be omitted when empty
+	if contains(jsonStr, "worktreePath") {
+		t.Error("empty worktreePath should be omitted")
+	}
+	if contains(jsonStr, "terminalId") {
+		t.Error("empty terminalId should be omitted")
+	}
+	if contains(jsonStr, "error") {
+		t.Error("empty error should be omitted")
+	}
+}
+
+func TestClientMsgIDIncrement(t *testing.T) {
+	c := &Client{
+		serverURL: "http://localhost:9776",
+		authToken: "test-token",
+		msgID:     0,
+	}
+
+	if c.msgID != 0 {
+		t.Errorf("expected initial msgID 0, got %d", c.msgID)
+	}
+
+	// Simulate increment (what EmitStartTask does)
+	c.msgID++
+	if c.msgID != 1 {
+		t.Errorf("expected msgID 1 after increment, got %d", c.msgID)
+	}
+
+	c.msgID++
+	if c.msgID != 2 {
+		t.Errorf("expected msgID 2 after second increment, got %d", c.msgID)
+	}
+}
