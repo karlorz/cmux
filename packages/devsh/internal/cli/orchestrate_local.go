@@ -103,10 +103,12 @@ Examples:
 		// Add start event
 		state.addEvent("task_started", fmt.Sprintf("Starting %s in %s", localAgent, absWorkspace))
 
-		fmt.Printf("Local Orchestration: %s\n", orchID)
-		fmt.Printf("Agent: %s\n", localAgent)
-		fmt.Printf("Workspace: %s\n", absWorkspace)
-		fmt.Printf("Prompt: %s\n", prompt)
+		if !flagJSON {
+			fmt.Printf("Local Orchestration: %s\n", orchID)
+			fmt.Printf("Agent: %s\n", localAgent)
+			fmt.Printf("Workspace: %s\n", absWorkspace)
+			fmt.Printf("Prompt: %s\n", prompt)
+		}
 
 		// Dry-run mode: just show what would happen
 		if localDryRun {
@@ -130,7 +132,9 @@ Examples:
 			return nil
 		}
 
-		fmt.Println()
+		if !flagJSON {
+			fmt.Println()
+		}
 
 		// Run the agent
 		var runErr error
@@ -159,18 +163,26 @@ Examples:
 		// Export if requested
 		if localExport != "" {
 			if err := exportLocalState(state, localExport); err != nil {
-				fmt.Printf("Warning: failed to export state: %v\n", err)
-			} else {
+				if !flagJSON {
+					fmt.Printf("Warning: failed to export state: %v\n", err)
+				}
+			} else if !flagJSON {
 				fmt.Printf("\nExported to: %s\n", localExport)
 			}
 		}
 
-		// Print summary
-		fmt.Printf("\n--- Summary ---\n")
-		fmt.Printf("Status: %s\n", state.Status)
-		fmt.Printf("Events: %d\n", len(state.Events))
-		if state.Error != nil {
-			fmt.Printf("Error: %s\n", *state.Error)
+		// Print summary (JSON or text based on global flag)
+		if flagJSON {
+			// JSON output for programmatic usage
+			output, _ := json.MarshalIndent(state, "", "  ")
+			fmt.Println(string(output))
+		} else {
+			fmt.Printf("\n--- Summary ---\n")
+			fmt.Printf("Status: %s\n", state.Status)
+			fmt.Printf("Events: %d\n", len(state.Events))
+			if state.Error != nil {
+				fmt.Printf("Error: %s\n", *state.Error)
+			}
 		}
 
 		if runErr != nil {
