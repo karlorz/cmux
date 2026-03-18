@@ -46,4 +46,18 @@ describe("STATUS_GRAPH_COLORS", () => {
       expect(STATUS_GRAPH_COLORS[status].border).toMatch(/^border-/);
     }
   });
+
+  it("includes dark mode variants", () => {
+    for (const status of ALL_STATUSES) {
+      expect(STATUS_GRAPH_COLORS[status].bg).toMatch(/dark:/);
+      expect(STATUS_GRAPH_COLORS[status].border).toMatch(/dark:/);
+    }
+  });
+
+  it("has animate-pulse only on running status dot", () => {
+    expect(STATUS_GRAPH_COLORS.running.dot).toContain("animate-pulse");
+    for (const status of ALL_STATUSES.filter((s) => s !== "running")) {
+      expect(STATUS_GRAPH_COLORS[status].dot).not.toContain("animate-pulse");
+    }
+  });
 });

@@ -20,6 +20,7 @@ import {
   formatBehaviorCorrection,
   extractBehaviorRulesSection,
   getOrchestrationRulesInstructions,
+  type OrchestrationRuleForInstructions,
 } from "./agent-memory-protocol";
 import { execSync } from "node:child_process";
 import { writeFileSync, unlinkSync } from "node:fs";
@@ -396,13 +397,84 @@ Each rule should be on its own line.
   });
 
   describe("getOrchestrationRulesInstructions", () => {
-    const hotRule = { ruleId: "r1", text: "Always run tests", lane: "hot" as const, confidence: 0.9 };
-    const orchRule = { ruleId: "r2", text: "Use parallel delegation", lane: "orchestration" as const, confidence: 0.8 };
-    const projectRule = { ruleId: "r3", text: "Use bun not npm", lane: "project" as const, confidence: 0.7, projectFullName: "org/repo" };
-
-    it("returns empty string for empty input", () => {
-      expect(getOrchestrationRulesInstructions([])).toBe("");
+    const makeRule = (
+      overrides: Partial<OrchestrationRuleForInstructions> & { ruleId: string; text: string }
+    ): OrchestrationRuleForInstructions => ({
+      lane: "hot",
+      confidence: 0.5,
+      ...overrides,
     });
+
+    it("returns empty string for empty or null-ish input", () => {
+      expect(getOrchestrationRulesInstructions([])).toBe("");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect(getOrchestrationRulesInstructions(null as any)).toBe("");
+    });
+
+    it("renders header and lane sections", () => {
+      const rules = [
+        makeRule({ ruleId: "r1", text: "Always test", lane: "hot", confidence: 0.9 }),
+        makeRule({ ruleId: "r2", text: "Use bun", lane: "project", confidence: 0.8 }),
+      ];
+      const result = getOrchestrationRulesInstructions(rules);
+      expect(result).toContain("# Orchestration Rules (Team-Learned)");
+      expect(result).toContain("## Hot Rules (Always Apply)");
+      expect(result).toContain("## Project Rules");
+      expect(result).toContain("- Always test");
+      expect(result).toContain("- Use bun");
+    });
+
+    it("sorts rules by confidence descending within each lane", () => {
+      const rules = [
+        makeRule({ ruleId: "r1", text: "Low confidence", lane: "hot", confidence: 0.3 }),
+        makeRule({ ruleId: "r2", text: "High confidence", lane: "hot", confidence: 0.9 }),
+        makeRule({ ruleId: "r3", text: "Medium confidence", lane: "hot", confidence: 0.6 }),
+      ];
+      const result = getOrchestrationRulesInstructions(rules);
+      const highIdx = result.indexOf("High confidence");
+      const medIdx = result.indexOf("Medium confidence");
+      const lowIdx = result.indexOf("Low confidence");
+      expect(highIdx).toBeLessThan(medIdx);
+      expect(medIdx).toBeLessThan(lowIdx);
+    });
+
+    it("orders lanes: hot before orchestration before project", () => {
+      const rules = [
+        makeRule({ ruleId: "r1", text: "Project rule", lane: "project", confidence: 1.0 }),
+        makeRule({ ruleId: "r2", text: "Hot rule", lane: "hot", confidence: 0.5 }),
+        makeRule({ ruleId: "r3", text: "Orch rule", lane: "orchestration", confidence: 0.5 }),
+      ];
+      const result = getOrchestrationRulesInstructions(rules);
+      const hotIdx = result.indexOf("## Hot Rules");
+      const orchIdx = result.indexOf("## Orchestration Rules");
+      const projIdx = result.indexOf("## Project Rules");
+      expect(hotIdx).toBeLessThan(orchIdx);
+      expect(orchIdx).toBeLessThan(projIdx);
+    });
+
+    it("handles multi-line rule text with proper indentation", () => {
+      const rules = [
+        makeRule({
+          ruleId: "r1",
+          text: "First line\nSecond line\nThird line",
+          confidence: 0.9,
+        }),
+      ];
+      const result = getOrchestrationRulesInstructions(rules);
+      // Multi-line text should be indented for markdown list continuation
+      expect(result).toContain("- First line\n  Second line\n  Third line");
+    });
+
+    it("includes team-learned description", () => {
+      const rules = [makeRule({ ruleId: "r1", text: "Test", confidence: 0.5 })];
+      const result = getOrchestrationRulesInstructions(rules);
+      expect(result).toContain("learned from previous orchestration runs");
+    });
+
+    // Lane filtering tests for head vs non-head agents
+    const hotRule = makeRule({ ruleId: "r1", text: "Always run tests", lane: "hot", confidence: 0.9 });
+    const orchRule = makeRule({ ruleId: "r2", text: "Use parallel delegation", lane: "orchestration", confidence: 0.8 });
+    const projectRule = makeRule({ ruleId: "r3", text: "Use bun not npm", lane: "project", confidence: 0.7 });
 
     it("renders all lanes when no options provided", () => {
       const result = getOrchestrationRulesInstructions([hotRule, orchRule, projectRule]);
