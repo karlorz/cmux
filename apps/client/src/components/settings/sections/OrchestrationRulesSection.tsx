@@ -43,6 +43,7 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
     bulkPromoteMutation,
     suppressMutation,
     createMutation,
+    updateSkillStatusMutation,
     selectedRuleIds,
     toggleSelect,
     laneFilter,
@@ -177,6 +178,8 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
           <SkillsList
             candidates={skillCandidates}
             emptyMessage="No skill candidates detected yet."
+            onUpdateStatus={(skillId, status) => updateSkillStatusMutation.mutate({ skillId, status })}
+            isUpdating={updateSkillStatusMutation.isPending}
           />
         )}
       </div>

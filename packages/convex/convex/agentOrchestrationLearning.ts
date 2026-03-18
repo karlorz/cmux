@@ -607,6 +607,32 @@ export const upsertSkillCandidate = authMutation({
   },
 });
 
+/**
+ * Update a skill candidate's status (approve, reject, or reset to candidate).
+ */
+export const updateSkillCandidateStatus = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    skillId: v.id("agentOrchestrationSkillCandidates"),
+    status: v.union(
+      v.literal("candidate"),
+      v.literal("approved"),
+      v.literal("rejected")
+    ),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+    const existing = await ctx.db.get(args.skillId);
+    if (!existing || existing.teamId !== teamId) {
+      throw new Error("Skill candidate not found");
+    }
+    await ctx.db.patch(args.skillId, {
+      status: args.status,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 // --- Internal Queries (for httpAction / spawn-config path) ---
 
 /**
