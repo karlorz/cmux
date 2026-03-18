@@ -115,7 +115,7 @@ func findAvailablePort(startPort int) int {
 }
 
 func init() {
-	orchestrateViewCmd.Flags().IntVarP(&orchestrateViewPort, "port", "p", 0, "Port to serve on (default: auto-select starting at 3456)")
+	orchestrateViewCmd.Flags().IntVar(&orchestrateViewPort, "port", 0, "Port to serve on (default: auto-select starting at 3456)")
 	orchestrateViewCmd.Flags().BoolVar(&orchestrateViewNoBrowser, "no-browser", false, "Don't automatically open browser")
 	orchestrateCmd.AddCommand(orchestrateViewCmd)
 }
