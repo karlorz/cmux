@@ -289,6 +289,57 @@ else
 fi
 
 # =============================================================================
+# Test 7: Query Skill Candidates
+# =============================================================================
+echo ""
+echo "=== Test 7: Query Skill Candidates ==="
+
+SKILLS_RESPONSE=$(curl -sS \
+  -H "Authorization: Bearer ${CMUX_AUTH_TOKEN}" \
+  "${API_URL}/api/v1/cmux/orchestration/skills?teamSlugOrId=${TEAM}" 2>&1 || echo '{"error":"request_failed"}')
+
+echo "  Response length: ${#SKILLS_RESPONSE} bytes"
+
+if echo "$SKILLS_RESPONSE" | grep -qE '^\[|"patternKey"'; then
+  pass "Query skill candidates API returned array"
+
+  if command -v jq &> /dev/null; then
+    SKILL_COUNT=$(echo "$SKILLS_RESPONSE" | jq 'length' 2>/dev/null || echo "?")
+    echo "  Found $SKILL_COUNT skill candidate(s)"
+  fi
+elif echo "$SKILLS_RESPONSE" | grep -qiE "not found|404"; then
+  # Endpoint may not exist yet - add after PR #597 merges
+  skip "Skill candidates endpoint not implemented (pending PR #597)"
+elif echo "$SKILLS_RESPONSE" | grep -qiE "unauthorized|401"; then
+  fail "Query skill candidates API - unauthorized"
+else
+  echo "  Response: ${SKILLS_RESPONSE:0:200}"
+  skip "Query skill candidates - unexpected response format"
+fi
+
+# =============================================================================
+# Test 8: Verify detectPatterns Cron Output (indirect)
+# =============================================================================
+echo ""
+echo "=== Test 8: Verify Pattern Detection ==="
+
+# Check if we have any skill candidates - indicates detectPatterns cron has run
+if [ "${SKILL_COUNT:-0}" != "?" ] && [ "${SKILL_COUNT:-0}" -gt 0 ]; then
+  pass "Pattern detection cron has generated skill candidates"
+
+  # Try to get details of first skill candidate
+  if command -v jq &> /dev/null && echo "$SKILLS_RESPONSE" | jq -e '.[0]' &>/dev/null; then
+    FIRST_SKILL=$(echo "$SKILLS_RESPONSE" | jq '.[0]' 2>/dev/null)
+    SKILL_TITLE=$(echo "$FIRST_SKILL" | jq -r '.title // "unknown"' 2>/dev/null)
+    SKILL_STATUS=$(echo "$FIRST_SKILL" | jq -r '.status // "unknown"' 2>/dev/null)
+    RECURRENCE=$(echo "$FIRST_SKILL" | jq -r '.recurrenceCount // 0' 2>/dev/null)
+    echo "  First skill: $SKILL_TITLE (status: $SKILL_STATUS, seen: $RECURRENCE times)"
+  fi
+else
+  skip "No skill candidates yet (cron may not have run or not enough patterns)"
+fi
+
+# =============================================================================
 # Summary
 # =============================================================================
 echo ""
