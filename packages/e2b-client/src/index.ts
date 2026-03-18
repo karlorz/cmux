@@ -1,4 +1,8 @@
 import { Sandbox, CommandExitError } from "e2b";
+import { withRetry, E2B_SANDBOX_RETRY_OPTIONS, type RetryOptions } from "./retry";
+
+// Re-export retry utilities
+export * from "./retry";
 
 export const DEFAULT_E2B_BASE_URL = "https://api.e2b.dev";
 
@@ -13,6 +17,10 @@ export const CMUX_DEVBOX_TEMPLATE_ID = "mknr7v3io3fqwpn7pbnk"; // high tier (8 v
 export interface E2BClientConfig {
   apiKey?: string;
   baseUrl?: string;
+  /** Retry options for sandbox operations (default: E2B_SANDBOX_RETRY_OPTIONS) */
+  retryOptions?: RetryOptions;
+  /** Disable retry logic (default: false) */
+  disableRetry?: boolean;
 }
 
 /**
@@ -232,13 +240,27 @@ export interface E2BSandboxInfo {
  */
 export class E2BClient {
   private apiKey: string;
+  private retryOptions: RetryOptions;
+  private disableRetry: boolean;
 
   constructor(config: E2BClientConfig = {}) {
     this.apiKey = config.apiKey || process.env.E2B_API_KEY || "";
+    this.retryOptions = config.retryOptions ?? E2B_SANDBOX_RETRY_OPTIONS;
+    this.disableRetry = config.disableRetry ?? false;
 
     if (!this.apiKey) {
       throw new Error("E2B API key is required");
     }
+  }
+
+  /**
+   * Execute an operation with retry logic if enabled
+   */
+  private async withRetryIfEnabled<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.disableRetry) {
+      return fn();
+    }
+    return withRetry(fn, this.retryOptions);
   }
 
   /**
@@ -257,12 +279,14 @@ export class E2BClient {
     }): Promise<E2BInstance> => {
       const timeoutMs = (options.ttlSeconds || 3600) * 1000;
 
-      const sandbox = await Sandbox.create(options.templateId || CMUX_DEVBOX_TEMPLATE_ID, {
-        apiKey: this.apiKey,
-        timeoutMs,
-        metadata: options.metadata,
-        envs: options.envs,
-      });
+      const sandbox = await this.withRetryIfEnabled(() =>
+        Sandbox.create(options.templateId || CMUX_DEVBOX_TEMPLATE_ID, {
+          apiKey: this.apiKey,
+          timeoutMs,
+          metadata: options.metadata,
+          envs: options.envs,
+        })
+      );
 
       // Set up default HTTP services for VSCode, worker, VNC, and Jupyter ports
       const httpServices: E2BHttpService[] = [
@@ -295,9 +319,11 @@ export class E2BClient {
      * Get an existing sandbox by ID (auto-resumes if paused)
      */
     get: async (options: { instanceId: string }): Promise<E2BInstance> => {
-      const sandbox = await Sandbox.connect(options.instanceId, {
-        apiKey: this.apiKey,
-      });
+      const sandbox = await this.withRetryIfEnabled(() =>
+        Sandbox.connect(options.instanceId, {
+          apiKey: this.apiKey,
+        })
+      );
 
       // Rebuild HTTP services from the connected sandbox
       const httpServices: E2BHttpService[] = [
@@ -371,7 +397,9 @@ export class E2BClient {
      * Pause a sandbox by ID (SDK v2 beta feature)
      */
     pause: async (sandboxId: string): Promise<boolean> => {
-      return await Sandbox.betaPause(sandboxId, { apiKey: this.apiKey });
+      return await this.withRetryIfEnabled(() =>
+        Sandbox.betaPause(sandboxId, { apiKey: this.apiKey })
+      );
     },
 
     /**
@@ -379,10 +407,12 @@ export class E2BClient {
      * Sandbox.connect() auto-resumes paused sandboxes
      */
     resume: async (sandboxId: string, options?: { timeoutMs?: number }): Promise<E2BInstance> => {
-      const sandbox = await Sandbox.connect(sandboxId, {
-        apiKey: this.apiKey,
-        timeoutMs: options?.timeoutMs,
-      });
+      const sandbox = await this.withRetryIfEnabled(() =>
+        Sandbox.connect(sandboxId, {
+          apiKey: this.apiKey,
+          timeoutMs: options?.timeoutMs,
+        })
+      );
 
       // Rebuild HTTP services from the resumed sandbox
       const httpServices: E2BHttpService[] = [
@@ -415,7 +445,9 @@ export class E2BClient {
      * Kill a sandbox by ID
      */
     kill: async (sandboxId: string): Promise<void> => {
-      await Sandbox.kill(sandboxId, { apiKey: this.apiKey });
+      await this.withRetryIfEnabled(() =>
+        Sandbox.kill(sandboxId, { apiKey: this.apiKey })
+      );
     },
   };
 }
