@@ -44,18 +44,20 @@ async function fetchActiveRules(
   teamId: string,
   lane?: string,
   projectFullName?: string,
+  minConfidence?: number,
 ) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let rules: any[];
+
   if (lane) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return db
+    rules = await db
       .query("agentOrchestrationRules")
       .withIndex("by_team_lane_status", (q: any) =>
         q.eq("teamId", teamId).eq("lane", lane).eq("status", "active")
       )
       .take(100);
-  }
-
-  if (projectFullName) {
+  } else if (projectFullName) {
     const [projectRules, globalRules] = await Promise.all([
       db
         .query("agentOrchestrationRules")
@@ -74,16 +76,23 @@ async function fetchActiveRules(
         .filter((q: any) => q.eq(q.field("projectFullName"), undefined))
         .take(100),
     ]);
-    return [...globalRules, ...projectRules];
+    rules = [...globalRules, ...projectRules];
+  } else {
+    rules = await db
+      .query("agentOrchestrationRules")
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .withIndex("by_team_status", (q: any) =>
+        q.eq("teamId", teamId).eq("status", "active")
+      )
+      .take(100);
   }
 
-  return db
-    .query("agentOrchestrationRules")
+  if (minConfidence !== undefined && minConfidence > 0) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .withIndex("by_team_status", (q: any) =>
-      q.eq("teamId", teamId).eq("status", "active")
-    )
-    .take(100);
+    return rules.filter((r: any) => (r.confidence ?? 0) >= minConfidence);
+  }
+
+  return rules;
 }
 
 /**
@@ -95,10 +104,11 @@ export const getActiveRules = authQuery({
     teamSlugOrId: v.string(),
     lane: v.optional(laneValidator),
     projectFullName: v.optional(v.string()),
+    minConfidence: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const teamId = await getTeamId(ctx, args.teamSlugOrId);
-    return fetchActiveRules(ctx.db, teamId, args.lane, args.projectFullName);
+    return fetchActiveRules(ctx.db, teamId, args.lane, args.projectFullName, args.minConfidence);
   },
 });
 
@@ -608,9 +618,10 @@ export const getActiveRulesInternal = internalQuery({
     teamId: v.string(),
     lane: v.optional(laneValidator),
     projectFullName: v.optional(v.string()),
+    minConfidence: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    return fetchActiveRules(ctx.db, args.teamId, args.lane, args.projectFullName);
+    return fetchActiveRules(ctx.db, args.teamId, args.lane, args.projectFullName, args.minConfidence);
   },
 });
 
