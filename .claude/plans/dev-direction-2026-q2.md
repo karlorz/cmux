@@ -45,14 +45,16 @@ All planned phases and industry trends have been implemented.
 - Deployment: Docker build decoupled from Coolify, multi-arch (amd64+arm64)
 - Providers: PVE-LXC (active), E2B (active, 64 tests), Morph (stale)
 
-### What's Missing (Dev Direction Gaps)
-- No PR comment → agent pipeline (GitHub webhook stubs exist but are no-ops)
-- No browser automation post-run (magnitude-core exists but not integrated)
-- No mobile-friendly review UX (current diff viewer is desktop-focused)
-- Memory freshness/forgetting not implemented
-- Provider-neutral lifecycle events not implemented
-- Vercel deployment cap still bottlenecking apps/www and apps/client
-- 20 test PRs need merging
+### What's Missing (Dev Direction Gaps) - UPDATED
+~~- No PR comment → agent pipeline~~ → Complete (PR #691, #692)
+~~- No browser automation post-run~~ → Complete (PR #693)
+~~- No mobile-friendly review UX~~ → Complete (PR #694)
+~~- Memory freshness/forgetting not implemented~~ → Complete (PR #695)
+~~- Provider-neutral lifecycle events not implemented~~ → Complete (PR #697)
+~~- 20 test PRs need merging~~ → Complete (Phase 0)
+
+**Remaining:**
+- Vercel deployment cap still bottlenecking apps/www and apps/client (Phase 0.2 Coolify - infrastructure task)
 
 ## Confirmed Priority Order (2026-03-19)
 
