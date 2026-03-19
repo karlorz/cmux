@@ -154,4 +154,22 @@ crons.daily(
   internal.agentMemoryFreshness.dailyMaintenance
 );
 
+// Scheduled Tasks: Poll for tasks ready to run
+// Checks for active scheduled tasks whose nextRunAt has passed
+// Runs every minute to enable near-real-time task triggering
+crons.interval(
+  "poll scheduled tasks",
+  { minutes: 1 },
+  internal.scheduledTasks.pollAndStartReadyTasks
+);
+
+// Scheduled Tasks: Reset daily run counters
+// Resets runsToday for all scheduled tasks with maxRunsPerDay limits
+// Runs daily at 0:00 UTC
+crons.daily(
+  "reset scheduled task daily counters",
+  { hourUTC: 0, minuteUTC: 0 },
+  internal.scheduledTasks.resetDailyCounters
+);
+
 export default crons;
