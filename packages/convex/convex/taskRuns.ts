@@ -517,6 +517,17 @@ async function fetchTaskRunsForTask(
 }
 
 /**
+ * Internal query to get a task run by ID (for use in actions).
+ * Used by PR Comment → Agent result posting.
+ */
+export const getByIdInternal = internalQuery({
+  args: { id: v.id("taskRuns") },
+  handler: async (ctx, { id }) => {
+    return ctx.db.get(id);
+  },
+});
+
+/**
  * Internal mutation to create a task run with JWT.
  * Used by CLI HTTP API for task creation with sandbox provisioning.
  */
@@ -838,6 +849,19 @@ export const updateStatus = internalMutation({
           0,
           internal.githubProjectSync.syncStatusToProject,
           { taskId: run.taskId },
+        );
+      }
+
+      // PR Comment → Agent: Post result back to source comment if this run was triggered by a comment
+      if (run.githubCommentId && run.githubCommentUrl && task?.projectFullName) {
+        await ctx.scheduler.runAfter(
+          0,
+          internal.github_pr_comments.postResultToSourceComment,
+          {
+            taskRunId: args.id,
+            repoFullName: task.projectFullName,
+            status: args.status,
+          },
         );
       }
     }

@@ -1815,3 +1815,139 @@ export const addReactionToComment = internalAction({
     return { ok: true };
   },
 });
+
+/**
+ * Post result back to the GitHub comment that triggered a task run.
+ * Called when a task run completes (success or failure) and has githubCommentId.
+ */
+export const postResultToSourceComment = internalAction({
+  args: {
+    taskRunId: v.id("taskRuns"),
+    repoFullName: v.string(),
+    status: v.union(v.literal("completed"), v.literal("failed")),
+  },
+  handler: async (ctx, args) => {
+    const { taskRunId, repoFullName, status } = args;
+
+    // Get task run details
+    const taskRun = await ctx.runQuery(internal.taskRuns.getByIdInternal, { id: taskRunId });
+    if (!taskRun) {
+      console.warn("[postResultToSourceComment] Task run not found", { taskRunId });
+      return { ok: false, error: "Task run not found" };
+    }
+
+    const { githubCommentId, githubCommentUrl, summary, pullRequests } = taskRun;
+    if (!githubCommentId) {
+      console.warn("[postResultToSourceComment] No source comment ID", { taskRunId });
+      return { ok: false, error: "No source comment ID" };
+    }
+
+    // Get task for additional context
+    const task = await ctx.runQuery(internal.tasks.getByIdInternal, { id: taskRun.taskId });
+
+    // Get installation ID from provider connection
+    const [owner, repo] = repoFullName.split("/");
+    if (!owner || !repo) {
+      return { ok: false, error: `Invalid repoFullName: ${repoFullName}` };
+    }
+
+    const connection = await ctx.runQuery(internal.github_app.getProviderConnectionByRepo, {
+      repoFullName,
+    });
+    if (!connection?.installationId) {
+      console.warn("[postResultToSourceComment] No installation found for repo", { repoFullName });
+      return { ok: false, error: "No GitHub installation found for repo" };
+    }
+
+    const accessToken = await fetchInstallationAccessToken(connection.installationId);
+    const octokit = new Octokit({ auth: accessToken });
+
+    // Build result comment body
+    const statusEmoji = status === "completed" ? "✅" : "❌";
+    const statusText = status === "completed" ? "completed" : "failed";
+
+    // Get PR info if available
+    const prInfo = pullRequests?.[0];
+    const prLink = prInfo?.url ? `[PR #${prInfo.number}](${prInfo.url})` : null;
+
+    // Build comment body
+    const lines: string[] = [
+      `${statusEmoji} **Agent ${statusText}**`,
+      "",
+    ];
+
+    if (summary) {
+      lines.push("### Summary");
+      lines.push(summary);
+      lines.push("");
+    }
+
+    if (prLink) {
+      lines.push(`**Pull Request:** ${prLink}`);
+      lines.push("");
+    }
+
+    // Link to cmux dashboard
+    const dashboardUrl = `${CMUX_BASE_URL}/task/${task?._id}?${UTM_PARAMS}&utm_content=result_comment`;
+    lines.push(`[View details in cmux](${dashboardUrl})`);
+    lines.push("");
+    lines.push(COMMENT_SIGNATURE);
+
+    const body = lines.join("\n");
+
+    // Extract issue/PR number from the original comment URL
+    // Format: https://github.com/owner/repo/issues/123#issuecomment-456
+    // or: https://github.com/owner/repo/pull/123#issuecomment-456
+    let issueNumber: number | undefined;
+    if (githubCommentUrl) {
+      const match = githubCommentUrl.match(/\/(issues|pull)\/(\d+)/);
+      if (match) {
+        issueNumber = parseInt(match[2], 10);
+      }
+    }
+
+    if (!issueNumber) {
+      console.warn("[postResultToSourceComment] Could not extract issue number from URL", { githubCommentUrl });
+      return { ok: false, error: "Could not extract issue number from comment URL" };
+    }
+
+    try {
+      // Post as a reply to the issue/PR
+      const result = await octokit.rest.issues.createComment({
+        owner,
+        repo,
+        issue_number: issueNumber,
+        body,
+      });
+
+      console.log("[postResultToSourceComment] Posted result comment", {
+        taskRunId,
+        commentId: result.data.id,
+        issueNumber,
+      });
+
+      // Add rocket reaction to original comment to indicate completion
+      try {
+        await octokit.rest.reactions.createForIssueComment({
+          owner,
+          repo,
+          comment_id: githubCommentId,
+          content: "rocket",
+        });
+      } catch (reactionErr) {
+        console.warn("[postResultToSourceComment] Failed to add completion reaction", { reactionErr });
+      }
+
+      return { ok: true, commentId: result.data.id };
+    } catch (error) {
+      console.error("[postResultToSourceComment] Failed to post comment", {
+        taskRunId,
+        error,
+      });
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  },
+});
