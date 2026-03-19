@@ -495,6 +495,79 @@ export const emitMemoryLoaded = internalMutation({
 });
 
 /**
+ * Emit a memory pruned event.
+ * Called when stale memory entries are cleaned up.
+ */
+export const emitMemoryPruned = internalMutation({
+  args: {
+    orchestrationId: v.string(),
+    taskRunId: v.optional(v.id("taskRuns")),
+    teamId: v.string(),
+    prunedCount: v.number(),
+    memoryTypes: v.array(v.string()),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const eventId = `evt_${now}_${Math.random().toString(36).slice(2, 8)}`;
+
+    await ctx.db.insert("orchestrationEvents", {
+      eventId,
+      orchestrationId: args.orchestrationId,
+      eventType: "memory_pruned",
+      teamId: args.teamId,
+      taskRunId: args.taskRunId,
+      payload: {
+        prunedCount: args.prunedCount,
+        memoryTypes: args.memoryTypes,
+        reason: args.reason,
+      },
+      createdAt: now,
+    });
+
+    return { eventId };
+  },
+});
+
+/**
+ * Emit a session stop blocked event.
+ * Called when an agent session cannot stop due to pending work.
+ */
+export const emitSessionStopBlocked = internalMutation({
+  args: {
+    orchestrationId: v.string(),
+    taskRunId: v.id("taskRuns"),
+    teamId: v.string(),
+    blockedReason: v.union(
+      v.literal("pending_approval"),
+      v.literal("uncommitted_changes"),
+      v.literal("running_subprocess"),
+      v.literal("pending_sync")
+    ),
+    details: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const eventId = `evt_${now}_${Math.random().toString(36).slice(2, 8)}`;
+
+    await ctx.db.insert("orchestrationEvents", {
+      eventId,
+      orchestrationId: args.orchestrationId,
+      eventType: "session_stop_blocked",
+      teamId: args.teamId,
+      taskRunId: args.taskRunId,
+      payload: {
+        blockedReason: args.blockedReason,
+        details: args.details,
+      },
+      createdAt: now,
+    });
+
+    return { eventId };
+  },
+});
+
+/**
  * Daily maintenance job: update freshness scores and demote stale rules.
  * Called by cron job to process all teams.
  */

@@ -28,7 +28,12 @@ const eventTypeValidator = v.union(
   v.literal("approval_resolved"),
   v.literal("plan_updated"),
   v.literal("orchestration_completed"),
-  v.literal("provider_session_bound")
+  v.literal("provider_session_bound"),
+  // Phase 4: Context health and lifecycle events
+  v.literal("context_warning"), // Context approaching limit
+  v.literal("memory_loaded"), // Memory seeded into sandbox
+  v.literal("memory_pruned"), // Stale memory entries removed
+  v.literal("session_stop_blocked") // Session stop blocked by pending work
 );
 
 // =============================================================================
