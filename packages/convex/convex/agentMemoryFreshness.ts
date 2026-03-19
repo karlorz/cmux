@@ -1,11 +1,6 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import {
-  internalMutation,
-  internalQuery,
-  type MutationCtx,
-} from "./_generated/server";
-import type { Doc, Id } from "./_generated/dataModel";
+import { internalMutation } from "./_generated/server";
 import { getTeamId } from "../_shared/team";
 import { authMutation, authQuery } from "./users/utils";
 
@@ -496,5 +491,53 @@ export const emitMemoryLoaded = internalMutation({
     });
 
     return { eventId };
+  },
+});
+
+/**
+ * Daily maintenance job: update freshness scores and demote stale rules.
+ * Called by cron job to process all teams.
+ */
+export const dailyMaintenance = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    // Get all unique team IDs from recent snapshots
+    const recentSnapshots = await ctx.db
+      .query("agentMemorySnapshots")
+      .order("desc")
+      .take(1000);
+
+    const teamIds = [...new Set(recentSnapshots.map((s) => s.teamId))];
+
+    let totalUpdated = 0;
+    let totalDemoted = 0;
+
+    for (const teamId of teamIds) {
+      // Update freshness scores
+      const freshnessResult = await ctx.runMutation(
+        internal.agentMemoryFreshness.updateTeamFreshness,
+        { teamId, limit: 100 }
+      );
+      totalUpdated += freshnessResult.updated;
+
+      // Demote stale behavior rules
+      const demoteResult = await ctx.runMutation(
+        internal.agentMemoryFreshness.demoteStaleBehaviorRules,
+        { teamId, limit: 50 }
+      );
+      totalDemoted += demoteResult.demoted;
+    }
+
+    console.log("[agentMemoryFreshness] Daily maintenance complete", {
+      teamsProcessed: teamIds.length,
+      snapshotsUpdated: totalUpdated,
+      rulesDemoted: totalDemoted,
+    });
+
+    return {
+      teamsProcessed: teamIds.length,
+      snapshotsUpdated: totalUpdated,
+      rulesDemoted: totalDemoted,
+    };
   },
 });

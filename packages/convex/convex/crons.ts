@@ -145,4 +145,13 @@ crons.interval(
   internal.taskRuns.checkStaleHeadAgents
 );
 
+// Phase 4: Memory freshness maintenance
+// Updates freshness scores and demotes stale behavior rules
+// Runs daily at 4:00 UTC (12:00 HKT)
+crons.daily(
+  "memory freshness maintenance",
+  { hourUTC: 4, minuteUTC: 0 },
+  internal.agentMemoryFreshness.dailyMaintenance
+);
+
 export default crons;
