@@ -59,6 +59,7 @@ import { Route as LayoutTeamSlugOrIdTaskTaskIdRunRunIdOrchestrationRouteImport }
 import { Route as LayoutTeamSlugOrIdTaskTaskIdRunRunIdMemoryRouteImport } from './routes/_layout.$teamSlugOrId.task.$taskId.run.$runId.memory'
 import { Route as LayoutTeamSlugOrIdTaskTaskIdRunRunIdDiffRouteImport } from './routes/_layout.$teamSlugOrId.task.$taskId.run.$runId.diff'
 import { Route as LayoutTeamSlugOrIdTaskTaskIdRunRunIdBrowserRouteImport } from './routes/_layout.$teamSlugOrId.task.$taskId.run.$runId.browser'
+import { Route as LayoutTeamSlugOrIdTaskTaskIdRunRunIdActivityRouteImport } from './routes/_layout.$teamSlugOrId.task.$taskId.run.$runId.activity'
 import { Route as LayoutTeamSlugOrIdTaskTaskIdRunRunIdPreviewPreviewIdRouteImport } from './routes/_layout.$teamSlugOrId.task.$taskId.run.$runId.preview.$previewId'
 
 const SignInRoute = SignInRouteImport.update({
@@ -342,6 +343,12 @@ const LayoutTeamSlugOrIdTaskTaskIdRunRunIdBrowserRoute =
     path: '/run/$runId/browser',
     getParentRoute: () => LayoutTeamSlugOrIdTaskTaskIdRoute,
   } as any)
+const LayoutTeamSlugOrIdTaskTaskIdRunRunIdActivityRoute =
+  LayoutTeamSlugOrIdTaskTaskIdRunRunIdActivityRouteImport.update({
+    id: '/run/$runId/activity',
+    path: '/run/$runId/activity',
+    getParentRoute: () => LayoutTeamSlugOrIdTaskTaskIdRoute,
+  } as any)
 const LayoutTeamSlugOrIdTaskTaskIdRunRunIdPreviewPreviewIdRoute =
   LayoutTeamSlugOrIdTaskTaskIdRunRunIdPreviewPreviewIdRouteImport.update({
     id: '/run/$runId/preview/$previewId',
@@ -391,6 +398,7 @@ export interface FileRoutesByFullPath {
   '/$teamSlugOrId/task/$taskId/': typeof LayoutTeamSlugOrIdTaskTaskIdIndexRoute
   '/$teamSlugOrId/prs-only/$owner/$repo/$number': typeof LayoutTeamSlugOrIdPrsOnlyOwnerRepoNumberRoute
   '/$teamSlugOrId/prs/$owner/$repo/$number': typeof LayoutTeamSlugOrIdPrsOwnerRepoNumberRoute
+  '/$teamSlugOrId/task/$taskId/run/$runId/activity': typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdActivityRoute
   '/$teamSlugOrId/task/$taskId/run/$runId/browser': typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdBrowserRoute
   '/$teamSlugOrId/task/$taskId/run/$runId/diff': typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdDiffRoute
   '/$teamSlugOrId/task/$taskId/run/$runId/memory': typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdMemoryRoute
@@ -440,6 +448,7 @@ export interface FileRoutesByTo {
   '/$teamSlugOrId/task/$taskId': typeof LayoutTeamSlugOrIdTaskTaskIdIndexRoute
   '/$teamSlugOrId/prs-only/$owner/$repo/$number': typeof LayoutTeamSlugOrIdPrsOnlyOwnerRepoNumberRoute
   '/$teamSlugOrId/prs/$owner/$repo/$number': typeof LayoutTeamSlugOrIdPrsOwnerRepoNumberRoute
+  '/$teamSlugOrId/task/$taskId/run/$runId/activity': typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdActivityRoute
   '/$teamSlugOrId/task/$taskId/run/$runId/browser': typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdBrowserRoute
   '/$teamSlugOrId/task/$taskId/run/$runId/diff': typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdDiffRoute
   '/$teamSlugOrId/task/$taskId/run/$runId/memory': typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdMemoryRoute
@@ -494,6 +503,7 @@ export interface FileRoutesById {
   '/_layout/$teamSlugOrId/task/$taskId/': typeof LayoutTeamSlugOrIdTaskTaskIdIndexRoute
   '/_layout/$teamSlugOrId/prs-only/$owner/$repo/$number': typeof LayoutTeamSlugOrIdPrsOnlyOwnerRepoNumberRoute
   '/_layout/$teamSlugOrId/prs/$owner/$repo/$number': typeof LayoutTeamSlugOrIdPrsOwnerRepoNumberRoute
+  '/_layout/$teamSlugOrId/task/$taskId/run/$runId/activity': typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdActivityRoute
   '/_layout/$teamSlugOrId/task/$taskId/run/$runId/browser': typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdBrowserRoute
   '/_layout/$teamSlugOrId/task/$taskId/run/$runId/diff': typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdDiffRoute
   '/_layout/$teamSlugOrId/task/$taskId/run/$runId/memory': typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdMemoryRoute
@@ -548,6 +558,7 @@ export interface FileRouteTypes {
     | '/$teamSlugOrId/task/$taskId/'
     | '/$teamSlugOrId/prs-only/$owner/$repo/$number'
     | '/$teamSlugOrId/prs/$owner/$repo/$number'
+    | '/$teamSlugOrId/task/$taskId/run/$runId/activity'
     | '/$teamSlugOrId/task/$taskId/run/$runId/browser'
     | '/$teamSlugOrId/task/$taskId/run/$runId/diff'
     | '/$teamSlugOrId/task/$taskId/run/$runId/memory'
@@ -597,6 +608,7 @@ export interface FileRouteTypes {
     | '/$teamSlugOrId/task/$taskId'
     | '/$teamSlugOrId/prs-only/$owner/$repo/$number'
     | '/$teamSlugOrId/prs/$owner/$repo/$number'
+    | '/$teamSlugOrId/task/$taskId/run/$runId/activity'
     | '/$teamSlugOrId/task/$taskId/run/$runId/browser'
     | '/$teamSlugOrId/task/$taskId/run/$runId/diff'
     | '/$teamSlugOrId/task/$taskId/run/$runId/memory'
@@ -650,6 +662,7 @@ export interface FileRouteTypes {
     | '/_layout/$teamSlugOrId/task/$taskId/'
     | '/_layout/$teamSlugOrId/prs-only/$owner/$repo/$number'
     | '/_layout/$teamSlugOrId/prs/$owner/$repo/$number'
+    | '/_layout/$teamSlugOrId/task/$taskId/run/$runId/activity'
     | '/_layout/$teamSlugOrId/task/$taskId/run/$runId/browser'
     | '/_layout/$teamSlugOrId/task/$taskId/run/$runId/diff'
     | '/_layout/$teamSlugOrId/task/$taskId/run/$runId/memory'
@@ -1027,6 +1040,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdBrowserRouteImport
       parentRoute: typeof LayoutTeamSlugOrIdTaskTaskIdRoute
     }
+    '/_layout/$teamSlugOrId/task/$taskId/run/$runId/activity': {
+      id: '/_layout/$teamSlugOrId/task/$taskId/run/$runId/activity'
+      path: '/run/$runId/activity'
+      fullPath: '/$teamSlugOrId/task/$taskId/run/$runId/activity'
+      preLoaderRoute: typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdActivityRouteImport
+      parentRoute: typeof LayoutTeamSlugOrIdTaskTaskIdRoute
+    }
     '/_layout/$teamSlugOrId/task/$taskId/run/$runId/preview/$previewId': {
       id: '/_layout/$teamSlugOrId/task/$taskId/run/$runId/preview/$previewId'
       path: '/run/$runId/preview/$previewId'
@@ -1133,6 +1153,7 @@ const LayoutTeamSlugOrIdSettingsRouteWithChildren =
 
 interface LayoutTeamSlugOrIdTaskTaskIdRouteChildren {
   LayoutTeamSlugOrIdTaskTaskIdIndexRoute: typeof LayoutTeamSlugOrIdTaskTaskIdIndexRoute
+  LayoutTeamSlugOrIdTaskTaskIdRunRunIdActivityRoute: typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdActivityRoute
   LayoutTeamSlugOrIdTaskTaskIdRunRunIdBrowserRoute: typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdBrowserRoute
   LayoutTeamSlugOrIdTaskTaskIdRunRunIdDiffRoute: typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdDiffRoute
   LayoutTeamSlugOrIdTaskTaskIdRunRunIdMemoryRoute: typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdMemoryRoute
@@ -1148,6 +1169,8 @@ const LayoutTeamSlugOrIdTaskTaskIdRouteChildren: LayoutTeamSlugOrIdTaskTaskIdRou
   {
     LayoutTeamSlugOrIdTaskTaskIdIndexRoute:
       LayoutTeamSlugOrIdTaskTaskIdIndexRoute,
+    LayoutTeamSlugOrIdTaskTaskIdRunRunIdActivityRoute:
+      LayoutTeamSlugOrIdTaskTaskIdRunRunIdActivityRoute,
     LayoutTeamSlugOrIdTaskTaskIdRunRunIdBrowserRoute:
       LayoutTeamSlugOrIdTaskTaskIdRunRunIdBrowserRoute,
     LayoutTeamSlugOrIdTaskTaskIdRunRunIdDiffRoute:

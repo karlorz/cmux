@@ -7,6 +7,7 @@ import {
   crownWorkerComplete,
 } from "./crown_http";
 import { agentStopped } from "./notifications_http";
+import { postActivity } from "./taskRunActivity_http";
 import { syncMemory } from "./agentMemory_http";
 import { getPolicyRules } from "./agentPolicyRules_http";
 import { getPermissionDenyRules } from "./permissionDenyRules_http";
@@ -138,6 +139,12 @@ http.route({
   path: "/api/notifications/agent-stopped",
   method: "POST",
   handler: agentStopped,
+});
+
+http.route({
+  path: "/api/task-run/activity",
+  method: "POST",
+  handler: postActivity,
 });
 
 http.route({

@@ -113,6 +113,8 @@ import type * as supervisorProfiles from "../supervisorProfiles.js";
 import type * as sync from "../sync.js";
 import type * as taskComments from "../taskComments.js";
 import type * as taskNotifications from "../taskNotifications.js";
+import type * as taskRunActivity from "../taskRunActivity.js";
+import type * as taskRunActivity_http from "../taskRunActivity_http.js";
 import type * as taskRunLogChunks from "../taskRunLogChunks.js";
 import type * as taskRuns from "../taskRuns.js";
 import type * as taskRuns_http from "../taskRuns_http.js";
@@ -241,6 +243,8 @@ declare const fullApi: ApiFromModules<{
   sync: typeof sync;
   taskComments: typeof taskComments;
   taskNotifications: typeof taskNotifications;
+  taskRunActivity: typeof taskRunActivity;
+  taskRunActivity_http: typeof taskRunActivity_http;
   taskRunLogChunks: typeof taskRunLogChunks;
   taskRuns: typeof taskRuns;
   taskRuns_http: typeof taskRuns_http;

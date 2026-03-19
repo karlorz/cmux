@@ -244,6 +244,13 @@ if [ -n "\${CMUX_TASK_RUN_JWT}" ] && [ -n "\${CMUX_TASK_RUN_ID}" ] && [ -n "\${C
       -d "{\\"taskRunId\\": \\"\${CMUX_TASK_RUN_ID}\\"}" \\
       >> "$LOG_FILE" 2>&1
     echo "" >> "$LOG_FILE"
+    # Post "agent stopped" activity event for dashboard timeline
+    curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+      -H "Content-Type: application/json" \\
+      -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+      -d "{\\"taskRunId\\": \\"\${CMUX_TASK_RUN_ID}\\", \\"type\\": \\"tool_call\\", \\"toolName\\": \\"Stop\\", \\"summary\\": \\"Agent stopped\\"}" \\
+      >> "$LOG_FILE" 2>&1 || true
+
     echo "[CMUX Stop Hook] API calls completed at $(date)" >> "$LOG_FILE"
   ) &
 else
@@ -327,6 +334,92 @@ exit 0`;
     mode: "755",
   });
 
+  // Activity hook script - reports agent tool-use events to cmux dashboard
+  const activityHookScript = `#!/bin/bash
+# Claude Code activity hook - posts tool-use events for real-time dashboard
+# Runs after every matched tool call. Non-blocking (background POST).
+set -eu
+EVENT=$(cat)
+TOOL_NAME=$(echo "$EVENT" | jq -r '.tool_use.name // "unknown"')
+
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_ID:-}" ]; then
+  exit 0
+fi
+
+# Map tool names to activity types
+case "$TOOL_NAME" in
+  Edit|Write|NotebookEdit) TYPE="file_edit" ;;
+  Read)                     TYPE="file_read" ;;
+  Bash)                     TYPE="bash_command" ;;
+  Grep|Glob)                TYPE="file_read" ;;
+  Agent)                    TYPE="tool_call" ;;
+  *)                        TYPE="tool_call" ;;
+esac
+
+# Build human-readable summary from tool input
+case "$TOOL_NAME" in
+  Edit)  SUMMARY="Edit $(echo "$EVENT" | jq -r '.tool_use.input.file_path // ""' | sed 's|.*/||')" ;;
+  Read)  SUMMARY="Read $(echo "$EVENT" | jq -r '.tool_use.input.file_path // ""' | sed 's|.*/||')" ;;
+  Write) SUMMARY="Write $(echo "$EVENT" | jq -r '.tool_use.input.file_path // ""' | sed 's|.*/||')" ;;
+  Bash)  SUMMARY="Run: $(echo "$EVENT" | jq -r '.tool_use.input.command // ""' | head -c 80)" ;;
+  Grep)  SUMMARY="Search: $(echo "$EVENT" | jq -r '.tool_use.input.pattern // ""' | head -c 60)" ;;
+  Glob)  SUMMARY="Find: $(echo "$EVENT" | jq -r '.tool_use.input.pattern // ""' | head -c 60)" ;;
+  Agent) SUMMARY="Agent: $(echo "$EVENT" | jq -r '.tool_use.input.description // ""' | head -c 60)" ;;
+  *)     SUMMARY="$TOOL_NAME" ;;
+esac
+
+# Non-blocking POST
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n \\
+      --arg trid "\${CMUX_TASK_RUN_ID}" \\
+      --arg type "$TYPE" \\
+      --arg tool "$TOOL_NAME" \\
+      --arg summary "$SUMMARY" \\
+      '{taskRunId: $trid, type: $type, toolName: $tool, summary: $summary}')" \\
+    >> /root/lifecycle/activity-hook.log 2>&1 || true
+) &
+exit 0`;
+
+  files.push({
+    destinationPath: `${claudeLifecycleDir}/activity-hook.sh`,
+    contentBase64: Buffer.from(activityHookScript).toString("base64"),
+    mode: "755",
+  });
+
+  // Error hook script - reports StopFailure events (API errors, rate limits) to dashboard
+  const errorHookScript = `#!/bin/bash
+# Claude Code error hook - surfaces agent failures in cmux dashboard
+# Fires on StopFailure: rate limit, auth failure, API error, etc.
+set -eu
+EVENT=$(cat)
+
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_ID:-}" ]; then
+  exit 0
+fi
+
+ERROR_MSG=$(echo "$EVENT" | jq -r '.error // "Agent stopped due to an error"' | head -c 300)
+
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n \\
+      --arg trid "\${CMUX_TASK_RUN_ID}" \\
+      --arg summary "Error: $ERROR_MSG" \\
+      '{taskRunId: $trid, type: "error", summary: $summary}')" \\
+    >> /root/lifecycle/activity-hook.log 2>&1 || true
+) &
+exit 0`;
+
+  files.push({
+    destinationPath: `${claudeLifecycleDir}/error-hook.sh`,
+    contentBase64: Buffer.from(errorHookScript).toString("base64"),
+    mode: "755",
+  });
+
   // Check if user has provided an OAuth token (preferred) or API key
   const hasOAuthToken =
     ctx.apiKeys?.CLAUDE_CODE_OAUTH_TOKEN &&
@@ -388,6 +481,17 @@ exit 0`;
           ],
         },
       ],
+      // Error surfacing: fires when agent stops due to API error (rate limit, auth, etc.)
+      StopFailure: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${claudeLifecycleDir}/error-hook.sh`,
+            },
+          ],
+        },
+      ],
       // Plan mode hook: captures plans when ExitPlanMode is called
       // Syncs plan content to GitHub Projects if project is linked
       PostToolUse: [
@@ -397,6 +501,16 @@ exit 0`;
             {
               type: "command",
               command: `${claudeLifecycleDir}/plan-hook.sh`,
+            },
+          ],
+        },
+        // Activity stream: report tool-use events to cmux dashboard
+        {
+          matcher: "Edit|Write|Read|Bash|Grep|Glob|NotebookEdit|Agent",
+          hooks: [
+            {
+              type: "command",
+              command: `${claudeLifecycleDir}/activity-hook.sh`,
             },
           ],
         },

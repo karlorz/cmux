@@ -649,6 +649,18 @@ const convexSchema = defineSchema({
   })
     .index("by_taskRun", ["taskRunId"])
     .index("by_team_user", ["teamId", "userId"]),
+  taskRunActivity: defineTable({
+    taskRunId: v.id("taskRuns"),
+    type: v.string(), // tool_call, file_edit, file_read, bash_command, test_run, git_commit, error
+    toolName: v.optional(v.string()),
+    summary: v.string(),
+    detail: v.optional(v.string()),
+    durationMs: v.optional(v.number()),
+    teamId: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_task_run", ["taskRunId", "createdAt"])
+    .index("by_team", ["teamId", "createdAt"]),
   apiKeys: defineTable({
     envVar: v.string(), // e.g. "GEMINI_API_KEY"
     value: v.string(), // The actual API key value (encrypted in a real app)
