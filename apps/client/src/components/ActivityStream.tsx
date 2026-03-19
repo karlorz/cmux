@@ -79,12 +79,38 @@ export function ActivityStream({ taskRunId }: ActivityStreamProps) {
     );
   }
 
+  const editCount = activities.filter(
+    (a) => a.type === "file_edit"
+  ).length;
+  const commandCount = activities.filter(
+    (a) => a.type === "bash_command"
+  ).length;
+  const errorCount = activities.filter((a) => a.type === "error").length;
+
   return (
     <div className="flex flex-col h-full">
+      {errorCount > 0 && (
+        <div className="px-3 py-2 bg-red-50 dark:bg-red-950/40 border-b border-red-200 dark:border-red-900 flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-red-500" />
+          <span className="text-sm font-medium text-red-700 dark:text-red-300">
+            {errorCount} error{errorCount > 1 ? "s" : ""} encountered
+          </span>
+        </div>
+      )}
       <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-200 dark:border-neutral-800">
-        <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-          {activities.length} events
-        </span>
+        <div className="flex items-center gap-3 text-xs text-neutral-500 dark:text-neutral-400">
+          <span>{activities.length} events</span>
+          {editCount > 0 && (
+            <span className="text-blue-600 dark:text-blue-400">
+              {editCount} file edit{editCount > 1 ? "s" : ""}
+            </span>
+          )}
+          {commandCount > 0 && (
+            <span className="text-green-600 dark:text-green-400">
+              {commandCount} command{commandCount > 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
         <button
           onClick={() => setPinToBottom(!pinToBottom)}
           className={`text-xs px-2 py-0.5 rounded ${
