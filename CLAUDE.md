@@ -40,34 +40,28 @@ Use bun to install dependencies and run the project.
 
 **All agents MUST follow this workflow after code changes:**
 
-1. Run `bun check` (or `make check`) and fix any errors
-2. If changes exist after check, run `/simplify` to review code quality
-3. Commit only after both check and simplify pass
+1. Stage and commit directly — the pre-commit hook runs `bun check` automatically
+2. If the hook fails, fix errors and recommit
+3. Do NOT run `bun check` manually before committing (the hook handles it)
+4. Run `/simplify` only when explicitly asked or for large changes
 
-**Available tools:**
+**Pre-commit hook (always active):**
+
+The `.githooks/pre-commit` hook runs `bun check` on every commit. It is auto-configured via `bun install`. Do not bypass it with `--no-verify`.
+
+**Available tools (for manual use when needed):**
 
 | Command | Purpose |
 |---------|---------|
-| `bun check` | Run lint + typecheck |
-| `make check` | Same as `bun check` |
-| `make check-simplify` | Run check + prompt for simplify |
+| `bun check` | Run lint + typecheck (manual, hook runs this automatically) |
 | `/simplify` | Full 3-pass code review (reuse, quality, efficiency) |
 | `/simplify --quick` | Fast single-pass review |
 | `/simplify --staged-only` | Review only staged files |
-| `./scripts/check-and-simplify.sh` | Combined workflow script |
 
 **Simplify invocation:**
 
 - **Claude Code**: Use `/simplify` directly (built-in since v2.1.63)
 - **Codex/Other agents**: Use portable skill at `.agents/skills/simplify/SKILL.md`
-
-**Pre-commit hook:**
-
-The `.githooks/pre-commit` hook automatically runs `bun check` on commit. Enable with:
-```bash
-git config core.hooksPath .githooks
-```
-This is auto-configured on `bun install` via the `prepare` script.
 
 **After adding new package.json exports:**
 

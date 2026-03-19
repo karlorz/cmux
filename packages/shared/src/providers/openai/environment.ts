@@ -174,6 +174,26 @@ fi
 if [ -n "$THREAD_ID" ]; then
   echo "$THREAD_ID" > /root/lifecycle/codex-session-id.txt
 fi
+# Post activity event to dashboard (best-effort, non-blocking)
+if [ -n "\${CMUX_TASK_RUN_JWT:-}" ] && [ -n "\${CMUX_CALLBACK_URL:-}" ] && [ -n "\${CMUX_TASK_RUN_ID:-}" ]; then
+  (
+    # Extract a summary from the Codex turn payload
+    SUMMARY=$(printf '%s' "$1" | jq -r '
+      if .type == "function_call" then "Tool: " + (.name // "unknown")
+      elif .type == "message" then "Codex turn"
+      else .type // "Codex activity"
+      end' 2>/dev/null || echo "Codex turn")
+    TYPE="tool_call"
+    if printf '%s' "$SUMMARY" | grep -qi "edit\\|write\\|patch"; then TYPE="file_edit"; fi
+    if printf '%s' "$SUMMARY" | grep -qi "shell\\|exec\\|bash\\|command"; then TYPE="bash_command"; fi
+    curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+      -H "Content-Type: application/json" \\
+      -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+      -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID}" --arg type "$TYPE" --arg summary "$SUMMARY" \\
+           '{taskRunId: $trid, type: $type, toolName: "codex", summary: $summary}')" \\
+      >> /root/lifecycle/activity-hook.log 2>&1 || true
+  ) &
+fi
 # Sync memory files to Convex (best-effort, idempotent upsert)
 /root/lifecycle/memory/sync.sh >> /root/lifecycle/memory-sync.log 2>&1 || true
 touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
