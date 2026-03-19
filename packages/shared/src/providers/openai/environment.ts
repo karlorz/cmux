@@ -349,16 +349,34 @@ ${CODEX_AUTOPILOT_TURN_SUMMARY_LINE}"
 
   # Check if there's a session to resume
   SESSION_FILE="/root/lifecycle/codex-session-id.txt"
+  CODEX_EXIT=0
   if [ "\$ITER" -gt 1 ] && [ -f "\$SESSION_FILE" ]; then
     THREAD_ID=\$(cat "\$SESSION_FILE")
     if [ -n "\$THREAD_ID" ]; then
       log "Resuming session: \$THREAD_ID"
-      codex exec resume --last "\$PROMPT" 2>&1 | tee -a "\$TURN_FILE" || true
+      codex exec resume --last "\$PROMPT" 2>&1 | tee -a "\$TURN_FILE" || CODEX_EXIT=\$?
     else
-      codex exec "\$PROMPT" 2>&1 | tee -a "\$TURN_FILE" || true
+      codex exec "\$PROMPT" 2>&1 | tee -a "\$TURN_FILE" || CODEX_EXIT=\$?
     fi
   else
-    codex exec "\$PROMPT" 2>&1 | tee -a "\$TURN_FILE" || true
+    codex exec "\$PROMPT" 2>&1 | tee -a "\$TURN_FILE" || CODEX_EXIT=\$?
+  fi
+
+  # Report errors to dashboard
+  if [ "\$CODEX_EXIT" -ne 0 ] && [ -n "\$CMUX_CALLBACK_URL" ] && [ -n "\$CMUX_TASK_RUN_JWT" ] && [ -n "\${CMUX_TASK_RUN_ID:-}" ]; then
+    ERROR_MSG="Codex exited with code \$CODEX_EXIT (turn \$ITER)"
+    # Try to extract last error line from turn log
+    LAST_ERR=\$(tail -5 "\$TURN_FILE" 2>/dev/null | grep -i "error\\|fail\\|exception" | tail -1 || true)
+    if [ -n "\$LAST_ERR" ]; then
+      ERROR_MSG="\$ERROR_MSG: \$LAST_ERR"
+    fi
+    curl -s -X POST "\$CMUX_CALLBACK_URL/api/task-run/activity" \\
+      -H "Content-Type: application/json" \\
+      -H "x-cmux-token: \$CMUX_TASK_RUN_JWT" \\
+      -d "\$(jq -n --arg trid "\$CMUX_TASK_RUN_ID" --arg summary "Error: \$ERROR_MSG" \\
+           '{taskRunId: \$trid, type: "error", toolName: "codex", summary: \$summary}')" \\
+      >> /root/lifecycle/activity-hook.log 2>&1 || true
+    log "Error reported: \$ERROR_MSG"
   fi
 
   send_heartbeat
