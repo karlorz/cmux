@@ -10,11 +10,16 @@ describe("electron utilities", () => {
   });
 
   afterEach(() => {
-    // Clean up window properties
-    const w = window as unknown as { cmux?: unknown; electron?: unknown; process?: { type?: string } };
+    // Clean up window properties, but preserve process to avoid breaking vitest cleanup
+    const w = window as unknown as {
+      cmux?: unknown;
+      electron?: unknown;
+      process?: { type?: string };
+    };
     delete w.cmux;
     delete w.electron;
-    delete w.process;
+    // Reset process to default stub instead of deleting (vitest needs process)
+    w.process = { type: undefined };
   });
 
   describe("getIsElectron", () => {
