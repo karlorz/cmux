@@ -244,6 +244,13 @@ if [ -n "\${CMUX_TASK_RUN_JWT}" ] && [ -n "\${CMUX_TASK_RUN_ID}" ] && [ -n "\${C
       -d "{\\"taskRunId\\": \\"\${CMUX_TASK_RUN_ID}\\"}" \\
       >> "$LOG_FILE" 2>&1
     echo "" >> "$LOG_FILE"
+    # Post "agent stopped" activity event for dashboard timeline
+    curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+      -H "Content-Type: application/json" \\
+      -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+      -d "{\\"taskRunId\\": \\"\${CMUX_TASK_RUN_ID}\\", \\"type\\": \\"tool_call\\", \\"toolName\\": \\"Stop\\", \\"summary\\": \\"Agent stopped\\"}" \\
+      >> "$LOG_FILE" 2>&1 || true
+
     echo "[CMUX Stop Hook] API calls completed at $(date)" >> "$LOG_FILE"
   ) &
 else
@@ -382,6 +389,37 @@ exit 0`;
     mode: "755",
   });
 
+  // Error hook script - reports StopFailure events (API errors, rate limits) to dashboard
+  const errorHookScript = `#!/bin/bash
+# Claude Code error hook - surfaces agent failures in cmux dashboard
+# Fires on StopFailure: rate limit, auth failure, API error, etc.
+set -eu
+EVENT=$(cat)
+
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_ID:-}" ]; then
+  exit 0
+fi
+
+ERROR_MSG=$(echo "$EVENT" | jq -r '.error // "Agent stopped due to an error"' | head -c 300)
+
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n \\
+      --arg trid "\${CMUX_TASK_RUN_ID}" \\
+      --arg summary "Error: $ERROR_MSG" \\
+      '{taskRunId: $trid, type: "error", summary: $summary}')" \\
+    >> /root/lifecycle/activity-hook.log 2>&1 || true
+) &
+exit 0`;
+
+  files.push({
+    destinationPath: `${claudeLifecycleDir}/error-hook.sh`,
+    contentBase64: Buffer.from(errorHookScript).toString("base64"),
+    mode: "755",
+  });
+
   // Check if user has provided an OAuth token (preferred) or API key
   const hasOAuthToken =
     ctx.apiKeys?.CLAUDE_CODE_OAUTH_TOKEN &&
@@ -439,6 +477,17 @@ exit 0`;
             {
               type: "command",
               command: `${claudeLifecycleDir}/stop-hook.sh`,
+            },
+          ],
+        },
+      ],
+      // Error surfacing: fires when agent stops due to API error (rate limit, auth, etc.)
+      StopFailure: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${claudeLifecycleDir}/error-hook.sh`,
             },
           ],
         },

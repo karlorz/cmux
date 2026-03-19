@@ -113,10 +113,16 @@ export function ActivityStream({ taskRunId }: ActivityStreamProps) {
             const colorClass =
               ACTIVITY_COLORS[activity.type] ?? "text-neutral-500";
 
+            const isError = activity.type === "error";
+
             return (
               <div
                 key={activity._id}
-                className="flex items-start gap-2 px-3 py-2 hover:bg-neutral-50 dark:hover:bg-neutral-900/50"
+                className={`flex items-start gap-2 px-3 py-2 ${
+                  isError
+                    ? "bg-red-50 dark:bg-red-950/30 border-l-2 border-red-500"
+                    : "hover:bg-neutral-50 dark:hover:bg-neutral-900/50"
+                }`}
               >
                 <Icon className={`h-4 w-4 mt-0.5 flex-shrink-0 ${colorClass}`} />
                 <div className="flex-1 min-w-0">
