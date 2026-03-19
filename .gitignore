@@ -75,3 +75,4 @@ apps/www/scripts/pr-review/evals/results/
 .local_version
 .envrc
 *.tsbuildinfo
+.claude/scheduled_tasks.lock

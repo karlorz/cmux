@@ -1,0 +1,52 @@
+# Docker Compose for Coolify deployment using pre-built images
+#
+# This file pulls from Docker Hub/GHCR instead of building from source.
+# Images are built by GitHub Actions (.github/workflows/docker-server-build.yml)
+#
+# Usage:
+#   1. In Coolify, set this as the docker-compose file
+#   2. Set DOCKER_IMAGE env var to your registry image:
+#      - ghcr.io/<owner>/cmux-server:latest
+#      - docker.io/<user>/cmux-server:latest
+#   3. Or use a specific SHA tag: ghcr.io/<owner>/cmux-server:sha-abc1234
+#
+# Environment variables are set via Coolify UI.
+
+services:
+  cmux-server:
+    image: ${DOCKER_IMAGE:-ghcr.io/karlorz/cmux-server:latest}
+    container_name: cmux-server
+    restart: unless-stopped
+    ports:
+      - "${PORT:-9776}:9776"
+    environment:
+      - NODE_ENV=production
+      - PORT=9776
+      # Timezone for the server container (defaults to Asia/Hong_Kong)
+      - TZ=${TZ:-Asia/Hong_Kong}
+      # Required: Convex deployment URL
+      - NEXT_PUBLIC_CONVEX_URL=${NEXT_PUBLIC_CONVEX_URL}
+      # Required: Client origin(s) for CORS - comma-separated for multiple origins
+      - CMUX_ALLOWED_SOCKET_ORIGINS=${CMUX_ALLOWED_SOCKET_ORIGINS}
+      # Optional: WWW app origin for API calls
+      - NEXT_PUBLIC_WWW_ORIGIN=${NEXT_PUBLIC_WWW_ORIGIN:-}
+      # Optional: Convex HTTP actions URL
+      - CONVEX_SITE_URL=${CONVEX_SITE_URL:-}
+      # Optional: Enable web-only mode (no local Docker features)
+      - NEXT_PUBLIC_WEB_MODE=${NEXT_PUBLIC_WEB_MODE:-true}
+      # Optional: Default timezone for sandboxes
+      - DEFAULT_SANDBOX_TIMEZONE=${DEFAULT_SANDBOX_TIMEZONE:-Asia/Hong_Kong}
+      # Required for orchestration: JWT secret for agent-to-agent auth
+      - CMUX_TASK_RUN_JWT_SECRET=${CMUX_TASK_RUN_JWT_SECRET}
+    healthcheck:
+      test: ["CMD", "bun", "-e", "const net = require('net'); const s = net.createConnection(9776, 'localhost'); s.on('connect', () => process.exit(0)); s.on('error', () => process.exit(1));"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
