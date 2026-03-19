@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import { internalQuery, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getTeamId } from "../_shared/team";
@@ -390,7 +391,33 @@ export const complete = authMutation({
       updatedAt: now,
     });
 
-    // TODO: If submitToGitHub, schedule action to post review to GitHub
+    // Submit review to GitHub if requested and we have the required info
+    if (
+      args.submitToGitHub &&
+      session.installationId &&
+      session.repoFullName &&
+      session.prNumber
+    ) {
+      // Determine review event based on decisions
+      const reviewEvent =
+        session.changesRequestedFiles > 0
+          ? "REQUEST_CHANGES"
+          : session.approvedFiles === session.totalFiles
+            ? "APPROVE"
+            : "COMMENT";
+
+      await ctx.scheduler.runAfter(
+        0,
+        internal.prReviewSessions_actions.submitReviewToGitHub,
+        {
+          sessionId: args.sessionId,
+          installationId: session.installationId,
+          repoFullName: session.repoFullName,
+          prNumber: session.prNumber,
+          reviewEvent,
+        }
+      );
+    }
 
     return { ok: true };
   },

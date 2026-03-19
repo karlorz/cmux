@@ -2316,6 +2316,8 @@ const convexSchema = defineSchema({
     repoFullName: v.optional(v.string()),
     prNumber: v.optional(v.number()),
     prUrl: v.optional(v.string()),
+    // GitHub installation ID for API access
+    installationId: v.optional(v.number()),
     // Session status
     status: v.union(
       v.literal("in_progress"),
