@@ -382,6 +382,9 @@ const convexSchema = defineSchema({
       )
     ),
     codexThreadId: v.optional(v.string()), // Codex CLI thread-id for session resume
+    // PR Comment → Agent: link back to source comment for result posting
+    githubCommentId: v.optional(v.number()), // GitHub comment ID that triggered this run
+    githubCommentUrl: v.optional(v.string()), // URL to the source comment
   })
     .index("by_task", ["taskId", "createdAt"])
     .index("by_parent", ["parentRunId"])

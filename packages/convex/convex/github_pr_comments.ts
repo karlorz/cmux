@@ -1773,3 +1773,45 @@ export const addScreenshotCommentToPr = internalAction({
     }
   },
 });
+
+/**
+ * Add a reaction to a GitHub issue/PR comment.
+ * Used by PR Comment → Agent to acknowledge @cmux mentions.
+ */
+export const addReactionToComment = internalAction({
+  args: {
+    installationId: v.number(),
+    repoFullName: v.string(),
+    commentId: v.number(),
+    reaction: v.union(
+      v.literal("+1"),
+      v.literal("-1"),
+      v.literal("laugh"),
+      v.literal("confused"),
+      v.literal("heart"),
+      v.literal("hooray"),
+      v.literal("rocket"),
+      v.literal("eyes"),
+    ),
+  },
+  handler: async (_ctx, args) => {
+    const { installationId, repoFullName, commentId, reaction } = args;
+
+    const [owner, repo] = repoFullName.split("/");
+    if (!owner || !repo) {
+      throw new Error(`Invalid repoFullName: ${repoFullName}`);
+    }
+
+    const accessToken = await fetchInstallationAccessToken(installationId);
+    const octokit = new Octokit({ auth: accessToken });
+
+    await octokit.rest.reactions.createForIssueComment({
+      owner,
+      repo,
+      comment_id: commentId,
+      content: reaction,
+    });
+
+    return { ok: true };
+  },
+});

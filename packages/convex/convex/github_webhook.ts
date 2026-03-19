@@ -4,7 +4,9 @@ import type {
   DeploymentStatusEvent,
   InstallationEvent,
   InstallationRepositoriesEvent,
+  IssueCommentEvent,
   PullRequestEvent,
+  PullRequestReviewCommentEvent,
   PushEvent,
   StatusEvent,
   WebhookEvent,
@@ -24,7 +26,12 @@ const DEBUG_FLAGS = {
 
 const FEATURE_FLAGS = {
   githubEyesReactionOnPrOpen: true,
+  // PR Comment → Agent: trigger agent from @cmux mentions in PR comments
+  prCommentTriggerEnabled: true,
 };
+
+// Bot mention pattern - matches @cmux or @cmux-bot followed by the prompt
+const CMUX_MENTION_PATTERN = /@cmux(?:-bot)?\s+(.+)/is;
 
 async function verifySignature(
   secret: string,
@@ -215,9 +222,155 @@ export const githubWebhook = httpAction(async (_ctx, req) => {
       case "repository":
       case "create":
       case "delete":
-      case "pull_request_review":
+      case "pull_request_review": {
+        break;
+      }
       case "pull_request_review_comment":
       case "issue_comment": {
+        // PR Comment → Agent: trigger agent from @cmux mentions
+        if (!FEATURE_FLAGS.prCommentTriggerEnabled) {
+          break;
+        }
+
+        try {
+          const commentPayload = body as IssueCommentEvent | PullRequestReviewCommentEvent;
+          const action = commentPayload.action;
+
+          // Only process new comments (not edits or deletes)
+          if (action !== "created") {
+            break;
+          }
+
+          // Get comment body
+          const commentBody = commentPayload.comment?.body ?? "";
+          const match = commentBody.match(CMUX_MENTION_PATTERN);
+          if (!match) {
+            break; // No @cmux mention
+          }
+
+          const prompt = match[1].trim();
+          if (!prompt) {
+            console.log("[issue_comment] Empty prompt after @cmux mention", { delivery });
+            break;
+          }
+
+          // Get repo and installation info
+          const repoFullName = String(commentPayload.repository?.full_name ?? "");
+          const installation = Number(commentPayload.installation?.id ?? 0);
+          const commentId = Number(commentPayload.comment?.id ?? 0);
+          const commentUrl = String(commentPayload.comment?.html_url ?? "");
+          const commentAuthor = String(commentPayload.comment?.user?.login ?? "");
+
+          if (!repoFullName || !installation || !commentId) {
+            console.warn("[issue_comment] Missing required fields", {
+              repoFullName,
+              installation,
+              commentId,
+              delivery,
+            });
+            break;
+          }
+
+          // Get PR info (for issue_comment on a PR, or pull_request_review_comment)
+          let prNumber: number | undefined;
+          let prBranch: string | undefined;
+          let baseBranch: string | undefined;
+
+          if ("issue" in commentPayload && commentPayload.issue?.pull_request) {
+            // issue_comment on a PR
+            prNumber = commentPayload.issue.number;
+          } else if ("pull_request" in commentPayload && commentPayload.pull_request) {
+            // pull_request_review_comment
+            const pr = commentPayload.pull_request;
+            prNumber = pr.number;
+            prBranch = pr.head?.ref;
+            baseBranch = pr.base?.ref;
+          }
+
+          // Find team from installation
+          const conn = await _ctx.runQuery(
+            internal.github_app.getProviderConnectionByInstallationId,
+            { installationId: installation },
+          );
+          const teamId = conn?.teamId;
+
+          if (!teamId) {
+            console.warn("[issue_comment] No team found for installation", {
+              installation,
+              delivery,
+            });
+            break;
+          }
+
+          // Find a default user for this team (use team owner)
+          const teamDoc = await _ctx.runQuery(internal.teams.getByIdInternal, { id: teamId });
+          const userId = teamDoc?.ownerUserId;
+
+          if (!userId) {
+            console.warn("[issue_comment] No owner found for team", { teamId, delivery });
+            break;
+          }
+
+          console.log("[issue_comment] Creating task from @cmux mention", {
+            repoFullName,
+            prNumber,
+            commentAuthor,
+            promptPreview: prompt.substring(0, 100),
+            delivery,
+          });
+
+          // Create task
+          const { taskId } = await _ctx.runMutation(internal.tasks.createInternal, {
+            teamId,
+            userId,
+            text: prompt,
+            description: `Triggered by @${commentAuthor} in ${repoFullName}${prNumber ? ` PR #${prNumber}` : ""}`,
+            projectFullName: repoFullName,
+            baseBranch: baseBranch ?? "main",
+          });
+
+          // Create task run with default agent and link to source comment
+          await _ctx.runMutation(internal.taskRuns.createInternal, {
+            taskId,
+            teamId,
+            userId,
+            prompt,
+            agentName: "claude/sonnet-4", // Default agent
+            newBranch: prBranch, // Use PR head branch if available
+            githubCommentId: commentId,
+            githubCommentUrl: commentUrl,
+          });
+
+          // Add eyes reaction to acknowledge the comment
+          try {
+            await _ctx.runAction(internal.github_pr_comments.addReactionToComment, {
+              installationId: installation,
+              repoFullName,
+              commentId,
+              reaction: "eyes",
+            });
+          } catch (reactionErr) {
+            console.warn("[issue_comment] Failed to add reaction", { reactionErr, delivery });
+          }
+
+          // Capture analytics
+          capturePosthogEvent({
+            distinctId: teamId,
+            event: "pr_comment_agent_triggered",
+            properties: {
+              repo: repoFullName,
+              prNumber,
+              commentAuthor,
+              promptLength: prompt.length,
+            },
+          });
+
+        } catch (commentErr) {
+          console.error("[issue_comment] Handler failed", {
+            err: commentErr,
+            delivery,
+          });
+        }
         break;
       }
       case "workflow_run": {
