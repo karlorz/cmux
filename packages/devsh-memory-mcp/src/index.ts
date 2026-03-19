@@ -94,10 +94,15 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
     id: string;
     from: string;
     to: string;
-    type?: "handoff" | "request" | "status";
+    type?: "handoff" | "request" | "status" | "response";
     message: string;
     timestamp: string;
     read?: boolean;
+    // SendMessage alignment fields
+    correlationId?: string; // For request-response tracking
+    replyTo?: string; // Message ID this is responding to
+    metadata?: Record<string, unknown>; // Additional context
+    priority?: "high" | "normal" | "low"; // Message urgency
   }
 
   interface TaskEntry {
@@ -374,7 +379,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
       },
       {
         name: "send_message",
-        description: 'Send a message to another agent on the same task. Use "*" to broadcast to all agents.',
+        description: 'Send a message to another agent on the same task. Use "*" to broadcast to all agents. Aligned with Claude Code SendMessage pattern.',
         inputSchema: {
           type: "object" as const,
           properties: {
@@ -388,8 +393,25 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
             },
             type: {
               type: "string",
-              enum: ["handoff", "request", "status"],
-              description: "Message type: handoff (work transfer), request (ask to do something), status (progress update)",
+              enum: ["handoff", "request", "status", "response"],
+              description: "Message type: handoff (work transfer), request (ask to do something), status (progress update), response (reply to a request)",
+            },
+            correlationId: {
+              type: "string",
+              description: "Optional correlation ID for request-response tracking. Use to link related messages.",
+            },
+            replyTo: {
+              type: "string",
+              description: "Optional message ID this is responding to (for response type messages).",
+            },
+            priority: {
+              type: "string",
+              enum: ["high", "normal", "low"],
+              description: "Message priority (default: normal). High priority messages appear first.",
+            },
+            metadata: {
+              type: "object",
+              description: "Optional additional context as key-value pairs.",
             },
           },
           required: ["to", "message"],
@@ -397,13 +419,22 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
       },
       {
         name: "get_my_messages",
-        description: "Get all messages addressed to this agent (including broadcasts). Returns unread messages first.",
+        description: "Get all messages addressed to this agent (including broadcasts). Returns high-priority and unread messages first.",
         inputSchema: {
           type: "object" as const,
           properties: {
             includeRead: {
               type: "boolean",
               description: "Include messages already marked as read (default: false)",
+            },
+            correlationId: {
+              type: "string",
+              description: "Filter messages by correlation ID (for tracking request-response chains)",
+            },
+            type: {
+              type: "string",
+              enum: ["handoff", "request", "status", "response"],
+              description: "Filter messages by type",
             },
           },
         },
@@ -927,7 +958,15 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
       }
 
       case "send_message": {
-        const { to, message, type } = args as { to: string; message: string; type?: "handoff" | "request" | "status" };
+        const { to, message, type, correlationId, replyTo, priority, metadata } = args as {
+          to: string;
+          message: string;
+          type?: "handoff" | "request" | "status" | "response";
+          correlationId?: string;
+          replyTo?: string;
+          priority?: "high" | "normal" | "low";
+          metadata?: Record<string, unknown>;
+        };
         const mailbox = readMailbox();
         const newMessage: MailboxMessage = {
           id: generateMessageId(),
@@ -937,24 +976,61 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
           message,
           timestamp: new Date().toISOString(),
           read: false,
+          correlationId,
+          replyTo,
+          priority,
+          metadata,
         };
         mailbox.messages.push(newMessage);
         writeMailbox(mailbox);
-        return { content: [{ type: "text", text: `Message sent successfully. ID: ${newMessage.id}` }] };
+
+        // Include correlationId in response for easy tracking
+        const responseText = correlationId
+          ? `Message sent successfully. ID: ${newMessage.id}, correlationId: ${correlationId}`
+          : `Message sent successfully. ID: ${newMessage.id}`;
+        return { content: [{ type: "text", text: responseText }] };
       }
 
       case "get_my_messages": {
-        const includeRead = (args as { includeRead?: boolean }).includeRead ?? false;
+        const { includeRead, correlationId, type: filterType } = args as {
+          includeRead?: boolean;
+          correlationId?: string;
+          type?: "handoff" | "request" | "status" | "response";
+        };
         const mailbox = readMailbox();
-        const myMessages = mailbox.messages.filter(
+        let myMessages = mailbox.messages.filter(
           (m) => m.to === agentName || m.to === "*"
         );
-        const filtered = includeRead ? myMessages : myMessages.filter((m) => !m.read);
-        if (filtered.length === 0) {
+
+        // Apply filters
+        if (!includeRead) {
+          myMessages = myMessages.filter((m) => !m.read);
+        }
+        if (correlationId) {
+          myMessages = myMessages.filter((m) => m.correlationId === correlationId);
+        }
+        if (filterType) {
+          myMessages = myMessages.filter((m) => m.type === filterType);
+        }
+
+        // Sort by priority (high first) then by timestamp (newest first)
+        const priorityOrder = { high: 0, normal: 1, low: 2, undefined: 1 };
+        myMessages.sort((a, b) => {
+          const pa = priorityOrder[a.priority ?? "normal"];
+          const pb = priorityOrder[b.priority ?? "normal"];
+          if (pa !== pb) return pa - pb;
+          return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+        });
+
+        if (myMessages.length === 0) {
           return { content: [{ type: "text", text: "No messages for you." }] };
         }
-        const formatted = filtered
-          .map((m) => `[${m.id}] ${m.type ?? "message"} from ${m.from}: ${m.message}`)
+        const formatted = myMessages
+          .map((m) => {
+            const priorityTag = m.priority === "high" ? "[HIGH] " : m.priority === "low" ? "[low] " : "";
+            const corrTag = m.correlationId ? ` (corr: ${m.correlationId})` : "";
+            return `${priorityTag}[${m.id}] ${m.type ?? "message"} from ${m.from}${corrTag}: ${m.message}`;
+          })
           .join("\n\n");
         return { content: [{ type: "text", text: formatted }] };
       }
