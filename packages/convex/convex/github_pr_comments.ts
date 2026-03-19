@@ -1836,7 +1836,7 @@ export const postResultToSourceComment = internalAction({
       return { ok: false, error: "Task run not found" };
     }
 
-    const { githubCommentId, githubCommentUrl, prompt, summary, pullRequests } = taskRun;
+    const { githubCommentId, githubCommentUrl, summary, pullRequests } = taskRun;
     if (!githubCommentId) {
       console.warn("[postResultToSourceComment] No source comment ID", { taskRunId });
       return { ok: false, error: "No source comment ID" };
