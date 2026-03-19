@@ -104,6 +104,7 @@ import type * as pve_lxc_actions from "../pve_lxc_actions.js";
 import type * as resultAggregation from "../resultAggregation.js";
 import type * as sandboxInstanceMaintenance from "../sandboxInstanceMaintenance.js";
 import type * as sandboxInstances from "../sandboxInstances.js";
+import type * as scheduledTasks from "../scheduledTasks.js";
 import type * as screenshots_http from "../screenshots_http.js";
 import type * as seed from "../seed.js";
 import type * as seedPermissionDenyRules from "../seedPermissionDenyRules.js";
@@ -240,6 +241,7 @@ declare const fullApi: ApiFromModules<{
   resultAggregation: typeof resultAggregation;
   sandboxInstanceMaintenance: typeof sandboxInstanceMaintenance;
   sandboxInstances: typeof sandboxInstances;
+  scheduledTasks: typeof scheduledTasks;
   screenshots_http: typeof screenshots_http;
   seed: typeof seed;
   seedPermissionDenyRules: typeof seedPermissionDenyRules;

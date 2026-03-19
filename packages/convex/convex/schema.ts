@@ -2410,6 +2410,99 @@ const convexSchema = defineSchema({
     .index("by_pr", ["repoFullName", "prNumber"])
     .index("by_session", ["sessionId"]),
 
+  // Scheduled Tasks - recurring agent task execution
+  // Enables "always-on" agents like Claude /loop and Cursor Automations
+  scheduledTasks: defineTable({
+    teamId: v.string(),
+    userId: v.string(),
+    // Task configuration
+    name: v.string(), // Human-readable name
+    description: v.optional(v.string()),
+    prompt: v.string(), // The prompt to execute
+    // Target repository (optional - for repo-scoped tasks)
+    repoFullName: v.optional(v.string()),
+    branch: v.optional(v.string()),
+    // Agent configuration
+    agentName: v.string(), // e.g., "claude/opus-4.5", "codex/gpt-5.1-codex"
+    // Schedule configuration (cron-style)
+    scheduleType: v.union(
+      v.literal("interval"), // Every N minutes/hours
+      v.literal("daily"), // Once per day at specific time
+      v.literal("weekly"), // Once per week at specific day/time
+      v.literal("cron") // Full cron expression
+    ),
+    // For interval: minutes between runs
+    intervalMinutes: v.optional(v.number()),
+    // For daily/weekly: hour (0-23) and minute (0-59) in UTC
+    hourUTC: v.optional(v.number()),
+    minuteUTC: v.optional(v.number()),
+    // For weekly: day of week (0=Sunday, 6=Saturday)
+    dayOfWeek: v.optional(v.number()),
+    // For cron: full cron expression (e.g., "0 9 * * 1-5")
+    cronExpression: v.optional(v.string()),
+    // Execution status
+    status: v.union(
+      v.literal("active"), // Scheduled and running
+      v.literal("paused"), // Temporarily disabled
+      v.literal("disabled") // Permanently disabled
+    ),
+    // Execution tracking
+    lastRunAt: v.optional(v.number()),
+    lastRunTaskId: v.optional(v.id("tasks")),
+    lastRunStatus: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("running"),
+        v.literal("completed"),
+        v.literal("failed")
+      )
+    ),
+    nextRunAt: v.optional(v.number()), // Pre-calculated next execution time
+    runCount: v.number(), // Total executions
+    failureCount: v.number(), // Consecutive failures (for backoff)
+    // Limits
+    maxConcurrentRuns: v.optional(v.number()), // Default 1
+    maxRunsPerDay: v.optional(v.number()), // Rate limiting
+    runsToday: v.optional(v.number()), // Counter reset daily
+    // Timestamps
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_team", ["teamId", "status"])
+    .index("by_team_user", ["teamId", "userId", "status"])
+    .index("by_next_run", ["status", "nextRunAt"])
+    .index("by_repo", ["repoFullName", "status"]),
+
+  // Scheduled Task Runs - execution history
+  scheduledTaskRuns: defineTable({
+    scheduledTaskId: v.id("scheduledTasks"),
+    teamId: v.string(),
+    // Linked task/run
+    taskId: v.optional(v.id("tasks")),
+    taskRunId: v.optional(v.id("taskRuns")),
+    // Execution details
+    status: v.union(
+      v.literal("pending"), // Waiting to start
+      v.literal("spawning"), // Creating sandbox
+      v.literal("running"), // Agent executing
+      v.literal("completed"), // Success
+      v.literal("failed"), // Error
+      v.literal("skipped") // Skipped (e.g., previous run still active)
+    ),
+    triggeredAt: v.number(), // When schedule triggered
+    startedAt: v.optional(v.number()), // When agent started
+    completedAt: v.optional(v.number()),
+    // Result
+    errorMessage: v.optional(v.string()),
+    // Output summary (for quick display)
+    summary: v.optional(v.string()),
+    // Timestamps
+    createdAt: v.number(),
+  })
+    .index("by_scheduled_task", ["scheduledTaskId", "createdAt"])
+    .index("by_team", ["teamId", "createdAt"])
+    .index("by_status", ["status", "triggeredAt"]),
+
   // Permission deny rules for Claude Code settings.json
   // These are the "deny" patterns in permissions.deny that restrict tool access
   // Separate from policy rules which are markdown instructions injected into CLAUDE.md
