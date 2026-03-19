@@ -5673,6 +5673,79 @@ export type PostApiSandboxesByIdDiscoverReposResponses = {
 
 export type PostApiSandboxesByIdDiscoverReposResponse = PostApiSandboxesByIdDiscoverReposResponses[keyof PostApiSandboxesByIdDiscoverReposResponses];
 
+export type PostApiSandboxesByIdLiveDiffData = {
+    body: {
+        /**
+         * Path to scan for repos (default: /root/workspace)
+         */
+        workspacePath?: string;
+        /**
+         * Include full diff content (default: false, stats only)
+         */
+        includeContent?: boolean;
+        /**
+         * Max diff content length in bytes (default: 100000)
+         */
+        maxContentLength?: number;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/sandboxes/{id}/live-diff';
+};
+
+export type PostApiSandboxesByIdLiveDiffErrors = {
+    /**
+     * Invalid workspace path
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Sandbox not found
+     */
+    404: unknown;
+    /**
+     * Failed to get diff
+     */
+    500: unknown;
+};
+
+export type PostApiSandboxesByIdLiveDiffResponses = {
+    /**
+     * Live diff from sandbox
+     */
+    200: {
+        /**
+         * Changed files with stats
+         */
+        files: Array<{
+            path: string;
+            status: 'added' | 'modified' | 'deleted' | 'renamed' | 'untracked';
+            insertions: number;
+            deletions: number;
+        }>;
+        summary: {
+            totalFiles: number;
+            insertions: number;
+            deletions: number;
+        };
+        /**
+         * Full diff content (if includeContent=true)
+         */
+        diff?: string;
+        /**
+         * True if diff was truncated
+         */
+        truncated?: boolean;
+    };
+};
+
+export type PostApiSandboxesByIdLiveDiffResponse = PostApiSandboxesByIdLiveDiffResponses[keyof PostApiSandboxesByIdLiveDiffResponses];
+
 export type GetApiTeamsData = {
     body?: never;
     path?: never;
