@@ -178,10 +178,15 @@ jobs:
       - name: Inspect image
         id: inspect
         run: |
-          # Print image info (don't capture to output to avoid format issues)
+          # Disable GitHub Actions command processing for this step
+          # The imagetools output contains colons that get misinterpreted
+          echo "::stop-commands::inspect-output"
+
           docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest || true
 
-          # Get digest separately with proper format
+          echo "::inspect-output::"
+
+          # Get digest separately
           digest=$(docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest --format '{{.Manifest.Digest}}' 2>/dev/null || echo "")
           if [[ -n "$digest" ]]; then
             echo "digest=${digest}" >> "$GITHUB_OUTPUT"
