@@ -318,3 +318,19 @@ export const getProviderConnectionByInstallationId = internalQuery({
       .first();
   },
 });
+
+// Internal helper: fetch provider connection by repo full name (owner/repo)
+// Extracts the owner and matches against accountLogin
+export const getProviderConnectionByRepo = internalQuery({
+  args: { repoFullName: v.string() },
+  handler: async (ctx, { repoFullName }) => {
+    const [owner] = repoFullName.split("/");
+    if (!owner) return null;
+
+    // Find connection where accountLogin matches the owner (case-insensitive)
+    const connections = await ctx.db.query("providerConnections").collect();
+    return connections.find(
+      (c) => c.accountLogin?.toLowerCase() === owner.toLowerCase()
+    ) ?? null;
+  },
+});
