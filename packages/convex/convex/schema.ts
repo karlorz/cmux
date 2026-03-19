@@ -2358,6 +2358,47 @@ const convexSchema = defineSchema({
     .index("by_session", ["sessionId", "createdAt"])
     .index("by_session_file", ["sessionId", "filePath"]),
 
+  // Phase 3: PR Merge Queue
+  // Ordered queue for safe, sequential PR merging after review
+  prMergeQueue: defineTable({
+    teamId: v.string(),
+    userId: v.string(),
+    // PR info
+    repoFullName: v.string(),
+    prNumber: v.number(),
+    prUrl: v.string(),
+    prTitle: v.optional(v.string()),
+    // Link to review session
+    sessionId: v.optional(v.id("prReviewSessions")),
+    // Queue status
+    status: v.union(
+      v.literal("queued"), // Waiting in queue
+      v.literal("checks_pending"), // CI running
+      v.literal("ready"), // CI passed, ready to merge
+      v.literal("merging"), // Merge in progress
+      v.literal("merged"), // Successfully merged
+      v.literal("failed"), // Merge failed
+      v.literal("cancelled") // Removed from queue
+    ),
+    // Queue position (lower = higher priority)
+    position: v.number(),
+    // Risk score from review (affects queue priority)
+    riskScore: v.optional(v.number()),
+    // GitHub check status
+    checksPassedAt: v.optional(v.number()),
+    // Merge details
+    mergedAt: v.optional(v.number()),
+    mergeCommitSha: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+    // Timestamps
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_team_status", ["teamId", "status", "position"])
+    .index("by_team_repo", ["teamId", "repoFullName", "status"])
+    .index("by_pr", ["repoFullName", "prNumber"])
+    .index("by_session", ["sessionId"]),
+
   // Permission deny rules for Claude Code settings.json
   // These are the "deny" patterns in permissions.deny that restrict tool access
   // Separate from policy rules which are markdown instructions injected into CLAUDE.md
