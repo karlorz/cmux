@@ -864,6 +864,27 @@ export const updateStatus = internalMutation({
           },
         );
       }
+
+      // Phase 2: Operator visual verification - trigger screenshots after completion
+      // Only trigger for completed runs (not failed) that have a running sandbox
+      if (
+        args.status === "completed" &&
+        run.vscode?.status === "running" &&
+        run.vscode?.ports?.worker &&
+        (run.pullRequests?.length || run.pullRequestUrl) &&
+        env.CMUX_ENABLE_OPERATOR_VERIFICATION === "true"
+      ) {
+        console.log("[operatorVerification] Scheduling verification", {
+          taskRunId: args.id,
+          hasPullRequests: !!(run.pullRequests?.length || run.pullRequestUrl),
+        });
+        await ctx.scheduler.runAfter(
+          // Delay 5 seconds to let the sandbox stabilize after agent completes
+          5000,
+          internal.operatorVerification_actions.triggerOperatorVerification,
+          { taskRunId: args.id }
+        );
+      }
     }
   },
 });

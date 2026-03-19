@@ -385,6 +385,17 @@ const convexSchema = defineSchema({
     // PR Comment → Agent: link back to source comment for result posting
     githubCommentId: v.optional(v.number()), // GitHub comment ID that triggered this run
     githubCommentUrl: v.optional(v.string()), // URL to the source comment
+    // Phase 2: Operator visual verification status
+    operatorVerificationStatus: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("running"),
+        v.literal("completed"),
+        v.literal("failed"),
+        v.literal("skipped")
+      )
+    ),
+    operatorVerificationError: v.optional(v.string()),
   })
     .index("by_task", ["taskId", "createdAt"])
     .index("by_parent", ["parentRunId"])

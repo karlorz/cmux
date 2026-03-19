@@ -1951,3 +1951,131 @@ export const postResultToSourceComment = internalAction({
     }
   },
 });
+
+/**
+ * Phase 2: Operator Visual Verification - Post screenshots to a PR comment.
+ * This is a simpler version of postPreviewComment that doesn't require previewRuns.
+ */
+export const postOperatorScreenshotComment = internalAction({
+  args: {
+    installationId: v.number(),
+    repoFullName: v.string(),
+    prNumber: v.number(),
+    screenshotSetId: v.id("taskRunScreenshotSets"),
+    workspaceUrl: v.optional(v.string()),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ ok: true; commentId?: number; commentUrl?: string } | { ok: false; error: string }> => {
+    const {
+      installationId,
+      repoFullName,
+      prNumber,
+      screenshotSetId,
+      workspaceUrl,
+    } = args;
+
+    try {
+      const accessToken = await fetchInstallationAccessToken(installationId);
+      if (!accessToken) {
+        console.error(
+          "[github_pr_comments] Failed to get access token for operator screenshot comment",
+          { installationId }
+        );
+        return { ok: false, error: "Failed to get access token" };
+      }
+
+      const repo = parseRepoFullName(repoFullName);
+      if (!repo) {
+        console.error("[github_pr_comments] Invalid repo full name", {
+          repoFullName,
+        });
+        return { ok: false, error: "Invalid repository name" };
+      }
+
+      const octokit = createOctokit(accessToken);
+
+      const screenshotSet = await ctx.runQuery(
+        internal.previewScreenshots.getScreenshotSet,
+        { screenshotSetId }
+      );
+
+      if (!screenshotSet) {
+        console.error("[github_pr_comments] Screenshot set not found", {
+          screenshotSetId,
+        });
+        return { ok: false, error: "Screenshot set not found" };
+      }
+
+      // Build comment sections
+      const commentSections: string[] = ["## Operator Visual Verification"];
+
+      // Build links row
+      const linkParts: string[] = [];
+      if (workspaceUrl) {
+        linkParts.push(
+          `<a href="${workspaceUrl}?${UTM_PARAMS}&utm_content=operator_workspace" target="_blank">Open Workspace</a>`
+        );
+      }
+
+      if (linkParts.length > 0) {
+        commentSections.push(linkParts.join(" · "));
+      }
+
+      // Render options with GitHub video upload support
+      const renderOptions: RenderScreenshotSetOptions = {
+        accessToken,
+        repoFullName,
+      };
+
+      // Render the screenshot section
+      const screenshotSection = await renderScreenshotSetMarkdown(
+        ctx,
+        screenshotSet,
+        "",
+        renderOptions
+      );
+
+      commentSections.push(screenshotSection);
+
+      // Add signature
+      commentSections.push("---", PREVIEW_SIGNATURE);
+      const commentBody = commentSections.join("\n\n");
+
+      const { data } = await octokit.rest.issues.createComment({
+        owner: repo.owner,
+        repo: repo.repo,
+        issue_number: prNumber,
+        body: commentBody,
+      });
+
+      console.log(
+        "[github_pr_comments] Successfully posted operator screenshot comment",
+        {
+          installationId,
+          repoFullName,
+          prNumber,
+          commentId: data.id,
+          commentUrl: data.html_url,
+        }
+      );
+
+      return { ok: true, commentId: data.id, commentUrl: data.html_url };
+    } catch (error) {
+      console.error(
+        "[github_pr_comments] Unexpected error posting operator screenshot comment",
+        {
+          installationId,
+          repoFullName,
+          prNumber,
+          error,
+        }
+      );
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  },
+});
