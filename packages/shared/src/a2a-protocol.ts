@@ -423,10 +423,15 @@ export function a2aToMailboxMessage(
                   a2aMsg.content.type === "error" ? a2aMsg.content.error.message :
                   JSON.stringify(a2aMsg.content);
 
+  // Handle array toAgent - take first recipient or "*" if empty
+  const toRecipient = Array.isArray(a2aMsg.toAgent)
+    ? (a2aMsg.toAgent[0] ?? "*")
+    : a2aMsg.toAgent;
+
   return {
     id: a2aMsg.messageId,
     from: a2aMsg.fromAgent,
-    to: Array.isArray(a2aMsg.toAgent) ? a2aMsg.toAgent[0] : a2aMsg.toAgent,
+    to: toRecipient,
     type: a2aMsg.type === "handoff" ? "handoff" :
           a2aMsg.type === "status" ? "status" :
           a2aMsg.type === "error" ? "response" : "request",
