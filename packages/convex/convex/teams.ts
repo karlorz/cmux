@@ -140,6 +140,32 @@ export const getByTeamIdInternal = internalQuery({
   },
 });
 
+// Internal helper to fetch team by ID with owner userId (used by webhook handlers)
+export const getByIdInternal = internalQuery({
+  args: { id: v.string() },
+  handler: async (ctx, { id }) => {
+    const team = await ctx.db
+      .query("teams")
+      .withIndex("by_teamId", (q) => q.eq("teamId", id))
+      .first();
+    if (!team) return null;
+
+    // Find the owner from team memberships
+    const ownerMembership = await ctx.db
+      .query("teamMemberships")
+      .withIndex("by_team", (q) => q.eq("teamId", id))
+      .filter((q) => q.eq(q.field("role"), "owner"))
+      .first();
+
+    return {
+      teamId: team.teamId,
+      slug: team.slug ?? null,
+      displayName: team.displayName ?? null,
+      ownerUserId: ownerMembership?.userId ?? null,
+    };
+  },
+});
+
 // Internal helper to fetch team memberships by userId (used by HTTP handlers)
 export const getMembershipsByUserIdInternal = internalQuery({
   args: { userId: v.string() },
