@@ -422,7 +422,7 @@ export const remove = authMutation({
       throw new Error("Policy rule not found");
     }
 
-    // System rules can only be deleted by admin (TODO: add admin check)
+    // System rules are protected and cannot be deleted by any user
     if (rule.scope === "system") {
       throw new Error("System rules cannot be deleted");
     }
