@@ -3,6 +3,20 @@ name: Docker (cmux-server)
 on:
   push:
     branches: [main]
+    paths:
+      # Server application
+      - 'apps/server/**'
+      # Shared packages used by server
+      - 'packages/shared/**'
+      - 'packages/convex/**'
+      - 'packages/www-openapi-client/**'
+      - 'packages/e2b-client/**'
+      # Root dependencies
+      - 'package.json'
+      - 'bun.lock'
+      - '.npmrc'
+      # This workflow
+      - '.github/workflows/docker-server-build.yml'
   workflow_dispatch:
     inputs:
       force_deploy:
@@ -16,7 +30,7 @@ permissions:
 
 concurrency:
   group: docker-cmux-server-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   IMAGE_NAME: cmux-server
