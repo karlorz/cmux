@@ -19,6 +19,14 @@ The three launch pillars:
 - **Phase 3**: Complete (Swipe Code Review - PR #694)
 - **Phase 4**: Complete (Memory Quality & Lifecycle - PR #695)
 
+### Industry Trends Status (All Complete)
+- **#1 Sub-agent/Guardian patterns**: Complete (PR #698 - SendMessage alignment)
+- **#2 Hook standardization**: Complete (PR #697 - Provider-neutral lifecycle events)
+- **#3 Always-on/Cron agents**: Complete (PR #696 - Scheduled tasks)
+- **#4 A2A/ACP protocols**: Complete (PR #699 - A2A protocol)
+- **#5 MCP as plugin standard**: Already complete (31 MCP tools)
+- **#6 Sandbox security convergence**: Already complete (multi-provider abstraction)
+
 ## Previous State (2026-03-19)
 
 ### What's Complete
