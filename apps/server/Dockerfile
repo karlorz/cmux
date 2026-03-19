@@ -91,9 +91,11 @@ FROM oven/bun:1-slim AS production
 WORKDIR /app
 
 # Install minimal runtime dependencies including tzdata for timezone support
+# curl is needed for Coolify healthchecks
 # DEBIAN_FRONTEND=noninteractive prevents tzdata from prompting
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates \
+    curl \
     git \
     tzdata \
     && rm -rf /var/lib/apt/lists/*
