@@ -24,21 +24,89 @@ env:
   CONTEXT: .
 
 jobs:
-  build-and-push:
-    name: Build and push Docker image
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    outputs:
-      image_tag: ${{ steps.meta.outputs.version }}
-      image_digest: ${{ steps.build.outputs.digest }}
-      ghcr_image: ${{ steps.meta.outputs.tags }}
+  build:
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up QEMU for multi-arch builds
-        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PAT }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+            docker.io/${{ secrets.DOCKER_USER }}/${{ env.IMAGE_NAME }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.CONTEXT }}
+          file: ${{ env.DOCKERFILE }}
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=server-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=server-${{ matrix.platform }}
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-digests-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Create multi-arch manifest
+    runs-on: ubuntu-24.04
+    needs: build
+    timeout-minutes: 10
+    outputs:
+      image_digest: ${{ steps.inspect.outputs.digest }}
+
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: server-digests-*
+          merge-multiple: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -65,33 +133,46 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
             docker.io/${{ secrets.DOCKER_USER }}/${{ env.IMAGE_NAME }}
           tags: |
-            # SHA tags for precise tracking
             type=sha,prefix=sha-,format=short
-            # latest for main branch
             type=raw,value=latest,enable={{is_default_branch}}
-            # Branch name
             type=ref,event=branch
-            # Timestamp for ordering
             type=raw,value={{date 'YYYYMMDD-HHmmss'}},enable={{is_default_branch}}
 
-      - name: Build and push
-        id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: ${{ env.CONTEXT }}
-          file: ${{ env.DOCKERFILE }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+      - name: Create GHCR manifest and push
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map(select(startswith("ghcr.io"))) | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf 'ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
+
+      - name: Create Docker Hub manifest and push
+        working-directory: /tmp/digests
+        env:
+          DOCKER_USER: ${{ secrets.DOCKER_USER }}
+        run: |
+          # Build digest list for Docker Hub
+          # First push the individual digests to Docker Hub, then create manifest
+          for digest in *; do
+            docker buildx imagetools create \
+              -t docker.io/${DOCKER_USER}/${{ env.IMAGE_NAME }}:sha256-${digest} \
+              ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}@sha256:${digest} || true
+          done
+
+          # Create multi-arch manifest on Docker Hub
+          docker buildx imagetools create $(jq -cr '.tags | map(select(startswith("docker.io"))) | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf 'ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
+
+      - name: Inspect image
+        id: inspect
+        run: |
+          docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
+          digest=$(docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest --format '{{.Manifest.Digest}}')
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
 
       - name: Output image info
         run: |
-          echo "## Docker Image Built" >> $GITHUB_STEP_SUMMARY
+          echo "## Docker Image Built (Multi-Arch)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Digest:** \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Platforms:** linux/amd64, linux/arm64" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Tags:**" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
@@ -101,7 +182,7 @@ jobs:
   trigger-coolify:
     name: Trigger Coolify deployment
     runs-on: ubuntu-24.04
-    needs: build-and-push
+    needs: merge
     if: github.ref == 'refs/heads/main'
     timeout-minutes: 5
 
@@ -111,7 +192,6 @@ jobs:
           COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
           COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
           COOLIFY_APP_UUID: ${{ secrets.COOLIFY_APP_UUID }}
-          IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
         run: |
           set -euo pipefail
 
@@ -142,5 +222,4 @@ jobs:
           else
             echo "Warning: Coolify deploy trigger returned HTTP ${http_code}"
             echo "Response: $body"
-            # Don't fail - image was pushed successfully
           fi
