@@ -1661,6 +1661,8 @@ const convexSchema = defineSchema({
     status: v.union(
       v.literal("candidate"),
       v.literal("active"),
+      v.literal("dismissed"),
+      // Deprecated: kept for backwards compatibility, treated as "dismissed"
       v.literal("suppressed"),
       v.literal("archived")
     ),
@@ -1700,6 +1702,8 @@ const convexSchema = defineSchema({
       v.literal("error_logged"),
       v.literal("feature_request_logged"),
       v.literal("rule_promoted"),
+      v.literal("rule_dismissed"),
+      // Deprecated: kept for backwards compatibility
       v.literal("rule_suppressed"),
       v.literal("rule_forgotten"),
       v.literal("rule_used")
