@@ -178,9 +178,14 @@ jobs:
       - name: Inspect image
         id: inspect
         run: |
-          docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
-          digest=$(docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest --format '{{.Manifest.Digest}}')
-          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          # Print image info (don't capture to output to avoid format issues)
+          docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest || true
+
+          # Get digest separately with proper format
+          digest=$(docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest --format '{{.Manifest.Digest}}' 2>/dev/null || echo "")
+          if [[ -n "$digest" ]]; then
+            echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Output image info
         run: |
