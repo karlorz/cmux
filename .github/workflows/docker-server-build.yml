@@ -216,14 +216,13 @@ jobs:
 
           echo "Triggering Coolify deployment..."
 
+          # Coolify webhook API uses query params: /api/v1/deploy?uuid={uuid}&force=true
           response=$(curl -sS -w "\n%{http_code}" \
             --connect-timeout 10 --max-time 30 \
-            -X POST \
+            -X GET \
             -H "Accept: application/json" \
-            -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${COOLIFY_API_TOKEN}" \
-            -d '{"force":true}' \
-            "${base_url}/api/v1/applications/${COOLIFY_APP_UUID}/deploy" || true)
+            "${base_url}/api/v1/deploy?uuid=${COOLIFY_APP_UUID}&force=true" || true)
 
           http_code=$(echo "$response" | tail -n1)
           body=$(echo "$response" | sed '$d')
