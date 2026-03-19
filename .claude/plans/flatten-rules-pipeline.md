@@ -50,10 +50,16 @@ Simplify the orchestration rules pipeline from 15-cell state matrix (5 statuses 
 - Breaking change for existing rules with suppressed/archived status
 - Need backwards compatibility period
 
-## Decision
-Keep this as a TODO for now. The current system works and changing it requires:
-1. Coordinated schema + code + migration
-2. Testing with production data
-3. User communication about status changes
+## Progress
 
-**Recommendation**: Defer to next major version or when rules UI gets more usage.
+**Phase 1 Complete** (PR #702):
+- Schema updated with "dismissed" status (backwards compatible)
+- `dismissRule` mutation added
+- `suppressRule` marked deprecated
+- `rule_dismissed` event type added
+
+## Next Steps
+Phase 2 (Frontend) and Phase 3 (Migration) deferred until Phase 1 is validated in production.
+
+## Original Decision
+Keep frontend changes minimal for now. The current system works and the backend change is backwards compatible. Full migration can be done when the rules UI gets more usage.
