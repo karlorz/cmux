@@ -1,12 +1,5 @@
 import { v } from "convex/values";
-import { internal } from "./_generated/api";
-import {
-  internalMutation,
-  internalQuery,
-  mutation,
-  query,
-  type MutationCtx,
-} from "./_generated/server";
+import { internalQuery, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getTeamId } from "../_shared/team";
 import { authMutation, authQuery } from "./users/utils";
