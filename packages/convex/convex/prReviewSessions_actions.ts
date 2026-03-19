@@ -44,7 +44,7 @@ export const submitReviewToGitHub = internalAction({
       return { ok: false, error: "Session not found" };
     }
 
-    const { session, decisions } = sessionData;
+    const { decisions } = sessionData;
 
     try {
       // Get GitHub access token
