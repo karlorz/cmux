@@ -1,23 +1,47 @@
 ## Living plan
 
-### Completed: PR heatmap experiment (PR #607)
-- packages/pr-heatmap: AI-powered code review with Vercel AI SDK generateObject
-- devsh review command (hidden): wraps pr-heatmap for CLI usage
-- Unified view --live mode (D5.5): replaces serve-local
-- --persist default true: disk-first observability
+### Phase 0: Housekeeping (active)
+- [ ] Merge 20 passing test PRs from coverage sprint
+- [ ] Start Coolify web stack migration (apps/client first)
+- [x] PR heatmap experiment (PR #607)
+- [x] Local captain mode (32 devsh orchestrate subcommands)
+- [x] Documentation coverage (14 packages + 9 apps)
 
-### Active: Local captain polish
-- D5.6: Active instruction handling (blocked on upstream CLI support for mid-run input)
-- D5.7: Document local captain as default orchestration prototyping lane
-- D5.8: Tighten local-to-cloud bridge (improve bundle metadata, workspace info)
+### Phase 0.5: Native Workflow Dashboard (NEW — before launches)
+- Agent activity stream: real-time tool calls, file edits, test results in web dashboard
+- Error surfacing: agent errors visible immediately (not buried in terminal)
+- Live diff panel: code changes without VS Code iframe
+- VS Code iframe becomes optional "deep dive", not primary view
+- See `.claude/plans/native-workflow-dashboard.md` for architecture
+- Foundation for all 3 launches (without this, users can't see agent work)
 
-### Backlog / future launches
-- linear interface for main thing
-- launch 1: “vercel preview environments”
-  - vercel comments pill that pipes directly to claude code
-- launch 2: after all coding clis are done running, we spin up operator to test the changes and take screenshots to make it easy to verify stuff
-  - launch 3: swift app
-- code review
-  - swipe left or swipe right (order of changes)..
-  - merge queue...?
-- code review agent that spins up operator to click around and take screenshots and then posts it back to the PR we're reviewing
+### Phase 1: PR Comment → Agent ("Launch 1")
+- Enable `issue_comment` webhook handler in `github_webhook.ts`
+- Parse `@cmux` mentions → extract prompt + PR context
+- Create task from comment → spawn agent → post result back to PR
+- Optional: Crown evaluation picks best result across multiple agents
+- See `.claude/plans/dev-direction-2026-q2.md` for full architecture
+
+### Phase 2: Operator Visual Verification ("Launch 2")
+- After agents complete, spin up browser automation agent
+- Navigate preview environment, take screenshots
+- Post screenshot gallery to PR as visual proof
+- Separate "operator" agent profile (browser testing, not coding)
+
+### Phase 3: Swipe Code Review ("Launch 3")
+- Mobile-first card-based review UX
+- Swipe right (approve) / left (request changes) per file
+- AI-assisted risk scoring via packages/pr-heatmap
+- Optional merge queue for ordered safe merging
+
+### Phase 4: Memory Quality & Lifecycle
+- Memory freshness scoring (updated_at, last_used_at, confidence)
+- Forgetting policy (demote stale entries, prune unused rules)
+- Context health visibility (provider-neutral warnings)
+- Provider-neutral lifecycle events (session_stop_blocked, context_warning)
+
+### Backlog / future
+- Swift app (mobile client)
+- Coolify all-in-one stack (replace Vercel for apps/www + apps/client)
+- Flatten rules pipeline (3 statuses instead of 5)
+- D5.6: Native agent instruction injection (blocked on upstream CLI support)

@@ -327,6 +327,61 @@ exit 0`;
     mode: "755",
   });
 
+  // Activity hook script - reports agent tool-use events to cmux dashboard
+  const activityHookScript = `#!/bin/bash
+# Claude Code activity hook - posts tool-use events for real-time dashboard
+# Runs after every matched tool call. Non-blocking (background POST).
+set -eu
+EVENT=$(cat)
+TOOL_NAME=$(echo "$EVENT" | jq -r '.tool_use.name // "unknown"')
+
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_ID:-}" ]; then
+  exit 0
+fi
+
+# Map tool names to activity types
+case "$TOOL_NAME" in
+  Edit|Write|NotebookEdit) TYPE="file_edit" ;;
+  Read)                     TYPE="file_read" ;;
+  Bash)                     TYPE="bash_command" ;;
+  Grep|Glob)                TYPE="file_read" ;;
+  Agent)                    TYPE="tool_call" ;;
+  *)                        TYPE="tool_call" ;;
+esac
+
+# Build human-readable summary from tool input
+case "$TOOL_NAME" in
+  Edit)  SUMMARY="Edit $(echo "$EVENT" | jq -r '.tool_use.input.file_path // ""' | sed 's|.*/||')" ;;
+  Read)  SUMMARY="Read $(echo "$EVENT" | jq -r '.tool_use.input.file_path // ""' | sed 's|.*/||')" ;;
+  Write) SUMMARY="Write $(echo "$EVENT" | jq -r '.tool_use.input.file_path // ""' | sed 's|.*/||')" ;;
+  Bash)  SUMMARY="Run: $(echo "$EVENT" | jq -r '.tool_use.input.command // ""' | head -c 80)" ;;
+  Grep)  SUMMARY="Search: $(echo "$EVENT" | jq -r '.tool_use.input.pattern // ""' | head -c 60)" ;;
+  Glob)  SUMMARY="Find: $(echo "$EVENT" | jq -r '.tool_use.input.pattern // ""' | head -c 60)" ;;
+  Agent) SUMMARY="Agent: $(echo "$EVENT" | jq -r '.tool_use.input.description // ""' | head -c 60)" ;;
+  *)     SUMMARY="$TOOL_NAME" ;;
+esac
+
+# Non-blocking POST
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n \\
+      --arg trid "\${CMUX_TASK_RUN_ID}" \\
+      --arg type "$TYPE" \\
+      --arg tool "$TOOL_NAME" \\
+      --arg summary "$SUMMARY" \\
+      '{taskRunId: $trid, type: $type, toolName: $tool, summary: $summary}')" \\
+    >> /root/lifecycle/activity-hook.log 2>&1 || true
+) &
+exit 0`;
+
+  files.push({
+    destinationPath: `${claudeLifecycleDir}/activity-hook.sh`,
+    contentBase64: Buffer.from(activityHookScript).toString("base64"),
+    mode: "755",
+  });
+
   // Check if user has provided an OAuth token (preferred) or API key
   const hasOAuthToken =
     ctx.apiKeys?.CLAUDE_CODE_OAUTH_TOKEN &&
@@ -397,6 +452,16 @@ exit 0`;
             {
               type: "command",
               command: `${claudeLifecycleDir}/plan-hook.sh`,
+            },
+          ],
+        },
+        // Activity stream: report tool-use events to cmux dashboard
+        {
+          matcher: "Edit|Write|Read|Bash|Grep|Glob|NotebookEdit|Agent",
+          hooks: [
+            {
+              type: "command",
+              command: `${claudeLifecycleDir}/activity-hook.sh`,
             },
           ],
         },
