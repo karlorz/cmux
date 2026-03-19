@@ -9,7 +9,17 @@ The three launch pillars:
 2. **Operator Visual Verification** (browser automation screenshots on PRs)
 3. **Swipe Code Review** (mobile-first review UX with merge queue)
 
-## Current State (2026-03-19)
+## Current State (Updated 2026-03-19)
+
+### Phase Status
+- **Phase 0**: Complete (test PRs merged)
+- **Phase 0.5**: Complete (Activity stream in dashboard - PR #687)
+- **Phase 1**: Complete (PR Comment → Agent - PR #691, #692)
+- **Phase 2**: Complete (Operator Screenshots - PR #693)
+- **Phase 3**: In Progress (Swipe Code Review - PR #694)
+- **Phase 4**: Not started
+
+## Previous State (2026-03-19)
 
 ### What's Complete
 - Cloud orchestration: SSE events, JWT auth, 31 MCP tools, background worker
