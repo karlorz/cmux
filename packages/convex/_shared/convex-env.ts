@@ -37,6 +37,9 @@ export const env = createEnv({
     // Opt-in flag for screenshot workflow (disabled by default)
     // Set to "true" or "1" to enable screenshot capture for task runs and PR previews
     CMUX_ENABLE_SCREENSHOT_WORKFLOW: z.string().min(1).optional(),
+    // Opt-in flag for Phase 2 operator verification (disabled by default)
+    // Set to "true" to enable automatic screenshots after task run completion
+    CMUX_ENABLE_OPERATOR_VERIFICATION: z.string().optional(),
     POSTHOG_API_KEY: z.string().optional(),
   },
   runtimeEnv: process.env,
