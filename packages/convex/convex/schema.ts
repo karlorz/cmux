@@ -1562,10 +1562,16 @@ const convexSchema = defineSchema({
     date: v.optional(v.string()), // YYYY-MM-DD for daily logs
     truncated: v.optional(v.boolean()),
     createdAt: v.number(),
+    // Phase 4: Memory freshness metadata
+    lastUsedAt: v.optional(v.number()), // When this snapshot was last loaded into a sandbox
+    usageCount: v.optional(v.number()), // How many times loaded
+    freshnessScore: v.optional(v.number()), // 0.0-1.0, decays over time
+    lastFreshnessUpdate: v.optional(v.number()), // When freshness was last calculated
   })
     .index("by_task_run", ["taskRunId", "memoryType"])
     .index("by_team_type", ["teamId", "memoryType", "createdAt"])
-    .index("by_team_created", ["teamId", "createdAt"]),
+    .index("by_team_created", ["teamId", "createdAt"])
+    .index("by_team_freshness", ["teamId", "memoryType", "freshnessScore"]),
 
   // Normalized behavior rules for self-improving memory (S15 provenance)
   // Enables fast querying, cross-run seeding, and provenance tracking
@@ -1866,7 +1872,12 @@ const convexSchema = defineSchema({
       v.literal("approval_resolved"),
       v.literal("plan_updated"),
       v.literal("orchestration_completed"),
-      v.literal("provider_session_bound")
+      v.literal("provider_session_bound"),
+      // Phase 4: Context health and lifecycle events
+      v.literal("context_warning"), // Context approaching limit
+      v.literal("memory_loaded"), // Memory seeded into sandbox
+      v.literal("memory_pruned"), // Stale memory entries removed
+      v.literal("session_stop_blocked") // Session stop blocked by pending work
     ),
     teamId: v.string(),
     taskId: v.optional(v.string()), // Related orchestration task ID
