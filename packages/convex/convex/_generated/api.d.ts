@@ -84,6 +84,7 @@ import type * as orchestrationWorker from "../orchestrationWorker.js";
 import type * as orchestration_http from "../orchestration_http.js";
 import type * as permissionDenyRules from "../permissionDenyRules.js";
 import type * as permissionDenyRules_http from "../permissionDenyRules_http.js";
+import type * as prReviewSessions from "../prReviewSessions.js";
 import type * as previewConfigs from "../previewConfigs.js";
 import type * as previewRuns from "../previewRuns.js";
 import type * as previewScreenshots from "../previewScreenshots.js";
@@ -216,6 +217,7 @@ declare const fullApi: ApiFromModules<{
   orchestration_http: typeof orchestration_http;
   permissionDenyRules: typeof permissionDenyRules;
   permissionDenyRules_http: typeof permissionDenyRules_http;
+  prReviewSessions: typeof prReviewSessions;
   previewConfigs: typeof previewConfigs;
   previewRuns: typeof previewRuns;
   previewScreenshots: typeof previewScreenshots;

@@ -2294,6 +2294,70 @@ const convexSchema = defineSchema({
     .index("by_user", ["userId", "status"])
     .index("by_ruleId", ["ruleId"]), // For upsert lookups
 
+  // Phase 3: Swipe Code Review - Review Sessions
+  // Tracks per-file review decisions (approve/reject) for PR reviews
+  prReviewSessions: defineTable({
+    teamId: v.string(),
+    userId: v.string(),
+    // Link to either a task run or external PR
+    taskRunId: v.optional(v.id("taskRuns")),
+    // External PR info (when not linked to a task run)
+    repoFullName: v.optional(v.string()),
+    prNumber: v.optional(v.number()),
+    prUrl: v.optional(v.string()),
+    // Session status
+    status: v.union(
+      v.literal("in_progress"),
+      v.literal("completed"),
+      v.literal("abandoned")
+    ),
+    // Counts for quick display
+    totalFiles: v.number(),
+    reviewedFiles: v.number(),
+    approvedFiles: v.number(),
+    changesRequestedFiles: v.number(),
+    // Heatmap data (JSON string of PRHeatmapResult)
+    heatmapData: v.optional(v.string()),
+    // Timestamps
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_team", ["teamId", "createdAt"])
+    .index("by_team_user", ["teamId", "userId", "createdAt"])
+    .index("by_task_run", ["taskRunId"]),
+
+  // Phase 3: Swipe Code Review - File Decisions
+  // Individual file review decisions within a session
+  prReviewFileDecisions: defineTable({
+    sessionId: v.id("prReviewSessions"),
+    filePath: v.string(),
+    decision: v.union(
+      v.literal("pending"),
+      v.literal("approved"),
+      v.literal("changes_requested"),
+      v.literal("skipped")
+    ),
+    comment: v.optional(v.string()),
+    // Risk score from heatmap
+    riskScore: v.optional(v.number()),
+    // Undo stack for reverting decisions
+    undoStack: v.optional(
+      v.array(
+        v.object({
+          decision: v.string(),
+          comment: v.optional(v.string()),
+          timestamp: v.number(),
+        })
+      )
+    ),
+    // Timestamps
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_session", ["sessionId", "createdAt"])
+    .index("by_session_file", ["sessionId", "filePath"]),
+
   // Permission deny rules for Claude Code settings.json
   // These are the "deny" patterns in permissions.deny that restrict tool access
   // Separate from policy rules which are markdown instructions injected into CLAUDE.md
