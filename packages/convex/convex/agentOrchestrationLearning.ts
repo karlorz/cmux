@@ -14,6 +14,8 @@ const laneValidator = v.union(
 const statusValidator = v.union(
   v.literal("candidate"),
   v.literal("active"),
+  v.literal("dismissed"),
+  // Deprecated: kept for backwards compatibility, treated as "dismissed"
   v.literal("suppressed"),
   v.literal("archived")
 );
@@ -30,6 +32,8 @@ const eventTypeValidator = v.union(
   v.literal("error_logged"),
   v.literal("feature_request_logged"),
   v.literal("rule_promoted"),
+  v.literal("rule_dismissed"),
+  // Deprecated: kept for backwards compatibility
   v.literal("rule_suppressed"),
   v.literal("rule_forgotten"),
   v.literal("rule_used")
@@ -488,7 +492,41 @@ export const bulkPromoteRules = authMutation({
 });
 
 /**
+ * Dismiss an orchestration rule (new preferred name for suppress).
+ */
+export const dismissRule = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    ruleId: v.id("agentOrchestrationRules"),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+    const userId = ctx.identity.subject;
+
+    const rule = await ctx.db.get(args.ruleId);
+    if (!rule || rule.teamId !== teamId) {
+      throw new Error("Rule not found or unauthorized");
+    }
+
+    await ctx.db.patch(args.ruleId, {
+      status: "dismissed",
+      updatedAt: Date.now(),
+    });
+
+    return ctx.db.insert("agentOrchestrationLearningEvents", {
+      teamId,
+      userId,
+      ruleId: args.ruleId,
+      eventType: "rule_dismissed",
+      text: `Dismissed rule: ${rule.text.slice(0, 100)}`,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+/**
  * Suppress an orchestration rule.
+ * @deprecated Use dismissRule instead. This alias is kept for backwards compatibility.
  */
 export const suppressRule = authMutation({
   args: {
@@ -504,17 +542,19 @@ export const suppressRule = authMutation({
       throw new Error("Rule not found or unauthorized");
     }
 
+    // Use new "dismissed" status
     await ctx.db.patch(args.ruleId, {
-      status: "suppressed",
+      status: "dismissed",
       updatedAt: Date.now(),
     });
 
+    // Log with new event type for consistency
     return ctx.db.insert("agentOrchestrationLearningEvents", {
       teamId,
       userId,
       ruleId: args.ruleId,
-      eventType: "rule_suppressed",
-      text: `Suppressed rule: ${rule.text.slice(0, 100)}`,
+      eventType: "rule_dismissed",
+      text: `Dismissed rule: ${rule.text.slice(0, 100)}`,
       createdAt: Date.now(),
     });
   },
