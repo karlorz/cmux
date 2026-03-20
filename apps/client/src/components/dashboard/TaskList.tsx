@@ -1,9 +1,10 @@
 import { api } from "@cmux/convex/api";
 import type { Doc, Id } from "@cmux/convex/dataModel";
 import { useLocalStorage } from "@mantine/hooks";
-import { usePaginatedQuery, useQuery } from "convex/react";
+import { usePaginatedQuery, useQuery, useMutation } from "convex/react";
 import clsx from "clsx";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Archive, Pin, X } from "lucide-react";
 
 // Custom hook for infinite scroll that only triggers after user has scrolled
 function useInfiniteScroll(
@@ -77,6 +78,7 @@ function useInfiniteScroll(
 import { TaskItem } from "./TaskItem";
 import { PreviewItem } from "./PreviewItem";
 import { ChevronRight, Loader2 } from "lucide-react";
+import { useArchiveTask } from "@/hooks/useArchiveTask";
 import { env } from "../../client-env";
 
 type TaskCategoryKey =
@@ -261,6 +263,31 @@ export const TaskList = memo(function TaskList({
   // In web mode, exclude local workspaces from the task list
   const excludeLocalWorkspaces = env.NEXT_PUBLIC_WEB_MODE || undefined;
 
+  // Selection state for bulk actions
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const hasSelection = selectedTaskIds.size > 0;
+
+  // Bulk action mutations
+  const pinTask = useMutation(api.tasks.pin);
+  const unpinTask = useMutation(api.tasks.unpin);
+  const { archiveWithUndo } = useArchiveTask(teamSlugOrId);
+
+  const handleSelectionChange = useCallback((taskId: string, selected: boolean) => {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      if (selected) {
+        next.add(taskId);
+      } else {
+        next.delete(taskId);
+      }
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedTaskIds(new Set());
+  }, []);
+
   // Paginated query for main tasks (replaces non-paginated api.tasks.get)
   const {
     results: allTasks,
@@ -282,6 +309,32 @@ export const TaskList = memo(function TaskList({
     { initialNumItems: PREVIEW_PAGE_SIZE },
   );
   const [tab, setTab] = useState<"all" | "previews">("all");
+
+  // Bulk actions
+  const handleBulkPin = useCallback(async () => {
+    const promises = Array.from(selectedTaskIds).map(id =>
+      pinTask({ teamSlugOrId, id: id as Id<"tasks"> })
+    );
+    await Promise.all(promises);
+    clearSelection();
+  }, [selectedTaskIds, pinTask, teamSlugOrId, clearSelection]);
+
+  const handleBulkUnpin = useCallback(async () => {
+    const promises = Array.from(selectedTaskIds).map(id =>
+      unpinTask({ teamSlugOrId, id: id as Id<"tasks"> })
+    );
+    await Promise.all(promises);
+    clearSelection();
+  }, [selectedTaskIds, unpinTask, teamSlugOrId, clearSelection]);
+
+  const handleBulkArchive = useCallback(async () => {
+    // Get selected tasks from allTasks
+    const selectedTasks = allTasks.filter(t => selectedTaskIds.has(t._id));
+    for (const task of selectedTasks) {
+      archiveWithUndo(task);
+    }
+    clearSelection();
+  }, [selectedTaskIds, allTasks, archiveWithUndo, clearSelection]);
 
   // Infinite scroll for preview runs
   const previewScrollRef = useRef<HTMLDivElement>(null);
@@ -470,6 +523,43 @@ export const TaskList = memo(function TaskList({
           </button>
         </div>
       </div>
+
+      {/* Bulk actions toolbar */}
+      {hasSelection && tab === "all" && (
+        <div className="mx-4 mb-3 flex items-center gap-2 rounded-md bg-neutral-100 dark:bg-neutral-800 px-3 py-2">
+          <span className="text-xs font-medium text-neutral-600 dark:text-neutral-300">
+            {selectedTaskIds.size} selected
+          </span>
+          <div className="flex-1" />
+          <button
+            onClick={handleBulkPin}
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-200 dark:text-neutral-300 dark:hover:bg-neutral-700"
+          >
+            <Pin className="h-3 w-3" />
+            Pin
+          </button>
+          <button
+            onClick={handleBulkUnpin}
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-200 dark:text-neutral-300 dark:hover:bg-neutral-700"
+          >
+            <Pin className="h-3 w-3" />
+            Unpin
+          </button>
+          <button
+            onClick={handleBulkArchive}
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-200 dark:text-neutral-300 dark:hover:bg-neutral-700"
+          >
+            <Archive className="h-3 w-3" />
+            Archive
+          </button>
+          <button
+            onClick={clearSelection}
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:bg-neutral-700"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
       <div className="flex flex-col gap-1 w-full">
         {tab === "previews" ? (
           previewRunsStatus === "LoadingFirstPage" ? (
@@ -534,6 +624,8 @@ export const TaskList = memo(function TaskList({
                     expanded={Boolean(expandedCategories[categoryKey])}
                     onToggleExpanded={toggleCategoryExpanded}
                     initialDisplayCount={CATEGORY_INITIAL_DISPLAY_COUNT}
+                    selectedTaskIds={selectedTaskIds}
+                    onSelectionChange={handleSelectionChange}
                   />
                 );
               })}
@@ -566,6 +658,8 @@ function TaskCategorySection({
   expanded,
   onToggleExpanded,
   initialDisplayCount,
+  selectedTaskIds,
+  onSelectionChange,
 }: {
   categoryKey: TaskCategoryKey;
   tasks: Doc<"tasks">[];
@@ -575,6 +669,8 @@ function TaskCategorySection({
   expanded: boolean;
   onToggleExpanded: (key: TaskCategoryKey) => void;
   initialDisplayCount: number;
+  selectedTaskIds: Set<string>;
+  onSelectionChange: (taskId: string, selected: boolean) => void;
 }) {
   const meta = CATEGORY_META[categoryKey];
   const handleToggle = useCallback(
@@ -629,7 +725,14 @@ function TaskCategorySection({
       {collapsed ? null : tasks.length > 0 ? (
         <div id={contentId} className="flex flex-col w-full">
           {visibleTasks.map((task) => (
-            <TaskItem key={task._id} task={task} teamSlugOrId={teamSlugOrId} />
+            <TaskItem
+              key={task._id}
+              task={task}
+              teamSlugOrId={teamSlugOrId}
+              isSelected={selectedTaskIds.has(task._id)}
+              onSelectionChange={onSelectionChange}
+              showCheckbox={selectedTaskIds.size > 0}
+            />
           ))}
           {hasOverflow && (
             <button
