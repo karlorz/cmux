@@ -41,6 +41,7 @@ export { projectGetRouter } from "./project.get.route";
 export { projectListRouter } from "./project.list.route";
 export { projectPlanRouter } from "./project.plan.route";
 export { projectRouter } from "./project.route";
+export { projectUpdateRouter } from "./project.update.route";
 export { pveLxcPreviewRouter } from "./pve-lxc.preview.route";
 export { pveLxcRouter } from "./pve-lxc.route";
 export { teamsRouter } from "./teams.route";
