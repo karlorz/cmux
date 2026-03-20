@@ -890,23 +890,6 @@ export type ApprovalRequest = {
     createdAt: number;
 };
 
-export type ProjectGoal = {
-    /**
-     * Goal ID
-     */
-    id: string;
-    /**
-     * Goal title
-     */
-    title: string;
-    /**
-     * Whether goal is completed
-     */
-    completed: boolean;
-};
-
-export type ProjectStatus = 'planning' | 'active' | 'paused' | 'completed' | 'archived';
-
 export type PlanTask = {
     /**
      * Task ID
@@ -937,6 +920,81 @@ export type PlanTask = {
      */
     orchestrationTaskId?: string;
 };
+
+export type UpsertPlanRequest = {
+    /**
+     * Orchestration ID
+     */
+    orchestrationId: string;
+    /**
+     * Head agent name
+     */
+    headAgent: string;
+    /**
+     * Plan description
+     */
+    description?: string;
+    /**
+     * Plan tasks
+     */
+    tasks: Array<PlanTask>;
+};
+
+export type ProjectProgress = {
+    /**
+     * Total tasks
+     */
+    total: number;
+    /**
+     * Completed tasks
+     */
+    completed: number;
+    /**
+     * Running tasks
+     */
+    running: number;
+    /**
+     * Failed tasks
+     */
+    failed: number;
+    /**
+     * Pending tasks
+     */
+    pending: number;
+    /**
+     * Cancelled tasks
+     */
+    cancelled: number;
+    /**
+     * Progress percentage (0-100)
+     */
+    progressPercent: number;
+    /**
+     * Last update timestamp (ISO)
+     */
+    lastUpdated: string;
+};
+
+export type DispatchPlanRequest = {
+    [key: string]: unknown;
+};
+
+export type ProjectGoal = {
+    /**
+     * Goal ID
+     */
+    id: string;
+    /**
+     * Goal title
+     */
+    title: string;
+    /**
+     * Whether goal is completed
+     */
+    completed: boolean;
+};
+
+export type ProjectStatus = 'planning' | 'active' | 'paused' | 'completed' | 'archived';
 
 /**
  * Embedded orchestration plan
@@ -1071,64 +1129,6 @@ export type UpdateProjectRequest = {
      * GitHub Projects node ID
      */
     githubProjectId?: string;
-};
-
-export type UpsertPlanRequest = {
-    /**
-     * Orchestration ID
-     */
-    orchestrationId: string;
-    /**
-     * Head agent name
-     */
-    headAgent: string;
-    /**
-     * Plan description
-     */
-    description?: string;
-    /**
-     * Plan tasks
-     */
-    tasks: Array<PlanTask>;
-};
-
-export type ProjectProgress = {
-    /**
-     * Total tasks
-     */
-    total: number;
-    /**
-     * Completed tasks
-     */
-    completed: number;
-    /**
-     * Running tasks
-     */
-    running: number;
-    /**
-     * Failed tasks
-     */
-    failed: number;
-    /**
-     * Pending tasks
-     */
-    pending: number;
-    /**
-     * Cancelled tasks
-     */
-    cancelled: number;
-    /**
-     * Progress percentage (0-100)
-     */
-    progressPercent: number;
-    /**
-     * Last update timestamp (ISO)
-     */
-    lastUpdated: string;
-};
-
-export type DispatchPlanRequest = {
-    [key: string]: unknown;
 };
 
 export type RecommendedAction = {
@@ -4166,6 +4166,137 @@ export type GetApiV1CmuxOrchestrationRulesResponses = {
 
 export type GetApiV1CmuxOrchestrationRulesResponse = GetApiV1CmuxOrchestrationRulesResponses[keyof GetApiV1CmuxOrchestrationRulesResponses];
 
+export type PutApiProjectsByProjectIdPlanData = {
+    body: UpsertPlanRequest;
+    path: {
+        /**
+         * Project ID
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/projects/{projectId}/plan';
+};
+
+export type PutApiProjectsByProjectIdPlanErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Project not found
+     */
+    404: unknown;
+    /**
+     * Validation error
+     */
+    422: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PutApiProjectsByProjectIdPlanResponses = {
+    /**
+     * Plan upserted successfully
+     */
+    200: {
+        /**
+         * Updated project ID
+         */
+        id: string;
+    };
+};
+
+export type PutApiProjectsByProjectIdPlanResponse = PutApiProjectsByProjectIdPlanResponses[keyof PutApiProjectsByProjectIdPlanResponses];
+
+export type GetApiProjectsByProjectIdProgressData = {
+    body?: never;
+    path: {
+        /**
+         * Project ID
+         */
+        projectId: string;
+    };
+    query: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId: string;
+    };
+    url: '/api/projects/{projectId}/progress';
+};
+
+export type GetApiProjectsByProjectIdProgressErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Project not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiProjectsByProjectIdProgressResponses = {
+    /**
+     * Progress retrieved successfully
+     */
+    200: ProjectProgress;
+};
+
+export type GetApiProjectsByProjectIdProgressResponse = GetApiProjectsByProjectIdProgressResponses[keyof GetApiProjectsByProjectIdProgressResponses];
+
+export type PostApiProjectsByProjectIdDispatchData = {
+    body: DispatchPlanRequest;
+    path: {
+        /**
+         * Project ID
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/projects/{projectId}/dispatch';
+};
+
+export type PostApiProjectsByProjectIdDispatchErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Project not found
+     */
+    404: unknown;
+    /**
+     * No plan tasks to dispatch
+     */
+    422: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiProjectsByProjectIdDispatchResponses = {
+    /**
+     * Plan dispatched successfully
+     */
+    200: {
+        /**
+         * Number of tasks dispatched
+         */
+        dispatched: number;
+    };
+};
+
+export type PostApiProjectsByProjectIdDispatchResponse = PostApiProjectsByProjectIdDispatchResponses[keyof PostApiProjectsByProjectIdDispatchResponses];
+
 export type GetApiProjectsData = {
     body?: never;
     path?: never;
@@ -4327,137 +4458,6 @@ export type PatchApiProjectsByProjectIdResponses = {
 };
 
 export type PatchApiProjectsByProjectIdResponse = PatchApiProjectsByProjectIdResponses[keyof PatchApiProjectsByProjectIdResponses];
-
-export type PutApiProjectsByProjectIdPlanData = {
-    body: UpsertPlanRequest;
-    path: {
-        /**
-         * Project ID
-         */
-        projectId: string;
-    };
-    query?: never;
-    url: '/api/projects/{projectId}/plan';
-};
-
-export type PutApiProjectsByProjectIdPlanErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Project not found
-     */
-    404: unknown;
-    /**
-     * Validation error
-     */
-    422: unknown;
-    /**
-     * Server error
-     */
-    500: unknown;
-};
-
-export type PutApiProjectsByProjectIdPlanResponses = {
-    /**
-     * Plan upserted successfully
-     */
-    200: {
-        /**
-         * Updated project ID
-         */
-        id: string;
-    };
-};
-
-export type PutApiProjectsByProjectIdPlanResponse = PutApiProjectsByProjectIdPlanResponses[keyof PutApiProjectsByProjectIdPlanResponses];
-
-export type GetApiProjectsByProjectIdProgressData = {
-    body?: never;
-    path: {
-        /**
-         * Project ID
-         */
-        projectId: string;
-    };
-    query: {
-        /**
-         * Team slug or ID
-         */
-        teamSlugOrId: string;
-    };
-    url: '/api/projects/{projectId}/progress';
-};
-
-export type GetApiProjectsByProjectIdProgressErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Project not found
-     */
-    404: unknown;
-    /**
-     * Server error
-     */
-    500: unknown;
-};
-
-export type GetApiProjectsByProjectIdProgressResponses = {
-    /**
-     * Progress retrieved successfully
-     */
-    200: ProjectProgress;
-};
-
-export type GetApiProjectsByProjectIdProgressResponse = GetApiProjectsByProjectIdProgressResponses[keyof GetApiProjectsByProjectIdProgressResponses];
-
-export type PostApiProjectsByProjectIdDispatchData = {
-    body: DispatchPlanRequest;
-    path: {
-        /**
-         * Project ID
-         */
-        projectId: string;
-    };
-    query?: never;
-    url: '/api/projects/{projectId}/dispatch';
-};
-
-export type PostApiProjectsByProjectIdDispatchErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Project not found
-     */
-    404: unknown;
-    /**
-     * No plan tasks to dispatch
-     */
-    422: unknown;
-    /**
-     * Server error
-     */
-    500: unknown;
-};
-
-export type PostApiProjectsByProjectIdDispatchResponses = {
-    /**
-     * Plan dispatched successfully
-     */
-    200: {
-        /**
-         * Number of tasks dispatched
-         */
-        dispatched: number;
-    };
-};
-
-export type PostApiProjectsByProjectIdDispatchResponse = PostApiProjectsByProjectIdDispatchResponses[keyof PostApiProjectsByProjectIdDispatchResponses];
 
 export type GetApiVaultRecommendationsData = {
     body?: never;
