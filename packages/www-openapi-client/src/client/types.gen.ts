@@ -1775,6 +1775,14 @@ export type SeedResultResponse = {
     error?: string;
 };
 
+export type SuccessResponse = {
+    success: boolean;
+};
+
+export type SetEnabledBody = {
+    enabled: boolean;
+};
+
 export type Model = {
     _id: string;
     name: string;
@@ -1803,14 +1811,6 @@ export type Model = {
 
 export type ModelListResponse = {
     models: Array<Model>;
-};
-
-export type SuccessResponse = {
-    success: boolean;
-};
-
-export type SetEnabledBody = {
-    enabled: boolean;
 };
 
 export type ReorderBody = {
@@ -6588,31 +6588,6 @@ export type PostApiModelsSeedResponses = {
 
 export type PostApiModelsSeedResponse = PostApiModelsSeedResponses[keyof PostApiModelsSeedResponses];
 
-export type GetApiModelsData = {
-    body?: never;
-    path?: never;
-    query: {
-        teamSlugOrId: string;
-    };
-    url: '/api/models';
-};
-
-export type GetApiModelsErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-};
-
-export type GetApiModelsResponses = {
-    /**
-     * List of all models
-     */
-    200: ModelListResponse;
-};
-
-export type GetApiModelsResponse = GetApiModelsResponses[keyof GetApiModelsResponses];
-
 export type PatchApiModelsByNameEnabledData = {
     body: SetEnabledBody;
     path: {
@@ -6646,6 +6621,31 @@ export type PatchApiModelsByNameEnabledResponses = {
 };
 
 export type PatchApiModelsByNameEnabledResponse = PatchApiModelsByNameEnabledResponses[keyof PatchApiModelsByNameEnabledResponses];
+
+export type GetApiModelsData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/models';
+};
+
+export type GetApiModelsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiModelsResponses = {
+    /**
+     * List of all models
+     */
+    200: ModelListResponse;
+};
+
+export type GetApiModelsResponse = GetApiModelsResponses[keyof GetApiModelsResponses];
 
 export type PostApiModelsReorderData = {
     body: ReorderBody;
