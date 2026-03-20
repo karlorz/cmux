@@ -20,6 +20,7 @@ export { githubPrsBackfillRouter } from "./github.prs.backfill.route";
 export { githubPrsCloseRouter } from "./github.prs.close.route";
 export { githubPrsCodeRouter } from "./github.prs.code.route";
 export { githubPrsMergeRouter } from "./github.prs.merge.route";
+export { githubPrsOpenCreateRouter } from "./github.prs.open.create.route";
 export { githubPrsOpenRouter } from "./github.prs.open.route";
 export { githubPrsFileContentsBatchRouter } from "./github.prs.file-contents-batch.route";
 export { githubPrsFileContentsRouter } from "./github.prs.file-contents.route";
