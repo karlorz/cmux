@@ -890,6 +890,23 @@ export type ApprovalRequest = {
     createdAt: number;
 };
 
+export type ProjectGoal = {
+    /**
+     * Goal ID
+     */
+    id: string;
+    /**
+     * Goal title
+     */
+    title: string;
+    /**
+     * Whether goal is completed
+     */
+    completed: boolean;
+};
+
+export type ProjectStatus = 'planning' | 'active' | 'paused' | 'completed' | 'archived';
+
 export type PlanTask = {
     /**
      * Task ID
@@ -920,81 +937,6 @@ export type PlanTask = {
      */
     orchestrationTaskId?: string;
 };
-
-export type UpsertPlanRequest = {
-    /**
-     * Orchestration ID
-     */
-    orchestrationId: string;
-    /**
-     * Head agent name
-     */
-    headAgent: string;
-    /**
-     * Plan description
-     */
-    description?: string;
-    /**
-     * Plan tasks
-     */
-    tasks: Array<PlanTask>;
-};
-
-export type ProjectProgress = {
-    /**
-     * Total tasks
-     */
-    total: number;
-    /**
-     * Completed tasks
-     */
-    completed: number;
-    /**
-     * Running tasks
-     */
-    running: number;
-    /**
-     * Failed tasks
-     */
-    failed: number;
-    /**
-     * Pending tasks
-     */
-    pending: number;
-    /**
-     * Cancelled tasks
-     */
-    cancelled: number;
-    /**
-     * Progress percentage (0-100)
-     */
-    progressPercent: number;
-    /**
-     * Last update timestamp (ISO)
-     */
-    lastUpdated: string;
-};
-
-export type DispatchPlanRequest = {
-    [key: string]: unknown;
-};
-
-export type ProjectGoal = {
-    /**
-     * Goal ID
-     */
-    id: string;
-    /**
-     * Goal title
-     */
-    title: string;
-    /**
-     * Whether goal is completed
-     */
-    completed: boolean;
-};
-
-export type ProjectStatus = 'planning' | 'active' | 'paused' | 'completed' | 'archived';
 
 /**
  * Embedded orchestration plan
@@ -1077,6 +1019,64 @@ export type Project = {
      * Last update timestamp
      */
     updatedAt: number;
+};
+
+export type UpsertPlanRequest = {
+    /**
+     * Orchestration ID
+     */
+    orchestrationId: string;
+    /**
+     * Head agent name
+     */
+    headAgent: string;
+    /**
+     * Plan description
+     */
+    description?: string;
+    /**
+     * Plan tasks
+     */
+    tasks: Array<PlanTask>;
+};
+
+export type ProjectProgress = {
+    /**
+     * Total tasks
+     */
+    total: number;
+    /**
+     * Completed tasks
+     */
+    completed: number;
+    /**
+     * Running tasks
+     */
+    running: number;
+    /**
+     * Failed tasks
+     */
+    failed: number;
+    /**
+     * Pending tasks
+     */
+    pending: number;
+    /**
+     * Cancelled tasks
+     */
+    cancelled: number;
+    /**
+     * Progress percentage (0-100)
+     */
+    progressPercent: number;
+    /**
+     * Last update timestamp (ISO)
+     */
+    lastUpdated: string;
+};
+
+export type DispatchPlanRequest = {
+    [key: string]: unknown;
 };
 
 export type CreateProjectRequest = {
@@ -4166,6 +4166,82 @@ export type GetApiV1CmuxOrchestrationRulesResponses = {
 
 export type GetApiV1CmuxOrchestrationRulesResponse = GetApiV1CmuxOrchestrationRulesResponses[keyof GetApiV1CmuxOrchestrationRulesResponses];
 
+export type GetApiProjectsData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId: string;
+        /**
+         * Filter by status
+         */
+        status?: ProjectStatus & unknown;
+        /**
+         * Maximum number of projects
+         */
+        limit?: number | null;
+    };
+    url: '/api/projects';
+};
+
+export type GetApiProjectsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiProjectsResponses = {
+    /**
+     * Projects retrieved successfully
+     */
+    200: Array<Project>;
+};
+
+export type GetApiProjectsResponse = GetApiProjectsResponses[keyof GetApiProjectsResponses];
+
+export type PostApiProjectsData = {
+    body: CreateProjectRequest;
+    path?: never;
+    query?: never;
+    url: '/api/projects';
+};
+
+export type PostApiProjectsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Validation error
+     */
+    422: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiProjectsResponses = {
+    /**
+     * Project created successfully
+     */
+    201: {
+        /**
+         * Created project ID
+         */
+        id: string;
+    };
+};
+
+export type PostApiProjectsResponse = PostApiProjectsResponses[keyof PostApiProjectsResponses];
+
 export type PutApiProjectsByProjectIdPlanData = {
     body: UpsertPlanRequest;
     path: {
@@ -4296,82 +4372,6 @@ export type PostApiProjectsByProjectIdDispatchResponses = {
 };
 
 export type PostApiProjectsByProjectIdDispatchResponse = PostApiProjectsByProjectIdDispatchResponses[keyof PostApiProjectsByProjectIdDispatchResponses];
-
-export type GetApiProjectsData = {
-    body?: never;
-    path?: never;
-    query: {
-        /**
-         * Team slug or ID
-         */
-        teamSlugOrId: string;
-        /**
-         * Filter by status
-         */
-        status?: ProjectStatus & unknown;
-        /**
-         * Maximum number of projects
-         */
-        limit?: number | null;
-    };
-    url: '/api/projects';
-};
-
-export type GetApiProjectsErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Server error
-     */
-    500: unknown;
-};
-
-export type GetApiProjectsResponses = {
-    /**
-     * Projects retrieved successfully
-     */
-    200: Array<Project>;
-};
-
-export type GetApiProjectsResponse = GetApiProjectsResponses[keyof GetApiProjectsResponses];
-
-export type PostApiProjectsData = {
-    body: CreateProjectRequest;
-    path?: never;
-    query?: never;
-    url: '/api/projects';
-};
-
-export type PostApiProjectsErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Validation error
-     */
-    422: unknown;
-    /**
-     * Server error
-     */
-    500: unknown;
-};
-
-export type PostApiProjectsResponses = {
-    /**
-     * Project created successfully
-     */
-    201: {
-        /**
-         * Created project ID
-         */
-        id: string;
-    };
-};
-
-export type PostApiProjectsResponse = PostApiProjectsResponses[keyof PostApiProjectsResponses];
 
 export type GetApiProjectsByProjectIdData = {
     body?: never;
