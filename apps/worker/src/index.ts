@@ -57,6 +57,46 @@ import { verifyTaskRunToken } from "@cmux/shared/convex-safe";
 
 const execAsync = promisify(exec);
 
+// CPU usage tracking state
+let lastCpuUsage: NodeJS.CpuUsage | null = null;
+let lastCpuTime: number = Date.now();
+
+/**
+ * Calculate CPU usage percentage since last call.
+ * Uses process.cpuUsage() to get user and system CPU time,
+ * then calculates percentage based on elapsed wall clock time.
+ */
+function getCpuUsagePercent(): number {
+  const currentUsage = process.cpuUsage(lastCpuUsage ?? undefined);
+  const currentTime = Date.now();
+
+  if (lastCpuUsage === null) {
+    // First call, initialize and return 0
+    lastCpuUsage = process.cpuUsage();
+    lastCpuTime = currentTime;
+    return 0;
+  }
+
+  const elapsedMs = currentTime - lastCpuTime;
+  if (elapsedMs <= 0) {
+    return 0;
+  }
+
+  // CPU usage is in microseconds, convert to milliseconds
+  const cpuTimeMs = (currentUsage.user + currentUsage.system) / 1000;
+
+  // Calculate percentage (considering number of CPU cores)
+  const numCores = cpus().length;
+  const percentage = (cpuTimeMs / (elapsedMs * numCores)) * 100;
+
+  // Update last readings for next call
+  lastCpuUsage = process.cpuUsage();
+  lastCpuTime = currentTime;
+
+  // Clamp to 0-100 range
+  return Math.min(100, Math.max(0, percentage));
+}
+
 // Cache for environment variables fetched from envd
 const envdCache = new Map<string, { value: string | undefined; timestamp: number }>();
 const ENVD_CACHE_TTL_MS = 30000; // Cache for 30 seconds
@@ -628,7 +668,7 @@ function getWorkerStats(): WorkerHeartbeat {
     workerId: WORKER_ID,
     timestamp: Date.now(),
     stats: {
-      cpuUsage: 0, // TODO: Implement actual CPU usage tracking
+      cpuUsage: getCpuUsagePercent(),
       memoryUsage: (usedMem / totalMem) * 100,
     },
   };

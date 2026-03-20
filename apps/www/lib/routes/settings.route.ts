@@ -98,6 +98,24 @@ function isAllowedBaseUrl(urlString: string): { allowed: boolean; reason?: strin
   return { allowed: true };
 }
 
+// Shared schema for provider connection results
+const ProviderConnectionResult = z
+  .object({
+    success: z.boolean(),
+    message: z.string(),
+    details: z
+      .object({
+        statusCode: z.number().optional(),
+        responseTime: z.number().optional(),
+        endpoint: z.string(),
+        modelsFound: z.number().optional(),
+        provider: z.string().optional(),
+      })
+      .optional(),
+  })
+  .openapi("ProviderConnectionResult");
+
+// Legacy Anthropic-specific schemas (kept for backwards compatibility)
 const TestAnthropicConnectionBody = z
   .object({
     baseUrl: z.string().url(),
@@ -119,6 +137,54 @@ const TestAnthropicConnectionResult = z
       .optional(),
   })
   .openapi("TestAnthropicConnectionResult");
+
+// Provider configuration for unified endpoint
+const PROVIDER_CONFIGS = {
+  anthropic: {
+    defaultBaseUrl: "https://api.anthropic.com",
+    modelsEndpoint: "/v1/models",
+    headers: (apiKey: string) => ({
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    }),
+  },
+  openai: {
+    defaultBaseUrl: "https://api.openai.com",
+    modelsEndpoint: "/v1/models",
+    headers: (apiKey: string) => ({
+      Authorization: `Bearer ${apiKey}`,
+    }),
+  },
+  google: {
+    defaultBaseUrl: "https://generativelanguage.googleapis.com",
+    modelsEndpoint: "/v1beta/models",
+    headers: (_apiKey: string) => ({}),
+    queryParams: (apiKey: string) => ({ key: apiKey }),
+  },
+  mistral: {
+    defaultBaseUrl: "https://api.mistral.ai",
+    modelsEndpoint: "/v1/models",
+    headers: (apiKey: string) => ({
+      Authorization: `Bearer ${apiKey}`,
+    }),
+  },
+  together: {
+    defaultBaseUrl: "https://api.together.xyz",
+    modelsEndpoint: "/v1/models",
+    headers: (apiKey: string) => ({
+      Authorization: `Bearer ${apiKey}`,
+    }),
+  },
+  groq: {
+    defaultBaseUrl: "https://api.groq.com/openai",
+    modelsEndpoint: "/v1/models",
+    headers: (apiKey: string) => ({
+      Authorization: `Bearer ${apiKey}`,
+    }),
+  },
+} as const;
+
+type ProviderName = keyof typeof PROVIDER_CONFIGS;
 
 settingsRouter.openapi(
   createRoute({
@@ -281,6 +347,176 @@ settingsRouter.openapi(
         message: `Unexpected error: ${error instanceof Error ? error.message : "Unknown error"}`,
         details: {
           endpoint,
+        },
+      });
+    }
+  }
+);
+
+// Unified provider connection test endpoint
+const TestProviderConnectionBody = z
+  .object({
+    provider: z.enum(["anthropic", "openai", "google", "mistral", "together", "groq"]),
+    baseUrl: z.string().url().optional(),
+    apiKey: z.string().min(1),
+  })
+  .openapi("TestProviderConnectionBody");
+
+settingsRouter.openapi(
+  createRoute({
+    method: "post",
+    path: "/settings/test-provider-connection",
+    tags: ["Settings"],
+    summary: "Test provider connection (OpenAI, Google, Mistral, Together, Groq, Anthropic)",
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: TestProviderConnectionBody,
+          },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        description: "Connection test result",
+        content: {
+          "application/json": {
+            schema: ProviderConnectionResult,
+          },
+        },
+      },
+      401: {
+        description: "Unauthorized",
+      },
+    },
+  }),
+  async (c) => {
+    const user = await getUserFromRequest(c.req.raw);
+    if (!user) {
+      return c.json(
+        {
+          success: false,
+          message: "Unauthorized",
+        },
+        401
+      );
+    }
+
+    const { provider, baseUrl, apiKey } = c.req.valid("json");
+    const config = PROVIDER_CONFIGS[provider as ProviderName];
+
+    if (!config) {
+      return c.json({
+        success: false,
+        message: `Unknown provider: ${provider}`,
+        details: {
+          endpoint: "",
+          provider,
+        },
+      });
+    }
+
+    const normalizedBaseUrl = (baseUrl ?? config.defaultBaseUrl)
+      .replace(/\/v1\/?$/, "")
+      .replace(/\/+$/, "");
+
+    // SSRF protection
+    const urlValidation = isAllowedBaseUrl(normalizedBaseUrl);
+    if (!urlValidation.allowed) {
+      return c.json({
+        success: false,
+        message: `Invalid base URL: ${urlValidation.reason}`,
+        details: {
+          endpoint: normalizedBaseUrl,
+          provider,
+        },
+      });
+    }
+
+    let endpoint = `${normalizedBaseUrl}${config.modelsEndpoint}`;
+
+    // Add query params for providers that use them (like Google)
+    if ("queryParams" in config && config.queryParams) {
+      const params = new URLSearchParams(config.queryParams(apiKey));
+      endpoint = `${endpoint}?${params.toString()}`;
+    }
+
+    const startTime = Date.now();
+
+    try {
+      const headers = {
+        ...config.headers(apiKey),
+        "Content-Type": "application/json",
+      };
+
+      const response = await fetch(endpoint, {
+        method: "GET",
+        headers,
+        signal: AbortSignal.timeout(15000),
+      });
+
+      const responseTime = Date.now() - startTime;
+
+      if (response.ok) {
+        let modelsCount = 0;
+        try {
+          const data = await response.json();
+          // Handle different response formats
+          if (Array.isArray(data?.data)) {
+            modelsCount = data.data.length; // OpenAI-style
+          } else if (Array.isArray(data?.models)) {
+            modelsCount = data.models.length; // Google-style
+          } else if (Array.isArray(data)) {
+            modelsCount = data.length;
+          }
+        } catch {
+          // Non-JSON success is still valid
+        }
+
+        return c.json({
+          success: true,
+          message: `Connection successful - ${provider} endpoint validated`,
+          details: {
+            statusCode: response.status,
+            responseTime,
+            endpoint: endpoint.replace(/key=[^&]+/, "key=***"), // Mask API key in endpoint
+            modelsFound: modelsCount,
+            provider,
+          },
+        });
+      }
+
+      const errorMessages: Record<number, string> = {
+        401: "Authentication failed - check your API key",
+        403: "Permission denied - API key may lack required permissions",
+        404: "Endpoint not found - check your base URL",
+        429: "Rate limited - too many requests",
+        500: "Server error - endpoint returned an internal error",
+        502: "Bad gateway - proxy or endpoint issue",
+        503: "Service unavailable - endpoint is temporarily down",
+      };
+
+      return c.json({
+        success: false,
+        message: errorMessages[response.status] || `API error: HTTP ${response.status}`,
+        details: {
+          statusCode: response.status,
+          responseTime,
+          endpoint: endpoint.replace(/key=[^&]+/, "key=***"),
+          provider,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return c.json({
+        success: false,
+        message: `Connection failed: ${message}`,
+        details: {
+          endpoint: endpoint.replace(/key=[^&]+/, "key=***"),
+          responseTime: Date.now() - startTime,
+          provider,
         },
       });
     }

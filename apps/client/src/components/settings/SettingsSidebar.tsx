@@ -7,7 +7,7 @@ import {
 import { isElectron } from "@/lib/electron";
 import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
-import { Archive, ArrowLeft, BrainCircuit, FileCode2, FolderGit2, GitBranch, KeyRound, Layers, Plug, Settings, Shield, ShieldBan } from "lucide-react";
+import { Archive, ArrowLeft, BrainCircuit, FileCode2, FolderGit2, GitBranch, KeyRound, Layers, Plug, Search, Settings, Shield, ShieldBan, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -124,6 +124,7 @@ export function SettingsSidebar({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const containerLeftRef = useRef<number>(0);
   const rafIdRef = useRef<number | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [width, setWidth] = useState<number>(() => {
     const stored = localStorage.getItem("sidebarWidth");
     const parsed = stored ? Number.parseInt(stored, 10) : DEFAULT_WIDTH;
@@ -131,15 +132,45 @@ export function SettingsSidebar({
     return Math.min(Math.max(parsed, MIN_WIDTH), MAX_WIDTH);
   });
   const [isResizing, setIsResizing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const { isHidden } = useSidebar();
 
   // Filter nav items based on web mode - worktrees are local-only
-  const navItems = useMemo(() => {
+  const baseNavItems = useMemo(() => {
     if (env.NEXT_PUBLIC_WEB_MODE) {
       return allNavItems.filter((item) => !item.localOnly);
     }
     return allNavItems;
   }, []);
+
+  // Filter nav items based on search query
+  const navItems = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return baseNavItems;
+    }
+    const query = searchQuery.toLowerCase();
+    return baseNavItems.filter((item) =>
+      item.label.toLowerCase().includes(query) ||
+      item.section.toLowerCase().includes(query)
+    );
+  }, [baseNavItems, searchQuery]);
+
+  // Keyboard shortcut to focus search (Cmd/Ctrl + K)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+      // Escape to clear search
+      if (e.key === "Escape" && searchQuery) {
+        setSearchQuery("");
+        searchInputRef.current?.blur();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [searchQuery]);
 
   useEffect(() => {
     localStorage.setItem("sidebarWidth", String(width));
@@ -235,6 +266,31 @@ export function SettingsSidebar({
           />
           <span>Back to app</span>
         </Link>
+
+        {/* Settings search */}
+        <div className="relative mx-2 mb-2">
+          <Search
+            className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-neutral-400 dark:text-neutral-500 pointer-events-none"
+            aria-hidden
+          />
+          <input
+            ref={searchInputRef}
+            type="text"
+            placeholder="Search settings..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full h-7 pl-7 pr-7 text-xs rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800/50 text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-blue-400"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+            >
+              <X className="size-3" aria-hidden />
+            </button>
+          )}
+        </div>
 
         <ul className="flex flex-col gap-px">
           {navItems.map((item) => {

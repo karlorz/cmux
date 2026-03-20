@@ -81,8 +81,8 @@ const DispatchRequestSchema = z
  * Get vault config from user settings or environment.
  */
 async function getVaultConfig(
-  _teamSlugOrId: string,
-  _accessToken: string
+  teamSlugOrId: string,
+  accessToken: string
 ): Promise<{
   type: "local" | "github";
   localPath?: string;
@@ -114,8 +114,32 @@ async function getVaultConfig(
     };
   }
 
-  // TODO: Fetch user-specific vault config from workspace settings
-  // For now, return null if no env config
+  // Fetch user-specific vault config from workspace settings
+  try {
+    const convex = getConvex({ accessToken });
+    const settings = await convex.query(api.workspaceSettings.get, { teamSlugOrId });
+
+    if (settings?.vaultConfig) {
+      const vc = settings.vaultConfig;
+      if (vc.type === "local" && vc.localPath) {
+        return { type: "local", localPath: vc.localPath };
+      }
+      if (vc.type === "github" && vc.githubOwner && vc.githubRepo) {
+        return {
+          type: "github",
+          githubOwner: vc.githubOwner,
+          githubRepo: vc.githubRepo,
+          githubPath: vc.githubPath || "",
+          githubBranch: vc.githubBranch || "main",
+          // GitHub token still comes from env for security
+          githubToken: process.env.OBSIDIAN_GITHUB_TOKEN,
+        };
+      }
+    }
+  } catch (error) {
+    console.error("[vault] Failed to fetch workspace settings:", error);
+  }
+
   return null;
 }
 

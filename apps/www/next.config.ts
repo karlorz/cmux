@@ -4,6 +4,8 @@ import type { NextConfig } from "next";
 import { SENTRY_RELEASE } from "./lib/sentry-release";
 
 const nextConfig: NextConfig = {
+  // Enable standalone output for self-hosted deployments (Coolify, Docker)
+  output: "standalone",
   turbopack: {
     // Explicitly set workspace root to prevent Next.js from inferring /Users/karlchow
     // as root (due to package-lock.json in home dir), which causes high memory usage

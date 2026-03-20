@@ -675,6 +675,16 @@ const convexSchema = defineSchema({
   })
     .index("by_task_run", ["taskRunId", "createdAt"])
     .index("by_team", ["teamId", "createdAt"]),
+  taskRunResourceMetrics: defineTable({
+    taskRunId: v.id("taskRuns"),
+    cpuPercent: v.number(), // CPU usage percentage (0-100)
+    memoryMB: v.number(), // Memory usage in megabytes
+    memoryPercent: v.number(), // Memory usage as percentage of total
+    timestamp: v.number(), // When this sample was taken
+    teamId: v.string(),
+  })
+    .index("by_task_run", ["taskRunId", "timestamp"])
+    .index("by_team", ["teamId", "timestamp"]),
   apiKeys: defineTable({
     envVar: v.string(), // e.g. "GEMINI_API_KEY"
     value: v.string(), // The actual API key value (encrypted in a real app)
@@ -720,6 +730,19 @@ const convexSchema = defineSchema({
     ),
     // Shell wrapper settings for task sandboxes
     enableShellWrappers: v.optional(v.boolean()), // When true, inject gh/git wrappers to block dangerous commands (default: false)
+    // Obsidian vault configuration
+    vaultConfig: v.optional(
+      v.object({
+        type: v.union(v.literal("local"), v.literal("github")),
+        // Local vault settings
+        localPath: v.optional(v.string()),
+        // GitHub vault settings
+        githubOwner: v.optional(v.string()),
+        githubRepo: v.optional(v.string()),
+        githubPath: v.optional(v.string()), // Path within repo (default: "")
+        githubBranch: v.optional(v.string()), // Branch name (default: "main")
+      })
+    ),
     createdAt: v.number(),
     updatedAt: v.number(),
     userId: v.string(),
@@ -2009,6 +2032,7 @@ const convexSchema = defineSchema({
   })
     .index("by_orchestration", ["orchestrationId", "createdAt"])
     .index("by_orchestration_status", ["orchestrationId", "status", "createdAt"])
+    .index("by_team", ["teamId", "createdAt"])
     .index("by_team_status", ["teamId", "status", "createdAt"])
     .index("by_task", ["taskId", "createdAt"])
     .index("by_task_run", ["taskRunId", "createdAt"])
@@ -2075,6 +2099,77 @@ const convexSchema = defineSchema({
     .index("by_team", ["teamId", "updatedAt"])
     .index("by_team_status", ["teamId", "status", "updatedAt"])
     .index("by_team_user", ["teamId", "userId", "updatedAt"]),
+
+  // Project milestones for tracking progress and deadlines
+  milestones: defineTable({
+    projectId: v.id("projects"),
+    teamId: v.string(),
+    userId: v.string(),
+    // Milestone details
+    title: v.string(),
+    description: v.optional(v.string()),
+    // Due date (epoch ms)
+    dueDate: v.optional(v.number()),
+    // Milestone status
+    status: v.union(
+      v.literal("not_started"),
+      v.literal("in_progress"),
+      v.literal("completed"),
+      v.literal("overdue")
+    ),
+    // Progress tracking (optional, can be calculated from tasks)
+    totalTasks: v.optional(v.number()),
+    completedTasks: v.optional(v.number()),
+    // Ordering within project (lower = earlier)
+    sortOrder: v.number(),
+    // Timestamps
+    completedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_project", ["projectId", "sortOrder"])
+    .index("by_team", ["teamId", "dueDate"])
+    .index("by_team_status", ["teamId", "status", "dueDate"]),
+
+  // Feed events for team activity stream
+  feedEvents: defineTable({
+    teamId: v.string(),
+    userId: v.optional(v.string()),
+    // Event type
+    eventType: v.union(
+      v.literal("task_completed"),
+      v.literal("task_failed"),
+      v.literal("pr_merged"),
+      v.literal("pr_opened"),
+      v.literal("pr_closed"),
+      v.literal("agent_started"),
+      v.literal("agent_error"),
+      v.literal("approval_required"),
+      v.literal("approval_resolved"),
+      v.literal("milestone_completed"),
+      v.literal("project_created"),
+      v.literal("orchestration_completed")
+    ),
+    // Event details
+    title: v.string(),
+    description: v.optional(v.string()),
+    // Related entities
+    taskId: v.optional(v.id("tasks")),
+    taskRunId: v.optional(v.id("taskRuns")),
+    projectId: v.optional(v.id("projects")),
+    orchestrationTaskId: v.optional(v.id("orchestrationTasks")),
+    // Metadata
+    agentName: v.optional(v.string()),
+    repoFullName: v.optional(v.string()),
+    prNumber: v.optional(v.number()),
+    prUrl: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+    // Timestamps
+    createdAt: v.number(),
+  })
+    .index("by_team", ["teamId", "createdAt"])
+    .index("by_team_type", ["teamId", "eventType", "createdAt"])
+    .index("by_team_repo", ["teamId", "repoFullName", "createdAt"]),
 
   // MCP server configurations (central, cloud-based MCP management)
   // Users configure MCP servers in the web UI; these are injected into sandboxes
