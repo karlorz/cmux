@@ -66,6 +66,9 @@ export { settingsTestAnthropicConnectionRouter } from "./settings.test-anthropic
 export { settingsRouter } from "./settings.route";
 export { worktreesRouter } from "./worktrees.route";
 export { modelsDiscoveryRouter } from "./models.discovery.route";
+export { modelsEnabledRouter } from "./models.enabled.route";
+export { modelsListRouter } from "./models.list.route";
+export { modelsReorderRouter } from "./models.reorder.route";
 export { modelsRouter } from "./models.route";
 export { providersEnabledRouter } from "./providers.enabled.route";
 export { providersOverridesRouter } from "./providers.overrides.route";
