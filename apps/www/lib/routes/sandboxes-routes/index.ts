@@ -19,6 +19,7 @@ export { sandboxesRouter } from "../sandboxes.route";
 // Export sub-routers for direct use
 export { sandboxesLifecycleRouter } from "./lifecycle.route";
 export { sandboxesFeaturesRouter } from "./features.route";
+export { sandboxesConfigRouter } from "./config.route";
 
 // Export helpers for use by route modules
 export * from "./_helpers";
