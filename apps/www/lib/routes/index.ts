@@ -46,6 +46,8 @@ export { projectPlanRouter } from "./project.plan.route";
 export { projectRouter } from "./project.route";
 export { projectUpdateRouter } from "./project.update.route";
 export { pveLxcPreviewRouter } from "./pve-lxc.preview.route";
+export { pveLxcResumeRouter } from "./pve-lxc.resume.route";
+export { pveLxcStoppedRouter } from "./pve-lxc.stopped.route";
 export { pveLxcRouter } from "./pve-lxc.route";
 export { teamsRouter } from "./teams.route";
 export { usersRouter } from "./users.route";
