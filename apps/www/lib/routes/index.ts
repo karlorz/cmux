@@ -38,6 +38,7 @@ export { previewRouter } from "./preview.route";
 export { settingsProviderConnectionRouter } from "./settings.provider-connection.route";
 export { settingsRouter } from "./settings.route";
 export { worktreesRouter } from "./worktrees.route";
+export { modelsDiscoveryRouter } from "./models.discovery.route";
 export { modelsRouter } from "./models.route";
 export { providersRouter } from "./providers.route";
 export { providersStatusRouter } from "./providers.status.route";

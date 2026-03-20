@@ -1752,6 +1752,26 @@ export type RemoveWorktreeBody = {
     worktreePath: string;
 };
 
+export type DiscoveryResultResponse = {
+    success: boolean;
+    curated?: number;
+    discovered?: number;
+    free?: number;
+    paid?: number;
+    openrouter?: {
+        discovered: number;
+        free: number;
+        paid: number;
+    };
+    error?: string;
+};
+
+export type SeedResultResponse = {
+    success: boolean;
+    seededCount: number;
+    error?: string;
+};
+
 export type Model = {
     _id: string;
     name: string;
@@ -1792,20 +1812,6 @@ export type SetEnabledBody = {
 
 export type ReorderBody = {
     modelNames: Array<string>;
-};
-
-export type DiscoveryResultResponse = {
-    success: boolean;
-    curated?: number;
-    discovered?: number;
-    free?: number;
-    paid?: number;
-    openrouter?: {
-        discovered: number;
-        free: number;
-        paid: number;
-    };
-    error?: string;
 };
 
 export type ApiFormat = 'anthropic' | 'openai' | 'bedrock' | 'vertex' | 'passthrough';
@@ -6529,6 +6535,56 @@ export type PostApiWorktreesRemoveResponses = {
 
 export type PostApiWorktreesRemoveResponse = PostApiWorktreesRemoveResponses[keyof PostApiWorktreesRemoveResponses];
 
+export type PostApiModelsRefreshData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/models/refresh';
+};
+
+export type PostApiModelsRefreshErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiModelsRefreshResponses = {
+    /**
+     * Discovery result
+     */
+    200: DiscoveryResultResponse;
+};
+
+export type PostApiModelsRefreshResponse = PostApiModelsRefreshResponses[keyof PostApiModelsRefreshResponses];
+
+export type PostApiModelsSeedData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/models/seed';
+};
+
+export type PostApiModelsSeedErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiModelsSeedResponses = {
+    /**
+     * Seed result
+     */
+    200: SeedResultResponse;
+};
+
+export type PostApiModelsSeedResponse = PostApiModelsSeedResponses[keyof PostApiModelsSeedResponses];
+
 export type GetApiModelsData = {
     body?: never;
     path?: never;
@@ -6612,60 +6668,6 @@ export type PostApiModelsReorderResponses = {
 };
 
 export type PostApiModelsReorderResponse = PostApiModelsReorderResponses[keyof PostApiModelsReorderResponses];
-
-export type PostApiModelsRefreshData = {
-    body?: never;
-    path?: never;
-    query: {
-        teamSlugOrId: string;
-    };
-    url: '/api/models/refresh';
-};
-
-export type PostApiModelsRefreshErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-};
-
-export type PostApiModelsRefreshResponses = {
-    /**
-     * Discovery result
-     */
-    200: DiscoveryResultResponse;
-};
-
-export type PostApiModelsRefreshResponse = PostApiModelsRefreshResponses[keyof PostApiModelsRefreshResponses];
-
-export type PostApiModelsSeedData = {
-    body?: never;
-    path?: never;
-    query: {
-        teamSlugOrId: string;
-    };
-    url: '/api/models/seed';
-};
-
-export type PostApiModelsSeedErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-};
-
-export type PostApiModelsSeedResponses = {
-    /**
-     * Seed result
-     */
-    200: {
-        success: boolean;
-        seededCount: number;
-        error?: string;
-    };
-};
-
-export type PostApiModelsSeedResponse = PostApiModelsSeedResponses[keyof PostApiModelsSeedResponses];
 
 export type GetApiProvidersData = {
     body?: never;
