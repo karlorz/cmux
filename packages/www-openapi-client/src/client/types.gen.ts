@@ -565,6 +565,21 @@ export type InstanceInfo = {
 
 export type ListInstancesResponse = Array<InstanceInfo>;
 
+export type SetupInstanceResponse = {
+    instanceId: string;
+    vscodeUrl: string;
+    clonedRepos: Array<string>;
+    removedRepos: Array<string>;
+};
+
+export type SetupInstanceBody = {
+    teamSlugOrId: string;
+    instanceId?: string;
+    selectedRepos?: Array<string>;
+    ttlSeconds?: number;
+    snapshotId?: string | ('snapshot_mgmhjyrd' | 'snapshot_fe0cgqlw');
+};
+
 export type ResumeTaskRunResponse = {
     resumed: true;
 };
@@ -589,21 +604,6 @@ export type RefreshGitHubAuthResponse = {
 
 export type RefreshGitHubAuthBody = {
     teamSlugOrId: string;
-};
-
-export type SetupInstanceResponse = {
-    instanceId: string;
-    vscodeUrl: string;
-    clonedRepos: Array<string>;
-    removedRepos: Array<string>;
-};
-
-export type SetupInstanceBody = {
-    teamSlugOrId: string;
-    instanceId?: string;
-    selectedRepos?: Array<string>;
-    ttlSeconds?: number;
-    snapshotId?: string | ('snapshot_mgmhjyrd' | 'snapshot_fe0cgqlw');
 };
 
 export type OrchestrateMessageResponse = {
@@ -3453,6 +3453,33 @@ export type GetApiMorphInstancesResponses = {
 
 export type GetApiMorphInstancesResponse = GetApiMorphInstancesResponses[keyof GetApiMorphInstancesResponses];
 
+export type PostApiMorphSetupInstanceData = {
+    body: SetupInstanceBody;
+    path?: never;
+    query?: never;
+    url: '/api/morph/setup-instance';
+};
+
+export type PostApiMorphSetupInstanceErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Failed to setup instance
+     */
+    500: unknown;
+};
+
+export type PostApiMorphSetupInstanceResponses = {
+    /**
+     * Instance setup successfully
+     */
+    200: SetupInstanceResponse;
+};
+
+export type PostApiMorphSetupInstanceResponse = PostApiMorphSetupInstanceResponses[keyof PostApiMorphSetupInstanceResponses];
+
 export type PostApiMorphTaskRunsByTaskRunIdResumeData = {
     body: ResumeTaskRunBody;
     path: {
@@ -3579,33 +3606,6 @@ export type PostApiMorphTaskRunsByTaskRunIdRefreshGithubAuthResponses = {
 };
 
 export type PostApiMorphTaskRunsByTaskRunIdRefreshGithubAuthResponse = PostApiMorphTaskRunsByTaskRunIdRefreshGithubAuthResponses[keyof PostApiMorphTaskRunsByTaskRunIdRefreshGithubAuthResponses];
-
-export type PostApiMorphSetupInstanceData = {
-    body: SetupInstanceBody;
-    path?: never;
-    query?: never;
-    url: '/api/morph/setup-instance';
-};
-
-export type PostApiMorphSetupInstanceErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Failed to setup instance
-     */
-    500: unknown;
-};
-
-export type PostApiMorphSetupInstanceResponses = {
-    /**
-     * Instance setup successfully
-     */
-    200: SetupInstanceResponse;
-};
-
-export type PostApiMorphSetupInstanceResponse = PostApiMorphSetupInstanceResponses[keyof PostApiMorphSetupInstanceResponses];
 
 export type PostApiOrchestrateMessageData = {
     body: OrchestrateMessageRequest;

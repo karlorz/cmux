@@ -31,6 +31,7 @@ export { githubProjectsPlanSyncRouter } from "./github.projects.plan-sync.route"
 export { healthRouter } from "./health.route";
 export { iframePreflightRouter } from "./iframe-preflight.route";
 export { morphInstancesRouter } from "./morph.instances.route";
+export { morphSetupInstanceRouter } from "./morph.setup-instance.route";
 export { morphTaskRunsRouter } from "./morph.task-runs.route";
 export { morphRouter } from "./morph.route";
 export { orchestrateRouter } from "./orchestrate.route";
