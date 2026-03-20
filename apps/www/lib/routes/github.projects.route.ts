@@ -16,6 +16,7 @@ import { getAccessTokenFromRequest, getUserFromRequest } from "@/lib/utils/auth"
 import { api } from "@cmux/convex/api";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { getConvex } from "../utils/get-convex";
+import { githubProjectsPlanSyncRouter } from "./github.projects.plan-sync.route";
 import {
   listProjects,
   getProjectFields,
@@ -27,6 +28,8 @@ import {
 } from "../utils/github-projects";
 
 export const githubProjectsRouter = new OpenAPIHono();
+githubProjectsRouter.route("/", githubProjectsPlanSyncRouter);
+
 const execFileAsync = promisify(execFile);
 
 const GITHUB_PROJECT_SCOPES = ["project"] as const;
@@ -1209,150 +1212,3 @@ githubProjectsRouter.openapi(
 
 // Export status mapping for use in sync logic
 export { mapCmuxStatusToProjectStatus };
-
-// Schema for plan-sync endpoint (called from Claude Code plan hook)
-const PlanSyncBody = z.object({
-  planContent: z.string().min(1).max(100000),
-  planFile: z.string().optional(),
-});
-
-const PlanSyncResponse = z.object({
-  success: z.boolean(),
-  itemsCreated: z.number(),
-  projectId: z.string().nullable(),
-  error: z.string().optional(),
-});
-
-/**
- * Simple plan markdown parser - extracts ## headings as items
- * Similar to apps/client/src/lib/parse-plan-markdown.ts
- */
-function parsePlanMarkdown(markdown: string): Array<{ title: string; body: string }> {
-  const normalized = markdown.replace(/\r\n?/g, "\n");
-  if (normalized.trim().length === 0) return [];
-
-  const lines = normalized.split("\n");
-  const items: Array<{ title: string; body: string }> = [];
-  let currentTitle: string | null = null;
-  let currentBodyLines: string[] = [];
-
-  for (const line of lines) {
-    // Check for ## heading
-    const trimmed = line.trimStart();
-    if (trimmed.startsWith("## ") && !trimmed.startsWith("### ")) {
-      // Save previous item
-      if (currentTitle !== null) {
-        items.push({
-          title: currentTitle,
-          body: currentBodyLines.join("\n").trim(),
-        });
-      }
-      currentTitle = trimmed.slice(3).trim();
-      currentBodyLines = [];
-      continue;
-    }
-
-    if (currentTitle !== null) {
-      currentBodyLines.push(line);
-    }
-  }
-
-  // Save last item
-  if (currentTitle !== null) {
-    items.push({
-      title: currentTitle,
-      body: currentBodyLines.join("\n").trim(),
-    });
-  }
-
-  return items;
-}
-
-// POST /integrations/github/projects/plan-sync - Sync plan from Claude Code hook
-// Called by the plan-hook.sh script when ExitPlanMode is used
-githubProjectsRouter.openapi(
-  createRoute({
-    method: "post" as const,
-    path: "/integrations/github/projects/plan-sync",
-    tags: ["Integrations"],
-    summary: "Sync a plan from Claude Code to GitHub Projects",
-    description:
-      "Called by the Claude Code plan hook when ExitPlanMode is used. " +
-      "Parses the plan markdown and creates draft issues in the linked project.",
-    request: {
-      body: {
-        content: { "application/json": { schema: PlanSyncBody } },
-        required: true,
-      },
-    },
-    responses: {
-      200: {
-        description: "OK",
-        content: { "application/json": { schema: PlanSyncResponse } },
-      },
-      401: { description: "Unauthorized" },
-    },
-  }),
-  async (c) => {
-    const { verifyTaskRunJwt } = await import("@/lib/utils/jwt-task-run");
-
-    // This endpoint uses task run JWT auth (from x-cmux-token header)
-    const cmuxToken = c.req.header("x-cmux-token");
-    if (!cmuxToken) {
-      return c.json({
-        success: false,
-        itemsCreated: 0,
-        projectId: null,
-        error: "Missing x-cmux-token header",
-      });
-    }
-
-    // Verify JWT and extract task run context
-    const jwtPayload = await verifyTaskRunJwt(cmuxToken);
-    if (!jwtPayload) {
-      return c.json({
-        success: false,
-        itemsCreated: 0,
-        projectId: null,
-        error: "Invalid or expired task run token",
-      });
-    }
-
-    const { planContent, planFile: _planFile } = c.req.valid("json");
-
-    // Parse plan into items
-    const items = parsePlanMarkdown(planContent);
-    if (items.length === 0) {
-      return c.json({
-        success: true,
-        itemsCreated: 0,
-        projectId: null,
-        error: "No items found in plan",
-      });
-    }
-
-    // Log received plan items for debugging
-    // Full implementation would:
-    // 1. Use jwtPayload.teamId to get workspace settings
-    // 2. Check for linked GitHub Project ID
-    // 3. Use user OAuth token with project scope to create draft issues
-    console.log(
-      `[github.projects] Plan sync received from task ${jwtPayload.taskRunId}:`,
-    );
-    console.log(`[github.projects] Team: ${jwtPayload.teamId}`);
-    console.log(`[github.projects] Items (${items.length}):`);
-    for (const item of items) {
-      console.log(`  - ${item.title}`);
-    }
-
-    // Return success with items parsed
-    // Note: Item creation requires OAuth token with project scope,
-    // which isn't available in agent context. Future work: team-level tokens.
-    return c.json({
-      success: true,
-      itemsCreated: 0,
-      projectId: null,
-      error: `Parsed ${items.length} items. Creation pending OAuth integration.`,
-    });
-  },
-);
