@@ -562,6 +562,20 @@
         "typescript-eslint": "^8.41.0",
       },
     },
+    "packages/pve-vm-client": {
+      "name": "@cmux/pve-vm-client",
+      "version": "0.1.0",
+      "dependencies": {
+        "undici": "^6.21.3",
+      },
+      "devDependencies": {
+        "@eslint/js": "^9.34.0",
+        "@types/node": "^24.9.1",
+        "eslint": "^9.34.0",
+        "typescript": "^5.9.3",
+        "typescript-eslint": "^8.41.0",
+      },
+    },
     "packages/shared": {
       "name": "@cmux/shared",
       "version": "1.0.0",
@@ -999,6 +1013,8 @@
     "@cmux/pr-heatmap": ["@cmux/pr-heatmap@workspace:packages/pr-heatmap"],
 
     "@cmux/pve-lxc-client": ["@cmux/pve-lxc-client@workspace:packages/pve-lxc-client"],
+
+    "@cmux/pve-vm-client": ["@cmux/pve-vm-client@workspace:packages/pve-vm-client"],
 
     "@cmux/scripts": ["@cmux/scripts@workspace:scripts"],
 
