@@ -1253,6 +1253,22 @@ export type PveLxcCheckTaskRunStoppedBody = {
     teamSlugOrId: string;
 };
 
+export type GetEnvironmentResponse = {
+    id: string;
+    name: string;
+    snapshotId: string;
+    snapshotProvider: 'docker' | 'morph' | 'e2b' | 'daytona' | 'pve-lxc' | 'other' | 'pve-vm';
+    templateVmid?: number;
+    dataVaultKey: string;
+    selectedRepos?: Array<string>;
+    description?: string;
+    maintenanceScript?: string;
+    devScript?: string;
+    exposedPorts?: Array<number>;
+    createdAt: number;
+    updatedAt: number;
+};
+
 export type CreateEnvironmentResponse = {
     id: string;
     snapshotId: string;
@@ -1269,22 +1285,6 @@ export type CreateEnvironmentBody = {
     maintenanceScript?: string;
     devScript?: string;
     exposedPorts?: Array<number>;
-};
-
-export type GetEnvironmentResponse = {
-    id: string;
-    name: string;
-    snapshotId: string;
-    snapshotProvider: 'docker' | 'morph' | 'e2b' | 'daytona' | 'pve-lxc' | 'other' | 'pve-vm';
-    templateVmid?: number;
-    dataVaultKey: string;
-    selectedRepos?: Array<string>;
-    description?: string;
-    maintenanceScript?: string;
-    devScript?: string;
-    exposedPorts?: Array<number>;
-    createdAt: number;
-    updatedAt: number;
 };
 
 export type ListEnvironmentsResponse = Array<GetEnvironmentResponse>;
@@ -4876,62 +4876,6 @@ export type GetApiIframePreflightResponses = {
 
 export type GetApiIframePreflightResponse = GetApiIframePreflightResponses[keyof GetApiIframePreflightResponses];
 
-export type GetApiEnvironmentsData = {
-    body?: never;
-    path?: never;
-    query: {
-        teamSlugOrId: string;
-    };
-    url: '/api/environments';
-};
-
-export type GetApiEnvironmentsErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Failed to list environments
-     */
-    500: unknown;
-};
-
-export type GetApiEnvironmentsResponses = {
-    /**
-     * Environments retrieved successfully
-     */
-    200: ListEnvironmentsResponse;
-};
-
-export type GetApiEnvironmentsResponse = GetApiEnvironmentsResponses[keyof GetApiEnvironmentsResponses];
-
-export type PostApiEnvironmentsData = {
-    body: CreateEnvironmentBody;
-    path?: never;
-    query?: never;
-    url: '/api/environments';
-};
-
-export type PostApiEnvironmentsErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Failed to create environment
-     */
-    500: unknown;
-};
-
-export type PostApiEnvironmentsResponses = {
-    /**
-     * Environment created successfully
-     */
-    200: CreateEnvironmentResponse;
-};
-
-export type PostApiEnvironmentsResponse = PostApiEnvironmentsResponses[keyof PostApiEnvironmentsResponses];
-
 export type DeleteApiEnvironmentsByIdData = {
     body?: never;
     path: {
@@ -5038,6 +4982,62 @@ export type PatchApiEnvironmentsByIdResponses = {
 };
 
 export type PatchApiEnvironmentsByIdResponse = PatchApiEnvironmentsByIdResponses[keyof PatchApiEnvironmentsByIdResponses];
+
+export type GetApiEnvironmentsData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/environments';
+};
+
+export type GetApiEnvironmentsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Failed to list environments
+     */
+    500: unknown;
+};
+
+export type GetApiEnvironmentsResponses = {
+    /**
+     * Environments retrieved successfully
+     */
+    200: ListEnvironmentsResponse;
+};
+
+export type GetApiEnvironmentsResponse = GetApiEnvironmentsResponses[keyof GetApiEnvironmentsResponses];
+
+export type PostApiEnvironmentsData = {
+    body: CreateEnvironmentBody;
+    path?: never;
+    query?: never;
+    url: '/api/environments';
+};
+
+export type PostApiEnvironmentsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Failed to create environment
+     */
+    500: unknown;
+};
+
+export type PostApiEnvironmentsResponses = {
+    /**
+     * Environment created successfully
+     */
+    200: CreateEnvironmentResponse;
+};
+
+export type PostApiEnvironmentsResponse = PostApiEnvironmentsResponses[keyof PostApiEnvironmentsResponses];
 
 export type PatchApiEnvironmentsByIdPortsData = {
     body: UpdateEnvironmentPortsBody;
