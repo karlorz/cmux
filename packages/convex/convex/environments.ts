@@ -323,3 +323,98 @@ export const getByDataVaultKey = authQuery({
       .first();
   },
 });
+
+/**
+ * Export an environment's configuration (excluding secrets).
+ * Returns a portable JSON format for import/backup.
+ */
+export const exportConfig = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    id: v.id("environments"),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const environment = await ctx.db.get(args.id);
+
+    if (!environment || environment.teamId !== teamId) {
+      return null;
+    }
+
+    // Return exportable config (excluding internal IDs and secrets)
+    return {
+      version: 1,
+      name: environment.name,
+      description: environment.description,
+      snapshotProvider: environment.snapshotProvider,
+      snapshotId: environment.snapshotId,
+      templateVmid: environment.templateVmid,
+      selectedRepos: environment.selectedRepos,
+      maintenanceScript: environment.maintenanceScript,
+      devScript: environment.devScript,
+      exposedPorts: environment.exposedPorts,
+      exportedAt: Date.now(),
+    };
+  },
+});
+
+/**
+ * Compare two environments side-by-side.
+ * Returns differences in configuration fields.
+ */
+export const compare = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    envIdA: v.id("environments"),
+    envIdB: v.id("environments"),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    const [envA, envB] = await Promise.all([
+      ctx.db.get(args.envIdA),
+      ctx.db.get(args.envIdB),
+    ]);
+
+    if (!envA || envA.teamId !== teamId) {
+      throw new Error("Environment A not found");
+    }
+    if (!envB || envB.teamId !== teamId) {
+      throw new Error("Environment B not found");
+    }
+
+    // Compare fields
+    const differences: Array<{
+      field: string;
+      valueA: unknown;
+      valueB: unknown;
+      isDifferent: boolean;
+    }> = [];
+
+    const compareField = (
+      field: string,
+      a: unknown,
+      b: unknown
+    ) => {
+      const isDifferent = JSON.stringify(a) !== JSON.stringify(b);
+      differences.push({ field, valueA: a, valueB: b, isDifferent });
+    };
+
+    compareField("name", envA.name, envB.name);
+    compareField("description", envA.description, envB.description);
+    compareField("snapshotProvider", envA.snapshotProvider, envB.snapshotProvider);
+    compareField("snapshotId", envA.snapshotId, envB.snapshotId);
+    compareField("templateVmid", envA.templateVmid, envB.templateVmid);
+    compareField("selectedRepos", envA.selectedRepos, envB.selectedRepos);
+    compareField("maintenanceScript", envA.maintenanceScript, envB.maintenanceScript);
+    compareField("devScript", envA.devScript, envB.devScript);
+    compareField("exposedPorts", envA.exposedPorts, envB.exposedPorts);
+
+    return {
+      envA: { id: envA._id, name: envA.name },
+      envB: { id: envB._id, name: envB.name },
+      differences,
+      hasDifferences: differences.some((d) => d.isDifferent),
+    };
+  },
+});
