@@ -48,6 +48,11 @@ import {
   settingsRouter,
   worktreesRouter,
 } from "@/lib/routes/index";
+import {
+  sandboxesLifecycleRouter,
+  sandboxesFeaturesRouter,
+  sandboxesConfigRouter,
+} from "@/lib/routes/sandboxes-routes";
 import { authAnonymousRouter } from "@/lib/routes/auth.anonymous.route";
 import { stackServerApp } from "@/lib/utils/stack";
 import { swaggerUI } from "@hono/swagger-ui";
@@ -185,6 +190,9 @@ app.route("/", pveLxcRouter);
 app.route("/", iframePreflightRouter);
 app.route("/", environmentsRouter);
 app.route("/", sandboxesRouter);
+app.route("/", sandboxesLifecycleRouter);
+app.route("/", sandboxesFeaturesRouter);
+app.route("/", sandboxesConfigRouter);
 app.route("/", teamsRouter);
 app.route("/", branchRouter);
 app.route("/", codeReviewRouter);

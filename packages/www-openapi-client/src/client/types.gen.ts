@@ -1391,6 +1391,38 @@ export type StartSandboxBody = {
     prompt?: string;
 };
 
+export type PrewarmSandboxResponse = {
+    id: string;
+    alreadyExists: boolean;
+};
+
+export type PrewarmSandboxBody = {
+    teamSlugOrId: string;
+    repoUrl?: string;
+    branch?: string;
+};
+
+export type SandboxSshResponse = {
+    morphInstanceId: string;
+    /**
+     * Full SSH command to connect to this sandbox
+     */
+    sshCommand: string;
+    /**
+     * SSH access token for this sandbox
+     */
+    accessToken: string;
+    user: string;
+    /**
+     * Current instance status
+     */
+    status: 'running' | 'paused';
+};
+
+export type SandboxResumeResponse = {
+    resumed: true;
+};
+
 export type SetupProvidersResponse = {
     success: boolean;
     providers: Array<string>;
@@ -1401,17 +1433,6 @@ export type SetupProvidersBody = {
     repoUrl?: string;
     taskRunId?: string;
     taskRunJwt?: string;
-};
-
-export type PrewarmSandboxResponse = {
-    id: string;
-    alreadyExists: boolean;
-};
-
-export type PrewarmSandboxBody = {
-    teamSlugOrId: string;
-    repoUrl?: string;
-    branch?: string;
 };
 
 export type SandboxRefreshGitHubAuthResponse = {
@@ -1439,27 +1460,6 @@ export type RunScriptsBody = {
     teamSlugOrId: string;
     maintenanceScript?: string;
     devScript?: string;
-};
-
-export type SandboxSshResponse = {
-    morphInstanceId: string;
-    /**
-     * Full SSH command to connect to this sandbox
-     */
-    sshCommand: string;
-    /**
-     * SSH access token for this sandbox
-     */
-    accessToken: string;
-    user: string;
-    /**
-     * Current instance status
-     */
-    status: 'running' | 'paused';
-};
-
-export type SandboxResumeResponse = {
-    resumed: true;
 };
 
 export type Team = {
@@ -5269,42 +5269,6 @@ export type PostApiSandboxesStartResponses = {
 
 export type PostApiSandboxesStartResponse = PostApiSandboxesStartResponses[keyof PostApiSandboxesStartResponses];
 
-export type PostApiSandboxesByIdSetupProvidersData = {
-    body: SetupProvidersBody;
-    path: {
-        /**
-         * Sandbox instance ID
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/api/sandboxes/{id}/setup-providers';
-};
-
-export type PostApiSandboxesByIdSetupProvidersErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Instance not found
-     */
-    404: unknown;
-    /**
-     * Failed to set up providers
-     */
-    500: unknown;
-};
-
-export type PostApiSandboxesByIdSetupProvidersResponses = {
-    /**
-     * Provider auth configured
-     */
-    200: SetupProvidersResponse;
-};
-
-export type PostApiSandboxesByIdSetupProvidersResponse = PostApiSandboxesByIdSetupProvidersResponses[keyof PostApiSandboxesByIdSetupProvidersResponses];
-
 export type PostApiSandboxesPrewarmData = {
     body: PrewarmSandboxBody;
     path?: never;
@@ -5331,129 +5295,6 @@ export type PostApiSandboxesPrewarmResponses = {
 };
 
 export type PostApiSandboxesPrewarmResponse = PostApiSandboxesPrewarmResponses[keyof PostApiSandboxesPrewarmResponses];
-
-export type PostApiSandboxesByIdRefreshGithubAuthData = {
-    body: SandboxRefreshGitHubAuthBody;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/sandboxes/{id}/refresh-github-auth';
-};
-
-export type PostApiSandboxesByIdRefreshGithubAuthErrors = {
-    /**
-     * Unsupported sandbox provider
-     */
-    400: unknown;
-    /**
-     * Unauthorized or GitHub not connected
-     */
-    401: unknown;
-    /**
-     * Forbidden - sandbox does not belong to this team
-     */
-    403: unknown;
-    /**
-     * Sandbox not found
-     */
-    404: unknown;
-    /**
-     * Sandbox is paused/stopped and must be resumed first
-     */
-    409: unknown;
-    /**
-     * Failed to refresh GitHub authentication
-     */
-    500: unknown;
-    /**
-     * Sandbox provider not configured
-     */
-    503: unknown;
-};
-
-export type PostApiSandboxesByIdRefreshGithubAuthResponses = {
-    /**
-     * GitHub authentication refreshed successfully
-     */
-    200: SandboxRefreshGitHubAuthResponse;
-};
-
-export type PostApiSandboxesByIdRefreshGithubAuthResponse = PostApiSandboxesByIdRefreshGithubAuthResponses[keyof PostApiSandboxesByIdRefreshGithubAuthResponses];
-
-export type PostApiSandboxesByIdEnvData = {
-    body: UpdateSandboxEnvBody;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/sandboxes/{id}/env';
-};
-
-export type PostApiSandboxesByIdEnvErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden
-     */
-    403: unknown;
-    /**
-     * Sandbox not found
-     */
-    404: unknown;
-    /**
-     * Failed to apply environment variables
-     */
-    500: unknown;
-};
-
-export type PostApiSandboxesByIdEnvResponses = {
-    /**
-     * Environment variables applied
-     */
-    200: UpdateSandboxEnvResponse;
-};
-
-export type PostApiSandboxesByIdEnvResponse = PostApiSandboxesByIdEnvResponses[keyof PostApiSandboxesByIdEnvResponses];
-
-export type PostApiSandboxesByIdRunScriptsData = {
-    body: RunScriptsBody;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/sandboxes/{id}/run-scripts';
-};
-
-export type PostApiSandboxesByIdRunScriptsErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden
-     */
-    403: unknown;
-    /**
-     * Sandbox not found
-     */
-    404: unknown;
-    /**
-     * Failed to run scripts
-     */
-    500: unknown;
-};
-
-export type PostApiSandboxesByIdRunScriptsResponses = {
-    /**
-     * Scripts started successfully
-     */
-    200: RunScriptsResponse;
-};
-
-export type PostApiSandboxesByIdRunScriptsResponse = PostApiSandboxesByIdRunScriptsResponses[keyof PostApiSandboxesByIdRunScriptsResponses];
 
 export type PostApiSandboxesByIdStopData = {
     body?: never;
@@ -5763,6 +5604,165 @@ export type PostApiSandboxesByIdLiveDiffResponses = {
 };
 
 export type PostApiSandboxesByIdLiveDiffResponse = PostApiSandboxesByIdLiveDiffResponses[keyof PostApiSandboxesByIdLiveDiffResponses];
+
+export type PostApiSandboxesByIdSetupProvidersData = {
+    body: SetupProvidersBody;
+    path: {
+        /**
+         * Sandbox instance ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/sandboxes/{id}/setup-providers';
+};
+
+export type PostApiSandboxesByIdSetupProvidersErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Instance not found
+     */
+    404: unknown;
+    /**
+     * Failed to set up providers
+     */
+    500: unknown;
+};
+
+export type PostApiSandboxesByIdSetupProvidersResponses = {
+    /**
+     * Provider auth configured
+     */
+    200: SetupProvidersResponse;
+};
+
+export type PostApiSandboxesByIdSetupProvidersResponse = PostApiSandboxesByIdSetupProvidersResponses[keyof PostApiSandboxesByIdSetupProvidersResponses];
+
+export type PostApiSandboxesByIdRefreshGithubAuthData = {
+    body: SandboxRefreshGitHubAuthBody;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/sandboxes/{id}/refresh-github-auth';
+};
+
+export type PostApiSandboxesByIdRefreshGithubAuthErrors = {
+    /**
+     * Unsupported sandbox provider
+     */
+    400: unknown;
+    /**
+     * Unauthorized or GitHub not connected
+     */
+    401: unknown;
+    /**
+     * Forbidden - sandbox does not belong to this team
+     */
+    403: unknown;
+    /**
+     * Sandbox not found
+     */
+    404: unknown;
+    /**
+     * Sandbox is paused/stopped and must be resumed first
+     */
+    409: unknown;
+    /**
+     * Failed to refresh GitHub authentication
+     */
+    500: unknown;
+    /**
+     * Sandbox provider not configured
+     */
+    503: unknown;
+};
+
+export type PostApiSandboxesByIdRefreshGithubAuthResponses = {
+    /**
+     * GitHub authentication refreshed successfully
+     */
+    200: SandboxRefreshGitHubAuthResponse;
+};
+
+export type PostApiSandboxesByIdRefreshGithubAuthResponse = PostApiSandboxesByIdRefreshGithubAuthResponses[keyof PostApiSandboxesByIdRefreshGithubAuthResponses];
+
+export type PostApiSandboxesByIdEnvData = {
+    body: UpdateSandboxEnvBody;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/sandboxes/{id}/env';
+};
+
+export type PostApiSandboxesByIdEnvErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Sandbox not found
+     */
+    404: unknown;
+    /**
+     * Failed to apply environment variables
+     */
+    500: unknown;
+};
+
+export type PostApiSandboxesByIdEnvResponses = {
+    /**
+     * Environment variables applied
+     */
+    200: UpdateSandboxEnvResponse;
+};
+
+export type PostApiSandboxesByIdEnvResponse = PostApiSandboxesByIdEnvResponses[keyof PostApiSandboxesByIdEnvResponses];
+
+export type PostApiSandboxesByIdRunScriptsData = {
+    body: RunScriptsBody;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/sandboxes/{id}/run-scripts';
+};
+
+export type PostApiSandboxesByIdRunScriptsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Sandbox not found
+     */
+    404: unknown;
+    /**
+     * Failed to run scripts
+     */
+    500: unknown;
+};
+
+export type PostApiSandboxesByIdRunScriptsResponses = {
+    /**
+     * Scripts started successfully
+     */
+    200: RunScriptsResponse;
+};
+
+export type PostApiSandboxesByIdRunScriptsResponse = PostApiSandboxesByIdRunScriptsResponses[keyof PostApiSandboxesByIdRunScriptsResponses];
 
 export type GetApiTeamsData = {
     body?: never;
