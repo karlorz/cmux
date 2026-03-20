@@ -1374,8 +1374,11 @@ export type StartSandboxResponse = {
 
 export type StartSandboxBody = {
     teamSlugOrId: string;
-    environmentId?: string;
     snapshotId?: string;
+    environmentId?: string;
+    projectSlugOrId?: string;
+    sessionId?: string;
+    vscodePersisted?: boolean;
     ttlSeconds?: number;
     metadata?: {
         [key: string]: string;
@@ -1402,6 +1405,10 @@ export type PrewarmSandboxBody = {
     branch?: string;
 };
 
+export type SandboxResumeResponse = {
+    resumed: true;
+};
+
 export type SandboxSshResponse = {
     morphInstanceId: string;
     /**
@@ -1417,10 +1424,6 @@ export type SandboxSshResponse = {
      * Current instance status
      */
     status: 'running' | 'paused';
-};
-
-export type SandboxResumeResponse = {
-    resumed: true;
 };
 
 export type SetupProvidersResponse = {
@@ -5296,81 +5299,6 @@ export type PostApiSandboxesPrewarmResponses = {
 
 export type PostApiSandboxesPrewarmResponse = PostApiSandboxesPrewarmResponses[keyof PostApiSandboxesPrewarmResponses];
 
-export type PostApiSandboxesByIdPublishDevcontainerData = {
-    body: {
-        teamSlugOrId: string;
-        taskRunId: string;
-    };
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/sandboxes/{id}/publish-devcontainer';
-};
-
-export type PostApiSandboxesByIdPublishDevcontainerErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Failed to publish devcontainer networking
-     */
-    500: unknown;
-};
-
-export type PostApiSandboxesByIdPublishDevcontainerResponses = {
-    /**
-     * Exposed ports list
-     */
-    200: Array<{
-        status?: 'running';
-        port: number;
-        url: string;
-    }>;
-};
-
-export type PostApiSandboxesByIdPublishDevcontainerResponse = PostApiSandboxesByIdPublishDevcontainerResponses[keyof PostApiSandboxesByIdPublishDevcontainerResponses];
-
-export type GetApiSandboxesByIdSshData = {
-    body?: never;
-    path: {
-        id: string;
-    };
-    query?: {
-        teamSlugOrId?: string;
-    };
-    url: '/api/sandboxes/{id}/ssh';
-};
-
-export type GetApiSandboxesByIdSshErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden - not a team member
-     */
-    403: unknown;
-    /**
-     * Sandbox not found
-     */
-    404: unknown;
-    /**
-     * Failed to get SSH info
-     */
-    500: unknown;
-};
-
-export type GetApiSandboxesByIdSshResponses = {
-    /**
-     * SSH connection details
-     */
-    200: SandboxSshResponse;
-};
-
-export type GetApiSandboxesByIdSshResponse = GetApiSandboxesByIdSshResponses[keyof GetApiSandboxesByIdSshResponses];
-
 export type PostApiSandboxesByIdStopData = {
     body?: never;
     path: {
@@ -5604,6 +5532,81 @@ export type PostApiSandboxesByIdLiveDiffResponses = {
 };
 
 export type PostApiSandboxesByIdLiveDiffResponse = PostApiSandboxesByIdLiveDiffResponses[keyof PostApiSandboxesByIdLiveDiffResponses];
+
+export type PostApiSandboxesByIdPublishDevcontainerData = {
+    body: {
+        teamSlugOrId: string;
+        taskRunId: string;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/sandboxes/{id}/publish-devcontainer';
+};
+
+export type PostApiSandboxesByIdPublishDevcontainerErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Failed to publish devcontainer networking
+     */
+    500: unknown;
+};
+
+export type PostApiSandboxesByIdPublishDevcontainerResponses = {
+    /**
+     * Exposed ports list
+     */
+    200: Array<{
+        status?: 'running';
+        port: number;
+        url: string;
+    }>;
+};
+
+export type PostApiSandboxesByIdPublishDevcontainerResponse = PostApiSandboxesByIdPublishDevcontainerResponses[keyof PostApiSandboxesByIdPublishDevcontainerResponses];
+
+export type GetApiSandboxesByIdSshData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: {
+        teamSlugOrId?: string;
+    };
+    url: '/api/sandboxes/{id}/ssh';
+};
+
+export type GetApiSandboxesByIdSshErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden - not a team member
+     */
+    403: unknown;
+    /**
+     * Sandbox not found
+     */
+    404: unknown;
+    /**
+     * Failed to get SSH info
+     */
+    500: unknown;
+};
+
+export type GetApiSandboxesByIdSshResponses = {
+    /**
+     * SSH connection details
+     */
+    200: SandboxSshResponse;
+};
+
+export type GetApiSandboxesByIdSshResponse = GetApiSandboxesByIdSshResponses[keyof GetApiSandboxesByIdSshResponses];
 
 export type PostApiSandboxesByIdSetupProvidersData = {
     body: SetupProvidersBody;
