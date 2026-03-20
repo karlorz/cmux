@@ -5296,74 +5296,6 @@ export type PostApiSandboxesPrewarmResponses = {
 
 export type PostApiSandboxesPrewarmResponse = PostApiSandboxesPrewarmResponses[keyof PostApiSandboxesPrewarmResponses];
 
-export type PostApiSandboxesByIdStopData = {
-    body?: never;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/sandboxes/{id}/stop';
-};
-
-export type PostApiSandboxesByIdStopErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Not found
-     */
-    404: unknown;
-    /**
-     * Failed to stop sandbox
-     */
-    500: unknown;
-};
-
-export type PostApiSandboxesByIdStopResponses = {
-    /**
-     * Sandbox stopped
-     */
-    204: void;
-};
-
-export type PostApiSandboxesByIdStopResponse = PostApiSandboxesByIdStopResponses[keyof PostApiSandboxesByIdStopResponses];
-
-export type GetApiSandboxesByIdStatusData = {
-    body?: never;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/sandboxes/{id}/status';
-};
-
-export type GetApiSandboxesByIdStatusErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Failed to get status
-     */
-    500: unknown;
-};
-
-export type GetApiSandboxesByIdStatusResponses = {
-    /**
-     * Sandbox status
-     */
-    200: {
-        running: boolean;
-        vscodeUrl?: string;
-        vncUrl?: string;
-        workerUrl?: string;
-        provider?: 'morph' | 'pve-lxc';
-    };
-};
-
-export type GetApiSandboxesByIdStatusResponse = GetApiSandboxesByIdStatusResponses[keyof GetApiSandboxesByIdStatusResponses];
-
 export type PostApiSandboxesByIdPublishDevcontainerData = {
     body: {
         teamSlugOrId: string;
@@ -5438,6 +5370,74 @@ export type GetApiSandboxesByIdSshResponses = {
 };
 
 export type GetApiSandboxesByIdSshResponse = GetApiSandboxesByIdSshResponses[keyof GetApiSandboxesByIdSshResponses];
+
+export type PostApiSandboxesByIdStopData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/sandboxes/{id}/stop';
+};
+
+export type PostApiSandboxesByIdStopErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Failed to stop sandbox
+     */
+    500: unknown;
+};
+
+export type PostApiSandboxesByIdStopResponses = {
+    /**
+     * Sandbox stopped
+     */
+    204: void;
+};
+
+export type PostApiSandboxesByIdStopResponse = PostApiSandboxesByIdStopResponses[keyof PostApiSandboxesByIdStopResponses];
+
+export type GetApiSandboxesByIdStatusData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/sandboxes/{id}/status';
+};
+
+export type GetApiSandboxesByIdStatusErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Failed to get status
+     */
+    500: unknown;
+};
+
+export type GetApiSandboxesByIdStatusResponses = {
+    /**
+     * Sandbox status
+     */
+    200: {
+        running: boolean;
+        vscodeUrl?: string;
+        vncUrl?: string;
+        workerUrl?: string;
+        provider?: 'morph' | 'pve-lxc';
+    };
+};
+
+export type GetApiSandboxesByIdStatusResponse = GetApiSandboxesByIdStatusResponses[keyof GetApiSandboxesByIdStatusResponses];
 
 export type PostApiSandboxesByIdResumeData = {
     body?: never;
