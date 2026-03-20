@@ -4499,53 +4499,6 @@ export type PostApiVaultDispatchResponses = {
 
 export type PostApiVaultDispatchResponse = PostApiVaultDispatchResponses[keyof PostApiVaultDispatchResponses];
 
-export type GetApiVaultRecommendationsData = {
-    body?: never;
-    path?: never;
-    query: {
-        /**
-         * Team slug or ID
-         */
-        teamSlugOrId: string;
-        /**
-         * Maximum recommendations
-         */
-        limit?: number | null;
-        /**
-         * Filter by priority
-         */
-        priority?: 'high' | 'medium' | 'low';
-        /**
-         * Filter by type
-         */
-        type?: 'todo' | 'stale_note' | 'missing_docs' | 'broken_link';
-    };
-    url: '/api/vault/recommendations';
-};
-
-export type GetApiVaultRecommendationsErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Server error
-     */
-    500: unknown;
-};
-
-export type GetApiVaultRecommendationsResponses = {
-    /**
-     * Recommendations retrieved successfully
-     */
-    200: {
-        recommendations: Array<RecommendedAction>;
-        vaultConfigured: boolean;
-    };
-};
-
-export type GetApiVaultRecommendationsResponse = GetApiVaultRecommendationsResponses[keyof GetApiVaultRecommendationsResponses];
-
 export type GetApiVaultNotesData = {
     body?: never;
     path?: never;
@@ -4597,6 +4550,53 @@ export type GetApiVaultNotesResponses = {
 };
 
 export type GetApiVaultNotesResponse = GetApiVaultNotesResponses[keyof GetApiVaultNotesResponses];
+
+export type GetApiVaultRecommendationsData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId: string;
+        /**
+         * Maximum recommendations
+         */
+        limit?: number | null;
+        /**
+         * Filter by priority
+         */
+        priority?: 'high' | 'medium' | 'low';
+        /**
+         * Filter by type
+         */
+        type?: 'todo' | 'stale_note' | 'missing_docs' | 'broken_link';
+    };
+    url: '/api/vault/recommendations';
+};
+
+export type GetApiVaultRecommendationsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiVaultRecommendationsResponses = {
+    /**
+     * Recommendations retrieved successfully
+     */
+    200: {
+        recommendations: Array<RecommendedAction>;
+        vaultConfigured: boolean;
+    };
+};
+
+export type GetApiVaultRecommendationsResponse = GetApiVaultRecommendationsResponses[keyof GetApiVaultRecommendationsResponses];
 
 export type PostApiPveLxcPreviewInstancesStartData = {
     body: PveLxcPreviewInstanceStartBody;
