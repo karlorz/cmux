@@ -1,3 +1,6 @@
+import { validateExposedPorts } from "@cmux/shared/utils/validate-exposed-ports";
+import { HTTPException } from "hono/http-exception";
+
 function isConnectTimeoutError(error: Error): boolean {
   return (
     error.message.includes("fetch failed") ||
@@ -42,4 +45,19 @@ export const detectInstanceProvider = (
     return "pve-vm";
   }
   return "other";
+};
+
+export const sanitizePortsOrThrow = (ports: readonly number[]): number[] => {
+  const validation = validateExposedPorts(ports);
+  if (validation.reserved.length > 0) {
+    throw new HTTPException(400, {
+      message: `Reserved ports cannot be exposed: ${validation.reserved.join(", ")}`,
+    });
+  }
+  if (validation.invalid.length > 0) {
+    throw new HTTPException(400, {
+      message: `Invalid ports provided: ${validation.invalid.join(", ")}`,
+    });
+  }
+  return validation.sanitized;
 };

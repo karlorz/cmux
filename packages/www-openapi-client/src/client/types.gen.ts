@@ -1268,6 +1268,22 @@ export type CreateEnvironmentBody = {
     exposedPorts?: Array<number>;
 };
 
+export type ExposedService = {
+    port: number;
+    url: string;
+};
+
+export type UpdateEnvironmentPortsResponse = {
+    exposedPorts: Array<number>;
+    services?: Array<ExposedService>;
+};
+
+export type UpdateEnvironmentPortsBody = {
+    teamSlugOrId: string;
+    ports: Array<number>;
+    instanceId?: string;
+};
+
 export type GetEnvironmentVarsResponse = {
     envVarsContent: string;
 };
@@ -1344,22 +1360,6 @@ export type UpdateEnvironmentBody = {
     description?: string;
     maintenanceScript?: string;
     devScript?: string;
-};
-
-export type ExposedService = {
-    port: number;
-    url: string;
-};
-
-export type UpdateEnvironmentPortsResponse = {
-    exposedPorts: Array<number>;
-    services?: Array<ExposedService>;
-};
-
-export type UpdateEnvironmentPortsBody = {
-    teamSlugOrId: string;
-    ports: Array<number>;
-    instanceId?: string;
 };
 
 export type StartSandboxResponse = {
@@ -5030,6 +5030,43 @@ export type PatchApiEnvironmentsByIdResponses = {
 
 export type PatchApiEnvironmentsByIdResponse = PatchApiEnvironmentsByIdResponses[keyof PatchApiEnvironmentsByIdResponses];
 
+export type PatchApiEnvironmentsByIdPortsData = {
+    body: UpdateEnvironmentPortsBody;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/environments/{id}/ports';
+};
+
+export type PatchApiEnvironmentsByIdPortsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Environment not found
+     */
+    404: unknown;
+    /**
+     * Failed to update environment ports
+     */
+    500: unknown;
+};
+
+export type PatchApiEnvironmentsByIdPortsResponses = {
+    /**
+     * Exposed ports updated successfully
+     */
+    200: UpdateEnvironmentPortsResponse;
+};
+
+export type PatchApiEnvironmentsByIdPortsResponse = PatchApiEnvironmentsByIdPortsResponses[keyof PatchApiEnvironmentsByIdPortsResponses];
+
 export type GetApiEnvironmentsByIdVarsData = {
     body?: never;
     path: {
@@ -5207,43 +5244,6 @@ export type PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateResponses
 };
 
 export type PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateResponse = PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateResponses[keyof PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateResponses];
-
-export type PatchApiEnvironmentsByIdPortsData = {
-    body: UpdateEnvironmentPortsBody;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/environments/{id}/ports';
-};
-
-export type PatchApiEnvironmentsByIdPortsErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden
-     */
-    403: unknown;
-    /**
-     * Environment not found
-     */
-    404: unknown;
-    /**
-     * Failed to update environment ports
-     */
-    500: unknown;
-};
-
-export type PatchApiEnvironmentsByIdPortsResponses = {
-    /**
-     * Exposed ports updated successfully
-     */
-    200: UpdateEnvironmentPortsResponse;
-};
-
-export type PatchApiEnvironmentsByIdPortsResponse = PatchApiEnvironmentsByIdPortsResponses[keyof PatchApiEnvironmentsByIdPortsResponses];
 
 export type PostApiSandboxesStartData = {
     body: StartSandboxBody;
