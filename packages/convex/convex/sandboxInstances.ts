@@ -246,7 +246,7 @@ export const recordCreateInternal = internalMutation({
 
 /**
  * Record that an instance was created.
- * Called from sandboxes.route.ts after starting a new sandbox.
+ * Called from the sandbox start route after starting a new sandbox.
  * Requires auth and verifies the user belongs to the specified team.
  */
 export const recordCreate = authMutation({
