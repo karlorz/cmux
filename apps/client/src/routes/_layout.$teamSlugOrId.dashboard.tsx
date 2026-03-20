@@ -7,6 +7,7 @@ import { FileChangeHeatmap } from "@/components/dashboard/FileChangeHeatmap";
 import { SessionActivityCard } from "@/components/dashboard/SessionActivityCard";
 import { SessionTimeline } from "@/components/dashboard/SessionTimeline";
 import { TaskList } from "@/components/dashboard/TaskList";
+import { ErrorBoundary, CompactErrorFallback } from "@/components/ErrorBoundary";
 import { WorkspaceCreationButtons } from "@/components/dashboard/WorkspaceCreationButtons";
 import { FloatingPane } from "@/components/floating-pane";
 import { WorkspaceSetupPanel } from "@/components/WorkspaceSetupPanel";
@@ -1481,18 +1482,35 @@ function DashboardComponent() {
           </div>
 
           {/* Session Activity */}
-          <SessionActivityCard teamSlugOrId={teamSlugOrId} className="mb-4" />
+          <ErrorBoundary
+            name="Session Activity"
+            fallback={<CompactErrorFallback name="Session Activity" />}
+          >
+            <SessionActivityCard teamSlugOrId={teamSlugOrId} className="mb-4" />
+          </ErrorBoundary>
 
           {/* Visual Charts */}
           <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <SessionTimeline teamSlugOrId={teamSlugOrId} limit={5} />
-            <FileChangeHeatmap teamSlugOrId={teamSlugOrId} days={7} />
+            <ErrorBoundary
+              name="Session Timeline"
+              fallback={<CompactErrorFallback name="Session Timeline" />}
+            >
+              <SessionTimeline teamSlugOrId={teamSlugOrId} limit={5} />
+            </ErrorBoundary>
+            <ErrorBoundary
+              name="File Change Heatmap"
+              fallback={<CompactErrorFallback name="File Change Heatmap" />}
+            >
+              <FileChangeHeatmap teamSlugOrId={teamSlugOrId} days={7} />
+            </ErrorBoundary>
           </div>
 
           {/* Task List */}
-          <div className="w-full">
-            <TaskList teamSlugOrId={teamSlugOrId} />
-          </div>
+          <ErrorBoundary name="Task List">
+            <div className="w-full">
+              <TaskList teamSlugOrId={teamSlugOrId} />
+            </div>
+          </ErrorBoundary>
         </div>
       </div>
     </FloatingPane>

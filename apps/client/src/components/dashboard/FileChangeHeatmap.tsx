@@ -3,6 +3,7 @@ import { useQuery as useConvexQuery } from "convex/react";
 import { FileCode, FolderOpen } from "lucide-react";
 import { memo, useMemo, useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const TIME_RANGES = [7, 14, 30] as const;
 type TimeRange = (typeof TIME_RANGES)[number];
@@ -239,8 +240,25 @@ function FileChangeHeatmapContent({ teamSlugOrId, days = 7 }: FileChangeHeatmapP
 
   if (!result) {
     return (
-      <div className="flex items-center justify-center py-8">
-        <div className="text-sm text-neutral-500 dark:text-neutral-400">Loading...</div>
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, groupIndex) => (
+          <div key={groupIndex} className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Skeleton className="size-4" />
+              <Skeleton className="h-4 w-24" />
+            </div>
+            <div className="ml-6 space-y-1">
+              {Array.from({ length: 3 }).map((_, fileIndex) => (
+                <div key={fileIndex} className="flex items-center gap-2">
+                  <Skeleton className="size-3.5" />
+                  <Skeleton className="h-3 flex-1 max-w-32" />
+                  <Skeleton className="h-3 w-24" />
+                  <Skeleton className="h-3 w-10" />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     );
   }

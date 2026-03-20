@@ -3,6 +3,7 @@ import { useQuery as useConvexQuery } from "convex/react";
 import { GitCommit, GitPullRequest, FileCode, Plus, Minus, Clock } from "lucide-react";
 import { memo, useState } from "react";
 import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const TIME_RANGES = [7, 14, 30] as const;
 type TimeRange = (typeof TIME_RANGES)[number];
@@ -45,8 +46,16 @@ function SessionActivityCardContent({ teamSlugOrId, days = 7 }: SessionActivityC
 
   if (!stats) {
     return (
-      <div className="flex items-center justify-center py-8">
-        <div className="text-sm text-neutral-500 dark:text-neutral-400">Loading...</div>
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <Skeleton className="size-4 rounded" />
+            <div className="flex flex-col gap-1">
+              <Skeleton className="h-6 w-12" />
+              <Skeleton className="h-3 w-16" />
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
