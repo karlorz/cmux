@@ -1294,6 +1294,8 @@ githubProjectsRouter.openapi(
     },
   }),
   async (c) => {
+    const { verifyTaskRunJwt } = await import("@/lib/utils/jwt-task-run");
+
     // This endpoint uses task run JWT auth (from x-cmux-token header)
     const cmuxToken = c.req.header("x-cmux-token");
     if (!cmuxToken) {
@@ -1305,7 +1307,18 @@ githubProjectsRouter.openapi(
       });
     }
 
-    const { planContent, planFile } = c.req.valid("json");
+    // Verify JWT and extract task run context
+    const jwtPayload = await verifyTaskRunJwt(cmuxToken);
+    if (!jwtPayload) {
+      return c.json({
+        success: false,
+        itemsCreated: 0,
+        projectId: null,
+        error: "Invalid or expired task run token",
+      });
+    }
+
+    const { planContent, planFile: _planFile } = c.req.valid("json");
 
     // Parse plan into items
     const items = parsePlanMarkdown(planContent);
@@ -1318,25 +1331,28 @@ githubProjectsRouter.openapi(
       });
     }
 
-    // TODO: Get linked project from task run context
-    // For now, we just log and return success without creating items
+    // Log received plan items for debugging
     // Full implementation would:
-    // 1. Decode JWT to get taskRunId
-    // 2. Query Convex for taskRun -> session -> team -> linked project
-    // 3. Create draft issues in the project
+    // 1. Use jwtPayload.teamId to get workspace settings
+    // 2. Check for linked GitHub Project ID
+    // 3. Use user OAuth token with project scope to create draft issues
     console.log(
-      `[github.projects] Plan sync received: ${items.length} items from ${planFile || "unknown"}`,
+      `[github.projects] Plan sync received from task ${jwtPayload.taskRunId}:`,
     );
-    console.log(
-      `[github.projects] Items:`,
-      items.map((i) => i.title),
-    );
+    console.log(`[github.projects] Team: ${jwtPayload.teamId}`);
+    console.log(`[github.projects] Items (${items.length}):`);
+    for (const item of items) {
+      console.log(`  - ${item.title}`);
+    }
 
+    // Return success with items parsed
+    // Note: Item creation requires OAuth token with project scope,
+    // which isn't available in agent context. Future work: team-level tokens.
     return c.json({
       success: true,
-      itemsCreated: 0, // Would be items.length after full implementation
+      itemsCreated: 0,
       projectId: null,
-      error: "Plan sync endpoint ready - full implementation pending project linking",
+      error: `Parsed ${items.length} items. Creation pending OAuth integration.`,
     });
   },
 );
