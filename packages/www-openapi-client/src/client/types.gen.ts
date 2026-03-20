@@ -552,6 +552,19 @@ export type GithubBranchesResponse = {
     hasMore: boolean;
 };
 
+export type InstanceInfo = {
+    id: string;
+    status: string;
+    createdAt?: string;
+    metadata?: {
+        app?: string;
+        userId?: string;
+        teamId?: string;
+    };
+};
+
+export type ListInstancesResponse = Array<InstanceInfo>;
+
 export type ResumeTaskRunResponse = {
     resumed: true;
 };
@@ -592,19 +605,6 @@ export type SetupInstanceBody = {
     ttlSeconds?: number;
     snapshotId?: string | ('snapshot_mgmhjyrd' | 'snapshot_fe0cgqlw');
 };
-
-export type InstanceInfo = {
-    id: string;
-    status: string;
-    createdAt?: string;
-    metadata?: {
-        app?: string;
-        userId?: string;
-        teamId?: string;
-    };
-};
-
-export type ListInstancesResponse = Array<InstanceInfo>;
 
 export type OrchestrateMessageResponse = {
     /**
@@ -3424,6 +3424,35 @@ export type GetApiIntegrationsGithubBranchesResponses = {
 
 export type GetApiIntegrationsGithubBranchesResponse = GetApiIntegrationsGithubBranchesResponses[keyof GetApiIntegrationsGithubBranchesResponses];
 
+export type GetApiMorphInstancesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        teamId?: string;
+    };
+    url: '/api/morph/instances';
+};
+
+export type GetApiMorphInstancesErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Failed to list instances
+     */
+    500: unknown;
+};
+
+export type GetApiMorphInstancesResponses = {
+    /**
+     * List of Morph instances
+     */
+    200: ListInstancesResponse;
+};
+
+export type GetApiMorphInstancesResponse = GetApiMorphInstancesResponses[keyof GetApiMorphInstancesResponses];
+
 export type PostApiMorphTaskRunsByTaskRunIdResumeData = {
     body: ResumeTaskRunBody;
     path: {
@@ -3577,35 +3606,6 @@ export type PostApiMorphSetupInstanceResponses = {
 };
 
 export type PostApiMorphSetupInstanceResponse = PostApiMorphSetupInstanceResponses[keyof PostApiMorphSetupInstanceResponses];
-
-export type GetApiMorphInstancesData = {
-    body?: never;
-    path?: never;
-    query?: {
-        teamId?: string;
-    };
-    url: '/api/morph/instances';
-};
-
-export type GetApiMorphInstancesErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Failed to list instances
-     */
-    500: unknown;
-};
-
-export type GetApiMorphInstancesResponses = {
-    /**
-     * List of Morph instances
-     */
-    200: ListInstancesResponse;
-};
-
-export type GetApiMorphInstancesResponse = GetApiMorphInstancesResponses[keyof GetApiMorphInstancesResponses];
 
 export type PostApiOrchestrateMessageData = {
     body: OrchestrateMessageRequest;

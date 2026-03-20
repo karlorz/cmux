@@ -24,6 +24,7 @@ export { githubInstallStateRouter } from "./github.install-state.route";
 export { githubProjectsPlanSyncRouter } from "./github.projects.plan-sync.route";
 export { healthRouter } from "./health.route";
 export { iframePreflightRouter } from "./iframe-preflight.route";
+export { morphInstancesRouter } from "./morph.instances.route";
 export { morphRouter } from "./morph.route";
 export { orchestrateRouter } from "./orchestrate.route";
 export { projectPlanRouter } from "./project.plan.route";
