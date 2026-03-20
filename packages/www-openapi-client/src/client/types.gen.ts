@@ -1259,6 +1259,49 @@ export type UpdateEnvironmentVarsBody = {
     envVarsContent: string;
 };
 
+export type SnapshotVersionResponse = {
+    id: string;
+    version: number;
+    snapshotId: string;
+    snapshotProvider: 'docker' | 'morph' | 'e2b' | 'daytona' | 'pve-lxc' | 'other' | 'pve-vm';
+    templateVmid?: number;
+    createdAt: number;
+    createdByUserId: string;
+    label?: string;
+    isActive: boolean;
+    maintenanceScript?: string;
+    devScript?: string;
+};
+
+export type ListSnapshotVersionsResponse = Array<SnapshotVersionResponse>;
+
+export type CreateSnapshotVersionResponse = {
+    snapshotVersionId: string;
+    snapshotId: string;
+    snapshotProvider: 'docker' | 'morph' | 'e2b' | 'daytona' | 'pve-lxc' | 'other' | 'pve-vm';
+    version: number;
+};
+
+export type CreateSnapshotVersionBody = {
+    teamSlugOrId: string;
+    instanceId: string;
+    label?: string;
+    activate?: boolean;
+    maintenanceScript?: string;
+    devScript?: string;
+};
+
+export type ActivateSnapshotVersionResponse = {
+    snapshotId: string;
+    snapshotProvider: 'docker' | 'morph' | 'e2b' | 'daytona' | 'pve-lxc' | 'other' | 'pve-vm';
+    templateVmid?: number;
+    version: number;
+};
+
+export type ActivateSnapshotVersionBody = {
+    teamSlugOrId: string;
+};
+
 export type CreateEnvironmentResponse = {
     id: string;
     snapshotId: string;
@@ -1317,49 +1360,6 @@ export type UpdateEnvironmentPortsBody = {
     teamSlugOrId: string;
     ports: Array<number>;
     instanceId?: string;
-};
-
-export type SnapshotVersionResponse = {
-    id: string;
-    version: number;
-    snapshotId: string;
-    snapshotProvider: 'docker' | 'morph' | 'e2b' | 'daytona' | 'pve-lxc' | 'other' | 'pve-vm';
-    templateVmid?: number;
-    createdAt: number;
-    createdByUserId: string;
-    label?: string;
-    isActive: boolean;
-    maintenanceScript?: string;
-    devScript?: string;
-};
-
-export type ListSnapshotVersionsResponse = Array<SnapshotVersionResponse>;
-
-export type CreateSnapshotVersionResponse = {
-    snapshotVersionId: string;
-    snapshotId: string;
-    snapshotProvider: 'docker' | 'morph' | 'e2b' | 'daytona' | 'pve-lxc' | 'other' | 'pve-vm';
-    version: number;
-};
-
-export type CreateSnapshotVersionBody = {
-    teamSlugOrId: string;
-    instanceId: string;
-    label?: string;
-    activate?: boolean;
-    maintenanceScript?: string;
-    devScript?: string;
-};
-
-export type ActivateSnapshotVersionResponse = {
-    snapshotId: string;
-    snapshotProvider: 'docker' | 'morph' | 'e2b' | 'daytona' | 'pve-lxc' | 'other' | 'pve-vm';
-    templateVmid?: number;
-    version: number;
-};
-
-export type ActivateSnapshotVersionBody = {
-    teamSlugOrId: string;
 };
 
 export type StartSandboxResponse = {
@@ -4939,6 +4939,112 @@ export type PatchApiEnvironmentsByIdVarsResponses = {
 
 export type PatchApiEnvironmentsByIdVarsResponse = PatchApiEnvironmentsByIdVarsResponses[keyof PatchApiEnvironmentsByIdVarsResponses];
 
+export type GetApiEnvironmentsByIdSnapshotsData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/environments/{id}/snapshots';
+};
+
+export type GetApiEnvironmentsByIdSnapshotsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Environment not found
+     */
+    404: unknown;
+    /**
+     * Failed to list snapshot versions
+     */
+    500: unknown;
+};
+
+export type GetApiEnvironmentsByIdSnapshotsResponses = {
+    /**
+     * Snapshot versions retrieved successfully
+     */
+    200: ListSnapshotVersionsResponse;
+};
+
+export type GetApiEnvironmentsByIdSnapshotsResponse = GetApiEnvironmentsByIdSnapshotsResponses[keyof GetApiEnvironmentsByIdSnapshotsResponses];
+
+export type PostApiEnvironmentsByIdSnapshotsData = {
+    body: CreateSnapshotVersionBody;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/environments/{id}/snapshots';
+};
+
+export type PostApiEnvironmentsByIdSnapshotsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Environment not found
+     */
+    404: unknown;
+    /**
+     * Failed to create snapshot version
+     */
+    500: unknown;
+};
+
+export type PostApiEnvironmentsByIdSnapshotsResponses = {
+    /**
+     * Snapshot version created successfully
+     */
+    200: CreateSnapshotVersionResponse;
+};
+
+export type PostApiEnvironmentsByIdSnapshotsResponse = PostApiEnvironmentsByIdSnapshotsResponses[keyof PostApiEnvironmentsByIdSnapshotsResponses];
+
+export type PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateData = {
+    body: ActivateSnapshotVersionBody;
+    path: {
+        id: string;
+        snapshotVersionId: string;
+    };
+    query?: never;
+    url: '/api/environments/{id}/snapshots/{snapshotVersionId}/activate';
+};
+
+export type PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Snapshot version not found
+     */
+    404: unknown;
+    /**
+     * Failed to activate snapshot version
+     */
+    500: unknown;
+};
+
+export type PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateResponses = {
+    /**
+     * Snapshot version activated successfully
+     */
+    200: ActivateSnapshotVersionResponse;
+};
+
+export type PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateResponse = PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateResponses[keyof PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateResponses];
+
 export type GetApiEnvironmentsData = {
     body?: never;
     path?: never;
@@ -5138,112 +5244,6 @@ export type PatchApiEnvironmentsByIdPortsResponses = {
 };
 
 export type PatchApiEnvironmentsByIdPortsResponse = PatchApiEnvironmentsByIdPortsResponses[keyof PatchApiEnvironmentsByIdPortsResponses];
-
-export type GetApiEnvironmentsByIdSnapshotsData = {
-    body?: never;
-    path: {
-        id: string;
-    };
-    query: {
-        teamSlugOrId: string;
-    };
-    url: '/api/environments/{id}/snapshots';
-};
-
-export type GetApiEnvironmentsByIdSnapshotsErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Environment not found
-     */
-    404: unknown;
-    /**
-     * Failed to list snapshot versions
-     */
-    500: unknown;
-};
-
-export type GetApiEnvironmentsByIdSnapshotsResponses = {
-    /**
-     * Snapshot versions retrieved successfully
-     */
-    200: ListSnapshotVersionsResponse;
-};
-
-export type GetApiEnvironmentsByIdSnapshotsResponse = GetApiEnvironmentsByIdSnapshotsResponses[keyof GetApiEnvironmentsByIdSnapshotsResponses];
-
-export type PostApiEnvironmentsByIdSnapshotsData = {
-    body: CreateSnapshotVersionBody;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/environments/{id}/snapshots';
-};
-
-export type PostApiEnvironmentsByIdSnapshotsErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden
-     */
-    403: unknown;
-    /**
-     * Environment not found
-     */
-    404: unknown;
-    /**
-     * Failed to create snapshot version
-     */
-    500: unknown;
-};
-
-export type PostApiEnvironmentsByIdSnapshotsResponses = {
-    /**
-     * Snapshot version created successfully
-     */
-    200: CreateSnapshotVersionResponse;
-};
-
-export type PostApiEnvironmentsByIdSnapshotsResponse = PostApiEnvironmentsByIdSnapshotsResponses[keyof PostApiEnvironmentsByIdSnapshotsResponses];
-
-export type PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateData = {
-    body: ActivateSnapshotVersionBody;
-    path: {
-        id: string;
-        snapshotVersionId: string;
-    };
-    query?: never;
-    url: '/api/environments/{id}/snapshots/{snapshotVersionId}/activate';
-};
-
-export type PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Snapshot version not found
-     */
-    404: unknown;
-    /**
-     * Failed to activate snapshot version
-     */
-    500: unknown;
-};
-
-export type PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateResponses = {
-    /**
-     * Snapshot version activated successfully
-     */
-    200: ActivateSnapshotVersionResponse;
-};
-
-export type PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateResponse = PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateResponses[keyof PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateResponses];
 
 export type PostApiSandboxesStartData = {
     body: StartSandboxBody;
