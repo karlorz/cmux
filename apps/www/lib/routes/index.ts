@@ -70,5 +70,6 @@ export { providersOverridesRouter } from "./providers.overrides.route";
 export { providersRouter } from "./providers.route";
 export { providersStatusRouter } from "./providers.status.route";
 export { apiKeysRouter } from "./api-keys.route";
+export { mcpServersListRouter } from "./mcp-servers.list.route";
 export { mcpServersWriteRouter } from "./mcp-servers.write.route";
 export { mcpServersRouter } from "./mcp-servers.route";
