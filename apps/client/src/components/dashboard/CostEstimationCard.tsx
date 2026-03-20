@@ -3,7 +3,7 @@ import type { Id } from "@cmux/convex/dataModel";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { memo } from "react";
-import { DollarSign, Clock, Cpu } from "lucide-react";
+import { AlertTriangle, Clock, Cpu, DollarSign, RefreshCw } from "lucide-react";
 
 type CostEstimationCardProps = {
   taskRunId: Id<"taskRuns">;
@@ -75,6 +75,33 @@ export const CostEstimationCard = memo(function CostEstimationCard({
 
   if (taskRunQuery.isLoading) {
     return <CostEstimationCardSkeleton />;
+  }
+
+  if (taskRunQuery.isError) {
+    const message = taskRunQuery.error?.message ?? "Failed to load cost estimate";
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950/30">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2 text-red-700 dark:text-red-300">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <div>
+              <p className="text-sm font-medium">Failed to load cost estimate</p>
+              <p className="mt-1 text-xs text-red-600 dark:text-red-400">{message}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              void taskRunQuery.refetch();
+            }}
+            className="inline-flex items-center gap-1 rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-200 dark:bg-red-900/50 dark:text-red-300 dark:hover:bg-red-900"
+          >
+            <RefreshCw className="size-3" />
+            Retry
+          </button>
+        </div>
+      </div>
+    );
   }
 
   const taskRun = taskRunQuery.data;
