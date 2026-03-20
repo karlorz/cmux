@@ -720,6 +720,19 @@ const convexSchema = defineSchema({
     ),
     // Shell wrapper settings for task sandboxes
     enableShellWrappers: v.optional(v.boolean()), // When true, inject gh/git wrappers to block dangerous commands (default: false)
+    // Obsidian vault configuration
+    vaultConfig: v.optional(
+      v.object({
+        type: v.union(v.literal("local"), v.literal("github")),
+        // Local vault settings
+        localPath: v.optional(v.string()),
+        // GitHub vault settings
+        githubOwner: v.optional(v.string()),
+        githubRepo: v.optional(v.string()),
+        githubPath: v.optional(v.string()), // Path within repo (default: "")
+        githubBranch: v.optional(v.string()), // Branch name (default: "main")
+      })
+    ),
     createdAt: v.number(),
     updatedAt: v.number(),
     userId: v.string(),

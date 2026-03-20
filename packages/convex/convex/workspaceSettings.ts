@@ -54,6 +54,16 @@ export const update = authMutation({
       })
     ),
     enableShellWrappers: v.optional(v.boolean()),
+    vaultConfig: v.optional(
+      v.object({
+        type: v.union(v.literal("local"), v.literal("github")),
+        localPath: v.optional(v.string()),
+        githubOwner: v.optional(v.string()),
+        githubRepo: v.optional(v.string()),
+        githubPath: v.optional(v.string()),
+        githubBranch: v.optional(v.string()),
+      })
+    ),
   },
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
@@ -83,6 +93,14 @@ export const update = authMutation({
           token: { start: string; end: string };
         };
         enableShellWrappers?: boolean;
+        vaultConfig?: {
+          type: "local" | "github";
+          localPath?: string;
+          githubOwner?: string;
+          githubRepo?: string;
+          githubPath?: string;
+          githubBranch?: string;
+        };
         updatedAt: number;
       } = { updatedAt: now };
 
@@ -122,6 +140,9 @@ export const update = authMutation({
       if (args.enableShellWrappers !== undefined) {
         updates.enableShellWrappers = args.enableShellWrappers;
       }
+      if (args.vaultConfig !== undefined) {
+        updates.vaultConfig = args.vaultConfig;
+      }
 
       await ctx.db.patch(existing._id, updates);
     } else {
@@ -138,6 +159,7 @@ export const update = authMutation({
         heatmapTooltipLanguage: args.heatmapTooltipLanguage,
         heatmapColors: args.heatmapColors,
         enableShellWrappers: args.enableShellWrappers,
+        vaultConfig: args.vaultConfig,
         nextLocalWorkspaceSequence: 0,
         createdAt: now,
         updatedAt: now,
