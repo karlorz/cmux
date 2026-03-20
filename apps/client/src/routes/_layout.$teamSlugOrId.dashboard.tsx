@@ -46,9 +46,9 @@ import {
   useQuery,
   type InfiniteData,
 } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useAction, useMutation } from "convex/react";
-import { Server as ServerIcon } from "lucide-react";
+import { Server as ServerIcon, Info } from "lucide-react";
 import { useDebouncedValue } from "@mantine/hooks";
 import {
   lazy,
@@ -293,8 +293,8 @@ function DashboardComponent() {
   const [isStartingTask, setIsStartingTask] = useState(false);
   const isStartingTaskRef = useRef(false);
 
-  // const [hasDismissedCloudRepoOnboarding, setHasDismissedCloudRepoOnboarding] =
-  //   useState<boolean>(false);
+  const [hasDismissedCloudRepoOnboarding, setHasDismissedCloudRepoOnboarding] =
+    useState<boolean>(false);
 
   // Ref to access editor API
   const editorApiRef = useRef<EditorApi | null>(null);
@@ -1146,24 +1146,24 @@ function DashboardComponent() {
 
   const shouldShowWorkspaceSetup = workspaceSetupProjects.length > 0;
 
-  // const shouldShowCloudRepoOnboarding =
-  //   !!selectedRepoFullName && isCloudMode && !isEnvSelected && !hasDismissedCloudRepoOnboarding;
+  const shouldShowCloudRepoOnboarding =
+    !!selectedRepoFullName && isCloudMode && !isEnvSelected && !hasDismissedCloudRepoOnboarding;
 
-  // const createEnvironmentSearch = useMemo(() => {
-  //   if (!selectedRepoFullName) return null;
-  //   return {
-  //     step: "select" as const,
-  //     selectedRepos: [selectedRepoFullName],
-  //     instanceId: undefined,
-  //     connectionLogin: undefined,
-  //     repoSearch: undefined,
-  //     snapshotId: undefined,
-  //   };
-  // }, [selectedRepoFullName]);
+  const createEnvironmentSearch = useMemo(() => {
+    if (!selectedRepoFullName) return null;
+    return {
+      step: "select" as const,
+      selectedRepos: [selectedRepoFullName],
+      instanceId: undefined,
+      connectionLogin: undefined,
+      repoSearch: undefined,
+      snapshotId: undefined,
+    };
+  }, [selectedRepoFullName]);
 
-  // const handleStartEnvironmentSetup = useCallback(() => {
-  //   setHasDismissedCloudRepoOnboarding(true);
-  // }, []);
+  const handleStartEnvironmentSetup = useCallback(() => {
+    setHasDismissedCloudRepoOnboarding(true);
+  }, []);
 
   const branchOptions = branchNames;
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = branchesQuery;
@@ -1448,7 +1448,7 @@ function DashboardComponent() {
               </div>
             ) : null}
 
-            {/* {shouldShowCloudRepoOnboarding && createEnvironmentSearch ? (
+            {shouldShowCloudRepoOnboarding && createEnvironmentSearch ? (
               <div className="mt-4 mb-4 flex items-start gap-2 rounded-xl border border-green-200/60 dark:border-green-500/40 bg-green-50/80 dark:bg-green-500/10 px-3 py-2 text-sm text-green-900 dark:text-green-100">
                 <Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-green-500 dark:text-green-300" />
                 <div className="flex flex-col gap-1">
@@ -1478,7 +1478,7 @@ function DashboardComponent() {
                   </div>
                 </div>
               </div>
-            ) : null} */}
+            ) : null}
           </div>
 
           {/* Session Activity */}
