@@ -38,7 +38,6 @@ import {
   providersStatusRouter,
   apiKeysRouter,
   pveLxcRouter,
-  sandboxesRouter,
   teamsRouter,
   usersRouter,
   vaultRouter,
@@ -180,7 +179,6 @@ app.route("/", vaultRouter);
 app.route("/", pveLxcRouter);
 app.route("/", iframePreflightRouter);
 app.route("/", environmentsRouter);
-app.route("/", sandboxesRouter);
 app.route("/", sandboxesStartRouter);
 app.route("/", sandboxesLifecycleRouter);
 app.route("/", sandboxesFeaturesRouter);

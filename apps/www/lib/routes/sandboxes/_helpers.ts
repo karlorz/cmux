@@ -1,6 +1,5 @@
 /**
- * Shared helpers for sandbox routes.
- * Extracted from sandboxes.route.ts to reduce file size and improve maintainability.
+ * Shared helpers for sandbox route modules.
  */
 
 import { env } from "@/lib/utils/www-env";
