@@ -188,6 +188,20 @@ export type CreateDraftBody = {
     body?: string;
 };
 
+export type ProjectField = {
+    id: string;
+    name: string;
+    dataType: string;
+    options?: Array<{
+        id: string;
+        name: string;
+    }>;
+};
+
+export type ProjectFieldsResponse = {
+    fields: Array<ProjectField>;
+};
+
 export type AddItemBody = {
     /**
      * GitHub Project node ID
@@ -237,20 +251,6 @@ export type ProjectsResponse = {
      * True if user needs to re-authorize GitHub with 'project' scope to see all projects
      */
     needsReauthorization?: boolean;
-};
-
-export type ProjectField = {
-    id: string;
-    name: string;
-    dataType: string;
-    options?: Array<{
-        id: string;
-        name: string;
-    }>;
-};
-
-export type ProjectFieldsResponse = {
-    fields: Array<ProjectField>;
 };
 
 export type ProjectItemContent = {
@@ -2568,6 +2568,37 @@ export type PostApiIntegrationsGithubProjectsDraftsResponses = {
 
 export type PostApiIntegrationsGithubProjectsDraftsResponse = PostApiIntegrationsGithubProjectsDraftsResponses[keyof PostApiIntegrationsGithubProjectsDraftsResponses];
 
+export type GetApiIntegrationsGithubProjectsFieldsData = {
+    body?: never;
+    path?: never;
+    query: {
+        team: string;
+        installationId?: number | null;
+        projectId: string;
+    };
+    url: '/api/integrations/github/projects/fields';
+};
+
+export type GetApiIntegrationsGithubProjectsFieldsErrors = {
+    /**
+     * Bad request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiIntegrationsGithubProjectsFieldsResponses = {
+    /**
+     * OK
+     */
+    200: ProjectFieldsResponse;
+};
+
+export type GetApiIntegrationsGithubProjectsFieldsResponse = GetApiIntegrationsGithubProjectsFieldsResponses[keyof GetApiIntegrationsGithubProjectsFieldsResponses];
+
 export type GetApiIntegrationsGithubProjectsItemsData = {
     body?: never;
     path?: never;
@@ -2758,37 +2789,6 @@ export type GetApiIntegrationsGithubProjectsResponses = {
 };
 
 export type GetApiIntegrationsGithubProjectsResponse = GetApiIntegrationsGithubProjectsResponses[keyof GetApiIntegrationsGithubProjectsResponses];
-
-export type GetApiIntegrationsGithubProjectsFieldsData = {
-    body?: never;
-    path?: never;
-    query: {
-        team: string;
-        installationId?: number | null;
-        projectId: string;
-    };
-    url: '/api/integrations/github/projects/fields';
-};
-
-export type GetApiIntegrationsGithubProjectsFieldsErrors = {
-    /**
-     * Bad request
-     */
-    400: unknown;
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-};
-
-export type GetApiIntegrationsGithubProjectsFieldsResponses = {
-    /**
-     * OK
-     */
-    200: ProjectFieldsResponse;
-};
-
-export type GetApiIntegrationsGithubProjectsFieldsResponse = GetApiIntegrationsGithubProjectsFieldsResponses[keyof GetApiIntegrationsGithubProjectsFieldsResponses];
 
 export type GetApiIntegrationsGithubFrameworkDetectionData = {
     body?: never;
