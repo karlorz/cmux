@@ -842,8 +842,27 @@ export const updateStatus = internalMutation({
         type: args.status === "completed" ? "run_completed" : "run_failed",
       });
 
-      // Schedule GitHub Project status sync if task has project linkage
+      // Create feed event for team activity stream
       const task = await ctx.db.get(run.taskId);
+      const eventType = args.status === "completed" ? "task_completed" : "task_failed";
+      const eventTitle = args.status === "completed"
+        ? `Task run completed: ${task?.text?.slice(0, 60) ?? "Unknown task"}${(task?.text?.length ?? 0) > 60 ? "..." : ""}`
+        : `Task run failed: ${task?.text?.slice(0, 60) ?? "Unknown task"}${(task?.text?.length ?? 0) > 60 ? "..." : ""}`;
+
+      await ctx.runMutation(internal.feedEvents.create, {
+        teamId: run.teamId,
+        userId: run.userId,
+        eventType,
+        title: eventTitle,
+        description: args.status === "failed" ? run.errorMessage : undefined,
+        taskId: run.taskId,
+        taskRunId: args.id,
+        agentName: run.agentName,
+        repoFullName: task?.projectFullName,
+        errorMessage: args.status === "failed" ? run.errorMessage : undefined,
+      });
+
+      // Schedule GitHub Project status sync if task has project linkage
       if (task?.githubProjectId && task?.githubProjectItemId && task?.githubProjectInstallationId) {
         await ctx.scheduler.runAfter(
           0,
@@ -1906,6 +1925,21 @@ export const workerComplete = internalMutation({
         exitCode: args.exitCode,
       }
     );
+
+    // Create feed event for team activity stream
+    const task = await ctx.db.get(run.taskId);
+    const eventTitle = `Task completed: ${task?.text?.slice(0, 60) ?? "Unknown task"}${(task?.text?.length ?? 0) > 60 ? "..." : ""}`;
+
+    await ctx.runMutation(internal.feedEvents.create, {
+      teamId: run.teamId,
+      userId: run.userId,
+      eventType: "task_completed",
+      title: eventTitle,
+      taskId: run.taskId,
+      taskRunId: args.taskRunId,
+      agentName: run.agentName,
+      repoFullName: task?.projectFullName,
+    });
 
     // Note: Notifications are handled separately via /api/notifications/agent-stopped
     // which is called by the stop hook. This keeps status updates decoupled from notifications.

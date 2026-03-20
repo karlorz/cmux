@@ -1,11 +1,12 @@
 import { useState, useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Users, Plus, List, GitBranch, Radio, Download } from "lucide-react";
+import { Users, Plus, List, GitBranch, Radio, Download, Columns3 } from "lucide-react";
 import { OrchestrationSummaryCards } from "./OrchestrationSummaryCards";
 import { OrchestrationTaskList } from "./OrchestrationTaskList";
 import { OrchestrationSpawnDialog } from "./OrchestrationSpawnDialog";
 import { OrchestrationDependencyGraph } from "./OrchestrationDependencyGraph";
 import { OrchestrationEventStream } from "./OrchestrationEventStream";
+import { ProjectKanbanView } from "../projects/ProjectKanbanView";
 import { STATUS_CONFIG, type TaskStatus } from "./status-config";
 import type { Doc, Id } from "@cmux/convex/dataModel";
 
@@ -63,7 +64,7 @@ export function OrchestrationDashboard({
 }: OrchestrationDashboardProps) {
   const navigate = useNavigate();
   const [spawnDialogOpen, setSpawnDialogOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<"list" | "graph">("list");
+  const [viewMode, setViewMode] = useState<"list" | "graph" | "kanban">("list");
   const [showEventStream, setShowEventStream] = useState(!!orchestrationId);
   const [exporting, setExporting] = useState(false);
 
@@ -245,6 +246,19 @@ export function OrchestrationDashboard({
                   </button>
                   <button
                     type="button"
+                    onClick={() => setViewMode("kanban")}
+                    className={`flex items-center gap-1 px-2 py-1 text-xs font-medium transition-colors ${
+                      viewMode === "kanban"
+                        ? "bg-neutral-100 text-neutral-900 dark:bg-neutral-700 dark:text-neutral-100"
+                        : "text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+                    }`}
+                    title="Kanban board"
+                  >
+                    <Columns3 className="size-3.5" />
+                    Kanban
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setViewMode("graph")}
                     className={`flex items-center gap-1 px-2 py-1 text-xs font-medium transition-colors ${
                       viewMode === "graph"
@@ -278,6 +292,13 @@ export function OrchestrationDashboard({
                 tasks={tasks}
                 loading={tasksLoading}
               />
+            ) : viewMode === "kanban" ? (
+              <div className="p-4">
+                <ProjectKanbanView
+                  tasks={tasks ?? []}
+                  loading={tasksLoading}
+                />
+              </div>
             ) : (
               <OrchestrationDependencyGraph
                 tasks={tasks}

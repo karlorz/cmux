@@ -2,14 +2,16 @@ import { FloatingPane } from "@/components/floating-pane";
 import { TitleBar } from "@/components/TitleBar";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { useEnvironmentDraft } from "@/state/environment-draft-store";
+import { EnvironmentCompare } from "@/components/environment/EnvironmentCompare";
 import { api } from "@cmux/convex/api";
+import type { Id } from "@cmux/convex/dataModel";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { useQuery as useRQQuery } from "@tanstack/react-query";
 import { getApiConfigSandboxOptions } from "@cmux/www-openapi-client/react-query";
 import { formatDistanceToNow } from "date-fns";
-import { Calendar, Eye, GitBranch, Play, Plus, Server } from "lucide-react";
-import { useEffect } from "react";
+import { ArrowLeftRight, Calendar, Eye, GitBranch, Play, Plus, Server, X } from "lucide-react";
+import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/environments/")({
   loader: async ({ params }) => {
@@ -27,6 +29,9 @@ function EnvironmentsListPage() {
   const { teamSlugOrId } = Route.useParams();
   const navigate = useNavigate({ from: Route.fullPath });
   const draft = useEnvironmentDraft(teamSlugOrId);
+  const [showCompare, setShowCompare] = useState(false);
+  const [compareEnvA, setCompareEnvA] = useState<Id<"environments"> | undefined>(undefined);
+  const [compareEnvB, setCompareEnvB] = useState<Id<"environments"> | undefined>(undefined);
 
   // Fetch sandbox config to get default preset ID
   const { data: sandboxConfig } = useRQQuery(getApiConfigSandboxOptions());
@@ -67,23 +72,95 @@ function EnvironmentsListPage() {
           <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
             Your Environments
           </h2>
-          <Link
-            to="/$teamSlugOrId/environments/new"
-            params={{ teamSlugOrId }}
-            search={{
-              step: undefined,
-              selectedRepos: undefined,
-              connectionLogin: undefined,
-              repoSearch: undefined,
-              instanceId: undefined,
-              snapshotId: defaultSnapshotId,
-            }}
-            className="inline-flex items-center gap-2 rounded-md bg-neutral-900 text-white px-4 py-2 text-sm font-medium hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            New Environment
-          </Link>
+          <div className="flex items-center gap-2">
+            {environments && environments.length >= 2 && (
+              <button
+                type="button"
+                onClick={() => setShowCompare(!showCompare)}
+                className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                  showCompare
+                    ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                    : "border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                }`}
+              >
+                <ArrowLeftRight className="w-4 h-4" />
+                Compare
+              </button>
+            )}
+            <Link
+              to="/$teamSlugOrId/environments/new"
+              params={{ teamSlugOrId }}
+              search={{
+                step: undefined,
+                selectedRepos: undefined,
+                connectionLogin: undefined,
+                repoSearch: undefined,
+                instanceId: undefined,
+                snapshotId: defaultSnapshotId,
+              }}
+              className="inline-flex items-center gap-2 rounded-md bg-neutral-900 text-white px-4 py-2 text-sm font-medium hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              New Environment
+            </Link>
+          </div>
         </div>
+
+        {/* Environment Comparison Section */}
+        {showCompare && environments && environments.length >= 2 && (
+          <div className="mb-6">
+            <div className="flex items-center gap-4 mb-4">
+              <select
+                value={compareEnvA ?? ""}
+                onChange={(e) => setCompareEnvA(e.target.value ? e.target.value as Id<"environments"> : undefined)}
+                className="flex-1 rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100"
+              >
+                <option value="">Select environment A...</option>
+                {environments.map((env) => (
+                  <option key={env._id} value={env._id} disabled={env._id === compareEnvB}>
+                    {env.name}
+                  </option>
+                ))}
+              </select>
+              <ArrowLeftRight className="w-5 h-5 text-neutral-400 shrink-0" />
+              <select
+                value={compareEnvB ?? ""}
+                onChange={(e) => setCompareEnvB(e.target.value ? e.target.value as Id<"environments"> : undefined)}
+                className="flex-1 rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100"
+              >
+                <option value="">Select environment B...</option>
+                {environments.map((env) => (
+                  <option key={env._id} value={env._id} disabled={env._id === compareEnvA}>
+                    {env.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCompare(false);
+                  setCompareEnvA(undefined);
+                  setCompareEnvB(undefined);
+                }}
+                className="p-2 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              >
+                <X className="w-4 h-4 text-neutral-500" />
+              </button>
+            </div>
+            {compareEnvA && compareEnvB && (
+              <EnvironmentCompare
+                teamSlugOrId={teamSlugOrId}
+                envIdA={compareEnvA}
+                envIdB={compareEnvB}
+                onClose={() => {
+                  setShowCompare(false);
+                  setCompareEnvA(undefined);
+                  setCompareEnvB(undefined);
+                }}
+              />
+            )}
+          </div>
+        )}
         {environments && environments.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {environments.map((env) => (
