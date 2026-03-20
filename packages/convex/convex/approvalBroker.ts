@@ -232,6 +232,90 @@ export const resolveRequest = authMutation({
 });
 
 /**
+ * Bulk resolve multiple approval requests.
+ */
+export const bulkResolve = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    requestIds: v.array(v.string()),
+    resolution: resolutionValidator,
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+    const identity = await ctx.auth.getUserIdentity();
+    const userId = identity?.subject ?? "unknown";
+    const now = Date.now();
+
+    const results: Array<{ requestId: string; success: boolean; error?: string }> = [];
+
+    const status =
+      args.resolution === "allow" ||
+      args.resolution === "allow_once" ||
+      args.resolution === "allow_session"
+        ? "approved"
+        : "denied";
+
+    for (const requestId of args.requestIds) {
+      const request = await ctx.db
+        .query("approvalRequests")
+        .withIndex("by_request_id", (q) => q.eq("requestId", requestId))
+        .first();
+
+      if (!request) {
+        results.push({ requestId, success: false, error: "Not found" });
+        continue;
+      }
+
+      if (request.teamId !== teamId) {
+        results.push({ requestId, success: false, error: "Unauthorized" });
+        continue;
+      }
+
+      if (request.status !== "pending") {
+        results.push({ requestId, success: false, error: `Already ${request.status}` });
+        continue;
+      }
+
+      await ctx.db.patch(request._id, {
+        status,
+        resolvedBy: userId,
+        resolvedAt: now,
+        resolution: args.resolution,
+        resolutionNote: args.note,
+        updatedAt: now,
+      });
+
+      // Log event
+      const event: Omit<ApprovalResolvedEvent, "eventId" | "timestamp"> = {
+        type: "approval_resolved",
+        orchestrationId: request.orchestrationId,
+        taskId: request.taskId,
+        taskRunId: request.taskRunId,
+        resolution: args.resolution,
+      };
+
+      await ctx.db.insert("orchestrationEvents", {
+        eventId: generateEventId(),
+        orchestrationId: request.orchestrationId,
+        eventType: "approval_resolved",
+        teamId,
+        taskId: request.taskId,
+        taskRunId: request.taskRunId,
+        correlationId: requestId,
+        payload: event,
+        createdAt: now,
+      });
+
+      results.push({ requestId, success: true });
+    }
+
+    const successCount = results.filter((r) => r.success).length;
+    return { results, successCount, totalCount: args.requestIds.length };
+  },
+});
+
+/**
  * Cancel a pending approval request.
  */
 export const cancelRequest = authMutation({
@@ -351,6 +435,43 @@ export const getPendingByTeam = authQuery({
       )
       .order("desc")
       .take(limit);
+  },
+});
+
+/**
+ * Get approval history for a team (resolved requests).
+ */
+export const getHistoryByTeam = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.number()), // createdAt timestamp for pagination
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+    const limit = args.limit ?? 50;
+
+    // Get resolved requests (approved, denied, expired, cancelled)
+    const requests = await ctx.db
+      .query("approvalRequests")
+      .withIndex("by_team", (q) =>
+        args.cursor
+          ? q.eq("teamId", teamId).lt("createdAt", args.cursor)
+          : q.eq("teamId", teamId)
+      )
+      .filter((q) => q.neq(q.field("status"), "pending"))
+      .order("desc")
+      .take(limit + 1);
+
+    const hasMore = requests.length > limit;
+    const items = hasMore ? requests.slice(0, -1) : requests;
+    const nextCursor = hasMore && items.length > 0 ? items[items.length - 1].createdAt : undefined;
+
+    return {
+      items,
+      nextCursor,
+      hasMore,
+    };
   },
 });
 

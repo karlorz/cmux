@@ -2009,6 +2009,7 @@ const convexSchema = defineSchema({
   })
     .index("by_orchestration", ["orchestrationId", "createdAt"])
     .index("by_orchestration_status", ["orchestrationId", "status", "createdAt"])
+    .index("by_team", ["teamId", "createdAt"])
     .index("by_team_status", ["teamId", "status", "createdAt"])
     .index("by_task", ["taskId", "createdAt"])
     .index("by_task_run", ["taskRunId", "createdAt"])
