@@ -9,6 +9,7 @@ export { environmentsRouter } from "./environments.route";
 export { environmentsGetRouter } from "./environments.get.route";
 export { environmentsLifecycleRouter } from "./environments.lifecycle.route";
 export { environmentsListRouter } from "./environments.list.route";
+export { environmentsUpdateRouter } from "./environments.update.route";
 export { environmentsPortsRouter } from "./environments.ports.route";
 export { environmentsSnapshotsRouter } from "./environments.snapshots.route";
 export { environmentsVarsRouter } from "./environments.vars.route";
