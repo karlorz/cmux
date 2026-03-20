@@ -36,11 +36,17 @@ import { EnvironmentName } from "./EnvironmentName";
 interface TaskItemProps {
   task: Doc<"tasks">;
   teamSlugOrId: string;
+  isSelected?: boolean;
+  onSelectionChange?: (taskId: string, selected: boolean) => void;
+  showCheckbox?: boolean;
 }
 
 export const TaskItem = memo(function TaskItem({
   task,
   teamSlugOrId,
+  isSelected = false,
+  onSelectionChange,
+  showCheckbox = false,
 }: TaskItemProps) {
   const clipboard = useClipboard({ timeout: 2000 });
   const { archiveWithUndo, unarchive, isArchiving } =
@@ -285,6 +291,26 @@ export const TaskItem = memo(function TaskItem({
     });
   }, [unpinTask, teamSlugOrId, task._id]);
 
+  const handleCheckboxChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      e.stopPropagation();
+      onSelectionChange?.(task._id, e.target.checked);
+    },
+    [onSelectionChange, task._id]
+  );
+
+  const handlePinClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (task.pinned) {
+        unpinTask({ teamSlugOrId, id: task._id });
+      } else {
+        pinTask({ teamSlugOrId, id: task._id });
+      }
+    },
+    [task.pinned, pinTask, unpinTask, teamSlugOrId, task._id]
+  );
+
   return (
     <div className="relative group w-full">
       <ContextMenu.Root>
@@ -306,11 +332,13 @@ export const TaskItem = memo(function TaskItem({
             <div className="flex items-center justify-center pl-1 -mr-2 relative">
               <input
                 type="checkbox"
-                className="peer w-3 h-3 cursor-pointer border border-neutral-400 dark:border-neutral-500 rounded bg-white dark:bg-neutral-900 appearance-none checked:bg-neutral-500 checked:border-neutral-500 dark:checked:bg-neutral-400 dark:checked:border-neutral-400 invisible"
+                checked={isSelected}
+                className={clsx(
+                  "peer w-3 h-3 cursor-pointer border border-neutral-400 dark:border-neutral-500 rounded bg-white dark:bg-neutral-900 appearance-none checked:bg-neutral-500 checked:border-neutral-500 dark:checked:bg-neutral-400 dark:checked:border-neutral-400",
+                  showCheckbox ? "visible" : "invisible group-hover:visible"
+                )}
                 onClick={(e) => e.stopPropagation()}
-                onChange={() => {
-                  // TODO: Implement checkbox functionality
-                }}
+                onChange={handleCheckboxChange}
               />
               <Check
                 className="absolute w-2.5 h-2.5 text-white pointer-events-none transition-opacity peer-checked:opacity-100 opacity-0"
@@ -552,6 +580,33 @@ export const TaskItem = memo(function TaskItem({
             className="group-hover:opacity-100 aria-expanded:opacity-100 opacity-0"
           />
 
+          {/* Pin/Unpin button */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={handlePinClick}
+                className={clsx(
+                  "p-1 rounded",
+                  "bg-neutral-100 dark:bg-neutral-700",
+                  task.pinned
+                    ? "text-amber-600 dark:text-amber-400"
+                    : "text-neutral-600 dark:text-neutral-400",
+                  "hover:bg-neutral-200 dark:hover:bg-neutral-600",
+                  "group-hover:opacity-100 opacity-0"
+                )}
+              >
+                {task.pinned ? (
+                  <PinOff className="w-3.5 h-3.5" />
+                ) : (
+                  <Pin className="w-3.5 h-3.5" />
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              {task.pinned ? "Unpin task" : "Pin task"}
+            </TooltipContent>
+          </Tooltip>
+
           {/* Keep-alive button */}
           {runWithVSCode && hasActiveVSCode && (
             <Tooltip>
@@ -565,8 +620,7 @@ export const TaskItem = memo(function TaskItem({
                       ? "text-blue-600 dark:text-blue-400"
                       : "text-neutral-600 dark:text-neutral-400",
                     "hover:bg-neutral-200 dark:hover:bg-neutral-600",
-                    "group-hover:opacity-100 opacity-0",
-                    "hidden" // TODO: show this button
+                    "group-hover:opacity-100 opacity-0"
                   )}
                 >
                   <Pin className="w-3.5 h-3.5" />
