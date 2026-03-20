@@ -57,6 +57,7 @@ export { vaultRecommendationsRouter } from "./vault.recommendations.route";
 export { vaultRouter } from "./vault.route";
 export { branchRouter } from "./branch.route";
 export { codeReviewSimpleRouter } from "./code-review.simple.route";
+export { codeReviewStartRouter } from "./code-review.start.route";
 export { codeReviewRouter } from "./code-review.route";
 export { workspaceConfigsRouter } from "./workspace-configs.route";
 export { previewConfigsRouter } from "./preview.configs.route";
