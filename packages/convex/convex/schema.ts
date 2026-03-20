@@ -2076,6 +2076,77 @@ const convexSchema = defineSchema({
     .index("by_team_status", ["teamId", "status", "updatedAt"])
     .index("by_team_user", ["teamId", "userId", "updatedAt"]),
 
+  // Project milestones for tracking progress and deadlines
+  milestones: defineTable({
+    projectId: v.id("projects"),
+    teamId: v.string(),
+    userId: v.string(),
+    // Milestone details
+    title: v.string(),
+    description: v.optional(v.string()),
+    // Due date (epoch ms)
+    dueDate: v.optional(v.number()),
+    // Milestone status
+    status: v.union(
+      v.literal("not_started"),
+      v.literal("in_progress"),
+      v.literal("completed"),
+      v.literal("overdue")
+    ),
+    // Progress tracking (optional, can be calculated from tasks)
+    totalTasks: v.optional(v.number()),
+    completedTasks: v.optional(v.number()),
+    // Ordering within project (lower = earlier)
+    sortOrder: v.number(),
+    // Timestamps
+    completedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_project", ["projectId", "sortOrder"])
+    .index("by_team", ["teamId", "dueDate"])
+    .index("by_team_status", ["teamId", "status", "dueDate"]),
+
+  // Feed events for team activity stream
+  feedEvents: defineTable({
+    teamId: v.string(),
+    userId: v.optional(v.string()),
+    // Event type
+    eventType: v.union(
+      v.literal("task_completed"),
+      v.literal("task_failed"),
+      v.literal("pr_merged"),
+      v.literal("pr_opened"),
+      v.literal("pr_closed"),
+      v.literal("agent_started"),
+      v.literal("agent_error"),
+      v.literal("approval_required"),
+      v.literal("approval_resolved"),
+      v.literal("milestone_completed"),
+      v.literal("project_created"),
+      v.literal("orchestration_completed")
+    ),
+    // Event details
+    title: v.string(),
+    description: v.optional(v.string()),
+    // Related entities
+    taskId: v.optional(v.id("tasks")),
+    taskRunId: v.optional(v.id("taskRuns")),
+    projectId: v.optional(v.id("projects")),
+    orchestrationTaskId: v.optional(v.id("orchestrationTasks")),
+    // Metadata
+    agentName: v.optional(v.string()),
+    repoFullName: v.optional(v.string()),
+    prNumber: v.optional(v.number()),
+    prUrl: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+    // Timestamps
+    createdAt: v.number(),
+  })
+    .index("by_team", ["teamId", "createdAt"])
+    .index("by_team_type", ["teamId", "eventType", "createdAt"])
+    .index("by_team_repo", ["teamId", "repoFullName", "createdAt"]),
+
   // MCP server configurations (central, cloud-based MCP management)
   // Users configure MCP servers in the web UI; these are injected into sandboxes
   // at startup. Borrows the per-agent enable pattern from cc-switch.

@@ -46,6 +46,7 @@ import type * as e2bInstances from "../e2bInstances.js";
 import type * as e2b_actions from "../e2b_actions.js";
 import type * as environmentSnapshots from "../environmentSnapshots.js";
 import type * as environments from "../environments.js";
+import type * as feedEvents from "../feedEvents.js";
 import type * as github from "../github.js";
 import type * as githubProjectSync from "../githubProjectSync.js";
 import type * as github_app from "../github_app.js";
@@ -183,6 +184,7 @@ declare const fullApi: ApiFromModules<{
   e2b_actions: typeof e2b_actions;
   environmentSnapshots: typeof environmentSnapshots;
   environments: typeof environments;
+  feedEvents: typeof feedEvents;
   github: typeof github;
   githubProjectSync: typeof githubProjectSync;
   github_app: typeof github_app;

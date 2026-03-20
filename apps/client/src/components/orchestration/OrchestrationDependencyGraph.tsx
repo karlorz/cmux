@@ -1,20 +1,41 @@
-import { useId, useMemo } from "react";
-import { Users } from "lucide-react";
+import { useMemo, useState, useEffect } from "react";
+import {
+  ReactFlow,
+  MiniMap,
+  Controls,
+  Background,
+  useNodesState,
+  useEdgesState,
+  type Node,
+  type Edge,
+  type NodeProps,
+  Handle,
+  Position,
+  MarkerType,
+  BackgroundVariant,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import { Users, Clock, CheckCircle2, XCircle, Loader2, Pause, Play } from "lucide-react";
 import { STATUS_CONFIG, STATUS_GRAPH_COLORS, type TaskStatus } from "./status-config";
 import type { OrchestrationTaskWithDeps } from "./OrchestrationDashboard";
 
 interface OrchestrationDependencyGraphProps {
   tasks?: OrchestrationTaskWithDeps[];
   loading: boolean;
+  onTaskClick?: (taskId: string) => void;
 }
 
-interface TaskNode {
+interface TaskNodeData extends Record<string, unknown> {
   task: OrchestrationTaskWithDeps;
-  level: number;
-  indexInLevel: number;
+  label: string;
+  status: TaskStatus;
+  agent?: string;
+  onTaskClick?: (taskId: string) => void;
 }
 
-function truncatePrompt(prompt: string | null | undefined, maxLen = 48): string {
+type TaskNode = Node<TaskNodeData, "taskNode">;
+
+function truncatePrompt(prompt: string | null | undefined, maxLen = 60): string {
   if (!prompt) {
     return "Untitled task";
   }
@@ -30,19 +51,189 @@ function isDependencyTaskId(depId: unknown): depId is string {
   return typeof depId === "string" && depId.length > 0;
 }
 
+// Status icons mapping
+const STATUS_ICONS: Record<TaskStatus, React.ElementType> = {
+  pending: Clock,
+  assigned: Play,
+  running: Loader2,
+  completed: CheckCircle2,
+  failed: XCircle,
+  cancelled: Pause,
+};
+
+// Custom node component for tasks
+function TaskNode({ data, selected }: NodeProps<TaskNode>) {
+  const [showPopover, setShowPopover] = useState(false);
+  const nodeData = data as TaskNodeData;
+  const colors = STATUS_GRAPH_COLORS[nodeData.status] ?? STATUS_GRAPH_COLORS.pending;
+  const statusConf = STATUS_CONFIG[nodeData.status];
+  const StatusIcon = STATUS_ICONS[nodeData.status];
+  const isRunning = nodeData.status === "running";
+
+  return (
+    <>
+      {/* Input handle for dependencies */}
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="!bg-neutral-400 !border-neutral-300 dark:!bg-neutral-500 dark:!border-neutral-600 !w-2 !h-2"
+      />
+
+      <div
+        className={`
+          relative rounded-lg border-2 p-3 shadow-sm transition-all duration-200 cursor-pointer
+          ${colors.border} ${colors.bg}
+          ${selected ? "ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-neutral-900" : ""}
+          hover:shadow-md hover:scale-[1.02]
+        `}
+        style={{ width: 240, minHeight: 72 }}
+        onMouseEnter={() => setShowPopover(true)}
+        onMouseLeave={() => setShowPopover(false)}
+        onClick={() => nodeData.onTaskClick?.(nodeData.task._id)}
+      >
+        {/* Status indicator with animation */}
+        <div className="flex items-start gap-2">
+          <div className={`mt-0.5 ${isRunning ? "animate-spin" : ""}`}>
+            <StatusIcon className={`size-4 ${statusConf?.color ?? "text-neutral-500"}`} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium leading-tight text-neutral-900 dark:text-neutral-100 line-clamp-2">
+              {nodeData.label}
+            </p>
+            <div className="mt-1.5 flex items-center gap-2 text-[11px] text-neutral-500 dark:text-neutral-400">
+              <span className={`font-medium ${statusConf?.color ?? ""}`}>
+                {statusConf?.label ?? nodeData.status}
+              </span>
+              {nodeData.agent && (
+                <>
+                  <span className="text-neutral-300 dark:text-neutral-600">|</span>
+                  <span className="truncate max-w-[120px]">{nodeData.agent}</span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Running indicator pulse */}
+        {isRunning && (
+          <div className="absolute -top-1 -right-1">
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500" />
+            </span>
+          </div>
+        )}
+
+        {/* Hover popover */}
+        {showPopover && (
+          <TaskPopover task={nodeData.task} />
+        )}
+      </div>
+
+      {/* Output handle for dependents */}
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="!bg-neutral-400 !border-neutral-300 dark:!bg-neutral-500 dark:!border-neutral-600 !w-2 !h-2"
+      />
+    </>
+  );
+}
+
+// Task popover component
+function TaskPopover({ task }: { task: OrchestrationTaskWithDeps }) {
+  const depInfo = task.dependencyInfo;
+
+  return (
+    <div
+      className="absolute left-full top-0 ml-2 z-50 w-72 rounded-lg border border-neutral-200 bg-white p-3 shadow-lg dark:border-neutral-700 dark:bg-neutral-800"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="space-y-2">
+        {/* Full prompt */}
+        <div>
+          <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1">Prompt</p>
+          <p className="text-sm text-neutral-900 dark:text-neutral-100 line-clamp-4">
+            {task.prompt || "No prompt"}
+          </p>
+        </div>
+
+        {/* Agent */}
+        {task.assignedAgentName && (
+          <div>
+            <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1">Agent</p>
+            <p className="text-sm text-neutral-900 dark:text-neutral-100">
+              {task.assignedAgentName}
+            </p>
+          </div>
+        )}
+
+        {/* Dependencies */}
+        {depInfo && depInfo.totalDeps > 0 && (
+          <div>
+            <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1">
+              Dependencies ({depInfo.completedDeps}/{depInfo.totalDeps})
+            </p>
+            <div className="flex gap-1">
+              {Array.from({ length: depInfo.totalDeps }).map((_, i) => (
+                <div
+                  key={i}
+                  className={`h-1.5 flex-1 rounded-full ${
+                    i < depInfo.completedDeps
+                      ? "bg-green-500"
+                      : "bg-neutral-200 dark:bg-neutral-600"
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Error message */}
+        {task.errorMessage && (
+          <div>
+            <p className="text-xs font-medium text-red-500 mb-1">Error</p>
+            <p className="text-xs text-red-600 dark:text-red-400 line-clamp-2">
+              {task.errorMessage}
+            </p>
+          </div>
+        )}
+
+        {/* Result */}
+        {task.result && (
+          <div>
+            <p className="text-xs font-medium text-green-500 mb-1">Result</p>
+            <p className="text-xs text-green-600 dark:text-green-400 line-clamp-2">
+              {task.result}
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Node types registry
+const nodeTypes = {
+  taskNode: TaskNode,
+};
+
 /**
- * Topological sort to arrange tasks by dependency depth.
+ * Compute graph layout using topological sort.
  * Tasks with no dependencies go to level 0, tasks depending only
  * on level-0 tasks go to level 1, etc.
  */
-function computeLevels(tasks: OrchestrationTaskWithDeps[]): TaskNode[] {
+function computeGraphLayout(
+  tasks: OrchestrationTaskWithDeps[],
+  onTaskClick?: (taskId: string) => void
+): { nodes: TaskNode[]; edges: Edge[] } {
   const taskMap = new Map<string, OrchestrationTaskWithDeps>();
   for (const t of tasks) {
     taskMap.set(t._id, t);
   }
 
+  // Compute levels via topological sort
   const levels = new Map<string, number>();
-  const visited = new Set<string>();
   const visiting = new Set<string>();
 
   function getLevel(id: string): number {
@@ -58,31 +249,25 @@ function computeLevels(tasks: OrchestrationTaskWithDeps[]): TaskNode[] {
     if (!task?.dependencies?.length) {
       levels.set(id, 0);
       visiting.delete(id);
-      visited.add(id);
       return 0;
     }
     let maxDepLevel = 0;
     for (const depId of task.dependencies) {
-      if (!isDependencyTaskId(depId)) {
-        continue;
-      }
+      if (!isDependencyTaskId(depId)) continue;
       if (taskMap.has(depId)) {
         maxDepLevel = Math.max(maxDepLevel, getLevel(depId) + 1);
       }
     }
     levels.set(id, maxDepLevel);
     visiting.delete(id);
-    visited.add(id);
     return maxDepLevel;
   }
 
   for (const t of tasks) {
-    if (!visited.has(t._id)) {
-      getLevel(t._id);
-    }
+    getLevel(t._id);
   }
 
-  // Group by level and assign index within level
+  // Group by level
   const levelGroups = new Map<number, OrchestrationTaskWithDeps[]>();
   for (const t of tasks) {
     const level = levels.get(t._id) ?? 0;
@@ -91,136 +276,122 @@ function computeLevels(tasks: OrchestrationTaskWithDeps[]): TaskNode[] {
     levelGroups.set(level, group);
   }
 
+  // Layout constants
+  const NODE_WIDTH = 240;
+  const NODE_HEIGHT = 72;
+  const LEVEL_GAP = 120;
+  const NODE_GAP = 24;
+  const PADDING = 50;
+
+  // Create nodes with positions
   const nodes: TaskNode[] = [];
   for (const [level, group] of levelGroups) {
+    const startY = PADDING;
+
     group.forEach((task, idx) => {
-      nodes.push({ task, level, indexInLevel: idx });
+      const x = PADDING + level * (NODE_WIDTH + LEVEL_GAP);
+      const y = startY + idx * (NODE_HEIGHT + NODE_GAP);
+
+      nodes.push({
+        id: task._id,
+        type: "taskNode",
+        position: { x, y },
+        data: {
+          task,
+          label: truncatePrompt(task.prompt),
+          status: task.status as TaskStatus,
+          agent: task.assignedAgentName ?? undefined,
+          onTaskClick,
+        },
+      });
     });
   }
 
-  return nodes;
-}
+  // Create edges
+  const edges: Edge[] = [];
+  for (const task of tasks) {
+    if (!task.dependencies?.length) continue;
 
+    for (const depId of task.dependencies) {
+      if (!isDependencyTaskId(depId)) continue;
+      if (!taskMap.has(depId)) continue;
 
-// Layout constants
-const CARD_WIDTH = 220;
-const CARD_HEIGHT = 80;
-const LEVEL_GAP = 80;
-const CARD_GAP = 16;
-const PADDING = 24;
+      const depTask = taskMap.get(depId)!;
+      const depStatus = depTask.status as TaskStatus;
 
-function TaskCard({ node }: { node: TaskNode }) {
-  const { task } = node;
-  const colors = STATUS_GRAPH_COLORS[task.status as TaskStatus] ?? STATUS_GRAPH_COLORS.pending;
-  const statusConf = STATUS_CONFIG[task.status as TaskStatus];
-  const label = truncatePrompt(task.prompt);
-  const agent = task.assignedAgentName;
-
-  return (
-    <div
-      className={`rounded-lg border ${colors.border} ${colors.bg} p-3 shadow-sm transition-shadow hover:shadow-md`}
-      style={{ width: CARD_WIDTH, minHeight: CARD_HEIGHT }}
-      title={task.prompt}
-    >
-      <div className="flex items-start gap-2">
-        <span className={`mt-1 inline-block size-2 shrink-0 rounded-full ${colors.dot}`} />
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium leading-tight text-neutral-900 dark:text-neutral-100 line-clamp-2">
-            {label}
-          </p>
-          <div className="mt-1.5 flex items-center gap-2 text-[10px] text-neutral-500 dark:text-neutral-400">
-            {statusConf && (
-              <span className="font-medium">{statusConf.label}</span>
-            )}
-            {agent && (
-              <>
-                <span className="text-neutral-300 dark:text-neutral-600">|</span>
-                <span className="truncate">{agent}</span>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Compute SVG path coordinates for dependency arrows.
- * Each edge goes from a dependency (left) to a dependent (right).
- */
-function computeEdges(
-  nodes: TaskNode[],
-  nodePositions: Map<string, { x: number; y: number }>
-): Array<{ from: { x: number; y: number }; to: { x: number; y: number }; key: string }> {
-  const edges: Array<{ from: { x: number; y: number }; to: { x: number; y: number }; key: string }> = [];
-
-  for (const node of nodes) {
-    const deps = node.task.dependencies;
-    if (!deps?.length) continue;
-    const toPos = nodePositions.get(node.task._id);
-    if (!toPos) continue;
-
-    for (const depId of deps) {
-      if (!isDependencyTaskId(depId)) {
-        continue;
+      // Color edge based on dependency status
+      let edgeColor = "#9ca3af"; // neutral
+      if (depStatus === "completed") {
+        edgeColor = "#22c55e"; // green
+      } else if (depStatus === "failed") {
+        edgeColor = "#ef4444"; // red
+      } else if (depStatus === "running") {
+        edgeColor = "#3b82f6"; // blue
       }
-      const fromPos = nodePositions.get(depId);
-      if (!fromPos) continue;
 
       edges.push({
-        from: { x: fromPos.x + CARD_WIDTH, y: fromPos.y + CARD_HEIGHT / 2 },
-        to: { x: toPos.x, y: toPos.y + CARD_HEIGHT / 2 },
-        key: `${depId}->${node.task._id}`,
+        id: `${depId}->${task._id}`,
+        source: depId,
+        target: task._id,
+        type: "smoothstep",
+        animated: depStatus === "running",
+        style: { stroke: edgeColor, strokeWidth: 2 },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: edgeColor,
+          width: 16,
+          height: 16,
+        },
       });
     }
   }
 
-  return edges;
+  return { nodes, edges };
+}
+
+// Minimap node color function
+function getMinimapNodeColor(node: Node): string {
+  const data = node.data as TaskNodeData | undefined;
+  if (!data) return "#9ca3af";
+
+  const statusColors: Record<TaskStatus, string> = {
+    pending: "#9ca3af",
+    assigned: "#3b82f6",
+    running: "#3b82f6",
+    completed: "#22c55e",
+    failed: "#ef4444",
+    cancelled: "#9ca3af",
+  };
+
+  return statusColors[data.status] ?? "#9ca3af";
 }
 
 export function OrchestrationDependencyGraph({
   tasks,
   loading,
+  onTaskClick,
 }: OrchestrationDependencyGraphProps) {
-  const markerId = useId().replace(/:/g, "-");
-  const { nodes, nodePositions, edges, canvasWidth, canvasHeight, hasDeps } = useMemo(() => {
+  const { initialNodes, initialEdges, hasDeps } = useMemo(() => {
     if (!tasks || tasks.length === 0) {
-      return { nodes: [], nodePositions: new Map<string, { x: number; y: number }>(), edges: [], canvasWidth: 0, canvasHeight: 0, hasDeps: false };
+      return { initialNodes: [] as TaskNode[], initialEdges: [] as Edge[], hasDeps: false };
     }
 
-    const computedNodes = computeLevels(tasks);
+    const { nodes, edges } = computeGraphLayout(tasks, onTaskClick);
     const hasDependencies = tasks.some((t) => t.dependencies && t.dependencies.length > 0);
 
-    // Compute positions
-    const positions = new Map<string, { x: number; y: number }>();
-    const levelCounts = new Map<number, number>();
-    for (const n of computedNodes) {
-      levelCounts.set(n.level, (levelCounts.get(n.level) ?? 0) + 1);
+    return { initialNodes: nodes, initialEdges: edges, hasDeps: hasDependencies };
+  }, [tasks, onTaskClick]);
+
+  const [nodes, setNodes, onNodesChange] = useNodesState<TaskNode>(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+
+  // Update nodes/edges when tasks change
+  useEffect(() => {
+    if (initialNodes.length > 0) {
+      setNodes(initialNodes);
+      setEdges(initialEdges);
     }
-    const maxLvl = Math.max(...Array.from(levelCounts.keys()), 0);
-
-    for (const n of computedNodes) {
-      const x = PADDING + n.level * (CARD_WIDTH + LEVEL_GAP);
-      const y = PADDING + n.indexInLevel * (CARD_HEIGHT + CARD_GAP);
-      positions.set(n.task._id, { x, y });
-    }
-
-    const maxNodesInLevel = Math.max(...Array.from(levelCounts.values()), 1);
-    const totalWidth = PADDING * 2 + (maxLvl + 1) * CARD_WIDTH + maxLvl * LEVEL_GAP;
-    const totalHeight = PADDING * 2 + maxNodesInLevel * CARD_HEIGHT + (maxNodesInLevel - 1) * CARD_GAP;
-
-    const computedEdges = computeEdges(computedNodes, positions);
-
-    return {
-      nodes: computedNodes,
-      nodePositions: positions,
-      edges: computedEdges,
-      canvasWidth: Math.max(totalWidth, 400),
-      canvasHeight: Math.max(totalHeight, 200),
-      hasDeps: hasDependencies,
-    };
-  }, [tasks]);
+  }, [initialNodes, initialEdges, setNodes, setEdges]);
 
   if (loading) {
     return (
@@ -263,66 +434,46 @@ export function OrchestrationDependencyGraph({
             No dependency edges
           </span>
         )}
+        <span className="ml-auto text-neutral-400 dark:text-neutral-500">
+          Scroll to zoom | Drag to pan
+        </span>
       </div>
 
-      {/* Graph canvas */}
-      <div className="overflow-auto" style={{ maxHeight: "calc(100vh - 400px)" }}>
-        <div className="relative" style={{ width: canvasWidth, height: canvasHeight, minWidth: "100%" }}>
-          {/* SVG layer for edges */}
-          {edges.length > 0 && (
-            <svg
-              className="pointer-events-none absolute inset-0"
-              width={canvasWidth}
-              height={canvasHeight}
-            >
-              <defs>
-                <marker
-                  id={markerId}
-                  markerWidth="8"
-                  markerHeight="6"
-                  refX="7"
-                  refY="3"
-                  orient="auto"
-                >
-                  <polygon
-                    points="0 0, 8 3, 0 6"
-                    className="fill-neutral-400 dark:fill-neutral-500"
-                  />
-                </marker>
-              </defs>
-              {edges.map((edge) => {
-                const dx = edge.to.x - edge.from.x;
-                const cp = dx * 0.4;
-                const d = `M ${edge.from.x} ${edge.from.y} C ${edge.from.x + cp} ${edge.from.y}, ${edge.to.x - cp} ${edge.to.y}, ${edge.to.x} ${edge.to.y}`;
-                return (
-                  <path
-                    key={edge.key}
-                    d={d}
-                    fill="none"
-                    className="stroke-neutral-300 dark:stroke-neutral-600"
-                    strokeWidth={1.5}
-                    markerEnd={`url(#${markerId})`}
-                  />
-                );
-              })}
-            </svg>
-          )}
-
-          {/* Card layer */}
-          {nodes.map((node) => {
-            const pos = nodePositions.get(node.task._id);
-            if (!pos) return null;
-            return (
-              <div
-                key={node.task._id}
-                className="absolute"
-                style={{ left: pos.x, top: pos.y }}
-              >
-                <TaskCard node={node} />
-              </div>
-            );
-          })}
-        </div>
+      {/* React Flow canvas */}
+      <div className="h-[500px] w-full">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          nodeTypes={nodeTypes}
+          fitView
+          fitViewOptions={{ padding: 0.2, maxZoom: 1.5 }}
+          minZoom={0.1}
+          maxZoom={2}
+          defaultEdgeOptions={{
+            type: "smoothstep",
+          }}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Controls
+            className="!bg-white dark:!bg-neutral-800 !border-neutral-200 dark:!border-neutral-700 !shadow-md"
+            showInteractive={false}
+          />
+          <MiniMap
+            nodeColor={getMinimapNodeColor}
+            maskColor="rgba(0, 0, 0, 0.1)"
+            className="!bg-neutral-50 dark:!bg-neutral-900 !border-neutral-200 dark:!border-neutral-700"
+            pannable
+            zoomable
+          />
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={16}
+            size={1}
+            className="!bg-neutral-50 dark:!bg-neutral-900"
+          />
+        </ReactFlow>
       </div>
     </div>
   );

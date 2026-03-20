@@ -41,7 +41,7 @@ const PAUSE_DAYS_THRESHOLD_PVE = 3;
 const STOP_DAYS_THRESHOLD = 7;
 const ORPHAN_MIN_AGE_DAYS = 5;
 const MILLISECONDS_PER_HOUR = 60 * 60 * 1000;
-const BATCH_SIZE = 5;
+const BATCH_SIZE = 20;
 
 // ============================================================================
 // Provider Client Interfaces
@@ -334,6 +334,7 @@ export const debugListInstances = action({
 /**
  * Pauses all sandbox instances that have been running for more than the threshold.
  * Called by the daily cron job.
+ * Processes all providers (Morph, PVE) concurrently for faster execution.
  */
 export const pauseOldSandboxInstances = internalAction({
   args: {},
@@ -347,161 +348,174 @@ export const pauseOldSandboxInstances = internalAction({
     const providerConfigs = getProviderConfigs();
     const now = Date.now();
 
-    let totalSuccess = 0;
-    let totalFailure = 0;
-    let totalSkipped = 0;
-    let cloudWorkspaceSkipped = 0;
+    // Process all providers in parallel
+    const providerResults = await Promise.all(
+      providerConfigs.map(async (config) => {
+        const stats = { success: 0, failure: 0, skipped: 0, cloudWorkspaceSkipped: 0 };
 
-    for (const config of providerConfigs) {
-      const thresholdMs =
-        config.provider === "pve-lxc"
-          ? PAUSE_DAYS_THRESHOLD_PVE * 24 * MILLISECONDS_PER_HOUR
-          : PAUSE_HOURS_THRESHOLD * MILLISECONDS_PER_HOUR;
+        const thresholdMs =
+          config.provider === "pve-lxc"
+            ? PAUSE_DAYS_THRESHOLD_PVE * 24 * MILLISECONDS_PER_HOUR
+            : PAUSE_HOURS_THRESHOLD * MILLISECONDS_PER_HOUR;
 
-      if (!config.available || !config.client) {
-        console.log(
-          `[sandboxMaintenance:pause] Skipping ${config.provider}: ${config.error}`
-        );
-        continue;
-      }
-
-      const client = config.client;
-
-      console.log(
-        `[sandboxMaintenance:pause] Processing provider: ${config.provider}`
-      );
-
-      try {
-        const instances = await client.listInstances();
-
-        // Filter for cmux instances that are ready/running and older than threshold
-        let staleInstances = instances
-          .filter((inst) => inst.metadata?.app?.startsWith("cmux"))
-          .filter((inst) => inst.status === "ready" || inst.status === "running")
-          .filter((inst) => {
-            // For PVE, check activity table since PVE doesn't track creation time
-            if (inst.created === 0) {
-              // Will be checked via activity table below
-              return true;
-            }
-            const createdMs = inst.created * 1000;
-            return now - createdMs > thresholdMs;
-          })
-          .sort((a, b) => a.created - b.created);
-
-        if (staleInstances.length === 0) {
+        if (!config.available || !config.client) {
           console.log(
-            `[sandboxMaintenance:pause] No stale instances for ${config.provider}`
+            `[sandboxMaintenance:pause] Skipping ${config.provider}: ${config.error}`
           );
-          continue;
+          return stats;
         }
 
-        const activities = await ctx.runQuery(
-          internal.sandboxInstances.getActivitiesByInstanceIdsInternal,
-          { instanceIds: staleInstances.map((instance) => instance.id) }
+        const client = config.client;
+
+        console.log(
+          `[sandboxMaintenance:pause] Processing provider: ${config.provider}`
         );
 
-        // For PVE, we need to check activity table for creation time
-        if (config.provider === "pve-lxc") {
-          const filteredStale = staleInstances.filter((inst) => {
-            return isPastPauseThreshold({
-              now,
-              thresholdMs,
-              activity: activities[inst.id],
-              providerCreatedAtSeconds: inst.created,
+        try {
+          const instances = await client.listInstances();
+
+          // Filter for cmux instances that are ready/running and older than threshold
+          let staleInstances = instances
+            .filter((inst) => inst.metadata?.app?.startsWith("cmux"))
+            .filter((inst) => inst.status === "ready" || inst.status === "running")
+            .filter((inst) => {
+              // For PVE, check activity table since PVE doesn't track creation time
+              if (inst.created === 0) {
+                // Will be checked via activity table below
+                return true;
+              }
+              const createdMs = inst.created * 1000;
+              return now - createdMs > thresholdMs;
+            })
+            .sort((a, b) => a.created - b.created);
+
+          if (staleInstances.length === 0) {
+            console.log(
+              `[sandboxMaintenance:pause] No stale instances for ${config.provider}`
+            );
+            return stats;
+          }
+
+          const activities = await ctx.runQuery(
+            internal.sandboxInstances.getActivitiesByInstanceIdsInternal,
+            { instanceIds: staleInstances.map((instance) => instance.id) }
+          );
+
+          // For PVE, we need to check activity table for creation time
+          if (config.provider === "pve-lxc") {
+            const filteredStale = staleInstances.filter((inst) => {
+              return isPastPauseThreshold({
+                now,
+                thresholdMs,
+                activity: activities[inst.id],
+                providerCreatedAtSeconds: inst.created,
+              });
             });
+
+            if (filteredStale.length === 0) {
+              console.log(
+                `[sandboxMaintenance:pause] No stale PVE instances after activity check`
+              );
+              return stats;
+            }
+
+            staleInstances = filteredStale;
+          }
+
+          const cloudWorkspaceProtection = await resolveCloudWorkspaceProtectionMap({
+            instanceIds: staleInstances.map((instance) => instance.id),
+            activitiesByInstanceId: activities,
+            fetchTaskRunCloudWorkspaceFlags: (containerNames) =>
+              ctx.runQuery(
+                internal.taskRuns.getCloudWorkspaceFlagsByContainerNamesInternal,
+                { containerNames }
+              ),
           });
 
-          if (filteredStale.length === 0) {
-            console.log(
-              `[sandboxMaintenance:pause] No stale PVE instances after activity check`
-            );
-            continue;
-          }
-
-          staleInstances = filteredStale;
-        }
-
-        const cloudWorkspaceProtection = await resolveCloudWorkspaceProtectionMap({
-          instanceIds: staleInstances.map((instance) => instance.id),
-          activitiesByInstanceId: activities,
-          fetchTaskRunCloudWorkspaceFlags: (containerNames) =>
-            ctx.runQuery(
-              internal.taskRuns.getCloudWorkspaceFlagsByContainerNamesInternal,
-              { containerNames }
-            ),
-        });
-
-        console.log(
-          `[sandboxMaintenance:pause] Found ${staleInstances.length} stale ${config.provider} instances`
-        );
-
-        // Process in batches
-        for (let i = 0; i < staleInstances.length; i += BATCH_SIZE) {
-          const batch = staleInstances.slice(i, i + BATCH_SIZE);
-
-          const results = await Promise.allSettled(
-            batch.map(async (instance) => {
-              if (cloudWorkspaceProtection[instance.id]) {
-                console.log(
-                  `[sandboxMaintenance:pause] Skipping cloud workspace: ${instance.id}`
-                );
-                return { skipped: true as const, reason: "cloud_workspace" as const };
-              }
-
-              const ageHours =
-                instance.created > 0
-                  ? Math.floor(
-                      (now - instance.created * 1000) / MILLISECONDS_PER_HOUR
-                    )
-                  : "unknown";
-
-              console.log(
-                `[sandboxMaintenance:pause] Pausing ${instance.id} (${ageHours}h old)...`
-              );
-
-              await client.pauseInstance(instance.id);
-
-              // Record in activity table
-              await ctx.runMutation(internal.sandboxInstances.recordPauseInternal, {
-                instanceId: instance.id,
-                provider: config.provider,
-              });
-
-              console.log(`[sandboxMaintenance:pause] Paused ${instance.id}`);
-              return { skipped: false as const };
-            })
+          console.log(
+            `[sandboxMaintenance:pause] Found ${staleInstances.length} stale ${config.provider} instances`
           );
 
-          for (const result of results) {
-            if (result.status === "fulfilled") {
-              if (result.value.skipped) {
-                totalSkipped++;
-                if (result.value.reason === "cloud_workspace") {
-                  cloudWorkspaceSkipped++;
+          // Process in batches
+          for (let i = 0; i < staleInstances.length; i += BATCH_SIZE) {
+            const batch = staleInstances.slice(i, i + BATCH_SIZE);
+
+            const results = await Promise.allSettled(
+              batch.map(async (instance) => {
+                if (cloudWorkspaceProtection[instance.id]) {
+                  console.log(
+                    `[sandboxMaintenance:pause] Skipping cloud workspace: ${instance.id}`
+                  );
+                  return { skipped: true as const, reason: "cloud_workspace" as const };
+                }
+
+                const ageHours =
+                  instance.created > 0
+                    ? Math.floor(
+                        (now - instance.created * 1000) / MILLISECONDS_PER_HOUR
+                      )
+                    : "unknown";
+
+                console.log(
+                  `[sandboxMaintenance:pause] Pausing ${instance.id} (${ageHours}h old)...`
+                );
+
+                await client.pauseInstance(instance.id);
+
+                // Record in activity table
+                await ctx.runMutation(internal.sandboxInstances.recordPauseInternal, {
+                  instanceId: instance.id,
+                  provider: config.provider,
+                });
+
+                console.log(`[sandboxMaintenance:pause] Paused ${instance.id}`);
+                return { skipped: false as const };
+              })
+            );
+
+            for (const result of results) {
+              if (result.status === "fulfilled") {
+                if (result.value.skipped) {
+                  stats.skipped++;
+                  if (result.value.reason === "cloud_workspace") {
+                    stats.cloudWorkspaceSkipped++;
+                  }
+                } else {
+                  stats.success++;
                 }
               } else {
-                totalSuccess++;
+                stats.failure++;
+                console.error(
+                  `[sandboxMaintenance:pause] Failed to pause instance:`,
+                  result.reason
+                );
               }
-            } else {
-              totalFailure++;
-              console.error(
-                `[sandboxMaintenance:pause] Failed to pause instance:`,
-                result.reason
-              );
             }
           }
+        } catch (error) {
+          console.error(
+            `[sandboxMaintenance:pause] Error processing ${config.provider}:`,
+            error
+          );
         }
-      } catch (error) {
-        console.error(
-          `[sandboxMaintenance:pause] Error processing ${config.provider}:`,
-          error
-        );
-      }
-    }
+
+        return stats;
+      })
+    );
+
+    // Aggregate results from all providers
+    const totals = providerResults.reduce(
+      (acc, stats) => ({
+        success: acc.success + stats.success,
+        failure: acc.failure + stats.failure,
+        skipped: acc.skipped + stats.skipped,
+        cloudWorkspaceSkipped: acc.cloudWorkspaceSkipped + stats.cloudWorkspaceSkipped,
+      }),
+      { success: 0, failure: 0, skipped: 0, cloudWorkspaceSkipped: 0 }
+    );
 
     console.log(
-      `[sandboxMaintenance:pause] Finished: ${totalSuccess} paused, ${totalSkipped} skipped (${cloudWorkspaceSkipped} cloud workspaces), ${totalFailure} failed`
+      `[sandboxMaintenance:pause] Finished: ${totals.success} paused, ${totals.skipped} skipped (${totals.cloudWorkspaceSkipped} cloud workspaces), ${totals.failure} failed`
     );
   },
 });
@@ -509,6 +523,7 @@ export const pauseOldSandboxInstances = internalAction({
 /**
  * Stops (deletes) sandbox instances that have been inactive for more than the threshold.
  * Called by the daily cron job.
+ * Processes all providers (Morph, PVE) concurrently for faster execution.
  */
 export const stopOldSandboxInstances = internalAction({
   args: {},
@@ -523,166 +538,179 @@ export const stopOldSandboxInstances = internalAction({
     const now = Date.now();
     const thresholdMs = STOP_DAYS_THRESHOLD * 24 * MILLISECONDS_PER_HOUR;
 
-    let totalSuccess = 0;
-    let totalFailure = 0;
-    let totalSkipped = 0;
-    let cloudWorkspaceSkipped = 0;
+    // Process all providers in parallel
+    const providerResults = await Promise.all(
+      providerConfigs.map(async (config) => {
+        const stats = { success: 0, failure: 0, skipped: 0, cloudWorkspaceSkipped: 0 };
 
-    for (const config of providerConfigs) {
-      if (!config.available || !config.client) {
-        console.log(
-          `[sandboxMaintenance:stop] Skipping ${config.provider}: ${config.error}`
-        );
-        continue;
-      }
-
-      const client = config.client;
-
-      console.log(
-        `[sandboxMaintenance:stop] Processing provider: ${config.provider}`
-      );
-
-      try {
-        const instances = await client.listInstances();
-
-        // Filter for cmux instances that are paused/stopped
-        const pausedInstances = instances
-          .filter((inst) => inst.metadata?.app?.startsWith("cmux"))
-          .filter(
-            (inst) => inst.status === "paused" || inst.status === "stopped"
-          );
-
-        if (pausedInstances.length === 0) {
+        if (!config.available || !config.client) {
           console.log(
-            `[sandboxMaintenance:stop] No paused instances for ${config.provider}`
+            `[sandboxMaintenance:stop] Skipping ${config.provider}: ${config.error}`
           );
-          continue;
+          return stats;
         }
 
+        const client = config.client;
+
         console.log(
-          `[sandboxMaintenance:stop] Checking ${pausedInstances.length} paused ${config.provider} instances`
+          `[sandboxMaintenance:stop] Processing provider: ${config.provider}`
         );
 
-        // Get activity records for all instances
-        const instanceIds = pausedInstances.map((i) => i.id);
-        const activities = await ctx.runQuery(
-          internal.sandboxInstances.getActivitiesByInstanceIdsInternal,
-          { instanceIds }
-        );
+        try {
+          const instances = await client.listInstances();
 
-        const cloudWorkspaceProtection = await resolveCloudWorkspaceProtectionMap({
-          instanceIds,
-          activitiesByInstanceId: activities,
-          fetchTaskRunCloudWorkspaceFlags: (containerNames) =>
-            ctx.runQuery(
-              internal.taskRuns.getCloudWorkspaceFlagsByContainerNamesInternal,
-              { containerNames }
-            ),
-        });
+          // Filter for cmux instances that are paused/stopped
+          const pausedInstances = instances
+            .filter((inst) => inst.metadata?.app?.startsWith("cmux"))
+            .filter(
+              (inst) => inst.status === "paused" || inst.status === "stopped"
+            );
 
-        // Process in batches
-        for (let i = 0; i < pausedInstances.length; i += BATCH_SIZE) {
-          const batch = pausedInstances.slice(i, i + BATCH_SIZE);
+          if (pausedInstances.length === 0) {
+            console.log(
+              `[sandboxMaintenance:stop] No paused instances for ${config.provider}`
+            );
+            return stats;
+          }
 
-          const results = await Promise.allSettled(
-            batch.map(async (instance) => {
-              if (cloudWorkspaceProtection[instance.id]) {
-                console.log(
-                  `[sandboxMaintenance:stop] Skipping cloud workspace: ${instance.id}`
-                );
-                return { skipped: true as const, reason: "cloud_workspace" as const };
-              }
-
-              const activity = activities[instance.id];
-
-              // Already stopped?
-              if (activity?.stoppedAt) {
-                console.log(
-                  `[sandboxMaintenance:stop] Skipping ${instance.id} - already recorded as stopped`
-                );
-                return { skipped: true, reason: "already_stopped" };
-              }
-
-              // PVE LXC doesn't expose creation time; created is 0 in the provider list.
-              // If we also have no activity record, we can't safely determine age/inactivity.
-              if (!activity && instance.created === 0) {
-                console.warn(
-                  `[sandboxMaintenance:stop] Skipping ${instance.id} - unknown creation time (no activity record)`
-                );
-                return { skipped: true, reason: "unknown_creation_time" };
-              }
-
-              // Determine last activity time
-              const lastActivityAt = getLastActivityTimeMs({
-                activity,
-                providerCreatedAtSeconds: instance.created,
-              });
-
-              if (lastActivityAt === null) {
-                console.warn(
-                  `[sandboxMaintenance:stop] Skipping ${instance.id} - unknown last activity time`
-                );
-                return { skipped: true, reason: "unknown_creation_time" };
-              }
-
-              const inactiveDuration = now - lastActivityAt;
-              const inactiveDays = Math.floor(
-                inactiveDuration / (24 * MILLISECONDS_PER_HOUR)
-              );
-
-              if (inactiveDuration < thresholdMs) {
-                console.log(
-                  `[sandboxMaintenance:stop] Skipping ${instance.id} - last activity ${inactiveDays} days ago`
-                );
-                return { skipped: true, reason: "recently_active" };
-              }
-
-              console.log(
-                `[sandboxMaintenance:stop] Stopping ${instance.id} (inactive ${inactiveDays} days)...`
-              );
-
-              await client.stopInstance(instance.id);
-
-              // Record in activity table
-              await ctx.runMutation(internal.sandboxInstances.recordStopInternal, {
-                instanceId: instance.id,
-                provider: config.provider,
-              });
-
-              console.log(`[sandboxMaintenance:stop] Stopped ${instance.id}`);
-              return { skipped: false };
-            })
+          console.log(
+            `[sandboxMaintenance:stop] Checking ${pausedInstances.length} paused ${config.provider} instances`
           );
 
-          for (const result of results) {
-            if (result.status === "fulfilled") {
-              if (result.value.skipped) {
-                totalSkipped++;
-                if (result.value.reason === "cloud_workspace") {
-                  cloudWorkspaceSkipped++;
+          // Get activity records for all instances
+          const instanceIds = pausedInstances.map((i) => i.id);
+          const activities = await ctx.runQuery(
+            internal.sandboxInstances.getActivitiesByInstanceIdsInternal,
+            { instanceIds }
+          );
+
+          const cloudWorkspaceProtection = await resolveCloudWorkspaceProtectionMap({
+            instanceIds,
+            activitiesByInstanceId: activities,
+            fetchTaskRunCloudWorkspaceFlags: (containerNames) =>
+              ctx.runQuery(
+                internal.taskRuns.getCloudWorkspaceFlagsByContainerNamesInternal,
+                { containerNames }
+              ),
+          });
+
+          // Process in batches
+          for (let i = 0; i < pausedInstances.length; i += BATCH_SIZE) {
+            const batch = pausedInstances.slice(i, i + BATCH_SIZE);
+
+            const results = await Promise.allSettled(
+              batch.map(async (instance) => {
+                if (cloudWorkspaceProtection[instance.id]) {
+                  console.log(
+                    `[sandboxMaintenance:stop] Skipping cloud workspace: ${instance.id}`
+                  );
+                  return { skipped: true as const, reason: "cloud_workspace" as const };
+                }
+
+                const activity = activities[instance.id];
+
+                // Already stopped?
+                if (activity?.stoppedAt) {
+                  console.log(
+                    `[sandboxMaintenance:stop] Skipping ${instance.id} - already recorded as stopped`
+                  );
+                  return { skipped: true, reason: "already_stopped" };
+                }
+
+                // PVE LXC doesn't expose creation time; created is 0 in the provider list.
+                // If we also have no activity record, we can't safely determine age/inactivity.
+                if (!activity && instance.created === 0) {
+                  console.warn(
+                    `[sandboxMaintenance:stop] Skipping ${instance.id} - unknown creation time (no activity record)`
+                  );
+                  return { skipped: true, reason: "unknown_creation_time" };
+                }
+
+                // Determine last activity time
+                const lastActivityAt = getLastActivityTimeMs({
+                  activity,
+                  providerCreatedAtSeconds: instance.created,
+                });
+
+                if (lastActivityAt === null) {
+                  console.warn(
+                    `[sandboxMaintenance:stop] Skipping ${instance.id} - unknown last activity time`
+                  );
+                  return { skipped: true, reason: "unknown_creation_time" };
+                }
+
+                const inactiveDuration = now - lastActivityAt;
+                const inactiveDays = Math.floor(
+                  inactiveDuration / (24 * MILLISECONDS_PER_HOUR)
+                );
+
+                if (inactiveDuration < thresholdMs) {
+                  console.log(
+                    `[sandboxMaintenance:stop] Skipping ${instance.id} - last activity ${inactiveDays} days ago`
+                  );
+                  return { skipped: true, reason: "recently_active" };
+                }
+
+                console.log(
+                  `[sandboxMaintenance:stop] Stopping ${instance.id} (inactive ${inactiveDays} days)...`
+                );
+
+                await client.stopInstance(instance.id);
+
+                // Record in activity table
+                await ctx.runMutation(internal.sandboxInstances.recordStopInternal, {
+                  instanceId: instance.id,
+                  provider: config.provider,
+                });
+
+                console.log(`[sandboxMaintenance:stop] Stopped ${instance.id}`);
+                return { skipped: false };
+              })
+            );
+
+            for (const result of results) {
+              if (result.status === "fulfilled") {
+                if (result.value.skipped) {
+                  stats.skipped++;
+                  if (result.value.reason === "cloud_workspace") {
+                    stats.cloudWorkspaceSkipped++;
+                  }
+                } else {
+                  stats.success++;
                 }
               } else {
-                totalSuccess++;
+                stats.failure++;
+                console.error(
+                  `[sandboxMaintenance:stop] Failed to stop instance:`,
+                  result.reason
+                );
               }
-            } else {
-              totalFailure++;
-              console.error(
-                `[sandboxMaintenance:stop] Failed to stop instance:`,
-                result.reason
-              );
             }
           }
+        } catch (error) {
+          console.error(
+            `[sandboxMaintenance:stop] Error processing ${config.provider}:`,
+            error
+          );
         }
-      } catch (error) {
-        console.error(
-          `[sandboxMaintenance:stop] Error processing ${config.provider}:`,
-          error
-        );
-      }
-    }
+
+        return stats;
+      })
+    );
+
+    // Aggregate results from all providers
+    const totals = providerResults.reduce(
+      (acc, stats) => ({
+        success: acc.success + stats.success,
+        failure: acc.failure + stats.failure,
+        skipped: acc.skipped + stats.skipped,
+        cloudWorkspaceSkipped: acc.cloudWorkspaceSkipped + stats.cloudWorkspaceSkipped,
+      }),
+      { success: 0, failure: 0, skipped: 0, cloudWorkspaceSkipped: 0 }
+    );
 
     console.log(
-      `[sandboxMaintenance:stop] Finished: ${totalSuccess} stopped, ${totalSkipped} skipped (${cloudWorkspaceSkipped} cloud workspaces), ${totalFailure} failed`
+      `[sandboxMaintenance:stop] Finished: ${totals.success} stopped, ${totals.skipped} skipped (${totals.cloudWorkspaceSkipped} cloud workspaces), ${totals.failure} failed`
     );
   },
 });

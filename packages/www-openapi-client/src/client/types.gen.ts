@@ -1721,6 +1721,24 @@ export type TestAnthropicConnectionBody = {
     apiKey: string;
 };
 
+export type ProviderConnectionResult = {
+    success: boolean;
+    message: string;
+    details?: {
+        statusCode?: number;
+        responseTime?: number;
+        endpoint: string;
+        modelsFound?: number;
+        provider?: string;
+    };
+};
+
+export type TestProviderConnectionBody = {
+    provider: 'anthropic' | 'openai' | 'google' | 'mistral' | 'together' | 'groq';
+    baseUrl?: string;
+    apiKey: string;
+};
+
 export type RemoveWorktreeResult = {
     success: boolean;
     message: string;
@@ -6461,6 +6479,29 @@ export type PostApiSettingsTestAnthropicConnectionResponses = {
 };
 
 export type PostApiSettingsTestAnthropicConnectionResponse = PostApiSettingsTestAnthropicConnectionResponses[keyof PostApiSettingsTestAnthropicConnectionResponses];
+
+export type PostApiSettingsTestProviderConnectionData = {
+    body: TestProviderConnectionBody;
+    path?: never;
+    query?: never;
+    url: '/api/settings/test-provider-connection';
+};
+
+export type PostApiSettingsTestProviderConnectionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiSettingsTestProviderConnectionResponses = {
+    /**
+     * Connection test result
+     */
+    200: ProviderConnectionResult;
+};
+
+export type PostApiSettingsTestProviderConnectionResponse = PostApiSettingsTestProviderConnectionResponses[keyof PostApiSettingsTestProviderConnectionResponses];
 
 export type PostApiWorktreesRemoveData = {
     body: RemoveWorktreeBody;
