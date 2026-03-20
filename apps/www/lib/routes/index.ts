@@ -33,6 +33,7 @@ export { branchRouter } from "./branch.route";
 export { codeReviewRouter } from "./code-review.route";
 export { workspaceConfigsRouter } from "./workspace-configs.route";
 export { previewConfigsRouter } from "./preview.configs.route";
+export { previewTestJobsRouter } from "./preview.test-jobs.route";
 export { previewRouter } from "./preview.route";
 export { settingsRouter } from "./settings.route";
 export { worktreesRouter } from "./worktrees.route";
