@@ -4,6 +4,7 @@ import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { api } from "@cmux/convex/api";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { environmentsGetRouter } from "./environments.get.route";
 import { environmentsLifecycleRouter } from "./environments.lifecycle.route";
 import { environmentsListRouter } from "./environments.list.route";
 import { environmentsPortsRouter } from "./environments.ports.route";
@@ -16,87 +17,12 @@ import {
 
 export const environmentsRouter = new OpenAPIHono();
 
+environmentsRouter.route("/", environmentsGetRouter);
 environmentsRouter.route("/", environmentsLifecycleRouter);
 environmentsRouter.route("/", environmentsListRouter);
 environmentsRouter.route("/", environmentsPortsRouter);
 environmentsRouter.route("/", environmentsVarsRouter);
 environmentsRouter.route("/", environmentsSnapshotsRouter);
-
-// Get a specific environment
-environmentsRouter.openapi(
-  createRoute({
-    method: "get" as const,
-    path: "/environments/{id}",
-    tags: ["Environments"],
-    summary: "Get a specific environment",
-    request: {
-      params: z.object({
-        id: z.string(),
-      }),
-      query: z.object({
-        teamSlugOrId: z.string(),
-      }),
-    },
-    responses: {
-      200: {
-        content: {
-          "application/json": {
-            schema: GetEnvironmentResponseSchema,
-          },
-        },
-        description: "Environment retrieved successfully",
-      },
-      401: { description: "Unauthorized" },
-      404: { description: "Environment not found" },
-      500: { description: "Failed to get environment" },
-    },
-  }),
-  async (c) => {
-    // Require authentication
-    const accessToken = await getAccessTokenFromRequest(c.req.raw);
-    if (!accessToken) return c.text("Unauthorized", 401);
-
-    const { id } = c.req.valid("param");
-    const { teamSlugOrId } = c.req.valid("query");
-
-    try {
-      const convexClient = getConvex({ accessToken });
-      const environmentId = typedZid("environments").parse(id);
-      const environment = await convexClient.query(api.environments.get, {
-        teamSlugOrId,
-        id: environmentId,
-      });
-
-      if (!environment) {
-        return c.text("Environment not found", 404);
-      }
-      // Map Convex document to API response shape
-      if (!environment.snapshotId || !environment.snapshotProvider) {
-        throw new Error(`Environment ${environment._id} is missing snapshot metadata`);
-      }
-      const mapped = {
-        id: environment._id,
-        name: environment.name,
-        snapshotId: environment.snapshotId,
-        snapshotProvider: environment.snapshotProvider,
-        templateVmid: environment.templateVmid ?? undefined,
-        dataVaultKey: environment.dataVaultKey,
-        selectedRepos: environment.selectedRepos,
-        description: environment.description,
-        maintenanceScript: environment.maintenanceScript,
-        devScript: environment.devScript,
-        exposedPorts: environment.exposedPorts,
-        createdAt: environment.createdAt,
-        updatedAt: environment.updatedAt,
-      };
-
-      return c.json(mapped);
-    } catch (error) {
-      console.error("Failed to get environment:", error);
-      return c.text("Failed to get environment", 500);
-    }
-  }
-);
 
 // Update metadata for an environment
 environmentsRouter.openapi(
