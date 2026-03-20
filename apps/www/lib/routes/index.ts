@@ -42,6 +42,7 @@ export { pveLxcPreviewRouter } from "./pve-lxc.preview.route";
 export { pveLxcRouter } from "./pve-lxc.route";
 export { teamsRouter } from "./teams.route";
 export { usersRouter } from "./users.route";
+export { vaultDispatchRouter } from "./vault.dispatch.route";
 export { vaultRouter } from "./vault.route";
 export { branchRouter } from "./branch.route";
 export { codeReviewSimpleRouter } from "./code-review.simple.route";

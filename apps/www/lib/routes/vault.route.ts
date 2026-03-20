@@ -7,71 +7,25 @@
  * - POST /api/vault/dispatch - Create task from recommendation
  */
 
-import {
-  getAccessTokenFromRequest,
-  getUserFromRequest,
-} from "@/lib/utils/auth";
+import { getAccessTokenFromRequest } from "@/lib/utils/auth";
 import { getConvex } from "@/lib/utils/get-convex";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { api } from "@cmux/convex/api";
 import {
+  extractAllTags,
+  filterNotesByPath,
   generateRecommendations,
   readVaultGitHub,
   readVaultLocal,
   searchNotes,
-  filterNotesByPath,
-  extractAllTags,
   type ObsidianNote,
 } from "@cmux/shared/node/obsidian-reader";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-
-// ============================================================================
-// Schemas
-// ============================================================================
-
-const RecommendedActionSchema = z
-  .object({
-    type: z.enum(["todo", "stale_note", "missing_docs", "broken_link"]).openapi({
-      description: "Type of recommended action",
-    }),
-    source: z.string().openapi({ description: "Source note path" }),
-    description: z.string().openapi({ description: "Action description" }),
-    priority: z.enum(["high", "medium", "low"]).openapi({ description: "Priority level" }),
-    suggestedPrompt: z.string().optional().openapi({ description: "Suggested prompt for agent" }),
-  })
-  .openapi("RecommendedAction");
-
-const ObsidianNoteSchema = z
-  .object({
-    path: z.string().openapi({ description: "Note path relative to vault" }),
-    title: z.string().openapi({ description: "Note title" }),
-    modifiedAt: z.string().openapi({ description: "Last modified timestamp (ISO)" }),
-    status: z.enum(["active", "archive", "stale"]).optional().openapi({ description: "Note status" }),
-    todoCount: z.number().openapi({ description: "Number of incomplete TODOs" }),
-    tags: z.array(z.string()).openapi({ description: "Note tags" }),
-  })
-  .openapi("ObsidianNote");
-
-// Schema for vault configuration (used for documentation/validation)
-const _VaultConfigSchema = z
-  .object({
-    type: z.enum(["local", "github"]).openapi({ description: "Vault source type" }),
-    localPath: z.string().optional().openapi({ description: "Local vault path (for local type)" }),
-    githubOwner: z.string().optional().openapi({ description: "GitHub owner (for github type)" }),
-    githubRepo: z.string().optional().openapi({ description: "GitHub repo (for github type)" }),
-    githubPath: z.string().optional().openapi({ description: "Path within repo (for github type)" }),
-    githubBranch: z.string().optional().openapi({ description: "Branch name (for github type)" }),
-  })
-  .openapi("VaultConfig");
-
-const DispatchRequestSchema = z
-  .object({
-    teamSlugOrId: z.string().openapi({ description: "Team slug or ID" }),
-    recommendation: RecommendedActionSchema,
-    agentName: z.string().optional().openapi({ description: "Agent to use (default: claude/sonnet-4.5)" }),
-    repoFullName: z.string().optional().openapi({ description: "Repository full name" }),
-  })
-  .openapi("DispatchRequest");
+import {
+  ObsidianNoteSchema,
+  RecommendedActionSchema,
+} from "./vault.schemas";
+import { vaultDispatchRouter } from "./vault.dispatch.route";
 
 // ============================================================================
 // Helper Functions
@@ -80,7 +34,7 @@ const DispatchRequestSchema = z
 /**
  * Get vault config from user settings or environment.
  */
-async function getVaultConfig(
+export async function getVaultConfig(
   teamSlugOrId: string,
   accessToken: string
 ): Promise<{
@@ -146,7 +100,7 @@ async function getVaultConfig(
 /**
  * Read notes from vault based on config.
  */
-async function readVault(config: Awaited<ReturnType<typeof getVaultConfig>>): Promise<ObsidianNote[]> {
+export async function readVault(config: Awaited<ReturnType<typeof getVaultConfig>>): Promise<ObsidianNote[]> {
   if (!config) {
     return [];
   }
@@ -173,6 +127,8 @@ async function readVault(config: Awaited<ReturnType<typeof getVaultConfig>>): Pr
 // ============================================================================
 
 export const vaultRouter = new OpenAPIHono();
+
+vaultRouter.route("/", vaultDispatchRouter);
 
 /**
  * GET /api/vault/recommendations
@@ -336,76 +292,3 @@ vaultRouter.openapi(
   }
 );
 
-/**
- * POST /api/vault/dispatch
- * Create a task from a vault recommendation.
- */
-vaultRouter.openapi(
-  createRoute({
-    method: "post" as const,
-    path: "/vault/dispatch",
-    tags: ["Vault"],
-    summary: "Dispatch recommendation to agent",
-    description: "Create a task from a vault recommendation and dispatch it to an agent.",
-    request: {
-      body: {
-        content: {
-          "application/json": {
-            schema: DispatchRequestSchema,
-          },
-        },
-        required: true,
-      },
-    },
-    responses: {
-      201: {
-        content: {
-          "application/json": {
-            schema: z.object({
-              taskId: z.string().openapi({ description: "Created task ID" }),
-              taskRunId: z.string().optional().openapi({ description: "Created task run ID" }),
-            }),
-          },
-        },
-        description: "Task created successfully",
-      },
-      401: { description: "Unauthorized" },
-      422: { description: "Validation error" },
-      500: { description: "Server error" },
-    },
-  }),
-  async (c) => {
-    const accessToken = await getAccessTokenFromRequest(c.req.raw);
-    if (!accessToken) {
-      return c.text("Unauthorized", 401);
-    }
-
-    const user = await getUserFromRequest(c.req.raw);
-    if (!user) {
-      return c.text("Unauthorized", 401);
-    }
-
-    const body = c.req.valid("json");
-
-    try {
-      await verifyTeamAccess({ req: c.req.raw, teamSlugOrId: body.teamSlugOrId });
-      const convex = getConvex({ accessToken });
-
-      // Build task description from recommendation
-      const taskDescription = body.recommendation.suggestedPrompt ||
-        `[${body.recommendation.type}] ${body.recommendation.description}\n\nSource: ${body.recommendation.source}`;
-
-      // Create the task
-      const taskId = await convex.mutation(api.tasks.create, {
-        text: taskDescription,
-        projectFullName: body.repoFullName,
-        teamSlugOrId: body.teamSlugOrId,
-      });
-
-      return c.json({ taskId }, 201);
-    } catch (error) {
-      console.error("[vault] Failed to dispatch recommendation:", error);
-      return c.text("Failed to dispatch recommendation", 500);
-    }
-  }
-);
