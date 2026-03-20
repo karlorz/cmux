@@ -140,25 +140,6 @@ export type GithubReposResponse = {
     repos: Array<GithubRepo>;
 };
 
-export type GitHubProject = {
-    id: string;
-    title: string;
-    number: number;
-    url: string;
-    shortDescription: string | null;
-    closed: boolean;
-    createdAt: string;
-    updatedAt: string;
-};
-
-export type ProjectsResponse = {
-    projects: Array<GitHubProject>;
-    /**
-     * True if user needs to re-authorize GitHub with 'project' scope to see all projects
-     */
-    needsReauthorization?: boolean;
-};
-
 export type DraftBatchResult = {
     title: string;
     itemId: string | null;
@@ -186,6 +167,44 @@ export type CreateDraftBatchBody = {
      */
     projectId: string;
     items: Array<BatchDraftItem>;
+};
+
+export type ItemResponse = {
+    itemId: string | null;
+};
+
+export type CreateDraftBody = {
+    /**
+     * GitHub Project node ID
+     */
+    projectId: string;
+    /**
+     * Draft issue title
+     */
+    title: string;
+    /**
+     * Draft issue body
+     */
+    body?: string;
+};
+
+export type GitHubProject = {
+    id: string;
+    title: string;
+    number: number;
+    url: string;
+    shortDescription: string | null;
+    closed: boolean;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type ProjectsResponse = {
+    projects: Array<GitHubProject>;
+    /**
+     * True if user needs to re-authorize GitHub with 'project' scope to see all projects
+     */
+    needsReauthorization?: boolean;
 };
 
 export type ProjectField = {
@@ -230,10 +249,6 @@ export type ProjectItemsResponse = {
     };
 };
 
-export type ItemResponse = {
-    itemId: string | null;
-};
-
 export type AddItemBody = {
     /**
      * GitHub Project node ID
@@ -243,21 +258,6 @@ export type AddItemBody = {
      * Issue or PR node ID to add
      */
     contentId: string;
-};
-
-export type CreateDraftBody = {
-    /**
-     * GitHub Project node ID
-     */
-    projectId: string;
-    /**
-     * Draft issue title
-     */
-    title: string;
-    /**
-     * Draft issue body
-     */
-    body?: string;
 };
 
 export type UpdateFieldBody = {
@@ -2508,6 +2508,66 @@ export type GetApiIntegrationsGithubReposResponses = {
 
 export type GetApiIntegrationsGithubReposResponse = GetApiIntegrationsGithubReposResponses[keyof GetApiIntegrationsGithubReposResponses];
 
+export type PostApiIntegrationsGithubProjectsDraftsBatchData = {
+    body: CreateDraftBatchBody;
+    path?: never;
+    query: {
+        team: string;
+        installationId?: number | null;
+    };
+    url: '/api/integrations/github/projects/drafts/batch';
+};
+
+export type PostApiIntegrationsGithubProjectsDraftsBatchErrors = {
+    /**
+     * Bad request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiIntegrationsGithubProjectsDraftsBatchResponses = {
+    /**
+     * OK
+     */
+    200: DraftBatchResponse;
+};
+
+export type PostApiIntegrationsGithubProjectsDraftsBatchResponse = PostApiIntegrationsGithubProjectsDraftsBatchResponses[keyof PostApiIntegrationsGithubProjectsDraftsBatchResponses];
+
+export type PostApiIntegrationsGithubProjectsDraftsData = {
+    body: CreateDraftBody;
+    path?: never;
+    query: {
+        team: string;
+        installationId?: number | null;
+    };
+    url: '/api/integrations/github/projects/drafts';
+};
+
+export type PostApiIntegrationsGithubProjectsDraftsErrors = {
+    /**
+     * Bad request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiIntegrationsGithubProjectsDraftsResponses = {
+    /**
+     * OK
+     */
+    200: ItemResponse;
+};
+
+export type PostApiIntegrationsGithubProjectsDraftsResponse = PostApiIntegrationsGithubProjectsDraftsResponses[keyof PostApiIntegrationsGithubProjectsDraftsResponses];
+
 export type PostApiIntegrationsGithubProjectsPlanSyncData = {
     body: {
         planContent: string;
@@ -2582,36 +2642,6 @@ export type GetApiIntegrationsGithubProjectsResponses = {
 };
 
 export type GetApiIntegrationsGithubProjectsResponse = GetApiIntegrationsGithubProjectsResponses[keyof GetApiIntegrationsGithubProjectsResponses];
-
-export type PostApiIntegrationsGithubProjectsDraftsBatchData = {
-    body: CreateDraftBatchBody;
-    path?: never;
-    query: {
-        team: string;
-        installationId?: number | null;
-    };
-    url: '/api/integrations/github/projects/drafts/batch';
-};
-
-export type PostApiIntegrationsGithubProjectsDraftsBatchErrors = {
-    /**
-     * Bad request
-     */
-    400: unknown;
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-};
-
-export type PostApiIntegrationsGithubProjectsDraftsBatchResponses = {
-    /**
-     * OK
-     */
-    200: DraftBatchResponse;
-};
-
-export type PostApiIntegrationsGithubProjectsDraftsBatchResponse = PostApiIntegrationsGithubProjectsDraftsBatchResponses[keyof PostApiIntegrationsGithubProjectsDraftsBatchResponses];
 
 export type GetApiIntegrationsGithubProjectsFieldsData = {
     body?: never;
@@ -2729,36 +2759,6 @@ export type PostApiIntegrationsGithubProjectsItemsResponses = {
 };
 
 export type PostApiIntegrationsGithubProjectsItemsResponse = PostApiIntegrationsGithubProjectsItemsResponses[keyof PostApiIntegrationsGithubProjectsItemsResponses];
-
-export type PostApiIntegrationsGithubProjectsDraftsData = {
-    body: CreateDraftBody;
-    path?: never;
-    query: {
-        team: string;
-        installationId?: number | null;
-    };
-    url: '/api/integrations/github/projects/drafts';
-};
-
-export type PostApiIntegrationsGithubProjectsDraftsErrors = {
-    /**
-     * Bad request
-     */
-    400: unknown;
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-};
-
-export type PostApiIntegrationsGithubProjectsDraftsResponses = {
-    /**
-     * OK
-     */
-    200: ItemResponse;
-};
-
-export type PostApiIntegrationsGithubProjectsDraftsResponse = PostApiIntegrationsGithubProjectsDraftsResponses[keyof PostApiIntegrationsGithubProjectsDraftsResponses];
 
 export type PatchApiIntegrationsGithubProjectsItemsFieldData = {
     body: UpdateFieldBody;

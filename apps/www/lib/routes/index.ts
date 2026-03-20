@@ -21,6 +21,7 @@ export { githubPrsFilesRouter } from "./github.prs.files.route";
 export { githubPrsPatchRouter } from "./github.prs.patch.route";
 export { githubPrsRouter } from "./github.prs.route";
 export { githubInstallStateRouter } from "./github.install-state.route";
+export { githubProjectsDraftsRouter } from "./github.projects.drafts.route";
 export { githubProjectsPlanSyncRouter } from "./github.projects.plan-sync.route";
 export { healthRouter } from "./health.route";
 export { iframePreflightRouter } from "./iframe-preflight.route";

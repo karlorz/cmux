@@ -16,18 +16,19 @@ import { getAccessTokenFromRequest, getUserFromRequest } from "@/lib/utils/auth"
 import { api } from "@cmux/convex/api";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { getConvex } from "../utils/get-convex";
+import { githubProjectsDraftsRouter } from "./github.projects.drafts.route";
 import { githubProjectsPlanSyncRouter } from "./github.projects.plan-sync.route";
 import {
   listProjects,
   getProjectFields,
   getProjectItems,
   addItemToProject,
-  createDraftIssue,
   updateItemField,
   mapCmuxStatusToProjectStatus,
 } from "../utils/github-projects";
 
 export const githubProjectsRouter = new OpenAPIHono();
+githubProjectsRouter.route("/", githubProjectsDraftsRouter);
 githubProjectsRouter.route("/", githubProjectsPlanSyncRouter);
 
 const execFileAsync = promisify(execFile);
@@ -310,34 +311,6 @@ async function getProjectItemsViaGhCli(
   }
 }
 
-async function createDraftIssueViaGhCli(
-  projectId: string,
-  title: string,
-  body?: string,
-): Promise<string | null> {
-  if (!isGhCliFallbackEnabled()) return null;
-
-  const mutation = `mutation($projectId:ID!,$title:String!,$body:String){addProjectV2DraftIssue(input:{projectId:$projectId,title:$title,body:$body}){projectItem{id}}}`;
-
-  try {
-    const data = await runGhGraphql(mutation, {
-      projectId,
-      title,
-      body,
-    });
-    const payload = data.addProjectV2DraftIssue as
-      | { projectItem?: { id?: string } | null }
-      | undefined;
-    return payload?.projectItem?.id ?? null;
-  } catch (err) {
-    console.warn(
-      `[github.projects] gh CLI draft fallback failed for ${projectId}:`,
-      err instanceof Error ? err.message : err,
-    );
-    return null;
-  }
-}
-
 // Schemas
 
 const ListProjectsQuery = z
@@ -405,28 +378,6 @@ const AddItemBody = z
   })
   .openapi("AddItemBody");
 
-const CreateDraftBody = z
-  .object({
-    projectId: z.string().openapi({ description: "GitHub Project node ID" }),
-    title: z.string().min(1).openapi({ description: "Draft issue title" }),
-    body: z.string().optional().openapi({ description: "Draft issue body" }),
-  })
-  .openapi("CreateDraftBody");
-
-const BatchDraftItemSchema = z
-  .object({
-    title: z.string().min(1).openapi({ description: "Draft issue title" }),
-    body: z.string().optional().openapi({ description: "Draft issue body" }),
-  })
-  .openapi("BatchDraftItem");
-
-const CreateDraftBatchBody = z
-  .object({
-    projectId: z.string().openapi({ description: "GitHub Project node ID" }),
-    items: z.array(BatchDraftItemSchema).min(1).max(50),
-  })
-  .openapi("CreateDraftBatchBody");
-
 const UpdateFieldBody = z
   .object({
     projectId: z.string().openapi({ description: "GitHub Project node ID" }),
@@ -443,20 +394,6 @@ const ItemResponse = z
     itemId: z.string().nullable(),
   })
   .openapi("ItemResponse");
-
-const DraftBatchResultSchema = z
-  .object({
-    title: z.string(),
-    itemId: z.string().nullable(),
-    error: z.string().optional(),
-  })
-  .openapi("DraftBatchResult");
-
-const DraftBatchResponse = z
-  .object({
-    results: z.array(DraftBatchResultSchema),
-  })
-  .openapi("DraftBatchResponse");
 
 const ProjectItemContentSchema = z
   .object({
@@ -616,118 +553,6 @@ githubProjectsRouter.openapi(
         needsReauthorization,
       });
     }
-  },
-);
-
-// POST /integrations/github/projects/drafts/batch - Create many draft issues
-githubProjectsRouter.openapi(
-  createRoute({
-    method: "post" as const,
-    path: "/integrations/github/projects/drafts/batch",
-    tags: ["Integrations"],
-    summary: "Create multiple draft issues in a GitHub Project",
-    request: {
-      query: z.object({
-        team: z.string().min(1),
-        installationId: z.coerce.number(),
-      }),
-      body: {
-        content: { "application/json": { schema: CreateDraftBatchBody } },
-        required: true,
-      },
-    },
-    responses: {
-      200: {
-        description: "OK",
-        content: { "application/json": { schema: DraftBatchResponse } },
-      },
-      401: { description: "Unauthorized" },
-      400: { description: "Bad request" },
-    },
-  }),
-  async (c) => {
-    const accessToken = await getAccessTokenFromRequest(c.req.raw);
-    if (!accessToken) return c.text("Unauthorized", 401);
-
-    const { team, installationId } = c.req.valid("query");
-    const { projectId, items } = c.req.valid("json");
-
-    // Verify team membership
-    const convex = getConvex({ accessToken });
-    const connections = await convex.query(api.github.listProviderConnections, {
-      teamSlugOrId: team,
-    });
-
-    const target = connections.find(
-      (co) => co.isActive && co.installationId === installationId,
-    );
-
-    if (!target) {
-      return c.text("Installation not found", 400);
-    }
-
-    const userOAuthToken =
-      target.accountType === "User"
-        ? await getGitHubUserOAuthToken(c.req.raw, {
-            scopes: [...GITHUB_PROJECT_SCOPES],
-          })
-        : undefined;
-
-    const results: Array<{
-      title: string;
-      itemId: string | null;
-      error?: string;
-    }> = [];
-
-    for (const item of items) {
-      let itemId: string | null = null;
-      let errorMessage: string | undefined;
-
-      try {
-        if (target.accountType !== "User" || userOAuthToken) {
-          itemId = await createDraftIssue(
-            projectId,
-            item.title,
-            item.body,
-            installationId,
-            { userOAuthToken },
-          );
-        }
-      } catch (err) {
-        errorMessage = err instanceof Error ? err.message : String(err);
-      }
-
-      // Local dev fallback: if user-project API path fails, use gh CLI token.
-      if (!itemId && target.accountType === "User") {
-        itemId = await createDraftIssueViaGhCli(
-          projectId,
-          item.title,
-          item.body,
-        );
-        if (!itemId && !errorMessage && !userOAuthToken) {
-          errorMessage =
-            "GitHub OAuth token is missing the required 'project' scope. Re-authorize GitHub and retry.";
-        }
-      }
-
-      if (itemId) {
-        results.push({ title: item.title, itemId });
-      } else {
-        if (errorMessage) {
-          console.error(
-            `[github.projects] Failed to create draft issue in batch (${item.title}):`,
-            errorMessage,
-          );
-        }
-        results.push({
-          title: item.title,
-          itemId: null,
-          error: errorMessage ?? "Failed to create draft issue",
-        });
-      }
-    }
-
-    return c.json({ results });
   },
 );
 
@@ -1031,101 +856,6 @@ githubProjectsRouter.openapi(
         `[github.projects] Failed to add item to project:`,
         err instanceof Error ? err.message : err,
       );
-      return c.json({ itemId: null });
-    }
-  },
-);
-
-// POST /integrations/github/projects/drafts - Create draft issue
-githubProjectsRouter.openapi(
-  createRoute({
-    method: "post" as const,
-    path: "/integrations/github/projects/drafts",
-    tags: ["Integrations"],
-    summary: "Create a draft issue in a GitHub Project",
-    request: {
-      query: z.object({
-        team: z.string().min(1),
-        installationId: z.coerce.number(),
-      }),
-      body: {
-        content: { "application/json": { schema: CreateDraftBody } },
-        required: true,
-      },
-    },
-    responses: {
-      200: {
-        description: "OK",
-        content: { "application/json": { schema: ItemResponse } },
-      },
-      401: { description: "Unauthorized" },
-      400: { description: "Bad request" },
-    },
-  }),
-  async (c) => {
-    const accessToken = await getAccessTokenFromRequest(c.req.raw);
-    if (!accessToken) return c.text("Unauthorized", 401);
-
-    const { team, installationId } = c.req.valid("query");
-    const { projectId, title, body } = c.req.valid("json");
-
-    // Verify team membership
-    const convex = getConvex({ accessToken });
-    const connections = await convex.query(api.github.listProviderConnections, {
-      teamSlugOrId: team,
-    });
-
-    const target = connections.find(
-      (co) => co.isActive && co.installationId === installationId,
-    );
-
-    if (!target) {
-      return c.text("Installation not found", 400);
-    }
-
-    try {
-      const userOAuthToken =
-        target.accountType === "User"
-          ? await getGitHubUserOAuthToken(c.req.raw, {
-              scopes: [...GITHUB_PROJECT_SCOPES],
-            })
-          : undefined;
-
-      if (target.accountType === "User" && !userOAuthToken) {
-        const fallbackItemId = await createDraftIssueViaGhCli(
-          projectId,
-          title,
-          body,
-        );
-        if (fallbackItemId) {
-          return c.json({ itemId: fallbackItemId });
-        }
-        return c.json({ itemId: null });
-      }
-
-      const itemId = await createDraftIssue(
-        projectId,
-        title,
-        body,
-        installationId,
-        { userOAuthToken },
-      );
-      return c.json({ itemId });
-    } catch (err) {
-      console.error(
-        `[github.projects] Failed to create draft issue:`,
-        err instanceof Error ? err.message : err,
-      );
-      if (target.accountType === "User") {
-        const fallbackItemId = await createDraftIssueViaGhCli(
-          projectId,
-          title,
-          body,
-        );
-        if (fallbackItemId) {
-          return c.json({ itemId: fallbackItemId });
-        }
-      }
       return c.json({ itemId: null });
     }
   },
