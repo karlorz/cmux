@@ -6085,6 +6085,40 @@ export type GetApiPreviewConfigsByPreviewConfigIdRunsResponses = {
 
 export type GetApiPreviewConfigsByPreviewConfigIdRunsResponse = GetApiPreviewConfigsByPreviewConfigIdRunsResponses[keyof GetApiPreviewConfigsByPreviewConfigIdRunsResponses];
 
+export type GetApiPreviewTestCheckAccessData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+        prUrl: string;
+    };
+    url: '/api/preview/test/check-access';
+};
+
+export type GetApiPreviewTestCheckAccessErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiPreviewTestCheckAccessResponses = {
+    /**
+     * Access check result
+     */
+    200: {
+        hasAccess: boolean;
+        hasConfig: boolean;
+        hasActiveInstallation: boolean;
+        repoFullName: string | null;
+        errorCode: 'invalid_url' | 'no_config' | 'no_installation' | 'installation_inactive';
+        errorMessage: string | null;
+        suggestedAction: string | null;
+    };
+};
+
+export type GetApiPreviewTestCheckAccessResponse = GetApiPreviewTestCheckAccessResponses[keyof GetApiPreviewTestCheckAccessResponses];
+
 export type GetApiPreviewTestJobsData = {
     body?: never;
     path?: never;
@@ -6188,6 +6222,39 @@ export type PostApiPreviewTestJobsResponses = {
 };
 
 export type PostApiPreviewTestJobsResponse = PostApiPreviewTestJobsResponses[keyof PostApiPreviewTestJobsResponses];
+
+export type PostApiPreviewTestJobsByPreviewRunIdDispatchData = {
+    body?: never;
+    path: {
+        previewRunId: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/preview/test/jobs/{previewRunId}/dispatch';
+};
+
+export type PostApiPreviewTestJobsByPreviewRunIdDispatchErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Preview run not found
+     */
+    404: unknown;
+};
+
+export type PostApiPreviewTestJobsByPreviewRunIdDispatchResponses = {
+    /**
+     * Job dispatched
+     */
+    200: {
+        dispatched: boolean;
+    };
+};
+
+export type PostApiPreviewTestJobsByPreviewRunIdDispatchResponse = PostApiPreviewTestJobsByPreviewRunIdDispatchResponses[keyof PostApiPreviewTestJobsByPreviewRunIdDispatchResponses];
 
 export type DeleteApiPreviewTestJobsByPreviewRunIdData = {
     body?: never;
@@ -6328,73 +6395,6 @@ export type PostApiPreviewTestJobsByPreviewRunIdRetryResponses = {
 };
 
 export type PostApiPreviewTestJobsByPreviewRunIdRetryResponse = PostApiPreviewTestJobsByPreviewRunIdRetryResponses[keyof PostApiPreviewTestJobsByPreviewRunIdRetryResponses];
-
-export type GetApiPreviewTestCheckAccessData = {
-    body?: never;
-    path?: never;
-    query: {
-        teamSlugOrId: string;
-        prUrl: string;
-    };
-    url: '/api/preview/test/check-access';
-};
-
-export type GetApiPreviewTestCheckAccessErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-};
-
-export type GetApiPreviewTestCheckAccessResponses = {
-    /**
-     * Access check result
-     */
-    200: {
-        hasAccess: boolean;
-        hasConfig: boolean;
-        hasActiveInstallation: boolean;
-        repoFullName: string | null;
-        errorCode: 'invalid_url' | 'no_config' | 'no_installation' | 'installation_inactive';
-        errorMessage: string | null;
-        suggestedAction: string | null;
-    };
-};
-
-export type GetApiPreviewTestCheckAccessResponse = GetApiPreviewTestCheckAccessResponses[keyof GetApiPreviewTestCheckAccessResponses];
-
-export type PostApiPreviewTestJobsByPreviewRunIdDispatchData = {
-    body?: never;
-    path: {
-        previewRunId: string;
-    };
-    query: {
-        teamSlugOrId: string;
-    };
-    url: '/api/preview/test/jobs/{previewRunId}/dispatch';
-};
-
-export type PostApiPreviewTestJobsByPreviewRunIdDispatchErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Preview run not found
-     */
-    404: unknown;
-};
-
-export type PostApiPreviewTestJobsByPreviewRunIdDispatchResponses = {
-    /**
-     * Job dispatched
-     */
-    200: {
-        dispatched: boolean;
-    };
-};
-
-export type PostApiPreviewTestJobsByPreviewRunIdDispatchResponse = PostApiPreviewTestJobsByPreviewRunIdDispatchResponses[keyof PostApiPreviewTestJobsByPreviewRunIdDispatchResponses];
 
 export type DeleteApiEditorSettingsData = {
     body?: never;
