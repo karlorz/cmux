@@ -3,7 +3,7 @@ import type { Doc, Id } from "@cmux/convex/dataModel";
 import { useLocalStorage } from "@mantine/hooks";
 import { usePaginatedQuery, useQuery, useMutation } from "convex/react";
 import clsx from "clsx";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Archive, Pin, X, Keyboard } from "lucide-react";
 
 // Custom hook for infinite scroll that only triggers after user has scrolled
@@ -521,6 +521,30 @@ export const TaskList = memo(function TaskList({
   // Keyboard shortcuts for task navigation
   const [showKeyboardHint, setShowKeyboardHint] = useState(false);
 
+  // Use refs to avoid recreating the keyboard listener on every state change
+  const flattenedTaskIdsRef = useRef(flattenedTaskIds);
+  const focusedTaskIdRef = useRef(focusedTaskId);
+  const selectedTaskIdsRef = useRef(selectedTaskIds);
+
+  useLayoutEffect(() => {
+    flattenedTaskIdsRef.current = flattenedTaskIds;
+  }, [flattenedTaskIds]);
+
+  useLayoutEffect(() => {
+    focusedTaskIdRef.current = focusedTaskId;
+  }, [focusedTaskId]);
+
+  useLayoutEffect(() => {
+    selectedTaskIdsRef.current = selectedTaskIds;
+  }, [selectedTaskIds]);
+
+  // Reset focus if focused task is no longer visible
+  useEffect(() => {
+    if (focusedTaskId && !flattenedTaskIds.includes(focusedTaskId)) {
+      setFocusedTaskId(null);
+    }
+  }, [focusedTaskId, flattenedTaskIds]);
+
   useEffect(() => {
     if (tab !== "all") return;
 
@@ -531,28 +555,32 @@ export const TaskList = memo(function TaskList({
         return;
       }
 
-      const currentIndex = focusedTaskId ? flattenedTaskIds.indexOf(focusedTaskId) : -1;
+      const ids = flattenedTaskIdsRef.current;
+      const currentFocused = focusedTaskIdRef.current;
+      const currentIndex = currentFocused ? ids.indexOf(currentFocused) : -1;
+
+      const moveFocus = (direction: 1 | -1) => {
+        if (ids.length === 0) return;
+        const len = ids.length;
+        // Modular arithmetic for wrap-around: handles -1 % len correctly
+        const nextIndex = ((currentIndex === -1 ? (direction === 1 ? -1 : 0) : currentIndex) + direction + len) % len;
+        setFocusedTaskId(ids[nextIndex]);
+      };
 
       switch (e.key) {
         case "j": // Move down
           e.preventDefault();
-          if (flattenedTaskIds.length > 0) {
-            const nextIndex = currentIndex < flattenedTaskIds.length - 1 ? currentIndex + 1 : 0;
-            setFocusedTaskId(flattenedTaskIds[nextIndex]);
-          }
+          moveFocus(1);
           break;
         case "k": // Move up
           e.preventDefault();
-          if (flattenedTaskIds.length > 0) {
-            const prevIndex = currentIndex > 0 ? currentIndex - 1 : flattenedTaskIds.length - 1;
-            setFocusedTaskId(flattenedTaskIds[prevIndex]);
-          }
+          moveFocus(-1);
           break;
         case "x": // Toggle selection
           e.preventDefault();
-          if (focusedTaskId) {
-            const isCurrentlySelected = selectedTaskIds.has(focusedTaskId);
-            handleSelectionChange(focusedTaskId, !isCurrentlySelected);
+          if (currentFocused) {
+            const isCurrentlySelected = selectedTaskIdsRef.current.has(currentFocused);
+            handleSelectionChange(currentFocused, !isCurrentlySelected);
           }
           break;
         case "Escape": // Clear selection and focus
@@ -569,13 +597,13 @@ export const TaskList = memo(function TaskList({
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [tab, focusedTaskId, flattenedTaskIds, selectedTaskIds, handleSelectionChange, clearSelection]);
+  }, [tab, handleSelectionChange, clearSelection]);
 
-  // Scroll focused task into view
+  // Scroll focused task into view (use "auto" for keyboard nav to avoid animation queue)
   useEffect(() => {
     if (focusedTaskId) {
       const element = document.querySelector(`[data-task-id="${focusedTaskId}"]`);
-      element?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      element?.scrollIntoView({ block: "nearest", behavior: "auto" });
     }
   }, [focusedTaskId]);
 
