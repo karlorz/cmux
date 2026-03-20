@@ -47,6 +47,18 @@ interface GeneralSectionProps {
   onSaveTeamSlug: () => void;
   selectedTheme: "light" | "dark" | "system";
   onThemeChange: (theme: "light" | "dark" | "system") => void;
+  vaultType: "local" | "github";
+  onVaultTypeChange: (value: "local" | "github") => void;
+  vaultLocalPath: string;
+  onVaultLocalPathChange: (value: string) => void;
+  vaultGitHubOwner: string;
+  onVaultGitHubOwnerChange: (value: string) => void;
+  vaultGitHubRepo: string;
+  onVaultGitHubRepoChange: (value: string) => void;
+  vaultGitHubPath: string;
+  onVaultGitHubPathChange: (value: string) => void;
+  vaultGitHubBranch: string;
+  onVaultGitHubBranchChange: (value: string) => void;
   autoPrEnabled: boolean;
   onAutoPrEnabledChange: (value: boolean) => void;
   heatmapModel: string;
@@ -270,6 +282,12 @@ export function GeneralSection({
   selectedTheme,
   heatmapThreshold,
   worktreePath,
+  vaultType,
+  vaultLocalPath,
+  vaultGitHubOwner,
+  vaultGitHubRepo,
+  vaultGitHubPath,
+  vaultGitHubBranch,
   autoPrEnabled,
   originalTeamSlug,
   originalTeamName,
@@ -285,6 +303,12 @@ export function GeneralSection({
   onSaveTeamSlug,
   onSaveTeamName,
   onWorktreePathChange,
+  onVaultTypeChange,
+  onVaultLocalPathChange,
+  onVaultGitHubOwnerChange,
+  onVaultGitHubRepoChange,
+  onVaultGitHubPathChange,
+  onVaultGitHubBranchChange,
   onAutoPrEnabledChange,
   onContainerSettingsChange,
   onHeatmapModelChange,
@@ -415,6 +439,108 @@ export function GeneralSection({
       </SettingSection>
 
       <OnboardingTourSection teamSlugOrId={teamSlugOrId} />
+
+      <SettingSection
+        title="Vault Integration"
+        description="Connect an Obsidian vault to power project recommendations."
+      >
+        <SettingSegmented
+          label="Vault Source"
+          description="Choose where cmux should read your vault from."
+          value={vaultType}
+          options={[
+            { value: "local", label: "Local Folder" },
+            { value: "github", label: "GitHub Repo" },
+          ]}
+          onValueChange={(value) => onVaultTypeChange(value as "local" | "github")}
+        />
+
+        {vaultType === "local" ? (
+          <SettingRow
+            label="Vault Path"
+            description="Absolute path to your Obsidian vault on this machine. Leave empty to disable vault recommendations."
+            noBorder
+          >
+            <div className="w-full sm:w-[30rem]">
+              <input
+                type="text"
+                value={vaultLocalPath}
+                onChange={(event) => onVaultLocalPathChange(event.target.value)}
+                className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+                placeholder="/Users/you/Documents/Obsidian Vault"
+                autoComplete="off"
+              />
+            </div>
+          </SettingRow>
+        ) : (
+          <>
+            <SettingRow
+              label="Repository Owner"
+              description="GitHub owner or organization that hosts the vault repository."
+            >
+              <div className="w-full sm:w-[18rem]">
+                <input
+                  type="text"
+                  value={vaultGitHubOwner}
+                  onChange={(event) => onVaultGitHubOwnerChange(event.target.value)}
+                  className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+                  placeholder="your-org"
+                  autoComplete="off"
+                />
+              </div>
+            </SettingRow>
+
+            <SettingRow
+              label="Repository Name"
+              description="GitHub repository name containing the vault."
+            >
+              <div className="w-full sm:w-[18rem]">
+                <input
+                  type="text"
+                  value={vaultGitHubRepo}
+                  onChange={(event) => onVaultGitHubRepoChange(event.target.value)}
+                  className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+                  placeholder="obsidian-vault"
+                  autoComplete="off"
+                />
+              </div>
+            </SettingRow>
+
+            <SettingRow
+              label="Repository Path"
+              description="Optional subdirectory inside the repository that contains the vault."
+            >
+              <div className="w-full sm:w-[22rem]">
+                <input
+                  type="text"
+                  value={vaultGitHubPath}
+                  onChange={(event) => onVaultGitHubPathChange(event.target.value)}
+                  className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+                  placeholder="notes/project-docs"
+                  autoComplete="off"
+                />
+              </div>
+            </SettingRow>
+
+            <SettingRow
+              label="Branch"
+              description="Git branch to read from when syncing recommendations."
+              noBorder
+            >
+              <div className="w-full sm:w-[14rem]">
+                <input
+                  type="text"
+                  value={vaultGitHubBranch}
+                  onChange={(event) => onVaultGitHubBranchChange(event.target.value)}
+                  className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+                  placeholder="main"
+                  autoComplete="off"
+                />
+              </div>
+            </SettingRow>
+          </>
+        )}
+      </SettingSection>
 
       <SettingSection title="Crown Evaluator">
         <SettingSwitch
