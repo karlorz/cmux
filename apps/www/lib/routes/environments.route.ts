@@ -20,6 +20,7 @@ import { HTTPException } from "hono/http-exception";
 import { MorphCloudClient } from "morphcloud";
 import { randomBytes } from "node:crypto";
 import { determineHttpServiceUpdates } from "./determine-http-service-updates";
+import { environmentsVarsRouter } from "./environments.vars.route";
 import { SNAPSHOT_CLEANUP_COMMANDS } from "./sandboxes/cleanup";
 
 /**
@@ -62,6 +63,8 @@ async function withMorphRetry<T>(
 }
 
 export const environmentsRouter = new OpenAPIHono();
+
+environmentsRouter.route("/", environmentsVarsRouter);
 
 const sanitizePortsOrThrow = (ports: readonly number[]): number[] => {
   const validation = validateExposedPorts(ports);
@@ -136,19 +139,6 @@ const GetEnvironmentResponse = z
 const ListEnvironmentsResponse = z
   .array(GetEnvironmentResponse)
   .openapi("ListEnvironmentsResponse");
-
-const GetEnvironmentVarsResponse = z
-  .object({
-    envVarsContent: z.string(),
-  })
-  .openapi("GetEnvironmentVarsResponse");
-
-const UpdateEnvironmentVarsBody = z
-  .object({
-    teamSlugOrId: z.string(),
-    envVarsContent: z.string(),
-  })
-  .openapi("UpdateEnvironmentVarsBody");
 
 const UpdateEnvironmentBody = z
   .object({
@@ -540,151 +530,6 @@ environmentsRouter.openapi(
     } catch (error) {
       console.error("Failed to get environment:", error);
       return c.text("Failed to get environment", 500);
-    }
-  }
-);
-
-// Get environment variables for a specific environment
-environmentsRouter.openapi(
-  createRoute({
-    method: "get" as const,
-    path: "/environments/{id}/vars",
-    tags: ["Environments"],
-    summary: "Get environment variables for a specific environment",
-    request: {
-      params: z.object({
-        id: z.string(),
-      }),
-      query: z.object({
-        teamSlugOrId: z.string(),
-      }),
-    },
-    responses: {
-      200: {
-        content: {
-          "application/json": {
-            schema: GetEnvironmentVarsResponse,
-          },
-        },
-        description: "Environment variables retrieved successfully",
-      },
-      401: { description: "Unauthorized" },
-      404: { description: "Environment not found" },
-      500: { description: "Failed to get environment variables" },
-    },
-  }),
-  async (c) => {
-    // Require authentication
-    const accessToken = await getAccessTokenFromRequest(c.req.raw);
-    if (!accessToken) return c.text("Unauthorized", 401);
-
-    const { id } = c.req.valid("param");
-    const { teamSlugOrId } = c.req.valid("query");
-
-    try {
-      // Get the environment to retrieve the dataVaultKey
-      const convexClient = getConvex({ accessToken });
-      const environmentId = typedZid("environments").parse(id);
-      const environment = await convexClient.query(api.environments.get, {
-        teamSlugOrId,
-        id: environmentId,
-      });
-
-      if (!environment) {
-        return c.text("Environment not found", 404);
-      }
-
-      // Retrieve environment variables from StackAuth DataBook
-      const store =
-        await stackServerAppJs.getDataVaultStore("cmux-snapshot-envs");
-      const envVarsContent = await store.getValue(environment.dataVaultKey, {
-        secret: env.STACK_DATA_VAULT_SECRET,
-      });
-
-      if (!envVarsContent) {
-        return c.json({ envVarsContent: "" });
-      }
-
-      return c.json({ envVarsContent });
-    } catch (error) {
-      console.error("Failed to get environment variables:", error);
-      return c.text("Failed to get environment variables", 500);
-    }
-  }
-);
-
-// Update environment variables for a specific environment
-environmentsRouter.openapi(
-  createRoute({
-    method: "patch" as const,
-    path: "/environments/{id}/vars",
-    tags: ["Environments"],
-    summary: "Update environment variables for a specific environment",
-    request: {
-      params: z.object({
-        id: z.string(),
-      }),
-      body: {
-        content: {
-          "application/json": {
-            schema: UpdateEnvironmentVarsBody,
-          },
-        },
-        required: true,
-      },
-    },
-    responses: {
-      200: {
-        content: {
-          "application/json": {
-            schema: GetEnvironmentVarsResponse,
-          },
-        },
-        description: "Environment variables updated successfully",
-      },
-      401: { description: "Unauthorized" },
-      403: { description: "Forbidden" },
-      404: { description: "Environment not found" },
-      500: { description: "Failed to update environment variables" },
-    },
-  }),
-  async (c) => {
-    const accessToken = await getAccessTokenFromRequest(c.req.raw);
-    if (!accessToken) return c.text("Unauthorized", 401);
-
-    const { id } = c.req.valid("param");
-    const body = c.req.valid("json");
-
-    try {
-      await verifyTeamAccess({
-        req: c.req.raw,
-        teamSlugOrId: body.teamSlugOrId,
-      });
-
-      const convexClient = getConvex({ accessToken });
-      const environmentId = typedZid("environments").parse(id);
-      const environment = await convexClient.query(api.environments.get, {
-        teamSlugOrId: body.teamSlugOrId,
-        id: environmentId,
-      });
-
-      if (!environment) {
-        return c.text("Environment not found", 404);
-      }
-
-      const store =
-        await stackServerAppJs.getDataVaultStore("cmux-snapshot-envs");
-      await store.setValue(environment.dataVaultKey, body.envVarsContent, {
-        secret: env.STACK_DATA_VAULT_SECRET,
-      });
-
-      return c.json({ envVarsContent: body.envVarsContent });
-    } catch (error) {
-      if (error instanceof HTTPException) {
-        throw error;
-      }
-      console.error("Failed to update environment variables:", error);
-      return c.text("Failed to update environment variables", 500);
     }
   }
 );

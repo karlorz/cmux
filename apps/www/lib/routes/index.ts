@@ -5,6 +5,7 @@ export { editorSettingsRouter } from "./editor-settings.route";
 export { githubBranchesRouter } from "./github.branches.route";
 export { githubFrameworkDetectionRouter } from "./github.framework-detection.route";
 export { environmentsRouter } from "./environments.route";
+export { environmentsVarsRouter } from "./environments.vars.route";
 export { githubOAuthTokenRouter } from "./github.oauth-token.route";
 export { githubPrsBackfillRepoRouter } from "./github.prs.backfill-repo.route";
 export { githubPrsBackfillRouter } from "./github.prs.backfill.route";
