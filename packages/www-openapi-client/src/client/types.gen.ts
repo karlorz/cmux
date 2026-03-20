@@ -905,7 +905,38 @@ export type ProjectGoal = {
     completed: boolean;
 };
 
+/**
+ * Initial status
+ */
 export type ProjectStatus = 'planning' | 'active' | 'paused' | 'completed' | 'archived';
+
+export type CreateProjectRequest = {
+    /**
+     * Team slug or ID
+     */
+    teamSlugOrId: string;
+    /**
+     * Project name
+     */
+    name: string;
+    /**
+     * Project description
+     */
+    description?: string;
+    /**
+     * Initial goals
+     */
+    goals?: Array<ProjectGoal>;
+    status?: ProjectStatus;
+    /**
+     * Path to Obsidian note
+     */
+    obsidianNotePath?: string;
+    /**
+     * GitHub Projects node ID
+     */
+    githubProjectId?: string;
+};
 
 export type PlanTask = {
     /**
@@ -1077,34 +1108,6 @@ export type ProjectProgress = {
 
 export type DispatchPlanRequest = {
     [key: string]: unknown;
-};
-
-export type CreateProjectRequest = {
-    /**
-     * Team slug or ID
-     */
-    teamSlugOrId: string;
-    /**
-     * Project name
-     */
-    name: string;
-    /**
-     * Project description
-     */
-    description?: string;
-    /**
-     * Initial goals
-     */
-    goals?: Array<ProjectGoal>;
-    status?: ProjectStatus & unknown;
-    /**
-     * Path to Obsidian note
-     */
-    obsidianNotePath?: string;
-    /**
-     * GitHub Projects node ID
-     */
-    githubProjectId?: string;
 };
 
 export type UpdateProjectRequest = {
