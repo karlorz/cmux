@@ -1154,6 +1154,22 @@ export type RecommendedAction = {
     suggestedPrompt?: string;
 };
 
+export type DispatchRequest = {
+    /**
+     * Team slug or ID
+     */
+    teamSlugOrId: string;
+    recommendation: RecommendedAction;
+    /**
+     * Agent to use (default: claude/sonnet-4.5)
+     */
+    agentName?: string;
+    /**
+     * Repository full name
+     */
+    repoFullName?: string;
+};
+
 export type ObsidianNote = {
     /**
      * Note path relative to vault
@@ -1179,22 +1195,6 @@ export type ObsidianNote = {
      * Note tags
      */
     tags: Array<string>;
-};
-
-export type DispatchRequest = {
-    /**
-     * Team slug or ID
-     */
-    teamSlugOrId: string;
-    recommendation: RecommendedAction;
-    /**
-     * Agent to use (default: claude/sonnet-4.5)
-     */
-    agentName?: string;
-    /**
-     * Repository full name
-     */
-    repoFullName?: string;
 };
 
 export type PveLxcPreviewInstanceStartResponse = {
@@ -4459,6 +4459,46 @@ export type PatchApiProjectsByProjectIdResponses = {
 
 export type PatchApiProjectsByProjectIdResponse = PatchApiProjectsByProjectIdResponses[keyof PatchApiProjectsByProjectIdResponses];
 
+export type PostApiVaultDispatchData = {
+    body: DispatchRequest;
+    path?: never;
+    query?: never;
+    url: '/api/vault/dispatch';
+};
+
+export type PostApiVaultDispatchErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Validation error
+     */
+    422: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiVaultDispatchResponses = {
+    /**
+     * Task created successfully
+     */
+    201: {
+        /**
+         * Created task ID
+         */
+        taskId: string;
+        /**
+         * Created task run ID
+         */
+        taskRunId?: string;
+    };
+};
+
+export type PostApiVaultDispatchResponse = PostApiVaultDispatchResponses[keyof PostApiVaultDispatchResponses];
+
 export type GetApiVaultRecommendationsData = {
     body?: never;
     path?: never;
@@ -4557,46 +4597,6 @@ export type GetApiVaultNotesResponses = {
 };
 
 export type GetApiVaultNotesResponse = GetApiVaultNotesResponses[keyof GetApiVaultNotesResponses];
-
-export type PostApiVaultDispatchData = {
-    body: DispatchRequest;
-    path?: never;
-    query?: never;
-    url: '/api/vault/dispatch';
-};
-
-export type PostApiVaultDispatchErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Validation error
-     */
-    422: unknown;
-    /**
-     * Server error
-     */
-    500: unknown;
-};
-
-export type PostApiVaultDispatchResponses = {
-    /**
-     * Task created successfully
-     */
-    201: {
-        /**
-         * Created task ID
-         */
-        taskId: string;
-        /**
-         * Created task run ID
-         */
-        taskRunId?: string;
-    };
-};
-
-export type PostApiVaultDispatchResponse = PostApiVaultDispatchResponses[keyof PostApiVaultDispatchResponses];
 
 export type PostApiPveLxcPreviewInstancesStartData = {
     body: PveLxcPreviewInstanceStartBody;
