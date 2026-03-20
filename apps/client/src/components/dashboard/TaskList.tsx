@@ -3,8 +3,8 @@ import type { Doc, Id } from "@cmux/convex/dataModel";
 import { useLocalStorage } from "@mantine/hooks";
 import { usePaginatedQuery, useQuery, useMutation } from "convex/react";
 import clsx from "clsx";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Archive, Pin, X } from "lucide-react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Archive, Pin, X, Keyboard } from "lucide-react";
 
 // Custom hook for infinite scroll that only triggers after user has scrolled
 function useInfiniteScroll(
@@ -267,6 +267,9 @@ export const TaskList = memo(function TaskList({
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const hasSelection = selectedTaskIds.size > 0;
 
+  // Keyboard navigation state
+  const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
+
   // Bulk action mutations
   const pinTask = useMutation(api.tasks.pin);
   const unpinTask = useMutation(api.tasks.unpin);
@@ -493,6 +496,117 @@ export const TaskList = memo(function TaskList({
     }));
   }, [setExpandedPreviewCategories]);
 
+  // Flatten visible tasks for keyboard navigation (respects collapsed/expanded state)
+  const flattenedTaskIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const categoryKey of CATEGORY_ORDER) {
+      // Skip collapsed categories
+      if (collapsedCategories[categoryKey]) continue;
+      // Skip empty pinned category
+      if (categoryKey === 'pinned' && categoryBuckets[categoryKey].length === 0) continue;
+
+      const tasks = categoryBuckets[categoryKey];
+      const hasOverflow = tasks.length > CATEGORY_INITIAL_DISPLAY_COUNT;
+      const visibleTasks = hasOverflow && !expandedCategories[categoryKey]
+        ? tasks.slice(0, CATEGORY_INITIAL_DISPLAY_COUNT)
+        : tasks;
+
+      for (const task of visibleTasks) {
+        ids.push(task._id);
+      }
+    }
+    return ids;
+  }, [categoryBuckets, collapsedCategories, expandedCategories]);
+
+  // Keyboard shortcuts for task navigation
+  const [showKeyboardHint, setShowKeyboardHint] = useState(false);
+
+  // Use refs to avoid recreating the keyboard listener on every state change
+  const flattenedTaskIdsRef = useRef(flattenedTaskIds);
+  const focusedTaskIdRef = useRef(focusedTaskId);
+  const selectedTaskIdsRef = useRef(selectedTaskIds);
+
+  useLayoutEffect(() => {
+    flattenedTaskIdsRef.current = flattenedTaskIds;
+  }, [flattenedTaskIds]);
+
+  useLayoutEffect(() => {
+    focusedTaskIdRef.current = focusedTaskId;
+  }, [focusedTaskId]);
+
+  useLayoutEffect(() => {
+    selectedTaskIdsRef.current = selectedTaskIds;
+  }, [selectedTaskIds]);
+
+  // Reset focus if focused task is no longer visible
+  useEffect(() => {
+    if (focusedTaskId && !flattenedTaskIds.includes(focusedTaskId)) {
+      setFocusedTaskId(null);
+    }
+  }, [focusedTaskId, flattenedTaskIds]);
+
+  useEffect(() => {
+    if (tab !== "all") return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in an input/textarea
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
+        return;
+      }
+
+      const ids = flattenedTaskIdsRef.current;
+      const currentFocused = focusedTaskIdRef.current;
+      const currentIndex = currentFocused ? ids.indexOf(currentFocused) : -1;
+
+      const moveFocus = (direction: 1 | -1) => {
+        if (ids.length === 0) return;
+        const len = ids.length;
+        // Modular arithmetic for wrap-around: handles -1 % len correctly
+        const nextIndex = ((currentIndex === -1 ? (direction === 1 ? -1 : 0) : currentIndex) + direction + len) % len;
+        setFocusedTaskId(ids[nextIndex]);
+      };
+
+      switch (e.key) {
+        case "j": // Move down
+          e.preventDefault();
+          moveFocus(1);
+          break;
+        case "k": // Move up
+          e.preventDefault();
+          moveFocus(-1);
+          break;
+        case "x": // Toggle selection
+          e.preventDefault();
+          if (currentFocused) {
+            const isCurrentlySelected = selectedTaskIdsRef.current.has(currentFocused);
+            handleSelectionChange(currentFocused, !isCurrentlySelected);
+          }
+          break;
+        case "Escape": // Clear selection and focus
+          e.preventDefault();
+          clearSelection();
+          setFocusedTaskId(null);
+          break;
+        case "?": // Show keyboard shortcuts hint
+          e.preventDefault();
+          setShowKeyboardHint((prev) => !prev);
+          break;
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [tab, handleSelectionChange, clearSelection]);
+
+  // Scroll focused task into view (use "auto" for keyboard nav to avoid animation queue)
+  useEffect(() => {
+    if (focusedTaskId) {
+      const element = document.querySelector(`[data-task-id="${focusedTaskId}"]`);
+      element?.scrollIntoView({ block: "nearest", behavior: "auto" });
+    }
+  }, [focusedTaskId]);
+
   return (
     <div className="mt-6 w-full">
       <div className="mb-3 px-4">
@@ -558,6 +672,44 @@ export const TaskList = memo(function TaskList({
           >
             <X className="h-3 w-3" />
           </button>
+        </div>
+      )}
+
+      {/* Keyboard shortcuts hint */}
+      {showKeyboardHint && tab === "all" && (
+        <div className="mx-4 mb-3 rounded-md border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 px-3 py-2">
+          <div className="flex items-center gap-2 mb-2">
+            <Keyboard className="h-3.5 w-3.5 text-neutral-500" />
+            <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">Keyboard Shortcuts</span>
+            <button
+              onClick={() => setShowKeyboardHint(false)}
+              className="ml-auto p-0.5 rounded text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+            <div className="flex items-center gap-2">
+              <kbd className="px-1.5 py-0.5 rounded bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 font-mono">j</kbd>
+              <span className="text-neutral-600 dark:text-neutral-400">Move down</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <kbd className="px-1.5 py-0.5 rounded bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 font-mono">k</kbd>
+              <span className="text-neutral-600 dark:text-neutral-400">Move up</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <kbd className="px-1.5 py-0.5 rounded bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 font-mono">x</kbd>
+              <span className="text-neutral-600 dark:text-neutral-400">Toggle select</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <kbd className="px-1.5 py-0.5 rounded bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 font-mono">Esc</kbd>
+              <span className="text-neutral-600 dark:text-neutral-400">Clear selection</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <kbd className="px-1.5 py-0.5 rounded bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 font-mono">?</kbd>
+              <span className="text-neutral-600 dark:text-neutral-400">Toggle this help</span>
+            </div>
+          </div>
         </div>
       )}
       <div className="flex flex-col gap-1 w-full">
@@ -626,6 +778,7 @@ export const TaskList = memo(function TaskList({
                     initialDisplayCount={CATEGORY_INITIAL_DISPLAY_COUNT}
                     selectedTaskIds={selectedTaskIds}
                     onSelectionChange={handleSelectionChange}
+                    focusedTaskId={focusedTaskId}
                   />
                 );
               })}
@@ -660,6 +813,7 @@ function TaskCategorySection({
   initialDisplayCount,
   selectedTaskIds,
   onSelectionChange,
+  focusedTaskId,
 }: {
   categoryKey: TaskCategoryKey;
   tasks: Doc<"tasks">[];
@@ -671,6 +825,7 @@ function TaskCategorySection({
   initialDisplayCount: number;
   selectedTaskIds: Set<string>;
   onSelectionChange: (taskId: string, selected: boolean) => void;
+  focusedTaskId: string | null;
 }) {
   const meta = CATEGORY_META[categoryKey];
   const handleToggle = useCallback(
@@ -732,6 +887,7 @@ function TaskCategorySection({
               isSelected={selectedTaskIds.has(task._id)}
               onSelectionChange={onSelectionChange}
               showCheckbox={selectedTaskIds.size > 0}
+              isFocused={focusedTaskId === task._id}
             />
           ))}
           {hasOverflow && (

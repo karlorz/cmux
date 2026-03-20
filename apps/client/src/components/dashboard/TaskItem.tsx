@@ -39,6 +39,7 @@ interface TaskItemProps {
   isSelected?: boolean;
   onSelectionChange?: (taskId: string, selected: boolean) => void;
   showCheckbox?: boolean;
+  isFocused?: boolean;
 }
 
 export const TaskItem = memo(function TaskItem({
@@ -47,6 +48,7 @@ export const TaskItem = memo(function TaskItem({
   isSelected = false,
   onSelectionChange,
   showCheckbox = false,
+  isFocused = false,
 }: TaskItemProps) {
   const clipboard = useClipboard({ timeout: 2000 });
   const { archiveWithUndo, unarchive, isArchiving } =
@@ -312,7 +314,7 @@ export const TaskItem = memo(function TaskItem({
   );
 
   return (
-    <div className="relative group w-full">
+    <div className="relative group w-full" data-task-id={task._id}>
       <ContextMenu.Root>
         <ContextMenu.Trigger>
           <Link
@@ -326,7 +328,8 @@ export const TaskItem = memo(function TaskItem({
               isOptimisticUpdate
                 ? "bg-white/50 dark:bg-neutral-900/30 animate-pulse"
                 : "bg-white dark:bg-neutral-900/50 group-hover:bg-neutral-50/90 dark:group-hover:bg-neutral-600/60",
-              isRenaming && "pr-2"
+              isRenaming && "pr-2",
+              isFocused && "ring-2 ring-inset ring-blue-500/50 dark:ring-blue-400/50"
             )}
           >
             <div className="flex items-center justify-center pl-1 -mr-2 relative">
