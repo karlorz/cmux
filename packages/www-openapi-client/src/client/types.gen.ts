@@ -4245,6 +4245,92 @@ export type PostApiProjectsResponses = {
 
 export type PostApiProjectsResponse = PostApiProjectsResponses[keyof PostApiProjectsResponses];
 
+export type GetApiProjectsByProjectIdData = {
+    body?: never;
+    path: {
+        /**
+         * Project ID
+         */
+        projectId: string;
+    };
+    query: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId: string;
+    };
+    url: '/api/projects/{projectId}';
+};
+
+export type GetApiProjectsByProjectIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Project not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiProjectsByProjectIdResponses = {
+    /**
+     * Project retrieved successfully
+     */
+    200: Project;
+};
+
+export type GetApiProjectsByProjectIdResponse = GetApiProjectsByProjectIdResponses[keyof GetApiProjectsByProjectIdResponses];
+
+export type PatchApiProjectsByProjectIdData = {
+    body: UpdateProjectRequest;
+    path: {
+        /**
+         * Project ID
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/projects/{projectId}';
+};
+
+export type PatchApiProjectsByProjectIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Project not found
+     */
+    404: unknown;
+    /**
+     * Validation error
+     */
+    422: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PatchApiProjectsByProjectIdResponses = {
+    /**
+     * Project updated successfully
+     */
+    200: {
+        /**
+         * Updated project ID
+         */
+        id: string;
+    };
+};
+
+export type PatchApiProjectsByProjectIdResponse = PatchApiProjectsByProjectIdResponses[keyof PatchApiProjectsByProjectIdResponses];
+
 export type PutApiProjectsByProjectIdPlanData = {
     body: UpsertPlanRequest;
     path: {
@@ -4375,92 +4461,6 @@ export type PostApiProjectsByProjectIdDispatchResponses = {
 };
 
 export type PostApiProjectsByProjectIdDispatchResponse = PostApiProjectsByProjectIdDispatchResponses[keyof PostApiProjectsByProjectIdDispatchResponses];
-
-export type GetApiProjectsByProjectIdData = {
-    body?: never;
-    path: {
-        /**
-         * Project ID
-         */
-        projectId: string;
-    };
-    query: {
-        /**
-         * Team slug or ID
-         */
-        teamSlugOrId: string;
-    };
-    url: '/api/projects/{projectId}';
-};
-
-export type GetApiProjectsByProjectIdErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Project not found
-     */
-    404: unknown;
-    /**
-     * Server error
-     */
-    500: unknown;
-};
-
-export type GetApiProjectsByProjectIdResponses = {
-    /**
-     * Project retrieved successfully
-     */
-    200: Project;
-};
-
-export type GetApiProjectsByProjectIdResponse = GetApiProjectsByProjectIdResponses[keyof GetApiProjectsByProjectIdResponses];
-
-export type PatchApiProjectsByProjectIdData = {
-    body: UpdateProjectRequest;
-    path: {
-        /**
-         * Project ID
-         */
-        projectId: string;
-    };
-    query?: never;
-    url: '/api/projects/{projectId}';
-};
-
-export type PatchApiProjectsByProjectIdErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Project not found
-     */
-    404: unknown;
-    /**
-     * Validation error
-     */
-    422: unknown;
-    /**
-     * Server error
-     */
-    500: unknown;
-};
-
-export type PatchApiProjectsByProjectIdResponses = {
-    /**
-     * Project updated successfully
-     */
-    200: {
-        /**
-         * Updated project ID
-         */
-        id: string;
-    };
-};
-
-export type PatchApiProjectsByProjectIdResponse = PatchApiProjectsByProjectIdResponses[keyof PatchApiProjectsByProjectIdResponses];
 
 export type PostApiVaultDispatchData = {
     body: DispatchRequest;
