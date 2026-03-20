@@ -16,88 +16,19 @@ import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { projectCreateRouter } from "./project.create.route";
 import { projectListRouter } from "./project.list.route";
 import { projectPlanRouter } from "./project.plan.route";
-import {
-  CreateProjectRequestSchema,
-  ProjectSchema,
-  UpdateProjectRequestSchema,
-} from "./project.schemas";
+import { ProjectSchema, UpdateProjectRequestSchema } from "./project.schemas";
 // ============================================================================
 // Router
 // ============================================================================
 
 export const projectRouter = new OpenAPIHono();
 
+projectRouter.route("/", projectCreateRouter);
 projectRouter.route("/", projectListRouter);
 projectRouter.route("/", projectPlanRouter);
-
-/**
- * POST /api/projects
- * Create a new project.
- */
-projectRouter.openapi(
-  createRoute({
-    method: "post" as const,
-    path: "/projects",
-    tags: ["Projects"],
-    summary: "Create project",
-    description: "Create a new project for a team.",
-    request: {
-      body: {
-        content: {
-          "application/json": {
-            schema: CreateProjectRequestSchema,
-          },
-        },
-        required: true,
-      },
-    },
-    responses: {
-      201: {
-        content: {
-          "application/json": {
-            schema: z.object({
-              id: z.string().openapi({ description: "Created project ID" }),
-            }),
-          },
-        },
-        description: "Project created successfully",
-      },
-      401: { description: "Unauthorized" },
-      422: { description: "Validation error" },
-      500: { description: "Server error" },
-    },
-  }),
-  async (c) => {
-    const accessToken = await getAccessTokenFromRequest(c.req.raw);
-    if (!accessToken) {
-      return c.text("Unauthorized", 401);
-    }
-
-    const body = c.req.valid("json");
-
-    try {
-      await verifyTeamAccess({ req: c.req.raw, teamSlugOrId: body.teamSlugOrId });
-      const convex = getConvex({ accessToken });
-
-      const projectId = await convex.mutation(api.projectQueries.createProject, {
-        teamSlugOrId: body.teamSlugOrId,
-        name: body.name,
-        description: body.description,
-        goals: body.goals,
-        status: body.status,
-        obsidianNotePath: body.obsidianNotePath,
-        githubProjectId: body.githubProjectId,
-      });
-
-      return c.json({ id: projectId }, 201);
-    } catch (error) {
-      console.error("[projects] Failed to create project:", error);
-      return c.text("Failed to create project", 500);
-    }
-  }
-);
 
 /**
  * GET /api/projects/:projectId

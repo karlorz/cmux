@@ -36,6 +36,7 @@ export { morphSetupInstanceRouter } from "./morph.setup-instance.route";
 export { morphTaskRunsRouter } from "./morph.task-runs.route";
 export { morphRouter } from "./morph.route";
 export { orchestrateRouter } from "./orchestrate.route";
+export { projectCreateRouter } from "./project.create.route";
 export { projectListRouter } from "./project.list.route";
 export { projectPlanRouter } from "./project.plan.route";
 export { projectRouter } from "./project.route";
