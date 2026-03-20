@@ -2,128 +2,25 @@ import { getAccessTokenFromRequest } from "@/lib/utils/auth";
 import { getConvex } from "@/lib/utils/get-convex";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { api } from "@cmux/convex/api";
-import { SNAPSHOT_PROVIDERS } from "@cmux/shared/provider-types";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { environmentsLifecycleRouter } from "./environments.lifecycle.route";
+import { environmentsListRouter } from "./environments.list.route";
 import { environmentsPortsRouter } from "./environments.ports.route";
 import { environmentsSnapshotsRouter } from "./environments.snapshots.route";
 import { environmentsVarsRouter } from "./environments.vars.route";
+import {
+  GetEnvironmentResponseSchema,
+  UpdateEnvironmentBodySchema,
+} from "./environments.schemas";
 
 export const environmentsRouter = new OpenAPIHono();
 
 environmentsRouter.route("/", environmentsLifecycleRouter);
+environmentsRouter.route("/", environmentsListRouter);
 environmentsRouter.route("/", environmentsPortsRouter);
 environmentsRouter.route("/", environmentsVarsRouter);
 environmentsRouter.route("/", environmentsSnapshotsRouter);
-
-const GetEnvironmentResponse = z
-  .object({
-    id: z.string(),
-    name: z.string(),
-    snapshotId: z.string(),
-    snapshotProvider: z.enum(SNAPSHOT_PROVIDERS),
-    templateVmid: z.number().optional(),
-    dataVaultKey: z.string(),
-    selectedRepos: z.array(z.string()).optional(),
-    description: z.string().optional(),
-    maintenanceScript: z.string().optional(),
-    devScript: z.string().optional(),
-    exposedPorts: z.array(z.number()).optional(),
-    createdAt: z.number(),
-    updatedAt: z.number(),
-  })
-  .openapi("GetEnvironmentResponse");
-
-const ListEnvironmentsResponse = z
-  .array(GetEnvironmentResponse)
-  .openapi("ListEnvironmentsResponse");
-
-const UpdateEnvironmentBody = z
-  .object({
-    teamSlugOrId: z.string(),
-    name: z.string().trim().min(1).optional(),
-    description: z.string().optional(),
-    maintenanceScript: z.string().optional(),
-    devScript: z.string().optional(),
-  })
-  .refine(
-    (value) =>
-      value.name !== undefined ||
-      value.description !== undefined ||
-      value.maintenanceScript !== undefined ||
-      value.devScript !== undefined,
-    "At least one field must be provided",
-  )
-  .openapi("UpdateEnvironmentBody");
-
-// List environments for a team
-environmentsRouter.openapi(
-  createRoute({
-    method: "get" as const,
-    path: "/environments",
-    tags: ["Environments"],
-    summary: "List environments for a team",
-    request: {
-      query: z.object({
-        teamSlugOrId: z.string(),
-      }),
-    },
-    responses: {
-      200: {
-        content: {
-          "application/json": {
-            schema: ListEnvironmentsResponse,
-          },
-        },
-        description: "Environments retrieved successfully",
-      },
-      401: { description: "Unauthorized" },
-      500: { description: "Failed to list environments" },
-    },
-  }),
-  async (c) => {
-    // Require authentication
-    const accessToken = await getAccessTokenFromRequest(c.req.raw);
-    if (!accessToken) return c.text("Unauthorized", 401);
-
-    const { teamSlugOrId } = c.req.valid("query");
-
-    try {
-      const convexClient = getConvex({ accessToken });
-      const environments = await convexClient.query(api.environments.list, {
-        teamSlugOrId,
-      });
-
-      // Map Convex documents to API response shape
-      const result = environments.map((env) => {
-        if (!env.snapshotId || !env.snapshotProvider) {
-          throw new Error(`Environment ${env._id} is missing snapshot metadata`);
-        }
-        return {
-          id: env._id,
-          name: env.name,
-          snapshotId: env.snapshotId,
-          snapshotProvider: env.snapshotProvider,
-          templateVmid: env.templateVmid ?? undefined,
-          dataVaultKey: env.dataVaultKey,
-          selectedRepos: env.selectedRepos,
-          description: env.description,
-          maintenanceScript: env.maintenanceScript,
-          devScript: env.devScript,
-          exposedPorts: env.exposedPorts,
-          createdAt: env.createdAt,
-          updatedAt: env.updatedAt,
-        };
-      });
-
-      return c.json(result);
-    } catch (error) {
-      console.error("Failed to list environments:", error);
-      return c.text("Failed to list environments", 500);
-    }
-  }
-);
 
 // Get a specific environment
 environmentsRouter.openapi(
@@ -144,7 +41,7 @@ environmentsRouter.openapi(
       200: {
         content: {
           "application/json": {
-            schema: GetEnvironmentResponse,
+            schema: GetEnvironmentResponseSchema,
           },
         },
         description: "Environment retrieved successfully",
@@ -215,7 +112,7 @@ environmentsRouter.openapi(
       body: {
         content: {
           "application/json": {
-            schema: UpdateEnvironmentBody,
+            schema: UpdateEnvironmentBodySchema,
           },
         },
         required: true,
@@ -225,7 +122,7 @@ environmentsRouter.openapi(
       200: {
         content: {
           "application/json": {
-            schema: GetEnvironmentResponse,
+            schema: GetEnvironmentResponseSchema,
           },
         },
         description: "Environment updated successfully",

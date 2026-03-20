@@ -7,6 +7,7 @@ export { githubBranchesRouter } from "./github.branches.route";
 export { githubFrameworkDetectionRouter } from "./github.framework-detection.route";
 export { environmentsRouter } from "./environments.route";
 export { environmentsLifecycleRouter } from "./environments.lifecycle.route";
+export { environmentsListRouter } from "./environments.list.route";
 export { environmentsPortsRouter } from "./environments.ports.route";
 export { environmentsSnapshotsRouter } from "./environments.snapshots.route";
 export { environmentsVarsRouter } from "./environments.vars.route";
