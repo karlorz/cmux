@@ -67,6 +67,7 @@ export { settingsRouter } from "./settings.route";
 export { worktreesRouter } from "./worktrees.route";
 export { modelsDiscoveryRouter } from "./models.discovery.route";
 export { modelsRouter } from "./models.route";
+export { providersEnabledRouter } from "./providers.enabled.route";
 export { providersOverridesRouter } from "./providers.overrides.route";
 export { providersRouter } from "./providers.route";
 export { providersStatusRouter } from "./providers.status.route";
