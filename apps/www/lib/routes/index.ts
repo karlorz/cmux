@@ -62,6 +62,7 @@ export { previewTestJobRunsRouter } from "./preview.test-jobs.runs.route";
 export { previewTestJobsRouter } from "./preview.test-jobs.route";
 export { previewRouter } from "./preview.route";
 export { settingsProviderConnectionRouter } from "./settings.provider-connection.route";
+export { settingsTestAnthropicConnectionRouter } from "./settings.test-anthropic-connection.route";
 export { settingsRouter } from "./settings.route";
 export { worktreesRouter } from "./worktrees.route";
 export { modelsDiscoveryRouter } from "./models.discovery.route";
