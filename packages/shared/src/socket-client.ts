@@ -33,10 +33,15 @@ export function connectToMainServer(
   // Prefer WebSocket, but allow polling fallback to survive tricky dev setups
   const { url, transports = ["websocket", "polling"], ...rest } = params;
   const query = buildMainClientQuery(rest);
-  return io(url, { transports, query }) as Socket<
-    ServerToClientEvents,
-    ClientToServerEvents
-  >;
+  return io(url, {
+    transports,
+    query,
+    // Reconnection with exponential backoff
+    reconnection: true,
+    reconnectionAttempts: 10,
+    reconnectionDelay: 1000, // Start at 1s
+    reconnectionDelayMax: 30_000, // Max 30s between attempts
+  }) as Socket<ServerToClientEvents, ClientToServerEvents>;
 }
 
 // Typed socket aliases for consumers

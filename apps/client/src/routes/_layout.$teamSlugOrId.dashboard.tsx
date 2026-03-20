@@ -1025,14 +1025,15 @@ function DashboardComponent() {
   // }, [reposByOrg, fetchRepos]);
 
   // Check provider status on mount and keep it fresh without page refresh
+  // Reduced from 5s to 30s since provider status changes infrequently
   useEffect(() => {
     // Initial check
     checkProviderStatus();
 
-    // Poll while the dashboard is open so Docker state updates live
+    // Poll with reduced frequency - provider status changes slowly
     const interval = setInterval(() => {
       checkProviderStatus();
-    }, 5000);
+    }, 30_000);
 
     // Also refresh on window focus to catch recent changes quickly
     const handleFocus = () => checkProviderStatus();
