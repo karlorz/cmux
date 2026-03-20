@@ -17,18 +17,18 @@ import { api } from "@cmux/convex/api";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { getConvex } from "../utils/get-convex";
 import { githubProjectsDraftsRouter } from "./github.projects.drafts.route";
+import { githubProjectsItemMutationsRouter } from "./github.projects.item-mutations.route";
 import { githubProjectsPlanSyncRouter } from "./github.projects.plan-sync.route";
 import {
   listProjects,
   getProjectFields,
   getProjectItems,
-  addItemToProject,
-  updateItemField,
   mapCmuxStatusToProjectStatus,
 } from "../utils/github-projects";
 
 export const githubProjectsRouter = new OpenAPIHono();
 githubProjectsRouter.route("/", githubProjectsDraftsRouter);
+githubProjectsRouter.route("/", githubProjectsItemMutationsRouter);
 githubProjectsRouter.route("/", githubProjectsPlanSyncRouter);
 
 const execFileAsync = promisify(execFile);
@@ -368,32 +368,6 @@ const ProjectFieldsResponse = z
     fields: z.array(ProjectFieldSchema),
   })
   .openapi("ProjectFieldsResponse");
-
-const AddItemBody = z
-  .object({
-    projectId: z.string().openapi({ description: "GitHub Project node ID" }),
-    contentId: z
-      .string()
-      .openapi({ description: "Issue or PR node ID to add" }),
-  })
-  .openapi("AddItemBody");
-
-const UpdateFieldBody = z
-  .object({
-    projectId: z.string().openapi({ description: "GitHub Project node ID" }),
-    itemId: z.string().openapi({ description: "Project item node ID" }),
-    fieldId: z.string().openapi({ description: "Field node ID" }),
-    value: z
-      .record(z.string(), z.union([z.string(), z.number()]))
-      .openapi({ description: "Field value (format depends on field type)" }),
-  })
-  .openapi("UpdateFieldBody");
-
-const ItemResponse = z
-  .object({
-    itemId: z.string().nullable(),
-  })
-  .openapi("ItemResponse");
 
 const ProjectItemContentSchema = z
   .object({
@@ -781,161 +755,6 @@ githubProjectsRouter.openapi(
         errMsg,
       );
       return c.json({ items: [], pageInfo: { hasNextPage: false, endCursor: null } });
-    }
-  },
-);
-
-// POST /integrations/github/projects/items - Add item to project
-githubProjectsRouter.openapi(
-  createRoute({
-    method: "post" as const,
-    path: "/integrations/github/projects/items",
-    tags: ["Integrations"],
-    summary: "Add an issue or PR to a GitHub Project",
-    request: {
-      query: z.object({
-        team: z.string().min(1),
-        installationId: z.coerce.number(),
-      }),
-      body: {
-        content: { "application/json": { schema: AddItemBody } },
-        required: true,
-      },
-    },
-    responses: {
-      200: {
-        description: "OK",
-        content: { "application/json": { schema: ItemResponse } },
-      },
-      401: { description: "Unauthorized" },
-      400: { description: "Bad request" },
-    },
-  }),
-  async (c) => {
-    const accessToken = await getAccessTokenFromRequest(c.req.raw);
-    if (!accessToken) return c.text("Unauthorized", 401);
-
-    const { team, installationId } = c.req.valid("query");
-    const { projectId, contentId } = c.req.valid("json");
-
-    // Verify team membership
-    const convex = getConvex({ accessToken });
-    const connections = await convex.query(api.github.listProviderConnections, {
-      teamSlugOrId: team,
-    });
-
-    const target = connections.find(
-      (co) => co.isActive && co.installationId === installationId,
-    );
-
-    if (!target) {
-      return c.text("Installation not found", 400);
-    }
-
-    try {
-      const userOAuthToken =
-        target.accountType === "User"
-          ? await getGitHubUserOAuthToken(c.req.raw, {
-              scopes: [...GITHUB_PROJECT_SCOPES],
-            })
-          : undefined;
-
-      if (target.accountType === "User" && !userOAuthToken) {
-        return c.json({ itemId: null });
-      }
-
-      const itemId = await addItemToProject(
-        projectId,
-        contentId,
-        installationId,
-        { userOAuthToken },
-      );
-      return c.json({ itemId });
-    } catch (err) {
-      console.error(
-        `[github.projects] Failed to add item to project:`,
-        err instanceof Error ? err.message : err,
-      );
-      return c.json({ itemId: null });
-    }
-  },
-);
-
-// PATCH /integrations/github/projects/items/field - Update item field
-githubProjectsRouter.openapi(
-  createRoute({
-    method: "patch" as const,
-    path: "/integrations/github/projects/items/field",
-    tags: ["Integrations"],
-    summary: "Update a field value on a GitHub Project item",
-    request: {
-      query: z.object({
-        team: z.string().min(1),
-        installationId: z.coerce.number(),
-      }),
-      body: {
-        content: { "application/json": { schema: UpdateFieldBody } },
-        required: true,
-      },
-    },
-    responses: {
-      200: {
-        description: "OK",
-        content: { "application/json": { schema: ItemResponse } },
-      },
-      401: { description: "Unauthorized" },
-      400: { description: "Bad request" },
-    },
-  }),
-  async (c) => {
-    const accessToken = await getAccessTokenFromRequest(c.req.raw);
-    if (!accessToken) return c.text("Unauthorized", 401);
-
-    const { team, installationId } = c.req.valid("query");
-    const { projectId, itemId, fieldId, value } = c.req.valid("json");
-
-    // Verify team membership
-    const convex = getConvex({ accessToken });
-    const connections = await convex.query(api.github.listProviderConnections, {
-      teamSlugOrId: team,
-    });
-
-    const target = connections.find(
-      (co) => co.isActive && co.installationId === installationId,
-    );
-
-    if (!target) {
-      return c.text("Installation not found", 400);
-    }
-
-    try {
-      const typedValue = value as Record<string, string | number>;
-      const userOAuthToken =
-        target.accountType === "User"
-          ? await getGitHubUserOAuthToken(c.req.raw, {
-              scopes: [...GITHUB_PROJECT_SCOPES],
-            })
-          : undefined;
-
-      if (target.accountType === "User" && !userOAuthToken) {
-        return c.json({ itemId: null });
-      }
-
-      const updatedItemId = await updateItemField(
-        projectId,
-        itemId,
-        fieldId,
-        typedValue,
-        installationId,
-        { userOAuthToken },
-      );
-      return c.json({ itemId: updatedItemId });
-    } catch (err) {
-      console.error(
-        `[github.projects] Failed to update item field:`,
-        err instanceof Error ? err.message : err,
-      );
-      return c.json({ itemId: null });
     }
   },
 );

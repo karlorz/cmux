@@ -188,6 +188,38 @@ export type CreateDraftBody = {
     body?: string;
 };
 
+export type AddItemBody = {
+    /**
+     * GitHub Project node ID
+     */
+    projectId: string;
+    /**
+     * Issue or PR node ID to add
+     */
+    contentId: string;
+};
+
+export type UpdateFieldBody = {
+    /**
+     * GitHub Project node ID
+     */
+    projectId: string;
+    /**
+     * Project item node ID
+     */
+    itemId: string;
+    /**
+     * Field node ID
+     */
+    fieldId: string;
+    /**
+     * Field value (format depends on field type)
+     */
+    value: {
+        [key: string]: string | number;
+    };
+};
+
 export type GitHubProject = {
     id: string;
     title: string;
@@ -246,38 +278,6 @@ export type ProjectItemsResponse = {
     pageInfo: {
         hasNextPage: boolean;
         endCursor: string | null;
-    };
-};
-
-export type AddItemBody = {
-    /**
-     * GitHub Project node ID
-     */
-    projectId: string;
-    /**
-     * Issue or PR node ID to add
-     */
-    contentId: string;
-};
-
-export type UpdateFieldBody = {
-    /**
-     * GitHub Project node ID
-     */
-    projectId: string;
-    /**
-     * Project item node ID
-     */
-    itemId: string;
-    /**
-     * Field node ID
-     */
-    fieldId: string;
-    /**
-     * Field value (format depends on field type)
-     */
-    value: {
-        [key: string]: string | number;
     };
 };
 
@@ -2568,112 +2568,6 @@ export type PostApiIntegrationsGithubProjectsDraftsResponses = {
 
 export type PostApiIntegrationsGithubProjectsDraftsResponse = PostApiIntegrationsGithubProjectsDraftsResponses[keyof PostApiIntegrationsGithubProjectsDraftsResponses];
 
-export type PostApiIntegrationsGithubProjectsPlanSyncData = {
-    body: {
-        planContent: string;
-        planFile?: string;
-    };
-    path?: never;
-    query?: never;
-    url: '/api/integrations/github/projects/plan-sync';
-};
-
-export type PostApiIntegrationsGithubProjectsPlanSyncErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-};
-
-export type PostApiIntegrationsGithubProjectsPlanSyncResponses = {
-    /**
-     * OK
-     */
-    200: {
-        success: boolean;
-        itemsCreated: number;
-        projectId: string | null;
-        error?: string;
-    };
-};
-
-export type PostApiIntegrationsGithubProjectsPlanSyncResponse = PostApiIntegrationsGithubProjectsPlanSyncResponses[keyof PostApiIntegrationsGithubProjectsPlanSyncResponses];
-
-export type GetApiIntegrationsGithubProjectsData = {
-    body?: never;
-    path?: never;
-    query: {
-        /**
-         * Team slug or UUID
-         */
-        team: string;
-        /**
-         * GitHub App installation ID
-         */
-        installationId?: number | null;
-        /**
-         * GitHub user or org login (optional, inferred from installation if omitted)
-         */
-        owner?: string;
-        /**
-         * Owner type
-         */
-        ownerType?: 'user' | 'organization';
-    };
-    url: '/api/integrations/github/projects';
-};
-
-export type GetApiIntegrationsGithubProjectsErrors = {
-    /**
-     * Bad request
-     */
-    400: unknown;
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-};
-
-export type GetApiIntegrationsGithubProjectsResponses = {
-    /**
-     * OK
-     */
-    200: ProjectsResponse;
-};
-
-export type GetApiIntegrationsGithubProjectsResponse = GetApiIntegrationsGithubProjectsResponses[keyof GetApiIntegrationsGithubProjectsResponses];
-
-export type GetApiIntegrationsGithubProjectsFieldsData = {
-    body?: never;
-    path?: never;
-    query: {
-        team: string;
-        installationId?: number | null;
-        projectId: string;
-    };
-    url: '/api/integrations/github/projects/fields';
-};
-
-export type GetApiIntegrationsGithubProjectsFieldsErrors = {
-    /**
-     * Bad request
-     */
-    400: unknown;
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-};
-
-export type GetApiIntegrationsGithubProjectsFieldsResponses = {
-    /**
-     * OK
-     */
-    200: ProjectFieldsResponse;
-};
-
-export type GetApiIntegrationsGithubProjectsFieldsResponse = GetApiIntegrationsGithubProjectsFieldsResponses[keyof GetApiIntegrationsGithubProjectsFieldsResponses];
-
 export type GetApiIntegrationsGithubProjectsItemsData = {
     body?: never;
     path?: never;
@@ -2789,6 +2683,112 @@ export type PatchApiIntegrationsGithubProjectsItemsFieldResponses = {
 };
 
 export type PatchApiIntegrationsGithubProjectsItemsFieldResponse = PatchApiIntegrationsGithubProjectsItemsFieldResponses[keyof PatchApiIntegrationsGithubProjectsItemsFieldResponses];
+
+export type PostApiIntegrationsGithubProjectsPlanSyncData = {
+    body: {
+        planContent: string;
+        planFile?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/integrations/github/projects/plan-sync';
+};
+
+export type PostApiIntegrationsGithubProjectsPlanSyncErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiIntegrationsGithubProjectsPlanSyncResponses = {
+    /**
+     * OK
+     */
+    200: {
+        success: boolean;
+        itemsCreated: number;
+        projectId: string | null;
+        error?: string;
+    };
+};
+
+export type PostApiIntegrationsGithubProjectsPlanSyncResponse = PostApiIntegrationsGithubProjectsPlanSyncResponses[keyof PostApiIntegrationsGithubProjectsPlanSyncResponses];
+
+export type GetApiIntegrationsGithubProjectsData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Team slug or UUID
+         */
+        team: string;
+        /**
+         * GitHub App installation ID
+         */
+        installationId?: number | null;
+        /**
+         * GitHub user or org login (optional, inferred from installation if omitted)
+         */
+        owner?: string;
+        /**
+         * Owner type
+         */
+        ownerType?: 'user' | 'organization';
+    };
+    url: '/api/integrations/github/projects';
+};
+
+export type GetApiIntegrationsGithubProjectsErrors = {
+    /**
+     * Bad request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiIntegrationsGithubProjectsResponses = {
+    /**
+     * OK
+     */
+    200: ProjectsResponse;
+};
+
+export type GetApiIntegrationsGithubProjectsResponse = GetApiIntegrationsGithubProjectsResponses[keyof GetApiIntegrationsGithubProjectsResponses];
+
+export type GetApiIntegrationsGithubProjectsFieldsData = {
+    body?: never;
+    path?: never;
+    query: {
+        team: string;
+        installationId?: number | null;
+        projectId: string;
+    };
+    url: '/api/integrations/github/projects/fields';
+};
+
+export type GetApiIntegrationsGithubProjectsFieldsErrors = {
+    /**
+     * Bad request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiIntegrationsGithubProjectsFieldsResponses = {
+    /**
+     * OK
+     */
+    200: ProjectFieldsResponse;
+};
+
+export type GetApiIntegrationsGithubProjectsFieldsResponse = GetApiIntegrationsGithubProjectsFieldsResponses[keyof GetApiIntegrationsGithubProjectsFieldsResponses];
 
 export type GetApiIntegrationsGithubFrameworkDetectionData = {
     body?: never;
