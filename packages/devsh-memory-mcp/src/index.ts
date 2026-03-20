@@ -328,7 +328,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
     tools: [
       {
         name: "read_memory",
-        description: 'Read a memory file. Type can be "knowledge", "tasks", or "mailbox".',
+        description: 'Read a memory file. Type can be "knowledge", "tasks", or "mailbox". For tasks, by default only returns open tasks (pending/in_progress) to prevent context bloat.',
         inputSchema: {
           type: "object" as const,
           properties: {
@@ -336,6 +336,14 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
               type: "string",
               enum: ["knowledge", "tasks", "mailbox"],
               description: "The type of memory to read",
+            },
+            includeCompleted: {
+              type: "boolean",
+              description: "For tasks: include completed tasks (default: false, only open tasks)",
+            },
+            limit: {
+              type: "number",
+              description: "For tasks: maximum number of tasks to return (default: 50)",
             },
           },
           required: ["type"],
@@ -916,12 +924,48 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
 
     switch (name) {
       case "read_memory": {
-        const type = (args as { type: string }).type;
+        const { type, includeCompleted, limit } = args as {
+          type: string;
+          includeCompleted?: boolean;
+          limit?: number;
+        };
         let content: string | null = null;
         if (type === "knowledge") {
           content = readFile(path.join(knowledgeDir, "MEMORY.md"));
         } else if (type === "tasks") {
-          content = readFile(tasksPath);
+          // Filter tasks to prevent context bloat
+          const tasksFile = readTasks();
+          const maxTasks = limit ?? 50;
+          const showCompleted = includeCompleted ?? false;
+
+          // Filter to open tasks by default, sort by ID (newest first)
+          let filteredTasks = showCompleted
+            ? tasksFile.tasks
+            : tasksFile.tasks.filter((t) => t.status === "pending" || t.status === "in_progress");
+
+          // Sort by ID descending (assuming IDs are sequential)
+          filteredTasks = filteredTasks.sort((a, b) => {
+            const aNum = parseInt(a.id.replace(/\D/g, ""), 10) || 0;
+            const bNum = parseInt(b.id.replace(/\D/g, ""), 10) || 0;
+            return bNum - aNum;
+          });
+
+          // Apply limit
+          const truncated = filteredTasks.length > maxTasks;
+          filteredTasks = filteredTasks.slice(0, maxTasks);
+
+          const result = {
+            version: tasksFile.version,
+            tasks: filteredTasks,
+            _meta: {
+              totalTasks: tasksFile.tasks.length,
+              openTasks: tasksFile.tasks.filter((t) => t.status === "pending" || t.status === "in_progress").length,
+              returnedTasks: filteredTasks.length,
+              truncated,
+              includeCompleted: showCompleted,
+            },
+          };
+          content = JSON.stringify(result, null, 2);
         } else if (type === "mailbox") {
           content = readFile(mailboxPath);
         }
