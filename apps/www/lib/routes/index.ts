@@ -35,6 +35,7 @@ export { workspaceConfigsRouter } from "./workspace-configs.route";
 export { previewConfigsRouter } from "./preview.configs.route";
 export { previewTestJobsRouter } from "./preview.test-jobs.route";
 export { previewRouter } from "./preview.route";
+export { settingsProviderConnectionRouter } from "./settings.provider-connection.route";
 export { settingsRouter } from "./settings.route";
 export { worktreesRouter } from "./worktrees.route";
 export { modelsRouter } from "./models.route";
