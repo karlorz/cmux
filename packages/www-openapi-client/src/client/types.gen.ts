@@ -1896,7 +1896,72 @@ export type UpsertApiKeyBody = {
     description?: string;
 };
 
+export type McpServerSuccessResponse = {
+    success: boolean;
+    id?: string;
+};
+
 export type McpServerScope = 'global' | 'workspace';
+
+export type UpsertMcpServerBody = {
+    name: string;
+    displayName: string;
+    type?: 'stdio';
+    command: string;
+    args?: Array<string>;
+    envVars?: {
+        [key: string]: string;
+    };
+    description?: string;
+    tags?: Array<string>;
+    enabledClaude: boolean;
+    enabledCodex: boolean;
+    enabledGemini: boolean;
+    enabledOpencode: boolean;
+    sourcePresetId?: string;
+    scope: McpServerScope;
+    projectFullName?: string;
+} | {
+    type: 'http';
+    name: string;
+    displayName: string;
+    url: string;
+    headers?: {
+        [key: string]: string;
+    };
+    envVars?: {
+        [key: string]: string;
+    };
+    description?: string;
+    tags?: Array<string>;
+    enabledClaude: boolean;
+    enabledCodex: boolean;
+    enabledGemini: boolean;
+    enabledOpencode: boolean;
+    sourcePresetId?: string;
+    scope: McpServerScope;
+    projectFullName?: string;
+} | {
+    type: 'sse';
+    name: string;
+    displayName: string;
+    url: string;
+    headers?: {
+        [key: string]: string;
+    };
+    envVars?: {
+        [key: string]: string;
+    };
+    description?: string;
+    tags?: Array<string>;
+    enabledClaude: boolean;
+    enabledCodex: boolean;
+    enabledGemini: boolean;
+    enabledOpencode: boolean;
+    sourcePresetId?: string;
+    scope: McpServerScope;
+    projectFullName?: string;
+};
 
 export type McpServerStdioConfig = {
     _id: string;
@@ -1997,71 +2062,6 @@ export type McpServerPreset = {
 export type McpServersListResponse = {
     configs: Array<McpServerConfig>;
     presets: Array<McpServerPreset>;
-};
-
-export type McpServerSuccessResponse = {
-    success: boolean;
-    id?: string;
-};
-
-export type UpsertMcpServerBody = {
-    name: string;
-    displayName: string;
-    type?: 'stdio';
-    command: string;
-    args?: Array<string>;
-    envVars?: {
-        [key: string]: string;
-    };
-    description?: string;
-    tags?: Array<string>;
-    enabledClaude: boolean;
-    enabledCodex: boolean;
-    enabledGemini: boolean;
-    enabledOpencode: boolean;
-    sourcePresetId?: string;
-    scope: McpServerScope;
-    projectFullName?: string;
-} | {
-    type: 'http';
-    name: string;
-    displayName: string;
-    url: string;
-    headers?: {
-        [key: string]: string;
-    };
-    envVars?: {
-        [key: string]: string;
-    };
-    description?: string;
-    tags?: Array<string>;
-    enabledClaude: boolean;
-    enabledCodex: boolean;
-    enabledGemini: boolean;
-    enabledOpencode: boolean;
-    sourcePresetId?: string;
-    scope: McpServerScope;
-    projectFullName?: string;
-} | {
-    type: 'sse';
-    name: string;
-    displayName: string;
-    url: string;
-    headers?: {
-        [key: string]: string;
-    };
-    envVars?: {
-        [key: string]: string;
-    };
-    description?: string;
-    tags?: Array<string>;
-    enabledClaude: boolean;
-    enabledCodex: boolean;
-    enabledGemini: boolean;
-    enabledOpencode: boolean;
-    sourcePresetId?: string;
-    scope: McpServerScope;
-    projectFullName?: string;
 };
 
 export type GetApiHealthData = {
