@@ -6672,6 +6672,42 @@ export type PostApiModelsReorderResponses = {
 
 export type PostApiModelsReorderResponse = PostApiModelsReorderResponses[keyof PostApiModelsReorderResponses];
 
+export type PatchApiProvidersByIdEnabledData = {
+    body: {
+        enabled: boolean;
+    };
+    path: {
+        /**
+         * Provider ID
+         */
+        id: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/providers/{id}/enabled';
+};
+
+export type PatchApiProvidersByIdEnabledErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Provider override not found
+     */
+    404: unknown;
+};
+
+export type PatchApiProvidersByIdEnabledResponses = {
+    /**
+     * Success
+     */
+    200: SuccessResponse;
+};
+
+export type PatchApiProvidersByIdEnabledResponse = PatchApiProvidersByIdEnabledResponses[keyof PatchApiProvidersByIdEnabledResponses];
+
 export type GetApiProvidersData = {
     body?: never;
     path?: never;
@@ -6820,42 +6856,6 @@ export type PostApiProvidersByIdTestResponses = {
 };
 
 export type PostApiProvidersByIdTestResponse = PostApiProvidersByIdTestResponses[keyof PostApiProvidersByIdTestResponses];
-
-export type PatchApiProvidersByIdEnabledData = {
-    body: {
-        enabled: boolean;
-    };
-    path: {
-        /**
-         * Provider ID
-         */
-        id: string;
-    };
-    query: {
-        teamSlugOrId: string;
-    };
-    url: '/api/providers/{id}/enabled';
-};
-
-export type PatchApiProvidersByIdEnabledErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Provider override not found
-     */
-    404: unknown;
-};
-
-export type PatchApiProvidersByIdEnabledResponses = {
-    /**
-     * Success
-     */
-    200: SuccessResponse;
-};
-
-export type PatchApiProvidersByIdEnabledResponse = PatchApiProvidersByIdEnabledResponses[keyof PatchApiProvidersByIdEnabledResponses];
 
 export type GetApiProvidersStatusData = {
     body?: never;
