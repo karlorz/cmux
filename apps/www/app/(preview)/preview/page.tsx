@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { waitUntil } from "@vercel/functions";
+import { after } from "next/server";
 import { stackServerApp } from "@/lib/utils/stack";
 import { getConvex } from "@/lib/utils/get-convex";
 import { api } from "@cmux/convex/api";
@@ -229,7 +229,7 @@ export default async function PreviewLandingPage({ searchParams }: PageProps) {
     const existingSorted = existingWaitlist?.slice().sort().join(",") ?? "";
     const newSorted = waitlistProviders.slice().sort().join(",");
     if (existingSorted !== newSorted) {
-      waitUntil(
+      after(() =>
         user.update({
           serverMetadata: {
             ...serverMetadata,

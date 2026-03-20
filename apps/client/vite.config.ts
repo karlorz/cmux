@@ -6,12 +6,6 @@ import { sentryVitePlugin } from "@sentry/vite-plugin";
 import { createLogger, defineConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 
-import { relatedProjects } from "@vercel/related-projects";
-
-const NEXT_PUBLIC_RELATED_WWW_ORIGIN_PREVIEW = relatedProjects({
-  noThrow: true,
-}).find((p) => p.project.name === "cmux-www")?.preview.branch;
-
 // Ensure all env is loaded
 await import("./src/client-env.ts");
 
@@ -76,9 +70,6 @@ export default defineConfig(({ command }) => ({
     "process.env": {},
     "process.env.NODE_ENV": JSON.stringify(
       command === "build" ? "production" : "development"
-    ),
-    "process.env.NEXT_PUBLIC_RELATED_WWW_ORIGIN_PREVIEW": JSON.stringify(
-      NEXT_PUBLIC_RELATED_WWW_ORIGIN_PREVIEW
     ),
     global: "globalThis",
   },

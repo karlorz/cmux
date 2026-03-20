@@ -49,6 +49,7 @@ import {
   worktreesRouter,
 } from "@/lib/routes/index";
 import {
+  sandboxesStartRouter,
   sandboxesLifecycleRouter,
   sandboxesFeaturesRouter,
   sandboxesConfigRouter,
@@ -57,31 +58,21 @@ import { authAnonymousRouter } from "@/lib/routes/auth.anonymous.route";
 import { stackServerApp } from "@/lib/utils/stack";
 import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { relatedProjects } from "@vercel/related-projects";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { prettyJSON } from "hono/pretty-json";
 import { decodeJwt } from "jose";
 import { setupHonoErrorHandler } from "@sentry/node";
 
-// Get client preview URL from related projects for CORS
-const clientPreviewOriginRaw = relatedProjects({ noThrow: true }).find(
-  (p) => p.project.name === "cmux-client",
-)?.preview.branch;
-const clientPreviewOrigin = clientPreviewOriginRaw
-  ? normalizeOrigin(clientPreviewOriginRaw)
-  : undefined;
-
-// Additional client origins from env (for custom domains like karldigi.dev)
+// Additional client origins from env (for custom domains, Coolify, or preview URLs)
 // Supports comma-separated values: NEXT_PUBLIC_CLIENT_ORIGIN=https://a.com,https://b.com
 const additionalClientOrigins =
-  process.env.NEXT_PUBLIC_CLIENT_ORIGIN?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
+  process.env.NEXT_PUBLIC_CLIENT_ORIGIN?.split(",").map((s) => normalizeOrigin(s.trim())).filter(Boolean) ?? [];
 const staticCorsOrigins = new Set([
   getHostUrl(defaultHostConfig.client),
   getHostUrl(defaultHostConfig.server),
   "https://cmux.sh",
   "https://www.cmux.sh",
-  ...(clientPreviewOrigin ? [clientPreviewOrigin] : []),
   ...additionalClientOrigins,
 ]);
 const trustedProxyDomains = buildTrustedProxyDomainSet([
@@ -190,6 +181,7 @@ app.route("/", pveLxcRouter);
 app.route("/", iframePreflightRouter);
 app.route("/", environmentsRouter);
 app.route("/", sandboxesRouter);
+app.route("/", sandboxesStartRouter);
 app.route("/", sandboxesLifecycleRouter);
 app.route("/", sandboxesFeaturesRouter);
 app.route("/", sandboxesConfigRouter);

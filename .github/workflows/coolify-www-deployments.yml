@@ -1,13 +1,13 @@
-name: Coolify Status (cmux-server)
+name: Coolify Status (cmux-www)
 
 # This workflow tracks Coolify deployment status for GitHub Deployments UI.
-# The actual deployment is triggered by docker-server-build.yml after pushing the image.
-# This workflow is triggered by repository_dispatch from docker-server-build.yml
+# The actual deployment is triggered by docker-www-build.yml after pushing the image.
+# This workflow is triggered by repository_dispatch from docker-www-build.yml
 # or can be manually triggered to check deployment status.
 
 on:
   repository_dispatch:
-    types: [coolify-server-deploy-started, coolify-deploy-started]
+    types: [coolify-www-deploy-started]
   workflow_dispatch:
     inputs:
       commit_sha:
@@ -19,7 +19,7 @@ permissions:
   deployments: write
 
 concurrency:
-  group: coolify-status-cmux-server
+  group: coolify-status-cmux-www
   cancel-in-progress: false
 
 jobs:
@@ -29,7 +29,7 @@ jobs:
     timeout-minutes: 35
     env:
       RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      ENVIRONMENT_NAME: Production - cmux-server
+      ENVIRONMENT_NAME: Production - cmux-www
       TARGET_SHA: ${{ github.event.client_payload.sha || inputs.commit_sha || github.sha }}
 
     steps:
@@ -72,8 +72,8 @@ jobs:
         env:
           COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
           COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-          COOLIFY_SERVER_APP_UUID: ${{ secrets.COOLIFY_SERVER_APP_UUID || secrets.COOLIFY_APP_UUID }}
-          COOLIFY_SERVER_ENV_URL: ${{ secrets.COOLIFY_SERVER_ENV_URL || secrets.COOLIFY_ENV_URL }}
+          COOLIFY_WWW_APP_UUID: ${{ secrets.COOLIFY_WWW_APP_UUID }}
+          COOLIFY_WWW_ENV_URL: ${{ secrets.COOLIFY_WWW_ENV_URL }}
         run: |
           set -euo pipefail
 
@@ -87,9 +87,6 @@ jobs:
           fi
 
           base_url="${COOLIFY_BASE_URL%/}"
-          sha="${TARGET_SHA}"
-          sha7="${sha:0:7}"
-
           auth_header="Authorization: Bearer ${COOLIFY_API_TOKEN}"
 
           tmp_dir="$(mktemp -d)"
@@ -128,25 +125,23 @@ jobs:
             local url_raw="${1:-}"
             if is_http_url "$url_raw"; then
               echo "$url_raw"
-            elif is_http_url "${COOLIFY_SERVER_ENV_URL:-}"; then
-              echo "${COOLIFY_SERVER_ENV_URL}"
+            elif is_http_url "${COOLIFY_WWW_ENV_URL:-}"; then
+              echo "${COOLIFY_WWW_ENV_URL}"
             elif [[ -n "$url_raw" ]]; then
               echo "${base_url}/${url_raw#/}"
             fi
           }
 
-          # Find latest deployment for our app
           find_latest_deployment() {
             local resp="$tmp_dir/deployments.json"
             local code
             local dep_uuid
 
-            code="$(http_get_json "${base_url}/api/v1/applications/${COOLIFY_SERVER_APP_UUID}/deployments?skip=0&take=5" "$resp")"
+            code="$(http_get_json "${base_url}/api/v1/applications/${COOLIFY_WWW_APP_UUID}/deployments?skip=0&take=5" "$resp")"
             if [[ "$code" != "200" ]]; then
               return 1
             fi
 
-            # Get the most recent deployment (first in list)
             dep_uuid="$(jq -r '
               (if type=="array" then .
                elif has("data") and (.data|type)=="array" then .data
@@ -168,12 +163,11 @@ jobs:
           start_epoch="$(now_epoch)"
           deadline=$((start_epoch + deploy_timeout_seconds))
 
-          # Wait a moment for deployment to be created
           sleep 10
 
           deployment_uuid="$(find_latest_deployment || true)"
           if [[ -z "${deployment_uuid:-}" ]]; then
-            echo "No deployment found for app ${COOLIFY_SERVER_APP_UUID}" >&2
+            echo "No deployment found for app ${COOLIFY_WWW_APP_UUID}" >&2
             echo "conclusion=failure" >> "$GITHUB_OUTPUT"
             echo "coolify_status=no_deployment_found" >> "$GITHUB_OUTPUT"
             exit 1
