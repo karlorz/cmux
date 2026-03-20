@@ -24,6 +24,7 @@ import { PROJECT_STATUS_CONFIG } from "./project-status-config";
 import { ProjectProgress, ProjectProgressBar } from "./ProjectProgress";
 import { PlanEditor } from "./PlanEditor";
 import { DispatchPlanDialog } from "./DispatchPlanDialog";
+import { MilestoneEditor, type Milestone } from "./MilestoneEditor";
 import type { Plan } from "./PlanEditor";
 import type { Doc } from "@cmux/convex/dataModel";
 
@@ -35,6 +36,10 @@ interface ProjectDetailViewProps {
   teamSlugOrId: string;
   onSavePlan: (plan: Plan) => Promise<void>;
   onDispatchComplete?: () => void;
+  milestones?: Milestone[];
+  onAddMilestone?: (milestone: Omit<Milestone, "id">) => Promise<void>;
+  onUpdateMilestone?: (id: string, updates: Partial<Milestone>) => Promise<void>;
+  onDeleteMilestone?: (id: string) => Promise<void>;
 }
 
 function OrchTaskStatusIcon({ status }: { status: string }) {
@@ -62,6 +67,10 @@ export function ProjectDetailView({
   teamSlugOrId,
   onSavePlan,
   onDispatchComplete,
+  milestones = [],
+  onAddMilestone,
+  onUpdateMilestone,
+  onDeleteMilestone,
 }: ProjectDetailViewProps) {
   const [showDispatchDialog, setShowDispatchDialog] = useState(false);
 
@@ -186,6 +195,17 @@ export function ProjectDetailView({
         taskStatuses={taskStatuses}
         className="min-h-[300px]"
       />
+
+      {/* Milestones Section */}
+      <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 p-4">
+        <MilestoneEditor
+          milestones={milestones}
+          onAdd={onAddMilestone}
+          onUpdate={onUpdateMilestone}
+          onDelete={onDeleteMilestone}
+          readOnly={!onAddMilestone}
+        />
+      </div>
 
       {/* Live task list (after dispatch) */}
       {orchTasks.length > 0 && (
