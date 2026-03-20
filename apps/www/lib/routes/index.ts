@@ -37,6 +37,7 @@ export { codeReviewSimpleRouter } from "./code-review.simple.route";
 export { codeReviewRouter } from "./code-review.route";
 export { workspaceConfigsRouter } from "./workspace-configs.route";
 export { previewConfigsRouter } from "./preview.configs.route";
+export { previewTestJobRunsRouter } from "./preview.test-jobs.runs.route";
 export { previewTestJobsRouter } from "./preview.test-jobs.route";
 export { previewRouter } from "./preview.route";
 export { settingsProviderConnectionRouter } from "./settings.provider-connection.route";
