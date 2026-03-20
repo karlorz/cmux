@@ -18,7 +18,7 @@ import { api } from "@cmux/convex/api";
 import { useQuery } from "convex/react";
 import type { LinkProps } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
-import { Bell, ChevronLeft, FolderKanban, Home, Plus, Server, Settings, Users } from "lucide-react";
+import { Bell, ChevronLeft, FolderKanban, Home, Plus, Server, Settings, Users, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -331,12 +331,13 @@ export function Sidebar({ tasks, teamSlugOrId, onToggleHidden }: SidebarProps) {
           className="flex items-center gap-1 ml-2"
           style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
         >
+          {/* Desktop: collapse chevron */}
           <Tooltip delayDuration={200}>
             <TooltipTrigger asChild>
               <button
                 type="button"
                 onClick={onToggleHidden}
-                className="w-[25px] h-[25px] border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900 rounded-lg flex items-center justify-center transition-colors cursor-default"
+                className="hidden md:flex w-[25px] h-[25px] border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900 rounded-lg items-center justify-center transition-colors cursor-default"
                 aria-label="Toggle sidebar"
               >
                 <ChevronLeft
@@ -353,6 +354,19 @@ export function Sidebar({ tasks, teamSlugOrId, onToggleHidden }: SidebarProps) {
               Toggle sidebar Ctrl+Shift+S
             </TooltipContent>
           </Tooltip>
+
+          {/* Mobile: close X button */}
+          <button
+            type="button"
+            onClick={onToggleHidden}
+            className="flex md:hidden w-[25px] h-[25px] border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900 rounded-lg items-center justify-center transition-colors cursor-default"
+            aria-label="Close menu"
+          >
+            <X
+              className="w-4 h-4 text-neutral-700 dark:text-neutral-300"
+              aria-hidden="true"
+            />
+          </button>
 
           <Tooltip delayDuration={200}>
             <TooltipTrigger asChild>
