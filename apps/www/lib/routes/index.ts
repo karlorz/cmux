@@ -30,6 +30,7 @@ export { teamsRouter } from "./teams.route";
 export { usersRouter } from "./users.route";
 export { vaultRouter } from "./vault.route";
 export { branchRouter } from "./branch.route";
+export { codeReviewSimpleRouter } from "./code-review.simple.route";
 export { codeReviewRouter } from "./code-review.route";
 export { workspaceConfigsRouter } from "./workspace-configs.route";
 export { previewConfigsRouter } from "./preview.configs.route";
