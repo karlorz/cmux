@@ -6,7 +6,7 @@ import {
 import { useSidebarOptional } from "@/contexts/sidebar/SidebarContext";
 import { isElectron } from "@/lib/electron";
 import { Link, useParams } from "@tanstack/react-router";
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight, Menu, Plus } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import CmuxLogoMark from "./logo/cmux-logo-mark";
 
@@ -30,10 +30,37 @@ export function TitleBar({
       className="h-[38px] border-b border-neutral-200/70 dark:border-neutral-800/50 flex items-center justify-center relative select-none"
       style={{ WebkitAppRegion: "drag" } as CSSProperties}
     >
-      {/* Left side: toggle icons when sidebar hidden - same X position as sidebar header icons */}
+      {/* Mobile hamburger menu - visible only on small screens when sidebar is hidden */}
+      {teamSlugOrId && (
+        <div
+          className="absolute inset-y-0 left-3 flex items-center md:hidden"
+          style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
+        >
+          <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={() => sidebar?.setIsHidden(false)}
+                className="w-[32px] h-[32px] hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg flex items-center justify-center transition-colors cursor-default"
+                aria-label="Open menu"
+              >
+                <Menu
+                  className="w-5 h-5 text-neutral-700 dark:text-neutral-300"
+                  aria-hidden="true"
+                />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" showArrow={false}>
+              Open menu
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      )}
+
+      {/* Left side: toggle icons when sidebar hidden - same X position as sidebar header icons (desktop only) */}
       {showSidebarToggle && (
         <div
-          className={`absolute inset-y-0 flex items-center -translate-y-px ${isElectron ? "" : "pl-3"}`}
+          className={`absolute inset-y-0 hidden md:flex items-center -translate-y-px ${isElectron ? "" : "pl-3"}`}
           style={{
             WebkitAppRegion: "no-drag",
             // Offset FloatingPane's left gutter: 1px border + 0.375rem (6px) pane padding.
