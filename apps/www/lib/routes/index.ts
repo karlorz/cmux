@@ -3,6 +3,7 @@ export { configRouter } from "./config.route";
 export { devServerRouter } from "./dev-server.route";
 export { editorSettingsRouter } from "./editor-settings.route";
 export { githubDefaultBranchRouter } from "./github.branches.default.route";
+export { githubBranchesListRouter } from "./github.branches.list.route";
 export { githubBranchesRouter } from "./github.branches.route";
 export { githubFrameworkDetectionRouter } from "./github.framework-detection.route";
 export { environmentsRouter } from "./environments.route";
