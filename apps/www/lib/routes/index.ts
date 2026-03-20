@@ -23,6 +23,7 @@ export { githubPrsRouter } from "./github.prs.route";
 export { githubInstallStateRouter } from "./github.install-state.route";
 export { githubProjectsDraftsRouter } from "./github.projects.drafts.route";
 export { githubProjectsFieldsRouter } from "./github.projects.fields.route";
+export { githubProjectsItemsRouter } from "./github.projects.items.route";
 export { githubProjectsItemMutationsRouter } from "./github.projects.item-mutations.route";
 export { githubProjectsPlanSyncRouter } from "./github.projects.plan-sync.route";
 export { healthRouter } from "./health.route";

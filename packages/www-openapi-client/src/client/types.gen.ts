@@ -202,6 +202,34 @@ export type ProjectFieldsResponse = {
     fields: Array<ProjectField>;
 };
 
+export type ProjectItemContent = {
+    id: string;
+    title: string;
+    number?: number;
+    state?: string;
+    url?: string;
+    body?: string;
+    labels?: Array<string>;
+} | null;
+
+export type ProjectItemFieldValues = {
+    [key: string]: string | number | unknown;
+};
+
+export type ProjectItem = {
+    id: string;
+    content: ProjectItemContent;
+    fieldValues: ProjectItemFieldValues;
+};
+
+export type ProjectItemsResponse = {
+    items: Array<ProjectItem>;
+    pageInfo: {
+        hasNextPage: boolean;
+        endCursor: string | null;
+    };
+};
+
 export type AddItemBody = {
     /**
      * GitHub Project node ID
@@ -251,34 +279,6 @@ export type ProjectsResponse = {
      * True if user needs to re-authorize GitHub with 'project' scope to see all projects
      */
     needsReauthorization?: boolean;
-};
-
-export type ProjectItemContent = {
-    id: string;
-    title: string;
-    number?: number;
-    state?: string;
-    url?: string;
-    body?: string;
-    labels?: Array<string>;
-} | null;
-
-export type ProjectItemFieldValues = {
-    [key: string]: string | number | unknown;
-};
-
-export type ProjectItem = {
-    id: string;
-    content: ProjectItemContent;
-    fieldValues: ProjectItemFieldValues;
-};
-
-export type ProjectItemsResponse = {
-    items: Array<ProjectItem>;
-    pageInfo: {
-        hasNextPage: boolean;
-        endCursor: string | null;
-    };
 };
 
 export type FrameworkPreset = 'other' | 'next' | 'vite' | 'remix' | 'nuxt' | 'sveltekit' | 'angular' | 'cra' | 'vue';
