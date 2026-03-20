@@ -1,8 +1,14 @@
-import type {
-  AggregatePullRequestSummary,
-  PullRequestActionResult,
-  RunPullRequestState,
+import { getConvex } from "@/lib/utils/get-convex";
+import { api } from "@cmux/convex/api";
+import type { Doc } from "@cmux/convex/dataModel";
+import {
+  reconcilePullRequestRecords,
+  type AggregatePullRequestSummary,
+  type PullRequestActionResult,
+  type RunPullRequestState,
+  type StoredPullRequestInfo,
 } from "@cmux/shared/pull-request-state";
+import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { z } from "@hono/zod-openapi";
 import { Octokit } from "octokit";
 
@@ -12,6 +18,10 @@ type GitHubPrBasic = {
   state: string;
   draft?: boolean;
 };
+
+type TaskDoc = Doc<"tasks">;
+type TaskRunDoc = Doc<"taskRuns">;
+export type ConvexClient = ReturnType<typeof getConvex>;
 
 type GitHubPrDetail = GitHubPrBasic & {
   title: string;
@@ -58,6 +68,21 @@ const taskMergeStatuses = [
   "pr_closed",
 ] as const;
 
+export const OpenPullRequestBody = z
+  .object({
+    teamSlugOrId: z.string(),
+    taskRunId: typedZid("taskRuns"),
+  })
+  .openapi("GithubOpenPrRequest");
+
+export const MergePullRequestBody = z
+  .object({
+    teamSlugOrId: z.string(),
+    taskRunId: typedZid("taskRuns"),
+    method: z.enum(["squash", "rebase", "merge"]),
+  })
+  .openapi("GithubMergePrRequest");
+
 export const PullRequestActionResultSchema = z.object({
   repoFullName: z.string(),
   url: z.string().url().optional(),
@@ -74,6 +99,15 @@ export const AggregatePullRequestSummarySchema = z.object({
   url: z.string().url().optional(),
   number: z.number().optional(),
 });
+
+export const OpenPullRequestResponse = z
+  .object({
+    success: z.boolean(),
+    results: z.array(PullRequestActionResultSchema),
+    aggregate: AggregatePullRequestSummarySchema,
+    error: z.string().optional(),
+  })
+  .openapi("GithubOpenPrResponse");
 
 export function createOctokit(token: string): Octokit {
   return new Octokit({
@@ -544,4 +578,99 @@ export function buildPrDescription({
   }
 
   return parts.join("\n\n");
+}
+
+export async function collectRepoFullNamesForRun({
+  convex,
+  run,
+  task,
+  teamSlugOrId,
+}: {
+  convex: ConvexClient;
+  run: TaskRunDoc;
+  task: TaskDoc;
+  teamSlugOrId: string;
+}): Promise<string[]> {
+  const repos = new Set<string>();
+
+  const project = task.projectFullName?.trim();
+  if (project) {
+    repos.add(project);
+  }
+
+  const environmentId = run.environmentId;
+  if (environmentId) {
+    try {
+      const environment = await convex.query(api.environments.get, {
+        teamSlugOrId,
+        id: environmentId,
+      });
+      environment?.selectedRepos?.forEach((repoName) => {
+        const trimmed = typeof repoName === "string" ? repoName.trim() : "";
+        if (trimmed) {
+          repos.add(trimmed);
+        }
+      });
+    } catch (error) {
+      console.error(
+        "[github-open-pr] Failed to load environment repos for run",
+        error,
+      );
+    }
+  }
+
+  if (run.discoveredRepos?.length) {
+    run.discoveredRepos.forEach((repoName) => {
+      const trimmed = typeof repoName === "string" ? repoName.trim() : "";
+      if (trimmed) {
+        repos.add(trimmed);
+      }
+    });
+  }
+
+  return Array.from(repos);
+}
+
+export async function persistPullRequestResults({
+  convex,
+  teamSlugOrId,
+  run,
+  task,
+  repoFullNames,
+  results,
+}: {
+  convex: ConvexClient;
+  teamSlugOrId: string;
+  run: TaskRunDoc;
+  task: TaskDoc;
+  repoFullNames: readonly string[];
+  results: PullRequestActionResult[];
+}): Promise<{
+  records: StoredPullRequestInfo[];
+  aggregate: AggregatePullRequestSummary;
+}> {
+  const existing = run.pullRequests ?? [];
+  const { records, aggregate } = reconcilePullRequestRecords({
+    existing,
+    updates: results,
+    repoFullNames,
+  });
+
+  await convex.mutation(api.taskRuns.updatePullRequestState, {
+    teamSlugOrId,
+    id: run._id,
+    state: aggregate.state,
+    isDraft: aggregate.isDraft,
+    number: aggregate.number,
+    url: aggregate.url,
+    pullRequests: records,
+  });
+
+  await convex.mutation(api.tasks.updateMergeStatus, {
+    teamSlugOrId,
+    id: task._id,
+    mergeStatus: aggregate.mergeStatus,
+  });
+
+  return { records, aggregate };
 }

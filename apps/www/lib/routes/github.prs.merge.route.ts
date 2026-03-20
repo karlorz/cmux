@@ -2,43 +2,38 @@ import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { getConvex } from "@/lib/utils/get-convex";
 import { stackServerAppJs } from "@/lib/utils/stack";
 import { api } from "@cmux/convex/api";
-import type { PullRequestActionResult } from "@cmux/shared/pull-request-state";
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
-import { githubPrsDirectActionsRouter } from "./github.prs.direct-actions.route";
-import { githubPrsMergeRouter } from "./github.prs.merge.route";
 import {
-  OpenPullRequestBody,
+  MergePullRequestBody,
   OpenPullRequestResponse,
-  buildPrDescription,
+  buildMergeCommitInfo,
   collectRepoFullNamesForRun,
   createOctokit,
-  createReadyPullRequest,
   emptyAggregate,
+  fetchPullRequestCommits,
   fetchPullRequestDetail,
   loadPullRequestDetail,
   markPullRequestReady,
+  mergePullRequest,
   persistPullRequestResults,
+  reopenPullRequest,
   splitRepoFullName,
   toPullRequestActionResult,
 } from "./github.prs.open.helpers";
 
-export const githubPrsOpenRouter = new OpenAPIHono();
+export const githubPrsMergeRouter = new OpenAPIHono();
 
-githubPrsOpenRouter.route("/", githubPrsDirectActionsRouter);
-githubPrsOpenRouter.route("/", githubPrsMergeRouter);
-
-githubPrsOpenRouter.openapi(
+githubPrsMergeRouter.openapi(
   createRoute({
     method: "post" as const,
-    path: "/integrations/github/prs/open",
+    path: "/integrations/github/prs/merge",
     tags: ["Integrations"],
-    summary:
-      "Create or update GitHub pull requests for a task run using the user's GitHub OAuth token",
+    summary: "Merge GitHub pull requests for a task run using the user's GitHub OAuth token",
     request: {
       body: {
         content: {
           "application/json": {
-            schema: OpenPullRequestBody,
+            schema: MergePullRequestBody,
           },
         },
         required: true,
@@ -46,7 +41,7 @@ githubPrsOpenRouter.openapi(
     },
     responses: {
       200: {
-        description: "PRs created or updated",
+        description: "PRs merged",
         content: {
           "application/json": {
             schema: OpenPullRequestResponse,
@@ -57,7 +52,7 @@ githubPrsOpenRouter.openapi(
       401: { description: "Unauthorized" },
       403: { description: "Forbidden" },
       404: { description: "Task run not found" },
-      500: { description: "Failed to create or update PRs" },
+      500: { description: "Failed to merge PRs" },
     },
   }),
   async (c) => {
@@ -101,7 +96,7 @@ githubPrsOpenRouter.openapi(
     }
 
     const body = c.req.valid("json");
-    const { teamSlugOrId, taskRunId } = body;
+    const { teamSlugOrId, taskRunId, method } = body;
 
     await verifyTeamAccess({ req: c.req.raw, teamSlugOrId });
 
@@ -173,16 +168,6 @@ githubPrsOpenRouter.openapi(
       );
     }
 
-    const baseBranch = task.baseBranch?.trim() || "main";
-    const title = task.pullRequestTitle || task.text || "cmux changes";
-    const truncatedTitle =
-      title.length > 72 ? `${title.slice(0, 69)}...` : title;
-    const description = buildPrDescription({
-      taskText: task.text,
-      title,
-      summary: run.summary,
-    });
-
     const existingByRepo = new Map(
       (run.pullRequests ?? []).map(
         (record) => [record.repoFullName, record] as const,
@@ -201,7 +186,6 @@ githubPrsOpenRouter.openapi(
 
           const { owner, repo } = split;
           const existingRecord = existingByRepo.get(repoFullName);
-          const existingNumber = existingRecord?.number;
 
           let detail = await loadPullRequestDetail({
             octokit,
@@ -209,26 +193,14 @@ githubPrsOpenRouter.openapi(
             owner,
             repo,
             branchName,
-            number: existingNumber,
+            number: existingRecord?.number,
           });
 
           if (!detail) {
-            const created = await createReadyPullRequest({
-              octokit,
-              owner,
-              repo,
-              title: truncatedTitle,
-              head: branchName,
-              base: baseBranch,
-              body: description,
-            });
-            detail = await fetchPullRequestDetail({
-              octokit,
-              owner,
-              repo,
-              number: created.number,
-            });
-          } else if (detail.draft) {
+            throw new Error("Pull request not found for this branch");
+          }
+
+          if (detail.draft) {
             await markPullRequestReady({
               octokit,
               owner,
@@ -244,7 +216,65 @@ githubPrsOpenRouter.openapi(
             });
           }
 
-          return toPullRequestActionResult(repoFullName, detail);
+          if (
+            (detail.state ?? "").toLowerCase() === "closed" &&
+            !detail.merged_at
+          ) {
+            await reopenPullRequest({
+              octokit,
+              owner,
+              repo,
+              number: detail.number,
+            });
+            detail = await fetchPullRequestDetail({
+              octokit,
+              owner,
+              repo,
+              number: detail.number,
+            });
+          }
+
+          const commits =
+            method === "squash"
+              ? await fetchPullRequestCommits({
+                  octokit,
+                  owner,
+                  repo,
+                  number: detail.number,
+                })
+              : undefined;
+          const commitInfo = buildMergeCommitInfo({
+            method,
+            number: detail.number,
+            owner,
+            headRef: detail.head_ref,
+            prTitle: detail.title,
+            prBody: detail.body,
+            commitCount: commits?.count,
+            firstCommit: commits?.firstCommit,
+          });
+
+          await mergePullRequest({
+            octokit,
+            owner,
+            repo,
+            number: detail.number,
+            method,
+            ...commitInfo,
+          });
+
+          const mergedDetail = await fetchPullRequestDetail({
+            octokit,
+            owner,
+            repo,
+            number: detail.number,
+          });
+
+          return toPullRequestActionResult(repoFullName, {
+            ...mergedDetail,
+            merged_at:
+              mergedDetail.merged_at ?? new Date().toISOString(),
+          });
         } catch (error) {
           const message =
             error instanceof Error ? error.message : String(error);
@@ -252,10 +282,10 @@ githubPrsOpenRouter.openapi(
             repoFullName,
             url: undefined,
             number: undefined,
-            state: "none" as const,
+            state: "unknown" as const,
             isDraft: undefined,
             error: message,
-          } satisfies PullRequestActionResult;
+          };
         }
       }),
     );
@@ -294,5 +324,3 @@ githubPrsOpenRouter.openapi(
     }
   },
 );
-
-

@@ -419,15 +419,15 @@ export type GithubOpenPrResponse = {
     error?: string;
 };
 
-export type GithubOpenPrRequest = {
-    teamSlugOrId: string;
-    taskRunId: string;
-};
-
 export type GithubMergePrRequest = {
     teamSlugOrId: string;
     taskRunId: string;
     method: 'squash' | 'rebase' | 'merge';
+};
+
+export type GithubOpenPrRequest = {
+    teamSlugOrId: string;
+    taskRunId: string;
 };
 
 export type GithubPrsFilesResponse = {
@@ -3080,45 +3080,6 @@ export type PostApiIntegrationsGithubPrsMergeSimpleResponses = {
 
 export type PostApiIntegrationsGithubPrsMergeSimpleResponse = PostApiIntegrationsGithubPrsMergeSimpleResponses[keyof PostApiIntegrationsGithubPrsMergeSimpleResponses];
 
-export type PostApiIntegrationsGithubPrsOpenData = {
-    body: GithubOpenPrRequest;
-    path?: never;
-    query?: never;
-    url: '/api/integrations/github/prs/open';
-};
-
-export type PostApiIntegrationsGithubPrsOpenErrors = {
-    /**
-     * Invalid request
-     */
-    400: unknown;
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden
-     */
-    403: unknown;
-    /**
-     * Task run not found
-     */
-    404: unknown;
-    /**
-     * Failed to create or update PRs
-     */
-    500: unknown;
-};
-
-export type PostApiIntegrationsGithubPrsOpenResponses = {
-    /**
-     * PRs created or updated
-     */
-    200: GithubOpenPrResponse;
-};
-
-export type PostApiIntegrationsGithubPrsOpenResponse = PostApiIntegrationsGithubPrsOpenResponses[keyof PostApiIntegrationsGithubPrsOpenResponses];
-
 export type PostApiIntegrationsGithubPrsMergeData = {
     body: GithubMergePrRequest;
     path?: never;
@@ -3157,6 +3118,45 @@ export type PostApiIntegrationsGithubPrsMergeResponses = {
 };
 
 export type PostApiIntegrationsGithubPrsMergeResponse = PostApiIntegrationsGithubPrsMergeResponses[keyof PostApiIntegrationsGithubPrsMergeResponses];
+
+export type PostApiIntegrationsGithubPrsOpenData = {
+    body: GithubOpenPrRequest;
+    path?: never;
+    query?: never;
+    url: '/api/integrations/github/prs/open';
+};
+
+export type PostApiIntegrationsGithubPrsOpenErrors = {
+    /**
+     * Invalid request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Task run not found
+     */
+    404: unknown;
+    /**
+     * Failed to create or update PRs
+     */
+    500: unknown;
+};
+
+export type PostApiIntegrationsGithubPrsOpenResponses = {
+    /**
+     * PRs created or updated
+     */
+    200: GithubOpenPrResponse;
+};
+
+export type PostApiIntegrationsGithubPrsOpenResponse = PostApiIntegrationsGithubPrsOpenResponses[keyof PostApiIntegrationsGithubPrsOpenResponses];
 
 export type GetApiIntegrationsGithubPrsRawData = {
     body?: never;
