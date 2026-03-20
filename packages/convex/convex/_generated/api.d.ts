@@ -124,6 +124,7 @@ import type * as taskNotifications from "../taskNotifications.js";
 import type * as taskRunActivity from "../taskRunActivity.js";
 import type * as taskRunActivity_http from "../taskRunActivity_http.js";
 import type * as taskRunLogChunks from "../taskRunLogChunks.js";
+import type * as taskRunResourceMetrics from "../taskRunResourceMetrics.js";
 import type * as taskRuns from "../taskRuns.js";
 import type * as taskRuns_http from "../taskRuns_http.js";
 import type * as tasks from "../tasks.js";
@@ -262,6 +263,7 @@ declare const fullApi: ApiFromModules<{
   taskRunActivity: typeof taskRunActivity;
   taskRunActivity_http: typeof taskRunActivity_http;
   taskRunLogChunks: typeof taskRunLogChunks;
+  taskRunResourceMetrics: typeof taskRunResourceMetrics;
   taskRuns: typeof taskRuns;
   taskRuns_http: typeof taskRuns_http;
   tasks: typeof tasks;

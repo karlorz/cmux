@@ -675,6 +675,16 @@ const convexSchema = defineSchema({
   })
     .index("by_task_run", ["taskRunId", "createdAt"])
     .index("by_team", ["teamId", "createdAt"]),
+  taskRunResourceMetrics: defineTable({
+    taskRunId: v.id("taskRuns"),
+    cpuPercent: v.number(), // CPU usage percentage (0-100)
+    memoryMB: v.number(), // Memory usage in megabytes
+    memoryPercent: v.number(), // Memory usage as percentage of total
+    timestamp: v.number(), // When this sample was taken
+    teamId: v.string(),
+  })
+    .index("by_task_run", ["taskRunId", "timestamp"])
+    .index("by_team", ["teamId", "timestamp"]),
   apiKeys: defineTable({
     envVar: v.string(), // e.g. "GEMINI_API_KEY"
     value: v.string(), // The actual API key value (encrypted in a real app)
