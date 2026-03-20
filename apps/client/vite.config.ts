@@ -83,8 +83,9 @@ export default defineConfig(({ command }) => ({
     global: "globalThis",
   },
   envPrefix: "NEXT_PUBLIC_",
-  // TODO: make this safe
   server: {
+    // Allow all hosts in development for tunnel access (e.g., Cloudflare Tunnel).
+    // In production, Vite is not used - the built static files are served directly.
     allowedHosts: true,
   },
 }));

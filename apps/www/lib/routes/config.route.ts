@@ -1,13 +1,7 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { getActiveSandboxProvider } from "@/lib/utils/sandbox-provider";
-import {
-  DEFAULT_MORPH_SNAPSHOT_ID,
-  MORPH_SNAPSHOT_PRESETS,
-} from "@cmux/shared";
-import {
-  DEFAULT_PVE_LXC_SNAPSHOT_ID,
-  PVE_LXC_SNAPSHOT_PRESETS,
-} from "@/lib/utils/pve-lxc-defaults";
+import { MORPH_SNAPSHOT_PRESETS } from "@cmux/shared";
+import { PVE_LXC_SNAPSHOT_PRESETS } from "@/lib/utils/pve-lxc-defaults";
 import {
   SANDBOX_PROVIDER_CAPABILITIES,
   SANDBOX_PROVIDER_DISPLAY_NAMES,
@@ -69,19 +63,22 @@ function getPresetsForProvider(providerType: SandboxProviderType): SandboxPreset
 }
 
 /**
- * Get default preset ID for a provider
+ * Get default preset ID for a provider.
+ * Returns the presetId (e.g., "4vcpu_8gb_32gb"), not the snapshotId.
  */
 function getDefaultPresetId(providerType: SandboxProviderType): string {
   switch (providerType) {
     case "pve-lxc":
-      return DEFAULT_PVE_LXC_SNAPSHOT_ID;
+      // Return the presetId of the first PVE LXC preset
+      return PVE_LXC_SNAPSHOT_PRESETS[0]?.presetId ?? "";
     case "pve-vm":
       // NOTE: PVE VM provider is not yet implemented. Returns empty string.
-      // Should be populated with DEFAULT_PVE_VM_SNAPSHOT_ID once PVE VM support is added.
+      // Should be populated with the first PVE VM preset once support is added.
       return "";
     case "morph":
     default:
-      return DEFAULT_MORPH_SNAPSHOT_ID;
+      // Return the presetId of the first Morph preset
+      return MORPH_SNAPSHOT_PRESETS[0]?.presetId ?? "";
   }
 }
 

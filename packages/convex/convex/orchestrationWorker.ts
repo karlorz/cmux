@@ -440,6 +440,25 @@ export const handleTaskCompletion = internalMutation({
         orchestrationTaskId: orchTask._id,
       });
     }
+
+    // Create feed event for team activity stream
+    const isSuccess = args.exitCode === 0 || args.exitCode === undefined;
+    const feedEventType = isSuccess ? "task_completed" : "task_failed";
+    const promptPreview = orchTask.prompt.slice(0, 60);
+    const feedTitle = isSuccess
+      ? `Agent completed: ${promptPreview}${orchTask.prompt.length > 60 ? "..." : ""}`
+      : `Agent failed: ${promptPreview}${orchTask.prompt.length > 60 ? "..." : ""}`;
+
+    await ctx.runMutation(internal.feedEvents.create, {
+      teamId: orchTask.teamId,
+      eventType: feedEventType,
+      title: feedTitle,
+      description: isSuccess ? undefined : `Exit code ${args.exitCode}`,
+      taskRunId: args.taskRunId,
+      orchestrationTaskId: orchTask._id,
+      agentName: orchTask.assignedAgentName,
+      errorMessage: isSuccess ? undefined : `Agent exited with code ${args.exitCode}`,
+    });
   },
 });
 
