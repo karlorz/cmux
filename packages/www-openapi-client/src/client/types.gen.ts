@@ -1197,14 +1197,6 @@ export type DispatchRequest = {
     repoFullName?: string;
 };
 
-export type PveLxcResumeTaskRunResponse = {
-    resumed: true;
-};
-
-export type PveLxcResumeTaskRunBody = {
-    teamSlugOrId: string;
-};
-
 export type PveLxcPreviewInstanceStartResponse = {
     instanceId: string;
     vmid: number;
@@ -1239,6 +1231,14 @@ export type PveLxcPreviewInstanceExecResponse = {
 export type PveLxcPreviewInstanceExecBody = {
     command: string;
     timeoutMs?: number;
+};
+
+export type PveLxcResumeTaskRunResponse = {
+    resumed: true;
+};
+
+export type PveLxcResumeTaskRunBody = {
+    teamSlugOrId: string;
 };
 
 export type PveLxcCheckTaskRunStoppedResponse = {
@@ -4598,51 +4598,6 @@ export type PostApiVaultDispatchResponses = {
 
 export type PostApiVaultDispatchResponse = PostApiVaultDispatchResponses[keyof PostApiVaultDispatchResponses];
 
-export type PostApiPveLxcTaskRunsByTaskRunIdResumeData = {
-    body: PveLxcResumeTaskRunBody;
-    path: {
-        taskRunId: string;
-    };
-    query?: never;
-    url: '/api/pve-lxc/task-runs/{taskRunId}/resume';
-};
-
-export type PostApiPveLxcTaskRunsByTaskRunIdResumeErrors = {
-    /**
-     * Task run is not backed by a PVE LXC container
-     */
-    400: unknown;
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden
-     */
-    403: unknown;
-    /**
-     * Task run or container not found
-     */
-    404: unknown;
-    /**
-     * Failed to resume container
-     */
-    500: unknown;
-    /**
-     * PVE LXC provider not configured
-     */
-    503: unknown;
-};
-
-export type PostApiPveLxcTaskRunsByTaskRunIdResumeResponses = {
-    /**
-     * PVE LXC container resumed
-     */
-    200: PveLxcResumeTaskRunResponse;
-};
-
-export type PostApiPveLxcTaskRunsByTaskRunIdResumeResponse = PostApiPveLxcTaskRunsByTaskRunIdResumeResponses[keyof PostApiPveLxcTaskRunsByTaskRunIdResumeResponses];
-
 export type PostApiPveLxcPreviewInstancesStartData = {
     body: PveLxcPreviewInstanceStartBody;
     path?: never;
@@ -4791,6 +4746,51 @@ export type PostApiPveLxcPreviewInstancesByInstanceIdReadFileResponses = {
 };
 
 export type PostApiPveLxcPreviewInstancesByInstanceIdReadFileResponse = PostApiPveLxcPreviewInstancesByInstanceIdReadFileResponses[keyof PostApiPveLxcPreviewInstancesByInstanceIdReadFileResponses];
+
+export type PostApiPveLxcTaskRunsByTaskRunIdResumeData = {
+    body: PveLxcResumeTaskRunBody;
+    path: {
+        taskRunId: string;
+    };
+    query?: never;
+    url: '/api/pve-lxc/task-runs/{taskRunId}/resume';
+};
+
+export type PostApiPveLxcTaskRunsByTaskRunIdResumeErrors = {
+    /**
+     * Task run is not backed by a PVE LXC container
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Task run or container not found
+     */
+    404: unknown;
+    /**
+     * Failed to resume container
+     */
+    500: unknown;
+    /**
+     * PVE LXC provider not configured
+     */
+    503: unknown;
+};
+
+export type PostApiPveLxcTaskRunsByTaskRunIdResumeResponses = {
+    /**
+     * PVE LXC container resumed
+     */
+    200: PveLxcResumeTaskRunResponse;
+};
+
+export type PostApiPveLxcTaskRunsByTaskRunIdResumeResponse = PostApiPveLxcTaskRunsByTaskRunIdResumeResponses[keyof PostApiPveLxcTaskRunsByTaskRunIdResumeResponses];
 
 export type PostApiPveLxcTaskRunsByTaskRunIdIsStoppedData = {
     body: PveLxcCheckTaskRunStoppedBody;

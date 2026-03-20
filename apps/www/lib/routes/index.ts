@@ -26,6 +26,7 @@ export { morphRouter } from "./morph.route";
 export { orchestrateRouter } from "./orchestrate.route";
 export { projectPlanRouter } from "./project.plan.route";
 export { projectRouter } from "./project.route";
+export { pveLxcPreviewRouter } from "./pve-lxc.preview.route";
 export { pveLxcRouter } from "./pve-lxc.route";
 export { teamsRouter } from "./teams.route";
 export { usersRouter } from "./users.route";
