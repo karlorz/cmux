@@ -1271,6 +1271,24 @@ export type CreateEnvironmentBody = {
     exposedPorts?: Array<number>;
 };
 
+export type GetEnvironmentResponse = {
+    id: string;
+    name: string;
+    snapshotId: string;
+    snapshotProvider: 'docker' | 'morph' | 'e2b' | 'daytona' | 'pve-lxc' | 'other' | 'pve-vm';
+    templateVmid?: number;
+    dataVaultKey: string;
+    selectedRepos?: Array<string>;
+    description?: string;
+    maintenanceScript?: string;
+    devScript?: string;
+    exposedPorts?: Array<number>;
+    createdAt: number;
+    updatedAt: number;
+};
+
+export type ListEnvironmentsResponse = Array<GetEnvironmentResponse>;
+
 export type ExposedService = {
     port: number;
     url: string;
@@ -1338,24 +1356,6 @@ export type ActivateSnapshotVersionResponse = {
 export type ActivateSnapshotVersionBody = {
     teamSlugOrId: string;
 };
-
-export type GetEnvironmentResponse = {
-    id: string;
-    name: string;
-    snapshotId: string;
-    snapshotProvider: 'docker' | 'morph' | 'e2b' | 'daytona' | 'pve-lxc' | 'other' | 'pve-vm';
-    templateVmid?: number;
-    dataVaultKey: string;
-    selectedRepos?: Array<string>;
-    description?: string;
-    maintenanceScript?: string;
-    devScript?: string;
-    exposedPorts?: Array<number>;
-    createdAt: number;
-    updatedAt: number;
-};
-
-export type ListEnvironmentsResponse = Array<GetEnvironmentResponse>;
 
 export type UpdateEnvironmentBody = {
     teamSlugOrId: string;
