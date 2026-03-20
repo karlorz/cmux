@@ -4,41 +4,38 @@ import { stackServerAppJs } from "@/lib/utils/stack";
 import { api } from "@cmux/convex/api";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import {
-  buildMergeCommitInfo,
+  closePullRequest,
   createOctokit,
-  fetchPullRequestCommits,
   fetchPullRequestDetail,
-  mergePullRequest,
 } from "./github.prs.open.helpers";
 
-const MergePullRequestSimpleBody = z
+const ClosePullRequestBody = z
   .object({
     teamSlugOrId: z.string(),
     owner: z.string(),
     repo: z.string(),
     number: z.number(),
-    method: z.enum(["squash", "rebase", "merge"]),
   })
-  .openapi("GithubMergePrSimpleRequest");
+  .openapi("GithubClosePrRequest");
 
 const DirectPullRequestActionResponse = z.object({
   success: z.boolean(),
   message: z.string(),
 });
 
-export const githubPrsDirectActionsRouter = new OpenAPIHono();
+export const githubPrsCloseRouter = new OpenAPIHono();
 
-githubPrsDirectActionsRouter.openapi(
+githubPrsCloseRouter.openapi(
   createRoute({
     method: "post" as const,
-    path: "/integrations/github/prs/merge-simple",
+    path: "/integrations/github/prs/close",
     tags: ["Integrations"],
-    summary: "Merge a GitHub pull request using the user's GitHub OAuth token",
+    summary: "Close a GitHub pull request using the user's GitHub OAuth token",
     request: {
       body: {
         content: {
           "application/json": {
-            schema: MergePullRequestSimpleBody,
+            schema: ClosePullRequestBody,
           },
         },
         required: true,
@@ -46,7 +43,7 @@ githubPrsDirectActionsRouter.openapi(
     },
     responses: {
       200: {
-        description: "PR merged successfully",
+        description: "PR closed successfully",
         content: {
           "application/json": {
             schema: DirectPullRequestActionResponse,
@@ -56,7 +53,7 @@ githubPrsDirectActionsRouter.openapi(
       400: { description: "Invalid request" },
       401: { description: "Unauthorized" },
       403: { description: "Forbidden" },
-      500: { description: "Failed to merge PR" },
+      500: { description: "Failed to close PR" },
     },
   }),
   async (c) => {
@@ -96,7 +93,7 @@ githubPrsDirectActionsRouter.openapi(
     }
 
     const body = c.req.valid("json");
-    const { teamSlugOrId, owner, repo, number, method } = body;
+    const { teamSlugOrId, owner, repo, number } = body;
 
     await verifyTeamAccess({ req: c.req.raw, teamSlugOrId });
 
@@ -122,46 +119,18 @@ githubPrsDirectActionsRouter.openapi(
     const octokit = createOctokit(githubAccessToken);
 
     try {
-      const detail = await fetchPullRequestDetail({
+      await closePullRequest({
         octokit,
         owner,
         repo,
         number,
       });
-      const commits =
-        method === "squash"
-          ? await fetchPullRequestCommits({
-              octokit,
-              owner,
-              repo,
-              number: detail.number,
-            })
-          : undefined;
-      const commitInfo = buildMergeCommitInfo({
-        method,
-        number: detail.number,
-        owner,
-        headRef: detail.head_ref,
-        prTitle: detail.title,
-        prBody: detail.body,
-        commitCount: commits?.count,
-        firstCommit: commits?.firstCommit,
-      });
 
-      await mergePullRequest({
+      const closedPR = await fetchPullRequestDetail({
         octokit,
         owner,
         repo,
-        number: detail.number,
-        method,
-        ...commitInfo,
-      });
-
-      const mergedPR = await fetchPullRequestDetail({
-        octokit,
-        owner,
-        repo,
-        number: detail.number,
+        number,
       });
 
       await convex.mutation(api.github_prs.upsertFromServer, {
@@ -170,14 +139,14 @@ githubPrsDirectActionsRouter.openapi(
         repoFullName,
         number,
         record: {
-          providerPrId: mergedPR.number,
+          providerPrId: closedPR.number,
           title: existingPR.title,
-          state: mergedPR.state === "open" ? "open" : "closed",
-          merged: Boolean(mergedPR.merged_at),
-          draft: mergedPR.draft,
+          state: "closed",
+          merged: Boolean(closedPR.merged_at),
+          draft: closedPR.draft,
           authorLogin: existingPR.authorLogin,
           authorId: existingPR.authorId,
-          htmlUrl: mergedPR.html_url,
+          htmlUrl: closedPR.html_url,
           baseRef: existingPR.baseRef,
           headRef: existingPR.headRef,
           baseSha: existingPR.baseSha,
@@ -185,9 +154,9 @@ githubPrsDirectActionsRouter.openapi(
           mergeCommitSha: existingPR.mergeCommitSha,
           createdAt: existingPR.createdAt,
           updatedAt: existingPR.updatedAt,
-          closedAt: existingPR.closedAt,
-          mergedAt: mergedPR.merged_at
-            ? new Date(mergedPR.merged_at).getTime()
+          closedAt: Date.now(),
+          mergedAt: closedPR.merged_at
+            ? new Date(closedPR.merged_at).getTime()
             : undefined,
           repositoryId: existingPR.repositoryId,
         },
@@ -195,15 +164,15 @@ githubPrsDirectActionsRouter.openapi(
 
       return c.json({
         success: true,
-        message: `PR #${number} merged successfully`,
+        message: `PR #${number} closed successfully`,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error("[merge PR] Failed to merge PR", { error, message });
+      console.error("[close PR] Failed to close PR", { error, message });
       return c.json(
         {
           success: false,
-          message: `Failed to merge PR: ${message}`,
+          message: `Failed to close PR: ${message}`,
         },
         500,
       );

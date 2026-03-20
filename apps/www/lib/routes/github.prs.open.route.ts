@@ -4,6 +4,7 @@ import { stackServerAppJs } from "@/lib/utils/stack";
 import { api } from "@cmux/convex/api";
 import type { PullRequestActionResult } from "@cmux/shared/pull-request-state";
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
+import { githubPrsCloseRouter } from "./github.prs.close.route";
 import { githubPrsDirectActionsRouter } from "./github.prs.direct-actions.route";
 import { githubPrsMergeRouter } from "./github.prs.merge.route";
 import {
@@ -24,6 +25,7 @@ import {
 
 export const githubPrsOpenRouter = new OpenAPIHono();
 
+githubPrsOpenRouter.route("/", githubPrsCloseRouter);
 githubPrsOpenRouter.route("/", githubPrsDirectActionsRouter);
 githubPrsOpenRouter.route("/", githubPrsMergeRouter);
 
