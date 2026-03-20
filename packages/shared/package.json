@@ -197,6 +197,18 @@
     "./agent-memory-protocol": {
       "import": "./src/agent-memory-protocol.ts",
       "types": "./src/agent-memory-protocol.ts"
+    },
+    "./observability": {
+      "import": "./src/observability/index.ts",
+      "types": "./src/observability/index.ts"
+    },
+    "./observability/alerts": {
+      "import": "./src/observability/alerts.ts",
+      "types": "./src/observability/alerts.ts"
+    },
+    "./observability/tracing": {
+      "import": "./src/observability/tracing.ts",
+      "types": "./src/observability/tracing.ts"
     }
   },
   "peerDependencies": {

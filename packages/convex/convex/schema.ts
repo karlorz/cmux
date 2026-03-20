@@ -2645,6 +2645,58 @@ const convexSchema = defineSchema({
     .index("by_team", ["teamId", "enabled"])
     .index("by_team_scope", ["teamId", "scope", "enabled"])
     .index("by_ruleId", ["ruleId"]),
+
+  // Alerts for observability
+  alerts: defineTable({
+    alertId: v.string(), // Unique alert identifier
+    teamId: v.string(),
+    userId: v.optional(v.string()), // User who triggered the alert (if applicable)
+
+    // Alert details
+    severity: v.union(
+      v.literal("info"),
+      v.literal("warning"),
+      v.literal("error"),
+      v.literal("critical")
+    ),
+    category: v.union(
+      v.literal("sandbox"),
+      v.literal("provider"),
+      v.literal("orchestration"),
+      v.literal("auth"),
+      v.literal("system")
+    ),
+    title: v.string(),
+    message: v.string(),
+    metadata: v.optional(v.any()), // Additional context
+
+    // Tracing
+    traceId: v.optional(v.string()),
+
+    // Status
+    resolvedAt: v.optional(v.number()),
+    acknowledgedAt: v.optional(v.number()),
+    acknowledgedBy: v.optional(v.string()), // userId who acknowledged
+
+    // Timestamps
+    createdAt: v.number(),
+  })
+    .index("by_team", ["teamId"])
+    .index("by_team_severity", ["teamId", "severity"])
+    .index("by_team_unresolved", ["teamId", "resolvedAt"])
+    .index("by_alertId", ["alertId"]),
+
+  // SLA metrics for tracking
+  slaMetrics: defineTable({
+    teamId: v.string(),
+    metricName: v.string(), // e.g., "sandbox_spawn_p95", "task_completion_rate"
+    value: v.number(),
+    unit: v.string(), // "ms", "percent", "count"
+    timestamp: v.number(),
+    metadata: v.optional(v.any()),
+  })
+    .index("by_team_metric", ["teamId", "metricName"])
+    .index("by_team_metric_time", ["teamId", "metricName", "timestamp"]),
 });
 
 export default convexSchema;
