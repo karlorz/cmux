@@ -1305,15 +1305,6 @@ export type UpdateEnvironmentPortsBody = {
     instanceId?: string;
 };
 
-export type GetEnvironmentVarsResponse = {
-    envVarsContent: string;
-};
-
-export type UpdateEnvironmentVarsBody = {
-    teamSlugOrId: string;
-    envVarsContent: string;
-};
-
 export type SnapshotVersionResponse = {
     id: string;
     version: number;
@@ -1363,6 +1354,15 @@ export type UpdateEnvironmentBody = {
     description?: string;
     maintenanceScript?: string;
     devScript?: string;
+};
+
+export type GetEnvironmentVarsResponse = {
+    envVarsContent: string;
+};
+
+export type UpdateEnvironmentVarsBody = {
+    teamSlugOrId: string;
+    envVarsContent: string;
 };
 
 export type StartSandboxResponse = {
@@ -5076,78 +5076,6 @@ export type PatchApiEnvironmentsByIdPortsResponses = {
 
 export type PatchApiEnvironmentsByIdPortsResponse = PatchApiEnvironmentsByIdPortsResponses[keyof PatchApiEnvironmentsByIdPortsResponses];
 
-export type GetApiEnvironmentsByIdVarsData = {
-    body?: never;
-    path: {
-        id: string;
-    };
-    query: {
-        teamSlugOrId: string;
-    };
-    url: '/api/environments/{id}/vars';
-};
-
-export type GetApiEnvironmentsByIdVarsErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Environment not found
-     */
-    404: unknown;
-    /**
-     * Failed to get environment variables
-     */
-    500: unknown;
-};
-
-export type GetApiEnvironmentsByIdVarsResponses = {
-    /**
-     * Environment variables retrieved successfully
-     */
-    200: GetEnvironmentVarsResponse;
-};
-
-export type GetApiEnvironmentsByIdVarsResponse = GetApiEnvironmentsByIdVarsResponses[keyof GetApiEnvironmentsByIdVarsResponses];
-
-export type PatchApiEnvironmentsByIdVarsData = {
-    body: UpdateEnvironmentVarsBody;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/environments/{id}/vars';
-};
-
-export type PatchApiEnvironmentsByIdVarsErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden
-     */
-    403: unknown;
-    /**
-     * Environment not found
-     */
-    404: unknown;
-    /**
-     * Failed to update environment variables
-     */
-    500: unknown;
-};
-
-export type PatchApiEnvironmentsByIdVarsResponses = {
-    /**
-     * Environment variables updated successfully
-     */
-    200: GetEnvironmentVarsResponse;
-};
-
-export type PatchApiEnvironmentsByIdVarsResponse = PatchApiEnvironmentsByIdVarsResponses[keyof PatchApiEnvironmentsByIdVarsResponses];
-
 export type GetApiEnvironmentsByIdSnapshotsData = {
     body?: never;
     path: {
@@ -5253,6 +5181,78 @@ export type PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateResponses
 };
 
 export type PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateResponse = PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateResponses[keyof PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateResponses];
+
+export type GetApiEnvironmentsByIdVarsData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/environments/{id}/vars';
+};
+
+export type GetApiEnvironmentsByIdVarsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Environment not found
+     */
+    404: unknown;
+    /**
+     * Failed to get environment variables
+     */
+    500: unknown;
+};
+
+export type GetApiEnvironmentsByIdVarsResponses = {
+    /**
+     * Environment variables retrieved successfully
+     */
+    200: GetEnvironmentVarsResponse;
+};
+
+export type GetApiEnvironmentsByIdVarsResponse = GetApiEnvironmentsByIdVarsResponses[keyof GetApiEnvironmentsByIdVarsResponses];
+
+export type PatchApiEnvironmentsByIdVarsData = {
+    body: UpdateEnvironmentVarsBody;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/environments/{id}/vars';
+};
+
+export type PatchApiEnvironmentsByIdVarsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Environment not found
+     */
+    404: unknown;
+    /**
+     * Failed to update environment variables
+     */
+    500: unknown;
+};
+
+export type PatchApiEnvironmentsByIdVarsResponses = {
+    /**
+     * Environment variables updated successfully
+     */
+    200: GetEnvironmentVarsResponse;
+};
+
+export type PatchApiEnvironmentsByIdVarsResponse = PatchApiEnvironmentsByIdVarsResponses[keyof PatchApiEnvironmentsByIdVarsResponses];
 
 export type PostApiSandboxesStartData = {
     body: StartSandboxBody;
