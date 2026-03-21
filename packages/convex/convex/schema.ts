@@ -2776,6 +2776,47 @@ const convexSchema = defineSchema({
   })
     .index("by_team_metric", ["teamId", "metricName"])
     .index("by_team_metric_time", ["teamId", "metricName", "timestamp"]),
+
+  // MCP Tool Registry for tool suggestions (Q4 Phase 4)
+  mcpTools: defineTable({
+    name: v.string(), // Unique tool identifier, e.g., "context7", "devsh-memory-mcp"
+    displayName: v.string(), // Human-readable name
+    description: v.string(), // What the tool does
+    keywords: v.array(v.string()), // Keywords for matching
+    category: v.union(
+      v.literal("documentation"),
+      v.literal("memory"),
+      v.literal("code"),
+      v.literal("testing"),
+      v.literal("deployment"),
+      v.literal("general")
+    ),
+    defaultEnabled: v.boolean(), // Auto-enable for all tasks
+    // Optional: MCP server configuration
+    serverConfig: v.optional(
+      v.object({
+        command: v.optional(v.string()), // Command to start server
+        url: v.optional(v.string()), // URL for HTTP-based servers
+        env: v.optional(v.any()), // Environment variables
+      })
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_name", ["name"])
+    .index("by_category", ["category"])
+    .index("by_default_enabled", ["defaultEnabled"]),
+
+  // Team-specific tool preferences
+  teamToolPreferences: defineTable({
+    teamId: v.string(),
+    toolName: v.string(), // References mcpTools.name
+    enabled: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_team", ["teamId"])
+    .index("by_team_tool", ["teamId", "toolName"]),
 });
 
 export default convexSchema;
