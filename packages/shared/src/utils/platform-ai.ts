@@ -29,16 +29,16 @@ export const PLATFORM_AI_PROVIDER_NAMES: Record<PlatformAiProvider, string> = {
 export const PLATFORM_AI_MODELS: Record<PlatformAiProvider, PlatformAiTierMap> = {
   anthropic: {
     low: "claude-haiku-4-5-20251001",
-    mid: "claude-sonnet-4-5-20250929",
-    high: "claude-opus-4-5-20251101",
+    mid: "claude-sonnet-4-6",
+    high: "claude-opus-4-6",
   },
   openai: {
     low: "gpt-5-nano",
-    mid: "gpt-5-mini-2025-08-07",
-    high: "gpt-5",
+    mid: "gpt-5.4-mini",
+    high: "gpt-5.4",
   },
   gemini: {
-    low: "gemini-2.5-flash",
+    low: "gemini-3.1-flash-lite-preview",
     mid: "gemini-3-flash-preview",
     high: "gemini-2.5-pro",
   },
