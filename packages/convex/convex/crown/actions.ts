@@ -12,10 +12,11 @@ import {
   type CrownEvaluationCandidate,
   type CrownEvaluationResponse,
   type CrownSummarizationResponse,
-  CLOUDFLARE_OPENAI_BASE_URL,
-  CLOUDFLARE_ANTHROPIC_BASE_URL,
-  CLOUDFLARE_GEMINI_BASE_URL,
-  normalizeAnthropicBaseUrl,
+  getDefaultPlatformAiBaseUrl,
+  getPlatformAiModelIdForService,
+  getPlatformAiProviderOrder,
+  normalizePlatformAiBaseUrl,
+  type PlatformAiProvider,
 } from "@cmux/shared/convex-safe";
 import { action, internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
@@ -26,12 +27,7 @@ import {
 } from "./retryData";
 import { fetchInstallationAccessToken } from "../../_shared/githubApp";
 
-const OPENAI_CROWN_MODEL = "gpt-5-mini-2025-08-07";
-const ANTHROPIC_CROWN_MODEL = "claude-sonnet-4-5-20250929";
-const GEMINI_CROWN_MODEL = "gemini-3-flash-preview";
-
-const CROWN_PROVIDERS = ["gemini", "openai", "anthropic"] as const;
-type CrownProvider = (typeof CROWN_PROVIDERS)[number];
+type CrownProvider = PlatformAiProvider;
 
 // Configuration for retry logic
 const MAX_CROWN_EVALUATION_ATTEMPTS = 3;
@@ -167,43 +163,64 @@ function resolveCrownModel(): {
   provider: CrownProvider;
   model: LanguageModel;
 } {
-  // Use platform credentials from environment variables only
-  // Note: AIGATEWAY_* accessed via process.env to avoid Convex static analysis
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (geminiKey) {
-    const google = createGoogleGenerativeAI({
-      apiKey: geminiKey,
-      baseURL: process.env.AIGATEWAY_GEMINI_BASE_URL || CLOUDFLARE_GEMINI_BASE_URL,
-    });
-    return { provider: "gemini", model: google(GEMINI_CROWN_MODEL) };
-  }
-
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (openaiKey) {
-    const openai = createOpenAI({
-      apiKey: openaiKey,
-      baseURL: process.env.AIGATEWAY_OPENAI_BASE_URL || CLOUDFLARE_OPENAI_BASE_URL,
-    });
-    return { provider: "openai", model: openai(OPENAI_CROWN_MODEL) };
-  }
-
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  if (anthropicKey) {
-    const rawAnthropicBaseUrl =
-      process.env.AIGATEWAY_ANTHROPIC_BASE_URL ||
-      CLOUDFLARE_ANTHROPIC_BASE_URL;
-    const anthropic = createAnthropic({
-      apiKey: anthropicKey,
-      baseURL: normalizeAnthropicBaseUrl(rawAnthropicBaseUrl).forAiSdk,
-    });
-    return {
-      provider: "anthropic",
-      model: anthropic(ANTHROPIC_CROWN_MODEL),
-    };
+  const providerOrder = getPlatformAiProviderOrder();
+  for (const provider of providerOrder) {
+    const modelId = getPlatformAiModelIdForService("crown", provider);
+    switch (provider) {
+      case "anthropic": {
+        const apiKey = process.env.ANTHROPIC_API_KEY;
+        if (!apiKey) {
+          break;
+        }
+        const rawBaseUrl =
+          process.env.AIGATEWAY_ANTHROPIC_BASE_URL ||
+          getDefaultPlatformAiBaseUrl(provider);
+        const anthropic = createAnthropic({
+          apiKey,
+          baseURL: normalizePlatformAiBaseUrl(provider, rawBaseUrl),
+        });
+        return {
+          provider,
+          model: anthropic(modelId),
+        };
+      }
+      case "openai": {
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) {
+          break;
+        }
+        const openai = createOpenAI({
+          apiKey,
+          baseURL:
+            process.env.AIGATEWAY_OPENAI_BASE_URL ||
+            getDefaultPlatformAiBaseUrl(provider),
+        });
+        return {
+          provider,
+          model: openai(modelId),
+        };
+      }
+      case "gemini": {
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) {
+          break;
+        }
+        const google = createGoogleGenerativeAI({
+          apiKey,
+          baseURL:
+            process.env.AIGATEWAY_GEMINI_BASE_URL ||
+            getDefaultPlatformAiBaseUrl(provider),
+        });
+        return {
+          provider,
+          model: google(modelId),
+        };
+      }
+    }
   }
 
   throw new ConvexError(
-    "Crown evaluation is not configured (missing platform Gemini, OpenAI, or Anthropic API key)"
+    "Crown evaluation is not configured (missing platform Anthropic, OpenAI, or Gemini API key)"
   );
 }
 

@@ -21,6 +21,7 @@ export * from "./utils/local-vscode-placeholder";
 export * from "./utils/anthropic";
 export * from "./utils/openai";
 export * from "./utils/gemini";
+export * from "./utils/platform-ai";
 export * from "./utils/validate-exposed-ports";
 export * from "./utils/generate-workspace-name";
 export * from "./utils/derive-repo-base-name";
