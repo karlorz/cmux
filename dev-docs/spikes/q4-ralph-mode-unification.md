@@ -97,4 +97,4 @@ Works with all providers that use the stop hook:
 
 - [x] Phase 6a: Core Ralph Mode (commit bb63c0c78)
 - [x] Phase 6b: CLI Integration
-- [ ] Phase 6c: UI Integration (optional)
+- [x] Phase 6c: UI Integration (PR #741)

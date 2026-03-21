@@ -51,6 +51,14 @@ export const StartTaskSchema = z.object({
     .optional(),
   theme: z.enum(["dark", "light", "system"]).optional(),
   environmentId: typedZid("environments").optional(),
+  // Ralph Mode: keep working until explicit completion signal
+  ralphMode: z
+    .object({
+      enabled: z.boolean(),
+      maxIterations: z.number().optional().default(50),
+      completionTag: z.string().optional().default("DONE"),
+    })
+    .optional(),
 });
 
 export const CreateLocalWorkspaceSchema = z.object({
