@@ -1,9 +1,8 @@
 import {
-  DEFAULT_MORPH_SNAPSHOT_ID,
   MORPH_SNAPSHOT_PRESETS,
   type MorphSnapshotId,
 } from "@/lib/utils/morph-defaults";
-import { DEFAULT_PVE_LXC_SNAPSHOT_ID } from "@/lib/utils/pve-lxc-defaults";
+import { normalizeSetupInstanceSnapshotId } from "./morph.setup-instance.snapshot";
 import { getUserFromRequest } from "@/lib/utils/auth";
 import { getPveLxcClient } from "@/lib/utils/pve-lxc-client";
 import { getActiveSandboxProvider } from "@/lib/utils/sandbox-provider";
@@ -151,11 +150,10 @@ morphSetupInstanceRouter.openapi(
     try {
       const providerConfig = getActiveSandboxProvider();
       const provider = providerConfig.provider;
-      const selectedSnapshotId =
-        snapshotId ??
-        (provider === "pve-lxc"
-          ? DEFAULT_PVE_LXC_SNAPSHOT_ID
-          : DEFAULT_MORPH_SNAPSHOT_ID);
+      const selectedSnapshotId = normalizeSetupInstanceSnapshotId(
+        provider,
+        snapshotId,
+      );
 
       let sandboxInstance: SandboxInstance;
       let instanceId = existingInstanceId;
