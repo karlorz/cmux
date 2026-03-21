@@ -7,6 +7,7 @@ import {
   consumeGitHubAppInstallIntent,
   setGitHubAppInstallIntent,
 } from "@/lib/github-oauth-flow";
+import { resolveCanonicalSandboxSnapshotId } from "@/lib/sandbox-config-snapshot";
 import { WWW_ORIGIN } from "@/lib/wwwOrigin";
 import { useUser } from "@stackframe/react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -145,13 +146,23 @@ export function RepositoryPicker({
   const { data: sandboxConfig } = useRQQuery(getApiConfigSandboxOptions());
 
   // Set default snapshotId from sandbox config if not already set
+  // Always normalize to canonical snapshot IDs
   useEffect(() => {
-    if (initialSnapshotId) {
-      setSelectedSnapshotId(initialSnapshotId);
-    } else if (sandboxConfig?.defaultPresetId && !selectedSnapshotId) {
-      setSelectedSnapshotId(sandboxConfig.defaultPresetId);
+    if (!sandboxConfig) return;
+
+    const normalizedInitial = initialSnapshotId
+      ? resolveCanonicalSandboxSnapshotId(sandboxConfig, initialSnapshotId)
+      : undefined;
+
+    if (normalizedInitial && normalizedInitial !== selectedSnapshotId) {
+      setSelectedSnapshotId(normalizedInitial);
+    } else if (!selectedSnapshotId) {
+      const defaultCanonical = resolveCanonicalSandboxSnapshotId(sandboxConfig);
+      if (defaultCanonical) {
+        setSelectedSnapshotId(defaultCanonical);
+      }
     }
-  }, [initialSnapshotId, sandboxConfig?.defaultPresetId, selectedSnapshotId]);
+  }, [initialSnapshotId, sandboxConfig, selectedSnapshotId]);
 
   const handleConnectionsInvalidated = useCallback((): void => {
     void queryClient.invalidateQueries();

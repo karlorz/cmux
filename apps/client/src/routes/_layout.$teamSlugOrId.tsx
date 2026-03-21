@@ -22,7 +22,15 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type TouchEvent as ReactTouchEvent,
+} from "react";
 import { env } from "@/client-env";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId")({
@@ -86,9 +94,17 @@ function LayoutComponent() {
   const { teamSlugOrId } = Route.useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const [isSidebarHidden, setIsSidebarHidden] = useState(
+  const [isDesktopSidebarHidden, setIsDesktopSidebarHidden] = useState(
     () => localStorage.getItem("sidebarHidden") === "true"
   );
+  const [isMobileViewport, setIsMobileViewport] = useState(
+    () =>
+      typeof window !== "undefined" && "matchMedia" in window
+        ? window.matchMedia("(max-width: 767px)").matches
+        : false
+  );
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const touchStartXRef = useRef<number | null>(null);
   // In web mode, exclude local workspaces
   const excludeLocalWorkspaces = env.NEXT_PUBLIC_WEB_MODE || undefined;
   // Fetch all tasks - now efficient with by_team_user_active index
@@ -115,17 +131,32 @@ function LayoutComponent() {
     sectionFromSearch === "archived" ? "archived" : "general";
 
   useEffect(() => {
-    localStorage.setItem("sidebarHidden", String(isSidebarHidden));
-  }, [isSidebarHidden]);
+    localStorage.setItem("sidebarHidden", String(isDesktopSidebarHidden));
+  }, [isDesktopSidebarHidden]);
 
   useEffect(() => {
-    setIsSidebarHidden(localStorage.getItem("sidebarHidden") === "true");
+    setIsDesktopSidebarHidden(localStorage.getItem("sidebarHidden") === "true");
   }, [isSettingsRoute]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 767px)");
+    const syncViewport = (event?: MediaQueryListEvent) => {
+      const matches = event?.matches ?? mediaQuery.matches;
+      setIsMobileViewport(matches);
+      if (!matches) {
+        setIsMobileSidebarOpen(false);
+      }
+    };
+
+    syncViewport();
+    mediaQuery.addEventListener("change", syncViewport);
+    return () => mediaQuery.removeEventListener("change", syncViewport);
+  }, []);
 
   useEffect(() => {
     const handleStorage = (event: StorageEvent) => {
       if (event.key === "sidebarHidden" && event.newValue !== null) {
-        setIsSidebarHidden(event.newValue === "true");
+        setIsDesktopSidebarHidden(event.newValue === "true");
       }
     };
 
@@ -134,13 +165,21 @@ function LayoutComponent() {
   }, []);
 
   useEffect(() => {
+    setIsMobileSidebarOpen(false);
+  }, [location.pathname, location.searchStr]);
+
+  useEffect(() => {
+    const handleSidebarToggle = () => {
+      if (window.matchMedia("(max-width: 767px)").matches) {
+        setIsMobileSidebarOpen((prev) => !prev);
+        return;
+      }
+      setIsDesktopSidebarHidden((prev) => !prev);
+    };
+
+    let off: (() => void) | undefined;
     if (isElectron && window.cmux?.on) {
-      const off = window.cmux.on("shortcut:sidebar-toggle", () => {
-        setIsSidebarHidden((prev) => !prev);
-      });
-      return () => {
-        if (typeof off === "function") off();
-      };
+      off = window.cmux.on("shortcut:sidebar-toggle", handleSidebarToggle);
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -153,13 +192,18 @@ function LayoutComponent() {
       ) {
         event.preventDefault();
         event.stopPropagation();
-        setIsSidebarHidden((prev) => !prev);
+        handleSidebarToggle();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, []);
+    window.addEventListener("cmux:sidebar-toggle", handleSidebarToggle);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("cmux:sidebar-toggle", handleSidebarToggle);
+      off?.();
+    };
+  }, [isMobileViewport]);
 
   const handleSettingsSectionChange = useCallback(
     (section: SettingsSection) => {
@@ -176,13 +220,82 @@ function LayoutComponent() {
     [activeSettingsSection, isSettingsRoute, navigate, teamSlugOrId]
   );
 
+  const isSidebarHidden = isMobileViewport ? !isMobileSidebarOpen : isDesktopSidebarHidden;
+
+  const handleSetSidebarHidden = useCallback(
+    (hidden: boolean) => {
+      if (isMobileViewport) {
+        setIsMobileSidebarOpen(!hidden);
+        return;
+      }
+      setIsDesktopSidebarHidden(hidden);
+    },
+    [isMobileViewport]
+  );
+
+  const handleToggleSidebar = useCallback(() => {
+    if (isMobileViewport) {
+      setIsMobileSidebarOpen((prev) => !prev);
+      return;
+    }
+    setIsDesktopSidebarHidden((prev) => !prev);
+  }, [isMobileViewport]);
+
   const sidebarContextValue = useMemo(
     () => ({
       isHidden: isSidebarHidden,
-      setIsHidden: setIsSidebarHidden,
-      toggle: () => setIsSidebarHidden((prev) => !prev),
+      setIsHidden: handleSetSidebarHidden,
+      toggle: handleToggleSidebar,
     }),
-    [isSidebarHidden]
+    [handleSetSidebarHidden, handleToggleSidebar, isSidebarHidden]
+  );
+
+  const sidebarContent = isSettingsRoute ? (
+    <SettingsSidebar
+      teamSlugOrId={teamSlugOrId}
+      activeSection={activeSettingsSection}
+      onSectionChange={handleSettingsSectionChange}
+      onToggleHidden={() => handleSetSidebarHidden(true)}
+      isMobileViewport={isMobileViewport}
+    />
+  ) : (
+    <Sidebar
+      tasks={tasks}
+      teamSlugOrId={teamSlugOrId}
+      onToggleHidden={() => handleSetSidebarHidden(true)}
+      isMobileViewport={isMobileViewport}
+    />
+  );
+
+  const handleMobileShellTouchStart = useCallback(
+    (event: ReactTouchEvent<HTMLDivElement>) => {
+      if (!isMobileViewport || isMobileSidebarOpen) {
+        touchStartXRef.current = null;
+        return;
+      }
+      touchStartXRef.current = event.touches[0]?.clientX ?? null;
+    },
+    [isMobileSidebarOpen, isMobileViewport]
+  );
+
+  const handleMobileShellTouchEnd = useCallback(
+    (event: ReactTouchEvent<HTMLDivElement>) => {
+      if (!isMobileViewport || isMobileSidebarOpen || touchStartXRef.current === null) {
+        touchStartXRef.current = null;
+        return;
+      }
+
+      const startX = touchStartXRef.current;
+      const endX = event.changedTouches[0]?.clientX ?? startX;
+      touchStartXRef.current = null;
+
+      if (startX > 24 || endX - startX < 56) {
+        return;
+      }
+
+      setIsMobileSidebarOpen(true);
+    },
+    [isMobileSidebarOpen, isMobileViewport]
   );
 
   return (
@@ -190,22 +303,30 @@ function LayoutComponent() {
       <SidebarContext.Provider value={sidebarContextValue}>
         <CommandBar teamSlugOrId={teamSlugOrId} />
 
-        <div className="flex flex-row grow min-h-0 h-dvh bg-white dark:bg-black overflow-x-auto snap-x snap-mandatory md:overflow-x-visible md:snap-none">
-          {isSettingsRoute ? (
-            <SettingsSidebar
-              teamSlugOrId={teamSlugOrId}
-              activeSection={activeSettingsSection}
-              onSectionChange={handleSettingsSectionChange}
-            />
+        <div
+          className="relative flex flex-row grow min-h-0 h-dvh bg-white dark:bg-black overflow-hidden md:overflow-x-visible"
+          onTouchStart={handleMobileShellTouchStart}
+          onTouchEnd={handleMobileShellTouchEnd}
+        >
+          {isMobileViewport ? (
+            isMobileSidebarOpen ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setIsMobileSidebarOpen(false)}
+                  className="absolute inset-0 z-[var(--z-overlay-behind)] bg-neutral-950/50 backdrop-blur-[1px] md:hidden"
+                  aria-label="Close menu"
+                />
+                <div className="absolute inset-y-0 left-0 z-[var(--z-overlay)] shadow-2xl md:hidden">
+                  {sidebarContent}
+                </div>
+              </>
+            ) : null
           ) : isSidebarHidden ? null : (
-            <Sidebar
-              tasks={tasks}
-              teamSlugOrId={teamSlugOrId}
-              onToggleHidden={() => setIsSidebarHidden(true)}
-            />
+            sidebarContent
           )}
 
-          <div className="min-w-full md:min-w-0 grow snap-start snap-always flex flex-col">
+          <div className="min-w-0 grow flex flex-col">
             <Suspense fallback={<div>Loading...</div>}>
               <Outlet />
             </Suspense>

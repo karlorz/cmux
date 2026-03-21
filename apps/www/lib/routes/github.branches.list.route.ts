@@ -1,0 +1,379 @@
+import { stackServerAppJs } from "@/lib/utils/stack";
+import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { Octokit } from "octokit";
+
+function getErrorStatus(error: unknown): number | null {
+  if (!error || typeof error !== "object") return null;
+  if (!("status" in error)) return null;
+  const status = (error as { status?: unknown }).status;
+  return typeof status === "number" ? status : null;
+}
+
+function getErrorMessage(error: unknown): string | null {
+  if (error instanceof Error && error.message) return error.message;
+  if (!error || typeof error !== "object") return null;
+  if (!("message" in error)) return null;
+  const message = (error as { message?: unknown }).message;
+  return typeof message === "string" && message.trim().length > 0 ? message : null;
+}
+
+function isUnauthenticatedRateLimit(error: unknown): boolean {
+  const status = getErrorStatus(error);
+  const message = getErrorMessage(error)?.toLowerCase() ?? "";
+  return status === 403 && message.includes("api rate limit exceeded");
+}
+
+const GithubBranch = z
+  .object({
+    name: z.string(),
+    lastCommitSha: z.string().optional(),
+    lastCommitDate: z.string().optional(),
+    isDefault: z.boolean().optional(),
+  })
+  .openapi("GithubBranch");
+
+const BranchesQuery = z
+  .object({
+    repo: z.string().min(1).openapi({ description: "Repository full name (owner/repo)" }),
+    search: z
+      .string()
+      .trim()
+      .optional()
+      .openapi({ description: "Optional search term to filter branches by name" }),
+    limit: z.coerce
+      .number()
+      .min(1)
+      .max(100)
+      .default(30)
+      .optional()
+      .openapi({ description: "Max branches to return (default 30, max 100)" }),
+    offset: z.coerce
+      .number()
+      .min(0)
+      .default(0)
+      .optional()
+      .openapi({ description: "Offset for pagination (number of branches to skip)" }),
+  })
+  .openapi("GithubBranchesQuery");
+
+const BranchesResponse = z
+  .object({
+    branches: z.array(GithubBranch),
+    defaultBranch: z.string().nullable(),
+    error: z.string().nullable(),
+    nextOffset: z.number().optional(),
+    hasMore: z.boolean(),
+  })
+  .openapi("GithubBranchesResponse");
+
+type BranchesResponseType = z.infer<typeof BranchesResponse>;
+
+const branchesErrorResponse = (error: string): BranchesResponseType => ({
+  branches: [],
+  defaultBranch: null,
+  error,
+  hasMore: false,
+});
+
+export const githubBranchesListRouter = new OpenAPIHono();
+
+githubBranchesListRouter.openapi(
+  createRoute({
+    method: "get" as const,
+    path: "/integrations/github/branches",
+    tags: ["Integrations"],
+    summary: "List branches for a repository with optional search filter",
+    request: { query: BranchesQuery },
+    responses: {
+      200: {
+        description: "Branches list response",
+        content: {
+          "application/json": {
+            schema: BranchesResponse,
+          },
+        },
+      },
+      401: { description: "Unauthorized" },
+    },
+  }),
+  async (c) => {
+    const user = await stackServerAppJs.getUser({ tokenStore: c.req.raw });
+    if (!user) {
+      return c.text("Unauthorized", 401);
+    }
+
+    const { repo, search, limit = 30, offset = 0 } = c.req.valid("query");
+
+    try {
+      const [owner, repoName] = repo.split("/");
+      if (!owner || !repoName) {
+        return c.json(branchesErrorResponse("Invalid repository format"), 200);
+      }
+
+      let accessToken: string | null = null;
+      let missingAuthErrorMessage = "GitHub account not connected";
+      try {
+        const githubAccount = await user.getConnectedAccount("github");
+        if (githubAccount) {
+          const tokenResult = await githubAccount.getAccessToken();
+          const trimmed = (tokenResult.accessToken ?? "").trim();
+          if (trimmed.length > 0) {
+            accessToken = trimmed;
+          } else {
+            missingAuthErrorMessage = "GitHub access token not found";
+          }
+        }
+      } catch (error) {
+        missingAuthErrorMessage = "GitHub access token not found";
+        console.error("[github.branches] Failed to fetch GitHub access token:", error);
+      }
+
+      const normalizedSearch = search?.trim().toLowerCase() ?? "";
+      const shouldFilter = normalizedSearch.length > 0;
+
+      if (!accessToken) {
+        const unauthOctokit = new Octokit();
+        let defaultBranchName: string | null = null;
+        if (offset === 0) {
+          try {
+            const repoInfo = await unauthOctokit.request("GET /repos/{owner}/{repo}", {
+              owner,
+              repo: repoName,
+            });
+            defaultBranchName = repoInfo.data.default_branch;
+          } catch (error) {
+            if (getErrorStatus(error) === 404) {
+              return c.json(branchesErrorResponse(missingAuthErrorMessage), 200);
+            }
+            if (isUnauthenticatedRateLimit(error)) {
+              return c.json(
+                branchesErrorResponse(
+                  "GitHub API rate limit exceeded. Connect GitHub for higher limits."
+                ),
+                200
+              );
+            }
+          }
+        }
+
+        const targetCount = offset + limit;
+        const githubRestMaxPerPage = 100;
+        const maxBranchesToFetch = shouldFilter ? 500 : Math.max(targetCount, 100);
+
+        const allBranches: Array<z.infer<typeof GithubBranch>> = [];
+        let page = 1;
+        let totalFetched = 0;
+        let githubHasMore = true;
+
+        const restBranchesSchema = z.array(
+          z.object({
+            name: z.string(),
+            commit: z.object({
+              sha: z.string(),
+            }),
+          })
+        );
+
+        while (allBranches.length < targetCount && githubHasMore && totalFetched < maxBranchesToFetch) {
+          const remaining = maxBranchesToFetch - totalFetched;
+          const fetchSize = Math.min(remaining, githubRestMaxPerPage);
+
+          let rawResponse: { data: unknown };
+          try {
+            rawResponse = await unauthOctokit.request("GET /repos/{owner}/{repo}/branches", {
+              owner,
+              repo: repoName,
+              per_page: fetchSize,
+              page,
+            });
+          } catch (error) {
+            if (getErrorStatus(error) === 404) {
+              return c.json(branchesErrorResponse(missingAuthErrorMessage), 200);
+            }
+            if (isUnauthenticatedRateLimit(error)) {
+              return c.json(
+                branchesErrorResponse(
+                  "GitHub API rate limit exceeded. Connect GitHub for higher limits."
+                ),
+                200
+              );
+            }
+            throw error;
+          }
+
+          const parsed = restBranchesSchema.parse(rawResponse.data);
+          for (const branch of parsed) {
+            const name = branch.name;
+            if (shouldFilter && !name.toLowerCase().includes(normalizedSearch)) {
+              continue;
+            }
+            allBranches.push({
+              name,
+              lastCommitSha: branch.commit.sha,
+              isDefault: defaultBranchName ? name === defaultBranchName : undefined,
+            });
+          }
+
+          totalFetched += parsed.length;
+          githubHasMore = parsed.length === fetchSize;
+          if (parsed.length === 0) break;
+          page += 1;
+        }
+
+        const branches = allBranches.slice(offset, offset + limit);
+        const hasMore = allBranches.length > offset + limit || githubHasMore;
+        const nextOffset = hasMore ? offset + limit : undefined;
+
+        return c.json(
+          {
+            branches,
+            defaultBranch: defaultBranchName,
+            error: null,
+            nextOffset,
+            hasMore,
+          },
+          200
+        );
+      }
+
+      const octokit = new Octokit({ auth: accessToken });
+
+      const graphqlResponse = z.object({
+        repository: z
+          .object({
+            defaultBranchRef: z.object({ name: z.string() }).nullable(),
+            refs: z.object({
+              edges: z.array(
+                z.object({
+                  cursor: z.string(),
+                  node: z.object({
+                    name: z.string(),
+                    target: z.object({
+                      oid: z.string(),
+                      committedDate: z.string().optional(),
+                    }),
+                  }),
+                })
+              ),
+              pageInfo: z.object({
+                hasNextPage: z.boolean(),
+                endCursor: z.string().nullable(),
+              }),
+            }),
+          })
+          .nullable(),
+      });
+
+      const query = `
+        query($owner: String!, $repo: String!, $first: Int!, $after: String) {
+          repository(owner: $owner, name: $repo) {
+            defaultBranchRef {
+              name
+            }
+            refs(refPrefix: "refs/heads/", first: $first, after: $after) {
+              edges {
+                cursor
+                node {
+                  name
+                  target {
+                    oid
+                    ... on Commit {
+                      committedDate
+                    }
+                  }
+                }
+              }
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+            }
+          }
+        }
+      `;
+
+      const targetCount = offset + limit;
+      const githubGraphqlMaxRefs = 100;
+
+      const allBranches: Array<z.infer<typeof GithubBranch>> = [];
+      let defaultBranchName: string | null = null;
+      let afterCursor: string | null = null;
+      let githubHasMore = true;
+      const maxBranchesToFetch = shouldFilter ? 500 : Math.max(targetCount, 100);
+      let totalFetched = 0;
+
+      while (allBranches.length < targetCount && githubHasMore && totalFetched < maxBranchesToFetch) {
+        const remaining = maxBranchesToFetch - totalFetched;
+        const fetchSize = Math.min(remaining, githubGraphqlMaxRefs);
+
+        const rawResponse: unknown = await octokit.graphql(query, {
+          owner,
+          repo: repoName,
+          first: fetchSize,
+          after: afterCursor ?? null,
+        });
+
+        const parsed = graphqlResponse.parse(rawResponse);
+        const repoData = parsed.repository;
+        if (!repoData) {
+          return c.json(branchesErrorResponse("Repository not found"), 200);
+        }
+
+        if (defaultBranchName === null) {
+          defaultBranchName = repoData.defaultBranchRef?.name ?? null;
+        }
+
+        const edges = repoData.refs.edges;
+        for (const edge of edges) {
+          const name = edge.node.name;
+          if (shouldFilter && !name.toLowerCase().includes(normalizedSearch)) {
+            continue;
+          }
+
+          allBranches.push({
+            name,
+            lastCommitSha: edge.node.target.oid,
+            lastCommitDate: edge.node.target.committedDate,
+            isDefault: name === defaultBranchName,
+          });
+        }
+
+        totalFetched += edges.length;
+        githubHasMore = repoData.refs.pageInfo.hasNextPage;
+        const endCursor = repoData.refs.pageInfo.endCursor;
+
+        if (!githubHasMore || !endCursor) {
+          break;
+        }
+
+        afterCursor = endCursor;
+      }
+
+      allBranches.sort((a, b) => {
+        if (!a.lastCommitDate && !b.lastCommitDate) return 0;
+        if (!a.lastCommitDate) return 1;
+        if (!b.lastCommitDate) return -1;
+        return new Date(b.lastCommitDate).getTime() - new Date(a.lastCommitDate).getTime();
+      });
+
+      const branches = allBranches.slice(offset, offset + limit);
+      const hasMore = allBranches.length > offset + limit || githubHasMore;
+      const nextOffset = hasMore ? offset + limit : undefined;
+
+      return c.json(
+        {
+          branches,
+          defaultBranch: defaultBranchName,
+          error: null,
+          nextOffset,
+          hasMore,
+        },
+        200
+      );
+    } catch (error) {
+      console.error("[github.branches] Error fetching branches:", error);
+      const message = error instanceof Error ? error.message : "Failed to fetch branches";
+      return c.json(branchesErrorResponse(message), 200);
+    }
+  }
+);

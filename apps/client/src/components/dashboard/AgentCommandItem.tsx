@@ -3,10 +3,33 @@ import {
   WarningIndicator,
 } from "@/components/ui/searchable-select";
 import { clsx } from "clsx";
-import { AlertTriangle, Minus, Plus } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle2, Minus, Plus, XCircle } from "lucide-react";
 import type { MouseEvent } from "react";
 
 export const MAX_AGENT_COMMAND_COUNT = 6;
+
+function getStatusLabel(opt: OptionItemRenderProps["opt"]): string | null {
+  if (!("statusLabel" in opt) || typeof opt.statusLabel !== "string") {
+    return null;
+  }
+
+  return opt.statusLabel;
+}
+
+function getStatusTone(
+  opt: OptionItemRenderProps["opt"]
+): "healthy" | "warning" | "error" | undefined {
+  if (!("statusTone" in opt)) {
+    return undefined;
+  }
+
+  const tone = opt.statusTone;
+  if (tone === "healthy" || tone === "warning" || tone === "error") {
+    return tone;
+  }
+
+  return undefined;
+}
 
 export function AgentCommandItem({
   opt,
@@ -40,6 +63,8 @@ export function AgentCommandItem({
 
   const currentCount = count ?? 0;
   const canAdjustCount = Boolean(onIncrement && onDecrement);
+  const statusLabel = getStatusLabel(opt);
+  const statusTone = getStatusTone(opt);
 
   const handleDecrement = (event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -88,15 +113,31 @@ export function AgentCommandItem({
             {opt.icon}
           </span>
         ) : null}
-        <span className="truncate select-none">{opt.label}</span>
-        {opt.warning ? (
-          <WarningIndicator
-            warning={opt.warning}
-            onActivate={onWarningAction}
-          />
-        ) : opt.isUnavailable ? (
-          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-        ) : null}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="truncate select-none">{opt.label}</span>
+            {opt.warning ? (
+              <WarningIndicator
+                warning={opt.warning}
+                onActivate={onWarningAction}
+              />
+            ) : opt.isUnavailable ? (
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+            ) : null}
+          </div>
+          {statusLabel ? (
+            <div className="mt-0.5 flex items-center gap-1 text-[10px] text-neutral-500 dark:text-neutral-400">
+              {statusTone === "healthy" ? (
+                <CheckCircle2 className="size-3 text-green-600 dark:text-green-400" />
+              ) : statusTone === "error" ? (
+                <XCircle className="size-3 text-red-600 dark:text-red-400" />
+              ) : statusTone === "warning" ? (
+                <AlertCircle className="size-3 text-amber-600 dark:text-amber-400" />
+              ) : null}
+              <span className="truncate">{statusLabel}</span>
+            </div>
+          ) : null}
+        </div>
       </div>
       <div className="flex items-center">
         {canAdjustCount && currentCount > 0 ? (

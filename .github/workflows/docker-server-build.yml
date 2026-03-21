@@ -25,7 +25,7 @@ on:
         default: true
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 concurrency:
@@ -195,26 +195,28 @@ jobs:
     name: Trigger Coolify deployment
     runs-on: ubuntu-24.04
     needs: merge
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.force_deploy)
     timeout-minutes: 5
 
     steps:
       - name: Trigger Coolify deploy
+        id: trigger_coolify
         env:
           COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
           COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-          COOLIFY_APP_UUID: ${{ secrets.COOLIFY_APP_UUID }}
+          COOLIFY_SERVER_APP_UUID: ${{ secrets.COOLIFY_SERVER_APP_UUID || secrets.COOLIFY_APP_UUID }}
         run: |
           set -euo pipefail
 
-          if [[ -z "${COOLIFY_BASE_URL:-}" || -z "${COOLIFY_API_TOKEN:-}" ]]; then
-            echo "Coolify secrets not configured, skipping deploy trigger"
+          if [[ -z "${COOLIFY_BASE_URL:-}" || -z "${COOLIFY_API_TOKEN:-}" || -z "${COOLIFY_SERVER_APP_UUID:-}" ]]; then
+            echo "Coolify secrets not configured for server, skipping deploy trigger"
+            echo "triggered=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           base_url="${COOLIFY_BASE_URL%/}"
 
-          echo "Triggering Coolify deployment..."
+          echo "Triggering Coolify deployment for cmux-server..."
 
           # Coolify webhook API uses query params: /api/v1/deploy?uuid={uuid}&force=true
           response=$(curl -sS -w "\n%{http_code}" \
@@ -222,7 +224,7 @@ jobs:
             -X GET \
             -H "Accept: application/json" \
             -H "Authorization: Bearer ${COOLIFY_API_TOKEN}" \
-            "${base_url}/api/v1/deploy?uuid=${COOLIFY_APP_UUID}&force=true" || true)
+            "${base_url}/api/v1/deploy?uuid=${COOLIFY_SERVER_APP_UUID}&force=true" || true)
 
           http_code=$(echo "$response" | tail -n1)
           body=$(echo "$response" | sed '$d')
@@ -230,7 +232,24 @@ jobs:
           if [[ "$http_code" == "200" || "$http_code" == "201" ]]; then
             echo "Successfully triggered Coolify deployment"
             echo "Response: $body"
+            echo "triggered=true" >> "$GITHUB_OUTPUT"
           else
             echo "Warning: Coolify deploy trigger returned HTTP ${http_code}"
             echo "Response: $body"
+            echo "triggered=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Start deployment status tracking
+        if: steps.trigger_coolify.outputs.triggered == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            await github.rest.repos.createDispatchEvent({
+              owner,
+              repo,
+              event_type: "coolify-server-deploy-started",
+              client_payload: {
+                sha: context.sha,
+              },
+            });

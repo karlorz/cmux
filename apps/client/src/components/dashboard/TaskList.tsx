@@ -517,6 +517,33 @@ export const TaskList = memo(function TaskList({
     }
     return ids;
   }, [categoryBuckets, collapsedCategories, expandedCategories]);
+  const hasVisibleTasks = flattenedTaskIds.length > 0;
+  const visibleSelectedCount = useMemo(
+    () => flattenedTaskIds.filter((taskId) => selectedTaskIds.has(taskId)).length,
+    [flattenedTaskIds, selectedTaskIds]
+  );
+  const allVisibleSelected = hasVisibleTasks && visibleSelectedCount === flattenedTaskIds.length;
+
+  const toggleSelectVisibleTasks = useCallback(() => {
+    setSelectedTaskIds((prev) => {
+      if (flattenedTaskIds.length === 0) {
+        return prev;
+      }
+
+      const next = new Set(prev);
+      const shouldClearVisible = flattenedTaskIds.every((taskId) => next.has(taskId));
+
+      for (const taskId of flattenedTaskIds) {
+        if (shouldClearVisible) {
+          next.delete(taskId);
+        } else {
+          next.add(taskId);
+        }
+      }
+
+      return next;
+    });
+  }, [flattenedTaskIds]);
 
   // Keyboard shortcuts for task navigation
   const [showKeyboardHint, setShowKeyboardHint] = useState(false);
@@ -583,6 +610,10 @@ export const TaskList = memo(function TaskList({
             handleSelectionChange(currentFocused, !isCurrentlySelected);
           }
           break;
+        case "a": // Toggle selection for visible tasks
+          e.preventDefault();
+          toggleSelectVisibleTasks();
+          break;
         case "Escape": // Clear selection and focus
           e.preventDefault();
           clearSelection();
@@ -597,7 +628,7 @@ export const TaskList = memo(function TaskList({
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [tab, handleSelectionChange, clearSelection]);
+  }, [tab, handleSelectionChange, toggleSelectVisibleTasks, clearSelection]);
 
   // Scroll focused task into view (use "auto" for keyboard nav to avoid animation queue)
   useEffect(() => {
@@ -638,40 +669,61 @@ export const TaskList = memo(function TaskList({
         </div>
       </div>
 
+      {/* Selection hint */}
+      {!hasSelection && tab === "all" && hasVisibleTasks && (
+        <div className="mx-4 mb-3 flex items-center gap-2 rounded-md border border-dashed border-neutral-300 bg-neutral-50 px-3 py-2 text-xs text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300">
+          <span>Select tasks with the checkbox or press</span>
+          <kbd className="rounded bg-neutral-200 px-1.5 py-0.5 font-mono text-[11px] text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">x</kbd>
+          <span>to start bulk actions.</span>
+        </div>
+      )}
+
       {/* Bulk actions toolbar */}
-      {hasSelection && tab === "all" && (
-        <div className="mx-4 mb-3 flex items-center gap-2 rounded-md bg-neutral-100 dark:bg-neutral-800 px-3 py-2">
+      {tab === "all" && (hasSelection || hasVisibleTasks) && (
+        <div className="mx-4 mb-3 flex flex-wrap items-center gap-2 rounded-md bg-neutral-100 px-3 py-2 dark:bg-neutral-800">
           <span className="text-xs font-medium text-neutral-600 dark:text-neutral-300">
-            {selectedTaskIds.size} selected
+            {hasSelection
+              ? `${selectedTaskIds.size} selected`
+              : `Select tasks to pin or archive`}
           </span>
           <div className="flex-1" />
           <button
-            onClick={handleBulkPin}
+            onClick={toggleSelectVisibleTasks}
             className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-200 dark:text-neutral-300 dark:hover:bg-neutral-700"
           >
-            <Pin className="h-3 w-3" />
-            Pin
+            {allVisibleSelected ? "Clear visible" : `Select visible${visibleSelectedCount > 0 ? ` (${visibleSelectedCount}/${flattenedTaskIds.length})` : ""}`}
           </button>
-          <button
-            onClick={handleBulkUnpin}
-            className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-200 dark:text-neutral-300 dark:hover:bg-neutral-700"
-          >
-            <Pin className="h-3 w-3" />
-            Unpin
-          </button>
-          <button
-            onClick={handleBulkArchive}
-            className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-200 dark:text-neutral-300 dark:hover:bg-neutral-700"
-          >
-            <Archive className="h-3 w-3" />
-            Archive
-          </button>
-          <button
-            onClick={clearSelection}
-            className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:bg-neutral-700"
-          >
-            <X className="h-3 w-3" />
-          </button>
+          {hasSelection && (
+            <>
+              <button
+                onClick={handleBulkPin}
+                className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-200 dark:text-neutral-300 dark:hover:bg-neutral-700"
+              >
+                <Pin className="h-3 w-3" />
+                Pin
+              </button>
+              <button
+                onClick={handleBulkUnpin}
+                className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-200 dark:text-neutral-300 dark:hover:bg-neutral-700"
+              >
+                <Pin className="h-3 w-3" />
+                Unpin
+              </button>
+              <button
+                onClick={handleBulkArchive}
+                className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-200 dark:text-neutral-300 dark:hover:bg-neutral-700"
+              >
+                <Archive className="h-3 w-3" />
+                Archive
+              </button>
+              <button
+                onClick={clearSelection}
+                className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:bg-neutral-700"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </>
+          )}
         </div>
       )}
 
@@ -700,6 +752,10 @@ export const TaskList = memo(function TaskList({
             <div className="flex items-center gap-2">
               <kbd className="px-1.5 py-0.5 rounded bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 font-mono">x</kbd>
               <span className="text-neutral-600 dark:text-neutral-400">Toggle select</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <kbd className="px-1.5 py-0.5 rounded bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 font-mono">a</kbd>
+              <span className="text-neutral-600 dark:text-neutral-400">Select visible</span>
             </div>
             <div className="flex items-center gap-2">
               <kbd className="px-1.5 py-0.5 rounded bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 font-mono">Esc</kbd>

@@ -56,13 +56,32 @@ export function getWwwBaseUrl(): string {
  * Internal URL for server→www API calls on the same machine.
  * Bypasses Cloudflare tunnel to avoid 524 timeout on long-running requests
  * (e.g. PVE-LXC sandbox provisioning that takes >100s).
+ *
+ * In packaged Electron builds there is no separate local www server, so fall
+ * back to the public WWW origin when WWW_INTERNAL_URL is not configured.
  */
-export function getWwwInternalUrl(): string {
+export function resolveWwwInternalUrl(input: {
+  processWwwInternalUrl?: string;
+  bundledWwwInternalUrl?: string;
+  processWwwOrigin?: string;
+  bundledWwwOrigin?: string;
+}): string {
   const rawOrigin =
-    process.env.WWW_INTERNAL_URL ||
-    env.WWW_INTERNAL_URL ||
+    input.processWwwInternalUrl ||
+    input.bundledWwwInternalUrl ||
+    input.processWwwOrigin ||
+    input.bundledWwwOrigin ||
     "http://localhost:9779";
   return normalizeOrigin(rawOrigin);
+}
+
+export function getWwwInternalUrl(): string {
+  return resolveWwwInternalUrl({
+    processWwwInternalUrl: process.env.WWW_INTERNAL_URL,
+    bundledWwwInternalUrl: env.WWW_INTERNAL_URL,
+    processWwwOrigin: process.env.NEXT_PUBLIC_WWW_ORIGIN,
+    bundledWwwOrigin: env.NEXT_PUBLIC_WWW_ORIGIN,
+  });
 }
 
 /**

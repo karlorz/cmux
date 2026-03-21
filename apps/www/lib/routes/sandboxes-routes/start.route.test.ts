@@ -9,7 +9,7 @@ const TEST_TEAM = process.env.CMUX_TEST_TEAM_SLUG || "example-team";
 const ENVIRONMENT_ID =
   process.env.DEBUG_ENVIRONMENT_ID ?? "mn7bxgkya730p3hqzj2dzatzhh7s8c52";
 
-describe.skip("sandboxesRouter integration", () => {
+describe.skip("sandboxes start route integration", () => {
   it(
     "rejects providing a snapshotId not owned by the team",
     {

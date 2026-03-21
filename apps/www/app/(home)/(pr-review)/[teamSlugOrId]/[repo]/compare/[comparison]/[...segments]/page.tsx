@@ -1,7 +1,7 @@
 import { Suspense, use } from "react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { waitUntil } from "@vercel/functions";
+import { after } from "next/server";
 import { type Team } from "@stackframe/stack";
 import type { ModelConfig } from "@/lib/services/code-review/run-simple-anthropic-review";
 
@@ -171,7 +171,7 @@ export default async function ComparisonPage({ params, searchParams }: PageProps
     modelConfig,
   });
 
-  waitUntil(
+  after(() =>
     trackRepoPageView({
       repo: `${githubOwner}/${repo}`,
       pageType: "comparison",
@@ -449,7 +449,7 @@ function scheduleComparisonCodeReviewStart({
   comparisonDetails: ComparisonJobDetails;
   modelConfig?: ModelConfig;
 }): void {
-  waitUntil(
+  after(() =>
     (async () => {
       try {
         const comparison = await comparisonPromise;

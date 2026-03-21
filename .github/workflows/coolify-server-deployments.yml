@@ -7,7 +7,7 @@ name: Coolify Status (cmux-server)
 
 on:
   repository_dispatch:
-    types: [coolify-deploy-started]
+    types: [coolify-server-deploy-started, coolify-deploy-started]
   workflow_dispatch:
     inputs:
       commit_sha:
@@ -72,8 +72,8 @@ jobs:
         env:
           COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
           COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-          COOLIFY_APP_UUID: ${{ secrets.COOLIFY_APP_UUID }}
-          COOLIFY_ENV_URL: ${{ secrets.COOLIFY_ENV_URL }}
+          COOLIFY_SERVER_APP_UUID: ${{ secrets.COOLIFY_SERVER_APP_UUID || secrets.COOLIFY_APP_UUID }}
+          COOLIFY_SERVER_ENV_URL: ${{ secrets.COOLIFY_SERVER_ENV_URL || secrets.COOLIFY_ENV_URL }}
         run: |
           set -euo pipefail
 
@@ -128,8 +128,8 @@ jobs:
             local url_raw="${1:-}"
             if is_http_url "$url_raw"; then
               echo "$url_raw"
-            elif is_http_url "${COOLIFY_ENV_URL:-}"; then
-              echo "${COOLIFY_ENV_URL}"
+            elif is_http_url "${COOLIFY_SERVER_ENV_URL:-}"; then
+              echo "${COOLIFY_SERVER_ENV_URL}"
             elif [[ -n "$url_raw" ]]; then
               echo "${base_url}/${url_raw#/}"
             fi
@@ -141,7 +141,7 @@ jobs:
             local code
             local dep_uuid
 
-            code="$(http_get_json "${base_url}/api/v1/applications/${COOLIFY_APP_UUID}/deployments?skip=0&take=5" "$resp")"
+            code="$(http_get_json "${base_url}/api/v1/applications/${COOLIFY_SERVER_APP_UUID}/deployments?skip=0&take=5" "$resp")"
             if [[ "$code" != "200" ]]; then
               return 1
             fi
@@ -173,7 +173,7 @@ jobs:
 
           deployment_uuid="$(find_latest_deployment || true)"
           if [[ -z "${deployment_uuid:-}" ]]; then
-            echo "No deployment found for app ${COOLIFY_APP_UUID}" >&2
+            echo "No deployment found for app ${COOLIFY_SERVER_APP_UUID}" >&2
             echo "conclusion=failure" >> "$GITHUB_OUTPUT"
             echo "coolify_status=no_deployment_found" >> "$GITHUB_OUTPUT"
             exit 1

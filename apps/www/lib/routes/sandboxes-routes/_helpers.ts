@@ -611,7 +611,7 @@ export const StartSandboxBody = z
     projectSlugOrId: z.string().optional(),
     sessionId: z.string().optional(),
     vscodePersisted: z.boolean().optional(),
-    timeoutSeconds: z
+    ttlSeconds: z
       .number()
       .optional()
       .default(60 * 60),
