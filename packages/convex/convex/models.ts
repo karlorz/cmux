@@ -317,6 +317,8 @@ export const bulkUpsert = internalMutation({
           )
         ),
         defaultVariant: v.optional(v.string()),
+        contextWindow: v.optional(v.number()),
+        maxOutputTokens: v.optional(v.number()),
       })
     ),
   },
@@ -362,6 +364,8 @@ export const bulkUpsert = internalMutation({
           disabledReason: model.disabledReason,
           variants: model.variants,
           defaultVariant: model.defaultVariant,
+          contextWindow: model.contextWindow,
+          maxOutputTokens: model.maxOutputTokens,
           // Update source when curated takes over from discovered
           ...(isCuratedTakeover ? { source: "curated" } : {}),
           ...(model.source === "discovered" && model.discoveredAt
@@ -395,6 +399,8 @@ export const bulkUpsert = internalMutation({
           disabledReason: model.disabledReason,
           variants: model.variants,
           defaultVariant: model.defaultVariant,
+          contextWindow: model.contextWindow,
+          maxOutputTokens: model.maxOutputTokens,
           createdAt: now,
           updatedAt: now,
         });

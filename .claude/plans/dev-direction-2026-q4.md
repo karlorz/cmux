@@ -103,13 +103,29 @@ Leverage 1M context for Opus 4.6.
 
 ## Priority Matrix
 
-| Phase | Feature | User Impact | Effort | Dependencies |
-|-------|---------|-------------|--------|--------------|
-| 1 | `--bare` Mode | Medium | 2-3 days | None |
-| 2 | Approval Bridge | High | 3-4 days | Phase 1 |
-| 3 | Memory Freshness | High | 1 week | None |
-| 4 | Tool Suggestions | Medium | 1 week | None |
-| 5 | Context Optimization | Medium | 3-4 days | None |
+| Phase | Feature | User Impact | Effort | Status |
+|-------|---------|-------------|--------|--------|
+| 1 | `--bare` Mode | Medium | 2-3 days | Deferred |
+| 2 | Approval Bridge | High | 3-4 days | Deferred |
+| 3 | Memory Freshness | High | 1 week | **COMPLETE** |
+| 4 | Tool Suggestions | Medium | 1 week | **COMPLETE** |
+| 5 | Context Optimization | Medium | 3-4 days | **COMPLETE** |
+
+## Implementation Summary (2026-03-21)
+
+**Phase 3 (Memory Freshness):**
+- Usage tracking: 499661720
+- Freshness scoring: ff501232a
+- Archive tool: 30e811a7a
+- Write guardrails: 9a36faae5
+
+**Phase 4 (Tool Suggestions):**
+- Tool registry: d9190e861
+- Suggestion hook: d655fac76
+- UI integration: 757c20397
+
+**Phase 5 (Context Optimization):**
+- Context metadata: f3c372e7c
 
 ## Success Metrics
 

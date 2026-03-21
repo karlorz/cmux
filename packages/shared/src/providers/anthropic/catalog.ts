@@ -8,6 +8,8 @@ export const CLAUDE_CATALOG: AgentCatalogEntry[] = [
     requiredApiKeys: ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
     tier: "paid",
     tags: ["latest", "recommended", "reasoning"],
+    contextWindow: 1000000, // 1M context
+    maxOutputTokens: 32000,
   },
   {
     name: "claude/opus-4.5",
@@ -16,6 +18,8 @@ export const CLAUDE_CATALOG: AgentCatalogEntry[] = [
     requiredApiKeys: ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
     tier: "paid",
     tags: ["reasoning"],
+    contextWindow: 200000,
+    maxOutputTokens: 16000,
   },
   {
     name: "claude/sonnet-4.5",
@@ -24,6 +28,8 @@ export const CLAUDE_CATALOG: AgentCatalogEntry[] = [
     requiredApiKeys: ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
     tier: "paid",
     tags: ["reasoning"],
+    contextWindow: 200000,
+    maxOutputTokens: 16000,
   },
   {
     name: "claude/haiku-4.5",
@@ -32,5 +38,7 @@ export const CLAUDE_CATALOG: AgentCatalogEntry[] = [
     requiredApiKeys: ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
     tier: "paid",
     tags: ["fast"],
+    contextWindow: 200000,
+    maxOutputTokens: 8000,
   },
 ];

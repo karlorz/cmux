@@ -92,6 +92,10 @@ export interface AgentCatalogEntry {
   variants?: ModelVariant[];
   /** Default variant ID to use */
   defaultVariant?: string;
+  /** Context window size in tokens (for display purposes) */
+  contextWindow?: number;
+  /** Maximum output tokens supported */
+  maxOutputTokens?: number;
 }
 
 // Import per-provider catalogs
