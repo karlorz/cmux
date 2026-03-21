@@ -87,24 +87,24 @@ Prevent bad memory writes:
 ## Implementation
 
 ### Phase 3a: Usage Tracking (2 days)
-- [ ] Add usage metadata to read_memory
-- [ ] Track lastRead, readCount on each access
-- [ ] Persist to _meta section in MEMORY.md
+- [x] Add usage metadata to read_memory
+- [x] Track lastRead, readCount on each access
+- [x] Persist to _meta section in MEMORY.md
 
 ### Phase 3b: Freshness Scoring (2 days)
-- [ ] Implement scoring algorithm
-- [ ] Add `get_memory_health` tool
-- [ ] Return recommendations
+- [x] Implement scoring algorithm
+- [x] Add `get_memory_health` tool
+- [x] Return recommendations
 
 ### Phase 3c: Forgetting (1 day)
-- [ ] Implement `forget_stale_memories` tool
-- [ ] Move to archive section instead of delete
-- [ ] Support dry-run mode
+- [x] Implement `forget_stale_memories` tool
+- [x] Move to archive section instead of delete
+- [x] Support dry-run mode
 
 ### Phase 3d: Guardrails (1 day)
-- [ ] Add validation to update_knowledge
-- [ ] Duplicate detection
-- [ ] Contradiction warnings
+- [x] Add validation to update_knowledge
+- [x] Duplicate detection
+- [x] Contradiction warnings
 
 ## Files to Modify
 

@@ -68,14 +68,14 @@ REASON="$CMUX_RALPH_PROMPT"
 ## Implementation
 
 ### Phase 6a: Core Ralph Mode (1 day)
-- [ ] Add CMUX_RALPH_MODE env var check
-- [ ] Switch state file location to project-local
-- [ ] Add completion signal detection
-- [ ] Use original prompt for continuation
+- [x] Add CMUX_RALPH_MODE env var check
+- [x] Switch state file location to project-local
+- [x] Add completion signal detection
+- [x] Use original prompt for continuation
 
 ### Phase 6b: CLI Integration (0.5 day)
-- [ ] Add --ralph-mode flag to devsh spawn
-- [ ] Pass CMUX_RALPH_* env vars to sandbox
+- [x] Add --ralph-mode flag to devsh spawn
+- [x] Pass CMUX_RALPH_* env vars to sandbox
 
 ### Phase 6c: UI Integration (Optional)
 - [ ] Add "Ralph Mode" toggle to task creation

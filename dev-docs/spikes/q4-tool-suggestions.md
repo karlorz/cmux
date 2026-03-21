@@ -70,19 +70,19 @@ Add suggestions chip below prompt input:
 ## Implementation
 
 ### Phase 4a: Tool Registry (1 day)
-- [ ] Add mcpTools table to Convex schema
-- [ ] Seed initial tools (context7, devsh-memory-mcp)
-- [ ] Add query to fetch available tools
+- [x] Add mcpTools table to Convex schema
+- [x] Seed initial tools (context7, devsh-memory-mcp)
+- [x] Add query to fetch available tools
 
 ### Phase 4b: Suggestion Logic (1 day)
-- [ ] Implement keyword-based matching
-- [ ] Add Convex action for suggestions
-- [ ] Debounce on prompt change
+- [x] Implement keyword-based matching
+- [x] Add Convex action for suggestions
+- [x] Debounce on prompt change
 
 ### Phase 4c: UI Integration (2 days)
-- [ ] Add suggested tools display
-- [ ] Enable/disable tool toggles
-- [ ] Persist tool preferences per project
+- [x] Add suggested tools display
+- [x] Enable/disable tool toggles
+- [x] Persist tool preferences per project
 
 ### Phase 4d: AI Enhancement (Optional)
 - [ ] Use Claude to analyze prompt intent
