@@ -57,6 +57,9 @@ When context nears limit, trigger compact/summarize:
 
 ## Status
 
-- [x] Phase 5a: Metadata (commit pending)
+- [x] Phase 5a: Metadata - All catalogs complete
+  - Anthropic: f3c372e7c
+  - Gemini/Grok: d4d7f7d53
+  - Qwen/AMP: b10fb56b8
 - [ ] Phase 5b: Display (optional)
 - [ ] Phase 5c: Pre-Compact (future)
