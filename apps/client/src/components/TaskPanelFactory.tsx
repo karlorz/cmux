@@ -11,6 +11,8 @@ import {
   X,
   Maximize2,
   Minimize2,
+  GitPullRequest,
+  TestTube2,
 } from "lucide-react";
 import clsx from "clsx";
 import type { PanelType, PanelPosition } from "@/lib/panel-config";
@@ -25,6 +27,8 @@ import type { TaskRunTerminalPaneProps } from "./TaskRunTerminalPane";
 import type { TaskRunGitDiffPanelProps } from "./TaskRunGitDiffPanel";
 import type { TaskRunMemoryPanelProps } from "./TaskRunMemoryPanel";
 import type { TaskRunSummaryPanelProps } from "./TaskRunSummaryPanel";
+import type { LiveDiffPanelProps } from "./LiveDiffPanel";
+import type { TestResultsPanelProps } from "./TestResultsPanel";
 import { shouldUseServerIframePreflight } from "@/hooks/useIframePreflight";
 import { useVncClipboardBridge } from "@/hooks/useVncClipboardBridge";
 
@@ -192,12 +196,17 @@ interface PanelFactoryProps {
   TaskRunGitDiffPanel?: React.ComponentType<TaskRunGitDiffPanelProps>;
   TaskRunMemoryPanel?: React.ComponentType<TaskRunMemoryPanelProps>;
   TaskRunSummaryPanel?: React.ComponentType<TaskRunSummaryPanelProps>;
+  TaskRunLiveDiffPanel?: React.ComponentType<LiveDiffPanelProps>;
+  TaskRunTestResultsPanel?: React.ComponentType<TestResultsPanelProps>;
   // Constants
   TASK_RUN_IFRAME_ALLOW?: string;
   TASK_RUN_IFRAME_SANDBOX?: string;
   // Git diff panel props
   teamSlugOrId?: string;
   taskId?: Id<"tasks">;
+  // Live diff panel props
+  repoFullName?: string;
+  baseBranch?: string;
 }
 
 /**
@@ -732,6 +741,49 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
       );
     }
 
+    case "liveDiff": {
+      const { selectedRun, teamSlugOrId, taskId, TaskRunLiveDiffPanel, repoFullName, baseBranch } = props;
+      if (!TaskRunLiveDiffPanel || !teamSlugOrId || !taskId) return null;
+
+      const sandboxId = selectedRun?.vscode?.containerName;
+      const isRunning = selectedRun?.vscode?.status === "running";
+      const headBranch = selectedRun?.newBranch;
+
+      return panelWrapper(
+        <GitPullRequest className="size-3" aria-hidden />,
+        PANEL_LABELS.liveDiff,
+        <div className="relative flex-1 min-h-0 overflow-hidden">
+          <TaskRunLiveDiffPanel
+            key={selectedRun?._id}
+            sandboxId={sandboxId}
+            isRunning={isRunning}
+            taskRunId={selectedRun?._id}
+            teamSlugOrId={teamSlugOrId}
+            selectedRun={selectedRun}
+            repoFullName={repoFullName}
+            baseBranch={baseBranch}
+            headBranch={headBranch}
+          />
+        </div>
+      );
+    }
+
+    case "testResults": {
+      const { selectedRun, TaskRunTestResultsPanel } = props;
+      if (!TaskRunTestResultsPanel) return null;
+
+      return panelWrapper(
+        <TestTube2 className="size-3" aria-hidden />,
+        PANEL_LABELS.testResults,
+        <div className="relative flex-1 min-h-0 overflow-hidden">
+          <TaskRunTestResultsPanel
+            key={selectedRun?._id}
+            taskRunId={selectedRun?._id}
+          />
+        </div>
+      );
+    }
+
     case null:
       return null;
 
@@ -803,6 +855,27 @@ export const RenderPanel = React.memo(RenderPanelComponent, (prevProps, nextProp
       prevProps.task?.pullRequestDescription !== nextProps.task?.pullRequestDescription ||
       prevProps.selectedRun?._id !== nextProps.selectedRun?._id ||
       prevProps.selectedRun?.summary !== nextProps.selectedRun?.summary) {
+      return false;
+    }
+  }
+
+  // For liveDiff panel, check run state and branch changes
+  if (prevProps.type === "liveDiff") {
+    if (prevProps.selectedRun?._id !== nextProps.selectedRun?._id ||
+      prevProps.selectedRun?.vscode?.containerName !== nextProps.selectedRun?.vscode?.containerName ||
+      prevProps.selectedRun?.vscode?.status !== nextProps.selectedRun?.vscode?.status ||
+      prevProps.selectedRun?.newBranch !== nextProps.selectedRun?.newBranch ||
+      prevProps.teamSlugOrId !== nextProps.teamSlugOrId ||
+      prevProps.taskId !== nextProps.taskId ||
+      prevProps.repoFullName !== nextProps.repoFullName ||
+      prevProps.baseBranch !== nextProps.baseBranch) {
+      return false;
+    }
+  }
+
+  // For testResults panel, check selectedRun changes
+  if (prevProps.type === "testResults") {
+    if (prevProps.selectedRun?._id !== nextProps.selectedRun?._id) {
       return false;
     }
   }

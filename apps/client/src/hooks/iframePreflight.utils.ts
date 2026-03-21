@@ -1,4 +1,4 @@
-import { extractMorphInstanceInfo, isLoopbackHostname } from "@cmux/shared";
+import { extractMorphInstanceInfo, isLoopbackHostname, parseProxyHostname } from "@cmux/shared";
 
 export function shouldUseIframePreflightProxy(
   target: string | URL | null | undefined
@@ -8,7 +8,19 @@ export function shouldUseIframePreflightProxy(
   }
 
   try {
-    return extractMorphInstanceInfo(target) !== null;
+    // Check for Morph instances
+    if (extractMorphInstanceInfo(target) !== null) {
+      return true;
+    }
+
+    // Check for PVE-LXC instances (port-{port}-pvelxc-{id}.{domain})
+    const url = typeof target === "string" ? new URL(target) : target;
+    const parsed = parseProxyHostname(url.hostname);
+    if (parsed && parsed.hostId.startsWith("pvelxc-")) {
+      return true;
+    }
+
+    return false;
   } catch {
     return false;
   }
