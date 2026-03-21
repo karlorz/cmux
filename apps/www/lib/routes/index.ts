@@ -26,6 +26,7 @@ export { githubPrsFileContentsBatchRouter } from "./github.prs.file-contents-bat
 export { githubPrsFileContentsRouter } from "./github.prs.file-contents.route";
 export { githubPrsFilesRouter } from "./github.prs.files.route";
 export { githubPrsPatchRouter } from "./github.prs.patch.route";
+export { githubPrsListRouter } from "./github.prs.list.route";
 export { githubPrsRouter } from "./github.prs.route";
 export { githubInstallStateRouter } from "./github.install-state.route";
 export { githubProjectsDraftsRouter } from "./github.projects.drafts.route";
