@@ -3,6 +3,7 @@ import type { EditorApi } from "@/components/dashboard/DashboardInput";
 import { DashboardInputControls } from "@/components/dashboard/DashboardInputControls";
 import { DashboardInputFooter } from "@/components/dashboard/DashboardInputFooter";
 import { DashboardStartTaskButton } from "@/components/dashboard/DashboardStartTaskButton";
+import { ToolSuggestions } from "@/components/dashboard/ToolSuggestions";
 import { FileChangeHeatmap } from "@/components/dashboard/FileChangeHeatmap";
 import { SessionActivityCard } from "@/components/dashboard/SessionActivityCard";
 import { SessionTimeline } from "@/components/dashboard/SessionTimeline";
@@ -280,6 +281,20 @@ function DashboardComponent() {
   );
 
   const [taskDescription, setTaskDescription] = useState<string>("");
+  const [enabledTools, setEnabledTools] = useState<Set<string>>(() => new Set(["context7", "devsh-memory-mcp"]));
+
+  const handleToggleTool = useCallback((toolName: string) => {
+    setEnabledTools((prev) => {
+      const next = new Set(prev);
+      if (next.has(toolName)) {
+        next.delete(toolName);
+      } else {
+        next.add(toolName);
+      }
+      return next;
+    });
+  }, []);
+
   // In web mode, always force cloud mode
   const [isCloudMode, setIsCloudMode] = useState<boolean>(() => {
     if (env.NEXT_PUBLIC_WEB_MODE) return true;
@@ -1406,6 +1421,7 @@ function DashboardComponent() {
 
             <DashboardMainCard
               editorApiRef={editorApiRef}
+              taskDescription={taskDescription}
               onTaskDescriptionChange={handleTaskDescriptionChange}
               onSubmit={handleSubmit}
               lexicalRepoUrl={lexicalRepoUrl}
@@ -1438,6 +1454,8 @@ function DashboardComponent() {
               canSubmit={canSubmit}
               onStartTask={handleStartTask}
               isStartingTask={isStartingTask}
+              enabledTools={enabledTools}
+              onToggleTool={handleToggleTool}
             />
             {shouldShowWorkspaceSetup ? (
               <div className="space-y-1">
@@ -1522,6 +1540,7 @@ function DashboardComponent() {
 
 type DashboardMainCardProps = {
   editorApiRef: React.RefObject<EditorApi | null>;
+  taskDescription: string;
   onTaskDescriptionChange: (value: string) => void;
   onSubmit: () => void;
   lexicalRepoUrl?: string;
@@ -1554,6 +1573,8 @@ type DashboardMainCardProps = {
   canSubmit: boolean;
   onStartTask: () => void;
   isStartingTask: boolean;
+  enabledTools: Set<string>;
+  onToggleTool: (toolName: string) => void;
 };
 
 // Type for models from Convex listAvailable
@@ -1572,6 +1593,7 @@ type ConvexModelEntry = {
 
 function DashboardMainCard({
   editorApiRef,
+  taskDescription,
   onTaskDescriptionChange,
   onSubmit,
   lexicalRepoUrl,
@@ -1604,6 +1626,8 @@ function DashboardMainCard({
   canSubmit,
   onStartTask,
   isStartingTask,
+  enabledTools,
+  onToggleTool,
 }: DashboardMainCardProps) {
   return (
     <div
@@ -1622,6 +1646,12 @@ function DashboardMainCard({
           maxHeight="300px"
         />
       </Suspense>
+
+      <ToolSuggestions
+        prompt={taskDescription}
+        enabledTools={enabledTools}
+        onToggleTool={onToggleTool}
+      />
 
       <DashboardInputFooter>
         <DashboardInputControls

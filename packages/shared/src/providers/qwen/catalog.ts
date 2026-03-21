@@ -8,6 +8,8 @@ export const QWEN_CATALOG: AgentCatalogEntry[] = [
     requiredApiKeys: ["OPENROUTER_API_KEY"],
     tier: "free",
     tags: ["free"],
+    contextWindow: 131072,
+    maxOutputTokens: 8192,
   },
   {
     name: "qwen/qwen3-coder-plus",
@@ -15,5 +17,7 @@ export const QWEN_CATALOG: AgentCatalogEntry[] = [
     vendor: "qwen",
     requiredApiKeys: ["MODEL_STUDIO_API_KEY"],
     tier: "paid",
+    contextWindow: 131072,
+    maxOutputTokens: 16384,
   },
 ];

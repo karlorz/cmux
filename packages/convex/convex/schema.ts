@@ -1378,6 +1378,85 @@ const convexSchema = defineSchema({
     .index("by_team_user", ["teamId", "userId"]) // Get unread runs for a user in a team
     .index("by_task_user", ["taskId", "userId"]), // Get unread runs for a task
 
+  mobileMachines: defineTable({
+    teamId: v.string(),
+    userId: v.string(),
+    machineId: v.string(),
+    displayName: v.string(),
+    tailscaleHostname: v.optional(v.string()),
+    tailscaleIPs: v.array(v.string()),
+    status: v.union(
+      v.literal("online"),
+      v.literal("offline"),
+      v.literal("unknown")
+    ),
+    lastSeenAt: v.number(),
+    lastWorkspaceSyncAt: v.optional(v.number()),
+  })
+    .index("by_machineId", ["machineId"])
+    .index("by_team_user_machine", ["teamId", "userId", "machineId"])
+    .index("by_team_user_last_seen", ["teamId", "userId", "lastSeenAt"]),
+
+  mobileWorkspaces: defineTable({
+    teamId: v.string(),
+    userId: v.string(),
+    workspaceId: v.string(),
+    machineId: v.string(),
+    taskId: v.optional(v.string()),
+    taskRunId: v.optional(v.string()),
+    title: v.string(),
+    preview: v.optional(v.string()),
+    phase: v.string(),
+    tmuxSessionName: v.string(),
+    lastActivityAt: v.number(),
+    latestEventSeq: v.number(),
+    lastEventAt: v.optional(v.number()),
+  })
+    .index("by_workspaceId", ["workspaceId"])
+    .index("by_team_user_workspace", ["teamId", "userId", "workspaceId"])
+    .index("by_machine_last_activity", ["machineId", "lastActivityAt"])
+    .index("by_team_user_last_activity", ["teamId", "userId", "lastActivityAt"]),
+
+  mobileWorkspaceEvents: defineTable({
+    teamId: v.string(),
+    userId: v.string(),
+    workspaceId: v.string(),
+    eventSeq: v.number(),
+    kind: v.string(),
+    preview: v.optional(v.string()),
+    createdAt: v.number(),
+    shouldNotify: v.boolean(),
+  })
+    .index("by_workspace_event", ["workspaceId", "eventSeq"])
+    .index("by_team_user_created", ["teamId", "userId", "createdAt"])
+    .index("by_team_user_notify", ["teamId", "userId", "shouldNotify", "createdAt"]),
+
+  mobileUserWorkspaceState: defineTable({
+    teamId: v.string(),
+    userId: v.string(),
+    workspaceId: v.string(),
+    lastReadEventSeq: v.number(),
+    pinned: v.optional(v.boolean()),
+    archived: v.optional(v.boolean()),
+    updatedAt: v.number(),
+  })
+    .index("by_team_user_workspace", ["teamId", "userId", "workspaceId"])
+    .index("by_team_user_updated", ["teamId", "userId", "updatedAt"]),
+
+  devicePushTokens: defineTable({
+    teamId: v.string(),
+    userId: v.string(),
+    token: v.string(),
+    environment: v.union(v.literal("development"), v.literal("production")),
+    platform: v.string(),
+    bundleId: v.string(),
+    deviceId: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_team_user_updated", ["teamId", "userId", "updatedAt"])
+    .index("by_team_user_device", ["teamId", "userId", "deviceId"]),
+
   // Track Morph instance activity for cleanup cron decisions
   // DEPRECATED: Use sandboxInstanceActivity for new code (provider-agnostic)
   morphInstanceActivity: defineTable({
@@ -1552,6 +1631,8 @@ const convexSchema = defineSchema({
       )
     ), // Thinking/reasoning mode variants
     defaultVariant: v.optional(v.string()), // Default variant ID
+    contextWindow: v.optional(v.number()), // Max input tokens
+    maxOutputTokens: v.optional(v.number()), // Max output tokens
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -2697,6 +2778,47 @@ const convexSchema = defineSchema({
   })
     .index("by_team_metric", ["teamId", "metricName"])
     .index("by_team_metric_time", ["teamId", "metricName", "timestamp"]),
+
+  // MCP Tool Registry for tool suggestions (Q4 Phase 4)
+  mcpTools: defineTable({
+    name: v.string(), // Unique tool identifier, e.g., "context7", "devsh-memory-mcp"
+    displayName: v.string(), // Human-readable name
+    description: v.string(), // What the tool does
+    keywords: v.array(v.string()), // Keywords for matching
+    category: v.union(
+      v.literal("documentation"),
+      v.literal("memory"),
+      v.literal("code"),
+      v.literal("testing"),
+      v.literal("deployment"),
+      v.literal("general")
+    ),
+    defaultEnabled: v.boolean(), // Auto-enable for all tasks
+    // Optional: MCP server configuration
+    serverConfig: v.optional(
+      v.object({
+        command: v.optional(v.string()), // Command to start server
+        url: v.optional(v.string()), // URL for HTTP-based servers
+        env: v.optional(v.any()), // Environment variables
+      })
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_name", ["name"])
+    .index("by_category", ["category"])
+    .index("by_default_enabled", ["defaultEnabled"]),
+
+  // Team-specific tool preferences
+  teamToolPreferences: defineTable({
+    teamId: v.string(),
+    toolName: v.string(), // References mcpTools.name
+    enabled: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_team", ["teamId"])
+    .index("by_team_tool", ["teamId", "toolName"]),
 });
 
 export default convexSchema;

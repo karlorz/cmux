@@ -4,29 +4,36 @@
 
 Q3 focuses on **web app polish and production readiness** - completing the UI gaps identified in Q2, improving mobile experience, and unblocking deployment.
 
-## Current State (2026-03-20)
+## Current State (2026-03-21)
 
-### Q2 Completed
-- All 3 launch pillars shipped (PR Comment → Agent, Operator Screenshots, Swipe Code Review)
-- All 6 industry trends addressed
-- Activity stream, memory quality, A2A protocol, scheduled tasks
+### Q3 Completed (All UI Phases)
+- Phase 0.5: Live Diff & Test Results panels (PR #728)
+- Phase 1: Task checkbox & pin button enabled
+- Phase 2: Mobile hamburger navigation added
+- Phase 3: Skeleton imports centralized (PR #730)
+- Phase 4: Vault integration complete (routes + RecommendedActions)
+- Phase 5: Activity stream has filtering/search/export
+- Phase 6: Cloud onboarding + provider health indicators
 
-### Identified Gaps (from web exploration)
+### Remaining
+- Phase 7: Coolify Migration - **COMPLETE** (workflows exist for client, www, server)
 
-**High Priority:**
-1. Task checkbox & pin button hidden (TaskItem.tsx)
-2. No mobile hamburger navigation
-3. No skeleton loaders for dashboard components
-4. Vault integration incomplete (RecommendedActions placeholder)
+### Original Identified Gaps (all resolved except infra)
 
-**Medium Priority:**
-5. Activity stream missing filtering/search/export
-6. Cloud onboarding banner commented out
-7. Provider status not integrated into agent selection
-8. No component-level error boundaries
+**High Priority:** (DONE)
+1. ~~Task checkbox & pin button hidden~~ - Enabled
+2. ~~No mobile hamburger navigation~~ - Added
+3. ~~No skeleton loaders for dashboard components~~ - Centralized
+4. ~~Vault integration incomplete~~ - Full implementation
 
-**Infrastructure:**
-9. Vercel deployment cap (Coolify migration)
+**Medium Priority:** (DONE)
+5. ~~Activity stream missing filtering/search/export~~ - Implemented
+6. ~~Cloud onboarding banner commented out~~ - Enabled
+7. ~~Provider status not integrated~~ - ProviderHealthCard exists
+8. ~~No component-level error boundaries~~ - ErrorBoundary.tsx exists
+
+**Infrastructure:** (DONE)
+9. ~~Vercel deployment cap (Coolify migration)~~ - Coolify workflows deployed
 
 ---
 

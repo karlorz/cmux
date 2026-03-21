@@ -63,9 +63,64 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
   const orchestrationDir = path.join(memoryDir, "orchestration");
   const mailboxPath = path.join(memoryDir, "MAILBOX.json");
   const tasksPath = path.join(memoryDir, "TASKS.json");
+  const usageStatsPath = path.join(memoryDir, "USAGE_STATS.json");
   const planPath = path.join(orchestrationDir, "PLAN.json");
   const agentsPath = path.join(orchestrationDir, "AGENTS.json");
   const eventsPath = path.join(orchestrationDir, "EVENTS.jsonl");
+
+  // Usage tracking for memory freshness (Q4 Phase 3)
+  interface UsageStats {
+    version: number;
+    entries: Record<string, {
+      readCount: number;
+      lastRead: string;
+      lastWrite?: string;
+      createdAt: string;
+    }>;
+  }
+
+  function readUsageStats(): UsageStats {
+    const content = readFile(usageStatsPath);
+    if (!content) return { version: 1, entries: {} };
+    try {
+      return JSON.parse(content) as UsageStats;
+    } catch {
+      return { version: 1, entries: {} };
+    }
+  }
+
+  function writeUsageStats(stats: UsageStats): boolean {
+    return writeFile(usageStatsPath, JSON.stringify(stats, null, 2));
+  }
+
+  function trackRead(memoryType: string): void {
+    const stats = readUsageStats();
+    const now = new Date().toISOString();
+    if (!stats.entries[memoryType]) {
+      stats.entries[memoryType] = {
+        readCount: 0,
+        lastRead: now,
+        createdAt: now,
+      };
+    }
+    stats.entries[memoryType].readCount++;
+    stats.entries[memoryType].lastRead = now;
+    writeUsageStats(stats);
+  }
+
+  function trackWrite(memoryType: string): void {
+    const stats = readUsageStats();
+    const now = new Date().toISOString();
+    if (!stats.entries[memoryType]) {
+      stats.entries[memoryType] = {
+        readCount: 0,
+        lastRead: now,
+        createdAt: now,
+      };
+    }
+    stats.entries[memoryType].lastWrite = now;
+    writeUsageStats(stats);
+  }
 
   // Helper functions
   function readFile(filePath: string): string | null {
@@ -383,6 +438,31 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
             },
           },
           required: ["query"],
+        },
+      },
+      {
+        name: "get_memory_usage",
+        description: "Get usage statistics for memory files. Shows read/write counts and timestamps for freshness tracking.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {},
+        },
+      },
+      {
+        name: "archive_stale_memories",
+        description: "Archive stale memory entries from MEMORY.md. Moves low-freshness entries to an archive section. Use dryRun=true to preview without changes.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            dryRun: {
+              type: "boolean",
+              description: "Preview changes without modifying files (default: true)",
+            },
+            maxScoreToArchive: {
+              type: "number",
+              description: "Archive entries with freshness score below this threshold (default: 30)",
+            },
+          },
         },
       },
       {
@@ -929,6 +1009,9 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
           includeCompleted?: boolean;
           limit?: number;
         };
+        // Track usage for memory freshness
+        trackRead(type);
+
         let content: string | null = null;
         if (type === "knowledge") {
           content = readFile(path.join(knowledgeDir, "MEMORY.md"));
@@ -999,6 +1082,147 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
           .map((r) => `[${r.source}${r.line ? `:${r.line}` : ""}] ${r.content}`)
           .join("\n");
         return { content: [{ type: "text", text: formatted }] };
+      }
+
+      case "get_memory_usage": {
+        const stats = readUsageStats();
+        if (Object.keys(stats.entries).length === 0) {
+          return { content: [{ type: "text", text: "No usage statistics recorded yet." }] };
+        }
+        // Calculate freshness scores (Q4 Phase 3b)
+        const now = Date.now();
+        const entries = Object.entries(stats.entries).map(([key, value]) => {
+          const daysSinceRead = Math.floor((now - new Date(value.lastRead).getTime()) / (1000 * 60 * 60 * 24));
+          const daysSinceWrite = value.lastWrite
+            ? Math.floor((now - new Date(value.lastWrite).getTime()) / (1000 * 60 * 60 * 24))
+            : null;
+
+          // Freshness scoring algorithm
+          // Factors: recency (40%), usage frequency (40%), type priority (20%)
+          const recencyScore = Math.max(0, 100 - daysSinceRead * 3); // -3 points per day
+          const usageScore = Math.min(100, value.readCount * 10); // +10 per read, max 100
+          const priorityScore = key.includes("P0") ? 100 : key.includes("P1") ? 50 : key.includes("P2") ? 25 : 50;
+          const freshnessScore = Math.round(recencyScore * 0.4 + usageScore * 0.4 + priorityScore * 0.2);
+
+          // Recommendation based on score
+          let recommendation: "keep" | "review" | "archive";
+          if (freshnessScore >= 60) recommendation = "keep";
+          else if (freshnessScore >= 30) recommendation = "review";
+          else recommendation = "archive";
+
+          return {
+            type: key,
+            readCount: value.readCount,
+            daysSinceRead,
+            daysSinceWrite,
+            freshnessScore,
+            recommendation,
+          };
+        });
+
+        // Summary stats
+        const keepCount = entries.filter(e => e.recommendation === "keep").length;
+        const reviewCount = entries.filter(e => e.recommendation === "review").length;
+        const archiveCount = entries.filter(e => e.recommendation === "archive").length;
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              summary: { keep: keepCount, review: reviewCount, archive: archiveCount },
+              entries,
+            }, null, 2)
+          }]
+        };
+      }
+
+      case "archive_stale_memories": {
+        const { dryRun = true, maxScoreToArchive = 30 } = args as {
+          dryRun?: boolean;
+          maxScoreToArchive?: number;
+        };
+
+        const knowledgePath = path.join(knowledgeDir, "MEMORY.md");
+        const content = readFile(knowledgePath);
+        if (!content) {
+          return { content: [{ type: "text", text: "No MEMORY.md file found." }] };
+        }
+
+        // Parse entries with dates
+        const lines = content.split("\n");
+        const dateEntryPattern = /^- \[(\d{4}-\d{2}-\d{2})\] (.+)$/;
+        const now = Date.now();
+        const entriesToArchive: { line: number; date: string; text: string; score: number }[] = [];
+
+        for (let i = 0; i < lines.length; i++) {
+          const match = lines[i].match(dateEntryPattern);
+          if (match) {
+            const entryDate = new Date(match[1]).getTime();
+            const daysSince = Math.floor((now - entryDate) / (1000 * 60 * 60 * 24));
+            // Simple score based on age (newer = higher score)
+            const score = Math.max(0, 100 - daysSince * 2);
+            if (score < maxScoreToArchive) {
+              entriesToArchive.push({
+                line: i,
+                date: match[1],
+                text: match[2],
+                score,
+              });
+            }
+          }
+        }
+
+        if (entriesToArchive.length === 0) {
+          return { content: [{ type: "text", text: "No stale entries found to archive." }] };
+        }
+
+        if (dryRun) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                dryRun: true,
+                wouldArchive: entriesToArchive.length,
+                entries: entriesToArchive,
+                message: "Set dryRun=false to actually archive these entries.",
+              }, null, 2)
+            }]
+          };
+        }
+
+        // Actually archive: remove from main sections and add to archive section
+        const linesToRemove = new Set(entriesToArchive.map(e => e.line));
+        const newLines = lines.filter((_, i) => !linesToRemove.has(i));
+
+        // Add archive section if not exists
+        const archiveHeader = "## Archive (Stale Entries)";
+        let archiveContent = newLines.join("\n");
+        if (!archiveContent.includes(archiveHeader)) {
+          archiveContent += `\n\n${archiveHeader}\n<!-- Entries moved here by archive_stale_memories tool -->\n`;
+        }
+
+        // Add archived entries
+        const archiveEntries = entriesToArchive
+          .map(e => `- [${e.date}] [archived] ${e.text}`)
+          .join("\n");
+        archiveContent = archiveContent.replace(
+          archiveHeader,
+          `${archiveHeader}\n${archiveEntries}`
+        );
+
+        if (writeFile(knowledgePath, archiveContent)) {
+          trackWrite("knowledge.archive");
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                archived: entriesToArchive.length,
+                entries: entriesToArchive.map(e => e.text.slice(0, 50) + "..."),
+              }, null, 2)
+            }]
+          };
+        }
+        return { content: [{ type: "text", text: "Failed to write archived content." }] };
       }
 
       case "send_message": {
@@ -1108,6 +1332,24 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
 
       case "update_knowledge": {
         const { section, content } = args as { section: "P0" | "P1" | "P2"; content: string };
+
+        // Guardrail: Validate entry length (max 200 chars for concise insights)
+        if (content.length > 200) {
+          return {
+            content: [{
+              type: "text",
+              text: `Entry too long (${content.length} chars). Keep memory entries concise (max 200 chars). Consider splitting into multiple entries or being more specific.`,
+            }],
+          };
+        }
+
+        // Guardrail: Check for empty content
+        if (!content.trim()) {
+          return { content: [{ type: "text", text: "Cannot add empty memory entry." }] };
+        }
+
+        // Track usage for memory freshness
+        trackWrite(`knowledge.${section}`);
         ensureDir(knowledgeDir);
         const knowledgePath = path.join(knowledgeDir, "MEMORY.md");
         let existing = readFile(knowledgePath);
@@ -1148,6 +1390,54 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
 
         if (headerIndex === -1) {
           return { content: [{ type: "text", text: `Section ${section} not found in MEMORY.md` }] };
+        }
+
+        // Guardrail: Duplicate detection - check for similar existing entries
+        const contentLower = content.toLowerCase();
+        const existingEntries = existing.match(/- \[\d{4}-\d{2}-\d{2}\] .+/g) || [];
+        for (const entry of existingEntries) {
+          // Extract the text part after the date
+          const entryText = entry.replace(/- \[\d{4}-\d{2}-\d{2}\] /, "").toLowerCase();
+          // Check for high similarity (exact match or substring)
+          if (entryText === contentLower || entryText.includes(contentLower) || contentLower.includes(entryText)) {
+            return {
+              content: [{
+                type: "text",
+                text: `Duplicate detected. Similar entry already exists: "${entry.slice(0, 80)}...". Update the existing entry instead of adding a duplicate.`,
+              }],
+            };
+          }
+        }
+
+        // Guardrail: P0 contradiction warning - check for "uses X" patterns that conflict
+        if (section === "P0") {
+          const p0Section = existing.slice(headerIndex, existing.indexOf("## P1"));
+          const usesPattern = /uses?\s+(\w+)/gi;
+          const newUses = [...contentLower.matchAll(usesPattern)].map(m => m[1]);
+          const existingUses = [...p0Section.toLowerCase().matchAll(usesPattern)].map(m => m[1]);
+
+          // Common tool alternatives that often conflict
+          const alternatives: Record<string, string[]> = {
+            bun: ["npm", "yarn", "pnpm"],
+            npm: ["bun", "yarn", "pnpm"],
+            yarn: ["npm", "bun", "pnpm"],
+            vitest: ["jest", "mocha"],
+            jest: ["vitest", "mocha"],
+          };
+
+          for (const newTool of newUses) {
+            const conflicts = alternatives[newTool] || [];
+            for (const existingTool of existingUses) {
+              if (conflicts.includes(existingTool)) {
+                return {
+                  content: [{
+                    type: "text",
+                    text: `Potential P0 contradiction: New entry mentions "${newTool}" but P0 already contains "${existingTool}". These are typically alternatives. Verify this is intentional before adding.`,
+                  }],
+                };
+              }
+            }
+          }
         }
 
         // Find the next section or end of file

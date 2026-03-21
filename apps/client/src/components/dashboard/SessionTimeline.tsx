@@ -14,7 +14,7 @@ import {
 import { memo, useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { formatTime, formatShortDate, formatDuration } from "@/lib/time";
-import { Skeleton } from "@/components/ui/skeleton";
+import { SessionTimelineSkeleton } from "./DashboardSkeletons";
 
 interface SessionTimelineProps {
   teamSlugOrId: string;
@@ -268,27 +268,7 @@ function SessionTimelineContent({ teamSlugOrId, limit = 5 }: SessionTimelineProp
   }, [sessions]);
 
   if (!result) {
-    return (
-      <div className="space-y-4">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="rounded-lg border border-neutral-200 dark:border-neutral-700 p-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Skeleton className="size-4" />
-                <Skeleton className="h-4 w-32" />
-                <Skeleton className="h-3 w-16" />
-              </div>
-              <div className="flex items-center gap-3">
-                <Skeleton className="h-3 w-8" />
-                <Skeleton className="h-3 w-8" />
-                <Skeleton className="h-3 w-12" />
-                <Skeleton className="h-3 w-12" />
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    );
+    return <SessionTimelineSkeleton className="border-0 p-0" />;
   }
 
   if (sessions.length === 0) {

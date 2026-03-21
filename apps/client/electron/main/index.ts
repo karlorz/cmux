@@ -68,6 +68,7 @@ import {
   readOpencodeJsonConfig,
   type HostMcpFileResult,
 } from "./mcp-host-config";
+import { getMobileMachineInfo } from "./mobile-machine-info";
 
 // Use a cookieable HTTPS origin intercepted locally instead of a custom scheme.
 const PARTITION = "persist:cmux";
@@ -581,6 +582,10 @@ function registerAppIpcHandlers(): void {
         error: error instanceof Error ? error.message : String(error),
       };
     }
+  });
+
+  ipcMain.handle("cmux:mobile:get-machine-info", async () => {
+    return await getMobileMachineInfo();
   });
 }
 
