@@ -1,0 +1,76 @@
+name: Release Tag On Merge
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - apps/client/package.json
+      - .github/workflows/release-tag-on-merge.yml
+  workflow_dispatch:
+
+concurrency:
+  group: release-tag-on-merge-${{ github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  create-release-tag:
+    name: Create suffixed release tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve release tag from apps/client/package.json
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="$(node -p "require('./apps/client/package.json').version")"
+
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$ ]]; then
+            echo "Current version $version is not a suffixed fork release version. Skipping tag creation." >> "$GITHUB_STEP_SUMMARY"
+            echo "should_tag=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          tag="v$version"
+          echo "Resolved suffixed release tag $tag from apps/client/package.json." >> "$GITHUB_STEP_SUMMARY"
+          printf 'should_tag=true\n' >> "$GITHUB_OUTPUT"
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether the release tag already exists
+        if: steps.resolve.outputs.should_tag == 'true'
+        id: existing
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${{ steps.resolve.outputs.tag }}"
+          git fetch origin --tags
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists on origin. Nothing to do." >> "$GITHUB_STEP_SUMMARY"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Tag $tag does not exist on origin. Creating it on ${GITHUB_SHA}." >> "$GITHUB_STEP_SUMMARY"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create and push suffixed release tag
+        if: steps.resolve.outputs.should_tag == 'true' && steps.existing.outputs.exists == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${{ steps.resolve.outputs.tag }}"
+          git tag "$tag" "$GITHUB_SHA"
+          git push origin "refs/tags/$tag"
+          echo "Created and pushed $tag at ${GITHUB_SHA}." >> "$GITHUB_STEP_SUMMARY"
