@@ -1072,23 +1072,51 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         if (Object.keys(stats.entries).length === 0) {
           return { content: [{ type: "text", text: "No usage statistics recorded yet." }] };
         }
-        // Calculate freshness scores
+        // Calculate freshness scores (Q4 Phase 3b)
         const now = Date.now();
         const entries = Object.entries(stats.entries).map(([key, value]) => {
           const daysSinceRead = Math.floor((now - new Date(value.lastRead).getTime()) / (1000 * 60 * 60 * 24));
           const daysSinceWrite = value.lastWrite
             ? Math.floor((now - new Date(value.lastWrite).getTime()) / (1000 * 60 * 60 * 24))
             : null;
-          const freshness = value.readCount > 5 ? "active" : daysSinceRead > 7 ? "stale" : "normal";
+
+          // Freshness scoring algorithm
+          // Factors: recency (40%), usage frequency (40%), type priority (20%)
+          const recencyScore = Math.max(0, 100 - daysSinceRead * 3); // -3 points per day
+          const usageScore = Math.min(100, value.readCount * 10); // +10 per read, max 100
+          const priorityScore = key.includes("P0") ? 100 : key.includes("P1") ? 50 : key.includes("P2") ? 25 : 50;
+          const freshnessScore = Math.round(recencyScore * 0.4 + usageScore * 0.4 + priorityScore * 0.2);
+
+          // Recommendation based on score
+          let recommendation: "keep" | "review" | "archive";
+          if (freshnessScore >= 60) recommendation = "keep";
+          else if (freshnessScore >= 30) recommendation = "review";
+          else recommendation = "archive";
+
           return {
             type: key,
             readCount: value.readCount,
             daysSinceRead,
             daysSinceWrite,
-            freshness,
+            freshnessScore,
+            recommendation,
           };
         });
-        return { content: [{ type: "text", text: JSON.stringify({ entries }, null, 2) }] };
+
+        // Summary stats
+        const keepCount = entries.filter(e => e.recommendation === "keep").length;
+        const reviewCount = entries.filter(e => e.recommendation === "review").length;
+        const archiveCount = entries.filter(e => e.recommendation === "archive").length;
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              summary: { keep: keepCount, review: reviewCount, archive: archiveCount },
+              entries,
+            }, null, 2)
+          }]
+        };
       }
 
       case "send_message": {
