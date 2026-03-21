@@ -122,7 +122,7 @@ Reuse `postPreviewComment()` with screenshot gallery format:
 - [x] Phase 2a: Task Type & Trigger - `operatorVerification.ts`, `operatorVerification_actions.ts`
 - [x] Phase 2b: Screenshot Tool - `taskRuns.ts` triggers on completion
 - [x] Phase 2c: Gallery Comment - `postOperatorScreenshotComment` in `github_pr_comments.ts`
-- [ ] Phase 2d: UI Integration (optional)
+- [x] Phase 2d: UI Integration - Verification status badge in `RunScreenshotGallery.tsx` (PR #739)
 
 The full Phase 2 pipeline is already implemented:
 1. Task run completes → `updateStatus` schedules `triggerOperatorVerification` (5s delay)
