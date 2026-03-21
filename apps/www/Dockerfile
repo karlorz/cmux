@@ -65,6 +65,7 @@ COPY packages/pve-lxc-client ./packages/pve-lxc-client
 
 # Copy www source code
 COPY apps/www ./apps/www
+COPY scripts/package.json ./scripts/
 
 # Copy root config files
 COPY package.json bun.lock .npmrc tsconfig.json tsconfig.base.json ./
