@@ -1,4 +1,5 @@
 export { booksRouter } from "./books.route";
+export { configSandboxRouter } from "./config.sandbox.route";
 export { configRouter } from "./config.route";
 export { devServerRouter } from "./dev-server.route";
 export { editorSettingsRouter } from "./editor-settings.route";
