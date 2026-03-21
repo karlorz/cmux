@@ -10,6 +10,12 @@ SESSION_ACTIVITY_SCRIPT="${CMUX_SESSION_ACTIVITY_SCRIPT:-}"
 INLINE_WRAPUP="${CMUX_AUTOPILOT_INLINE_WRAPUP:-0}"
 ENABLE_REVIEW_WINDOW="${CMUX_AUTOPILOT_ENABLE_REVIEW_WINDOW:-0}"
 
+# Ralph Mode: simple task looping until completion signal
+RALPH_MODE="${CMUX_RALPH_MODE:-0}"
+RALPH_PROMPT="${CMUX_RALPH_PROMPT:-}"
+RALPH_COMPLETION_TAG="${CMUX_RALPH_COMPLETION_TAG:-DONE}"
+RALPH_MAX_ITERATIONS="${CMUX_RALPH_MAX_ITERATIONS:-50}"
+
 DEBUG_LOG="${CMUX_AUTOPILOT_DEBUG_LOG:-${STATE_DIR}/${STATE_PREFIX}-debug.log}"
 DEBUG_FLAG_FILE="${CMUX_AUTOPILOT_DEBUG_FLAG_FILE:-${STATE_DIR}/${STATE_PREFIX}-debug-enabled}"
 DEBUG_INPUT_FILE_TEMPLATE="${CMUX_AUTOPILOT_DEBUG_INPUT_FILE_TEMPLATE:-${STATE_DIR}/${STATE_PREFIX}-last-stop-input-%s.json}"
@@ -66,6 +72,15 @@ if [ "$DEBUG_ENABLED" = "1" ]; then
   printf '%s\n' "$INPUT" > "$DEBUG_INPUT_FILE"
 fi
 
+# Ralph Mode: use project-local state directory
+if [ "$RALPH_MODE" = "1" ]; then
+  RALPH_STATE_DIR="${PROJECT_DIR}/.${PROVIDER}"
+  mkdir -p "$RALPH_STATE_DIR"
+  STATE_DIR="$RALPH_STATE_DIR"
+  STATE_PREFIX="ralph-loop"
+  log_debug "ralph: using project-local state at $RALPH_STATE_DIR"
+fi
+
 TURN_FILE="${STATE_DIR}/${STATE_PREFIX}-turns-${SESSION_ID}"
 SESSION_STOP_FILE="${STATE_DIR}/${STATE_PREFIX}-stop-${SESSION_ID}"
 BLOCKED_FILE="${STATE_DIR}/${STATE_PREFIX}-blocked-${SESSION_ID}"
@@ -74,7 +89,12 @@ STATE_FILE="${STATE_DIR}/${STATE_PREFIX}-state-${SESSION_ID}"
 IDLE_COUNT_FILE="${STATE_DIR}/${STATE_PREFIX}-idle-${SESSION_ID}"
 WRAPUP_FILE="${STATE_DIR}/${STATE_PREFIX}-wrapup-${SESSION_ID}"
 PID_FILE="${STATE_DIR}/${STATE_PREFIX}-pid-${SESSION_ID}"
-MAX_TURNS="$(first_set "${AUTOPILOT_MAX_TURNS:-}" "${CMUX_AUTOPILOT_MAX_TURNS:-}" "${CLAUDE_AUTOPILOT_MAX_TURNS:-20}")"
+# Ralph Mode: override MAX_TURNS with RALPH_MAX_ITERATIONS
+if [ "$RALPH_MODE" = "1" ]; then
+  MAX_TURNS="$RALPH_MAX_ITERATIONS"
+else
+  MAX_TURNS="$(first_set "${AUTOPILOT_MAX_TURNS:-}" "${CMUX_AUTOPILOT_MAX_TURNS:-}" "${CLAUDE_AUTOPILOT_MAX_TURNS:-20}")"
+fi
 IDLE_THRESHOLD="$(first_set "${AUTOPILOT_IDLE_THRESHOLD:-}" "${CMUX_AUTOPILOT_IDLE_THRESHOLD:-}" "${CLAUDE_AUTOPILOT_IDLE_THRESHOLD:-3}")"
 MONITORING_THRESHOLD="$(first_set "${AUTOPILOT_MONITORING_THRESHOLD:-}" "${CMUX_AUTOPILOT_MONITORING_THRESHOLD:-}" "${CLAUDE_AUTOPILOT_MONITORING_THRESHOLD:-10}")"
 BASE_DELAY="$(first_set "${AUTOPILOT_DELAY:-}" "${CMUX_AUTOPILOT_DELAY:-}" "${CLAUDE_AUTOPILOT_DELAY:-2}")"
@@ -121,10 +141,40 @@ is_infinite_mode() {
   [ "$MAX_TURNS" -eq -1 ]
 }
 
+cleanup_ralph_state() {
+  rm -f "$TURN_FILE" "$STATE_FILE" "$IDLE_COUNT_FILE"
+  log_debug "ralph: cleaned up state files"
+}
+
+# Ralph Mode: check for completion signal in last assistant message
+check_ralph_completion() {
+  if [ "$RALPH_MODE" != "1" ]; then
+    return 1
+  fi
+
+  local COMPLETION_SIGNAL="<promise>${RALPH_COMPLETION_TAG}</promise>"
+  local LAST_MESSAGE
+  LAST_MESSAGE="$(echo "$INPUT" | jq -r '.last_assistant_message // ""' 2>/dev/null || echo "")"
+
+  if [ -n "$LAST_MESSAGE" ] && echo "$LAST_MESSAGE" | grep -qF "$COMPLETION_SIGNAL"; then
+    log_debug "ralph: completion signal detected: $COMPLETION_SIGNAL"
+    return 0
+  fi
+
+  return 1
+}
+
 cd "$PROJECT_DIR"
 log_debug "provider=$PROVIDER project_dir=$PROJECT_DIR session_id=$SESSION_ID"
 
 printf '%s\n' "${CMUX_SESSION_PID:-$PPID}" > "$PID_FILE"
+
+# Ralph Mode: check for completion signal before anything else
+if check_ralph_completion; then
+  echo "[Ralph Loop] Completion signal detected, allowing stop" >&2
+  cleanup_ralph_state
+  exit 0
+fi
 
 # Clean up stale completed marker from an earlier finished cycle.
 rm -f "$COMPLETED_FILE"
@@ -290,10 +340,20 @@ else
   TURN_STATUS="${TURN_COUNT}/${MAX_TURNS}"
 fi
 
-echo "[Autopilot] Turn $TURN_STATUS ($PHASE) - continuing..." >&2
+# Ralph Mode uses different status prefix
+if [ "$RALPH_MODE" = "1" ]; then
+  echo "[Ralph Loop] Iteration $TURN_STATUS - continuing..." >&2
+else
+  echo "[Autopilot] Turn $TURN_STATUS ($PHASE) - continuing..." >&2
+fi
 
 if [ -n "$WRAPUP_SOURCE" ]; then
   REASON="$(build_wrapup_reason)"
+elif [ "$RALPH_MODE" = "1" ] && [ -n "$RALPH_PROMPT" ]; then
+  # Ralph Mode: replay original prompt with completion instruction
+  REASON="$RALPH_PROMPT
+
+When you have completed the task, output <promise>${RALPH_COMPLETION_TAG}</promise> in your response to signal completion."
 elif [ "$REVIEW_ENABLED" = "1" ]; then
   REASON="Code review is running. After review feedback, address any issues found. You have 2 turns remaining."
   if [ -n "$WAIT_INSTRUCTION" ]; then
