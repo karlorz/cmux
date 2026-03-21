@@ -46,9 +46,9 @@ When context nears limit, trigger compact/summarize:
 - [x] Populate for Claude models (Opus 4.6 = 1M)
 - [x] Populate for flagship OpenAI models
 
-### Phase 5b: Display (Optional)
-- [ ] Show context capacity in agent selector
-- [ ] Add tooltip with model capabilities
+### Phase 5b: Display (Done)
+- [x] Show context capacity in agent selector
+- [x] Add tooltip with model capabilities
 
 ### Phase 5c: Pre-Compact (Future)
 - [ ] Monitor context usage
