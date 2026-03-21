@@ -92,9 +92,7 @@ import clsx from "clsx";
 import { kitties } from "./kitty";
 import {
   HEATMAP_MODEL_ANTHROPIC_HAIKU_45_QUERY_VALUE,
-  HEATMAP_MODEL_DENSE_FINETUNE_QUERY_VALUE,
-  HEATMAP_MODEL_DENSE_V2_FINETUNE_QUERY_VALUE,
-  HEATMAP_MODEL_FINETUNE_QUERY_VALUE,
+  HEATMAP_MODEL_OPENAI_GPT_5_NANO_QUERY_VALUE,
   HEATMAP_MODEL_QUERY_KEY,
   HEATMAP_LANGUAGE_QUERY_KEY,
   TOOLTIP_LANGUAGE_OPTIONS,
@@ -228,16 +226,8 @@ const HEATMAP_MODEL_OPTIONS: ReadonlyArray<{
     label: "Claude Haiku 4.5",
   },
   {
-    value: HEATMAP_MODEL_DENSE_V2_FINETUNE_QUERY_VALUE,
-    label: "cmux-heatmap-2",
-  },
-  {
-    value: HEATMAP_MODEL_FINETUNE_QUERY_VALUE,
-    label: "cmux-heatmap-0",
-  },
-  {
-    value: HEATMAP_MODEL_DENSE_FINETUNE_QUERY_VALUE,
-    label: "cmux-heatmap-1",
+    value: HEATMAP_MODEL_OPENAI_GPT_5_NANO_QUERY_VALUE,
+    label: "GPT-5 Nano",
   },
 ];
 

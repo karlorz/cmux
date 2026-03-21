@@ -1,13 +1,6 @@
-import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
-import { createOpenAI } from "@ai-sdk/openai";
 import { streamText } from "ai";
 
-import {
-  CLOUDFLARE_OPENAI_BASE_URL,
-  BEDROCK_AWS_REGION,
-} from "@cmux/shared";
 import { collectPrDiffs, collectPrDiffsViaGhCli } from "@/scripts/pr-review-heatmap";
-import { env } from "@/lib/utils/www-env";
 import {
   SimpleReviewParser,
   type SimpleReviewParsedEvent,
@@ -20,8 +13,15 @@ import { checkRepoVisibility } from "@/lib/github/check-repo-visibility";
 import {
   getDefaultHeatmapModelConfig,
   DEFAULT_TOOLTIP_LANGUAGE,
+  type ModelConfig,
   type TooltipLanguageValue,
 } from "./model-config";
+import {
+  createWwwPlatformAiModel,
+  getWwwPlatformAiMissingApiKeyMessage,
+} from "@/lib/utils/platform-ai";
+
+export type { ModelConfig } from "./model-config";
 
 const SIMPLE_REVIEW_INSTRUCTIONS = `Dannotate every modified/deleted/added line of this diff with a "fake" comment at the end of each line.
 
@@ -118,11 +118,6 @@ type CollectPrDiffsResult = Awaited<ReturnType<typeof collectPrDiffs>>;
 type RepoSlug = {
   owner: string;
   repo: string;
-};
-
-export type ModelConfig = {
-  provider: "anthropic" | "openai";
-  model: string;
 };
 
 export type SimpleReviewStreamOptions = {
@@ -368,18 +363,12 @@ export async function runSimpleAnthropicReviewStream(
   // Determine which model to use based on configuration
   const effectiveModelConfig: ModelConfig =
     modelConfig ?? getDefaultHeatmapModelConfig();
-
-  // AWS Bedrock SDK reads AWS_BEARER_TOKEN_BEDROCK and AWS_REGION from env vars by default
-  // We pass them explicitly for clarity
-  const bedrock = createAmazonBedrock({
-    region: env.AWS_REGION ?? BEDROCK_AWS_REGION,
-    apiKey: env.AWS_BEARER_TOKEN_BEDROCK,
-  });
-
-  const openai = createOpenAI({
-    apiKey: env.OPENAI_API_KEY,
-    baseURL: CLOUDFLARE_OPENAI_BASE_URL,
-  });
+  const resolvedModelConfig = createWwwPlatformAiModel(effectiveModelConfig);
+  if (!resolvedModelConfig) {
+    throw new Error(
+      getWwwPlatformAiMissingApiKeyMessage(effectiveModelConfig.provider)
+    );
+  }
 
   const runWithSemaphore = createSemaphore(MAX_CONCURRENCY);
   const finalChunks: string[] = [];
@@ -411,14 +400,8 @@ export async function runSimpleAnthropicReviewStream(
         const prompt = buildFilePrompt(prLabel, file.filePath, file.diffText, tooltipLanguage);
 
         try {
-          // Type assertion needed: @ai-sdk packages return V2|V3 but streamText expects V2
-          const modelInstance =
-            effectiveModelConfig.provider === "openai"
-              ? openai(effectiveModelConfig.model)
-              : bedrock(effectiveModelConfig.model);
-
           const stream = streamText({
-            model: modelInstance as Parameters<typeof streamText>[0]["model"],
+            model: resolvedModelConfig.model as Parameters<typeof streamText>[0]["model"],
             prompt,
             temperature: 0,
             maxRetries: 2,
