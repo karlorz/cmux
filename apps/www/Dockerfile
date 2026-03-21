@@ -69,6 +69,11 @@ COPY apps/www ./apps/www
 # Copy root config files
 COPY package.json bun.lock .npmrc tsconfig.json tsconfig.base.json ./
 
+# Re-hydrate dependencies against the full source tree. The manifest-only
+# install from the deps stage is not enough for Bun 1.3.11 to resolve the
+# nested apps/www workspace graph during generate-openapi-client in CI.
+RUN bun install --ignore-scripts --frozen-lockfile
+
 # Re-link @cmux workspace packages to local source and expose the
 # workspace-root node_modules to apps/www so Bun can resolve build-time
 # packages during generate-openapi-client inside Docker.
