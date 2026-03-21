@@ -580,14 +580,6 @@ export type SetupInstanceBody = {
     snapshotId?: string | ('snapshot_mgmhjyrd' | 'snapshot_fe0cgqlw');
 };
 
-export type ResumeTaskRunResponse = {
-    resumed: true;
-};
-
-export type ResumeTaskRunBody = {
-    teamSlugOrId: string;
-};
-
 export type CheckTaskRunPausedResponse = {
     paused: boolean;
     stopped?: boolean;
@@ -603,6 +595,14 @@ export type RefreshGitHubAuthResponse = {
 };
 
 export type RefreshGitHubAuthBody = {
+    teamSlugOrId: string;
+};
+
+export type ResumeTaskRunResponse = {
+    resumed: true;
+};
+
+export type ResumeTaskRunBody = {
     teamSlugOrId: string;
 };
 
@@ -3483,47 +3483,6 @@ export type PostApiMorphSetupInstanceResponses = {
 
 export type PostApiMorphSetupInstanceResponse = PostApiMorphSetupInstanceResponses[keyof PostApiMorphSetupInstanceResponses];
 
-export type PostApiMorphTaskRunsByTaskRunIdResumeData = {
-    body: ResumeTaskRunBody;
-    path: {
-        taskRunId: string;
-    };
-    query?: never;
-    url: '/api/morph/task-runs/{taskRunId}/resume';
-};
-
-export type PostApiMorphTaskRunsByTaskRunIdResumeErrors = {
-    /**
-     * Task run is not backed by a Morph instance
-     */
-    400: unknown;
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden
-     */
-    403: unknown;
-    /**
-     * Task run or instance not found
-     */
-    404: unknown;
-    /**
-     * Failed to resume instance
-     */
-    500: unknown;
-};
-
-export type PostApiMorphTaskRunsByTaskRunIdResumeResponses = {
-    /**
-     * Morph instance resumed
-     */
-    200: ResumeTaskRunResponse;
-};
-
-export type PostApiMorphTaskRunsByTaskRunIdResumeResponse = PostApiMorphTaskRunsByTaskRunIdResumeResponses[keyof PostApiMorphTaskRunsByTaskRunIdResumeResponses];
-
 export type PostApiMorphTaskRunsByTaskRunIdIsPausedData = {
     body: CheckTaskRunPausedBody;
     path: {
@@ -3609,6 +3568,47 @@ export type PostApiMorphTaskRunsByTaskRunIdRefreshGithubAuthResponses = {
 };
 
 export type PostApiMorphTaskRunsByTaskRunIdRefreshGithubAuthResponse = PostApiMorphTaskRunsByTaskRunIdRefreshGithubAuthResponses[keyof PostApiMorphTaskRunsByTaskRunIdRefreshGithubAuthResponses];
+
+export type PostApiMorphTaskRunsByTaskRunIdResumeData = {
+    body: ResumeTaskRunBody;
+    path: {
+        taskRunId: string;
+    };
+    query?: never;
+    url: '/api/morph/task-runs/{taskRunId}/resume';
+};
+
+export type PostApiMorphTaskRunsByTaskRunIdResumeErrors = {
+    /**
+     * Task run is not backed by a Morph instance
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Task run or instance not found
+     */
+    404: unknown;
+    /**
+     * Failed to resume instance
+     */
+    500: unknown;
+};
+
+export type PostApiMorphTaskRunsByTaskRunIdResumeResponses = {
+    /**
+     * Morph instance resumed
+     */
+    200: ResumeTaskRunResponse;
+};
+
+export type PostApiMorphTaskRunsByTaskRunIdResumeResponse = PostApiMorphTaskRunsByTaskRunIdResumeResponses[keyof PostApiMorphTaskRunsByTaskRunIdResumeResponses];
 
 export type PostApiOrchestrateMessageData = {
     body: OrchestrateMessageRequest;
