@@ -62,7 +62,7 @@ interface EnvironmentWorkspaceConfigProps {
   exposedPorts: string;
   vscodeUrl?: string;
   browserHtmlUrl?: string;
-  browserPersistKey?: string;
+  browserPersistKey: string;
   isSaving: boolean;
   errorMessage?: string | null;
   initialConfigStep?: ConfigStep;
@@ -389,23 +389,10 @@ export function EnvironmentWorkspaceConfig({
     [browserHtmlUrl]
   );
 
-  const resolvedBrowserPersistKey = useMemo(() => {
-    if (browserPersistKey) {
-      return browserPersistKey;
-    }
-    if (browserHtmlUrl) {
-      return `env-workspace-config:browser:${browserHtmlUrl}`;
-    }
-    if (vscodeUrl) {
-      return `env-workspace-config:browser:${vscodeUrl}`;
-    }
-    return `env-workspace-config:browser:${teamSlugOrId}`;
-  }, [browserHtmlUrl, browserPersistKey, teamSlugOrId, vscodeUrl]);
-
   const isVncBrowserPanel =
     showBrowser && Boolean(browserHtmlUrl?.includes("/vnc.html"));
   useVncClipboardBridge({
-    persistKey: resolvedBrowserPersistKey,
+    persistKey: browserPersistKey,
     enabled: isVncBrowserPanel,
   });
 
@@ -917,7 +904,7 @@ export function EnvironmentWorkspaceConfig({
         {/* Browser preview (shown for browser-setup step) */}
         {showBrowser && browserHtmlUrl && (
           <PersistentWebView
-            persistKey={resolvedBrowserPersistKey}
+            persistKey={browserPersistKey}
             src={browserHtmlUrl}
             className="absolute inset-0 opacity-100"
             iframeClassName="select-none"
