@@ -38,6 +38,8 @@ export { githubProjectsListRouter } from "./github.projects.list.route";
 export { githubProjectsPlanSyncRouter } from "./github.projects.plan-sync.route";
 export { healthRouter } from "./health.route";
 export { iframePreflightRouter } from "./iframe-preflight.route";
+export { mobileHeartbeatRouter } from "./mobile-heartbeat.route";
+export { mobileMachineSessionRouter } from "./mobile-machine-session.route";
 export { morphInstancesRouter } from "./morph.instances.route";
 export { morphSetupInstanceRouter } from "./morph.setup-instance.route";
 export { morphTaskRunsPausedRouter } from "./morph.task-runs.paused.route";

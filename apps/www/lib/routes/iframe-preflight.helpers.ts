@@ -4,6 +4,7 @@ import type { IframePreflightResult } from "@cmux/shared";
 const ALLOWED_HOST_SUFFIXES = [
   ".cmux.sh",
   ".cmux.dev",
+  ".cmux.com",
   ".manaflow.com",
   ".cmux.local",
   ".cmux.localhost",
@@ -17,7 +18,9 @@ const ALLOWED_EXACT_HOSTS = new Set<string>([
   "cmux.sh",
   "www.cmux.sh",
   "cmux.dev",
+  "cmux.com",
   "www.cmux.dev",
+  "www.cmux.com",
   "manaflow.com",
   "www.manaflow.com",
   "cmux.local",
