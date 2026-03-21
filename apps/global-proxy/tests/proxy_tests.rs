@@ -122,12 +122,17 @@ impl TestHttpBackend {
         }
     }
 
-    async fn serve_on_port(
+    /// Try to serve on a specific port. Returns None if port is already in use.
+    async fn try_serve_on_port(
         port: u16,
         handler: Arc<dyn Fn(Request<Body>) -> Response<Body> + Send + Sync + 'static>,
-    ) -> Self {
-        let listener = std::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
-            .expect("bind backend on port");
+    ) -> Option<Self> {
+        let listener =
+            match std::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port))) {
+                Ok(l) => l,
+                Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => return None,
+                Err(e) => panic!("failed to bind port {}: {}", port, e),
+            };
         listener.set_nonblocking(true).expect("set nonblocking");
         let addr = listener.local_addr().expect("local addr");
 
@@ -154,11 +159,11 @@ impl TestHttpBackend {
             }
         });
 
-        Self {
+        Some(Self {
             addr,
             shutdown: Some(tx),
             task,
-        }
+        })
     }
 
     fn port(&self) -> u16 {
@@ -844,7 +849,10 @@ async fn port_39378_strips_cors_and_applies_csp() {
         }
     });
 
-    let backend = TestHttpBackend::serve_on_port(39_378, handler).await;
+    let Some(backend) = TestHttpBackend::try_serve_on_port(39_378, handler).await else {
+        eprintln!("SKIP: port 39378 already in use (dev server running?)");
+        return;
+    };
     let proxy = TestProxy::spawn().await;
 
     let response = proxy

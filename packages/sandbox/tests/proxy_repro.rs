@@ -1,28 +1,38 @@
+use std::io::{BufRead, BufReader};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 #[tokio::test]
 async fn proxy_tls_handshake_should_not_panic() {
-    let port = 12345;
-
+    // Use port 0 to let OS assign an available port
     let mut child = std::process::Command::new(assert_cmd::cargo::cargo_bin!("cmux"))
-        .args(["proxy", "dummy-id", "--port", &port.to_string()])
-        .env("CMUX_SANDBOX_URL", "http://127.0.0.1:12346")
+        .args(["proxy", "dummy-id", "--port", "0"])
+        .env("CMUX_SANDBOX_URL", "http://127.0.0.1:19999")
         .stderr(std::process::Stdio::piped())
         .stdout(std::process::Stdio::null())
         .spawn()
         .expect("failed to spawn cmux");
 
-    // Give it a moment to start
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    // Read the port from stderr (format: "Proxy listening on http://127.0.0.1:<port>")
+    let stderr = child.stderr.take().expect("no stderr");
+    let mut reader = BufReader::new(stderr);
+    let mut line = String::new();
+    reader.read_line(&mut line).expect("failed to read stderr");
+
+    let port: u16 = line
+        .trim()
+        .rsplit(':')
+        .next()
+        .and_then(|s| s.parse().ok())
+        .expect(&format!("could not parse port from stderr: {:?}", line));
 
     // 2. Connect via TCP
     let mut stream = match TcpStream::connect(format!("127.0.0.1:{}", port)).await {
         Ok(s) => s,
         Err(e) => {
             let _ = child.kill();
-            panic!("Failed to connect to proxy: {}", e);
+            panic!("Failed to connect to proxy on port {}: {}", port, e);
         }
     };
 
@@ -37,7 +47,9 @@ async fn proxy_tls_handshake_should_not_panic() {
     let response = String::from_utf8_lossy(&buf[..n]);
     assert!(
         response.contains("200 Connection Established"),
-        "Proxy did not accept CONNECT"
+        "Proxy did not accept CONNECT. Got {} bytes: {:?}",
+        n,
+        response
     );
 
     // 4. Send TLS ClientHello (Client Hello is 0x16 ...)
