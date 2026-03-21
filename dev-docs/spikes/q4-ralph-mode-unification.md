@@ -78,8 +78,8 @@ REASON="$CMUX_RALPH_PROMPT"
 - [x] Pass CMUX_RALPH_* env vars to sandbox
 
 ### Phase 6c: UI Integration (Optional)
-- [ ] Add "Ralph Mode" toggle to task creation
-- [ ] Show completion status in dashboard
+- [x] Add "Ralph Mode" toggle to task creation (PR #741)
+- [x] Show completion status in dashboard
 
 ## Files to Modify
 
@@ -97,4 +97,4 @@ Works with all providers that use the stop hook:
 
 - [x] Phase 6a: Core Ralph Mode (commit bb63c0c78)
 - [x] Phase 6b: CLI Integration
-- [ ] Phase 6c: UI Integration (optional)
+- [x] Phase 6c: UI Integration (PR #741)

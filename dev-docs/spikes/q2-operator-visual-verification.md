@@ -92,22 +92,22 @@ Reuse `postPreviewComment()` with screenshot gallery format:
 ## Implementation
 
 ### Phase 2a: Task Type & Trigger (1 day)
-- [ ] Add taskType field to tasks schema
-- [ ] Add verification trigger after task completion
-- [ ] Link verification to parent coding task
+- [x] Add taskType field to tasks schema
+- [x] Add verification trigger after task completion
+- [x] Link verification to parent coding task
 
 ### Phase 2b: Screenshot Tool (1 day)
-- [ ] Add capture_screenshot MCP tool
-- [ ] Store screenshots to Convex storage
-- [ ] Return URLs for gallery
+- [x] Add capture_screenshot MCP tool
+- [x] Store screenshots to Convex storage
+- [x] Return URLs for gallery
 
 ### Phase 2c: Gallery Comment (0.5 day)
-- [ ] Format screenshot gallery markdown
-- [ ] Post to PR using existing pipeline
+- [x] Format screenshot gallery markdown
+- [x] Post to PR using existing pipeline
 
 ### Phase 2d: UI Integration (Optional)
-- [ ] Show verification status in dashboard
-- [ ] Display screenshot gallery in task details
+- [x] Show verification status in dashboard (PR #739)
+- [x] Display screenshot gallery in task details
 
 ## Files to Modify
 

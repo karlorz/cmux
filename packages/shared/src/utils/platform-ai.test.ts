@@ -36,13 +36,13 @@ describe("platform-ai", () => {
 
   it("maps crown and review service models correctly", () => {
     expect(getPlatformAiModelIdForService("crown", "anthropic")).toBe(
-      "claude-sonnet-4-5-20250929"
+      "claude-sonnet-4-6"
     );
     expect(getPlatformAiModelIdForService("review", "openai")).toBe(
       "gpt-5-nano"
     );
     expect(getPlatformAiModelIdForService("review", "gemini")).toBe(
-      "gemini-2.5-flash"
+      "gemini-3.1-flash-lite-preview"
     );
   });
 

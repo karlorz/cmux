@@ -151,6 +151,13 @@ interface AutopilotOptions {
   wrapUpMinutes: number;
 }
 
+/** Ralph Mode: simple task looping until explicit completion signal */
+interface RalphModeOptions {
+  enabled: boolean;
+  maxIterations?: number; // Default: 50
+  completionTag?: string; // Default: "DONE"
+}
+
 export async function spawnAgent(
   agent: AgentConfig,
   taskId: Id<"tasks">,
@@ -180,6 +187,8 @@ export async function spawnAgent(
     preFetchedConfig?: PreFetchedSpawnConfig;
     /** Autopilot mode options (Phase 6: Long-Running Sessions) */
     autopilotOptions?: AutopilotOptions;
+    /** Ralph Mode: simple task looping until explicit completion signal */
+    ralphModeOptions?: RalphModeOptions;
     /** Mark as cloud workspace (long-lived, not auto-paused) */
     isCloudWorkspace?: boolean;
     /** Mark as orchestration head agent (can spawn sub-agents via env JWT) */
@@ -502,6 +511,17 @@ export async function spawnAgent(
       systemEnvVars.CMUX_AUTOPILOT_WRAPUP_MINUTES = String(options.autopilotOptions.wrapUpMinutes);
       serverLogger.info(
         `[AgentSpawner] Autopilot mode enabled: ${options.autopilotOptions.totalMinutes}min total, ${options.autopilotOptions.turnMinutes}min/turn`
+      );
+    }
+
+    // Add Ralph mode environment variables (simple task looping until completion)
+    if (options.ralphModeOptions?.enabled) {
+      systemEnvVars.CMUX_RALPH_MODE = "1";
+      systemEnvVars.CMUX_RALPH_PROMPT = processedTaskDescription;
+      systemEnvVars.CMUX_RALPH_MAX_ITERATIONS = String(options.ralphModeOptions.maxIterations ?? 50);
+      systemEnvVars.CMUX_RALPH_COMPLETION_TAG = options.ralphModeOptions.completionTag ?? "DONE";
+      serverLogger.info(
+        `[AgentSpawner] Ralph mode enabled: max ${options.ralphModeOptions.maxIterations ?? 50} iterations, completion tag: ${options.ralphModeOptions.completionTag ?? "DONE"}`
       );
     }
 
@@ -2024,6 +2044,7 @@ export async function spawnAllAgents(
     }>;
     theme?: "dark" | "light" | "system";
     autopilotOptions?: AutopilotOptions;
+    ralphModeOptions?: RalphModeOptions;
     isCloudWorkspace?: boolean;
     isOrchestrationHead?: boolean;
   },

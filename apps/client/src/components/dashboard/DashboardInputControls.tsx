@@ -37,6 +37,7 @@ import {
   Link2,
   Mic,
   RefreshCw,
+  Repeat,
   Server,
   X,
 } from "lucide-react";
@@ -71,6 +72,9 @@ interface DashboardInputControlsProps {
   disabledByUserModels?: Set<string>;
   /** Models from Convex (includes runtime-discovered models), filtered by availability */
   convexModels?: ConvexModelEntry[] | null;
+  /** Ralph Mode: keep working until explicit completion signal */
+  isRalphMode?: boolean;
+  onRalphModeToggle?: () => void;
 }
 
 // Type for models from Convex
@@ -345,6 +349,8 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   providerStatus = null,
   disabledByUserModels,
   convexModels,
+  isRalphMode = false,
+  onRalphModeToggle,
 }: DashboardInputControlsProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -1119,6 +1125,36 @@ export const DashboardInputControls = memo(function DashboardInputControls({
               disabled={cloudToggleDisabled}
             />
           </div>
+        )}
+
+        {/* Ralph Mode Toggle - loop until completion */}
+        {onRalphModeToggle && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className={clsx(
+                  "p-1.5 rounded-full",
+                  "border transition-colors",
+                  isRalphMode
+                    ? "bg-blue-100 dark:bg-blue-900/50 border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400"
+                    : "bg-neutral-100 dark:bg-neutral-700 border-neutral-200 dark:border-neutral-500/15 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-600",
+                )}
+                onClick={onRalphModeToggle}
+                title={isRalphMode ? "Ralph Mode: ON" : "Ralph Mode: OFF"}
+              >
+                <Repeat className="w-4 h-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              <p className="font-medium">Ralph Mode {isRalphMode ? "ON" : "OFF"}</p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                {isRalphMode
+                  ? "Agent will keep working until it signals completion"
+                  : "Enable to let agent loop until task is done"}
+              </p>
+            </TooltipContent>
+          </Tooltip>
         )}
 
         <button

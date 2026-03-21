@@ -59,7 +59,64 @@ export const getByName = query({
   },
 });
 
-// Suggest tools based on prompt keywords
+/**
+ * Intent patterns for category boosting (Phase 4d lite).
+ * Maps regex patterns to category boosts.
+ */
+const INTENT_PATTERNS: Array<{
+  pattern: RegExp;
+  categoryBoosts: Record<string, number>;
+}> = [
+  // Documentation/learning intent
+  {
+    pattern: /\b(how (do|to)|what is|explain|docs?|documentation|learn|tutorial|example)\b/i,
+    categoryBoosts: { documentation: 3 },
+  },
+  // Testing intent
+  {
+    pattern: /\b(test|spec|coverage|jest|vitest|pytest|unittest|e2e|integration)\b/i,
+    categoryBoosts: { testing: 3 },
+  },
+  // Deployment/infra intent
+  {
+    pattern: /\b(deploy|ci|cd|docker|kubernetes|k8s|infra|production|staging|release)\b/i,
+    categoryBoosts: { deployment: 3 },
+  },
+  // Memory/context intent
+  {
+    pattern: /\b(remember|recall|history|previous|last time|context|memory)\b/i,
+    categoryBoosts: { memory: 3 },
+  },
+  // Code/development intent (default high for dev tasks)
+  {
+    pattern: /\b(implement|refactor|fix|bug|feature|code|function|class|module)\b/i,
+    categoryBoosts: { code: 2, documentation: 1 },
+  },
+  // Planning/analysis intent
+  {
+    pattern: /\b(plan|analyze|design|architect|think|reason|complex|strategy)\b/i,
+    categoryBoosts: { general: 2 },
+  },
+];
+
+/**
+ * Detect intent from prompt and return category boosts.
+ */
+function detectIntentBoosts(prompt: string): Record<string, number> {
+  const boosts: Record<string, number> = {};
+
+  for (const { pattern, categoryBoosts } of INTENT_PATTERNS) {
+    if (pattern.test(prompt)) {
+      for (const [category, boost] of Object.entries(categoryBoosts)) {
+        boosts[category] = (boosts[category] ?? 0) + boost;
+      }
+    }
+  }
+
+  return boosts;
+}
+
+// Suggest tools based on prompt keywords and intent (Phase 4d lite)
 export const suggestForPrompt = query({
   args: { prompt: v.string(), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
@@ -74,7 +131,10 @@ export const suggestForPrompt = query({
         .filter((w) => w.length > 2)
     );
 
-    // Score each tool by keyword overlap
+    // Detect intent-based category boosts
+    const categoryBoosts = detectIntentBoosts(args.prompt);
+
+    // Score each tool by keyword overlap + intent boost
     const scoredTools = allTools.map((tool) => {
       const keywordMatches = tool.keywords.filter((kw) =>
         promptTokens.has(kw.toLowerCase())
@@ -83,8 +143,15 @@ export const suggestForPrompt = query({
         .toLowerCase()
         .split(/\W+/)
         .filter((w) => promptTokens.has(w)).length;
-      const score = keywordMatches * 2 + descriptionMatches;
-      return { tool, score };
+
+      // Base score from keyword matching
+      let score = keywordMatches * 2 + descriptionMatches;
+
+      // Apply intent-based category boost
+      const intentBoost = categoryBoosts[tool.category] ?? 0;
+      score += intentBoost;
+
+      return { tool, score, intentBoost };
     });
 
     return scoredTools
