@@ -85,6 +85,8 @@ interface ConvexModelEntry {
   requiredApiKeys: string[];
   disabled?: boolean;
   sortOrder: number;
+  contextWindow?: number;
+  maxOutputTokens?: number;
 }
 
 type AgentOption = SelectOptionObject & {
@@ -93,6 +95,7 @@ type AgentOption = SelectOptionObject & {
   statusTone?: "healthy" | "warning" | "error";
   statusLabel?: string;
   statusDetail?: string;
+  contextInfo?: string; // e.g., "1M context, 32K output"
 };
 
 type AgentSelectionInstance = {
@@ -110,6 +113,14 @@ const STATUS_ICON_CLASSNAME: Record<NonNullable<AgentOption["statusTone"]>, stri
   warning: "text-amber-600 dark:text-amber-400",
   error: "text-red-600 dark:text-red-400",
 };
+
+/** Format context window size for display (e.g., 1000000 -> "1M") */
+function formatTokenCount(tokens: number | undefined): string | undefined {
+  if (!tokens) return undefined;
+  if (tokens >= 1000000) return `${(tokens / 1000000).toFixed(tokens % 1000000 === 0 ? 0 : 1)}M`;
+  if (tokens >= 1000) return `${(tokens / 1000).toFixed(0)}K`;
+  return `${tokens}`;
+}
 
 const AGENT_PREFIX_TO_VENDOR = {
   claude: "anthropic",
@@ -412,6 +423,16 @@ export const DashboardInputControls = memo(function DashboardInputControls({
         hasProviderStatus
       );
 
+      // Build context info string from model metadata
+      const convexEntry = entry as ConvexModelEntry;
+      const contextStr = formatTokenCount(convexEntry.contextWindow);
+      const outputStr = formatTokenCount(convexEntry.maxOutputTokens);
+      const contextInfo = contextStr
+        ? outputStr
+          ? `${contextStr} context, ${outputStr} output`
+          : `${contextStr} context`
+        : undefined;
+
       return {
         label: entry.name,
         displayLabel: entry.displayName,
@@ -438,6 +459,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
           </span>
         ),
         iconKey: entry.vendor,
+        contextInfo,
         ...providerMeta,
       } satisfies AgentOption;
     });
