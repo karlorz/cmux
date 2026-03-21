@@ -8,6 +8,10 @@
  */
 import { httpAction, type ActionCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
+import {
+  requireDevboxInstanceAccessForHttp,
+  requireDevboxTeamAccessForHttp,
+} from "../_shared/devbox-http-auth";
 import type { FunctionReference } from "convex/server";
 import { jsonResponse } from "../_shared/http-utils";
 import {
@@ -234,6 +238,15 @@ export const createInstance = httpAction(async (ctx, req) => {
     );
   }
 
+  const teamAccess = await requireDevboxTeamAccessForHttp(
+    ctx,
+    body.teamSlugOrId,
+    identity!.subject
+  );
+  if (!teamAccess.ok) {
+    return teamAccess.response;
+  }
+
   const provider: SandboxProvider = body.provider ?? "e2b";
 
   try {
@@ -278,7 +291,7 @@ export const createInstance = httpAction(async (ctx, req) => {
       };
 
       const instanceResult = (await ctx.runMutation(devboxApi.create, {
-        teamSlugOrId: body.teamSlugOrId,
+        teamSlugOrId: teamAccess.teamId,
         providerInstanceId: result.instanceId,
         provider: "modal",
         name: body.name,
@@ -342,7 +355,7 @@ export const createInstance = httpAction(async (ctx, req) => {
       }
 
       const instanceResult = (await ctx.runMutation(devboxApi.create, {
-        teamSlugOrId: body.teamSlugOrId,
+        teamSlugOrId: teamAccess.teamId,
         providerInstanceId: result.instanceId,
         provider: "pve-lxc",
         name: body.name,
@@ -386,7 +399,7 @@ export const createInstance = httpAction(async (ctx, req) => {
     };
 
     const instanceResult = (await ctx.runMutation(devboxApi.create, {
-      teamSlugOrId: body.teamSlugOrId,
+      teamSlugOrId: teamAccess.teamId,
       providerInstanceId: result.instanceId,
       provider: "e2b",
       name: body.name,
@@ -421,7 +434,7 @@ export const createInstance = httpAction(async (ctx, req) => {
 // GET /api/v2/devbox/instances - List instances
 // ============================================================================
 export const listInstances = httpAction(async (ctx, req) => {
-  const { error } = await getAuthenticatedUser(ctx);
+  const { identity, error } = await getAuthenticatedUser(ctx);
   if (error) return error;
 
   const url = new URL(req.url);
@@ -438,8 +451,17 @@ export const listInstances = httpAction(async (ctx, req) => {
   }
 
   try {
-    const rawInstances = (await ctx.runQuery(devboxApi.list, {
+    const teamAccess = await requireDevboxTeamAccessForHttp(
+      ctx,
       teamSlugOrId,
+      identity!.subject
+    );
+    if (!teamAccess.ok) {
+      return teamAccess.response;
+    }
+
+    const rawInstances = (await ctx.runQuery(devboxApi.list, {
+      teamSlugOrId: teamAccess.teamId,
       provider: providerFilter ?? undefined,
     })) as Array<{
       devboxId: string;
@@ -484,17 +506,20 @@ export const listInstances = httpAction(async (ctx, req) => {
 async function handleGetInstance(
   ctx: ActionCtx,
   id: string,
-  teamSlugOrId: string
+  teamSlugOrId: string,
+  userId: string
 ): Promise<Response> {
   try {
-    const instance = (await ctx.runQuery(devboxApi.getById, {
-      teamSlugOrId,
+    const instanceAccess = await requireDevboxInstanceAccessForHttp(
+      ctx,
       id,
-    })) as { id: string; status: string; name?: string } | null;
-
-    if (!instance) {
-      return jsonResponse({ code: 404, message: "Instance not found" }, 404);
+      teamSlugOrId,
+      userId
+    );
+    if (!instanceAccess.ok) {
+      return instanceAccess.response;
     }
+    const { instance, teamId } = instanceAccess;
 
     const providerInfo = await getProviderInfo(ctx, id);
     if (!providerInfo) {
@@ -523,7 +548,7 @@ async function handleGetInstance(
 
     if (status !== instance.status) {
       await ctx.runMutation(devboxApi.updateStatus, {
-        teamSlugOrId,
+        teamSlugOrId: teamId,
         id,
         status,
       });
@@ -551,16 +576,18 @@ async function handleExecCommand(
   ctx: ActionCtx,
   id: string,
   teamSlugOrId: string,
+  userId: string,
   command: string | string[]
 ): Promise<Response> {
   try {
-    const instance = await ctx.runQuery(devboxApi.getById, {
-      teamSlugOrId,
+    const instanceAccess = await requireDevboxInstanceAccessForHttp(
+      ctx,
       id,
-    });
-
-    if (!instance) {
-      return jsonResponse({ code: 404, message: "Instance not found" }, 404);
+      teamSlugOrId,
+      userId
+    );
+    if (!instanceAccess.ok) {
+      return instanceAccess.response;
     }
 
     const providerInfo = await getProviderInfo(ctx, id);
@@ -581,7 +608,10 @@ async function handleExecCommand(
       command: commandStr,
     });
 
-    await ctx.runMutation(devboxApi.recordAccess, { teamSlugOrId, id });
+    await ctx.runMutation(devboxApi.recordAccess, {
+      teamSlugOrId: instanceAccess.teamId,
+      id,
+    });
     return jsonResponse(result);
   } catch (error) {
     console.error("[devbox_v2.exec] Error:", error);
@@ -598,16 +628,18 @@ async function handleExecCommand(
 async function handlePauseInstance(
   ctx: ActionCtx,
   id: string,
-  teamSlugOrId: string
+  teamSlugOrId: string,
+  userId: string
 ): Promise<Response> {
   try {
-    const instance = await ctx.runQuery(devboxApi.getById, {
-      teamSlugOrId,
+    const instanceAccess = await requireDevboxInstanceAccessForHttp(
+      ctx,
       id,
-    });
-
-    if (!instance) {
-      return jsonResponse({ code: 404, message: "Instance not found" }, 404);
+      teamSlugOrId,
+      userId
+    );
+    if (!instanceAccess.ok) {
+      return instanceAccess.response;
     }
 
     const providerInfo = await getProviderInfo(ctx, id);
@@ -634,7 +666,7 @@ async function handlePauseInstance(
     }
 
     await ctx.runMutation(devboxApi.updateStatus, {
-      teamSlugOrId,
+      teamSlugOrId: instanceAccess.teamId,
       id,
       status: "paused",
     });
@@ -667,16 +699,18 @@ async function handlePauseInstance(
 async function handleResumeInstance(
   ctx: ActionCtx,
   id: string,
-  teamSlugOrId: string
+  teamSlugOrId: string,
+  userId: string
 ): Promise<Response> {
   try {
-    const instance = await ctx.runQuery(devboxApi.getById, {
-      teamSlugOrId,
+    const instanceAccess = await requireDevboxInstanceAccessForHttp(
+      ctx,
       id,
-    });
-
-    if (!instance) {
-      return jsonResponse({ code: 404, message: "Instance not found" }, 404);
+      teamSlugOrId,
+      userId
+    );
+    if (!instanceAccess.ok) {
+      return instanceAccess.response;
     }
 
     const providerInfo = await getProviderInfo(ctx, id);
@@ -698,7 +732,7 @@ async function handleResumeInstance(
     }
 
     await ctx.runMutation(devboxApi.updateStatus, {
-      teamSlugOrId,
+      teamSlugOrId: instanceAccess.teamId,
       id,
       status: "running",
     });
@@ -731,16 +765,18 @@ async function handleResumeInstance(
 async function handleStopInstance(
   ctx: ActionCtx,
   id: string,
-  teamSlugOrId: string
+  teamSlugOrId: string,
+  userId: string
 ): Promise<Response> {
   try {
-    const instance = await ctx.runQuery(devboxApi.getById, {
-      teamSlugOrId,
+    const instanceAccess = await requireDevboxInstanceAccessForHttp(
+      ctx,
       id,
-    });
-
-    if (!instance) {
-      return jsonResponse({ code: 404, message: "Instance not found" }, 404);
+      teamSlugOrId,
+      userId
+    );
+    if (!instanceAccess.ok) {
+      return instanceAccess.response;
     }
 
     const providerInfo = await getProviderInfo(ctx, id);
@@ -760,7 +796,7 @@ async function handleStopInstance(
     });
 
     await ctx.runMutation(devboxApi.updateStatus, {
-      teamSlugOrId,
+      teamSlugOrId: instanceAccess.teamId,
       id,
       status: "stopped",
     });
@@ -780,22 +816,27 @@ async function handleStopInstance(
 async function handleDeleteInstance(
   ctx: ActionCtx,
   id: string,
-  teamSlugOrId: string
+  teamSlugOrId: string,
+  userId: string
 ): Promise<Response> {
   try {
-    const instance = await ctx.runQuery(devboxApi.getById, {
-      teamSlugOrId,
+    const instanceAccess = await requireDevboxInstanceAccessForHttp(
+      ctx,
       id,
-    });
-
-    if (!instance) {
-      return jsonResponse({ code: 404, message: "Instance not found" }, 404);
+      teamSlugOrId,
+      userId
+    );
+    if (!instanceAccess.ok) {
+      return instanceAccess.response;
     }
 
     const providerInfo = await getProviderInfo(ctx, id);
     if (!providerInfo) {
       // No provider info - just remove DB record (orphaned instance)
-      await ctx.runMutation(devboxApi.remove, { teamSlugOrId, id });
+      await ctx.runMutation(devboxApi.remove, {
+        teamSlugOrId: instanceAccess.teamId,
+        id,
+      });
       return jsonResponse({
         deleted: true,
         provider: "unknown",
@@ -823,7 +864,10 @@ async function handleDeleteInstance(
     await recordProviderActivity(ctx, provider, providerInstanceId, "stop");
 
     // Remove from database
-    await ctx.runMutation(devboxApi.remove, { teamSlugOrId, id });
+    await ctx.runMutation(devboxApi.remove, {
+      teamSlugOrId: instanceAccess.teamId,
+      id,
+    });
 
     return jsonResponse({ deleted: true, provider });
   } catch (error) {
@@ -842,16 +886,18 @@ async function handleUpdateTtl(
   ctx: ActionCtx,
   id: string,
   teamSlugOrId: string,
+  userId: string,
   ttlSeconds: number
 ): Promise<Response> {
   try {
-    const instance = await ctx.runQuery(devboxApi.getById, {
-      teamSlugOrId,
+    const instanceAccess = await requireDevboxInstanceAccessForHttp(
+      ctx,
       id,
-    });
-
-    if (!instance) {
-      return jsonResponse({ code: 404, message: "Instance not found" }, 404);
+      teamSlugOrId,
+      userId
+    );
+    if (!instanceAccess.ok) {
+      return instanceAccess.response;
     }
 
     const providerInfo = await getProviderInfo(ctx, id);
@@ -984,16 +1030,18 @@ export const getMe = httpAction(async (ctx) => {
 async function handleGetAuthToken(
   ctx: ActionCtx,
   id: string,
-  teamSlugOrId: string
+  teamSlugOrId: string,
+  userId: string
 ): Promise<Response> {
   try {
-    const instance = await ctx.runQuery(devboxApi.getById, {
-      teamSlugOrId,
+    const instanceAccess = await requireDevboxInstanceAccessForHttp(
+      ctx,
       id,
-    });
-
-    if (!instance) {
-      return jsonResponse({ code: 404, message: "Instance not found" }, 404);
+      teamSlugOrId,
+      userId
+    );
+    if (!instanceAccess.ok) {
+      return instanceAccess.response;
     }
 
     const providerInfo = await getProviderInfo(ctx, id);
@@ -1038,8 +1086,11 @@ export const instanceActionRouter = httpAction(async (ctx, req) => {
   const contentTypeError = verifyContentType(req);
   if (contentTypeError) return contentTypeError;
 
-  const { error } = await getAuthenticatedUser(ctx);
-  if (error) return error;
+  const { identity, error } = await getAuthenticatedUser(ctx);
+  if (error || !identity) {
+    return error ?? jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+  }
+  const userId = identity.subject;
 
   const url = new URL(req.url);
   const path = url.pathname;
@@ -1073,19 +1124,19 @@ export const instanceActionRouter = httpAction(async (ctx, req) => {
       if (!body.command) {
         return jsonResponse({ code: 400, message: "command is required" }, 400);
       }
-      return handleExecCommand(ctx, id, body.teamSlugOrId, body.command);
+      return handleExecCommand(ctx, id, body.teamSlugOrId, userId, body.command);
 
     case "pause":
-      return handlePauseInstance(ctx, id, body.teamSlugOrId);
+      return handlePauseInstance(ctx, id, body.teamSlugOrId, userId);
 
     case "resume":
-      return handleResumeInstance(ctx, id, body.teamSlugOrId);
+      return handleResumeInstance(ctx, id, body.teamSlugOrId, userId);
 
     case "stop":
-      return handleStopInstance(ctx, id, body.teamSlugOrId);
+      return handleStopInstance(ctx, id, body.teamSlugOrId, userId);
 
     case "delete":
-      return handleDeleteInstance(ctx, id, body.teamSlugOrId);
+      return handleDeleteInstance(ctx, id, body.teamSlugOrId, userId);
 
     case "ttl":
       if (!body.ttlSeconds) {
@@ -1094,16 +1145,17 @@ export const instanceActionRouter = httpAction(async (ctx, req) => {
           400
         );
       }
-      return handleUpdateTtl(ctx, id, body.teamSlugOrId, body.ttlSeconds);
+      return handleUpdateTtl(ctx, id, body.teamSlugOrId, userId, body.ttlSeconds);
 
     case "token":
-      return handleGetAuthToken(ctx, id, body.teamSlugOrId);
+      return handleGetAuthToken(ctx, id, body.teamSlugOrId, userId);
 
     case "extend":
       return handleUpdateTtl(
         ctx,
         id,
         body.teamSlugOrId,
+        userId,
         body.ttlSeconds ?? 3600
       );
 
@@ -1116,8 +1168,11 @@ export const instanceActionRouter = httpAction(async (ctx, req) => {
 // Route handler for instance-specific GET actions
 // ============================================================================
 export const instanceGetRouter = httpAction(async (ctx, req) => {
-  const { error } = await getAuthenticatedUser(ctx);
-  if (error) return error;
+  const { identity, error } = await getAuthenticatedUser(ctx);
+  if (error || !identity) {
+    return error ?? jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+  }
+  const userId = identity.subject;
 
   const url = new URL(req.url);
   const path = url.pathname;
@@ -1133,7 +1188,7 @@ export const instanceGetRouter = httpAction(async (ctx, req) => {
   const pathParts = path.split("/").filter(Boolean);
   const id = pathParts[4];
 
-  return handleGetInstance(ctx, id, teamSlugOrId);
+  return handleGetInstance(ctx, id, teamSlugOrId, userId);
 });
 
 // ============================================================================

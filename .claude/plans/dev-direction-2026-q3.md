@@ -16,7 +16,7 @@ Q3 focuses on **web app polish and production readiness** - completing the UI ga
 - Phase 6: Cloud onboarding + provider health indicators
 
 ### Remaining
-- Phase 7: Coolify Migration (infrastructure task)
+- Phase 7: Coolify Migration - **COMPLETE** (workflows exist for client, www, server)
 
 ### Original Identified Gaps (all resolved except infra)
 
@@ -32,8 +32,8 @@ Q3 focuses on **web app polish and production readiness** - completing the UI ga
 7. ~~Provider status not integrated~~ - ProviderHealthCard exists
 8. ~~No component-level error boundaries~~ - ErrorBoundary.tsx exists
 
-**Infrastructure:** (PENDING)
-9. Vercel deployment cap (Coolify migration) - Phase 7
+**Infrastructure:** (DONE)
+9. ~~Vercel deployment cap (Coolify migration)~~ - Coolify workflows deployed
 
 ---
 
