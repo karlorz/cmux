@@ -177,15 +177,29 @@ export const CostEstimationCard = memo(function CostEstimationCard({
         </div>
         {taskRun.contextUsage && (
           <div className="flex items-center gap-2">
-            <Zap className="size-3.5" />
+            <Zap className={
+              taskRun.contextUsage.usagePercent !== undefined && taskRun.contextUsage.usagePercent >= 80
+                ? "size-3.5 text-amber-500"
+                : "size-3.5"
+            } />
             <span>
               Tokens: {formatTokenCount(taskRun.contextUsage.totalInputTokens)} in / {formatTokenCount(taskRun.contextUsage.totalOutputTokens)} out
               {taskRun.contextUsage.usagePercent !== undefined && (
-                <span className="ml-1 text-neutral-400 dark:text-neutral-500">
+                <span className={
+                  taskRun.contextUsage.usagePercent >= 80
+                    ? "ml-1 text-amber-500 font-medium"
+                    : "ml-1 text-neutral-400 dark:text-neutral-500"
+                }>
                   ({taskRun.contextUsage.usagePercent}% context)
                 </span>
               )}
             </span>
+          </div>
+        )}
+        {taskRun.contextUsage?.usagePercent !== undefined && taskRun.contextUsage.usagePercent >= 80 && (
+          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+            <AlertTriangle className="size-3.5" />
+            <span className="font-medium">Context window {taskRun.contextUsage.usagePercent >= 95 ? "nearly full" : "filling up"}</span>
           </div>
         )}
       </div>
