@@ -302,6 +302,12 @@ function DashboardComponent() {
     return stored ? JSON.parse(stored) : true;
   });
 
+  // Ralph Mode: keep working until explicit completion signal
+  const [isRalphMode, setIsRalphMode] = useState<boolean>(() => {
+    const stored = localStorage.getItem("isRalphMode");
+    return stored ? JSON.parse(stored) : false;
+  });
+
   const [, setDockerReady] = useState<boolean | null>(null);
   const [providerStatus, setProviderStatus] =
     useState<ProviderStatusResponse | null>(null);
@@ -1004,6 +1010,8 @@ function DashboardComponent() {
           ...(environmentId ? { environmentId } : {}),
           images: images.length > 0 ? images : undefined,
           theme,
+          // Ralph Mode: keep working until explicit completion signal
+          ...(isRalphMode ? { ralphMode: { enabled: true } } : {}),
         },
         handleStartTaskAck
       );
@@ -1026,6 +1034,7 @@ function DashboardComponent() {
     defaultAgentSelection,
     selectedAgents,
     isCloudMode,
+    isRalphMode,
     isEnvSelected,
     theme,
     generateUploadUrl,
@@ -1443,6 +1452,14 @@ function DashboardComponent() {
               onAgentChange={handleAgentChange}
               isCloudMode={isCloudMode}
               onCloudModeToggle={handleCloudModeToggle}
+              isRalphMode={isRalphMode}
+              onRalphModeToggle={() => {
+                setIsRalphMode((prev) => {
+                  const next = !prev;
+                  localStorage.setItem("isRalphMode", JSON.stringify(next));
+                  return next;
+                });
+              }}
               isLoadingProjects={reposByOrgQuery.isLoading}
               isLoadingBranches={branchesQuery.isLoading && effectiveSelectedBranch.length === 0}
               teamSlugOrId={teamSlugOrId}
@@ -1562,6 +1579,8 @@ type DashboardMainCardProps = {
   onAgentChange: (newAgents: string[]) => void;
   isCloudMode: boolean;
   onCloudModeToggle: () => void;
+  isRalphMode: boolean;
+  onRalphModeToggle: () => void;
   isLoadingProjects: boolean;
   isLoadingBranches: boolean;
   teamSlugOrId: string;
@@ -1615,6 +1634,8 @@ function DashboardMainCard({
   onAgentChange,
   isCloudMode,
   onCloudModeToggle,
+  isRalphMode,
+  onRalphModeToggle,
   isLoadingProjects,
   isLoadingBranches,
   teamSlugOrId,
@@ -1679,6 +1700,8 @@ function DashboardMainCard({
           providerStatus={providerStatus}
           disabledByUserModels={disabledByUserModels}
           convexModels={convexModels}
+          isRalphMode={isRalphMode}
+          onRalphModeToggle={onRalphModeToggle}
         />
         <DashboardStartTaskButton
           canSubmit={canSubmit}
