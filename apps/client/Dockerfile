@@ -13,25 +13,28 @@ WORKDIR /app
 # Copy package files for workspace resolution
 COPY package.json bun.lock .npmrc ./
 COPY apps/client/package.json ./apps/client/
-COPY apps/www/package.json ./apps/www/
-COPY apps/server/package.json ./apps/server/
-COPY apps/worker/package.json ./apps/worker/
+COPY apps/edge-router-pvelxc/package.json ./apps/edge-router-pvelxc/
 COPY apps/edge-router/package.json ./apps/edge-router/
 COPY apps/preview-proxy/package.json ./apps/preview-proxy/
-COPY packages/shared/package.json ./packages/shared/
-COPY packages/convex/package.json ./packages/convex/
-COPY packages/www-openapi-client/package.json ./packages/www-openapi-client/
-COPY packages/morphcloud-openapi-client/package.json ./packages/morphcloud-openapi-client/
+COPY apps/server/package.json ./apps/server/
+COPY apps/worker/package.json ./apps/worker/
+COPY apps/www/package.json ./apps/www/
 COPY packages/cmux/package.json ./packages/cmux/
-COPY packages/vscode-extension/package.json ./packages/vscode-extension/
-COPY packages/host-screenshot-collector/package.json ./packages/host-screenshot-collector/
+COPY packages/convex/package.json ./packages/convex/
+COPY packages/devsh-memory-mcp/package.json ./packages/devsh-memory-mcp/
 COPY packages/e2b-client/package.json ./packages/e2b-client/
+COPY packages/host-screenshot-collector/package.json ./packages/host-screenshot-collector/
+COPY packages/morphcloud-openapi-client/package.json ./packages/morphcloud-openapi-client/
+COPY packages/pr-heatmap/package.json ./packages/pr-heatmap/
 COPY packages/pve-lxc-client/package.json ./packages/pve-lxc-client/
+COPY packages/pve-vm-client/package.json ./packages/pve-vm-client/
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/vscode-extension/package.json ./packages/vscode-extension/
+COPY packages/www-openapi-client/package.json ./packages/www-openapi-client/
 COPY scripts/package.json ./scripts/
 
 # Install all dependencies (need devDependencies for build)
-ENV BUN_FROZEN_LOCKFILE=false
-RUN rm -f bun.lock && bun install --ignore-scripts
+RUN bun install --ignore-scripts --frozen-lockfile
 
 # =============================================================================
 # Stage 2: Build the application
@@ -52,13 +55,7 @@ COPY packages/www-openapi-client ./packages/www-openapi-client
 COPY apps/client ./apps/client
 
 # Copy root config files
-COPY package.json bun.lock .npmrc tsconfig.json ./
-
-# Re-link @cmux workspace packages to local source
-RUN rm -rf node_modules/@cmux && mkdir -p node_modules/@cmux \
-    && ln -s ../../packages/shared node_modules/@cmux/shared \
-    && ln -s ../../packages/convex node_modules/@cmux/convex \
-    && ln -s ../../packages/www-openapi-client node_modules/@cmux/www-openapi-client
+COPY package.json bun.lock .npmrc tsconfig.json tsconfig.base.json ./
 
 # Build arguments for environment variables (injected at build time)
 ARG NEXT_PUBLIC_CONVEX_URL
