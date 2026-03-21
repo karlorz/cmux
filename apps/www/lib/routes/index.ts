@@ -91,6 +91,7 @@ export { modelsRouter } from "./models.route";
 export { providersEnabledRouter } from "./providers.enabled.route";
 export { providersOverridesRouter } from "./providers.overrides.route";
 export { providersRouter } from "./providers.route";
+export { providersStatusListRouter } from "./providers.status.list.route";
 export { providersStatusRouter } from "./providers.status.route";
 export { providersTestRouter } from "./providers.test.route";
 export { apiKeysRouter } from "./api-keys.route";
