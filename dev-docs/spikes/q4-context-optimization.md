@@ -61,5 +61,5 @@ When context nears limit, trigger compact/summarize:
   - Anthropic: f3c372e7c
   - Gemini/Grok: d4d7f7d53
   - Qwen/AMP: b10fb56b8
-- [ ] Phase 5b: Display (optional)
+- [x] Phase 5b: Display - Agent selector shows context info (18eda22a7)
 - [ ] Phase 5c: Pre-Compact (future)

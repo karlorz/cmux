@@ -460,6 +460,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
         ),
         iconKey: entry.vendor,
         contextInfo,
+        secondaryText: contextInfo,
         ...providerMeta,
       } satisfies AgentOption;
     });
