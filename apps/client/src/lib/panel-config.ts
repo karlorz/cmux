@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
-import { MessageSquare, Code2, TerminalSquare, Globe2, GitCompare, Brain, FileText } from "lucide-react";
+import { MessageSquare, Code2, TerminalSquare, Globe2, GitCompare, Brain, FileText, GitPullRequest, TestTube2 } from "lucide-react";
 
-export type PanelType = "chat" | "workspace" | "terminal" | "browser" | "gitDiff" | "memory" | "summary";
+export type PanelType = "chat" | "workspace" | "terminal" | "browser" | "gitDiff" | "memory" | "summary" | "liveDiff" | "testResults";
 
 /**
  * All available panel types. When adding a new panel:
@@ -11,7 +11,7 @@ export type PanelType = "chat" | "workspace" | "terminal" | "browser" | "gitDiff
  * 4. Add to PANEL_ICON_COMPONENTS
  * 5. Handle in TaskPanelFactory.tsx switch statement
  */
-export const ALL_PANEL_TYPES: PanelType[] = ["chat", "workspace", "terminal", "browser", "gitDiff", "memory", "summary"];
+export const ALL_PANEL_TYPES: PanelType[] = ["chat", "workspace", "terminal", "browser", "gitDiff", "memory", "summary", "liveDiff", "testResults"];
 
 export type LayoutMode =
   | "single-panel"    // Single full-width panel
@@ -51,7 +51,7 @@ export const DEFAULT_PANEL_CONFIG: PanelConfig = {
     "four-panel": { ...DEFAULT_LAYOUT_PANELS },
     "two-horizontal": { topLeft: "workspace", topRight: "browser", bottomLeft: null, bottomRight: null },
     "two-vertical": { topLeft: "chat", topRight: null, bottomLeft: "workspace", bottomRight: null },
-    "three-left": { topLeft: "workspace", topRight: "browser", bottomLeft: null, bottomRight: "gitDiff" },
+    "three-left": { topLeft: "chat", topRight: "liveDiff", bottomLeft: null, bottomRight: "workspace" },
     "three-right": { topLeft: "chat", topRight: null, bottomLeft: "terminal", bottomRight: "workspace" },
     "three-top": { topLeft: "workspace", topRight: null, bottomLeft: "chat", bottomRight: "terminal" },
     "three-bottom": { topLeft: "chat", topRight: "workspace", bottomLeft: null, bottomRight: "terminal" },
@@ -66,6 +66,8 @@ export const PANEL_LABELS: Record<PanelType, string> = {
   gitDiff: "Git Diff",
   memory: "Memory",
   summary: "Summary",
+  liveDiff: "Live Diff",
+  testResults: "Test Results",
 };
 
 /** @deprecated Use PANEL_ICON_COMPONENTS instead */
@@ -77,6 +79,8 @@ export const PANEL_ICONS: Record<PanelType, string> = {
   gitDiff: "GitCompare",
   memory: "Brain",
   summary: "FileText",
+  liveDiff: "GitPullRequest",
+  testResults: "TestTube2",
 };
 
 /**
@@ -91,6 +95,8 @@ export const PANEL_ICON_COMPONENTS: Record<PanelType, LucideIcon> = {
   gitDiff: GitCompare,
   memory: Brain,
   summary: FileText,
+  liveDiff: GitPullRequest,
+  testResults: TestTube2,
 };
 
 export const LAYOUT_LABELS: Record<LayoutMode, string> = {
