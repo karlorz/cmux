@@ -1332,6 +1332,22 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
 
       case "update_knowledge": {
         const { section, content } = args as { section: "P0" | "P1" | "P2"; content: string };
+
+        // Guardrail: Validate entry length (max 200 chars for concise insights)
+        if (content.length > 200) {
+          return {
+            content: [{
+              type: "text",
+              text: `Entry too long (${content.length} chars). Keep memory entries concise (max 200 chars). Consider splitting into multiple entries or being more specific.`,
+            }],
+          };
+        }
+
+        // Guardrail: Check for empty content
+        if (!content.trim()) {
+          return { content: [{ type: "text", text: "Cannot add empty memory entry." }] };
+        }
+
         // Track usage for memory freshness
         trackWrite(`knowledge.${section}`);
         ensureDir(knowledgeDir);
@@ -1374,6 +1390,54 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
 
         if (headerIndex === -1) {
           return { content: [{ type: "text", text: `Section ${section} not found in MEMORY.md` }] };
+        }
+
+        // Guardrail: Duplicate detection - check for similar existing entries
+        const contentLower = content.toLowerCase();
+        const existingEntries = existing.match(/- \[\d{4}-\d{2}-\d{2}\] .+/g) || [];
+        for (const entry of existingEntries) {
+          // Extract the text part after the date
+          const entryText = entry.replace(/- \[\d{4}-\d{2}-\d{2}\] /, "").toLowerCase();
+          // Check for high similarity (exact match or substring)
+          if (entryText === contentLower || entryText.includes(contentLower) || contentLower.includes(entryText)) {
+            return {
+              content: [{
+                type: "text",
+                text: `Duplicate detected. Similar entry already exists: "${entry.slice(0, 80)}...". Update the existing entry instead of adding a duplicate.`,
+              }],
+            };
+          }
+        }
+
+        // Guardrail: P0 contradiction warning - check for "uses X" patterns that conflict
+        if (section === "P0") {
+          const p0Section = existing.slice(headerIndex, existing.indexOf("## P1"));
+          const usesPattern = /uses?\s+(\w+)/gi;
+          const newUses = [...contentLower.matchAll(usesPattern)].map(m => m[1]);
+          const existingUses = [...p0Section.toLowerCase().matchAll(usesPattern)].map(m => m[1]);
+
+          // Common tool alternatives that often conflict
+          const alternatives: Record<string, string[]> = {
+            bun: ["npm", "yarn", "pnpm"],
+            npm: ["bun", "yarn", "pnpm"],
+            yarn: ["npm", "bun", "pnpm"],
+            vitest: ["jest", "mocha"],
+            jest: ["vitest", "mocha"],
+          };
+
+          for (const newTool of newUses) {
+            const conflicts = alternatives[newTool] || [];
+            for (const existingTool of existingUses) {
+              if (conflicts.includes(existingTool)) {
+                return {
+                  content: [{
+                    type: "text",
+                    text: `Potential P0 contradiction: New entry mentions "${newTool}" but P0 already contains "${existingTool}". These are typically alternatives. Verify this is intentional before adding.`,
+                  }],
+                };
+              }
+            }
+          }
         }
 
         // Find the next section or end of file
