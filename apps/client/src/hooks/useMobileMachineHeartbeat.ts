@@ -20,6 +20,35 @@ type MachineSession = {
   expiresAt: number;
 };
 
+/**
+ * Computes a stable hash of a heartbeat payload to detect changes.
+ * Only publishes when the hash differs from the last publish.
+ */
+function computePayloadHash(
+  payload: ReturnType<typeof buildMobileHeartbeatPayload>,
+): string {
+  // Hash relevant fields that indicate actual state changes
+  // Exclude timestamps that change every heartbeat (lastSeenAt, lastWorkspaceSyncAt)
+  const stablePayload = {
+    machineId: payload.machineId,
+    displayName: payload.displayName,
+    tailscaleHostname: payload.tailscaleHostname,
+    tailscaleIPs: payload.tailscaleIPs,
+    workspaces: payload.workspaces.map((w) => ({
+      workspaceId: w.workspaceId,
+      taskId: w.taskId,
+      taskRunId: w.taskRunId,
+      title: w.title,
+      preview: w.preview,
+      phase: w.phase,
+      tmuxSessionName: w.tmuxSessionName,
+      lastActivityAt: w.lastActivityAt,
+      latestEventSeq: w.latestEventSeq,
+    })),
+  };
+  return JSON.stringify(stablePayload);
+}
+
 export function useMobileMachineHeartbeat({
   teamSlugOrId,
   tasks,
@@ -32,6 +61,7 @@ export function useMobileMachineHeartbeat({
   const payloadRef = useRef<ReturnType<typeof buildMobileHeartbeatPayload> | null>(
     null,
   );
+  const lastPublishedHashRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!isElectron || !window.cmux?.machine?.getInfo) {
@@ -127,6 +157,12 @@ export function useMobileMachineHeartbeat({
       if (!nextPayload) {
         return;
       }
+      // Skip publish if payload hasn't changed since last publish
+      const currentHash = computePayloadHash(nextPayload);
+      if (currentHash === lastPublishedHashRef.current) {
+        return;
+      }
+      lastPublishedHashRef.current = currentHash;
       void publishCurrentPayload({
         payload: nextPayload,
         sessionRef,

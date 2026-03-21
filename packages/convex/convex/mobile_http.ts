@@ -1,34 +1,47 @@
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { z } from "zod";
+
+const heartbeatWorkspaceSchema = z.object({
+  workspaceId: z.string(),
+  taskId: z.string().optional(),
+  taskRunId: z.string().optional(),
+  title: z.string(),
+  preview: z.string().optional(),
+  phase: z.string(),
+  tmuxSessionName: z.string(),
+  lastActivityAt: z.number(),
+  latestEventSeq: z.number(),
+  lastEventAt: z.number().optional(),
+});
+
+const heartbeatBodySchema = z.object({
+  teamId: z.string(),
+  userId: z.string(),
+  machineId: z.string(),
+  displayName: z.string(),
+  tailscaleHostname: z.string().optional(),
+  tailscaleIPs: z.array(z.string()),
+  status: z.enum(["online", "offline", "unknown"]),
+  lastSeenAt: z.number(),
+  lastWorkspaceSyncAt: z.number().optional(),
+  workspaces: z.array(heartbeatWorkspaceSchema),
+});
 
 export const ingestHeartbeat = httpAction(async (ctx, request) => {
   if (request.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
 
-  const body = (await request.json()) as {
-    teamId: string;
-    userId: string;
-    machineId: string;
-    displayName: string;
-    tailscaleHostname?: string;
-    tailscaleIPs: string[];
-    status: "online" | "offline" | "unknown";
-    lastSeenAt: number;
-    lastWorkspaceSyncAt?: number;
-    workspaces: Array<{
-      workspaceId: string;
-      taskId?: string;
-      taskRunId?: string;
-      title: string;
-      preview?: string;
-      phase: string;
-      tmuxSessionName: string;
-      lastActivityAt: number;
-      latestEventSeq: number;
-      lastEventAt?: number;
-    }>;
-  };
+  const rawBody: unknown = await request.json();
+  const parseResult = heartbeatBodySchema.safeParse(rawBody);
+  if (!parseResult.success) {
+    return new Response(
+      JSON.stringify({ error: "Invalid request body", details: parseResult.error.issues }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    );
+  }
+  const body = parseResult.data;
 
   await ctx.runMutation(internal.mobileMachines.upsertHeartbeatInternal, {
     teamId: body.teamId,

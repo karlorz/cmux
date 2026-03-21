@@ -1,6 +1,6 @@
 "use node";
 
-import { ConvexError, v } from "convex/values";
+import { v } from "convex/values";
 import { SignJWT, importPKCS8 } from "jose";
 import { env } from "../_shared/convex-env";
 import { internalAction } from "./_generated/server";
@@ -54,46 +54,57 @@ async function dispatchNotification(args: {
     return { delivered: 0, skipped: args.tokens.length };
   }
 
-  let delivered = 0;
-  for (const token of args.tokens) {
-    const endpoint =
-      token.environment === "development"
-        ? "https://api.sandbox.push.apple.com"
-        : "https://api.push.apple.com";
+  // Send notifications in parallel and don't fail-fast on individual failures
+  const results = await Promise.allSettled(
+    args.tokens.map(async (token) => {
+      const endpoint =
+        token.environment === "development"
+          ? "https://api.sandbox.push.apple.com"
+          : "https://api.push.apple.com";
 
-    const payload = {
-      aps: {
-        alert: {
-          title: args.title,
-          body: args.body,
+      const payload = {
+        aps: {
+          alert: {
+            title: args.title,
+            body: args.body,
+          },
+          sound: "default",
         },
-        sound: "default",
-      },
-      ...(args.routePayload ? { route: args.routePayload } : {}),
-    };
+        ...(args.routePayload ? { route: args.routePayload } : {}),
+      };
 
-    const response = await fetch(`${endpoint}/3/device/${token.token}`, {
-      method: "POST",
-      headers: {
-        authorization: `bearer ${authToken}`,
-        "apns-push-type": "alert",
-        "apns-topic": token.bundleId,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
+      const response = await fetch(`${endpoint}/3/device/${token.token}`, {
+        method: "POST",
+        headers: {
+          authorization: `bearer ${authToken}`,
+          "apns-push-type": "alert",
+          "apns-topic": token.bundleId,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
 
-    if (!response.ok) {
-      const body = await response.text();
-      throw new ConvexError(
-        `APNS send failed (${response.status}): ${body || "unknown error"}`,
-      );
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(
+          `APNS send failed (${response.status}): ${body || "unknown error"}`,
+        );
+      }
+    }),
+  );
+
+  let delivered = 0;
+  let failed = 0;
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      delivered += 1;
+    } else {
+      failed += 1;
+      console.error("[push-notifications] Token delivery failed:", result.reason);
     }
-
-    delivered += 1;
   }
 
-  return { delivered, skipped: 0 };
+  return { delivered, skipped: 0, failed };
 }
 
 export const sendWorkspaceEvent = internalAction({

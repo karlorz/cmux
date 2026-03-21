@@ -228,7 +228,22 @@ export const replaceMachineWorkspaceSnapshotInternal = internalMutation({
       } satisfies Partial<MobileWorkspaceDoc>;
 
       if (existing) {
-        await ctx.db.patch(existing._id, patch);
+        // Only patch if any field changed to avoid no-op DB writes
+        const hasChanges =
+          existing.machineId !== patch.machineId ||
+          existing.taskId !== patch.taskId ||
+          existing.taskRunId !== patch.taskRunId ||
+          existing.title !== patch.title ||
+          existing.preview !== patch.preview ||
+          existing.phase !== patch.phase ||
+          existing.tmuxSessionName !== patch.tmuxSessionName ||
+          existing.lastActivityAt !== patch.lastActivityAt ||
+          existing.latestEventSeq !== patch.latestEventSeq ||
+          existing.lastEventAt !== patch.lastEventAt;
+
+        if (hasChanges) {
+          await ctx.db.patch(existing._id, patch);
+        }
         if (workspace.latestEventSeq > existing.latestEventSeq) {
           await ctx.scheduler.runAfter(
             0,
