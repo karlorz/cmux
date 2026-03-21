@@ -1,4 +1,5 @@
 import { useToolSuggestions } from "@/hooks/useToolSuggestions";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Sparkles } from "lucide-react";
 import { memo } from "react";
 
@@ -37,18 +38,24 @@ export const ToolSuggestions = memo(function ToolSuggestions({
         {suggestions.map((tool) => {
           const isEnabled = enabledTools.has(tool.name);
           return (
-            <button
-              key={tool.name}
-              type="button"
-              onClick={() => onToggleTool(tool.name)}
-              className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium transition-colors cursor-pointer border ${
-                isEnabled
-                  ? "bg-emerald-500/90 hover:bg-emerald-600 text-white border-emerald-500"
-                  : "bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-600 hover:bg-neutral-200 dark:hover:bg-neutral-600"
-              }`}
-            >
-              {tool.displayName}
-            </button>
+            <Tooltip key={tool.name}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => onToggleTool(tool.name)}
+                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium transition-colors cursor-pointer border ${
+                    isEnabled
+                      ? "bg-emerald-500/90 hover:bg-emerald-600 text-white border-emerald-500"
+                      : "bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-600 hover:bg-neutral-200 dark:hover:bg-neutral-600"
+                  }`}
+                >
+                  {tool.displayName}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-xs">
+                <p className="text-xs">{tool.description}</p>
+              </TooltipContent>
+            </Tooltip>
           );
         })}
       </div>
