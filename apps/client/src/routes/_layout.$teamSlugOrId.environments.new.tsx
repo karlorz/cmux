@@ -80,6 +80,8 @@ function EnvironmentsPage() {
   const [headerActions, setHeaderActions] = useState<ReactNode | null>(null);
   const skipDraftHydrationRef = useRef(false);
   const provisioningTriggeredRef = useRef(false);
+  const successHandledRef = useRef(false);
+  const loggedErrorRef = useRef<unknown>(null);
 
   // Fetch sandbox config to normalize snapshotId to canonical form
   const { data: sandboxConfig } = useRQQuery(getApiConfigSandboxOptions());
@@ -106,6 +108,8 @@ function EnvironmentsPage() {
   useEffect(() => {
     if (activeStep !== "configure") {
       provisioningTriggeredRef.current = false;
+      successHandledRef.current = false;
+      loggedErrorRef.current = null;
       return;
     }
 
@@ -117,8 +121,8 @@ function EnvironmentsPage() {
 
     provisioningTriggeredRef.current = true;
 
-    // Don't use onSuccess/onError callbacks here - they can fail to fire when called inside useEffect
-    // due to React Query's closure behavior during re-renders. Instead, use separate effects below.
+    // Don't use onSuccess/onError callbacks here - since setupInstanceMutation is excluded from deps
+    // (to prevent infinite loops), callbacks would capture stale closures. Use separate effects below.
     setupInstanceMutation.mutate({
       body: {
         teamSlugOrId,
@@ -136,10 +140,10 @@ function EnvironmentsPage() {
   ]);
 
   // Handle provisioning success - react to mutation data instead of using onSuccess callback
-  // This pattern is more reliable because it doesn't depend on closure stability during re-renders
   useEffect(() => {
     const data = setupInstanceMutation.data;
-    if (data && !activeInstanceId) {
+    if (data && !successHandledRef.current) {
+      successHandledRef.current = true;
       // Update URL with instanceId
       void navigate({
         search: (prev) => ({
@@ -161,12 +165,14 @@ function EnvironmentsPage() {
       console.log("Instance provisioned:", data.instanceId);
       console.log("Cloned repos:", data.clonedRepos);
     }
-  }, [setupInstanceMutation.data, activeInstanceId, navigate, teamSlugOrId, activeSelectedRepos, activeSnapshotId]);
+  }, [setupInstanceMutation.data, navigate, teamSlugOrId, activeSelectedRepos, activeSnapshotId]);
 
   // Handle provisioning error - react to mutation error instead of using onError callback
   useEffect(() => {
-    if (setupInstanceMutation.error) {
-      console.error("Failed to provision instance:", setupInstanceMutation.error);
+    const error = setupInstanceMutation.error;
+    if (error && error !== loggedErrorRef.current) {
+      loggedErrorRef.current = error;
+      console.error("Failed to provision instance:", error);
       // Don't reset provisioningTriggeredRef here - it causes infinite retry loops
       // when combined with effect dependencies. User must navigate away and back to retry.
     }
