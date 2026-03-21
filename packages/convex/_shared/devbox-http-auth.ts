@@ -26,13 +26,14 @@ export async function requireDevboxTeamAccessForHttp(
   teamSlugOrId: string,
   userId: string
 ): Promise<DevboxTeamAuthorizationResult> {
-  const team = await ctx.runQuery(internal.teams.getBySlugOrIdInternal, {
-    slugOrId: teamSlugOrId,
-  });
-  const memberships = await ctx.runQuery(
-    internal.teams.getMembershipsByUserIdInternal,
-    { userId }
-  );
+  const [team, memberships] = await Promise.all([
+    ctx.runQuery(internal.teams.getBySlugOrIdInternal, {
+      slugOrId: teamSlugOrId,
+    }),
+    ctx.runQuery(internal.teams.getMembershipsByUserIdInternal, {
+      userId,
+    }),
+  ]);
 
   if (team) {
     const hasMembership = memberships.some((membership) => {

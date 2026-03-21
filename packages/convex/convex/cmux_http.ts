@@ -550,19 +550,15 @@ export const listInstances = httpAction(async (ctx, req) => {
 async function handleGetInstance(
   ctx: ActionCtx,
   id: string,
-  teamSlugOrId: string
+  teamSlugOrId: string,
+  userId: string
 ): Promise<Response> {
   try {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
-    }
-
     const instanceAccess = await requireDevboxInstanceAccessForHttp(
       ctx,
       id,
       teamSlugOrId,
-      identity.subject
+      userId
     );
     if (!instanceAccess.ok) {
       return instanceAccess.response;
@@ -684,20 +680,16 @@ async function handleExecCommand(
   ctx: ActionCtx,
   id: string,
   teamSlugOrId: string,
+  userId: string,
   command: string | string[],
   timeout?: number
 ): Promise<Response> {
   try {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
-    }
-
     const instanceAccess = await requireDevboxInstanceAccessForHttp(
       ctx,
       id,
       teamSlugOrId,
-      identity.subject
+      userId
     );
     if (!instanceAccess.ok) {
       return instanceAccess.response;
@@ -764,19 +756,15 @@ async function handleExecCommand(
 async function handlePauseInstance(
   ctx: ActionCtx,
   id: string,
-  teamSlugOrId: string
+  teamSlugOrId: string,
+  userId: string
 ): Promise<Response> {
   try {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
-    }
-
     const instanceAccess = await requireDevboxInstanceAccessForHttp(
       ctx,
       id,
       teamSlugOrId,
-      identity.subject
+      userId
     );
     if (!instanceAccess.ok) {
       return instanceAccess.response;
@@ -834,19 +822,15 @@ async function handlePauseInstance(
 async function handleResumeInstance(
   ctx: ActionCtx,
   id: string,
-  teamSlugOrId: string
+  teamSlugOrId: string,
+  userId: string
 ): Promise<Response> {
   try {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
-    }
-
     const instanceAccess = await requireDevboxInstanceAccessForHttp(
       ctx,
       id,
       teamSlugOrId,
-      identity.subject
+      userId
     );
     if (!instanceAccess.ok) {
       return instanceAccess.response;
@@ -904,19 +888,15 @@ async function handleResumeInstance(
 async function handleStopInstance(
   ctx: ActionCtx,
   id: string,
-  teamSlugOrId: string
+  teamSlugOrId: string,
+  userId: string
 ): Promise<Response> {
   try {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
-    }
-
     const instanceAccess = await requireDevboxInstanceAccessForHttp(
       ctx,
       id,
       teamSlugOrId,
-      identity.subject
+      userId
     );
     if (!instanceAccess.ok) {
       return instanceAccess.response;
@@ -971,19 +951,15 @@ async function handleStopInstance(
 async function handleGetInstanceSsh(
   ctx: ActionCtx,
   id: string,
-  teamSlugOrId: string
+  teamSlugOrId: string,
+  userId: string
 ): Promise<Response> {
   try {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
-    }
-
     const instanceAccess = await requireDevboxInstanceAccessForHttp(
       ctx,
       id,
       teamSlugOrId,
-      identity.subject
+      userId
     );
     if (!instanceAccess.ok) {
       return instanceAccess.response;
@@ -1062,19 +1038,15 @@ async function handleUpdateTtl(
   ctx: ActionCtx,
   id: string,
   teamSlugOrId: string,
+  userId: string,
   ttlSeconds: number
 ): Promise<Response> {
   try {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
-    }
-
     const instanceAccess = await requireDevboxInstanceAccessForHttp(
       ctx,
       id,
       teamSlugOrId,
-      identity.subject
+      userId
     );
     if (!instanceAccess.ok) {
       return instanceAccess.response;
@@ -1120,19 +1092,15 @@ async function handleUpdateTtl(
 async function handleRebootInstance(
   ctx: ActionCtx,
   id: string,
-  teamSlugOrId: string
+  teamSlugOrId: string,
+  userId: string
 ): Promise<Response> {
   try {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
-    }
-
     const instanceAccess = await requireDevboxInstanceAccessForHttp(
       ctx,
       id,
       teamSlugOrId,
-      identity.subject
+      userId
     );
     if (!instanceAccess.ok) {
       return instanceAccess.response;
@@ -1178,19 +1146,15 @@ async function handleSnapshotInstance(
   ctx: ActionCtx,
   id: string,
   teamSlugOrId: string,
+  userId: string,
   digest?: string
 ): Promise<Response> {
   try {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
-    }
-
     const instanceAccess = await requireDevboxInstanceAccessForHttp(
       ctx,
       id,
       teamSlugOrId,
-      identity.subject
+      userId
     );
     if (!instanceAccess.ok) {
       return instanceAccess.response;
@@ -1243,20 +1207,16 @@ async function handleExposeHttpService(
   ctx: ActionCtx,
   id: string,
   teamSlugOrId: string,
+  userId: string,
   serviceName: string,
   port: number
 ): Promise<Response> {
   try {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
-    }
-
     const instanceAccess = await requireDevboxInstanceAccessForHttp(
       ctx,
       id,
       teamSlugOrId,
-      identity.subject
+      userId
     );
     if (!instanceAccess.ok) {
       return instanceAccess.response;
@@ -1304,19 +1264,15 @@ async function handleHideHttpService(
   ctx: ActionCtx,
   id: string,
   teamSlugOrId: string,
+  userId: string,
   serviceName: string
 ): Promise<Response> {
   try {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
-    }
-
     const instanceAccess = await requireDevboxInstanceAccessForHttp(
       ctx,
       id,
       teamSlugOrId,
-      identity.subject
+      userId
     );
     if (!instanceAccess.ok) {
       return instanceAccess.response;
@@ -1636,8 +1592,11 @@ export const instanceActionRouter = httpAction(async (ctx, req) => {
   const contentTypeError = verifyContentType(req);
   if (contentTypeError) return contentTypeError;
 
-  const { error } = await getAuthenticatedUser(ctx);
-  if (error) return error;
+  const { identity, error } = await getAuthenticatedUser(ctx);
+  if (error || !identity) {
+    return error ?? jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+  }
+  const userId = identity.subject;
 
   const url = new URL(req.url);
   const path = url.pathname;
@@ -1693,18 +1652,19 @@ export const instanceActionRouter = httpAction(async (ctx, req) => {
         ctx,
         id,
         body.teamSlugOrId,
+        userId,
         body.command,
         body.timeout
       );
 
     case "pause":
-      return handlePauseInstance(ctx, id, body.teamSlugOrId);
+      return handlePauseInstance(ctx, id, body.teamSlugOrId, userId);
 
     case "resume":
-      return handleResumeInstance(ctx, id, body.teamSlugOrId);
+      return handleResumeInstance(ctx, id, body.teamSlugOrId, userId);
 
     case "stop":
-      return handleStopInstance(ctx, id, body.teamSlugOrId);
+      return handleStopInstance(ctx, id, body.teamSlugOrId, userId);
 
     case "ttl":
       if (!body.ttlSeconds) {
@@ -1714,17 +1674,19 @@ export const instanceActionRouter = httpAction(async (ctx, req) => {
         ctx,
         id,
         body.teamSlugOrId,
+        userId,
         body.ttlSeconds
       );
 
     case "reboot":
-      return handleRebootInstance(ctx, id, body.teamSlugOrId);
+      return handleRebootInstance(ctx, id, body.teamSlugOrId, userId);
 
     case "snapshot":
       return handleSnapshotInstance(
         ctx,
         id,
         body.teamSlugOrId,
+        userId,
         body.digest
       );
 
@@ -1739,6 +1701,7 @@ export const instanceActionRouter = httpAction(async (ctx, req) => {
         ctx,
         id,
         body.teamSlugOrId,
+        userId,
         body.serviceName,
         body.port
       );
@@ -1752,8 +1715,11 @@ export const instanceActionRouter = httpAction(async (ctx, req) => {
 // Route handler for instance-specific GET actions
 // ============================================================================
 export const instanceGetRouter = httpAction(async (ctx, req) => {
-  const { error } = await getAuthenticatedUser(ctx);
-  if (error) return error;
+  const { identity, error } = await getAuthenticatedUser(ctx);
+  if (error || !identity) {
+    return error ?? jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+  }
+  const userId = identity.subject;
 
   const url = new URL(req.url);
   const path = url.pathname;
@@ -1783,19 +1749,22 @@ export const instanceGetRouter = httpAction(async (ctx, req) => {
 
   // Route based on the action suffix
   if (action === "ssh") {
-    return handleGetInstanceSsh(ctx, id, teamSlugOrId);
+    return handleGetInstanceSsh(ctx, id, teamSlugOrId, userId);
   }
 
   // Default: get instance details
-  return handleGetInstance(ctx, id, teamSlugOrId);
+  return handleGetInstance(ctx, id, teamSlugOrId, userId);
 });
 
 // ============================================================================
 // Route handler for instance-specific DELETE actions
 // ============================================================================
 export const instanceDeleteRouter = httpAction(async (ctx, req) => {
-  const { error } = await getAuthenticatedUser(ctx);
-  if (error) return error;
+  const { identity, error } = await getAuthenticatedUser(ctx);
+  if (error || !identity) {
+    return error ?? jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+  }
+  const userId = identity.subject;
 
   const url = new URL(req.url);
   const path = url.pathname;
@@ -1829,7 +1798,7 @@ export const instanceDeleteRouter = httpAction(async (ctx, req) => {
         400
       );
     }
-    return handleHideHttpService(ctx, id, teamSlugOrId, serviceName);
+    return handleHideHttpService(ctx, id, teamSlugOrId, userId, serviceName);
   }
 
   return jsonResponse({ code: 404, message: "Not found" }, 404);
