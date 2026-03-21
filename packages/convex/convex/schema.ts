@@ -396,6 +396,16 @@ const convexSchema = defineSchema({
       )
     ),
     operatorVerificationError: v.optional(v.string()),
+    // Context usage tracking (Phase 5c)
+    contextUsage: v.optional(
+      v.object({
+        totalInputTokens: v.number(), // Cumulative input tokens
+        totalOutputTokens: v.number(), // Cumulative output tokens
+        contextWindow: v.optional(v.number()), // Model's context window size
+        usagePercent: v.optional(v.number()), // Current usage as percentage of context window
+        lastUpdated: v.number(), // Timestamp of last update
+      })
+    ),
   })
     .index("by_task", ["taskId", "createdAt"])
     .index("by_parent", ["parentRunId"])

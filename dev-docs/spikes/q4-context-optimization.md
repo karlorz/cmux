@@ -50,10 +50,12 @@ When context nears limit, trigger compact/summarize:
 - [x] Show context capacity in agent selector
 - [x] Add tooltip with model capabilities
 
-### Phase 5c: Pre-Compact (Future)
-- [ ] Monitor context usage
-- [ ] Implement summarization triggers
-- [ ] Add user preferences
+### Phase 5c: Context Usage Tracking (Partial)
+- [x] Track cumulative token usage per task run
+- [x] Store contextUsage in taskRuns table
+- [x] Wire anthropic_http to update usage on each request
+- [ ] Implement summarization triggers (future)
+- [ ] Add user preferences (future)
 
 ## Status
 
@@ -62,4 +64,4 @@ When context nears limit, trigger compact/summarize:
   - Gemini/Grok: d4d7f7d53
   - Qwen/AMP: b10fb56b8
 - [x] Phase 5b: Display - Agent selector shows context info (18eda22a7)
-- [ ] Phase 5c: Pre-Compact (future)
+- [x] Phase 5c: Context usage tracking (partial)

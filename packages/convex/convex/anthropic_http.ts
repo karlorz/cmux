@@ -503,14 +503,25 @@ export const anthropicProxy = httpAction(async (ctx, req) => {
       // Track non-streaming responses with token usage
       if (!isStreaming) {
         const responseData = await response.clone().json().catch(() => null);
+        const inputTokens = responseData?.usage?.input_tokens;
+        const outputTokens = responseData?.usage?.output_tokens;
         trackEvent(requestedModel, false, response.status, {
-          inputTokens: responseData?.usage?.input_tokens,
-          outputTokens: responseData?.usage?.output_tokens,
+          inputTokens,
+          outputTokens,
           cacheCreationInputTokens: responseData?.usage?.cache_creation_input_tokens,
           cacheReadInputTokens: responseData?.usage?.cache_read_input_tokens,
           errorType: response.ok ? undefined : responseData?.error?.type,
         });
         await drainPosthogEvents();
+
+        // Update context usage in Convex (Phase 5c) - fire and forget
+        if (inputTokens && outputTokens && workerAuth?.payload.taskRunId) {
+          ctx.runMutation(internal.taskRuns.updateContextUsage, {
+            id: workerAuth.payload.taskRunId as any,
+            inputTokens,
+            outputTokens,
+          }).catch(() => {}); // Ignore errors to not block response
+        }
       } else {
         // For streaming, track without token usage (not available until stream ends)
         trackEvent(requestedModel, true, response.status);
@@ -625,14 +636,25 @@ export const anthropicProxy = httpAction(async (ctx, req) => {
       // Track non-streaming responses with token usage
       if (!isStreaming) {
         const responseData = await response.clone().json().catch(() => null);
+        const inputTokens = responseData?.usage?.input_tokens;
+        const outputTokens = responseData?.usage?.output_tokens;
         trackEvent(requestedModel, false, response.status, {
-          inputTokens: responseData?.usage?.input_tokens,
-          outputTokens: responseData?.usage?.output_tokens,
+          inputTokens,
+          outputTokens,
           cacheCreationInputTokens: responseData?.usage?.cache_creation_input_tokens,
           cacheReadInputTokens: responseData?.usage?.cache_read_input_tokens,
           errorType: response.ok ? undefined : responseData?.error?.type,
         });
         await drainPosthogEvents();
+
+        // Update context usage in Convex (Phase 5c) - fire and forget
+        if (inputTokens && outputTokens && workerAuth?.payload.taskRunId) {
+          ctx.runMutation(internal.taskRuns.updateContextUsage, {
+            id: workerAuth.payload.taskRunId as any,
+            inputTokens,
+            outputTokens,
+          }).catch(() => {}); // Ignore errors to not block response
+        }
       } else {
         // For streaming, track without token usage (not available until stream ends)
         trackEvent(requestedModel, true, response.status);
