@@ -1631,6 +1631,8 @@ const convexSchema = defineSchema({
       )
     ), // Thinking/reasoning mode variants
     defaultVariant: v.optional(v.string()), // Default variant ID
+    contextWindow: v.optional(v.number()), // Max input tokens
+    maxOutputTokens: v.optional(v.number()), // Max output tokens
     createdAt: v.number(),
     updatedAt: v.number(),
   })
