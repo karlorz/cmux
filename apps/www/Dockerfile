@@ -67,6 +67,20 @@ COPY packages/morphcloud-openapi-client ./packages/morphcloud-openapi-client
 COPY packages/pve-lxc-client ./packages/pve-lxc-client
 COPY packages/pve-vm-client ./packages/pve-vm-client
 
+# Preserve the rest of the workspace manifests so Bun can honor the checked-in
+# lockfile even though this builder only carries the apps/www dependency slice.
+COPY apps/client/package.json ./apps/client/
+COPY apps/edge-router/package.json ./apps/edge-router/
+COPY apps/edge-router-pvelxc/package.json ./apps/edge-router-pvelxc/
+COPY apps/preview-proxy/package.json ./apps/preview-proxy/
+COPY apps/server/package.json ./apps/server/
+COPY apps/worker/package.json ./apps/worker/
+COPY packages/cmux/package.json ./packages/cmux/
+COPY packages/devsh-memory-mcp/package.json ./packages/devsh-memory-mcp/
+COPY packages/host-screenshot-collector/package.json ./packages/host-screenshot-collector/
+COPY packages/pr-heatmap/package.json ./packages/pr-heatmap/
+COPY packages/vscode-extension/package.json ./packages/vscode-extension/
+
 # Copy www source code
 COPY apps/www ./apps/www
 COPY scripts/package.json ./scripts/
@@ -74,9 +88,9 @@ COPY scripts/package.json ./scripts/
 # Copy root config files
 COPY package.json bun.lock .npmrc tsconfig.json tsconfig.base.json ./
 
-# Re-hydrate dependencies against the full source tree. The manifest-only
-# install from the deps stage is not enough for Bun 1.3.11 to resolve the
-# nested apps/www workspace graph during generate-openapi-client in CI.
+# Re-hydrate dependencies against the apps/www build graph. The manifest-only
+# install from the deps stage is not enough for Bun to resolve the nested
+# workspace graph during generate-openapi-client in CI.
 RUN bun install --ignore-scripts --frozen-lockfile
 
 # Re-link @cmux workspace packages to local source and expose the
