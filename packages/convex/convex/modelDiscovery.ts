@@ -413,6 +413,8 @@ export const seedCuratedModels = internalAction({
         disabledReason: entry.disabledReason,
         variants,
         defaultVariant: entry.defaultVariant ?? "default",
+        contextWindow: entry.contextWindow,
+        maxOutputTokens: entry.maxOutputTokens,
       };
     });
 

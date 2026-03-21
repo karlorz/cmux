@@ -5,6 +5,12 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  listReleaseTagsFromRemoteRefs,
+  parseRemoteTagRefs,
+  resolveRequestedForkReleaseVersion,
+} from "./lib/release-version";
+
 const scriptPath = fileURLToPath(import.meta.url);
 const scriptName = basename(scriptPath);
 const scriptDir = resolve(scriptPath, "..");
@@ -12,13 +18,9 @@ const repoRoot = resolve(scriptDir, "..");
 
 process.chdir(repoRoot);
 
-const semverPattern = /^\d+\.\d+\.\d+$/;
-
 const defaultBaseBranch = "main";
 
 const releaseBranchPrefix = "release/";
-
-type IncrementMode = "major" | "minor" | "patch";
 
 type RunOptions = {
   allowNonZeroExit?: boolean;
@@ -51,7 +53,7 @@ function writeGithubOutput(key: string, value: string): void {
 
 function usage(): never {
   console.error(
-    `Usage: ./scripts/${scriptName} [major|minor|patch|<semver>]\nExamples:\n  ./scripts/${scriptName}\n  ./scripts/${scriptName} minor\n  ./scripts/${scriptName} 1.2.3`
+    `Usage: ./scripts/${scriptName} [<fork-version>]\nExamples:\n  ./scripts/${scriptName}\n  ./scripts/${scriptName} 1.0.269-0`
   );
   return process.exit(1);
 }
@@ -95,85 +97,15 @@ function ensureGitAvailable(): void {
   }
 }
 
-function isSemver(value: string): boolean {
-  return semverPattern.test(value);
-}
-
-function parseSemverParts(value: string): [number, number, number] {
-  if (!isSemver(value)) {
-    throw new Error(`Version "${value}" is not a valid semver (x.y.z).`);
+function selectPreferredRemote(remotes: string[]): string {
+  if (remotes.includes("origin")) {
+    return "origin";
   }
-  const [major, minor, patch] = value.split(".").map((part) => Number.parseInt(part, 10));
-  return [major, minor, patch];
-}
-
-function compareSemver(left: string, right: string): number {
-  const [leftMajor, leftMinor, leftPatch] = parseSemverParts(left);
-  const [rightMajor, rightMinor, rightPatch] = parseSemverParts(right);
-
-  if (leftMajor !== rightMajor) {
-    return leftMajor > rightMajor ? 1 : -1;
+  const firstRemote = remotes[0];
+  if (!firstRemote) {
+    throw new Error("No git remote configured. Add a remote before releasing.");
   }
-  if (leftMinor !== rightMinor) {
-    return leftMinor > rightMinor ? 1 : -1;
-  }
-  if (leftPatch !== rightPatch) {
-    return leftPatch > rightPatch ? 1 : -1;
-  }
-  return 0;
-}
-
-function incrementVersion(mode: IncrementMode, base: string): string {
-  const [major, minor, patch] = parseSemverParts(base);
-
-  if (mode === "major") {
-    return `${major + 1}.0.0`;
-  }
-  if (mode === "minor") {
-    return `${major}.${minor + 1}.0`;
-  }
-  return `${major}.${minor}.${patch + 1}`;
-}
-
-function loadCurrentVersion(): string {
-  interface PackageJson {
-    version?: string;
-  }
-
-  const packagePath = resolve("apps", "client", "package.json");
-  const raw = readFileSync(packagePath, "utf8");
-  const parsed: PackageJson = JSON.parse(raw);
-
-  if (typeof parsed.version !== "string" || !parsed.version) {
-    throw new Error("Unable to read current version from apps/client/package.json.");
-  }
-
-  if (!isSemver(parsed.version)) {
-    throw new Error(`Current version "${parsed.version}" is not in the expected x.y.z format.`);
-  }
-
-  return parsed.version;
-}
-
-function determineHighestTagVersion(): string {
-  const tagOutput = run("git", ["tag", "--list", "v[0-9]*"]).stdout.trim();
-  if (!tagOutput) {
-    return "";
-  }
-
-  const versions = tagOutput
-    .split(/\r?\n/)
-    .map((tag) => tag.trim())
-    .filter(Boolean)
-    .map((tag) => (tag.startsWith("v") ? tag.slice(1) : tag))
-    .filter(isSemver);
-
-  if (versions.length === 0) {
-    return "";
-  }
-
-  versions.sort((a, b) => compareSemver(a, b));
-  return versions[versions.length - 1] ?? "";
+  return firstRemote;
 }
 
 function updateVersionFile(version: string): void {
@@ -301,38 +233,13 @@ async function main(): Promise<void> {
     throw new Error("No git remote configured. Add a remote before releasing.");
   }
 
-  const firstRemote = remotes[0] ?? "";
-
-  run("git", ["fetch", "--tags", firstRemote], { stdio: "inherit" });
-
-  const packageVersion = loadCurrentVersion();
-  const highestTagVersion = determineHighestTagVersion();
-
-  let baseVersion = packageVersion;
-  if (highestTagVersion && compareSemver(highestTagVersion, baseVersion) > 0) {
-    baseVersion = highestTagVersion;
-  }
-
-  const bumpTarget = args[0] ?? "";
-
-  let newVersion: string;
-
-  if (!bumpTarget) {
-    newVersion = incrementVersion("patch", baseVersion);
-  } else if (bumpTarget === "major" || bumpTarget === "minor" || bumpTarget === "patch") {
-    newVersion = incrementVersion(bumpTarget, baseVersion);
-  } else {
-    const manualTarget = bumpTarget.startsWith("v") ? bumpTarget.slice(1) : bumpTarget;
-    newVersion = manualTarget;
-  }
-
-  if (!isSemver(newVersion)) {
-    throw new Error(`Version "${newVersion}" is not a valid semver (x.y.z).`);
-  }
-
-  if (compareSemver(newVersion, baseVersion) <= 0) {
-    throw new Error(`New version ${newVersion} must be greater than existing version ${baseVersion}.`);
-  }
+  const pushRemote = selectPreferredRemote(remotes);
+  const remoteTags = parseRemoteTagRefs(run("git", ["ls-remote", "--tags", pushRemote]).stdout);
+  const releaseResolution = resolveRequestedForkReleaseVersion(
+    listReleaseTagsFromRemoteRefs(remoteTags),
+    args[0]
+  );
+  const newVersion = releaseResolution.version;
 
   const localTagCheck = run("git", ["rev-parse", "-q", "--verify", `refs/tags/v${newVersion}`], {
     allowNonZeroExit: true,
@@ -341,16 +248,22 @@ async function main(): Promise<void> {
     throw new Error(`Tag v${newVersion} already exists locally.`);
   }
 
-  const remoteTagCheck = run("git", ["ls-remote", "--tags", firstRemote, `refs/tags/v${newVersion}`], {
-    allowNonZeroExit: true,
-  });
+  const remoteTagCheck = run(
+    "git",
+    ["ls-remote", "--tags", pushRemote, `refs/tags/v${newVersion}`],
+    {
+      allowNonZeroExit: true,
+    }
+  );
   if (remoteTagCheck.stdout.trim()) {
-    throw new Error(`Tag v${newVersion} already exists on ${firstRemote}.`);
+    throw new Error(`Tag v${newVersion} already exists on ${pushRemote}.`);
   }
 
   const branchName = buildReleaseBranch(newVersion);
 
-  const branchCheck = run("git", ["ls-remote", "--heads", firstRemote, branchName], { allowNonZeroExit: true });
+  const branchCheck = run("git", ["ls-remote", "--heads", pushRemote, branchName], {
+    allowNonZeroExit: true,
+  });
   if (branchCheck.stdout.trim()) {
     const repo = resolveRepository();
     const token = ensureToken();
@@ -367,18 +280,20 @@ async function main(): Promise<void> {
     }
     // Branch exists but no open PR - delete the stale branch and continue
     console.log(`Deleting stale branch ${branchName} (no open PR found)`);
-    run("git", ["push", firstRemote, "--delete", branchName], { stdio: "inherit" });
+    run("git", ["push", pushRemote, "--delete", branchName], { stdio: "inherit" });
   }
 
   updateVersionFile(newVersion);
 
-  console.log(`Preparing release ${newVersion} (base was ${baseVersion})`);
+  console.log(
+    `Preparing release ${newVersion} (baseline is ${releaseResolution.state.baselineVersion})`
+  );
 
   run("git", ["checkout", "-b", branchName], { stdio: "inherit" });
 
   run("git", ["commit", "-m", `chore: release v${newVersion}`], { stdio: "inherit" });
 
-  run("git", ["push", "-u", firstRemote, branchName], { stdio: "inherit" });
+  run("git", ["push", "-u", pushRemote, branchName], { stdio: "inherit" });
 
   writeGithubOutput("release_branch", branchName);
   writeGithubOutput("release_version", newVersion);

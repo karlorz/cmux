@@ -47,6 +47,10 @@ var (
 	taskCreateAutopilotMinutes     int
 	taskCreateAutopilotTurnMinutes int
 	taskCreateAutopilotWrapUp      int
+	// Ralph Mode (Phase 6b) - simple task looping until completion
+	taskCreateRalphMode          bool
+	taskCreateRalphCompletionTag string
+	taskCreateRalphMaxIterations int
 )
 
 var taskCreateCmd = &cobra.Command{
@@ -261,6 +265,9 @@ Examples:
 			AutopilotMinutes:            taskCreateAutopilotMinutes,
 			AutopilotTurnMinutes:        taskCreateAutopilotTurnMinutes,
 			AutopilotWrapUp:             taskCreateAutopilotWrapUp,
+			RalphMode:                   taskCreateRalphMode,
+			RalphCompletionTag:          taskCreateRalphCompletionTag,
+			RalphMaxIterations:          taskCreateRalphMaxIterations,
 		}
 
 		// Create task and task runs (with JWTs)
@@ -387,6 +394,9 @@ Examples:
 					AutopilotMinutes:     taskCreateAutopilotMinutes,
 					AutopilotTurnMinutes: taskCreateAutopilotTurnMinutes,
 					AutopilotWrapUp:      taskCreateAutopilotWrapUp,
+					RalphMode:            taskCreateRalphMode,
+					RalphCompletionTag:   taskCreateRalphCompletionTag,
+					RalphMaxIterations:   taskCreateRalphMaxIterations,
 					IsCloudWorkspace:    taskCreateCloudWorkspace,
 					IsOrchestrationHead: taskCreateCloudWorkspace, // Cloud workspaces are orchestration heads
 				})
@@ -618,5 +628,9 @@ func init() {
 	taskCreateCmd.Flags().IntVar(&taskCreateAutopilotMinutes, "autopilot-minutes", 30, "Total autopilot duration in minutes (default: 30)")
 	taskCreateCmd.Flags().IntVar(&taskCreateAutopilotTurnMinutes, "autopilot-turn-minutes", 5, "Minutes per turn in autopilot mode (default: 5)")
 	taskCreateCmd.Flags().IntVar(&taskCreateAutopilotWrapUp, "autopilot-wrap-up", 3, "Minutes before deadline to wrap up in autopilot mode (default: 3)")
+	// Ralph Mode (Phase 6b) - simple task looping until completion signal
+	taskCreateCmd.Flags().BoolVar(&taskCreateRalphMode, "ralph-mode", false, "Run agent in Ralph Loop mode (iterate until <promise>DONE</promise> completion signal)")
+	taskCreateCmd.Flags().StringVar(&taskCreateRalphCompletionTag, "ralph-completion-tag", "DONE", "Completion tag for Ralph mode (default: DONE)")
+	taskCreateCmd.Flags().IntVar(&taskCreateRalphMaxIterations, "ralph-max-iterations", 50, "Max iterations for Ralph mode (default: 50)")
 	taskCmd.AddCommand(taskCreateCmd)
 }

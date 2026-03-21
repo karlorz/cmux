@@ -7,6 +7,8 @@ export const AMP_CATALOG: AgentCatalogEntry[] = [
     vendor: "amp",
     requiredApiKeys: ["AMP_API_KEY"],
     tier: "paid",
+    contextWindow: 200000,
+    maxOutputTokens: 16384,
   },
   {
     name: "amp/gpt-5",
@@ -14,5 +16,7 @@ export const AMP_CATALOG: AgentCatalogEntry[] = [
     vendor: "amp",
     requiredApiKeys: ["AMP_API_KEY"],
     tier: "paid",
+    contextWindow: 256000,
+    maxOutputTokens: 32000,
   },
 ];

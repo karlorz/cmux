@@ -9,6 +9,8 @@ export const CODEX_CATALOG: AgentCatalogEntry[] = [
     requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
     tier: "paid",
     tags: ["latest", "reasoning"],
+    contextWindow: 256000,
+    maxOutputTokens: 32000,
   },
   {
     name: "codex/gpt-5.4-high",
@@ -17,6 +19,8 @@ export const CODEX_CATALOG: AgentCatalogEntry[] = [
     requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
     tier: "paid",
     tags: ["reasoning"],
+    contextWindow: 256000,
+    maxOutputTokens: 32000,
   },
   {
     name: "codex/gpt-5.4-medium",

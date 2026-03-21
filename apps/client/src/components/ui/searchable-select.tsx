@@ -52,6 +52,8 @@ export interface SelectOptionObject {
   // Render as a non-selectable heading row
   heading?: boolean;
   warning?: OptionWarning;
+  // Optional secondary text shown below the label (e.g., context window info)
+  secondaryText?: string;
 }
 
 export type SelectOption = string | SelectOptionObject;
@@ -222,7 +224,14 @@ function DefaultOptionItem({
             {opt.icon}
           </span>
         ) : null}
-        <span className="truncate select-none">{opt.label}</span>
+        <div className="flex flex-col min-w-0">
+          <span className="truncate select-none">{opt.label}</span>
+          {opt.secondaryText ? (
+            <span className="truncate text-[10px] text-neutral-500 dark:text-neutral-400 -mt-0.5">
+              {opt.secondaryText}
+            </span>
+          ) : null}
+        </div>
         {opt.warning ? (
           <WarningIndicator
             warning={opt.warning}

@@ -78,6 +78,9 @@ interface SpawnConfig {
 
 ## Status
 
-- [ ] Benchmark in sandbox environment
-- [ ] Document latency improvements
+- [x] Checked Claude CLI v2.1.79 - `--bare` flag not available
+- [ ] Monitor future Claude releases for --bare flag
+- [ ] Benchmark when available
 - [ ] Implement spawn option if >20% improvement
+
+**Note (2026-03-21):** The `--bare` flag referenced in research notes is not present in Claude CLI v2.1.79. May have been renamed, removed, or is still in development. Phase deferred until flag becomes available.

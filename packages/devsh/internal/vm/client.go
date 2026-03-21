@@ -874,6 +874,10 @@ type CreateTaskOptions struct {
 	AutopilotMinutes     int
 	AutopilotTurnMinutes int
 	AutopilotWrapUp      int
+	// Ralph Mode (Phase 6b) - simple task looping until completion
+	RalphMode          bool
+	RalphCompletionTag string
+	RalphMaxIterations int
 }
 
 // TaskRunWithJWT represents a task run with its JWT for sandbox auth
@@ -1050,6 +1054,12 @@ func (c *Client) CreateTask(ctx context.Context, opts CreateTaskOptions) (*Creat
 		body["autopilotMinutes"] = opts.AutopilotMinutes
 		body["autopilotTurnMinutes"] = opts.AutopilotTurnMinutes
 		body["autopilotWrapUp"] = opts.AutopilotWrapUp
+	}
+	// Ralph Mode (Phase 6b)
+	if opts.RalphMode {
+		body["ralphMode"] = true
+		body["ralphCompletionTag"] = opts.RalphCompletionTag
+		body["ralphMaxIterations"] = opts.RalphMaxIterations
 	}
 
 	resp, err := c.doRequest(ctx, "POST", "/api/v1/cmux/tasks", body)
@@ -1661,6 +1671,10 @@ type StartTaskAgentsOptions struct {
 	AutopilotMinutes     int
 	AutopilotTurnMinutes int
 	AutopilotWrapUp      int
+	// Ralph Mode (Phase 6b) - simple task looping until completion
+	RalphMode          bool
+	RalphCompletionTag string
+	RalphMaxIterations int
 	// Cloud workspace and orchestration head flags
 	IsCloudWorkspace    bool
 	IsOrchestrationHead bool
@@ -1784,6 +1798,12 @@ func (c *Client) StartTaskAgents(ctx context.Context, opts StartTaskAgentsOption
 		body["autopilotMinutes"] = opts.AutopilotMinutes
 		body["autopilotTurnMinutes"] = opts.AutopilotTurnMinutes
 		body["autopilotWrapUp"] = opts.AutopilotWrapUp
+	}
+	// Ralph Mode (Phase 6b)
+	if opts.RalphMode {
+		body["ralphMode"] = true
+		body["ralphCompletionTag"] = opts.RalphCompletionTag
+		body["ralphMaxIterations"] = opts.RalphMaxIterations
 	}
 	// Cloud workspace and orchestration head flags
 	if opts.IsCloudWorkspace {

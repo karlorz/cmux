@@ -8,6 +8,8 @@ export const GROK_CATALOG: AgentCatalogEntry[] = [
     requiredApiKeys: ["XAI_API_KEY"],
     tier: "paid",
     tags: ["default", "fast"],
+    contextWindow: 131072,
+    maxOutputTokens: 16384,
   },
   {
     name: "grok/grok-4-latest",
@@ -16,6 +18,8 @@ export const GROK_CATALOG: AgentCatalogEntry[] = [
     requiredApiKeys: ["XAI_API_KEY"],
     tier: "paid",
     tags: ["latest"],
+    contextWindow: 256000,
+    maxOutputTokens: 32000,
   },
   {
     name: "grok/grok-3-latest",
@@ -23,6 +27,8 @@ export const GROK_CATALOG: AgentCatalogEntry[] = [
     vendor: "xai",
     requiredApiKeys: ["XAI_API_KEY"],
     tier: "paid",
+    contextWindow: 131072,
+    maxOutputTokens: 16384,
   },
   {
     name: "grok/grok-3-fast",
@@ -31,5 +37,7 @@ export const GROK_CATALOG: AgentCatalogEntry[] = [
     requiredApiKeys: ["XAI_API_KEY"],
     tier: "paid",
     tags: ["fast"],
+    contextWindow: 131072,
+    maxOutputTokens: 8192,
   },
 ];
