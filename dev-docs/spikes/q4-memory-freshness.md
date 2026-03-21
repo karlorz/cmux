@@ -113,7 +113,7 @@ Prevent bad memory writes:
 
 ## Status
 
-- [ ] Phase 3a: Usage tracking
-- [ ] Phase 3b: Freshness scoring
-- [ ] Phase 3c: Forgetting tool
-- [ ] Phase 3d: Guardrails
+- [x] Phase 3a: Usage tracking (commit 499661720)
+- [x] Phase 3b: Freshness scoring (commit ff501232a)
+- [x] Phase 3c: Forgetting tool (commit 30e811a7a)
+- [x] Phase 3d: Guardrails (commit 9a36faae5)
