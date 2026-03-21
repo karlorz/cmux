@@ -1216,6 +1216,8 @@ function RunDiffPage() {
               <RunScreenshotGallery
                 screenshotSets={screenshotSets}
                 screenshotConfig={screenshotConfig}
+                verificationStatus={selectedRun?.operatorVerificationStatus}
+                verificationError={selectedRun?.operatorVerificationError}
               />
             )}
             <div

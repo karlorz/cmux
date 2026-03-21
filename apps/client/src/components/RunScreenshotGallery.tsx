@@ -9,12 +9,16 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
+  AlertCircle,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Images,
+  Loader2,
   Maximize2,
   Play,
   RotateCcw,
+  SkipForward,
   X,
   ZoomIn,
   ZoomOut,
@@ -55,10 +59,16 @@ interface ScreenshotConfig {
   taskRunCompleted: boolean;
 }
 
+type OperatorVerificationStatus = "pending" | "running" | "completed" | "failed" | "skipped";
+
 interface RunScreenshotGalleryProps {
   screenshotSets: RunScreenshotSet[];
   screenshotConfig?: ScreenshotConfig;
   highlightedSetId?: Id<"taskRunScreenshotSets"> | null;
+  /** Operator verification status from the task run */
+  verificationStatus?: OperatorVerificationStatus | null;
+  /** Error message if verification failed */
+  verificationError?: string | null;
 }
 
 const MIN_ZOOM = 0.2;
@@ -142,8 +152,66 @@ const getMediaKey = (
   indexInSet: number,
 ) => `${setId}:${kind}:${media.storageId}:${indexInSet}`;
 
+function VerificationStatusBadge({
+  status,
+  error,
+}: {
+  status: OperatorVerificationStatus | null | undefined;
+  error: string | null | undefined;
+}) {
+  if (!status) return null;
+
+  const config = {
+    pending: {
+      icon: Loader2,
+      label: "Verification pending",
+      className: "text-neutral-500 dark:text-neutral-400",
+      iconClassName: "animate-spin",
+    },
+    running: {
+      icon: Loader2,
+      label: "Capturing screenshots...",
+      className: "text-blue-600 dark:text-blue-400",
+      iconClassName: "animate-spin",
+    },
+    completed: {
+      icon: CheckCircle2,
+      label: "Verification complete",
+      className: "text-green-600 dark:text-green-400",
+      iconClassName: "",
+    },
+    failed: {
+      icon: AlertCircle,
+      label: error ? `Verification failed: ${error}` : "Verification failed",
+      className: "text-red-600 dark:text-red-400",
+      iconClassName: "",
+    },
+    skipped: {
+      icon: SkipForward,
+      label: "Verification skipped",
+      className: "text-neutral-500 dark:text-neutral-400",
+      iconClassName: "",
+    },
+  }[status];
+
+  const Icon = config.icon;
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 text-[11px]",
+        config.className
+      )}
+      title={config.label}
+    >
+      <Icon className={cn("w-3 h-3", config.iconClassName)} />
+      <span className="hidden sm:inline">{status === "running" ? "Capturing..." : status}</span>
+    </span>
+  );
+}
+
 export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
-  const { screenshotSets, screenshotConfig } = props;
+  const { screenshotSets, screenshotConfig, verificationStatus, verificationError } = props;
   // Only show the latest screenshot set
   const latestScreenshotSet = useMemo(() => {
     if (screenshotSets.length === 0) return null;
@@ -529,9 +597,12 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
     screenshotConfig?.taskRunCompleted &&
     screenshotConfig?.screenshotWorkflowEnabled === false;
 
-  // Don't render at all if there's no screenshot set and no media
-  // (unless we need to show the "workflow disabled" message)
-  if (!latestScreenshotSet && totalMediaCount === 0 && !showWorkflowDisabledMessage) {
+  // Show the gallery section when:
+  // - There's a screenshot set (with or without media)
+  // - Workflow is disabled (show message)
+  // - Verification is in progress (pending/running)
+  const showVerificationInProgress = verificationStatus === "pending" || verificationStatus === "running";
+  if (!latestScreenshotSet && totalMediaCount === 0 && !showWorkflowDisabledMessage && !showVerificationInProgress) {
     return null;
   }
 
@@ -560,6 +631,12 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
           {videoCount > 0 && `${videoCount} ${videoCount === 1 ? "video" : "videos"}`}
           {totalMediaCount === 0 && "0 items"}
         </span>
+        {verificationStatus && (
+          <>
+            <span className="text-neutral-300 dark:text-neutral-600">|</span>
+            <VerificationStatusBadge status={verificationStatus} error={verificationError} />
+          </>
+        )}
       </div>
       <div className="px-3 pb-3">
         {currentEntry ? (
