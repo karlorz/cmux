@@ -84,10 +84,12 @@ Add suggestions chip below prompt input:
 - [x] Enable/disable tool toggles
 - [x] Persist tool preferences per project
 
-### Phase 4d: AI Enhancement (Optional)
-- [ ] Use Claude to analyze prompt intent
-- [ ] Semantic similarity matching
-- [ ] Learn from user selections
+### Phase 4d: Intent-Based Enhancement (Lite)
+- [x] Detect prompt intent via pattern matching
+- [x] Boost tool categories based on detected intent
+- [ ] Full AI analysis (future, requires API integration)
+- [ ] Semantic similarity matching (future, requires embeddings)
+- [ ] Learn from user selections (future)
 
 ## Files to Modify
 
@@ -101,4 +103,4 @@ Add suggestions chip below prompt input:
 - [x] Phase 4a: Tool registry (commit d9190e861)
 - [x] Phase 4b: Suggestion logic (commit d655fac76)
 - [x] Phase 4c: UI integration (commit 757c20397)
-- [ ] Phase 4d: AI enhancement (optional)
+- [x] Phase 4d: Intent-based enhancement (lite version)
