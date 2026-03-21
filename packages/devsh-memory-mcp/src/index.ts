@@ -63,9 +63,64 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
   const orchestrationDir = path.join(memoryDir, "orchestration");
   const mailboxPath = path.join(memoryDir, "MAILBOX.json");
   const tasksPath = path.join(memoryDir, "TASKS.json");
+  const usageStatsPath = path.join(memoryDir, "USAGE_STATS.json");
   const planPath = path.join(orchestrationDir, "PLAN.json");
   const agentsPath = path.join(orchestrationDir, "AGENTS.json");
   const eventsPath = path.join(orchestrationDir, "EVENTS.jsonl");
+
+  // Usage tracking for memory freshness (Q4 Phase 3)
+  interface UsageStats {
+    version: number;
+    entries: Record<string, {
+      readCount: number;
+      lastRead: string;
+      lastWrite?: string;
+      createdAt: string;
+    }>;
+  }
+
+  function readUsageStats(): UsageStats {
+    const content = readFile(usageStatsPath);
+    if (!content) return { version: 1, entries: {} };
+    try {
+      return JSON.parse(content) as UsageStats;
+    } catch {
+      return { version: 1, entries: {} };
+    }
+  }
+
+  function writeUsageStats(stats: UsageStats): boolean {
+    return writeFile(usageStatsPath, JSON.stringify(stats, null, 2));
+  }
+
+  function trackRead(memoryType: string): void {
+    const stats = readUsageStats();
+    const now = new Date().toISOString();
+    if (!stats.entries[memoryType]) {
+      stats.entries[memoryType] = {
+        readCount: 0,
+        lastRead: now,
+        createdAt: now,
+      };
+    }
+    stats.entries[memoryType].readCount++;
+    stats.entries[memoryType].lastRead = now;
+    writeUsageStats(stats);
+  }
+
+  function trackWrite(memoryType: string): void {
+    const stats = readUsageStats();
+    const now = new Date().toISOString();
+    if (!stats.entries[memoryType]) {
+      stats.entries[memoryType] = {
+        readCount: 0,
+        lastRead: now,
+        createdAt: now,
+      };
+    }
+    stats.entries[memoryType].lastWrite = now;
+    writeUsageStats(stats);
+  }
 
   // Helper functions
   function readFile(filePath: string): string | null {
@@ -383,6 +438,14 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
             },
           },
           required: ["query"],
+        },
+      },
+      {
+        name: "get_memory_usage",
+        description: "Get usage statistics for memory files. Shows read/write counts and timestamps for freshness tracking.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {},
         },
       },
       {
@@ -929,6 +992,9 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
           includeCompleted?: boolean;
           limit?: number;
         };
+        // Track usage for memory freshness
+        trackRead(type);
+
         let content: string | null = null;
         if (type === "knowledge") {
           content = readFile(path.join(knowledgeDir, "MEMORY.md"));
@@ -999,6 +1065,30 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
           .map((r) => `[${r.source}${r.line ? `:${r.line}` : ""}] ${r.content}`)
           .join("\n");
         return { content: [{ type: "text", text: formatted }] };
+      }
+
+      case "get_memory_usage": {
+        const stats = readUsageStats();
+        if (Object.keys(stats.entries).length === 0) {
+          return { content: [{ type: "text", text: "No usage statistics recorded yet." }] };
+        }
+        // Calculate freshness scores
+        const now = Date.now();
+        const entries = Object.entries(stats.entries).map(([key, value]) => {
+          const daysSinceRead = Math.floor((now - new Date(value.lastRead).getTime()) / (1000 * 60 * 60 * 24));
+          const daysSinceWrite = value.lastWrite
+            ? Math.floor((now - new Date(value.lastWrite).getTime()) / (1000 * 60 * 60 * 24))
+            : null;
+          const freshness = value.readCount > 5 ? "active" : daysSinceRead > 7 ? "stale" : "normal";
+          return {
+            type: key,
+            readCount: value.readCount,
+            daysSinceRead,
+            daysSinceWrite,
+            freshness,
+          };
+        });
+        return { content: [{ type: "text", text: JSON.stringify({ entries }, null, 2) }] };
       }
 
       case "send_message": {
@@ -1108,6 +1198,8 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
 
       case "update_knowledge": {
         const { section, content } = args as { section: "P0" | "P1" | "P2"; content: string };
+        // Track usage for memory freshness
+        trackWrite(`knowledge.${section}`);
         ensureDir(knowledgeDir);
         const knowledgePath = path.join(knowledgeDir, "MEMORY.md");
         let existing = readFile(knowledgePath);
