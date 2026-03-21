@@ -57,6 +57,9 @@ interface TestResult {
   response?: string;
   error?: string;
   latencyMs: number;
+  finishReason?: string;
+  reasoningText?: string;
+  upstreamModelId?: string;
 }
 
 type TestProviderOptions = {
@@ -199,16 +202,31 @@ async function testModel(
   }
 
   try {
-    const { text } = await generateText({
+    const { text, reasoning, finishReason, response } = await generateText({
       model: providerConfig.model,
       prompt: "Reply with exactly five words.",
       maxOutputTokens: 50,
       providerOptions: getProviderOptions(provider),
     });
 
-    result.success = true;
+    result.finishReason = finishReason;
+    result.upstreamModelId = response.modelId;
+    result.reasoningText =
+      reasoning
+        .map((part) => ("text" in part && typeof part.text === "string" ? part.text : ""))
+        .join(" ")
+        .trim();
     result.response = text.trim();
     result.latencyMs = Date.now() - start;
+
+    if (result.response.length > 0) {
+      result.success = true;
+      return result;
+    }
+
+    result.error =
+      `No text returned (finishReason=${finishReason}, upstreamModel=${response.modelId}` +
+      `${result.reasoningText ? ", received reasoning-only content" : ""})`;
   } catch (error) {
     result.error =
       error instanceof Error ? error.message : "Unknown error";
@@ -237,6 +255,11 @@ async function testProvider(provider: PlatformAiProvider): Promise<TestResult[]>
       console.log(`OK (${result.latencyMs}ms) - "${result.response}"`);
     } else {
       console.log(`FAILED (${result.latencyMs}ms) - ${result.error}`);
+      if (result.reasoningText) {
+        console.log(
+          `    reasoning preview: ${JSON.stringify(result.reasoningText.slice(0, 160))}`
+        );
+      }
     }
   }
 
