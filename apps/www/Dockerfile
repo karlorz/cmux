@@ -128,7 +128,17 @@ ENV SENTRY_AUTH_TOKEN=$SENTRY_AUTH_TOKEN
 # Build the Next.js app with standalone output
 WORKDIR /app/apps/www
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN bun run build
+# The www build imports server routes to generate the OpenAPI client and to
+# compile the app. Provide non-secret placeholders so env validation passes in
+# the ephemeral builder stage without requiring production credentials.
+RUN STACK_SECRET_SERVER_KEY=docker-build-placeholder \
+    STACK_SUPER_SECRET_ADMIN_KEY=docker-build-placeholder \
+    STACK_DATA_VAULT_SECRET=docker-build-placeholder-0123456789abcdef \
+    CMUX_GITHUB_APP_ID=docker-build-app-id \
+    CMUX_GITHUB_APP_PRIVATE_KEY=docker-build-private-key \
+    MORPH_API_KEY=docker-build-morph-key \
+    CMUX_TASK_RUN_JWT_SECRET=docker-build-jwt-secret \
+    bun run build
 
 # =============================================================================
 # Stage 3: Production
