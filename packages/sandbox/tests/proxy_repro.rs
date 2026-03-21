@@ -25,7 +25,7 @@ async fn proxy_tls_handshake_should_not_panic() {
         .rsplit(':')
         .next()
         .and_then(|s| s.parse().ok())
-        .expect(&format!("could not parse port from stderr: {:?}", line));
+        .unwrap_or_else(|| panic!("could not parse port from stderr: {:?}", line));
 
     // 2. Connect via TCP
     let mut stream = match TcpStream::connect(format!("127.0.0.1:{}", port)).await {
