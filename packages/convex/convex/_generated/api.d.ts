@@ -68,6 +68,7 @@ import type * as hostScreenshotCollector_http from "../hostScreenshotCollector_h
 import type * as http from "../http.js";
 import type * as localWorkspaces from "../localWorkspaces.js";
 import type * as mcpServerConfigs from "../mcpServerConfigs.js";
+import type * as mcpTools from "../mcpTools.js";
 import type * as media_proxy_http from "../media_proxy_http.js";
 import type * as migrations from "../migrations.js";
 import type * as mobileInbox from "../mobileInbox.js";
@@ -216,6 +217,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   localWorkspaces: typeof localWorkspaces;
   mcpServerConfigs: typeof mcpServerConfigs;
+  mcpTools: typeof mcpTools;
   media_proxy_http: typeof media_proxy_http;
   migrations: typeof migrations;
   mobileInbox: typeof mobileInbox;
