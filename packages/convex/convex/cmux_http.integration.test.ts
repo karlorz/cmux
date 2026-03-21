@@ -318,6 +318,21 @@ describe(
         expect(result.status).toBe(400);
       });
 
+      for (const path of [
+        "/api/v1/cmux/instances",
+        "/api/v1/devbox/instances",
+        "/api/v2/devbox/instances",
+      ]) {
+        it(`GET ${path} returns 404 for a nonexistent team`, async () => {
+          const result = await cmuxApiFetch(path, {
+            query: { teamSlugOrId: "nonexistent-team" },
+          });
+
+          expect(result.ok).toBe(false);
+          expect(result.status).toBe(404);
+        });
+      }
+
       it("GET /api/v2/devbox/instances lists instances (multi-provider)", async () => {
         // First get teams to find a valid team
         const teamsResult = await cmuxApiFetch<{
@@ -710,18 +725,32 @@ describe(
     // Cross-Team Isolation Tests
     // ========================================================================
     describe("Cross-Team Isolation", () => {
-      it("cannot access instances from other teams", async () => {
-        // Create a fake instance ID and try to access it with a different team
-        const result = await cmuxApiFetch(
-          "/api/v1/cmux/instances/cr_faketest123",
-          {
+      for (const path of [
+        "/api/v1/cmux/instances/cr_faketest123",
+        "/api/v1/devbox/instances/cr_faketest123",
+        "/api/v2/devbox/instances/cr_faketest123",
+      ]) {
+        it(`GET ${path} returns 404 for a nonexistent team`, async () => {
+          const result = await cmuxApiFetch(path, {
             query: { teamSlugOrId: "nonexistent-team" },
+          });
+
+          expect(result.ok).toBe(false);
+          expect(result.status).toBe(404);
+        });
+      }
+
+      it("POST /api/v1/cmux/instances/:id/stop returns 404 for a nonexistent team", async () => {
+        const result = await cmuxApiFetch(
+          "/api/v1/cmux/instances/cr_faketest123/stop",
+          {
+            method: "POST",
+            body: { teamSlugOrId: "nonexistent-team" },
           }
         );
 
-        // Should fail - 404 (team not found), 403 (forbidden), or 500 (internal error)
         expect(result.ok).toBe(false);
-        expect([403, 404, 500]).toContain(result.status);
+        expect(result.status).toBe(404);
       });
     });
 
