@@ -32,6 +32,8 @@ import {
   modelsRouter,
   mcpServersRouter,
   morphRouter,
+  mobileHeartbeatRouter,
+  mobileMachineSessionRouter,
   orchestrateRouter,
   projectRouter,
   providersRouter,
@@ -72,6 +74,10 @@ const staticCorsOrigins = new Set([
   getHostUrl(defaultHostConfig.server),
   "https://cmux.sh",
   "https://www.cmux.sh",
+  "https://cmux.com",
+  "https://www.cmux.com",
+  "https://manaflow.com",
+  "https://www.manaflow.com",
   ...additionalClientOrigins,
 ]);
 const trustedProxyDomains = buildTrustedProxyDomainSet([
@@ -172,6 +178,8 @@ app.route("/", githubPrsFileContentsBatchRouter);
 app.route("/", githubInstallStateRouter);
 app.route("/", githubOAuthTokenRouter);
 app.route("/", githubBranchesRouter);
+app.route("/", mobileMachineSessionRouter);
+app.route("/", mobileHeartbeatRouter);
 app.route("/", morphRouter);
 app.route("/", orchestrateRouter);
 app.route("/", projectRouter);

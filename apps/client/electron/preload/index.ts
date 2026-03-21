@@ -224,6 +224,16 @@ const cmuxAPI = {
         | { ok: false; error: string }
       >,
   },
+  machine: {
+    getInfo: () =>
+      ipcRenderer.invoke("cmux:mobile:get-machine-info") as Promise<{
+        machineId: string;
+        displayName: string;
+        hostname: string;
+        tailscaleHostname?: string;
+        tailscaleIPs: string[];
+      }>,
+  },
   mcpHostConfig: {
     readClaudeJson: () =>
       ipcRenderer.invoke(MCP_HOST_CONFIG_IPC_CHANNELS.readClaudeJson) as Promise<HostMcpFileResult>,
