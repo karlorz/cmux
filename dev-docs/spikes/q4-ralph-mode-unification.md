@@ -95,6 +95,6 @@ Works with all providers that use the stop hook:
 
 ## Status
 
-- [x] Phase 6a: Core Ralph Mode
-- [ ] Phase 6b: CLI Integration
+- [x] Phase 6a: Core Ralph Mode (commit bb63c0c78)
+- [x] Phase 6b: CLI Integration
 - [ ] Phase 6c: UI Integration (optional)
