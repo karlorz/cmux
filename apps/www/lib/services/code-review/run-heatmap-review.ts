@@ -1,14 +1,7 @@
-import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
-import { createOpenAI } from "@ai-sdk/openai";
-import type { LanguageModel } from "ai";
 import { streamObject } from "ai";
 import { withTracing } from "@posthog/ai";
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
-import {
-  CLOUDFLARE_OPENAI_BASE_URL,
-  BEDROCK_AWS_REGION,
-} from "@cmux/shared";
 import { getConvex } from "@/lib/utils/get-convex";
 import { getPostHogClientForAITracing } from "@/lib/analytics/posthog-server";
 import {
@@ -17,8 +10,14 @@ import {
   mapWithConcurrency,
 } from "@/scripts/pr-review-heatmap";
 import { formatUnifiedDiffWithLineNumbers } from "@/scripts/pr-review/diff-utils";
-import type { ModelConfig } from "./run-simple-anthropic-review";
-import { getDefaultHeatmapModelConfig } from "./model-config";
+import {
+  createWwwPlatformAiModel,
+  getWwwPlatformAiMissingApiKeyMessage,
+} from "@/lib/utils/platform-ai";
+import {
+  getDefaultHeatmapModelConfig,
+  type ModelConfig,
+} from "./model-config";
 import {
   buildHeatmapPrompt,
   heatmapSchema,
@@ -59,7 +58,7 @@ const HEATMAP_SANDBOX_ID = "heatmap-no-vm";
 
 /**
  * Run PR review using the heatmap strategy without Morph.
- * This calls OpenAI API directly and processes the PR via GitHub API.
+ * This calls the configured platform AI provider directly and processes the PR via GitHub API.
  * Results are streamed file-by-file to Convex.
  */
 export async function runHeatmapReview(
@@ -73,16 +72,11 @@ export async function runHeatmapReview(
   // Determine the effective model configuration (defaults to Anthropic Haiku 4.5)
   const effectiveModelConfig: ModelConfig =
     config.modelConfig ?? getDefaultHeatmapModelConfig();
-
-  // Validate API keys based on provider
-  const openAiApiKey = process.env.OPENAI_API_KEY;
-  const awsBedrockToken = process.env.AWS_BEARER_TOKEN_BEDROCK;
-
-  if (effectiveModelConfig.provider === "openai" && !openAiApiKey) {
-    throw new Error("OPENAI_API_KEY environment variable is required for OpenAI models");
-  }
-  if (effectiveModelConfig.provider === "anthropic" && !awsBedrockToken) {
-    throw new Error("AWS_BEARER_TOKEN_BEDROCK environment variable is required for Anthropic models via Bedrock");
+  const resolvedModelConfig = createWwwPlatformAiModel(effectiveModelConfig);
+  if (!resolvedModelConfig) {
+    throw new Error(
+      getWwwPlatformAiMissingApiKeyMessage(effectiveModelConfig.provider)
+    );
   }
 
   const convex = getConvex({ accessToken: config.accessToken });
@@ -227,26 +221,7 @@ export async function runHeatmapReview(
       model: effectiveModelConfig.model,
     });
 
-    // Create provider clients
-    // AWS Bedrock SDK reads AWS_BEARER_TOKEN_BEDROCK and AWS_REGION from env vars by default
-    // We pass them explicitly for clarity
-    const bedrock = createAmazonBedrock({
-      region: process.env.AWS_REGION ?? BEDROCK_AWS_REGION,
-      apiKey: awsBedrockToken,
-    });
-    const openai = createOpenAI({
-      apiKey: openAiApiKey ?? "",
-      baseURL: CLOUDFLARE_OPENAI_BASE_URL,
-    });
-
-    // Create the base model instance based on provider
-    // Type assertion needed: @ai-sdk/amazon-bedrock and @ai-sdk/openai return V2|V3,
-    // but ai's LanguageModel type expects V2. The runtime behavior is compatible.
-    const baseModelInstance = (
-      effectiveModelConfig.provider === "anthropic"
-        ? bedrock(effectiveModelConfig.model)
-        : openai(effectiveModelConfig.model)
-    ) as LanguageModel;
+    const baseModelInstance = resolvedModelConfig.model;
 
     // Wrap model with PostHog tracing if client is available
     // Cast needed due to posthog-node version mismatch between @posthog/ai peer dep and direct dep

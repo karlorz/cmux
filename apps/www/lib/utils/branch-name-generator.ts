@@ -1,14 +1,13 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { createOpenAI } from "@ai-sdk/openai";
-import { generateObject, generateText, type LanguageModel } from "ai";
+import { generateObject, generateText } from "ai";
 import {
-  CLOUDFLARE_ANTHROPIC_BASE_URL,
-  CLOUDFLARE_GEMINI_BASE_URL,
-  CLOUDFLARE_OPENAI_BASE_URL,
-  normalizeAnthropicBaseUrl,
+  DEFAULT_BRANCH_PREFIX as _DEFAULT_BRANCH_PREFIX,
+  MAX_BRANCH_NAME_LENGTH as _MAX_BRANCH_NAME_LENGTH,
 } from "@cmux/shared";
 import { z } from "zod";
+import {
+  resolveWwwPlatformAiModel,
+  type ResolvedWwwPlatformAiModel,
+} from "./platform-ai";
 import { env } from "./www-env";
 
 export function toKebabCase(input: string): string {
@@ -34,7 +33,6 @@ export function generateRandomId(): string {
   return result;
 }
 
-import { DEFAULT_BRANCH_PREFIX as _DEFAULT_BRANCH_PREFIX, MAX_BRANCH_NAME_LENGTH as _MAX_BRANCH_NAME_LENGTH } from "@cmux/shared";
 export const DEFAULT_BRANCH_PREFIX = _DEFAULT_BRANCH_PREFIX;
 export const MAX_BRANCH_NAME_LENGTH = _MAX_BRANCH_NAME_LENGTH;
 
@@ -123,9 +121,7 @@ function isBedrockBackedProxy(baseUrl: string): boolean {
   return false;
 }
 
-type ModelConfig = {
-  model: LanguageModel;
-  providerName: string;
+type ModelConfig = ResolvedWwwPlatformAiModel & {
   useTextMode: boolean; // Use generateText instead of generateObject for Bedrock compatibility
 };
 
@@ -135,55 +131,17 @@ type ModelConfig = {
  * and should NOT use user/team API keys.
  */
 function getModelAndProvider(): ModelConfig | null {
-  // Use platform credentials from environment variables only
-  // Note: AIGATEWAY_* accessed via process.env to support custom AI gateway configurations
-  const geminiKey = env.GEMINI_API_KEY;
-  if (geminiKey) {
-    const google = createGoogleGenerativeAI({
-      apiKey: geminiKey,
-      baseURL:
-        process.env.AIGATEWAY_GEMINI_BASE_URL || CLOUDFLARE_GEMINI_BASE_URL,
-    });
-    return {
-      model: google("gemini-2.5-flash"),
-      providerName: "Gemini",
-      useTextMode: false,
-    };
+  const config = resolveWwwPlatformAiModel("branch");
+  if (!config) {
+    return null;
   }
 
-  const openaiKey = env.OPENAI_API_KEY;
-  if (openaiKey) {
-    const openai = createOpenAI({
-      apiKey: openaiKey,
-      baseURL:
-        process.env.AIGATEWAY_OPENAI_BASE_URL || CLOUDFLARE_OPENAI_BASE_URL,
-    });
-    return {
-      model: openai("gpt-5-nano"),
-      providerName: "OpenAI",
-      useTextMode: false,
-    };
-  }
-
-  const anthropicKey = env.ANTHROPIC_API_KEY;
-  if (anthropicKey) {
-    const rawAnthropicBaseUrl =
-      process.env.AIGATEWAY_ANTHROPIC_BASE_URL ||
-      CLOUDFLARE_ANTHROPIC_BASE_URL;
-    const anthropic = createAnthropic({
-      apiKey: anthropicKey,
-      baseURL: normalizeAnthropicBaseUrl(rawAnthropicBaseUrl).forAiSdk,
-    });
-    // Use text mode for Bedrock-backed proxies to avoid tool_choice.disable_parallel_tool_use
-    const useTextMode = isBedrockBackedProxy(rawAnthropicBaseUrl);
-    return {
-      model: anthropic("claude-haiku-4-5-20251001"),
-      providerName: "Anthropic",
-      useTextMode,
-    };
-  }
-
-  return null;
+  return {
+    ...config,
+    useTextMode:
+      config.provider === "anthropic" &&
+      isBedrockBackedProxy(config.rawBaseUrl),
+  };
 }
 
 export function mergeApiKeysWithEnv(apiKeys: Record<string, string>): ApiKeys {

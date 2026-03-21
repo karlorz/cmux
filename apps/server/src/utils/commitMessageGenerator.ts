@@ -1,67 +1,13 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { createOpenAI } from "@ai-sdk/openai";
-import {
-  CLOUDFLARE_ANTHROPIC_BASE_URL,
-  CLOUDFLARE_GEMINI_BASE_URL,
-  CLOUDFLARE_OPENAI_BASE_URL,
-  normalizeAnthropicBaseUrl,
-} from "@cmux/shared";
-import { generateText, type LanguageModel } from "ai";
+import { generateText } from "ai";
+import { resolveServerPlatformAiModel } from "./platformAi";
 import { serverLogger } from "./fileLogger";
-
-/**
- * Get model and provider using PLATFORM credentials only.
- * This is for internal platform AI services (commit messages, branch names, etc.)
- * and should NOT use user/team API keys.
- */
-function getModelAndProvider(): { model: LanguageModel; providerName: string } | null {
-  // Use platform credentials from environment variables only
-  // Note: AIGATEWAY_* accessed via process.env to support custom AI gateway configurations
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (geminiKey) {
-    const google = createGoogleGenerativeAI({
-      apiKey: geminiKey,
-      baseURL:
-        process.env.AIGATEWAY_GEMINI_BASE_URL || CLOUDFLARE_GEMINI_BASE_URL,
-    });
-    return { model: google("gemini-2.5-flash"), providerName: "Gemini" };
-  }
-
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (openaiKey) {
-    const openai = createOpenAI({
-      apiKey: openaiKey,
-      baseURL:
-        process.env.AIGATEWAY_OPENAI_BASE_URL || CLOUDFLARE_OPENAI_BASE_URL,
-    });
-    return { model: openai("gpt-5-nano"), providerName: "OpenAI" };
-  }
-
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  if (anthropicKey) {
-    const rawAnthropicBaseUrl =
-      process.env.AIGATEWAY_ANTHROPIC_BASE_URL ||
-      CLOUDFLARE_ANTHROPIC_BASE_URL;
-    const anthropic = createAnthropic({
-      apiKey: anthropicKey,
-      baseURL: normalizeAnthropicBaseUrl(rawAnthropicBaseUrl).forAiSdk,
-    });
-    return {
-      model: anthropic("claude-haiku-4-5-20251001"),
-      providerName: "Anthropic",
-    };
-  }
-
-  return null;
-}
 
 export async function generateCommitMessageFromDiff(
   diff: string,
   _teamSlugOrId: string
 ): Promise<string | null> {
   // Use platform credentials only - not user/team API keys
-  const config = getModelAndProvider();
+  const config = resolveServerPlatformAiModel("commit");
   if (!config) {
     serverLogger.warn(
       "[CommitMsg] No platform API keys available, skipping AI generation"

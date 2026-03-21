@@ -1,8 +1,15 @@
-import { ANTHROPIC_MODEL_HAIKU_45 } from "@cmux/shared/utils/anthropic";
-import type { ModelConfig } from "./run-simple-anthropic-review";
+import {
+  getPlatformAiModelIdForService,
+  type PlatformAiProvider,
+} from "@cmux/shared";
 
 type SearchParamsRecord = {
   [key: string]: string | string[] | undefined;
+};
+
+export type ModelConfig = {
+  provider: PlatformAiProvider;
+  model: string;
 };
 
 export const HEATMAP_MODEL_QUERY_KEY = "model";
@@ -169,82 +176,68 @@ export function parseTooltipLanguageFromUrlSearchParams(
     searchParams.get(HEATMAP_LANGUAGE_QUERY_KEY)
   );
 }
+export const HEATMAP_MODEL_ANTHROPIC_HAIKU_45_QUERY_VALUE = "anthropic-haiku-4-5";
+export const HEATMAP_MODEL_OPENAI_GPT_5_NANO_QUERY_VALUE = "openai-gpt-5-nano";
 export const HEATMAP_MODEL_FINETUNE_QUERY_VALUE = "finetune";
 export const HEATMAP_MODEL_DENSE_FINETUNE_QUERY_VALUE = "cmux-heatmap-1";
 export const HEATMAP_MODEL_DENSE_V2_FINETUNE_QUERY_VALUE = "cmux-heatmap-2";
-export const HEATMAP_MODEL_ANTHROPIC_HAIKU_45_QUERY_VALUE = "anthropic-haiku-4-5";
 export const HEATMAP_MODEL_ANTHROPIC_OPUS_45_QUERY_VALUE = "anthropic-opus-4-5";
 export const HEATMAP_MODEL_ANTHROPIC_QUERY_VALUE = "anthropic";
 export type HeatmapModelQueryValue =
-  | typeof HEATMAP_MODEL_FINETUNE_QUERY_VALUE
-  | typeof HEATMAP_MODEL_DENSE_FINETUNE_QUERY_VALUE
-  | typeof HEATMAP_MODEL_DENSE_V2_FINETUNE_QUERY_VALUE
   | typeof HEATMAP_MODEL_ANTHROPIC_HAIKU_45_QUERY_VALUE
-  | typeof HEATMAP_MODEL_ANTHROPIC_OPUS_45_QUERY_VALUE
-  | typeof HEATMAP_MODEL_ANTHROPIC_QUERY_VALUE;
+  | typeof HEATMAP_MODEL_OPENAI_GPT_5_NANO_QUERY_VALUE;
 
-const LEGACY_HEATMAP_MODEL_PARAM_MAP: Record<string, HeatmapModelQueryValue> = {
-  ft0: HEATMAP_MODEL_FINETUNE_QUERY_VALUE,
-  ft1: HEATMAP_MODEL_DENSE_FINETUNE_QUERY_VALUE,
+function createReviewModelConfig(
+  provider: Extract<PlatformAiProvider, "anthropic" | "openai">
+): ModelConfig {
+  return {
+    provider,
+    model: getPlatformAiModelIdForService("review", provider),
+  };
+}
+
+const HEATMAP_MODEL_CONFIG_BY_SELECTION: Record<
+  HeatmapModelQueryValue,
+  ModelConfig
+> = {
+  [HEATMAP_MODEL_ANTHROPIC_HAIKU_45_QUERY_VALUE]:
+    createReviewModelConfig("anthropic"),
+  [HEATMAP_MODEL_OPENAI_GPT_5_NANO_QUERY_VALUE]:
+    createReviewModelConfig("openai"),
 };
 
-const FINE_TUNED_OPENAI_MODEL_ID =
-  "ft:gpt-4.1-mini-2025-04-14:lawrence:cmux-heatmap-sft:CZW6Lc77";
-const FINE_TUNED_OPENAI_DENSE_MODEL_ID =
-  "ft:gpt-4.1-mini-2025-04-14:lawrence:cmux-heatmap-dense:CaaqvYVO";
-const FINE_TUNED_OPENAI_DENSE_V2_MODEL_ID =
-  "ft:gpt-4.1-2025-04-14:lawrence:cmux-heatmap-dense-4-1:CahKn54r";
+const HEATMAP_MODEL_SELECTION_ALIASES: Record<string, HeatmapModelQueryValue> = {
+  [HEATMAP_MODEL_ANTHROPIC_HAIKU_45_QUERY_VALUE]:
+    HEATMAP_MODEL_ANTHROPIC_HAIKU_45_QUERY_VALUE,
+  [HEATMAP_MODEL_OPENAI_GPT_5_NANO_QUERY_VALUE]:
+    HEATMAP_MODEL_OPENAI_GPT_5_NANO_QUERY_VALUE,
+  [HEATMAP_MODEL_ANTHROPIC_OPUS_45_QUERY_VALUE]:
+    HEATMAP_MODEL_ANTHROPIC_HAIKU_45_QUERY_VALUE,
+  [HEATMAP_MODEL_ANTHROPIC_QUERY_VALUE]:
+    HEATMAP_MODEL_ANTHROPIC_HAIKU_45_QUERY_VALUE,
+  [HEATMAP_MODEL_DENSE_V2_FINETUNE_QUERY_VALUE]:
+    HEATMAP_MODEL_OPENAI_GPT_5_NANO_QUERY_VALUE,
+  [HEATMAP_MODEL_DENSE_FINETUNE_QUERY_VALUE]:
+    HEATMAP_MODEL_OPENAI_GPT_5_NANO_QUERY_VALUE,
+  [HEATMAP_MODEL_FINETUNE_QUERY_VALUE]:
+    HEATMAP_MODEL_OPENAI_GPT_5_NANO_QUERY_VALUE,
+};
 
-function createFineTunedOpenAiConfig(): ModelConfig {
-  return {
-    provider: "openai",
-    model: FINE_TUNED_OPENAI_MODEL_ID,
-  };
-}
-
-function createFineTunedDenseOpenAiConfig(): ModelConfig {
-  return {
-    provider: "openai",
-    model: FINE_TUNED_OPENAI_DENSE_MODEL_ID,
-  };
-}
-
-function createFineTunedDenseV2OpenAiConfig(): ModelConfig {
-  return {
-    provider: "openai",
-    model: FINE_TUNED_OPENAI_DENSE_V2_MODEL_ID,
-  };
-}
-
-function createAnthropicHaiku45Config(): ModelConfig {
-  return {
-    provider: "anthropic",
-    model: ANTHROPIC_MODEL_HAIKU_45,
-  };
-}
+const LEGACY_HEATMAP_MODEL_PARAM_MAP: Record<string, HeatmapModelQueryValue> = {
+  ft0: HEATMAP_MODEL_OPENAI_GPT_5_NANO_QUERY_VALUE,
+  ft1: HEATMAP_MODEL_OPENAI_GPT_5_NANO_QUERY_VALUE,
+};
 
 export function getDefaultHeatmapModelConfig(): ModelConfig {
-  return createAnthropicHaiku45Config();
+  return HEATMAP_MODEL_CONFIG_BY_SELECTION[
+    HEATMAP_MODEL_ANTHROPIC_HAIKU_45_QUERY_VALUE
+  ];
 }
 
 export function getHeatmapModelConfigForSelection(
   selection: HeatmapModelQueryValue
 ): ModelConfig {
-  if (selection === HEATMAP_MODEL_DENSE_V2_FINETUNE_QUERY_VALUE) {
-    return createFineTunedDenseV2OpenAiConfig();
-  }
-  if (selection === HEATMAP_MODEL_DENSE_FINETUNE_QUERY_VALUE) {
-    return createFineTunedDenseOpenAiConfig();
-  }
-  // Keep legacy anthropic values supported, but always resolve to Haiku 4.5.
-  if (
-    selection === HEATMAP_MODEL_ANTHROPIC_HAIKU_45_QUERY_VALUE ||
-    selection === HEATMAP_MODEL_ANTHROPIC_OPUS_45_QUERY_VALUE ||
-    selection === HEATMAP_MODEL_ANTHROPIC_QUERY_VALUE
-  ) {
-    return createAnthropicHaiku45Config();
-  }
-  return createFineTunedOpenAiConfig();
+  return HEATMAP_MODEL_CONFIG_BY_SELECTION[selection];
 }
 
 export function normalizeHeatmapModelQueryValue(
@@ -254,23 +247,9 @@ export function normalizeHeatmapModelQueryValue(
     return HEATMAP_MODEL_ANTHROPIC_HAIKU_45_QUERY_VALUE;
   }
   const normalized = raw.trim().toLowerCase();
-  if (normalized === HEATMAP_MODEL_ANTHROPIC_HAIKU_45_QUERY_VALUE) {
-    return HEATMAP_MODEL_ANTHROPIC_HAIKU_45_QUERY_VALUE;
-  }
-  if (normalized === HEATMAP_MODEL_ANTHROPIC_OPUS_45_QUERY_VALUE) {
-    return HEATMAP_MODEL_ANTHROPIC_HAIKU_45_QUERY_VALUE;
-  }
-  if (normalized === HEATMAP_MODEL_DENSE_V2_FINETUNE_QUERY_VALUE) {
-    return HEATMAP_MODEL_DENSE_V2_FINETUNE_QUERY_VALUE;
-  }
-  if (normalized === HEATMAP_MODEL_ANTHROPIC_QUERY_VALUE) {
-    return HEATMAP_MODEL_ANTHROPIC_HAIKU_45_QUERY_VALUE;
-  }
-  if (normalized === HEATMAP_MODEL_DENSE_FINETUNE_QUERY_VALUE) {
-    return HEATMAP_MODEL_DENSE_FINETUNE_QUERY_VALUE;
-  }
-  if (normalized === HEATMAP_MODEL_FINETUNE_QUERY_VALUE) {
-    return HEATMAP_MODEL_FINETUNE_QUERY_VALUE;
+  const aliasedValue = HEATMAP_MODEL_SELECTION_ALIASES[normalized];
+  if (aliasedValue) {
+    return aliasedValue;
   }
   return HEATMAP_MODEL_ANTHROPIC_HAIKU_45_QUERY_VALUE;
 }
