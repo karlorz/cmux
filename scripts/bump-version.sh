@@ -6,6 +6,7 @@ usage() {
 Usage: ./scripts/bump-version.sh <new-version|major|minor|patch>
 Examples:
   ./scripts/bump-version.sh 1.2.3
+  ./scripts/bump-version.sh 1.2.3-0
   ./scripts/bump-version.sh patch
 HELP
   exit 1
@@ -42,13 +43,17 @@ if [[ -z "$current_version" ]]; then
   exit 1
 fi
 
-if [[ ! "$current_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "Current version \"$current_version\" is not in the expected x.y.z format." >&2
+if [[ ! "$current_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+)?$ ]]; then
+  echo "Current version \"$current_version\" is not in the expected x.y.z or x.y.z-n format." >&2
   exit 1
 fi
 
 case "$BUMP_TARGET" in
   major|minor|patch)
+    if [[ "$current_version" == *-* ]]; then
+      echo "Cannot use $BUMP_TARGET while current version is suffixed ($current_version). Pass an exact version instead." >&2
+      exit 1
+    fi
     IFS='.' read -r major minor patch <<< "$current_version"
     case "$BUMP_TARGET" in
       major)
@@ -71,8 +76,8 @@ case "$BUMP_TARGET" in
     ;;
 esac
 
-if [[ ! "$new_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "Version \"$new_version\" is not a valid semver (x.y.z)." >&2
+if [[ ! "$new_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+)?$ ]]; then
+  echo "Version \"$new_version\" is not a valid release version (x.y.z or x.y.z-n)." >&2
   exit 1
 fi
 
@@ -81,12 +86,49 @@ if [[ "$new_version" == "$current_version" ]]; then
   exit 1
 fi
 
-read -r current_major current_minor current_patch <<< "$(printf '%s' "$current_version" | tr '.' ' ')"
-read -r next_major next_minor next_patch <<< "$(printf '%s' "$new_version" | tr '.' ' ')"
+compare_versions() {
+  CURRENT_VERSION="$1" NEXT_VERSION="$2" node <<'NODE'
+    const versionPattern = /^(\d+)\.(\d+)\.(\d+)(?:-(\d+))?$/;
 
-if (( next_major < current_major )) || \
-   (( next_major == current_major && next_minor < current_minor )) || \
-   (( next_major == current_major && next_minor == current_minor && next_patch < current_patch )); then
+    function parseVersion(value) {
+      const match = versionPattern.exec(value);
+      if (!match) {
+        process.stderr.write(`Invalid release version: ${value}\n`);
+        process.exit(1);
+      }
+      return {
+        major: Number.parseInt(match[1], 10),
+        minor: Number.parseInt(match[2], 10),
+        patch: Number.parseInt(match[3], 10),
+        suffix: typeof match[4] === "string" ? Number.parseInt(match[4], 10) : null,
+      };
+    }
+
+    function compare(left, right) {
+      for (const key of ["major", "minor", "patch"]) {
+        if (left[key] !== right[key]) {
+          return left[key] > right[key] ? 1 : -1;
+        }
+      }
+      if (left.suffix === right.suffix) {
+        return 0;
+      }
+      if (left.suffix === null) {
+        return -1;
+      }
+      if (right.suffix === null) {
+        return 1;
+      }
+      return left.suffix > right.suffix ? 1 : -1;
+    }
+
+    const current = parseVersion(process.env.CURRENT_VERSION ?? "");
+    const next = parseVersion(process.env.NEXT_VERSION ?? "");
+    process.stdout.write(String(compare(current, next)));
+NODE
+}
+
+if [[ "$(compare_versions "$new_version" "$current_version")" == "-1" ]]; then
   echo "New version $new_version is lower than current version $current_version." >&2
   exit 1
 fi
@@ -129,7 +171,11 @@ if [[ "$current_branch" == "HEAD" ]]; then
   exit 1
 fi
 
-first_remote="$(git remote | head -n 1)"
+if git remote | grep -x 'origin' >/dev/null 2>&1; then
+  first_remote="origin"
+else
+  first_remote="$(git remote | head -n 1)"
+fi
 if [[ -z "$first_remote" ]]; then
   echo "No git remote configured. Add a remote before bumping." >&2
   exit 1

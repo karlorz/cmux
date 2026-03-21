@@ -13,6 +13,29 @@ permissions:
   contents: write
 
 jobs:
+  mirror-upstream-tags:
+    name: Mirror upstream release tags
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout karlorz/cmux
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.21
+
+      - name: Configure upstream remote
+        run: git remote add upstream https://github.com/manaflow-ai/manaflow.git
+
+      - name: Mirror upstream plain release tags onto karlorz/cmux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+        run: ./scripts/sync-upstream-tags.sh
+
   sync-upstream-pr:
     name: Sync karl-digi/manaflow PR
     runs-on: ubuntu-latest

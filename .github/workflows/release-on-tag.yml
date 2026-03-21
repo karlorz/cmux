@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   push:
     tags:
-      - 'v*'
+      - 'v*-*'
 
 concurrency:
   group: release-${{ github.ref }}
@@ -16,6 +16,7 @@ permissions:
 
 env:
   NODE_VERSION: "24"
+  BUN_VERSION: "1.2.21"
 
 jobs:
   prepare-release:
@@ -30,6 +31,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
       - name: Resolve release tag
         id: resolve
         env:
@@ -44,56 +49,35 @@ jobs:
           release_tag="${EVENT_RELEASE_TAG:-}"
           repo="${GITHUB_REPOSITORY}"
 
-          version="$(node -p "require('./apps/client/package.json').version")"
-          if [[ -z "$version" ]]; then
-            echo "Unable to determine app version from apps/client/package.json" >&2
+          if [[ -z "$release_tag" && "$GITHUB_REF" == refs/tags/* ]]; then
+            release_tag="$GITHUB_REF_NAME"
+          fi
+
+          if [[ -z "$release_tag" ]]; then
+            release_tag="$(bun ./scripts/resolve-release-version.ts current-fork-tag)"
+          fi
+
+          if [[ -z "$release_tag" ]]; then
+            echo "Unable to resolve a fork release tag" >&2
             exit 1
           fi
 
-          declare -a candidates
-          candidates=()
-
-          if [[ -n "$release_tag" ]]; then
-            candidates+=("$release_tag")
-          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            candidates+=("$GITHUB_REF_NAME")
-          fi
-
-          candidates+=("v$version" "$version")
-
-          resolved_tag=""
-          # If triggered by tag push, use that tag directly (don't search for other versions)
-          if [[ -n "$release_tag" ]] || [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            resolved_tag="${candidates[0]}"
-          else
-            # workflow_dispatch without tag: search for existing release
-            for tag in "${candidates[@]}"; do
-              if [[ -z "$tag" ]]; then
-                continue
-              fi
-              if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
-                resolved_tag="$tag"
-                break
-              fi
-            done
-          fi
-
-          if [[ -z "$resolved_tag" ]]; then
-            resolved_tag="${candidates[0]}"
-            if [[ -z "$resolved_tag" ]]; then
-              echo "Unable to resolve a release tag candidate" >&2
-              exit 1
+          if ! gh release view "$release_tag" --repo "$repo" >/dev/null 2>&1; then
+            echo "Creating draft release $release_tag"
+            prerelease_flag=()
+            if [[ "$release_tag" == *-* ]]; then
+              prerelease_flag+=(--prerelease)
             fi
-            echo "Creating draft release $resolved_tag"
-            gh release create "$resolved_tag" \
+            gh release create "$release_tag" \
               --repo "$repo" \
               --draft \
-              --title "$resolved_tag" \
+              "${prerelease_flag[@]}" \
+              --title "${release_tag#v}" \
               --notes ""
           fi
 
-          echo "Resolved release tag: $resolved_tag"
-          printf 'tag=%s\n' "$resolved_tag" >> "$GITHUB_OUTPUT"
+          echo "Resolved release tag: $release_tag"
+          printf 'tag=%s\n' "$release_tag" >> "$GITHUB_OUTPUT"
 
   # mac-x64:
   #   name: macOS x64

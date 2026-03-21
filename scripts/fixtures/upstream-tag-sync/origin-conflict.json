@@ -1,0 +1,20 @@
+[
+  {
+    "name": "v1.0.269",
+    "objectId": "21528e72543fa9d5e09cef380231b143cb9f86ea",
+    "peeledObjectId": null,
+    "targetObjectId": "21528e72543fa9d5e09cef380231b143cb9f86ea"
+  },
+  {
+    "name": "host-screenshot-collector-v0.1.0-20260124033657-99a7d9c",
+    "objectId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "peeledObjectId": null,
+    "targetObjectId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  {
+    "name": "devsh-memory-mcp@0.2.1",
+    "objectId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "peeledObjectId": null,
+    "targetObjectId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  }
+]
