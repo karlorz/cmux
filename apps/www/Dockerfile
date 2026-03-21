@@ -83,6 +83,7 @@ COPY packages/vscode-extension/package.json ./packages/vscode-extension/
 
 # Copy www source code
 COPY apps/www ./apps/www
+COPY docs/assets ./docs/assets
 COPY scripts/package.json ./scripts/
 
 # Copy root config files
