@@ -100,5 +100,5 @@ Add suggestions chip below prompt input:
 
 - [x] Phase 4a: Tool registry (commit d9190e861)
 - [x] Phase 4b: Suggestion logic (commit d655fac76)
-- [ ] Phase 4c: UI integration
+- [x] Phase 4c: UI integration (commit 757c20397)
 - [ ] Phase 4d: AI enhancement (optional)
