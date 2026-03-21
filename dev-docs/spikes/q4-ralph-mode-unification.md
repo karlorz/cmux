@@ -78,8 +78,8 @@ REASON="$CMUX_RALPH_PROMPT"
 - [x] Pass CMUX_RALPH_* env vars to sandbox
 
 ### Phase 6c: UI Integration (Optional)
-- [ ] Add "Ralph Mode" toggle to task creation
-- [ ] Show completion status in dashboard
+- [x] Add "Ralph Mode" toggle to task creation (PR #741)
+- [x] Show completion status in dashboard
 
 ## Files to Modify
 
