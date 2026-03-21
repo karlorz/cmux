@@ -3224,6 +3224,61 @@ export const initializeAutopilot = authMutation({
 });
 
 /**
+ * Update context usage tracking for a task run (Phase 5c).
+ * Called from anthropic_http when token usage is available.
+ */
+export const updateContextUsage = internalMutation({
+  args: {
+    id: v.id("taskRuns"),
+    inputTokens: v.number(),
+    outputTokens: v.number(),
+    contextWindow: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.id);
+    if (!doc) {
+      return null;
+    }
+
+    const existing = doc.contextUsage;
+    const totalInputTokens = (existing?.totalInputTokens ?? 0) + args.inputTokens;
+    const totalOutputTokens = (existing?.totalOutputTokens ?? 0) + args.outputTokens;
+    const contextWindow = args.contextWindow ?? existing?.contextWindow;
+
+    // Calculate usage percentage if we have context window size
+    // Note: input tokens contribute to context, output tokens are generated
+    const usagePercent = contextWindow
+      ? Math.round((totalInputTokens / contextWindow) * 100)
+      : undefined;
+
+    await ctx.db.patch(args.id, {
+      contextUsage: {
+        totalInputTokens,
+        totalOutputTokens,
+        contextWindow,
+        usagePercent,
+        lastUpdated: Date.now(),
+      },
+    });
+
+    return { totalInputTokens, totalOutputTokens, usagePercent };
+  },
+});
+
+/**
+ * Get context usage for a task run (Phase 5c).
+ */
+export const getContextUsage = internalQuery({
+  args: {
+    id: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.id);
+    return doc?.contextUsage ?? null;
+  },
+});
+
+/**
  * Get autopilot info for resume.
  * Returns thread-id and config for resuming an autopilot session.
  */
