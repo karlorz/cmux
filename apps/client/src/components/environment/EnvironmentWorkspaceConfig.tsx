@@ -13,6 +13,7 @@ import { GitHubIcon } from "@/components/icons/github";
 import { PersistentWebView } from "@/components/persistent-webview";
 import { WorkspaceSetupPanel } from "@/components/WorkspaceSetupPanel";
 import { WorkspaceLoadingIndicator } from "@/components/workspace-loading-indicator";
+import { useVncClipboardBridge } from "@/hooks/useVncClipboardBridge";
 import {
   disableDragPointerEvents,
   restoreDragPointerEvents,
@@ -387,6 +388,7 @@ export function EnvironmentWorkspaceConfig({
           },
     [browserHtmlUrl]
   );
+
   const resolvedBrowserPersistKey = useMemo(() => {
     if (browserPersistKey) {
       return browserPersistKey;
@@ -399,6 +401,13 @@ export function EnvironmentWorkspaceConfig({
     }
     return `env-workspace-config:browser:${teamSlugOrId}`;
   }, [browserHtmlUrl, browserPersistKey, teamSlugOrId, vscodeUrl]);
+
+  const isVncBrowserPanel =
+    showBrowser && Boolean(browserHtmlUrl?.includes("/vnc.html"));
+  useVncClipboardBridge({
+    persistKey: resolvedBrowserPersistKey,
+    enabled: isVncBrowserPanel,
+  });
 
   // Render scripts section
   const renderScriptsSection = (options?: {
