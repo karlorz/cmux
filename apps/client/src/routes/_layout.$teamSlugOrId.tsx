@@ -13,6 +13,7 @@ import { cachedGetUser } from "@/lib/cachedGetUser";
 import { isElectron } from "@/lib/electron";
 import { setLastTeamSlugOrId } from "@/lib/lastTeam";
 import { stackClientApp } from "@/lib/stack";
+import { useMobileMachineHeartbeat } from "@/hooks/useMobileMachineHeartbeat";
 import { api } from "@cmux/convex/api";
 import {
   createFileRoute,
@@ -129,6 +130,10 @@ function LayoutComponent() {
     sectionFromSearch === "git" ? "git" :
     sectionFromSearch === "worktrees" ? "worktrees" :
     sectionFromSearch === "archived" ? "archived" : "general";
+  useMobileMachineHeartbeat({
+    teamSlugOrId,
+    tasks,
+  });
 
   useEffect(() => {
     localStorage.setItem("sidebarHidden", String(isDesktopSidebarHidden));
