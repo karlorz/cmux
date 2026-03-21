@@ -34,6 +34,7 @@ COPY packages/vscode-extension/package.json ./packages/vscode-extension/
 COPY packages/host-screenshot-collector/package.json ./packages/host-screenshot-collector/
 COPY packages/e2b-client/package.json ./packages/e2b-client/
 COPY packages/pve-lxc-client/package.json ./packages/pve-lxc-client/
+COPY packages/pve-vm-client/package.json ./packages/pve-vm-client/
 COPY scripts/package.json ./scripts/
 
 # Install all dependencies (need devDependencies for build)
@@ -61,7 +62,10 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY packages/shared ./packages/shared
 COPY packages/convex ./packages/convex
 COPY packages/www-openapi-client ./packages/www-openapi-client
+COPY packages/e2b-client ./packages/e2b-client
+COPY packages/morphcloud-openapi-client ./packages/morphcloud-openapi-client
 COPY packages/pve-lxc-client ./packages/pve-lxc-client
+COPY packages/pve-vm-client ./packages/pve-vm-client
 
 # Copy www source code
 COPY apps/www ./apps/www
@@ -81,6 +85,9 @@ RUN bun install --ignore-scripts --frozen-lockfile
 RUN rm -rf node_modules/@cmux && mkdir -p node_modules/@cmux \
     && ln -s ../../packages/shared node_modules/@cmux/shared \
     && ln -s ../../packages/convex node_modules/@cmux/convex \
+    && ln -s ../../packages/e2b-client node_modules/@cmux/e2b-client \
+    && ln -s ../../packages/morphcloud-openapi-client node_modules/@cmux/morphcloud-openapi-client \
+    && ln -s ../../packages/pve-vm-client node_modules/@cmux/pve-vm-client \
     && ln -s ../../packages/www-openapi-client node_modules/@cmux/www-openapi-client \
     && ln -s ../../packages/pve-lxc-client node_modules/@cmux/pve-lxc-client \
     && rm -rf apps/www/node_modules \
