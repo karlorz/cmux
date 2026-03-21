@@ -2,18 +2,23 @@ import { EnvironmentSetupFlow } from "@/components/environment";
 import { FloatingPane } from "@/components/floating-pane";
 import { RepositoryPicker } from "@/components/RepositoryPicker";
 import { TitleBar } from "@/components/TitleBar";
+import { resolveCanonicalSandboxSnapshotId } from "@/lib/sandbox-config-snapshot";
 import {
   clearEnvironmentDraft,
   persistEnvironmentDraftMetadata,
   useEnvironmentDraft,
 } from "@/state/environment-draft-store";
-import { postApiMorphSetupInstanceMutation } from "@cmux/www-openapi-client/react-query";
-import { useMutation as useRQMutation } from "@tanstack/react-query";
+import {
+  getApiConfigSandboxOptions,
+  postApiMorphSetupInstanceMutation,
+} from "@cmux/www-openapi-client/react-query";
+import { useMutation as useRQMutation, useQuery as useRQQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -76,12 +81,20 @@ function EnvironmentsPage() {
   const skipDraftHydrationRef = useRef(false);
   const provisioningTriggeredRef = useRef(false);
 
+  // Fetch sandbox config to normalize snapshotId to canonical form
+  const { data: sandboxConfig } = useRQQuery(getApiConfigSandboxOptions());
+
   // If we have a draft, use it - don't clear on navigation
   // Only clear via explicit discard (handleDiscardAndExit or handleResetDraft)
   const activeStep = draft?.step ?? stepFromSearch;
   const activeSelectedRepos = draft?.selectedRepos ?? urlSelectedRepos;
   const activeInstanceId = draft?.instanceId ?? urlInstanceId;
-  const activeSnapshotId = draft?.snapshotId ?? searchSnapshotId;
+  // Normalize snapshotId to canonical form (e.g., "4vcpu_8gb_32gb" -> "snapshot_xxx")
+  const rawSnapshotId = draft?.snapshotId ?? searchSnapshotId;
+  const activeSnapshotId = useMemo(() => {
+    if (!sandboxConfig) return rawSnapshotId;
+    return resolveCanonicalSandboxSnapshotId(sandboxConfig, rawSnapshotId);
+  }, [sandboxConfig, rawSnapshotId]);
 
   // Setup instance mutation for background provisioning
   const setupInstanceMutation = useRQMutation(postApiMorphSetupInstanceMutation());

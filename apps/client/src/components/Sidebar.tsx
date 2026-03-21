@@ -7,6 +7,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
+import { useSidebarOptional } from "@/contexts/sidebar/SidebarContext";
 import { useWarmLocalWorkspaces } from "@/hooks/useWarmLocalWorkspaces";
 import {
   disableDragPointerEvents,
@@ -57,6 +58,7 @@ interface SidebarProps {
   tasks: TaskWithUnread[] | undefined;
   teamSlugOrId: string;
   onToggleHidden: () => void;
+  isMobileViewport: boolean;
 }
 
 interface SidebarNavItem {
@@ -121,7 +123,12 @@ const navItems: SidebarNavItemWithBadge[] = [
   },
 ];
 
-export function Sidebar({ tasks, teamSlugOrId, onToggleHidden }: SidebarProps) {
+export function Sidebar({
+  tasks,
+  teamSlugOrId,
+  onToggleHidden,
+  isMobileViewport,
+}: SidebarProps) {
   const DEFAULT_WIDTH = 256;
   const MIN_WIDTH = 240;
   const MAX_WIDTH = 600;
@@ -292,12 +299,19 @@ export function Sidebar({ tasks, teamSlugOrId, onToggleHidden }: SidebarProps) {
   }, [onMouseMove, stopResizing]);
 
   const resetWidth = useCallback(() => setWidth(DEFAULT_WIDTH), []);
+  const { isHidden } = useSidebarOptional() ?? { isHidden: false };
+  const isMobileSidebarVisible = isMobileViewport && !isHidden;
+  const handleMobileNavClick = useCallback(() => {
+    if (isMobileSidebarVisible) {
+      onToggleHidden();
+    }
+  }, [isMobileSidebarVisible, onToggleHidden]);
 
   return (
     <div
       ref={containerRef}
       data-onboarding="sidebar"
-      className="relative bg-neutral-50 dark:bg-black flex flex-col shrink-0 h-dvh grow pr-1 pt-1.5 w-[75vw] snap-start snap-always md:w-auto md:snap-align-none"
+      className="relative bg-neutral-50 dark:bg-black flex flex-col shrink-0 h-dvh pr-1 pt-1.5 md:w-auto"
       style={
         {
           width: undefined,
@@ -317,6 +331,7 @@ export function Sidebar({ tasks, teamSlugOrId, onToggleHidden }: SidebarProps) {
           to="/$teamSlugOrId/dashboard"
           params={{ teamSlugOrId }}
           activeOptions={{ exact: true }}
+          onClick={handleMobileNavClick}
           className="flex items-center gap-1.5 select-none cursor-pointer whitespace-nowrap"
           style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
         >
@@ -374,6 +389,7 @@ export function Sidebar({ tasks, teamSlugOrId, onToggleHidden }: SidebarProps) {
                 to="/$teamSlugOrId/dashboard"
                 params={{ teamSlugOrId }}
                 activeOptions={{ exact: true }}
+                onClick={handleMobileNavClick}
                 className="w-[25px] h-[25px] border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900 rounded-lg flex items-center justify-center transition-colors cursor-default"
                 aria-label="New task"
               >
@@ -411,6 +427,7 @@ export function Sidebar({ tasks, teamSlugOrId, onToggleHidden }: SidebarProps) {
                   exact={item.exact}
                   label={item.label}
                   badgeCount={item.showBadge ? unreadCount : undefined}
+                  onClick={handleMobileNavClick}
                 />
               </li>
             ))}

@@ -72,6 +72,14 @@ type HeatmapColors = {
   token: { start: string; end: string };
 };
 
+type VaultConfig = {
+  type: "local" | "github";
+  localPath?: string;
+  githubOwner?: string;
+  githubRepo?: string;
+  githubPath?: string;
+  githubBranch?: string;
+};
 
 const createDefaultHeatmapColors = (): HeatmapColors => ({
   line: { start: "#fefce8", end: "#f8e1c9" },
@@ -157,6 +165,18 @@ function SettingsComponent() {
   const [teamSlugError, setTeamSlugError] = useState<string>("");
   const [worktreePath, setWorktreePath] = useState<string>("");
   const [originalWorktreePath, setOriginalWorktreePath] = useState<string>("");
+  const [vaultType, setVaultType] = useState<VaultConfig["type"]>("local");
+  const [originalVaultType, setOriginalVaultType] = useState<VaultConfig["type"]>("local");
+  const [vaultLocalPath, setVaultLocalPath] = useState("");
+  const [originalVaultLocalPath, setOriginalVaultLocalPath] = useState("");
+  const [vaultGitHubOwner, setVaultGitHubOwner] = useState("");
+  const [originalVaultGitHubOwner, setOriginalVaultGitHubOwner] = useState("");
+  const [vaultGitHubRepo, setVaultGitHubRepo] = useState("");
+  const [originalVaultGitHubRepo, setOriginalVaultGitHubRepo] = useState("");
+  const [vaultGitHubPath, setVaultGitHubPath] = useState("");
+  const [originalVaultGitHubPath, setOriginalVaultGitHubPath] = useState("");
+  const [vaultGitHubBranch, setVaultGitHubBranch] = useState("main");
+  const [originalVaultGitHubBranch, setOriginalVaultGitHubBranch] = useState("main");
   const [autoPrEnabled, setAutoPrEnabled] = useState<boolean>(false);
   const [originalAutoPrEnabled, setOriginalAutoPrEnabled] =
     useState<boolean>(false);
@@ -292,6 +312,50 @@ function SettingsComponent() {
     );
     setOriginalWorktreePath((prev) =>
       prev === nextWorktreePath ? prev : nextWorktreePath
+    );
+
+    const nextVaultType = workspaceSettings?.vaultConfig?.type ?? "local";
+    setVaultType((prev) => (prev === nextVaultType ? prev : nextVaultType));
+    setOriginalVaultType((prev) => (prev === nextVaultType ? prev : nextVaultType));
+
+    const nextVaultLocalPath = workspaceSettings?.vaultConfig?.localPath ?? "";
+    setVaultLocalPath((prev) =>
+      prev === nextVaultLocalPath ? prev : nextVaultLocalPath
+    );
+    setOriginalVaultLocalPath((prev) =>
+      prev === nextVaultLocalPath ? prev : nextVaultLocalPath
+    );
+
+    const nextVaultGitHubOwner = workspaceSettings?.vaultConfig?.githubOwner ?? "";
+    setVaultGitHubOwner((prev) =>
+      prev === nextVaultGitHubOwner ? prev : nextVaultGitHubOwner
+    );
+    setOriginalVaultGitHubOwner((prev) =>
+      prev === nextVaultGitHubOwner ? prev : nextVaultGitHubOwner
+    );
+
+    const nextVaultGitHubRepo = workspaceSettings?.vaultConfig?.githubRepo ?? "";
+    setVaultGitHubRepo((prev) =>
+      prev === nextVaultGitHubRepo ? prev : nextVaultGitHubRepo
+    );
+    setOriginalVaultGitHubRepo((prev) =>
+      prev === nextVaultGitHubRepo ? prev : nextVaultGitHubRepo
+    );
+
+    const nextVaultGitHubPath = workspaceSettings?.vaultConfig?.githubPath ?? "";
+    setVaultGitHubPath((prev) =>
+      prev === nextVaultGitHubPath ? prev : nextVaultGitHubPath
+    );
+    setOriginalVaultGitHubPath((prev) =>
+      prev === nextVaultGitHubPath ? prev : nextVaultGitHubPath
+    );
+
+    const nextVaultGitHubBranch = workspaceSettings?.vaultConfig?.githubBranch ?? "main";
+    setVaultGitHubBranch((prev) =>
+      prev === nextVaultGitHubBranch ? prev : nextVaultGitHubBranch
+    );
+    setOriginalVaultGitHubBranch((prev) =>
+      prev === nextVaultGitHubBranch ? prev : nextVaultGitHubBranch
     );
 
     const nextAutoPrEnabled = workspaceSettings?.autoPrEnabled ?? false;
@@ -576,6 +640,14 @@ function SettingsComponent() {
     // Check worktree path changes
     const worktreePathChanged = worktreePath !== originalWorktreePath;
 
+    const vaultConfigChanged =
+      vaultType !== originalVaultType ||
+      vaultLocalPath !== originalVaultLocalPath ||
+      vaultGitHubOwner !== originalVaultGitHubOwner ||
+      vaultGitHubRepo !== originalVaultGitHubRepo ||
+      vaultGitHubPath !== originalVaultGitHubPath ||
+      vaultGitHubBranch !== originalVaultGitHubBranch;
+
     // Check all required API keys for changes
     const apiKeysChanged = apiKeys.some((keyConfig) => {
       const currentValue = apiKeyValues[keyConfig.envVar] || "";
@@ -619,6 +691,7 @@ function SettingsComponent() {
 
     return (
       worktreePathChanged ||
+      vaultConfigChanged ||
       autoPrChanged ||
       bypassAnthropicProxyChanged ||
       enableShellWrappersChanged ||
@@ -645,8 +718,17 @@ function SettingsComponent() {
       let savedContainerSettings = false;
 
       // Save worktree path / auto PR / git / worktree mode / heatmap settings if changed
+      const vaultConfigChanged =
+        vaultType !== originalVaultType ||
+        vaultLocalPath !== originalVaultLocalPath ||
+        vaultGitHubOwner !== originalVaultGitHubOwner ||
+        vaultGitHubRepo !== originalVaultGitHubRepo ||
+        vaultGitHubPath !== originalVaultGitHubPath ||
+        vaultGitHubBranch !== originalVaultGitHubBranch;
+
       const workspaceSettingsChanged =
         worktreePath !== originalWorktreePath ||
+        vaultConfigChanged ||
         autoPrEnabled !== originalAutoPrEnabled ||
         bypassAnthropicProxy !== originalBypassAnthropicProxy ||
         enableShellWrappers !== originalEnableShellWrappers ||
@@ -659,9 +741,38 @@ function SettingsComponent() {
         JSON.stringify(heatmapColors) !== JSON.stringify(originalHeatmapColors);
 
       if (workspaceSettingsChanged) {
+        const trimmedVaultLocalPath = vaultLocalPath.trim();
+        const trimmedVaultGitHubOwner = vaultGitHubOwner.trim();
+        const trimmedVaultGitHubRepo = vaultGitHubRepo.trim();
+        const trimmedVaultGitHubPath = vaultGitHubPath.trim();
+        const trimmedVaultGitHubBranch = vaultGitHubBranch.trim() || "main";
+        const shouldClearVaultConfig =
+          vaultType === "local"
+            ? trimmedVaultLocalPath.length === 0
+            : trimmedVaultGitHubOwner.length === 0 &&
+              trimmedVaultGitHubRepo.length === 0 &&
+              trimmedVaultGitHubPath.length === 0 &&
+              trimmedVaultGitHubBranch === "main";
+        const nextVaultConfig = shouldClearVaultConfig
+          ? undefined
+          : vaultType === "local"
+            ? {
+                type: "local" as const,
+                localPath: trimmedVaultLocalPath,
+              }
+            : {
+                type: "github" as const,
+                githubOwner: trimmedVaultGitHubOwner,
+                githubRepo: trimmedVaultGitHubRepo,
+                githubPath: trimmedVaultGitHubPath || undefined,
+                githubBranch: trimmedVaultGitHubBranch,
+              };
+
         await convex.mutation(api.workspaceSettings.update, {
           teamSlugOrId,
           worktreePath: worktreePath || undefined,
+          clearVaultConfig: shouldClearVaultConfig,
+          vaultConfig: nextVaultConfig,
           autoPrEnabled,
           bypassAnthropicProxy,
           enableShellWrappers,
@@ -674,6 +785,17 @@ function SettingsComponent() {
           heatmapColors,
         });
         setOriginalWorktreePath(worktreePath);
+        setOriginalVaultType(vaultType);
+        setOriginalVaultLocalPath(trimmedVaultLocalPath);
+        setOriginalVaultGitHubOwner(trimmedVaultGitHubOwner);
+        setOriginalVaultGitHubRepo(trimmedVaultGitHubRepo);
+        setOriginalVaultGitHubPath(trimmedVaultGitHubPath);
+        setOriginalVaultGitHubBranch(trimmedVaultGitHubBranch);
+        setVaultLocalPath(trimmedVaultLocalPath);
+        setVaultGitHubOwner(trimmedVaultGitHubOwner);
+        setVaultGitHubRepo(trimmedVaultGitHubRepo);
+        setVaultGitHubPath(trimmedVaultGitHubPath);
+        setVaultGitHubBranch(trimmedVaultGitHubBranch);
         setOriginalAutoPrEnabled(autoPrEnabled);
         setOriginalBypassAnthropicProxy(bypassAnthropicProxy);
         setOriginalEnableShellWrappers(enableShellWrappers);
@@ -882,6 +1004,18 @@ function SettingsComponent() {
               }}
               selectedTheme={selectedTheme}
               onThemeChange={setTheme}
+              vaultType={vaultType}
+              onVaultTypeChange={setVaultType}
+              vaultLocalPath={vaultLocalPath}
+              onVaultLocalPathChange={setVaultLocalPath}
+              vaultGitHubOwner={vaultGitHubOwner}
+              onVaultGitHubOwnerChange={setVaultGitHubOwner}
+              vaultGitHubRepo={vaultGitHubRepo}
+              onVaultGitHubRepoChange={setVaultGitHubRepo}
+              vaultGitHubPath={vaultGitHubPath}
+              onVaultGitHubPathChange={setVaultGitHubPath}
+              vaultGitHubBranch={vaultGitHubBranch}
+              onVaultGitHubBranchChange={setVaultGitHubBranch}
               autoPrEnabled={autoPrEnabled}
               onAutoPrEnabledChange={setAutoPrEnabled}
               heatmapModel={heatmapModel}

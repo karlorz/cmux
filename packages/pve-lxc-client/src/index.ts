@@ -1415,7 +1415,7 @@ export class PveLxcClient {
       const fqdn = this.getFqdnSync(hostname, domainSuffix);
 
       // Note: Metadata (teamId, userId, etc.) is tracked in Convex sandboxInstanceActivity
-      // table via sandboxes.route.ts calling recordCreate mutation
+      // via the sandbox start route calling the recordCreate mutation
       const metadata = options.metadata || {};
 
       // Retry clone on VMID collision (race condition when multiple concurrent requests

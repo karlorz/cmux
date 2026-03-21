@@ -1,9 +1,11 @@
+import { resolveCanonicalSandboxSnapshotId } from "@/lib/sandbox-config-snapshot";
 import { type SandboxPreset } from "@cmux/shared";
 import { getApiConfigSandboxOptions } from "@cmux/www-openapi-client/react-query";
 import type { SandboxConfig } from "@cmux/www-openapi-client";
 import { Accordion, AccordionItem } from "@heroui/react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Loader2 } from "lucide-react";
+import { useMemo } from "react";
 import { Label, Radio, RadioGroup } from "react-aria-components";
 
 export interface RepositoryAdvancedOptionsProps {
@@ -19,8 +21,12 @@ export function RepositoryAdvancedOptions({
 }: RepositoryAdvancedOptionsProps) {
   const { data: config, isLoading, error } = useQuery(getApiConfigSandboxOptions());
 
-  // Use the first preset as default if none selected
-  const effectiveSnapshotId = selectedSnapshotId ?? config?.defaultPresetId;
+  // Normalize the incoming snapshotId to canonical form
+  // This handles cases where a presetId like "4vcpu_8gb_32gb" comes in from URL params
+  const effectiveSnapshotId = useMemo(() => {
+    if (!config) return selectedSnapshotId;
+    return resolveCanonicalSandboxSnapshotId(config, selectedSnapshotId);
+  }, [config, selectedSnapshotId]);
 
   // Handle loading and error states
   if (isLoading) {

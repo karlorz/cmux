@@ -37,6 +37,8 @@ interface SettingsSidebarProps {
   teamSlugOrId: string;
   activeSection: SettingsSection;
   onSectionChange: (section: SettingsSection) => void;
+  onToggleHidden: () => void;
+  isMobileViewport: boolean;
 }
 
 interface SettingsSidebarNavItem {
@@ -116,6 +118,8 @@ export function SettingsSidebar({
   teamSlugOrId,
   activeSection,
   onSectionChange,
+  onToggleHidden,
+  isMobileViewport,
 }: SettingsSidebarProps) {
   const DEFAULT_WIDTH = 256;
   const MIN_WIDTH = 240;
@@ -134,6 +138,7 @@ export function SettingsSidebar({
   const [isResizing, setIsResizing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const { isHidden } = useSidebar();
+  const isMobileSidebarVisible = isMobileViewport && !isHidden;
 
   // Filter nav items based on web mode - worktrees are local-only
   const baseNavItems = useMemo(() => {
@@ -234,10 +239,9 @@ export function SettingsSidebar({
   return (
     <div
       ref={containerRef}
-      className="relative flex h-dvh shrink-0 grow snap-always snap-start flex-col bg-neutral-50 pr-1 pt-1.5 dark:bg-neutral-900/50 md:w-auto md:snap-align-none"
+      className="relative flex h-dvh shrink-0 flex-col bg-neutral-50 pr-1 pt-1.5 dark:bg-neutral-900/50 md:w-auto"
       style={
         {
-          display: isHidden ? "none" : "flex",
           width: undefined,
           minWidth: undefined,
           maxWidth: undefined,
@@ -247,16 +251,31 @@ export function SettingsSidebar({
       }
     >
       <div
-        className={`h-[38px] shrink-0 pr-2 ${isElectron ? "" : "pl-3"}`}
+        className={`h-[38px] shrink-0 flex items-center justify-between pr-2 ${isElectron ? "" : "pl-3"}`}
         style={{ WebkitAppRegion: "drag" } as CSSProperties}
       >
         {isElectron && <div className="w-[80px]" />}
+        <div className="flex-1" />
+        <button
+          type="button"
+          onClick={onToggleHidden}
+          className="flex md:hidden w-[25px] h-[25px] border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900 rounded-lg items-center justify-center transition-colors cursor-default"
+          aria-label="Close menu"
+          style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
+        >
+          <X className="size-4 text-neutral-700 dark:text-neutral-300" aria-hidden />
+        </button>
       </div>
 
       <nav className="flex grow flex-col overflow-hidden pb-8">
         <Link
           to="/$teamSlugOrId/dashboard"
           params={{ teamSlugOrId }}
+          onClick={() => {
+            if (isMobileSidebarVisible) {
+              onToggleHidden();
+            }
+          }}
           className="pointer-default cursor-default group mb-1 ml-2 flex w-[calc(100%-8px)] items-center gap-2 rounded-sm pl-2 pr-2 py-1 text-left text-[13px] text-neutral-700 select-none hover:bg-neutral-200/45 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800/45 dark:hover:text-neutral-100"
           style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
         >
@@ -301,7 +320,12 @@ export function SettingsSidebar({
                 <button
                   type="button"
                   data-active={isActive ? "true" : undefined}
-                  onClick={() => onSectionChange(item.section)}
+                  onClick={() => {
+                    onSectionChange(item.section);
+                    if (isMobileSidebarVisible) {
+                      onToggleHidden();
+                    }
+                  }}
                   className={clsx(
                     "pointer-default cursor-default group ml-2 flex w-[calc(100%-8px)] items-center gap-2 rounded-sm pl-2 pr-2 py-1 text-left text-[13px] text-neutral-900 select-none hover:bg-neutral-200/45 dark:text-neutral-100 dark:hover:bg-neutral-800/45",
                     isActive &&

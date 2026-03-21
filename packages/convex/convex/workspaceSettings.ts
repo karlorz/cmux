@@ -54,6 +54,7 @@ export const update = authMutation({
       })
     ),
     enableShellWrappers: v.optional(v.boolean()),
+    clearVaultConfig: v.optional(v.boolean()),
     vaultConfig: v.optional(
       v.object({
         type: v.union(v.literal("local"), v.literal("github")),
@@ -140,7 +141,9 @@ export const update = authMutation({
       if (args.enableShellWrappers !== undefined) {
         updates.enableShellWrappers = args.enableShellWrappers;
       }
-      if (args.vaultConfig !== undefined) {
+      if (args.clearVaultConfig) {
+        updates.vaultConfig = undefined;
+      } else if (args.vaultConfig !== undefined) {
         updates.vaultConfig = args.vaultConfig;
       }
 
@@ -159,7 +162,7 @@ export const update = authMutation({
         heatmapTooltipLanguage: args.heatmapTooltipLanguage,
         heatmapColors: args.heatmapColors,
         enableShellWrappers: args.enableShellWrappers,
-        vaultConfig: args.vaultConfig,
+        vaultConfig: args.clearVaultConfig ? undefined : args.vaultConfig,
         nextLocalWorkspaceSequence: 0,
         createdAt: now,
         updatedAt: now,
