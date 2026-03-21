@@ -449,6 +449,23 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         },
       },
       {
+        name: "archive_stale_memories",
+        description: "Archive stale memory entries from MEMORY.md. Moves low-freshness entries to an archive section. Use dryRun=true to preview without changes.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            dryRun: {
+              type: "boolean",
+              description: "Preview changes without modifying files (default: true)",
+            },
+            maxScoreToArchive: {
+              type: "number",
+              description: "Archive entries with freshness score below this threshold (default: 30)",
+            },
+          },
+        },
+      },
+      {
         name: "send_message",
         description: 'Send a message to another agent on the same task. Use "*" to broadcast to all agents. Aligned with Claude Code SendMessage pattern.',
         inputSchema: {
@@ -1117,6 +1134,95 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
             }, null, 2)
           }]
         };
+      }
+
+      case "archive_stale_memories": {
+        const { dryRun = true, maxScoreToArchive = 30 } = args as {
+          dryRun?: boolean;
+          maxScoreToArchive?: number;
+        };
+
+        const knowledgePath = path.join(knowledgeDir, "MEMORY.md");
+        const content = readFile(knowledgePath);
+        if (!content) {
+          return { content: [{ type: "text", text: "No MEMORY.md file found." }] };
+        }
+
+        // Parse entries with dates
+        const lines = content.split("\n");
+        const dateEntryPattern = /^- \[(\d{4}-\d{2}-\d{2})\] (.+)$/;
+        const now = Date.now();
+        const entriesToArchive: { line: number; date: string; text: string; score: number }[] = [];
+
+        for (let i = 0; i < lines.length; i++) {
+          const match = lines[i].match(dateEntryPattern);
+          if (match) {
+            const entryDate = new Date(match[1]).getTime();
+            const daysSince = Math.floor((now - entryDate) / (1000 * 60 * 60 * 24));
+            // Simple score based on age (newer = higher score)
+            const score = Math.max(0, 100 - daysSince * 2);
+            if (score < maxScoreToArchive) {
+              entriesToArchive.push({
+                line: i,
+                date: match[1],
+                text: match[2],
+                score,
+              });
+            }
+          }
+        }
+
+        if (entriesToArchive.length === 0) {
+          return { content: [{ type: "text", text: "No stale entries found to archive." }] };
+        }
+
+        if (dryRun) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                dryRun: true,
+                wouldArchive: entriesToArchive.length,
+                entries: entriesToArchive,
+                message: "Set dryRun=false to actually archive these entries.",
+              }, null, 2)
+            }]
+          };
+        }
+
+        // Actually archive: remove from main sections and add to archive section
+        const linesToRemove = new Set(entriesToArchive.map(e => e.line));
+        const newLines = lines.filter((_, i) => !linesToRemove.has(i));
+
+        // Add archive section if not exists
+        const archiveHeader = "## Archive (Stale Entries)";
+        let archiveContent = newLines.join("\n");
+        if (!archiveContent.includes(archiveHeader)) {
+          archiveContent += `\n\n${archiveHeader}\n<!-- Entries moved here by archive_stale_memories tool -->\n`;
+        }
+
+        // Add archived entries
+        const archiveEntries = entriesToArchive
+          .map(e => `- [${e.date}] [archived] ${e.text}`)
+          .join("\n");
+        archiveContent = archiveContent.replace(
+          archiveHeader,
+          `${archiveHeader}\n${archiveEntries}`
+        );
+
+        if (writeFile(knowledgePath, archiveContent)) {
+          trackWrite("knowledge.archive");
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                archived: entriesToArchive.length,
+                entries: entriesToArchive.map(e => e.text.slice(0, 50) + "..."),
+              }, null, 2)
+            }]
+          };
+        }
+        return { content: [{ type: "text", text: "Failed to write archived content." }] };
       }
 
       case "send_message": {
