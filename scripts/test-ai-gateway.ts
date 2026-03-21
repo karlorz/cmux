@@ -59,6 +59,65 @@ interface TestResult {
   latencyMs: number;
 }
 
+type TestProviderOptions = {
+  anthropic:
+    | Record<string, never>
+    | {
+        sendReasoning: false;
+        thinking: {
+          type: "disabled";
+        };
+      };
+  openai:
+    | Record<string, never>
+    | {
+        reasoningEffort: "none";
+      };
+  google:
+    | Record<string, never>
+    | {
+        thinkingConfig: {
+          includeThoughts: false;
+          thinkingLevel: "minimal";
+        };
+      };
+};
+
+function getProviderOptions(provider: PlatformAiProvider): TestProviderOptions {
+  switch (provider) {
+    case "anthropic":
+      return {
+        anthropic: {
+          sendReasoning: false,
+          thinking: {
+            type: "disabled",
+          },
+        },
+        openai: {},
+        google: {},
+      };
+    case "openai":
+      return {
+        anthropic: {},
+        openai: {
+          reasoningEffort: "none",
+        },
+        google: {},
+      };
+    case "gemini":
+      return {
+        anthropic: {},
+        openai: {},
+        google: {
+          thinkingConfig: {
+            includeThoughts: false,
+            thinkingLevel: "minimal",
+          },
+        },
+      };
+  }
+}
+
 function isValidApiKey(key: string | undefined): boolean {
   if (!key) {
     return false;
@@ -144,6 +203,7 @@ async function testModel(
       model: providerConfig.model,
       prompt: "Reply with exactly five words.",
       maxOutputTokens: 50,
+      providerOptions: getProviderOptions(provider),
     });
 
     result.success = true;
