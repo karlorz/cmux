@@ -67,14 +67,18 @@ COPY packages/pve-lxc-client ./packages/pve-lxc-client
 COPY apps/www ./apps/www
 
 # Copy root config files
-COPY package.json bun.lock .npmrc tsconfig.json ./
+COPY package.json bun.lock .npmrc tsconfig.json tsconfig.base.json ./
 
-# Re-link @cmux workspace packages to local source
+# Re-link @cmux workspace packages to local source and expose the
+# workspace-root node_modules to apps/www so Bun can resolve build-time
+# packages during generate-openapi-client inside Docker.
 RUN rm -rf node_modules/@cmux && mkdir -p node_modules/@cmux \
     && ln -s ../../packages/shared node_modules/@cmux/shared \
     && ln -s ../../packages/convex node_modules/@cmux/convex \
     && ln -s ../../packages/www-openapi-client node_modules/@cmux/www-openapi-client \
-    && ln -s ../../packages/pve-lxc-client node_modules/@cmux/pve-lxc-client
+    && ln -s ../../packages/pve-lxc-client node_modules/@cmux/pve-lxc-client \
+    && rm -rf apps/www/node_modules \
+    && ln -s ../../node_modules apps/www/node_modules
 
 # Build arguments for environment variables (needed at build time)
 ARG NEXT_PUBLIC_CONVEX_URL
