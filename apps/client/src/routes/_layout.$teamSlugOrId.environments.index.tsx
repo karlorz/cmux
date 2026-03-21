@@ -1,6 +1,7 @@
 import { FloatingPane } from "@/components/floating-pane";
 import { TitleBar } from "@/components/TitleBar";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
+import { resolveCanonicalSandboxSnapshotId } from "@/lib/sandbox-config-snapshot";
 import { useEnvironmentDraft } from "@/state/environment-draft-store";
 import { EnvironmentCompare } from "@/components/environment/EnvironmentCompare";
 import { api } from "@cmux/convex/api";
@@ -11,7 +12,7 @@ import { useQuery as useRQQuery } from "@tanstack/react-query";
 import { getApiConfigSandboxOptions } from "@cmux/www-openapi-client/react-query";
 import { formatDistanceToNow } from "date-fns";
 import { ArrowLeftRight, Calendar, Eye, GitBranch, Play, Plus, Server, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/environments/")({
   loader: async ({ params }) => {
@@ -35,7 +36,10 @@ function EnvironmentsListPage() {
 
   // Fetch sandbox config to get default preset ID
   const { data: sandboxConfig } = useRQQuery(getApiConfigSandboxOptions());
-  const defaultSnapshotId = sandboxConfig?.defaultPresetId;
+  const defaultSnapshotId = useMemo(() => {
+    if (!sandboxConfig) return undefined;
+    return resolveCanonicalSandboxSnapshotId(sandboxConfig);
+  }, [sandboxConfig]);
 
   // Auto-navigate to /environments/new if there's a draft in progress
   useEffect(() => {

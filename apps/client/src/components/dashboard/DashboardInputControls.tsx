@@ -21,14 +21,25 @@ import { getVendorDisplayName, sortModelsByVendor } from "@/lib/model-vendor-uti
 import { WWW_ORIGIN } from "@/lib/wwwOrigin";
 import { api } from "@cmux/convex/api";
 import type { ProviderStatusResponse } from "@cmux/shared";
-import type { AgentVendor } from "@cmux/shared/agent-catalog";
+import { AGENT_CATALOG, type AgentVendor } from "@cmux/shared/agent-catalog";
 import { parseGithubRepoUrl } from "@cmux/shared";
 import { useUser } from "@stackframe/react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
 import { useAction, useMutation } from "convex/react";
-import { Check, GitBranch, Image, Link2, Mic, Server, X } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  CheckCircle2,
+  GitBranch,
+  Image,
+  Link2,
+  Mic,
+  RefreshCw,
+  Server,
+  X,
+} from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AgentCommandItem, MAX_AGENT_COMMAND_COUNT } from "./AgentCommandItem";
@@ -76,7 +87,13 @@ interface ConvexModelEntry {
   sortOrder: number;
 }
 
-type AgentOption = SelectOptionObject & { displayLabel: string; isDisabled?: boolean };
+type AgentOption = SelectOptionObject & {
+  displayLabel: string;
+  isDisabled?: boolean;
+  statusTone?: "healthy" | "warning" | "error";
+  statusLabel?: string;
+  statusDetail?: string;
+};
 
 type AgentSelectionInstance = {
   agent: string;
@@ -87,6 +104,148 @@ const GITHUB_INSTALL_COMPLETE_MESSAGE_TYPES = new Set([
   "manaflow/github-install-complete",
   "cmux/github-install-complete",
 ]);
+
+const STATUS_ICON_CLASSNAME: Record<NonNullable<AgentOption["statusTone"]>, string> = {
+  healthy: "text-green-600 dark:text-green-400",
+  warning: "text-amber-600 dark:text-amber-400",
+  error: "text-red-600 dark:text-red-400",
+};
+
+const AGENT_PREFIX_TO_VENDOR = {
+  claude: "anthropic",
+  codex: "openai",
+  gemini: "google",
+  opencode: "opencode",
+  qwen: "qwen",
+  cursor: "cursor",
+  amp: "amp",
+  grok: "xai",
+  openrouter: "openrouter",
+} as const;
+
+type AggregatedVendorStatus = {
+  vendor: string;
+  label: string;
+  isAvailable: boolean;
+  detail: string;
+};
+
+function formatProviderLabel(vendor: string): string {
+  return getVendorDisplayName(vendor);
+}
+
+function getVendorForAgentName(agentName: string): string | null {
+  const catalogVendor = AGENT_CATALOG.find((entry) => entry.name === agentName)?.vendor;
+  if (catalogVendor) {
+    return catalogVendor;
+  }
+
+  const prefix = agentName.split("/")[0] as keyof typeof AGENT_PREFIX_TO_VENDOR;
+  return AGENT_PREFIX_TO_VENDOR[prefix] ?? null;
+}
+
+function createProviderSettingsTooltip(providerLabel: string, detail: string) {
+  return (
+    <div className="space-y-1">
+      <p className="font-medium">{providerLabel} setup needed</p>
+      <p>{detail}</p>
+      <p className="text-neutral-500 dark:text-neutral-400">
+        Open AI Providers settings to finish setup.
+      </p>
+    </div>
+  );
+}
+
+function buildAggregatedVendorStatuses(
+  providerStatus: ProviderStatusResponse | null | undefined,
+): Map<string, AggregatedVendorStatus> {
+  const statuses = new Map<string, AggregatedVendorStatus>();
+
+  for (const provider of providerStatus?.providers ?? []) {
+    const vendor = getVendorForAgentName(provider.name);
+    if (!vendor) {
+      continue;
+    }
+
+    const label = formatProviderLabel(vendor);
+    const detail = provider.isAvailable
+      ? `${label} is ready.`
+      : provider.missingRequirements?.[0] ?? `${label} setup is incomplete.`;
+    const existing = statuses.get(vendor);
+
+    if (!existing) {
+      statuses.set(vendor, {
+        vendor,
+        label,
+        isAvailable: provider.isAvailable,
+        detail,
+      });
+      continue;
+    }
+
+    if (existing.isAvailable) {
+      continue;
+    }
+
+    if (provider.isAvailable) {
+      statuses.set(vendor, {
+        vendor,
+        label,
+        isAvailable: true,
+        detail: `${label} is ready.`,
+      });
+    }
+  }
+
+  return statuses;
+}
+
+function getProviderStatusMeta(
+  vendorStatuses: Map<string, AggregatedVendorStatus>,
+  vendor: string,
+  onClick: () => void,
+  hasProviderStatus: boolean,
+): Partial<Pick<AgentOption, "statusTone" | "statusLabel" | "statusDetail" | "warning">> {
+  if (!hasProviderStatus) {
+    return {};
+  }
+
+  const providerLabel = formatProviderLabel(vendor);
+  const status = vendorStatuses.get(vendor);
+
+  if (!status) {
+    return {
+      statusTone: "warning",
+      statusLabel: "Status unavailable",
+      statusDetail: `${providerLabel} status is unavailable right now.`,
+      warning: {
+        tooltip: createProviderSettingsTooltip(
+          providerLabel,
+          `${providerLabel} status is unavailable right now.`
+        ),
+        onClick,
+      },
+    };
+  }
+
+  if (status.isAvailable) {
+    return {
+      statusTone: "healthy",
+      statusLabel: "Ready",
+      statusDetail: status.detail,
+    };
+  }
+
+  return {
+    statusTone: "warning",
+    statusLabel: "Setup needed",
+    statusDetail: status.detail,
+    warning: {
+      tooltip: createProviderSettingsTooltip(providerLabel, status.detail),
+      onClick,
+    },
+  };
+}
 
 function watchPopupClosed(win: Window | null, onClose: () => void): void {
   if (!win) return;
@@ -172,17 +331,56 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   teamSlugOrId,
   cloudToggleDisabled = false,
   branchDisabled = false,
-  // providerStatus is kept for backward compatibility but no longer used
-  // (availability filtering is now done server-side via Convex)
-  providerStatus: _providerStatus = null,
+  providerStatus = null,
   disabledByUserModels,
   convexModels,
 }: DashboardInputControlsProps) {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const user = useUser({ or: "return-null" });
   const agentSelectRef = useRef<SearchableSelectHandle | null>(null);
   const mintState = useMutation(api.github_app.mintInstallState);
   const addManualRepo = useAction(api.github_http.addManualRepo);
+  const openAiProviderSettings = useCallback(() => {
+    navigate({
+      to: "/$teamSlugOrId/settings",
+      params: { teamSlugOrId },
+      search: { section: "ai-providers" },
+    });
+  }, [navigate, teamSlugOrId]);
+  const vendorStatuses = useMemo(
+    () => buildAggregatedVendorStatuses(providerStatus),
+    [providerStatus]
+  );
+  const hasProviderStatus = Boolean(providerStatus?.success);
+  const providerHealthSummary = useMemo(() => {
+    if (!providerStatus?.success) {
+      return null;
+    }
+
+    const readyCount = Array.from(vendorStatuses.values()).filter(
+      (status) => status.isAvailable
+    ).length;
+    const pendingCount = Array.from(vendorStatuses.values()).filter(
+      (status) => !status.isAvailable
+    ).length;
+    const dockerStatus = providerStatus.dockerStatus;
+    const dockerRunning = dockerStatus?.isRunning !== false;
+    const dockerImageAvailable = dockerStatus?.workerImage?.isAvailable ?? true;
+
+    if (pendingCount === 0 && dockerRunning && dockerImageAvailable) {
+      return null;
+    }
+
+    return {
+      readyCount,
+      pendingCount,
+      dockerRunning,
+      dockerImageAvailable,
+      dockerImagePulling: dockerStatus?.workerImage?.isPulling ?? false,
+      dockerImageName: dockerStatus?.workerImage?.name,
+    };
+  }, [providerStatus, vendorStatuses]);
   const agentOptions = useMemo<AgentOption[]>(() => {
     const baseModels: Array<{
       name: string;
@@ -207,12 +405,40 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     );
 
     const options = sortedModels.map((entry) => {
+      const providerMeta = getProviderStatusMeta(
+        vendorStatuses,
+        entry.vendor,
+        openAiProviderSettings,
+        hasProviderStatus
+      );
+
       return {
         label: entry.name,
         displayLabel: entry.displayName,
         value: entry.name,
-        icon: <AgentLogo agentName={entry.name} vendor={entry.vendor as AgentVendor} className="w-4 h-4" />,
+        icon: (
+          <span className="relative inline-flex h-4 w-4 items-center justify-center">
+            <AgentLogo
+              agentName={entry.name}
+              vendor={entry.vendor as AgentVendor}
+              className="w-4 h-4"
+            />
+            {providerMeta.statusTone ? (
+              <span
+                className={clsx(
+                  "absolute -right-1 -bottom-1 inline-flex h-2.5 w-2.5 rounded-full border border-white dark:border-neutral-950",
+                  providerMeta.statusTone === "healthy"
+                    ? "bg-green-500"
+                    : providerMeta.statusTone === "warning"
+                      ? "bg-amber-500"
+                      : "bg-red-500"
+                )}
+              />
+            ) : null}
+          </span>
+        ),
         iconKey: entry.vendor,
+        ...providerMeta,
       } satisfies AgentOption;
     });
 
@@ -235,7 +461,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     }
 
     return grouped;
-  }, [convexModels, disabledByUserModels]);
+  }, [convexModels, disabledByUserModels, hasProviderStatus, openAiProviderSettings, vendorStatuses]);
 
   const agentOptionsByValue = useMemo(() => {
     const map = new Map<string, AgentOption>();
@@ -454,8 +680,76 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     setCustomRepoError(null);
   }, []);
 
+  const providerStatusBanner = providerHealthSummary ? (
+    <button
+      type="button"
+      onClick={openAiProviderSettings}
+      className="mb-1 flex w-full items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-left dark:border-neutral-700 dark:bg-neutral-900/70"
+    >
+      <div className="flex min-w-0 items-start gap-2">
+        {providerHealthSummary.pendingCount > 0 || !providerHealthSummary.dockerRunning ? (
+          <AlertCircle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+        ) : providerHealthSummary.dockerImagePulling ? (
+          <RefreshCw className="mt-0.5 size-4 shrink-0 animate-spin text-blue-600 dark:text-blue-400" />
+        ) : (
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-green-600 dark:text-green-400" />
+        )}
+        <div className="min-w-0">
+          <p className="text-xs font-medium text-neutral-900 dark:text-neutral-100">
+            Provider health
+          </p>
+          <p className="text-[11px] text-neutral-600 dark:text-neutral-400">
+            {providerHealthSummary.readyCount} ready
+            {providerHealthSummary.pendingCount > 0
+              ? ` · ${providerHealthSummary.pendingCount} need setup`
+              : ""}
+            {!providerHealthSummary.dockerRunning
+              ? " · Docker not running"
+              : !providerHealthSummary.dockerImageAvailable &&
+                  providerHealthSummary.dockerImageName
+                ? providerHealthSummary.dockerImagePulling
+                  ? ` · Pulling ${providerHealthSummary.dockerImageName}`
+                  : ` · ${providerHealthSummary.dockerImageName} unavailable`
+                : ""}
+          </p>
+        </div>
+      </div>
+      <span className="shrink-0 text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
+        Open settings
+      </span>
+    </button>
+  ) : null;
+
   const agentSelectionFooter = selectedAgents.length ? (
     <div className="bg-neutral-50 dark:bg-neutral-900/70">
+      {hasProviderStatus ? (
+        <div className="border-b border-neutral-200 px-2 py-2 text-[11px] text-neutral-600 dark:border-neutral-800 dark:text-neutral-300">
+          <div className="flex flex-wrap gap-2">
+            {Array.from(vendorStatuses.values()).map((status) => {
+              const Icon = status.isAvailable ? CheckCircle2 : AlertCircle;
+              return (
+                <button
+                  key={status.vendor}
+                  type="button"
+                  onClick={openAiProviderSettings}
+                  className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 text-[10px] font-medium text-neutral-700 ring-1 ring-neutral-200 hover:bg-neutral-100 dark:bg-neutral-950 dark:text-neutral-200 dark:ring-neutral-800 dark:hover:bg-neutral-900"
+                  title={status.detail}
+                >
+                  <Icon
+                    className={clsx(
+                      "size-3",
+                      status.isAvailable
+                        ? STATUS_ICON_CLASSNAME.healthy
+                        : STATUS_ICON_CLASSNAME.warning
+                    )}
+                  />
+                  <span>{status.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
       <div className="relative">
         <div
           ref={pillboxScrollRef}
@@ -768,7 +1062,8 @@ export const DashboardInputControls = memo(function DashboardInputControls({
           </div>
         )}
 
-        <div data-onboarding="agent-picker">
+        <div className="flex flex-col gap-1" data-onboarding="agent-picker">
+          {providerStatusBanner}
           <SearchableSelect
             ref={agentSelectRef}
             options={agentOptions}

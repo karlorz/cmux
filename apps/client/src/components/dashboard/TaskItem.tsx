@@ -313,6 +313,19 @@ export const TaskItem = memo(function TaskItem({
     [task.pinned, pinTask, unpinTask, teamSlugOrId, task._id]
   );
 
+  const showCheckboxAffordance = showCheckbox || isFocused;
+  const showQuickActions = showCheckbox || isFocused || taskIsArchiving;
+  const showPinAffordance = showCheckbox || isFocused || task.pinned;
+  const quickActionVisibilityClass = showQuickActions
+    ? "opacity-100"
+    : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100";
+  const pinVisibilityClass = showPinAffordance
+    ? "opacity-100"
+    : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100";
+  const checkboxVisibilityClass = showCheckboxAffordance
+    ? "visible"
+    : "invisible group-hover:visible group-focus-within:visible";
+
   return (
     <div className="relative group w-full" data-task-id={task._id}>
       <ContextMenu.Root>
@@ -338,7 +351,7 @@ export const TaskItem = memo(function TaskItem({
                 checked={isSelected}
                 className={clsx(
                   "peer w-3 h-3 cursor-pointer border border-neutral-400 dark:border-neutral-500 rounded bg-white dark:bg-neutral-900 appearance-none checked:bg-neutral-500 checked:border-neutral-500 dark:checked:bg-neutral-400 dark:checked:border-neutral-400",
-                  showCheckbox ? "visible" : "invisible group-hover:visible"
+                  checkboxVisibilityClass
                 )}
                 onClick={(e) => e.stopPropagation()}
                 onChange={handleCheckboxChange}
@@ -558,7 +571,7 @@ export const TaskItem = memo(function TaskItem({
                   "bg-neutral-100 dark:bg-neutral-700",
                   "text-neutral-600 dark:text-neutral-400",
                   "hover:bg-neutral-200 dark:hover:bg-neutral-600",
-                  "group-hover:opacity-100 opacity-0"
+                  quickActionVisibilityClass
                 )}
                 title="Copy task description"
               >
@@ -595,7 +608,7 @@ export const TaskItem = memo(function TaskItem({
                     ? "text-amber-600 dark:text-amber-400"
                     : "text-neutral-600 dark:text-neutral-400",
                   "hover:bg-neutral-200 dark:hover:bg-neutral-600",
-                  "group-hover:opacity-100 opacity-0"
+                  pinVisibilityClass
                 )}
               >
                 {task.pinned ? (
@@ -623,7 +636,7 @@ export const TaskItem = memo(function TaskItem({
                       ? "text-blue-600 dark:text-blue-400"
                       : "text-neutral-600 dark:text-neutral-400",
                     "hover:bg-neutral-200 dark:hover:bg-neutral-600",
-                    "group-hover:opacity-100 opacity-0"
+                    quickActionVisibilityClass
                   )}
                 >
                   <Pin className="w-3.5 h-3.5" />
@@ -648,7 +661,7 @@ export const TaskItem = memo(function TaskItem({
                     "bg-neutral-100 dark:bg-neutral-700",
                     "text-neutral-600 dark:text-neutral-400",
                     "hover:bg-neutral-200 dark:hover:bg-neutral-600",
-                    "group-hover:opacity-100 opacity-0"
+                    quickActionVisibilityClass
                   )}
                   title="Unarchive task"
                 >
@@ -665,7 +678,7 @@ export const TaskItem = memo(function TaskItem({
                     "hover:bg-neutral-200 dark:hover:bg-neutral-600",
                     taskIsArchiving
                       ? "opacity-100"
-                      : "group-hover:opacity-100 opacity-0",
+                      : quickActionVisibilityClass,
                     taskIsArchiving && "cursor-not-allowed"
                   )}
                   title="Archive task"

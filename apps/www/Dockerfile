@@ -97,7 +97,7 @@ ENV SENTRY_AUTH_TOKEN=$SENTRY_AUTH_TOKEN
 # Build the Next.js app with standalone output
 WORKDIR /app/apps/www
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build
+RUN bun run build
 
 # =============================================================================
 # Stage 3: Production

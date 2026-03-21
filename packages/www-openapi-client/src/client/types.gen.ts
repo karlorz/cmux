@@ -140,25 +140,6 @@ export type GithubReposResponse = {
     repos: Array<GithubRepo>;
 };
 
-export type GitHubProject = {
-    id: string;
-    title: string;
-    number: number;
-    url: string;
-    shortDescription: string | null;
-    closed: boolean;
-    createdAt: string;
-    updatedAt: string;
-};
-
-export type ProjectsResponse = {
-    projects: Array<GitHubProject>;
-    /**
-     * True if user needs to re-authorize GitHub with 'project' scope to see all projects
-     */
-    needsReauthorization?: boolean;
-};
-
 export type DraftBatchResult = {
     title: string;
     itemId: string | null;
@@ -186,6 +167,25 @@ export type CreateDraftBatchBody = {
      */
     projectId: string;
     items: Array<BatchDraftItem>;
+};
+
+export type ItemResponse = {
+    itemId: string | null;
+};
+
+export type CreateDraftBody = {
+    /**
+     * GitHub Project node ID
+     */
+    projectId: string;
+    /**
+     * Draft issue title
+     */
+    title: string;
+    /**
+     * Draft issue body
+     */
+    body?: string;
 };
 
 export type ProjectField = {
@@ -230,10 +230,6 @@ export type ProjectItemsResponse = {
     };
 };
 
-export type ItemResponse = {
-    itemId: string | null;
-};
-
 export type AddItemBody = {
     /**
      * GitHub Project node ID
@@ -243,21 +239,6 @@ export type AddItemBody = {
      * Issue or PR node ID to add
      */
     contentId: string;
-};
-
-export type CreateDraftBody = {
-    /**
-     * GitHub Project node ID
-     */
-    projectId: string;
-    /**
-     * Draft issue title
-     */
-    title: string;
-    /**
-     * Draft issue body
-     */
-    body?: string;
 };
 
 export type UpdateFieldBody = {
@@ -279,6 +260,25 @@ export type UpdateFieldBody = {
     value: {
         [key: string]: string | number;
     };
+};
+
+export type GitHubProject = {
+    id: string;
+    title: string;
+    number: number;
+    url: string;
+    shortDescription: string | null;
+    closed: boolean;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type ProjectsResponse = {
+    projects: Array<GitHubProject>;
+    /**
+     * True if user needs to re-authorize GitHub with 'project' scope to see all projects
+     */
+    needsReauthorization?: boolean;
 };
 
 export type FrameworkPreset = 'other' | 'next' | 'vite' | 'remix' | 'nuxt' | 'sveltekit' | 'angular' | 'cra' | 'vue';
@@ -384,6 +384,21 @@ export type GithubPrCodeResponse = {
     files: Array<GithubPrFile>;
 };
 
+export type GithubClosePrRequest = {
+    teamSlugOrId: string;
+    owner: string;
+    repo: string;
+    number: number;
+};
+
+export type GithubMergePrSimpleRequest = {
+    teamSlugOrId: string;
+    owner: string;
+    repo: string;
+    number: number;
+    method: 'squash' | 'rebase' | 'merge';
+};
+
 export type GithubOpenPrResponse = {
     success: boolean;
     results: Array<{
@@ -404,30 +419,15 @@ export type GithubOpenPrResponse = {
     error?: string;
 };
 
-export type GithubOpenPrRequest = {
-    teamSlugOrId: string;
-    taskRunId: string;
-};
-
 export type GithubMergePrRequest = {
     teamSlugOrId: string;
     taskRunId: string;
     method: 'squash' | 'rebase' | 'merge';
 };
 
-export type GithubClosePrRequest = {
+export type GithubOpenPrRequest = {
     teamSlugOrId: string;
-    owner: string;
-    repo: string;
-    number: number;
-};
-
-export type GithubMergePrSimpleRequest = {
-    teamSlugOrId: string;
-    owner: string;
-    repo: string;
-    number: number;
-    method: 'squash' | 'rebase' | 'merge';
+    taskRunId: string;
 };
 
 export type GithubPrsFilesResponse = {
@@ -552,12 +552,32 @@ export type GithubBranchesResponse = {
     hasMore: boolean;
 };
 
-export type ResumeTaskRunResponse = {
-    resumed: true;
+export type InstanceInfo = {
+    id: string;
+    status: string;
+    createdAt?: string;
+    metadata?: {
+        app?: string;
+        userId?: string;
+        teamId?: string;
+    };
 };
 
-export type ResumeTaskRunBody = {
+export type ListInstancesResponse = Array<InstanceInfo>;
+
+export type SetupInstanceResponse = {
+    instanceId: string;
+    vscodeUrl: string;
+    clonedRepos: Array<string>;
+    removedRepos: Array<string>;
+};
+
+export type SetupInstanceBody = {
     teamSlugOrId: string;
+    instanceId?: string;
+    selectedRepos?: Array<string>;
+    ttlSeconds?: number;
+    snapshotId?: string | ('snapshot_mgmhjyrd' | 'snapshot_fe0cgqlw');
 };
 
 export type CheckTaskRunPausedResponse = {
@@ -578,33 +598,13 @@ export type RefreshGitHubAuthBody = {
     teamSlugOrId: string;
 };
 
-export type SetupInstanceResponse = {
-    instanceId: string;
-    vscodeUrl: string;
-    clonedRepos: Array<string>;
-    removedRepos: Array<string>;
+export type ResumeTaskRunResponse = {
+    resumed: true;
 };
 
-export type SetupInstanceBody = {
+export type ResumeTaskRunBody = {
     teamSlugOrId: string;
-    instanceId?: string;
-    selectedRepos?: Array<string>;
-    ttlSeconds?: number;
-    snapshotId?: string | ('snapshot_mgmhjyrd' | 'snapshot_fe0cgqlw');
 };
-
-export type InstanceInfo = {
-    id: string;
-    status: string;
-    createdAt?: string;
-    metadata?: {
-        app?: string;
-        userId?: string;
-        teamId?: string;
-    };
-};
-
-export type ListInstancesResponse = Array<InstanceInfo>;
 
 export type OrchestrateMessageResponse = {
     /**
@@ -905,7 +905,38 @@ export type ProjectGoal = {
     completed: boolean;
 };
 
+/**
+ * Initial status
+ */
 export type ProjectStatus = 'planning' | 'active' | 'paused' | 'completed' | 'archived';
+
+export type CreateProjectRequest = {
+    /**
+     * Team slug or ID
+     */
+    teamSlugOrId: string;
+    /**
+     * Project name
+     */
+    name: string;
+    /**
+     * Project description
+     */
+    description?: string;
+    /**
+     * Initial goals
+     */
+    goals?: Array<ProjectGoal>;
+    status?: ProjectStatus;
+    /**
+     * Path to Obsidian note
+     */
+    obsidianNotePath?: string;
+    /**
+     * GitHub Projects node ID
+     */
+    githubProjectId?: string;
+};
 
 export type PlanTask = {
     /**
@@ -1021,58 +1052,6 @@ export type Project = {
     updatedAt: number;
 };
 
-export type CreateProjectRequest = {
-    /**
-     * Team slug or ID
-     */
-    teamSlugOrId: string;
-    /**
-     * Project name
-     */
-    name: string;
-    /**
-     * Project description
-     */
-    description?: string;
-    /**
-     * Initial goals
-     */
-    goals?: Array<ProjectGoal>;
-    status?: ProjectStatus & unknown;
-    /**
-     * Path to Obsidian note
-     */
-    obsidianNotePath?: string;
-    /**
-     * GitHub Projects node ID
-     */
-    githubProjectId?: string;
-};
-
-export type UpdateProjectRequest = {
-    /**
-     * Project name
-     */
-    name?: string;
-    /**
-     * Project description
-     */
-    description?: string;
-    /**
-     * Project goals
-     */
-    goals?: Array<ProjectGoal>;
-    status?: ProjectStatus & unknown;
-    /**
-     * Path to Obsidian note
-     */
-    obsidianNotePath?: string;
-    /**
-     * GitHub Projects node ID
-     */
-    githubProjectId?: string;
-};
-
 export type UpsertPlanRequest = {
     /**
      * Orchestration ID
@@ -1131,6 +1110,30 @@ export type DispatchPlanRequest = {
     [key: string]: unknown;
 };
 
+export type UpdateProjectRequest = {
+    /**
+     * Project name
+     */
+    name?: string;
+    /**
+     * Project description
+     */
+    description?: string;
+    /**
+     * Project goals
+     */
+    goals?: Array<ProjectGoal>;
+    status?: ProjectStatus & unknown;
+    /**
+     * Path to Obsidian note
+     */
+    obsidianNotePath?: string;
+    /**
+     * GitHub Projects node ID
+     */
+    githubProjectId?: string;
+};
+
 export type RecommendedAction = {
     /**
      * Type of recommended action
@@ -1152,6 +1155,22 @@ export type RecommendedAction = {
      * Suggested prompt for agent
      */
     suggestedPrompt?: string;
+};
+
+export type DispatchRequest = {
+    /**
+     * Team slug or ID
+     */
+    teamSlugOrId: string;
+    recommendation: RecommendedAction;
+    /**
+     * Agent to use (default: claude/sonnet-4.5)
+     */
+    agentName?: string;
+    /**
+     * Repository full name
+     */
+    repoFullName?: string;
 };
 
 export type ObsidianNote = {
@@ -1179,30 +1198,6 @@ export type ObsidianNote = {
      * Note tags
      */
     tags: Array<string>;
-};
-
-export type DispatchRequest = {
-    /**
-     * Team slug or ID
-     */
-    teamSlugOrId: string;
-    recommendation: RecommendedAction;
-    /**
-     * Agent to use (default: claude/sonnet-4.5)
-     */
-    agentName?: string;
-    /**
-     * Repository full name
-     */
-    repoFullName?: string;
-};
-
-export type PveLxcResumeTaskRunResponse = {
-    resumed: true;
-};
-
-export type PveLxcResumeTaskRunBody = {
-    teamSlugOrId: string;
 };
 
 export type PveLxcPreviewInstanceStartResponse = {
@@ -1241,6 +1236,14 @@ export type PveLxcPreviewInstanceExecBody = {
     timeoutMs?: number;
 };
 
+export type PveLxcResumeTaskRunResponse = {
+    resumed: true;
+};
+
+export type PveLxcResumeTaskRunBody = {
+    teamSlugOrId: string;
+};
+
 export type PveLxcCheckTaskRunStoppedResponse = {
     stopped: boolean;
     deleted?: boolean;
@@ -1248,6 +1251,22 @@ export type PveLxcCheckTaskRunStoppedResponse = {
 
 export type PveLxcCheckTaskRunStoppedBody = {
     teamSlugOrId: string;
+};
+
+export type GetEnvironmentResponse = {
+    id: string;
+    name: string;
+    snapshotId: string;
+    snapshotProvider: 'docker' | 'morph' | 'e2b' | 'daytona' | 'pve-lxc' | 'other' | 'pve-vm';
+    templateVmid?: number;
+    dataVaultKey: string;
+    selectedRepos?: Array<string>;
+    description?: string;
+    maintenanceScript?: string;
+    devScript?: string;
+    exposedPorts?: Array<number>;
+    createdAt: number;
+    updatedAt: number;
 };
 
 export type CreateEnvironmentResponse = {
@@ -1268,40 +1287,7 @@ export type CreateEnvironmentBody = {
     exposedPorts?: Array<number>;
 };
 
-export type GetEnvironmentResponse = {
-    id: string;
-    name: string;
-    snapshotId: string;
-    snapshotProvider: 'docker' | 'morph' | 'e2b' | 'daytona' | 'pve-lxc' | 'other' | 'pve-vm';
-    templateVmid?: number;
-    dataVaultKey: string;
-    selectedRepos?: Array<string>;
-    description?: string;
-    maintenanceScript?: string;
-    devScript?: string;
-    exposedPorts?: Array<number>;
-    createdAt: number;
-    updatedAt: number;
-};
-
 export type ListEnvironmentsResponse = Array<GetEnvironmentResponse>;
-
-export type GetEnvironmentVarsResponse = {
-    envVarsContent: string;
-};
-
-export type UpdateEnvironmentVarsBody = {
-    teamSlugOrId: string;
-    envVarsContent: string;
-};
-
-export type UpdateEnvironmentBody = {
-    teamSlugOrId: string;
-    name?: string;
-    description?: string;
-    maintenanceScript?: string;
-    devScript?: string;
-};
 
 export type ExposedService = {
     port: number;
@@ -1362,6 +1348,23 @@ export type ActivateSnapshotVersionBody = {
     teamSlugOrId: string;
 };
 
+export type UpdateEnvironmentBody = {
+    teamSlugOrId: string;
+    name?: string;
+    description?: string;
+    maintenanceScript?: string;
+    devScript?: string;
+};
+
+export type GetEnvironmentVarsResponse = {
+    envVarsContent: string;
+};
+
+export type UpdateEnvironmentVarsBody = {
+    teamSlugOrId: string;
+    envVarsContent: string;
+};
+
 export type StartSandboxResponse = {
     instanceId: string;
     vscodeUrl: string;
@@ -1374,8 +1377,11 @@ export type StartSandboxResponse = {
 
 export type StartSandboxBody = {
     teamSlugOrId: string;
-    environmentId?: string;
     snapshotId?: string;
+    environmentId?: string;
+    projectSlugOrId?: string;
+    sessionId?: string;
+    vscodePersisted?: boolean;
     ttlSeconds?: number;
     metadata?: {
         [key: string]: string;
@@ -1402,6 +1408,10 @@ export type PrewarmSandboxBody = {
     branch?: string;
 };
 
+export type SandboxResumeResponse = {
+    resumed: true;
+};
+
 export type SandboxSshResponse = {
     morphInstanceId: string;
     /**
@@ -1417,10 +1427,6 @@ export type SandboxSshResponse = {
      * Current instance status
      */
     status: 'running' | 'paused';
-};
-
-export type SandboxResumeResponse = {
-    resumed: true;
 };
 
 export type SetupProvidersResponse = {
@@ -1705,22 +1711,6 @@ export type EditorSettingsBody = {
     extensions?: string;
 };
 
-export type TestAnthropicConnectionResult = {
-    success: boolean;
-    message: string;
-    details?: {
-        statusCode?: number;
-        responseTime?: number;
-        endpoint: string;
-        modelsFound?: number;
-    };
-};
-
-export type TestAnthropicConnectionBody = {
-    baseUrl: string;
-    apiKey: string;
-};
-
 export type ProviderConnectionResult = {
     success: boolean;
     message: string;
@@ -1739,6 +1729,22 @@ export type TestProviderConnectionBody = {
     apiKey: string;
 };
 
+export type TestAnthropicConnectionResult = {
+    success: boolean;
+    message: string;
+    details?: {
+        statusCode?: number;
+        responseTime?: number;
+        endpoint: string;
+        modelsFound?: number;
+    };
+};
+
+export type TestAnthropicConnectionBody = {
+    baseUrl: string;
+    apiKey: string;
+};
+
 export type RemoveWorktreeResult = {
     success: boolean;
     message: string;
@@ -1747,6 +1753,34 @@ export type RemoveWorktreeResult = {
 export type RemoveWorktreeBody = {
     teamSlugOrId: string;
     worktreePath: string;
+};
+
+export type DiscoveryResultResponse = {
+    success: boolean;
+    curated?: number;
+    discovered?: number;
+    free?: number;
+    paid?: number;
+    openrouter?: {
+        discovered: number;
+        free: number;
+        paid: number;
+    };
+    error?: string;
+};
+
+export type SeedResultResponse = {
+    success: boolean;
+    seededCount: number;
+    error?: string;
+};
+
+export type SuccessResponse = {
+    success: boolean;
+};
+
+export type SetEnabledBody = {
+    enabled: boolean;
 };
 
 export type Model = {
@@ -1779,30 +1813,8 @@ export type ModelListResponse = {
     models: Array<Model>;
 };
 
-export type SuccessResponse = {
-    success: boolean;
-};
-
-export type SetEnabledBody = {
-    enabled: boolean;
-};
-
 export type ReorderBody = {
     modelNames: Array<string>;
-};
-
-export type DiscoveryResultResponse = {
-    success: boolean;
-    curated?: number;
-    discovered?: number;
-    free?: number;
-    paid?: number;
-    openrouter?: {
-        discovered: number;
-        free: number;
-        paid: number;
-    };
-    error?: string;
 };
 
 export type ApiFormat = 'anthropic' | 'openai' | 'bedrock' | 'vertex' | 'passthrough';
@@ -2499,50 +2511,6 @@ export type GetApiIntegrationsGithubReposResponses = {
 
 export type GetApiIntegrationsGithubReposResponse = GetApiIntegrationsGithubReposResponses[keyof GetApiIntegrationsGithubReposResponses];
 
-export type GetApiIntegrationsGithubProjectsData = {
-    body?: never;
-    path?: never;
-    query: {
-        /**
-         * Team slug or UUID
-         */
-        team: string;
-        /**
-         * GitHub App installation ID
-         */
-        installationId?: number | null;
-        /**
-         * GitHub user or org login (optional, inferred from installation if omitted)
-         */
-        owner?: string;
-        /**
-         * Owner type
-         */
-        ownerType?: 'user' | 'organization';
-    };
-    url: '/api/integrations/github/projects';
-};
-
-export type GetApiIntegrationsGithubProjectsErrors = {
-    /**
-     * Bad request
-     */
-    400: unknown;
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-};
-
-export type GetApiIntegrationsGithubProjectsResponses = {
-    /**
-     * OK
-     */
-    200: ProjectsResponse;
-};
-
-export type GetApiIntegrationsGithubProjectsResponse = GetApiIntegrationsGithubProjectsResponses[keyof GetApiIntegrationsGithubProjectsResponses];
-
 export type PostApiIntegrationsGithubProjectsDraftsBatchData = {
     body: CreateDraftBatchBody;
     path?: never;
@@ -2572,6 +2540,36 @@ export type PostApiIntegrationsGithubProjectsDraftsBatchResponses = {
 };
 
 export type PostApiIntegrationsGithubProjectsDraftsBatchResponse = PostApiIntegrationsGithubProjectsDraftsBatchResponses[keyof PostApiIntegrationsGithubProjectsDraftsBatchResponses];
+
+export type PostApiIntegrationsGithubProjectsDraftsData = {
+    body: CreateDraftBody;
+    path?: never;
+    query: {
+        team: string;
+        installationId?: number | null;
+    };
+    url: '/api/integrations/github/projects/drafts';
+};
+
+export type PostApiIntegrationsGithubProjectsDraftsErrors = {
+    /**
+     * Bad request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiIntegrationsGithubProjectsDraftsResponses = {
+    /**
+     * OK
+     */
+    200: ItemResponse;
+};
+
+export type PostApiIntegrationsGithubProjectsDraftsResponse = PostApiIntegrationsGithubProjectsDraftsResponses[keyof PostApiIntegrationsGithubProjectsDraftsResponses];
 
 export type GetApiIntegrationsGithubProjectsFieldsData = {
     body?: never;
@@ -2690,36 +2688,6 @@ export type PostApiIntegrationsGithubProjectsItemsResponses = {
 
 export type PostApiIntegrationsGithubProjectsItemsResponse = PostApiIntegrationsGithubProjectsItemsResponses[keyof PostApiIntegrationsGithubProjectsItemsResponses];
 
-export type PostApiIntegrationsGithubProjectsDraftsData = {
-    body: CreateDraftBody;
-    path?: never;
-    query: {
-        team: string;
-        installationId?: number | null;
-    };
-    url: '/api/integrations/github/projects/drafts';
-};
-
-export type PostApiIntegrationsGithubProjectsDraftsErrors = {
-    /**
-     * Bad request
-     */
-    400: unknown;
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-};
-
-export type PostApiIntegrationsGithubProjectsDraftsResponses = {
-    /**
-     * OK
-     */
-    200: ItemResponse;
-};
-
-export type PostApiIntegrationsGithubProjectsDraftsResponse = PostApiIntegrationsGithubProjectsDraftsResponses[keyof PostApiIntegrationsGithubProjectsDraftsResponses];
-
 export type PatchApiIntegrationsGithubProjectsItemsFieldData = {
     body: UpdateFieldBody;
     path?: never;
@@ -2749,6 +2717,50 @@ export type PatchApiIntegrationsGithubProjectsItemsFieldResponses = {
 };
 
 export type PatchApiIntegrationsGithubProjectsItemsFieldResponse = PatchApiIntegrationsGithubProjectsItemsFieldResponses[keyof PatchApiIntegrationsGithubProjectsItemsFieldResponses];
+
+export type GetApiIntegrationsGithubProjectsData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Team slug or UUID
+         */
+        team: string;
+        /**
+         * GitHub App installation ID
+         */
+        installationId?: number | null;
+        /**
+         * GitHub user or org login (optional, inferred from installation if omitted)
+         */
+        owner?: string;
+        /**
+         * Owner type
+         */
+        ownerType?: 'user' | 'organization';
+    };
+    url: '/api/integrations/github/projects';
+};
+
+export type GetApiIntegrationsGithubProjectsErrors = {
+    /**
+     * Bad request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiIntegrationsGithubProjectsResponses = {
+    /**
+     * OK
+     */
+    200: ProjectsResponse;
+};
+
+export type GetApiIntegrationsGithubProjectsResponse = GetApiIntegrationsGithubProjectsResponses[keyof GetApiIntegrationsGithubProjectsResponses];
 
 export type PostApiIntegrationsGithubProjectsPlanSyncData = {
     body: {
@@ -2995,84 +3007,6 @@ export type GetApiIntegrationsGithubPrsCodeResponses = {
 
 export type GetApiIntegrationsGithubPrsCodeResponse = GetApiIntegrationsGithubPrsCodeResponses[keyof GetApiIntegrationsGithubPrsCodeResponses];
 
-export type PostApiIntegrationsGithubPrsOpenData = {
-    body: GithubOpenPrRequest;
-    path?: never;
-    query?: never;
-    url: '/api/integrations/github/prs/open';
-};
-
-export type PostApiIntegrationsGithubPrsOpenErrors = {
-    /**
-     * Invalid request
-     */
-    400: unknown;
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden
-     */
-    403: unknown;
-    /**
-     * Task run not found
-     */
-    404: unknown;
-    /**
-     * Failed to create or update PRs
-     */
-    500: unknown;
-};
-
-export type PostApiIntegrationsGithubPrsOpenResponses = {
-    /**
-     * PRs created or updated
-     */
-    200: GithubOpenPrResponse;
-};
-
-export type PostApiIntegrationsGithubPrsOpenResponse = PostApiIntegrationsGithubPrsOpenResponses[keyof PostApiIntegrationsGithubPrsOpenResponses];
-
-export type PostApiIntegrationsGithubPrsMergeData = {
-    body: GithubMergePrRequest;
-    path?: never;
-    query?: never;
-    url: '/api/integrations/github/prs/merge';
-};
-
-export type PostApiIntegrationsGithubPrsMergeErrors = {
-    /**
-     * Invalid request
-     */
-    400: unknown;
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden
-     */
-    403: unknown;
-    /**
-     * Task run not found
-     */
-    404: unknown;
-    /**
-     * Failed to merge PRs
-     */
-    500: unknown;
-};
-
-export type PostApiIntegrationsGithubPrsMergeResponses = {
-    /**
-     * PRs merged
-     */
-    200: GithubOpenPrResponse;
-};
-
-export type PostApiIntegrationsGithubPrsMergeResponse = PostApiIntegrationsGithubPrsMergeResponses[keyof PostApiIntegrationsGithubPrsMergeResponses];
-
 export type PostApiIntegrationsGithubPrsCloseData = {
     body: GithubClosePrRequest;
     path?: never;
@@ -3148,6 +3082,84 @@ export type PostApiIntegrationsGithubPrsMergeSimpleResponses = {
 };
 
 export type PostApiIntegrationsGithubPrsMergeSimpleResponse = PostApiIntegrationsGithubPrsMergeSimpleResponses[keyof PostApiIntegrationsGithubPrsMergeSimpleResponses];
+
+export type PostApiIntegrationsGithubPrsMergeData = {
+    body: GithubMergePrRequest;
+    path?: never;
+    query?: never;
+    url: '/api/integrations/github/prs/merge';
+};
+
+export type PostApiIntegrationsGithubPrsMergeErrors = {
+    /**
+     * Invalid request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Task run not found
+     */
+    404: unknown;
+    /**
+     * Failed to merge PRs
+     */
+    500: unknown;
+};
+
+export type PostApiIntegrationsGithubPrsMergeResponses = {
+    /**
+     * PRs merged
+     */
+    200: GithubOpenPrResponse;
+};
+
+export type PostApiIntegrationsGithubPrsMergeResponse = PostApiIntegrationsGithubPrsMergeResponses[keyof PostApiIntegrationsGithubPrsMergeResponses];
+
+export type PostApiIntegrationsGithubPrsOpenData = {
+    body: GithubOpenPrRequest;
+    path?: never;
+    query?: never;
+    url: '/api/integrations/github/prs/open';
+};
+
+export type PostApiIntegrationsGithubPrsOpenErrors = {
+    /**
+     * Invalid request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Task run not found
+     */
+    404: unknown;
+    /**
+     * Failed to create or update PRs
+     */
+    500: unknown;
+};
+
+export type PostApiIntegrationsGithubPrsOpenResponses = {
+    /**
+     * PRs created or updated
+     */
+    200: GithubOpenPrResponse;
+};
+
+export type PostApiIntegrationsGithubPrsOpenResponse = PostApiIntegrationsGithubPrsOpenResponses[keyof PostApiIntegrationsGithubPrsOpenResponses];
 
 export type GetApiIntegrationsGithubPrsRawData = {
     body?: never;
@@ -3415,46 +3427,61 @@ export type GetApiIntegrationsGithubBranchesResponses = {
 
 export type GetApiIntegrationsGithubBranchesResponse = GetApiIntegrationsGithubBranchesResponses[keyof GetApiIntegrationsGithubBranchesResponses];
 
-export type PostApiMorphTaskRunsByTaskRunIdResumeData = {
-    body: ResumeTaskRunBody;
-    path: {
-        taskRunId: string;
+export type GetApiMorphInstancesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        teamId?: string;
     };
-    query?: never;
-    url: '/api/morph/task-runs/{taskRunId}/resume';
+    url: '/api/morph/instances';
 };
 
-export type PostApiMorphTaskRunsByTaskRunIdResumeErrors = {
-    /**
-     * Task run is not backed by a Morph instance
-     */
-    400: unknown;
+export type GetApiMorphInstancesErrors = {
     /**
      * Unauthorized
      */
     401: unknown;
     /**
-     * Forbidden
-     */
-    403: unknown;
-    /**
-     * Task run or instance not found
-     */
-    404: unknown;
-    /**
-     * Failed to resume instance
+     * Failed to list instances
      */
     500: unknown;
 };
 
-export type PostApiMorphTaskRunsByTaskRunIdResumeResponses = {
+export type GetApiMorphInstancesResponses = {
     /**
-     * Morph instance resumed
+     * List of Morph instances
      */
-    200: ResumeTaskRunResponse;
+    200: ListInstancesResponse;
 };
 
-export type PostApiMorphTaskRunsByTaskRunIdResumeResponse = PostApiMorphTaskRunsByTaskRunIdResumeResponses[keyof PostApiMorphTaskRunsByTaskRunIdResumeResponses];
+export type GetApiMorphInstancesResponse = GetApiMorphInstancesResponses[keyof GetApiMorphInstancesResponses];
+
+export type PostApiMorphSetupInstanceData = {
+    body: SetupInstanceBody;
+    path?: never;
+    query?: never;
+    url: '/api/morph/setup-instance';
+};
+
+export type PostApiMorphSetupInstanceErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Failed to setup instance
+     */
+    500: unknown;
+};
+
+export type PostApiMorphSetupInstanceResponses = {
+    /**
+     * Instance setup successfully
+     */
+    200: SetupInstanceResponse;
+};
+
+export type PostApiMorphSetupInstanceResponse = PostApiMorphSetupInstanceResponses[keyof PostApiMorphSetupInstanceResponses];
 
 export type PostApiMorphTaskRunsByTaskRunIdIsPausedData = {
     body: CheckTaskRunPausedBody;
@@ -3542,61 +3569,46 @@ export type PostApiMorphTaskRunsByTaskRunIdRefreshGithubAuthResponses = {
 
 export type PostApiMorphTaskRunsByTaskRunIdRefreshGithubAuthResponse = PostApiMorphTaskRunsByTaskRunIdRefreshGithubAuthResponses[keyof PostApiMorphTaskRunsByTaskRunIdRefreshGithubAuthResponses];
 
-export type PostApiMorphSetupInstanceData = {
-    body: SetupInstanceBody;
-    path?: never;
-    query?: never;
-    url: '/api/morph/setup-instance';
-};
-
-export type PostApiMorphSetupInstanceErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Failed to setup instance
-     */
-    500: unknown;
-};
-
-export type PostApiMorphSetupInstanceResponses = {
-    /**
-     * Instance setup successfully
-     */
-    200: SetupInstanceResponse;
-};
-
-export type PostApiMorphSetupInstanceResponse = PostApiMorphSetupInstanceResponses[keyof PostApiMorphSetupInstanceResponses];
-
-export type GetApiMorphInstancesData = {
-    body?: never;
-    path?: never;
-    query?: {
-        teamId?: string;
+export type PostApiMorphTaskRunsByTaskRunIdResumeData = {
+    body: ResumeTaskRunBody;
+    path: {
+        taskRunId: string;
     };
-    url: '/api/morph/instances';
+    query?: never;
+    url: '/api/morph/task-runs/{taskRunId}/resume';
 };
 
-export type GetApiMorphInstancesErrors = {
+export type PostApiMorphTaskRunsByTaskRunIdResumeErrors = {
+    /**
+     * Task run is not backed by a Morph instance
+     */
+    400: unknown;
     /**
      * Unauthorized
      */
     401: unknown;
     /**
-     * Failed to list instances
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Task run or instance not found
+     */
+    404: unknown;
+    /**
+     * Failed to resume instance
      */
     500: unknown;
 };
 
-export type GetApiMorphInstancesResponses = {
+export type PostApiMorphTaskRunsByTaskRunIdResumeResponses = {
     /**
-     * List of Morph instances
+     * Morph instance resumed
      */
-    200: ListInstancesResponse;
+    200: ResumeTaskRunResponse;
 };
 
-export type GetApiMorphInstancesResponse = GetApiMorphInstancesResponses[keyof GetApiMorphInstancesResponses];
+export type PostApiMorphTaskRunsByTaskRunIdResumeResponse = PostApiMorphTaskRunsByTaskRunIdResumeResponses[keyof PostApiMorphTaskRunsByTaskRunIdResumeResponses];
 
 export type PostApiOrchestrateMessageData = {
     body: OrchestrateMessageRequest;
@@ -4450,52 +4462,45 @@ export type PostApiProjectsByProjectIdDispatchResponses = {
 
 export type PostApiProjectsByProjectIdDispatchResponse = PostApiProjectsByProjectIdDispatchResponses[keyof PostApiProjectsByProjectIdDispatchResponses];
 
-export type GetApiVaultRecommendationsData = {
-    body?: never;
+export type PostApiVaultDispatchData = {
+    body: DispatchRequest;
     path?: never;
-    query: {
-        /**
-         * Team slug or ID
-         */
-        teamSlugOrId: string;
-        /**
-         * Maximum recommendations
-         */
-        limit?: number | null;
-        /**
-         * Filter by priority
-         */
-        priority?: 'high' | 'medium' | 'low';
-        /**
-         * Filter by type
-         */
-        type?: 'todo' | 'stale_note' | 'missing_docs' | 'broken_link';
-    };
-    url: '/api/vault/recommendations';
+    query?: never;
+    url: '/api/vault/dispatch';
 };
 
-export type GetApiVaultRecommendationsErrors = {
+export type PostApiVaultDispatchErrors = {
     /**
      * Unauthorized
      */
     401: unknown;
+    /**
+     * Validation error
+     */
+    422: unknown;
     /**
      * Server error
      */
     500: unknown;
 };
 
-export type GetApiVaultRecommendationsResponses = {
+export type PostApiVaultDispatchResponses = {
     /**
-     * Recommendations retrieved successfully
+     * Task created successfully
      */
-    200: {
-        recommendations: Array<RecommendedAction>;
-        vaultConfigured: boolean;
+    201: {
+        /**
+         * Created task ID
+         */
+        taskId: string;
+        /**
+         * Created task run ID
+         */
+        taskRunId?: string;
     };
 };
 
-export type GetApiVaultRecommendationsResponse = GetApiVaultRecommendationsResponses[keyof GetApiVaultRecommendationsResponses];
+export type PostApiVaultDispatchResponse = PostApiVaultDispatchResponses[keyof PostApiVaultDispatchResponses];
 
 export type GetApiVaultNotesData = {
     body?: never;
@@ -4549,90 +4554,52 @@ export type GetApiVaultNotesResponses = {
 
 export type GetApiVaultNotesResponse = GetApiVaultNotesResponses[keyof GetApiVaultNotesResponses];
 
-export type PostApiVaultDispatchData = {
-    body: DispatchRequest;
+export type GetApiVaultRecommendationsData = {
+    body?: never;
     path?: never;
-    query?: never;
-    url: '/api/vault/dispatch';
+    query: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId: string;
+        /**
+         * Maximum recommendations
+         */
+        limit?: number | null;
+        /**
+         * Filter by priority
+         */
+        priority?: 'high' | 'medium' | 'low';
+        /**
+         * Filter by type
+         */
+        type?: 'todo' | 'stale_note' | 'missing_docs' | 'broken_link';
+    };
+    url: '/api/vault/recommendations';
 };
 
-export type PostApiVaultDispatchErrors = {
+export type GetApiVaultRecommendationsErrors = {
     /**
      * Unauthorized
      */
     401: unknown;
-    /**
-     * Validation error
-     */
-    422: unknown;
     /**
      * Server error
      */
     500: unknown;
 };
 
-export type PostApiVaultDispatchResponses = {
+export type GetApiVaultRecommendationsResponses = {
     /**
-     * Task created successfully
+     * Recommendations retrieved successfully
      */
-    201: {
-        /**
-         * Created task ID
-         */
-        taskId: string;
-        /**
-         * Created task run ID
-         */
-        taskRunId?: string;
+    200: {
+        recommendations: Array<RecommendedAction>;
+        vaultConfigured: boolean;
     };
 };
 
-export type PostApiVaultDispatchResponse = PostApiVaultDispatchResponses[keyof PostApiVaultDispatchResponses];
-
-export type PostApiPveLxcTaskRunsByTaskRunIdResumeData = {
-    body: PveLxcResumeTaskRunBody;
-    path: {
-        taskRunId: string;
-    };
-    query?: never;
-    url: '/api/pve-lxc/task-runs/{taskRunId}/resume';
-};
-
-export type PostApiPveLxcTaskRunsByTaskRunIdResumeErrors = {
-    /**
-     * Task run is not backed by a PVE LXC container
-     */
-    400: unknown;
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden
-     */
-    403: unknown;
-    /**
-     * Task run or container not found
-     */
-    404: unknown;
-    /**
-     * Failed to resume container
-     */
-    500: unknown;
-    /**
-     * PVE LXC provider not configured
-     */
-    503: unknown;
-};
-
-export type PostApiPveLxcTaskRunsByTaskRunIdResumeResponses = {
-    /**
-     * PVE LXC container resumed
-     */
-    200: PveLxcResumeTaskRunResponse;
-};
-
-export type PostApiPveLxcTaskRunsByTaskRunIdResumeResponse = PostApiPveLxcTaskRunsByTaskRunIdResumeResponses[keyof PostApiPveLxcTaskRunsByTaskRunIdResumeResponses];
+export type GetApiVaultRecommendationsResponse = GetApiVaultRecommendationsResponses[keyof GetApiVaultRecommendationsResponses];
 
 export type PostApiPveLxcPreviewInstancesStartData = {
     body: PveLxcPreviewInstanceStartBody;
@@ -4783,6 +4750,51 @@ export type PostApiPveLxcPreviewInstancesByInstanceIdReadFileResponses = {
 
 export type PostApiPveLxcPreviewInstancesByInstanceIdReadFileResponse = PostApiPveLxcPreviewInstancesByInstanceIdReadFileResponses[keyof PostApiPveLxcPreviewInstancesByInstanceIdReadFileResponses];
 
+export type PostApiPveLxcTaskRunsByTaskRunIdResumeData = {
+    body: PveLxcResumeTaskRunBody;
+    path: {
+        taskRunId: string;
+    };
+    query?: never;
+    url: '/api/pve-lxc/task-runs/{taskRunId}/resume';
+};
+
+export type PostApiPveLxcTaskRunsByTaskRunIdResumeErrors = {
+    /**
+     * Task run is not backed by a PVE LXC container
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Task run or container not found
+     */
+    404: unknown;
+    /**
+     * Failed to resume container
+     */
+    500: unknown;
+    /**
+     * PVE LXC provider not configured
+     */
+    503: unknown;
+};
+
+export type PostApiPveLxcTaskRunsByTaskRunIdResumeResponses = {
+    /**
+     * PVE LXC container resumed
+     */
+    200: PveLxcResumeTaskRunResponse;
+};
+
+export type PostApiPveLxcTaskRunsByTaskRunIdResumeResponse = PostApiPveLxcTaskRunsByTaskRunIdResumeResponses[keyof PostApiPveLxcTaskRunsByTaskRunIdResumeResponses];
+
 export type PostApiPveLxcTaskRunsByTaskRunIdIsStoppedData = {
     body: PveLxcCheckTaskRunStoppedBody;
     path: {
@@ -4863,62 +4875,6 @@ export type GetApiIframePreflightResponses = {
 };
 
 export type GetApiIframePreflightResponse = GetApiIframePreflightResponses[keyof GetApiIframePreflightResponses];
-
-export type GetApiEnvironmentsData = {
-    body?: never;
-    path?: never;
-    query: {
-        teamSlugOrId: string;
-    };
-    url: '/api/environments';
-};
-
-export type GetApiEnvironmentsErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Failed to list environments
-     */
-    500: unknown;
-};
-
-export type GetApiEnvironmentsResponses = {
-    /**
-     * Environments retrieved successfully
-     */
-    200: ListEnvironmentsResponse;
-};
-
-export type GetApiEnvironmentsResponse = GetApiEnvironmentsResponses[keyof GetApiEnvironmentsResponses];
-
-export type PostApiEnvironmentsData = {
-    body: CreateEnvironmentBody;
-    path?: never;
-    query?: never;
-    url: '/api/environments';
-};
-
-export type PostApiEnvironmentsErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Failed to create environment
-     */
-    500: unknown;
-};
-
-export type PostApiEnvironmentsResponses = {
-    /**
-     * Environment created successfully
-     */
-    200: CreateEnvironmentResponse;
-};
-
-export type PostApiEnvironmentsResponse = PostApiEnvironmentsResponses[keyof PostApiEnvironmentsResponses];
 
 export type DeleteApiEnvironmentsByIdData = {
     body?: never;
@@ -5027,77 +4983,61 @@ export type PatchApiEnvironmentsByIdResponses = {
 
 export type PatchApiEnvironmentsByIdResponse = PatchApiEnvironmentsByIdResponses[keyof PatchApiEnvironmentsByIdResponses];
 
-export type GetApiEnvironmentsByIdVarsData = {
+export type GetApiEnvironmentsData = {
     body?: never;
-    path: {
-        id: string;
-    };
+    path?: never;
     query: {
         teamSlugOrId: string;
     };
-    url: '/api/environments/{id}/vars';
+    url: '/api/environments';
 };
 
-export type GetApiEnvironmentsByIdVarsErrors = {
+export type GetApiEnvironmentsErrors = {
     /**
      * Unauthorized
      */
     401: unknown;
     /**
-     * Environment not found
-     */
-    404: unknown;
-    /**
-     * Failed to get environment variables
+     * Failed to list environments
      */
     500: unknown;
 };
 
-export type GetApiEnvironmentsByIdVarsResponses = {
+export type GetApiEnvironmentsResponses = {
     /**
-     * Environment variables retrieved successfully
+     * Environments retrieved successfully
      */
-    200: GetEnvironmentVarsResponse;
+    200: ListEnvironmentsResponse;
 };
 
-export type GetApiEnvironmentsByIdVarsResponse = GetApiEnvironmentsByIdVarsResponses[keyof GetApiEnvironmentsByIdVarsResponses];
+export type GetApiEnvironmentsResponse = GetApiEnvironmentsResponses[keyof GetApiEnvironmentsResponses];
 
-export type PatchApiEnvironmentsByIdVarsData = {
-    body: UpdateEnvironmentVarsBody;
-    path: {
-        id: string;
-    };
+export type PostApiEnvironmentsData = {
+    body: CreateEnvironmentBody;
+    path?: never;
     query?: never;
-    url: '/api/environments/{id}/vars';
+    url: '/api/environments';
 };
 
-export type PatchApiEnvironmentsByIdVarsErrors = {
+export type PostApiEnvironmentsErrors = {
     /**
      * Unauthorized
      */
     401: unknown;
     /**
-     * Forbidden
-     */
-    403: unknown;
-    /**
-     * Environment not found
-     */
-    404: unknown;
-    /**
-     * Failed to update environment variables
+     * Failed to create environment
      */
     500: unknown;
 };
 
-export type PatchApiEnvironmentsByIdVarsResponses = {
+export type PostApiEnvironmentsResponses = {
     /**
-     * Environment variables updated successfully
+     * Environment created successfully
      */
-    200: GetEnvironmentVarsResponse;
+    200: CreateEnvironmentResponse;
 };
 
-export type PatchApiEnvironmentsByIdVarsResponse = PatchApiEnvironmentsByIdVarsResponses[keyof PatchApiEnvironmentsByIdVarsResponses];
+export type PostApiEnvironmentsResponse = PostApiEnvironmentsResponses[keyof PostApiEnvironmentsResponses];
 
 export type PatchApiEnvironmentsByIdPortsData = {
     body: UpdateEnvironmentPortsBody;
@@ -5242,6 +5182,78 @@ export type PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateResponses
 
 export type PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateResponse = PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateResponses[keyof PostApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateResponses];
 
+export type GetApiEnvironmentsByIdVarsData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/environments/{id}/vars';
+};
+
+export type GetApiEnvironmentsByIdVarsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Environment not found
+     */
+    404: unknown;
+    /**
+     * Failed to get environment variables
+     */
+    500: unknown;
+};
+
+export type GetApiEnvironmentsByIdVarsResponses = {
+    /**
+     * Environment variables retrieved successfully
+     */
+    200: GetEnvironmentVarsResponse;
+};
+
+export type GetApiEnvironmentsByIdVarsResponse = GetApiEnvironmentsByIdVarsResponses[keyof GetApiEnvironmentsByIdVarsResponses];
+
+export type PatchApiEnvironmentsByIdVarsData = {
+    body: UpdateEnvironmentVarsBody;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/environments/{id}/vars';
+};
+
+export type PatchApiEnvironmentsByIdVarsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Environment not found
+     */
+    404: unknown;
+    /**
+     * Failed to update environment variables
+     */
+    500: unknown;
+};
+
+export type PatchApiEnvironmentsByIdVarsResponses = {
+    /**
+     * Environment variables updated successfully
+     */
+    200: GetEnvironmentVarsResponse;
+};
+
+export type PatchApiEnvironmentsByIdVarsResponse = PatchApiEnvironmentsByIdVarsResponses[keyof PatchApiEnvironmentsByIdVarsResponses];
+
 export type PostApiSandboxesStartData = {
     body: StartSandboxBody;
     path?: never;
@@ -5295,81 +5307,6 @@ export type PostApiSandboxesPrewarmResponses = {
 };
 
 export type PostApiSandboxesPrewarmResponse = PostApiSandboxesPrewarmResponses[keyof PostApiSandboxesPrewarmResponses];
-
-export type PostApiSandboxesByIdPublishDevcontainerData = {
-    body: {
-        teamSlugOrId: string;
-        taskRunId: string;
-    };
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/sandboxes/{id}/publish-devcontainer';
-};
-
-export type PostApiSandboxesByIdPublishDevcontainerErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Failed to publish devcontainer networking
-     */
-    500: unknown;
-};
-
-export type PostApiSandboxesByIdPublishDevcontainerResponses = {
-    /**
-     * Exposed ports list
-     */
-    200: Array<{
-        status?: 'running';
-        port: number;
-        url: string;
-    }>;
-};
-
-export type PostApiSandboxesByIdPublishDevcontainerResponse = PostApiSandboxesByIdPublishDevcontainerResponses[keyof PostApiSandboxesByIdPublishDevcontainerResponses];
-
-export type GetApiSandboxesByIdSshData = {
-    body?: never;
-    path: {
-        id: string;
-    };
-    query?: {
-        teamSlugOrId?: string;
-    };
-    url: '/api/sandboxes/{id}/ssh';
-};
-
-export type GetApiSandboxesByIdSshErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden - not a team member
-     */
-    403: unknown;
-    /**
-     * Sandbox not found
-     */
-    404: unknown;
-    /**
-     * Failed to get SSH info
-     */
-    500: unknown;
-};
-
-export type GetApiSandboxesByIdSshResponses = {
-    /**
-     * SSH connection details
-     */
-    200: SandboxSshResponse;
-};
-
-export type GetApiSandboxesByIdSshResponse = GetApiSandboxesByIdSshResponses[keyof GetApiSandboxesByIdSshResponses];
 
 export type PostApiSandboxesByIdStopData = {
     body?: never;
@@ -5604,6 +5541,81 @@ export type PostApiSandboxesByIdLiveDiffResponses = {
 };
 
 export type PostApiSandboxesByIdLiveDiffResponse = PostApiSandboxesByIdLiveDiffResponses[keyof PostApiSandboxesByIdLiveDiffResponses];
+
+export type PostApiSandboxesByIdPublishDevcontainerData = {
+    body: {
+        teamSlugOrId: string;
+        taskRunId: string;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/sandboxes/{id}/publish-devcontainer';
+};
+
+export type PostApiSandboxesByIdPublishDevcontainerErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Failed to publish devcontainer networking
+     */
+    500: unknown;
+};
+
+export type PostApiSandboxesByIdPublishDevcontainerResponses = {
+    /**
+     * Exposed ports list
+     */
+    200: Array<{
+        status?: 'running';
+        port: number;
+        url: string;
+    }>;
+};
+
+export type PostApiSandboxesByIdPublishDevcontainerResponse = PostApiSandboxesByIdPublishDevcontainerResponses[keyof PostApiSandboxesByIdPublishDevcontainerResponses];
+
+export type GetApiSandboxesByIdSshData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: {
+        teamSlugOrId?: string;
+    };
+    url: '/api/sandboxes/{id}/ssh';
+};
+
+export type GetApiSandboxesByIdSshErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden - not a team member
+     */
+    403: unknown;
+    /**
+     * Sandbox not found
+     */
+    404: unknown;
+    /**
+     * Failed to get SSH info
+     */
+    500: unknown;
+};
+
+export type GetApiSandboxesByIdSshResponses = {
+    /**
+     * SSH connection details
+     */
+    200: SandboxSshResponse;
+};
+
+export type GetApiSandboxesByIdSshResponse = GetApiSandboxesByIdSshResponses[keyof GetApiSandboxesByIdSshResponses];
 
 export type PostApiSandboxesByIdSetupProvidersData = {
     body: SetupProvidersBody;
@@ -6457,29 +6469,6 @@ export type PostApiEditorSettingsResponses = {
 
 export type PostApiEditorSettingsResponse = PostApiEditorSettingsResponses[keyof PostApiEditorSettingsResponses];
 
-export type PostApiSettingsTestAnthropicConnectionData = {
-    body: TestAnthropicConnectionBody;
-    path?: never;
-    query?: never;
-    url: '/api/settings/test-anthropic-connection';
-};
-
-export type PostApiSettingsTestAnthropicConnectionErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-};
-
-export type PostApiSettingsTestAnthropicConnectionResponses = {
-    /**
-     * Connection test result
-     */
-    200: TestAnthropicConnectionResult;
-};
-
-export type PostApiSettingsTestAnthropicConnectionResponse = PostApiSettingsTestAnthropicConnectionResponses[keyof PostApiSettingsTestAnthropicConnectionResponses];
-
 export type PostApiSettingsTestProviderConnectionData = {
     body: TestProviderConnectionBody;
     path?: never;
@@ -6503,6 +6492,29 @@ export type PostApiSettingsTestProviderConnectionResponses = {
 
 export type PostApiSettingsTestProviderConnectionResponse = PostApiSettingsTestProviderConnectionResponses[keyof PostApiSettingsTestProviderConnectionResponses];
 
+export type PostApiSettingsTestAnthropicConnectionData = {
+    body: TestAnthropicConnectionBody;
+    path?: never;
+    query?: never;
+    url: '/api/settings/test-anthropic-connection';
+};
+
+export type PostApiSettingsTestAnthropicConnectionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiSettingsTestAnthropicConnectionResponses = {
+    /**
+     * Connection test result
+     */
+    200: TestAnthropicConnectionResult;
+};
+
+export type PostApiSettingsTestAnthropicConnectionResponse = PostApiSettingsTestAnthropicConnectionResponses[keyof PostApiSettingsTestAnthropicConnectionResponses];
+
 export type PostApiWorktreesRemoveData = {
     body: RemoveWorktreeBody;
     path?: never;
@@ -6525,90 +6537,6 @@ export type PostApiWorktreesRemoveResponses = {
 };
 
 export type PostApiWorktreesRemoveResponse = PostApiWorktreesRemoveResponses[keyof PostApiWorktreesRemoveResponses];
-
-export type GetApiModelsData = {
-    body?: never;
-    path?: never;
-    query: {
-        teamSlugOrId: string;
-    };
-    url: '/api/models';
-};
-
-export type GetApiModelsErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-};
-
-export type GetApiModelsResponses = {
-    /**
-     * List of all models
-     */
-    200: ModelListResponse;
-};
-
-export type GetApiModelsResponse = GetApiModelsResponses[keyof GetApiModelsResponses];
-
-export type PatchApiModelsByNameEnabledData = {
-    body: SetEnabledBody;
-    path: {
-        /**
-         * Model name (URL-encoded)
-         */
-        name: string;
-    };
-    query: {
-        teamSlugOrId: string;
-    };
-    url: '/api/models/{name}/enabled';
-};
-
-export type PatchApiModelsByNameEnabledErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Model not found
-     */
-    404: unknown;
-};
-
-export type PatchApiModelsByNameEnabledResponses = {
-    /**
-     * Success
-     */
-    200: SuccessResponse;
-};
-
-export type PatchApiModelsByNameEnabledResponse = PatchApiModelsByNameEnabledResponses[keyof PatchApiModelsByNameEnabledResponses];
-
-export type PostApiModelsReorderData = {
-    body: ReorderBody;
-    path?: never;
-    query: {
-        teamSlugOrId: string;
-    };
-    url: '/api/models/reorder';
-};
-
-export type PostApiModelsReorderErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-};
-
-export type PostApiModelsReorderResponses = {
-    /**
-     * Success
-     */
-    200: SuccessResponse;
-};
-
-export type PostApiModelsReorderResponse = PostApiModelsReorderResponses[keyof PostApiModelsReorderResponses];
 
 export type PostApiModelsRefreshData = {
     body?: never;
@@ -6655,14 +6583,130 @@ export type PostApiModelsSeedResponses = {
     /**
      * Seed result
      */
-    200: {
-        success: boolean;
-        seededCount: number;
-        error?: string;
-    };
+    200: SeedResultResponse;
 };
 
 export type PostApiModelsSeedResponse = PostApiModelsSeedResponses[keyof PostApiModelsSeedResponses];
+
+export type PatchApiModelsByNameEnabledData = {
+    body: SetEnabledBody;
+    path: {
+        /**
+         * Model name (URL-encoded)
+         */
+        name: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/models/{name}/enabled';
+};
+
+export type PatchApiModelsByNameEnabledErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Model not found
+     */
+    404: unknown;
+};
+
+export type PatchApiModelsByNameEnabledResponses = {
+    /**
+     * Success
+     */
+    200: SuccessResponse;
+};
+
+export type PatchApiModelsByNameEnabledResponse = PatchApiModelsByNameEnabledResponses[keyof PatchApiModelsByNameEnabledResponses];
+
+export type GetApiModelsData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/models';
+};
+
+export type GetApiModelsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiModelsResponses = {
+    /**
+     * List of all models
+     */
+    200: ModelListResponse;
+};
+
+export type GetApiModelsResponse = GetApiModelsResponses[keyof GetApiModelsResponses];
+
+export type PostApiModelsReorderData = {
+    body: ReorderBody;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/models/reorder';
+};
+
+export type PostApiModelsReorderErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiModelsReorderResponses = {
+    /**
+     * Success
+     */
+    200: SuccessResponse;
+};
+
+export type PostApiModelsReorderResponse = PostApiModelsReorderResponses[keyof PostApiModelsReorderResponses];
+
+export type PatchApiProvidersByIdEnabledData = {
+    body: {
+        enabled: boolean;
+    };
+    path: {
+        /**
+         * Provider ID
+         */
+        id: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/providers/{id}/enabled';
+};
+
+export type PatchApiProvidersByIdEnabledErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Provider override not found
+     */
+    404: unknown;
+};
+
+export type PatchApiProvidersByIdEnabledResponses = {
+    /**
+     * Success
+     */
+    200: SuccessResponse;
+};
+
+export type PatchApiProvidersByIdEnabledResponse = PatchApiProvidersByIdEnabledResponses[keyof PatchApiProvidersByIdEnabledResponses];
 
 export type GetApiProvidersData = {
     body?: never;
@@ -6812,42 +6856,6 @@ export type PostApiProvidersByIdTestResponses = {
 };
 
 export type PostApiProvidersByIdTestResponse = PostApiProvidersByIdTestResponses[keyof PostApiProvidersByIdTestResponses];
-
-export type PatchApiProvidersByIdEnabledData = {
-    body: {
-        enabled: boolean;
-    };
-    path: {
-        /**
-         * Provider ID
-         */
-        id: string;
-    };
-    query: {
-        teamSlugOrId: string;
-    };
-    url: '/api/providers/{id}/enabled';
-};
-
-export type PatchApiProvidersByIdEnabledErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Provider override not found
-     */
-    404: unknown;
-};
-
-export type PatchApiProvidersByIdEnabledResponses = {
-    /**
-     * Success
-     */
-    200: SuccessResponse;
-};
-
-export type PatchApiProvidersByIdEnabledResponse = PatchApiProvidersByIdEnabledResponses[keyof PatchApiProvidersByIdEnabledResponses];
 
 export type GetApiProvidersStatusData = {
     body?: never;

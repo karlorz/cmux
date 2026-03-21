@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Helper: find a Coolify Application UUID (COOLIFY_APP_UUID) for cmux server (apps/server).
+# Helper: find a Coolify Application UUID for cmux server (apps/server).
+# Recommended secret name: COOLIFY_SERVER_APP_UUID (legacy COOLIFY_APP_UUID still works).
 #
 # Reads COOLIFY_BASE_URL and COOLIFY_API_TOKEN from:
 #   1) current environment, or
@@ -275,4 +276,4 @@ if [[ -n "${compose_loc:-}" ]]; then
   echo "  docker_compose_location: ${compose_loc}"
 fi
 echo ""
-echo "COOLIFY_APP_UUID=${uuid}"
+echo "COOLIFY_SERVER_APP_UUID=${uuid}"

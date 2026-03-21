@@ -1,9 +1,0 @@
-{
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
-  ],
-  "relatedProjects": ["prj_a4IMGYj5IUjwT0pug1x8gpsaFqOk"]
-}

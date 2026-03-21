@@ -1379,12 +1379,14 @@ function DashboardComponent() {
     if (!selectedProject[0]) return false;
     if (!taskDescription.trim()) return false;
     if (selectedAgents.length === 0) return false;
+    if (!convexModels || convexModels.length === 0) return false;
     if (isEnvSelected) return true; // no branch required when environment selected
     return !!effectiveSelectedBranch[0];
   }, [
     selectedProject,
     taskDescription,
     selectedAgents,
+    convexModels,
     isEnvSelected,
     effectiveSelectedBranch,
   ]);
@@ -1652,7 +1654,13 @@ function DashboardMainCard({
           canSubmit={canSubmit}
           onStartTask={onStartTask}
           isStarting={isStartingTask}
-          disabledReason={isStartingTask ? "Starting task..." : undefined}
+          disabledReason={
+            isStartingTask
+              ? "Starting task..."
+              : !convexModels || convexModels.length === 0
+                ? "No agents available yet. Configure AI Providers or wait for models to load."
+                : undefined
+          }
         />
       </DashboardInputFooter>
     </div>

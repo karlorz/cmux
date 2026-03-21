@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Cpu, HardDrive } from "lucide-react";
+import { AlertTriangle, Cpu, HardDrive, RefreshCw } from "lucide-react";
 
 type ResourceUsageCardProps = {
   taskRunId: Id<"taskRuns">;
@@ -80,6 +80,34 @@ export const ResourceUsageCard = memo(function ResourceUsageCard({
 
   if (metricsQuery.isLoading || statsQuery.isLoading) {
     return <ResourceUsageCardSkeleton />;
+  }
+
+  if (metricsQuery.isError || statsQuery.isError) {
+    const message = metricsQuery.error?.message ?? statsQuery.error?.message ?? "Failed to load resource metrics";
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950/30">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2 text-red-700 dark:text-red-300">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <div>
+              <p className="text-sm font-medium">Failed to load resource metrics</p>
+              <p className="mt-1 text-xs text-red-600 dark:text-red-400">{message}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              void metricsQuery.refetch();
+              void statsQuery.refetch();
+            }}
+            className="inline-flex items-center gap-1 rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-200 dark:bg-red-900/50 dark:text-red-300 dark:hover:bg-red-900"
+          >
+            <RefreshCw className="size-3" />
+            Retry
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (!metricsQuery.data || metricsQuery.data.length === 0) {

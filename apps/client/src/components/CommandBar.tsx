@@ -1456,17 +1456,7 @@ export function CommandBar({
           onboarding.startOnboarding();
         }
       } else if (value === "sidebar-toggle") {
-        const currentHidden = localStorage.getItem("sidebarHidden") === "true";
-        localStorage.setItem("sidebarHidden", String(!currentHidden));
-        window.dispatchEvent(
-          new StorageEvent("storage", {
-            key: "sidebarHidden",
-            newValue: String(!currentHidden),
-            oldValue: String(currentHidden),
-            storageArea: localStorage,
-            url: window.location.href,
-          })
-        );
+        window.dispatchEvent(new Event("cmux:sidebar-toggle"));
       } else if (value === "home") {
         navigate({
           to: "/$teamSlugOrId/dashboard",

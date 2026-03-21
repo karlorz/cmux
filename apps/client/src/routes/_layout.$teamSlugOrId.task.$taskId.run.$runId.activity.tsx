@@ -7,9 +7,10 @@ import { useMemo, useState } from "react";
 import z from "zod";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { ActivityStream } from "@/components/ActivityStream";
+import { CompactErrorFallback, ErrorBoundary } from "@/components/ErrorBoundary";
 import { LiveDiffStats } from "@/components/LiveDiffStats";
-import { ResourceUsageCard } from "@/components/dashboard/ResourceUsageCard";
 import { CostEstimationCard } from "@/components/dashboard/CostEstimationCard";
+import { ResourceUsageCard } from "@/components/dashboard/ResourceUsageCard";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 
 const paramsSchema = z.object({
@@ -47,6 +48,7 @@ export const Route = createFileRoute(
 function TaskRunActivity() {
   const { runId: taskRunId, teamSlugOrId, taskId } = Route.useParams();
   const [showMetrics, setShowMetrics] = useState(false);
+  const resetKey = `${taskId}-${taskRunId}`;
 
   // Get task runs to find sandbox info
   const taskRunsQuery = useRQ({
@@ -63,7 +65,13 @@ function TaskRunActivity() {
 
   return (
     <div className="flex grow min-h-0 flex-col bg-neutral-50 dark:bg-black">
-      <LiveDiffStats sandboxId={sandboxId} isRunning={isRunning} />
+      <ErrorBoundary
+        key={`${resetKey}-live-diff`}
+        name="Live Diff"
+        fallback={<CompactErrorFallback name="Live Diff" />}
+      >
+        <LiveDiffStats sandboxId={sandboxId} isRunning={isRunning} />
+      </ErrorBoundary>
 
       {/* Collapsible Resource Metrics Panel */}
       <div className="px-4 pt-2 pb-1">
@@ -79,14 +87,32 @@ function TaskRunActivity() {
 
       {showMetrics && (
         <div className="px-4 pb-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <ResourceUsageCard taskRunId={taskRunId} />
-            <CostEstimationCard taskRunId={taskRunId} teamSlugOrId={teamSlugOrId} />
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <ErrorBoundary
+              key={`${resetKey}-resource-usage`}
+              name="Resource Usage"
+              fallback={<CompactErrorFallback name="Resource Usage" />}
+            >
+              <ResourceUsageCard taskRunId={taskRunId} />
+            </ErrorBoundary>
+            <ErrorBoundary
+              key={`${resetKey}-cost-estimation`}
+              name="Cost Estimation"
+              fallback={<CompactErrorFallback name="Cost Estimation" />}
+            >
+              <CostEstimationCard taskRunId={taskRunId} teamSlugOrId={teamSlugOrId} />
+            </ErrorBoundary>
           </div>
         </div>
       )}
 
-      <ActivityStream taskRunId={taskRunId} />
+      <ErrorBoundary
+        key={`${resetKey}-activity-stream`}
+        name="Activity Stream"
+        fallback={<CompactErrorFallback name="Activity Stream" />}
+      >
+        <ActivityStream taskRunId={taskRunId} />
+      </ErrorBoundary>
     </div>
   );
 }
