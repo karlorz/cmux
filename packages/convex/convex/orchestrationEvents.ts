@@ -18,22 +18,35 @@ import { authMutation, authQuery } from "./users/utils";
 // =============================================================================
 
 const eventTypeValidator = v.union(
+  // Task lifecycle events
   v.literal("task_spawn_requested"),
   v.literal("task_started"),
   v.literal("task_status_changed"),
   v.literal("task_completed"),
+  // Worker communication events
   v.literal("worker_message"),
   v.literal("worker_status"),
+  // Approval events
   v.literal("approval_required"),
   v.literal("approval_resolved"),
+  // Plan and orchestration events
   v.literal("plan_updated"),
   v.literal("orchestration_completed"),
   v.literal("provider_session_bound"),
-  // Phase 4: Context health and lifecycle events
-  v.literal("context_warning"), // Context approaching limit
-  v.literal("memory_loaded"), // Memory seeded into sandbox
-  v.literal("memory_pruned"), // Stale memory entries removed
-  v.literal("session_stop_blocked") // Session stop blocked by pending work
+  // Session lifecycle events (Phase 4)
+  v.literal("session_started"),
+  v.literal("session_resumed"),
+  v.literal("session_stop_requested"),
+  v.literal("session_stop_blocked"),
+  v.literal("session_stop_failed"),
+  // Memory and instructions events (Phase 4)
+  v.literal("instructions_loaded"),
+  v.literal("memory_loaded"),
+  v.literal("memory_updated"),
+  v.literal("memory_pruned"), // Legacy alias for memory_updated with action=archive
+  // Context health events (Phase 4)
+  v.literal("context_warning"),
+  v.literal("context_compacted")
 );
 
 // =============================================================================
