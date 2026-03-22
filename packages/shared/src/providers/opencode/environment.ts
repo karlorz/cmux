@@ -5,12 +5,9 @@ import type {
 import {
   getMemoryStartupCommand,
   getMemorySeedFiles,
-  getMemoryProtocolInstructions,
   getProjectContextFile,
-  getPolicyRulesInstructions,
-  getOrchestrationRulesInstructions,
-  extractBehaviorRulesSection,
 } from "../../agent-memory-protocol";
+import { buildGenericInstructionsContent } from "../../agent-instruction-pack";
 import { buildOpencodeMcpConfig } from "../../mcp-injection";
 
 // Opencode HTTP API configuration
@@ -568,19 +565,12 @@ log "Post-start script end"
   }
 
   // Add AGENTS.md with memory protocol instructions at the user-level OpenCode path
-  const policyRulesSection = ctx.policyRules && ctx.policyRules.length > 0
-    ? `\n${getPolicyRulesInstructions(ctx.policyRules)}\n`
-    : "";
-  const orchestrationRulesSection = ctx.orchestrationRules && ctx.orchestrationRules.length > 0
-    ? `\n${getOrchestrationRulesInstructions(ctx.orchestrationRules, { isOrchestrationHead: ctx.isOrchestrationHead })}\n`
-    : "";
-  const behaviorRulesSection = ctx.previousBehavior
-    ? `\n${extractBehaviorRulesSection(ctx.previousBehavior)}\n`
-    : "";
-  const opencodeAgentsContent = `# cmux Project Instructions
-${policyRulesSection}${orchestrationRulesSection}${behaviorRulesSection}
-${getMemoryProtocolInstructions()}
-`;
+  const opencodeAgentsContent = buildGenericInstructionsContent({
+    policyRules: ctx.policyRules,
+    orchestrationRules: ctx.orchestrationRules,
+    previousBehavior: ctx.previousBehavior,
+    isOrchestrationHead: ctx.isOrchestrationHead,
+  }, "# cmux Project Instructions");
   files.push({
     destinationPath: "$HOME/.config/opencode/AGENTS.md",
     contentBase64: Buffer.from(opencodeAgentsContent).toString("base64"),

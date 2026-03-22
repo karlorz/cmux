@@ -5,13 +5,10 @@ import type {
 import {
   getMemoryStartupCommand,
   getMemorySeedFiles,
-  getMemoryProtocolInstructions,
   getProjectContextFile,
   getCrossToolSymlinkCommands,
-  getPolicyRulesInstructions,
-  getOrchestrationRulesInstructions,
-  extractBehaviorRulesSection,
 } from "../../agent-memory-protocol";
+import { buildCodexInstructionsContent } from "../../agent-instruction-pack";
 import { buildMergedCodexConfigToml } from "../../mcp-preview";
 export { stripFilteredConfigKeys } from "../../mcp-preview";
 import { getTaskSandboxWrapperFiles } from "../common/task-sandbox-wrappers";
@@ -650,10 +647,11 @@ log "Autopilot completed after \$ITER turns"
 
   // Copy instructions.md from host and append memory protocol instructions (desktop mode)
   // For server mode, only include memory protocol instructions to avoid leaking host-specific content
-  let instructionsContent = "";
+  // Uses shared instruction pack builder for consistent assembly across providers
+  let hostInstructionsContent = "";
   if (useHostConfig && readFile && homeDir) {
     try {
-      instructionsContent = await readFile(
+      hostInstructionsContent = await readFile(
         `${homeDir}/.codex/instructions.md`,
         "utf-8"
       );
@@ -662,22 +660,15 @@ log "Autopilot completed after \$ITER turns"
       console.warn("Failed to read .codex/instructions.md:", error);
     }
   }
-  const policyRulesSection = ctx.policyRules && ctx.policyRules.length > 0
-    ? getPolicyRulesInstructions(ctx.policyRules) + "\n\n"
-    : "";
-  const orchestrationRulesSection = ctx.orchestrationRules && ctx.orchestrationRules.length > 0
-    ? getOrchestrationRulesInstructions(ctx.orchestrationRules, { isOrchestrationHead: ctx.isOrchestrationHead }) + "\n\n"
-    : "";
-  const behaviorRulesSection = ctx.previousBehavior
-    ? extractBehaviorRulesSection(ctx.previousBehavior) + "\n\n"
-    : "";
-  const fullInstructions =
-    instructionsContent +
-    (instructionsContent ? "\n\n" : "") +
-    policyRulesSection +
-    orchestrationRulesSection +
-    behaviorRulesSection +
-    getMemoryProtocolInstructions();
+  const fullInstructions = buildCodexInstructionsContent(
+    {
+      policyRules: ctx.policyRules,
+      orchestrationRules: ctx.orchestrationRules,
+      previousBehavior: ctx.previousBehavior,
+      isOrchestrationHead: ctx.isOrchestrationHead,
+    },
+    hostInstructionsContent
+  );
   files.push({
     destinationPath: "$HOME/.codex/instructions.md",
     contentBase64: Buffer.from(fullInstructions).toString("base64"),

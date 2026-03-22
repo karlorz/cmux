@@ -6,13 +6,10 @@ import { getGeminiTelemetryPath } from "./telemetry";
 import {
   getMemoryStartupCommand,
   getMemorySeedFiles,
-  getMemoryProtocolInstructions,
   getProjectContextFile,
   getCrossToolSymlinkCommands,
-  getPolicyRulesInstructions,
-  getOrchestrationRulesInstructions,
-  extractBehaviorRulesSection,
 } from "../../agent-memory-protocol";
+import { buildGeminiMdContent } from "../../agent-instruction-pack";
 import { buildGeminiMcpServers } from "../../mcp-injection";
 import { getTaskSandboxWrapperFiles } from "../common/task-sandbox-wrappers";
 
@@ -353,19 +350,13 @@ exit 0
   // This is created at user-level ~/.gemini/GEMINI.md (not in workspace)
   // If Claude's CLAUDE.md exists, the symlink from getCrossToolSymlinkCommands()
   // will override this file, ensuring all tools share the same instructions
-  const policyRulesSection = ctx.policyRules && ctx.policyRules.length > 0
-    ? `\n${getPolicyRulesInstructions(ctx.policyRules)}\n`
-    : "";
-  const orchestrationRulesSection = ctx.orchestrationRules && ctx.orchestrationRules.length > 0
-    ? `\n${getOrchestrationRulesInstructions(ctx.orchestrationRules, { isOrchestrationHead: ctx.isOrchestrationHead })}\n`
-    : "";
-  const behaviorRulesSection = ctx.previousBehavior
-    ? `\n${extractBehaviorRulesSection(ctx.previousBehavior)}\n`
-    : "";
-  const geminiMdContent = `# cmux Project Instructions
-${policyRulesSection}${orchestrationRulesSection}${behaviorRulesSection}
-${getMemoryProtocolInstructions()}
-`;
+  // Uses shared instruction pack builder for consistent assembly across providers
+  const geminiMdContent = buildGeminiMdContent({
+    policyRules: ctx.policyRules,
+    orchestrationRules: ctx.orchestrationRules,
+    previousBehavior: ctx.previousBehavior,
+    isOrchestrationHead: ctx.isOrchestrationHead,
+  });
   files.push({
     destinationPath: "$HOME/.gemini/GEMINI.md",
     contentBase64: Buffer.from(geminiMdContent).toString("base64"),
