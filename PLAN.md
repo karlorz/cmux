@@ -82,3 +82,11 @@ All 11 Claude Code v2.1.78 hooks integrated:
 - SubagentStart, SubagentStop (coordination)
 - UserPromptSubmit, Notification (activity tracking)
 - PostToolUse (tool-specific)
+
+### Phase 11: Codex CLI Hook Integration — IN PROGRESS
+- [x] Stop hook for session completion tracking
+- [x] SessionStart hook for session initialization
+- [x] StopFailure hook for error surfacing
+- [x] hooks.json configuration file
+- [x] Enable `codex_hooks = true` feature flag in config.toml
+- [ ] Testing and PR merge
