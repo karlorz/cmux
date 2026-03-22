@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState, type PointerEvent } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -12,11 +12,21 @@ import { cn } from "@/lib/utils";
 
 type ReviewDecision = "pending" | "approved" | "changes_requested" | "skipped";
 
+interface HighlightedLine {
+  lineNumber: number;
+  content: string;
+  score: number;
+}
+
 interface FileReviewCardProps {
   filePath: string;
   decision: ReviewDecision;
   riskScore?: number;
   teamSlugOrId: string;
+  topHighlightedLines?: HighlightedLine[];
+  onSwipeLeft?: () => void;
+  onSwipeRight?: () => void;
+  onSwipeDown?: () => void;
 }
 
 function getRiskLevel(score?: number): {
@@ -130,11 +140,21 @@ function getFileLanguage(ext: string): string {
   return langMap[ext.toLowerCase()] || ext.toUpperCase();
 }
 
+const SWIPE_THRESHOLD = 100; // pixels
+
 export function FileReviewCard({
   filePath,
   decision,
   riskScore,
+  topHighlightedLines,
+  onSwipeLeft,
+  onSwipeRight,
+  onSwipeDown,
 }: FileReviewCardProps) {
+  const [dragStartX, setDragStartX] = useState<number | null>(null);
+  const [dragStartY, setDragStartY] = useState<number | null>(null);
+  const [dragDelta, setDragDelta] = useState({ x: 0, y: 0 });
+
   const risk = useMemo(() => getRiskLevel(riskScore), [riskScore]);
   const ext = getFileExtension(filePath);
   const language = getFileLanguage(ext);
@@ -143,6 +163,58 @@ export function FileReviewCard({
     ? filePath.substring(0, filePath.lastIndexOf("/"))
     : "";
 
+  const handlePointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    setDragStartX(e.clientX);
+    setDragStartY(e.clientY);
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: PointerEvent<HTMLDivElement>) => {
+    if (dragStartX === null || dragStartY === null) return;
+    setDragDelta({
+      x: e.clientX - dragStartX,
+      y: e.clientY - dragStartY,
+    });
+  };
+
+  const handlePointerUp = () => {
+    const absX = Math.abs(dragDelta.x);
+    const absY = Math.abs(dragDelta.y);
+
+    // Determine dominant direction
+    if (absX > SWIPE_THRESHOLD && absX > absY) {
+      if (dragDelta.x > 0) {
+        onSwipeRight?.();
+      } else {
+        onSwipeLeft?.();
+      }
+    } else if (absY > SWIPE_THRESHOLD && absY > absX && dragDelta.y > 0) {
+      onSwipeDown?.();
+    }
+
+    setDragStartX(null);
+    setDragStartY(null);
+    setDragDelta({ x: 0, y: 0 });
+  };
+
+  const handlePointerCancel = () => {
+    setDragStartX(null);
+    setDragStartY(null);
+    setDragDelta({ x: 0, y: 0 });
+  };
+
+  // Visual feedback colors based on swipe direction
+  const getSwipeOverlay = () => {
+    const absX = Math.abs(dragDelta.x);
+    if (absX < 30) return null;
+
+    const opacity = Math.min((absX - 30) / 100, 0.3);
+    if (dragDelta.x > 0) {
+      return `rgba(34, 197, 94, ${opacity})`; // green for approve
+    }
+    return `rgba(239, 68, 68, ${opacity})`; // red for changes
+  };
+
   return (
     <div
       className={cn(
@@ -150,8 +222,19 @@ export function FileReviewCard({
         "bg-white dark:bg-neutral-900",
         "border-neutral-200 dark:border-neutral-700",
         decision === "approved" && "ring-2 ring-green-500",
-        decision === "changes_requested" && "ring-2 ring-red-500"
+        decision === "changes_requested" && "ring-2 ring-red-500",
+        "touch-none select-none cursor-grab",
+        dragStartX !== null && "cursor-grabbing"
       )}
+      style={{
+        transform: `translateX(${dragDelta.x}px) rotate(${dragDelta.x * 0.02}deg)`,
+        transition: dragStartX === null ? "transform 0.2s ease-out" : "none",
+        backgroundColor: getSwipeOverlay() ?? undefined,
+      }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
     >
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-neutral-200 dark:border-neutral-800">
@@ -229,6 +312,37 @@ export function FileReviewCard({
             </span>
           )}
         </div>
+
+        {/* Diff preview - top highlighted lines */}
+        {topHighlightedLines && topHighlightedLines.length > 0 && (
+          <div className="mt-4 rounded-lg bg-neutral-950 p-3 font-mono text-xs overflow-hidden">
+            <div className="text-neutral-400 mb-2 text-[10px] uppercase tracking-wide">
+              Top changes to review
+            </div>
+            {topHighlightedLines.slice(0, 5).map((line) => (
+              <div
+                key={`${line.lineNumber}-${line.content.slice(0, 20)}`}
+                className="flex gap-3 py-0.5 hover:bg-neutral-800/50"
+              >
+                <span className="text-neutral-500 w-8 text-right shrink-0">
+                  {line.lineNumber}
+                </span>
+                <span
+                  className={cn(
+                    "flex-1 truncate",
+                    line.score >= 7
+                      ? "text-red-400"
+                      : line.score >= 5
+                        ? "text-orange-400"
+                        : "text-neutral-200"
+                  )}
+                >
+                  {line.content || " "}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Swipe hints */}
