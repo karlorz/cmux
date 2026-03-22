@@ -19,8 +19,9 @@ const STALE_THRESHOLD_DAYS = 90; // Entries older than this are candidates for p
 /**
  * Calculate freshness score based on age and usage.
  * Score decays exponentially over time but is boosted by usage.
+ * Exported for testing.
  */
-function calculateFreshnessScore(
+export function calculateFreshnessScore(
   createdAt: number,
   lastUsedAt: number | undefined,
   usageCount: number
@@ -306,7 +307,8 @@ export const getHealthSummary = authQuery({
   },
 });
 
-function generateHealthRecommendations(
+/** Exported for testing. */
+export function generateHealthRecommendations(
   byType: Record<string, { count: number; fresh: number; stale: number; avgFreshness: number }>,
   overallHealth: number
 ): string[] {
