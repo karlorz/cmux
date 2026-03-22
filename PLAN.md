@@ -45,6 +45,11 @@
 - [x] PermissionRequest hook script (PR #755)
 - [x] Wire hook into Claude settings.json
 
+### Phase 6: PreCompact Memory Sync — CODE COMPLETE
+- [x] PreCompact hook script (PR #756)
+- [x] Sync memory to Convex before context compression
+- [x] Post context_warning activity event
+
 ### Backlog / future
 - Swift app (mobile client)
 - D5.6: Native agent instruction injection (blocked on upstream CLI support)
