@@ -111,7 +111,7 @@ Based on [[cmux-agent-dev-roadmap]] spike status:
 - `--bare` mode evaluation (NOT recommended - disables critical hooks, see [[dev-log/2026-03-22-bare-mode-evaluation]])
 - `--channels` approval bridge (blocked - flag not in CLI v2.1.79)
 - Cost reduction roadmap: OpenRouter for 20-30% savings, local AI routing (see [[cmux-costreduce-roadmap]])
-- Sandbox prewarming for faster agent startup
+- Sandbox prewarming (EXISTS: warmPool.ts, warmPoolMaintenance.ts)
 
 ### Open Issues
 - #735: PVE-LXC exec connectivity failure (infrastructure)
