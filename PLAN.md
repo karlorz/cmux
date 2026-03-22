@@ -67,7 +67,7 @@ Based on [[cmux-coolify-all-in-one-stack-study]] recommendations:
 - [x] Coolify workflows: coolify-client-deployments.yml, coolify-www-deployments.yml
 - [ ] **OPS**: Deploy apps/client to Coolify and validate
 - [ ] **OPS**: Deploy apps/www to Coolify and validate
-- [ ] Phase 18c: Unified docker-compose.coolify.yml for all services
+- [x] Phase 18c: Unified docker-compose.coolify.yml for all services
 
 ### Phase 19: MCP Tool Suggestions — COMPLETE
 Based on Codex `tool_suggest` pattern from [[research-extended-2026-03-21]]:
