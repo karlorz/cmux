@@ -65,3 +65,7 @@
 
 ### Open Issues
 - #735: PVE-LXC exec connectivity failure (infrastructure)
+
+### Phase 9: Notification Hook — CODE COMPLETE
+- [x] Notification hook (PR #759)
+- [x] Activity events for attention requests
