@@ -1,4 +1,5 @@
 import { SiteHeader } from "@/components/site-header";
+import { env } from "@/lib/utils/www-env";
 import { fetchLatestRelease } from "@/lib/fetch-latest-release";
 import { fetchGithubRepoStats } from "@/lib/fetch-github-stars";
 import type { Metadata } from "next";
@@ -533,6 +534,7 @@ export default async function TutorialPage() {
     fetchLatestRelease(),
     fetchGithubRepoStats(),
   ]);
+  const webUrl = env.NEXT_PUBLIC_CLIENT_ORIGIN ?? "https://cmux.karldigi.dev";
 
   return (
     <div className="relative min-h-dvh overflow-hidden bg-[#030712] text-foreground">
@@ -549,6 +551,7 @@ export default async function TutorialPage() {
         linkPrefix="/"
         githubStars={githubRepo.stars}
         githubUrl={githubRepo.url}
+        webUrl={webUrl}
       />
 
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pt-12 sm:px-6">
