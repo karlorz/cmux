@@ -1,4 +1,5 @@
 import { env } from "@/lib/utils/www-env";
+import { getConfiguredOriginHostnames } from "@/lib/utils/configured-origins";
 import type { IframePreflightResult } from "@cmux/shared";
 
 const ALLOWED_HOST_SUFFIXES = [
@@ -30,61 +31,15 @@ const ALLOWED_EXACT_HOSTS = new Set<string>([
 
 const DEV_ONLY_HOSTS = new Set<string>(["localhost", "127.0.0.1", "::1"]);
 
-function normalizeAllowedHostname(candidate: string | undefined): string | null {
-  if (!candidate) {
-    return null;
-  }
-
-  let value = candidate.trim().toLowerCase();
-  if (!value) {
-    return null;
-  }
-
-  if (value.includes("://")) {
-    try {
-      value = new URL(value).hostname.toLowerCase();
-    } catch {
-      return null;
-    }
-  }
-
-  if (value.endsWith(".")) {
-    value = value.slice(0, -1);
-  }
-
-  if (!value || value.includes("/") || value.includes(" ")) {
-    return null;
-  }
-
-  return value;
-}
-
-function getNormalizedAllowedHostnames(candidate: string | undefined): string[] {
-  if (!candidate) {
-    return [];
-  }
-
-  return candidate
-    .split(",")
-    .map((part) => normalizeAllowedHostname(part))
-    .filter((value): value is string => Boolean(value));
-}
-
 function getDynamicAllowedExactHosts(): Set<string> {
-  const hosts = new Set<string>();
-
-  for (const candidate of [
-    process.env.NEXT_PUBLIC_CLIENT_ORIGIN,
-    process.env.NEXT_PUBLIC_WWW_ORIGIN,
-    process.env.NEXT_PUBLIC_SERVER_ORIGIN,
-    process.env.NEXT_PUBLIC_BASE_APP_URL,
-  ]) {
-    for (const normalized of getNormalizedAllowedHostnames(candidate)) {
-      hosts.add(normalized);
-    }
-  }
-
-  return hosts;
+  return new Set(
+    getConfiguredOriginHostnames([
+      process.env.NEXT_PUBLIC_CLIENT_ORIGIN,
+      process.env.NEXT_PUBLIC_WWW_ORIGIN,
+      process.env.NEXT_PUBLIC_SERVER_ORIGIN,
+      process.env.NEXT_PUBLIC_BASE_APP_URL,
+    ]),
+  );
 }
 
 function getDynamicAllowedHostSuffixes(): string[] {
