@@ -108,8 +108,8 @@ All 11 Claude Code v2.1.78 hooks integrated:
 - [x] Error hook for error surfacing
 - [x] Startup command to fire session start
 
-### Phase 15: Grok Activity Stream Integration — PR #765
-- [x] Session start hook with activity event
+### Phase 15: Grok Activity Stream Integration — MERGED
+- [x] Session start hook with activity event (PR #765)
 - [x] Session completion hook with activity event
 - [x] Error hook for error surfacing
 - [x] Startup command to fire session start
@@ -120,7 +120,7 @@ All 11 Claude Code v2.1.78 hooks integrated:
 - [x] Error hook for error surfacing
 - [x] Startup command to fire session start
 
-### Phase 17: Cursor Activity Stream Integration — IN PROGRESS
+### Phase 17: Cursor Activity Stream Integration — PR #767
 - [x] Session start hook with activity event
 - [x] Session completion hook with activity event
 - [x] Error hook for error surfacing
