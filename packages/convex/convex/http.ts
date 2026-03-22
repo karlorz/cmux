@@ -85,6 +85,7 @@ import {
   autopilotHeartbeat,
   autopilotThreadId,
   autopilotStatus,
+  autopilotSessionEvent,
   autopilotInfo,
 } from "./autopilot_http";
 import {
@@ -529,6 +530,12 @@ http.route({
   path: "/api/autopilot/status",
   method: "POST",
   handler: autopilotStatus,
+});
+
+http.route({
+  path: "/api/autopilot/session-event",
+  method: "POST",
+  handler: autopilotSessionEvent,
 });
 
 http.route({
