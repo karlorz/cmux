@@ -102,9 +102,8 @@ All 11 Claude Code v2.1.78 hooks integrated:
 - [x] Error hook for error surfacing
 - [x] Startup command to fire session start
 
-### Phase 14: Amp Activity Stream Integration — IN PROGRESS
-- [x] Session start hook with activity event
+### Phase 14: Amp Activity Stream Integration — MERGED
+- [x] Session start hook with activity event (PR #764)
 - [x] Session completion hook with activity event
 - [x] Error hook for error surfacing
 - [x] Startup command to fire session start
-- [ ] Testing and PR merge
