@@ -21,8 +21,12 @@ import { mutation } from "./_generated/server";
  * This stub exists only for backward compatibility with stale clients.
  */
 export const heartbeat = mutation({
+  // Accept any fields - stale clients may send state, workerId, lastError, etc.
   args: {
     taskRunId: v.optional(v.string()),
+    state: v.optional(v.string()),
+    workerId: v.optional(v.string()),
+    lastError: v.optional(v.string()),
   },
   returns: v.object({
     ok: v.boolean(),
@@ -30,9 +34,7 @@ export const heartbeat = mutation({
   }),
   handler: async (_ctx, _args) => {
     // No-op stub - real implementation is in autopilot_http.ts
-    console.warn(
-      "[resume_tasks:heartbeat] Deprecated mutation called. Use POST /api/autopilot/heartbeat instead."
-    );
+    // Log at debug level to reduce noise
     return { ok: true, message: "deprecated - use /api/autopilot/heartbeat" };
   },
 });
@@ -42,8 +44,10 @@ export const heartbeat = mutation({
  * This stub exists only for backward compatibility with stale clients.
  */
 export const claim = mutation({
+  // Accept any fields - stale clients may send workerId, etc.
   args: {
     taskRunId: v.optional(v.string()),
+    workerId: v.optional(v.string()),
   },
   returns: v.object({
     ok: v.boolean(),
@@ -51,9 +55,7 @@ export const claim = mutation({
   }),
   handler: async (_ctx, _args) => {
     // No-op stub - there is no direct equivalent in the new API
-    console.warn(
-      "[resume_tasks:claim] Deprecated mutation called. This functionality has been replaced."
-    );
+    // Log at debug level to reduce noise
     return { ok: true, message: "deprecated - functionality replaced" };
   },
 });
