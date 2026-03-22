@@ -3,7 +3,9 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
-HOOKS_TEMPLATE="${CMUX_CODEX_HOOKS_TEMPLATE:-$REPO_ROOT/.codex/autopilot-hooks.json}"
+AUTOPILOT_HOOKS_TEMPLATE="${CMUX_CODEX_HOOKS_TEMPLATE:-$REPO_ROOT/.codex/autopilot-hooks.json}"
+RALPH_HOOKS_TEMPLATE="${CMUX_CODEX_RALPH_HOOKS_TEMPLATE:-$REPO_ROOT/.codex/ralph-loop-hooks.json}"
+RALPH_STATE_FILE="${CMUX_CODEX_RALPH_STATE_FILE:-$REPO_ROOT/.codex/ralph-loop-state.json}"
 BASE_HOME="${CODEX_HOME:-$HOME/.codex}"
 TEMP_HOME=$(mktemp -d "${TMPDIR:-/tmp}/cmux-codex-home-XXXXXX")
 
@@ -37,21 +39,29 @@ if [ -d "$BASE_HOME" ]; then
 fi
 
 hooks_mode="disabled"
-if [ "${CMUX_AUTOPILOT_ENABLED:-0}" = "1" ] || [ "${CMUX_CODEX_HOOKS_ENABLED:-0}" = "1" ]; then
-  if [ ! -f "$HOOKS_TEMPLATE" ]; then
-    echo "Missing Codex hooks template: $HOOKS_TEMPLATE" >&2
+selected_hooks_template=""
+if [ -f "$RALPH_STATE_FILE" ]; then
+  selected_hooks_template="$RALPH_HOOKS_TEMPLATE"
+  hooks_mode="ralph-loop"
+elif [ "${CMUX_AUTOPILOT_ENABLED:-0}" = "1" ] || [ "${CMUX_CODEX_HOOKS_ENABLED:-0}" = "1" ]; then
+  selected_hooks_template="$AUTOPILOT_HOOKS_TEMPLATE"
+  hooks_mode="autopilot"
+fi
+
+if [ -n "$selected_hooks_template" ]; then
+  if [ ! -f "$selected_hooks_template" ]; then
+    echo "Missing Codex hooks template: $selected_hooks_template" >&2
     exit 1
   fi
-  cp "$HOOKS_TEMPLATE" "$TEMP_HOME/hooks.json"
-  hooks_mode="enabled"
+  cp "$selected_hooks_template" "$TEMP_HOME/hooks.json"
 fi
 
 debug_log "repo_root=$REPO_ROOT"
 debug_log "base_home=$BASE_HOME"
 debug_log "temp_home=$TEMP_HOME"
 debug_log "hooks_mode=$hooks_mode"
-if [ "$hooks_mode" = "enabled" ]; then
-  debug_log "hooks_template=$HOOKS_TEMPLATE"
+if [ -n "$selected_hooks_template" ]; then
+  debug_log "hooks_template=$selected_hooks_template"
 fi
 
 export CODEX_HOME="$TEMP_HOME"

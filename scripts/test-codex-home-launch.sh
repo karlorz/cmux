@@ -6,6 +6,7 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CODEX_LAUNCHER="$PROJECT_DIR/scripts/codex-home-launch.sh"
 CODEX_SHELL_HELPERS="$PROJECT_DIR/.codex/codex-shell-helpers.sh"
 AUTOPILOT_HOOKS_TEMPLATE="$PROJECT_DIR/.codex/autopilot-hooks.json"
+RALPH_HOOKS_TEMPLATE="$PROJECT_DIR/.codex/ralph-loop-hooks.json"
 
 PASS=0
 FAIL=0
@@ -56,6 +57,7 @@ TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cmux-codex-launch-test-XXXXXX")"
 OUTPUT_FILE="$TEST_DIR/output.log"
 FAKE_HOME="$TEST_DIR/home"
 FAKE_BIN="$TEST_DIR/bin"
+RALPH_STATE_FILE="$TEST_DIR/ralph-loop-state.json"
 
 cleanup() {
   rm -rf "$TEST_DIR"
@@ -120,6 +122,7 @@ echo "=== codex-home-launch smoke test ==="
 assert_file_exists "repo-local Codex launcher exists" "$CODEX_LAUNCHER"
 assert_file_exists "repo-local Codex shell helpers exist" "$CODEX_SHELL_HELPERS"
 assert_file_exists "autopilot hooks template exists" "$AUTOPILOT_HOOKS_TEMPLATE"
+assert_file_exists "ralph loop hooks template exists" "$RALPH_HOOKS_TEMPLATE"
 
 run_helper
 assert_contains \
@@ -144,6 +147,20 @@ assert_contains \
   "autopilot-enabled repo-local codex still uses temp CODEX_HOME" \
   "$OUTPUT_FILE" \
   "auth=symlink"
+
+cat >"$RALPH_STATE_FILE" <<'EOF'
+{"active":true}
+EOF
+run_helper CMUX_CODEX_RALPH_STATE_FILE="$RALPH_STATE_FILE"
+assert_contains \
+  "ralph-loop state activates the repo-local ralph hook template" \
+  "$OUTPUT_FILE" \
+  "running ralph loop stop hook"
+assert_contains \
+  "ralph-loop state does not require enabling autopilot hooks" \
+  "$OUTPUT_FILE" \
+  "auth=symlink"
+rm -f "$RALPH_STATE_FILE"
 
 run_helper CMUX_CODEX_USE_HOME_HOOKS=1
 assert_contains \
