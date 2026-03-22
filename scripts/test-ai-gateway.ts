@@ -185,15 +185,14 @@ function createProvider(
 
 type CliOptions = {
   specificProvider?: PlatformAiProvider;
-  maxOutputTokens: number;
-  maxOutputTokensExplicit: boolean;
+  /** Only set when --max-output-tokens is passed; otherwise uses catalog values */
+  maxOutputTokens?: number;
   prompt: string;
 };
 
 function parseCliOptions(args: string[]): CliOptions {
   let specificProvider: PlatformAiProvider | undefined;
-  let maxOutputTokens = 50;
-  let maxOutputTokensExplicit = false;
+  let maxOutputTokens: number | undefined;
   let prompt = "Reply with exactly five words.";
 
   for (let index = 0; index < args.length; index += 1) {
@@ -225,7 +224,6 @@ function parseCliOptions(args: string[]): CliOptions {
         throw new Error(`Invalid --max-output-tokens value: ${rawValue}`);
       }
       maxOutputTokens = parsedValue;
-      maxOutputTokensExplicit = true;
       index += 1;
       continue;
     }
@@ -243,12 +241,7 @@ function parseCliOptions(args: string[]): CliOptions {
     throw new Error(`Unknown option: ${arg}`);
   }
 
-  return {
-    specificProvider,
-    maxOutputTokens,
-    maxOutputTokensExplicit,
-    prompt,
-  };
+  return { specificProvider, maxOutputTokens, prompt };
 }
 
 async function testModel(
@@ -276,9 +269,8 @@ async function testModel(
   }
 
   try {
-    const effectiveMaxTokens = options.maxOutputTokensExplicit
-      ? options.maxOutputTokens
-      : getPlatformAiMaxOutputTokens(provider, tier);
+    const effectiveMaxTokens =
+      options.maxOutputTokens ?? getPlatformAiMaxOutputTokens(provider, tier);
     const { text, reasoning, finishReason, response } = await generateText({
       model: providerConfig.model,
       prompt: options.prompt,
@@ -387,7 +379,11 @@ async function main(): Promise<void> {
     );
   }
   console.log(`Prompt: ${JSON.stringify(options.prompt)}`);
-  console.log(`maxOutputTokens: ${options.maxOutputTokens}`);
+  if (options.maxOutputTokens !== undefined) {
+    console.log(`maxOutputTokens: ${options.maxOutputTokens} (explicit)`);
+  } else {
+    console.log(`maxOutputTokens: (per-model from catalog)`);
+  }
 
   const allResults: TestResult[] = [];
 
