@@ -101,8 +101,9 @@ const INTENT_PATTERNS: Array<{
 
 /**
  * Detect intent from prompt and return category boosts.
+ * Exported for testing.
  */
-function detectIntentBoosts(prompt: string): Record<string, number> {
+export function detectIntentBoosts(prompt: string): Record<string, number> {
   const boosts: Record<string, number> = {};
 
   for (const { pattern, categoryBoosts } of INTENT_PATTERNS) {
