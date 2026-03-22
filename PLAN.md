@@ -114,8 +114,8 @@ All 11 Claude Code v2.1.78 hooks integrated:
 - [x] Error hook for error surfacing
 - [x] Startup command to fire session start
 
-### Phase 16: Qwen Activity Stream Integration — PR #766
-- [x] Session start hook with activity event
+### Phase 16: Qwen Activity Stream Integration — MERGED
+- [x] Session start hook with activity event (PR #766)
 - [x] Session completion hook with activity event
 - [x] Error hook for error surfacing
 - [x] Startup command to fire session start
