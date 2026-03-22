@@ -1,5 +1,6 @@
 import { getUserFromRequest } from "@/lib/utils/auth";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { normalizeProviderBaseUrlForRawFetch } from "@cmux/shared";
 import { isAllowedBaseUrl } from "./settings.helpers";
 
 const ProviderConnectionResult = z
@@ -125,9 +126,10 @@ settingsProviderConnectionRouter.openapi(
 
     const { provider, baseUrl, apiKey } = c.req.valid("json");
     const config = PROVIDER_CONFIGS[provider];
-    const normalizedBaseUrl = (baseUrl ?? config.defaultBaseUrl)
-      .replace(/\/v1\/?$/, "")
-      .replace(/\/+$/, "");
+    const normalizedBaseUrl = normalizeProviderBaseUrlForRawFetch(
+      provider,
+      baseUrl ?? config.defaultBaseUrl
+    );
 
     const urlValidation = isAllowedBaseUrl(normalizedBaseUrl);
     if (!urlValidation.allowed) {

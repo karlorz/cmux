@@ -106,7 +106,7 @@ const WWW_PLATFORM_AI_PROVIDER_RUNTIME: Record<
     createModel: (apiKey, modelId, rawBaseUrl) =>
       createOpenAI({
         apiKey,
-        baseURL: rawBaseUrl,
+        baseURL: normalizePlatformAiBaseUrl("openai", rawBaseUrl),
       })(modelId),
     resolveRuntime: () => {
       const apiKey = env.OPENAI_API_KEY;
@@ -129,7 +129,7 @@ const WWW_PLATFORM_AI_PROVIDER_RUNTIME: Record<
     createModel: (apiKey, modelId, rawBaseUrl) =>
       createGoogleGenerativeAI({
         apiKey,
-        baseURL: rawBaseUrl,
+        baseURL: normalizePlatformAiBaseUrl("gemini", rawBaseUrl),
       })(modelId),
     resolveRuntime: () => {
       const apiKey = env.GEMINI_API_KEY;

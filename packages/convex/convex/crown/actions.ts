@@ -189,11 +189,12 @@ function resolveCrownModel(): {
         if (!apiKey) {
           break;
         }
+        const rawBaseUrl =
+          process.env.AIGATEWAY_OPENAI_BASE_URL ||
+          getDefaultPlatformAiBaseUrl(provider);
         const openai = createOpenAI({
           apiKey,
-          baseURL:
-            process.env.AIGATEWAY_OPENAI_BASE_URL ||
-            getDefaultPlatformAiBaseUrl(provider),
+          baseURL: normalizePlatformAiBaseUrl(provider, rawBaseUrl),
         });
         return {
           provider,
@@ -205,11 +206,12 @@ function resolveCrownModel(): {
         if (!apiKey) {
           break;
         }
+        const rawBaseUrl =
+          process.env.AIGATEWAY_GEMINI_BASE_URL ||
+          getDefaultPlatformAiBaseUrl(provider);
         const google = createGoogleGenerativeAI({
           apiKey,
-          baseURL:
-            process.env.AIGATEWAY_GEMINI_BASE_URL ||
-            getDefaultPlatformAiBaseUrl(provider),
+          baseURL: normalizePlatformAiBaseUrl(provider, rawBaseUrl),
         });
         return {
           provider,

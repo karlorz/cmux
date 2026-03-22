@@ -44,7 +44,7 @@ const SERVER_PLATFORM_AI_PROVIDER_RUNTIME: Record<
     createModel: (apiKey, modelId, rawBaseUrl) =>
       createOpenAI({
         apiKey,
-        baseURL: rawBaseUrl,
+        baseURL: normalizePlatformAiBaseUrl("openai", rawBaseUrl),
       })(modelId),
     getApiKey: () => process.env.OPENAI_API_KEY,
     getRawBaseUrl: () =>
@@ -55,7 +55,7 @@ const SERVER_PLATFORM_AI_PROVIDER_RUNTIME: Record<
     createModel: (apiKey, modelId, rawBaseUrl) =>
       createGoogleGenerativeAI({
         apiKey,
-        baseURL: rawBaseUrl,
+        baseURL: normalizePlatformAiBaseUrl("gemini", rawBaseUrl),
       })(modelId),
     getApiKey: () => process.env.GEMINI_API_KEY,
     getRawBaseUrl: () =>
