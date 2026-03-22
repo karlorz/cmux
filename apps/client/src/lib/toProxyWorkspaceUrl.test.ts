@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   resolveBrowserPreviewUrl,
   toGenericVncUrl,
+  toMorphXtermBaseUrl,
   toMorphVncUrl,
   toVncViewerUrl,
 } from "./toProxyWorkspaceUrl";
@@ -14,6 +15,18 @@ describe("toMorphVncUrl", () => {
 
     expect(result).toBe(
       "https://port-39380-morphvm-abc123.http.cloud.morph.so/vnc.html?autoconnect=1&resize=scale",
+    );
+  });
+});
+
+describe("toMorphXtermBaseUrl", () => {
+  it("uses the direct Morph xterm host instead of legacy alias domains", () => {
+    const result = toMorphXtermBaseUrl(
+      "https://port-39378-morphvm-abc123.http.cloud.morph.so/?foo=bar",
+    );
+
+    expect(result).toBe(
+      "https://port-39383-morphvm-abc123.http.cloud.morph.so/",
     );
   });
 });

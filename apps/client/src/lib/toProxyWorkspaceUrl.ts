@@ -2,7 +2,6 @@ import {
   LOCAL_VSCODE_PLACEHOLDER_HOST,
   isLoopbackHostname,
 } from "@cmux/shared";
-import { env } from "../client-env";
 
 const MORPH_HOST_REGEX = /^port-(\d+)-morphvm-([^.]+)\.http\.cloud\.morph\.so$/;
 
@@ -347,22 +346,11 @@ export function toMorphXtermBaseUrl(sourceUrl: string): string | null {
     return null;
   }
 
-  // In web mode, use the Morph URLs directly without proxy rewriting
-  if (env.NEXT_PUBLIC_WEB_MODE) {
-    const morphUrl = createMorphPortUrl(components, 39383);
-    morphUrl.pathname = "/";
-    morphUrl.search = "";
-    morphUrl.hash = "";
-    return morphUrl.toString();
-  }
-
-  const scope = "base";
-  const proxiedUrl = new URL(components.url.toString());
-  proxiedUrl.hostname = `cmux-${components.morphId}-${scope}-39383.cmux.app`;
-  proxiedUrl.port = "";
-  proxiedUrl.pathname = "/";
-  proxiedUrl.search = "";
-  proxiedUrl.hash = "";
-
-  return proxiedUrl.toString();
+  // Use the direct Morph xterm port host in both web and Electron flows.
+  // This avoids relying on legacy upstream alias domains such as *.cmux.app.
+  const morphUrl = createMorphPortUrl(components, 39383);
+  morphUrl.pathname = "/";
+  morphUrl.search = "";
+  morphUrl.hash = "";
+  return morphUrl.toString();
 }
