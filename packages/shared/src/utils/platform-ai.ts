@@ -11,7 +11,12 @@ export type PlatformAiTier = (typeof PLATFORM_AI_TIERS)[number];
 export const PLATFORM_AI_SERVICES = ["branch", "commit", "crown", "review"] as const;
 export type PlatformAiService = (typeof PLATFORM_AI_SERVICES)[number];
 
-type PlatformAiTierMap = Record<PlatformAiTier, string>;
+export type PlatformAiModelInfo = {
+  modelId: string;
+  maxOutputTokens: number;
+};
+
+type PlatformAiTierMap = Record<PlatformAiTier, PlatformAiModelInfo>;
 export type PlatformAiServiceProfile = {
   tier: PlatformAiTier;
   providers: readonly PlatformAiProvider[];
@@ -28,19 +33,19 @@ export const PLATFORM_AI_PROVIDER_NAMES: Record<PlatformAiProvider, string> = {
 
 export const PLATFORM_AI_MODELS: Record<PlatformAiProvider, PlatformAiTierMap> = {
   anthropic: {
-    low: "claude-haiku-4-5-20251001",
-    mid: "claude-sonnet-4-6",
-    high: "claude-opus-4-6",
+    low: { modelId: "claude-haiku-4-5-20251001", maxOutputTokens: 8000 },
+    mid: { modelId: "claude-sonnet-4-6", maxOutputTokens: 16000 },
+    high: { modelId: "claude-opus-4-6", maxOutputTokens: 32000 },
   },
   openai: {
-    low: "gpt-5-nano",
-    mid: "gpt-5.4-mini",
-    high: "gpt-5.4",
+    low: { modelId: "gpt-5-nano", maxOutputTokens: 16000 },
+    mid: { modelId: "gpt-5.4-mini", maxOutputTokens: 32000 },
+    high: { modelId: "gpt-5.4", maxOutputTokens: 32000 },
   },
   gemini: {
-    low: "gemini-3.1-flash-lite-preview",
-    mid: "gemini-3-flash-preview",
-    high: "gemini-2.5-pro",
+    low: { modelId: "gemini-3.1-flash-lite-preview", maxOutputTokens: 8192 },
+    mid: { modelId: "gemini-3-flash-preview", maxOutputTokens: 65536 },
+    high: { modelId: "gemini-2.5-pro", maxOutputTokens: 8192 },
   },
 };
 
@@ -74,7 +79,14 @@ export function getPlatformAiModelId(
   provider: PlatformAiProvider,
   tier: PlatformAiTier
 ): string {
-  return PLATFORM_AI_MODELS[provider][tier];
+  return PLATFORM_AI_MODELS[provider][tier].modelId;
+}
+
+export function getPlatformAiMaxOutputTokens(
+  provider: PlatformAiProvider,
+  tier: PlatformAiTier
+): number {
+  return PLATFORM_AI_MODELS[provider][tier].maxOutputTokens;
 }
 
 export function getPlatformAiServiceProfile(

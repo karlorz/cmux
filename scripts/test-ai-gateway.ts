@@ -19,11 +19,12 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { generateText, type LanguageModel } from "ai";
 import {
   getDefaultPlatformAiBaseUrl,
+  getPlatformAiMaxOutputTokens,
+  getPlatformAiModelId,
   getPlatformAiProviderName,
   getPlatformAiProviderOrder,
   getPlatformAiServiceProfile,
   normalizePlatformAiBaseUrl,
-  PLATFORM_AI_MODELS,
   PLATFORM_AI_SERVICES,
   PLATFORM_AI_TIERS,
   type PlatformAiProvider,
@@ -181,10 +182,6 @@ function createProvider(
   }
 }
 
-/** Per-provider maxOutputTokens override (MiniMax needs headroom for thinking). */
-const PROVIDER_DEFAULT_MAX_OUTPUT_TOKENS: Partial<Record<PlatformAiProvider, number>> = {
-  anthropic: 2000,
-};
 
 type CliOptions = {
   specificProvider?: PlatformAiProvider;
@@ -260,7 +257,7 @@ async function testModel(
   options: CliOptions
 ): Promise<TestResult> {
   const start = Date.now();
-  const modelId = PLATFORM_AI_MODELS[provider][tier];
+  const modelId = getPlatformAiModelId(provider, tier);
   const result: TestResult = {
     provider,
     tier,
@@ -281,7 +278,7 @@ async function testModel(
   try {
     const effectiveMaxTokens = options.maxOutputTokensExplicit
       ? options.maxOutputTokens
-      : (PROVIDER_DEFAULT_MAX_OUTPUT_TOKENS[provider] ?? options.maxOutputTokens);
+      : getPlatformAiMaxOutputTokens(provider, tier);
     const { text, reasoning, finishReason, response } = await generateText({
       model: providerConfig.model,
       prompt: options.prompt,
@@ -337,7 +334,7 @@ async function testProvider(
   console.log(`Using Base URL: ${getProviderResolvedBaseUrl(provider)}`);
 
   for (const tier of PLATFORM_AI_TIERS) {
-    const modelId = PLATFORM_AI_MODELS[provider][tier];
+    const modelId = getPlatformAiModelId(provider, tier);
     process.stdout.write(`  Testing ${tier} (${modelId})... `);
     const result = await testModel(provider, tier, options);
     results.push(result);

@@ -4,6 +4,7 @@ import { CLOUDFLARE_GEMINI_BASE_URL } from "./gemini";
 import { CLOUDFLARE_OPENAI_BASE_URL } from "./openai";
 import {
   getDefaultPlatformAiBaseUrl,
+  getPlatformAiMaxOutputTokens,
   getPlatformAiModelIdForService,
   getPlatformAiProviderOrder,
   getPlatformAiTierForService,
@@ -71,5 +72,13 @@ describe("platform-ai", () => {
     expect(
       normalizePlatformAiBaseUrl("gemini", CLOUDFLARE_GEMINI_BASE_URL)
     ).toBe(CLOUDFLARE_GEMINI_BASE_URL);
+  });
+
+  it("returns maxOutputTokens for provider/tier", () => {
+    expect(getPlatformAiMaxOutputTokens("anthropic", "low")).toBe(8000);
+    expect(getPlatformAiMaxOutputTokens("anthropic", "mid")).toBe(16000);
+    expect(getPlatformAiMaxOutputTokens("anthropic", "high")).toBe(32000);
+    expect(getPlatformAiMaxOutputTokens("gemini", "mid")).toBe(65536);
+    expect(getPlatformAiMaxOutputTokens("openai", "high")).toBe(32000);
   });
 });
