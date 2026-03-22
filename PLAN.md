@@ -40,22 +40,22 @@
 - [x] Provider-neutral lifecycle events (session_stop_blocked, context_warning)
 - [x] Context usage tracking and 80% warning threshold
 
-### Phase 5: Approval Bridge — CODE COMPLETE
+### Phase 5: Approval Bridge — MERGED
 - [x] HTTP endpoints for approval broker (PR #754)
 - [x] PermissionRequest hook script (PR #755)
 - [x] Wire hook into Claude settings.json
 
-### Phase 6: PreCompact Memory Sync — CODE COMPLETE
+### Phase 6: PreCompact Memory Sync — MERGED
 - [x] PreCompact hook script (PR #756)
 - [x] Sync memory to Convex before context compression
 - [x] Post context_warning activity event
 
-### Phase 7: Subagent Lifecycle Hooks — CODE COMPLETE
+### Phase 7: Subagent Lifecycle Hooks — MERGED
 - [x] SubagentStart hook (PR #757)
 - [x] SubagentStop hook (PR #757)
 - [x] Activity events for sub-agent spawning/completion
 
-### Phase 8: User Prompt Tracking — CODE COMPLETE
+### Phase 8: User Prompt Tracking — MERGED
 - [x] UserPromptSubmit hook (PR #758)
 - [x] Activity events for user prompt submissions
 
@@ -66,11 +66,19 @@
 ### Open Issues
 - #735: PVE-LXC exec connectivity failure (infrastructure)
 
-### Phase 9: Notification Hook — CODE COMPLETE
+### Phase 9: Notification Hook — MERGED
 - [x] Notification hook (PR #759)
 - [x] Activity events for attention requests
 
-### Phase 10: PostCompact Context Re-injection — CODE COMPLETE
+### Phase 10: PostCompact Context Re-injection — MERGED
 - [x] PostCompact hook (PR #760)
 - [x] Re-inject P0 Core memory after compaction
 - [x] Activity events for compaction completion
+
+### Claude Code Hook Integration Summary (Phases 5-10)
+All 11 Claude Code v2.1.78 hooks integrated:
+- Stop, StopFailure (existing)
+- PermissionRequest, PreCompact, PostCompact (lifecycle)
+- SubagentStart, SubagentStop (coordination)
+- UserPromptSubmit, Notification (activity tracking)
+- PostToolUse (tool-specific)
