@@ -81,7 +81,8 @@ Based on Codex `tool_suggest` pattern from [[research-extended-2026-03-21]]:
 - [x] Keyword-based suggestion algorithm
 - [x] UI integration with suggested tools chips
 - [x] Intent-based enhancement (lite pattern matching)
-- [ ] **FUTURE**: Full AI analysis, semantic matching, learning from selections
+- [x] Learning from selections (PR #774) - tracks team usage, boosts frequently-used tools
+- [ ] **FUTURE**: Full AI analysis, semantic matching (requires LLM integration)
 
 ### Phase 20: Memory Forgetting Policy — COMPLETE
 Based on Codex memory refinements from [[research-weekly-2026-03-19]]:

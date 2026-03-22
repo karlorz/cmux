@@ -2842,6 +2842,19 @@ const convexSchema = defineSchema({
   })
     .index("by_team", ["teamId"])
     .index("by_team_tool", ["teamId", "toolName"]),
+
+  // Tool usage tracking for learning from selections (Phase 19 enhancement)
+  toolUsageStats: defineTable({
+    teamId: v.string(),
+    toolName: v.string(),
+    selectionCount: v.number(), // Times tool was selected for a task
+    lastSelectedAt: v.number(),
+    // Optional: track prompt patterns that led to selection
+    recentPromptKeywords: v.optional(v.array(v.string())),
+  })
+    .index("by_team", ["teamId"])
+    .index("by_team_tool", ["teamId", "toolName"])
+    .index("by_selection_count", ["teamId", "selectionCount"]),
 });
 
 export default convexSchema;
