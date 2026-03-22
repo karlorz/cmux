@@ -40,9 +40,13 @@
 - [x] Provider-neutral lifecycle events (session_stop_blocked, context_warning)
 - [x] Context usage tracking and 80% warning threshold
 
+### Phase 5: Approval Bridge — CODE COMPLETE
+- [x] HTTP endpoints for approval broker (PR #754)
+- [x] PermissionRequest hook script (PR #755)
+- [x] Wire hook into Claude settings.json
+
 ### Backlog / future
 - Swift app (mobile client)
-- Approval bridge (map Claude --channels to cmux approval broker) — DESIGNED
 - D5.6: Native agent instruction injection (blocked on upstream CLI support)
 
 ### Open Issues

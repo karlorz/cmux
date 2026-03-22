@@ -56,11 +56,11 @@ Map Claude's `--channels` approval relay to cmux's approval broker.
 
 **Effort:** 3-4 days
 
-**Status (2026-03-22):** DESIGNED - Implementation deferred.
+**Status (2026-03-22):** CODE COMPLETE
 - Design documented in `/root/Documents/obsidian_vault/5️⃣-Projects/GitHub/cmux/cmux-claude-channels-approval-bridge.md`
-- Recommended approach: MCP Permission Hook (Option C)
-- Uses existing PermissionRequest hook + cmux approval broker
-- Would need HTTP endpoints for approval creation/polling
+- Implemented approach: MCP Permission Hook (Option C)
+- HTTP endpoints for approval broker: PR #754 (merged)
+- PermissionRequest hook + settings.json wiring: PR #755
 
 ---
 
@@ -117,7 +117,7 @@ Leverage 1M context for Opus 4.6.
 | Phase | Feature | User Impact | Effort | Status |
 |-------|---------|-------------|--------|--------|
 | 1 | `--bare` Mode | Medium | 2-3 days | **EVALUATED** - NOT recommended (disables hooks) |
-| 2 | Approval Bridge | High | 3-4 days | **DESIGNED** - See cmux-claude-channels-approval-bridge.md |
+| 2 | Approval Bridge | High | 3-4 days | **CODE COMPLETE** - PRs #754, #755 |
 | 3 | Memory Freshness | High | 1 week | **COMPLETE** |
 | 4 | Tool Suggestions | Medium | 1 week | **COMPLETE** |
 | 5 | Context Optimization | Medium | 3-4 days | **COMPLETE** |
