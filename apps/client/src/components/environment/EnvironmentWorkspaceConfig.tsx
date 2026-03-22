@@ -14,6 +14,7 @@ import { PersistentWebView } from "@/components/persistent-webview";
 import { WorkspaceSetupPanel } from "@/components/WorkspaceSetupPanel";
 import { WorkspaceLoadingIndicator } from "@/components/workspace-loading-indicator";
 import { useVncClipboardBridge } from "@/hooks/useVncClipboardBridge";
+import { VncViewer } from "@cmux/shared/components/vnc-viewer";
 import {
   disableDragPointerEvents,
   restoreDragPointerEvents,
@@ -62,6 +63,8 @@ interface EnvironmentWorkspaceConfigProps {
   exposedPorts: string;
   vscodeUrl?: string;
   browserHtmlUrl?: string;
+  /** WebSocket URL for direct VncViewer connection (preferred over iframe) */
+  vncWebsocketUrl?: string;
   browserPersistKey: string;
   isSaving: boolean;
   errorMessage?: string | null;
@@ -99,6 +102,7 @@ export function EnvironmentWorkspaceConfig({
   exposedPorts,
   vscodeUrl,
   browserHtmlUrl,
+  vncWebsocketUrl,
   browserPersistKey,
   isSaving,
   errorMessage,
@@ -378,22 +382,26 @@ export function EnvironmentWorkspaceConfig({
     [vscodeUrl]
   );
 
+  // Use direct VncViewer when websocket URL is available
+  const useDirectVncViewer = Boolean(vncWebsocketUrl);
+
   const browserPlaceholder = useMemo(
     () =>
-      browserHtmlUrl
+      browserHtmlUrl || vncWebsocketUrl
         ? null
         : {
             title: "Waiting for browser",
             description: "We'll embed the browser session as soon as the environment exposes it.",
           },
-    [browserHtmlUrl]
+    [browserHtmlUrl, vncWebsocketUrl]
   );
 
-  const isVncBrowserPanel =
-    showBrowser && Boolean(browserHtmlUrl?.includes("/vnc.html"));
+  // Only use clipboard bridge for iframe fallback path (not direct VncViewer)
+  const isVncIframeFallback =
+    showBrowser && !useDirectVncViewer && Boolean(browserHtmlUrl?.includes("/vnc.html"));
   useVncClipboardBridge({
     persistKey: browserPersistKey,
-    enabled: isVncBrowserPanel,
+    enabled: isVncIframeFallback,
   });
 
   // Render scripts section
@@ -902,7 +910,19 @@ export function EnvironmentWorkspaceConfig({
         )}
 
         {/* Browser preview (shown for browser-setup step) */}
-        {showBrowser && browserHtmlUrl && (
+        {/* Prefer direct VncViewer when websocket URL is available */}
+        {showBrowser && useDirectVncViewer && vncWebsocketUrl && (
+          <VncViewer
+            url={vncWebsocketUrl}
+            autoConnect
+            scaleViewport
+            className="absolute inset-0"
+            loadingFallback={<WorkspaceLoadingIndicator variant="browser" status="loading" />}
+            errorFallback={<WorkspaceLoadingIndicator variant="browser" status="error" />}
+          />
+        )}
+        {/* Fallback to iframe when only HTML URL is available */}
+        {showBrowser && !useDirectVncViewer && browserHtmlUrl && (
           <PersistentWebView
             persistKey={browserPersistKey}
             src={browserHtmlUrl}

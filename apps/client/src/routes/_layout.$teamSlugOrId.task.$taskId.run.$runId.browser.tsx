@@ -9,7 +9,11 @@ import {
   TASK_RUN_IFRAME_ALLOW,
   TASK_RUN_IFRAME_SANDBOX,
 } from "@/lib/preloadTaskRunIframes";
-import { resolveBrowserPreviewUrl } from "@/lib/toProxyWorkspaceUrl";
+import {
+  resolveBrowserPreviewUrl,
+  resolveBrowserPreviewWebsocketUrl,
+} from "@/lib/toProxyWorkspaceUrl";
+import { VncViewer } from "@cmux/shared/components/vnc-viewer";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { api } from "@cmux/convex/api";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
@@ -61,16 +65,29 @@ function BrowserComponent() {
     [vscodeInfo?.vncUrl, rawBrowserUrl]
   );
 
+  // WebSocket URL for direct VncViewer connection (preferred over iframe)
+  const vncWebsocketUrl = useMemo(
+    () =>
+      resolveBrowserPreviewWebsocketUrl({
+        vncUrl: vscodeInfo?.vncUrl,
+        workspaceUrl: rawBrowserUrl,
+      }),
+    [vscodeInfo?.vncUrl, rawBrowserUrl]
+  );
+
+  // Use direct VncViewer when websocket URL is available
+  const useDirectVncViewer = Boolean(vncWebsocketUrl);
+
   const persistKey = useMemo(
     () => getTaskRunBrowserPersistKey(taskRunId),
     [taskRunId]
   );
 
-  // Enable clipboard bridge only for VNC panel (vnc.html URLs)
-  const isVncPanel = Boolean(browserUrl?.includes("/vnc.html"));
+  // Enable clipboard bridge only for iframe fallback path (not direct VncViewer)
+  const isVncIframeFallback = !useDirectVncViewer && Boolean(browserUrl?.includes("/vnc.html"));
   useVncClipboardBridge({
     persistKey,
-    enabled: isVncPanel,
+    enabled: isVncIframeFallback,
   });
 
   const hasBrowserView = Boolean(browserUrl);
@@ -131,7 +148,8 @@ function BrowserComponent() {
     []
   );
 
-  const isBrowserBusy = !hasBrowserView || browserStatus !== "loaded";
+  const hasBrowserConnection = Boolean(vncWebsocketUrl || browserUrl);
+  const isBrowserBusy = !hasBrowserConnection || browserStatus !== "loaded";
 
   return (
     <div className="flex flex-col grow bg-neutral-50 dark:bg-black">
@@ -140,7 +158,18 @@ function BrowserComponent() {
           className="flex flex-row grow min-h-0 relative"
           aria-busy={isBrowserBusy}
         >
-          {browserUrl ? (
+          {/* Prefer direct VncViewer when websocket URL is available */}
+          {useDirectVncViewer && vncWebsocketUrl ? (
+            <VncViewer
+              url={vncWebsocketUrl}
+              autoConnect
+              scaleViewport
+              className="grow flex"
+              loadingFallback={loadingFallback}
+              errorFallback={errorFallback}
+            />
+          ) : browserUrl ? (
+            /* Fallback to iframe when only HTML URL is available */
             <PersistentWebView
               key={persistKey}
               persistKey={persistKey}
@@ -171,13 +200,13 @@ function BrowserComponent() {
               }
             )}
           >
-            {showLoader ? (
+            {showLoader && !hasBrowserConnection ? (
               <WorkspaceLoadingIndicator variant="browser" status="loading" />
-            ) : (
+            ) : !hasBrowserConnection ? (
               <span className="text-sm text-neutral-500 dark:text-neutral-400 text-center px-4">
                 {overlayMessage}
               </span>
-            )}
+            ) : null}
           </div>
         </div>
       </div>
