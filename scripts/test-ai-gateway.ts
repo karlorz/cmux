@@ -93,13 +93,11 @@ type TestProviderOptions = {
 function getProviderOptions(provider: PlatformAiProvider): TestProviderOptions {
   switch (provider) {
     case "anthropic":
+      // MiniMax-M2.7 behind the Anthropic gateway does not honor
+      // thinking: { type: "disabled" }, so we leave anthropic options
+      // empty and rely on a higher maxOutputTokens budget instead.
       return {
-        anthropic: {
-          sendReasoning: false,
-          thinking: {
-            type: "disabled",
-          },
-        },
+        anthropic: {},
         openai: {},
         google: {},
       };
@@ -183,15 +181,22 @@ function createProvider(
   }
 }
 
+/** Per-provider maxOutputTokens override (MiniMax needs headroom for thinking). */
+const PROVIDER_DEFAULT_MAX_OUTPUT_TOKENS: Partial<Record<PlatformAiProvider, number>> = {
+  anthropic: 1000,
+};
+
 type CliOptions = {
   specificProvider?: PlatformAiProvider;
   maxOutputTokens: number;
+  maxOutputTokensExplicit: boolean;
   prompt: string;
 };
 
 function parseCliOptions(args: string[]): CliOptions {
   let specificProvider: PlatformAiProvider | undefined;
   let maxOutputTokens = 50;
+  let maxOutputTokensExplicit = false;
   let prompt = "Reply with exactly five words.";
 
   for (let index = 0; index < args.length; index += 1) {
@@ -223,6 +228,7 @@ function parseCliOptions(args: string[]): CliOptions {
         throw new Error(`Invalid --max-output-tokens value: ${rawValue}`);
       }
       maxOutputTokens = parsedValue;
+      maxOutputTokensExplicit = true;
       index += 1;
       continue;
     }
@@ -243,6 +249,7 @@ function parseCliOptions(args: string[]): CliOptions {
   return {
     specificProvider,
     maxOutputTokens,
+    maxOutputTokensExplicit,
     prompt,
   };
 }
@@ -272,10 +279,13 @@ async function testModel(
   }
 
   try {
+    const effectiveMaxTokens = options.maxOutputTokensExplicit
+      ? options.maxOutputTokens
+      : (PROVIDER_DEFAULT_MAX_OUTPUT_TOKENS[provider] ?? options.maxOutputTokens);
     const { text, reasoning, finishReason, response } = await generateText({
       model: providerConfig.model,
       prompt: options.prompt,
-      maxOutputTokens: options.maxOutputTokens,
+      maxOutputTokens: effectiveMaxTokens,
       providerOptions: getProviderOptions(provider),
     });
 
@@ -290,13 +300,10 @@ async function testModel(
     result.latencyMs = Date.now() - start;
 
     if (response.modelId !== modelId) {
+      // Model rewriting is expected when the gateway maps Claude
+      // model IDs to a different backend (e.g. MiniMax-M2.7).
       result.warnings.push(
         `Requested ${modelId}, but upstream returned ${response.modelId}`
-      );
-    }
-    if (provider === "anthropic" && result.reasoningText) {
-      result.warnings.push(
-        "Received Anthropic reasoning content even though thinking was disabled in providerOptions"
       );
     }
 
