@@ -33,10 +33,95 @@ async function makeQwenEnvironment(
 
   // Ensure .qwen directory exists
   startupCommands.push("mkdir -p ~/.qwen");
+  startupCommands.push("mkdir -p /root/lifecycle/qwen");
 
   // Clean up any old Qwen telemetry files from previous runs
   // The actual telemetry path will be set by the agent spawner with the task ID
   startupCommands.push("rm -f /tmp/qwen-telemetry-*.log 2>/dev/null || true");
+
+  // Session start hook - posts activity event when Qwen session begins
+  const sessionStartHook = `#!/bin/bash
+set -eu
+LOG_FILE="/root/lifecycle/qwen-hook.log"
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
+  exit 0
+fi
+# Post session start activity event (non-blocking)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" \\
+         '{taskRunId: $trid, type: "session_start", toolName: "qwen", summary: "Session started"}')" \\
+    >> "\${LOG_FILE}" 2>&1 || true
+) &
+exit 0
+`;
+  files.push({
+    destinationPath: "/root/lifecycle/qwen/session-start-hook.sh",
+    contentBase64: Buffer.from(sessionStartHook).toString("base64"),
+    mode: "755",
+  });
+
+  // Session completion hook - posts activity event when Qwen session ends
+  const sessionCompleteHook = `#!/bin/bash
+set -eu
+LOG_FILE="/root/lifecycle/qwen-hook.log"
+MARKER_DIR="/root/lifecycle"
+GENERIC_MARKER="\${MARKER_DIR}/done.txt"
+
+# Post session completion activity event (non-blocking)
+if [ -n "\${CMUX_TASK_RUN_JWT:-}" ] && [ -n "\${CMUX_CALLBACK_URL:-}" ]; then
+  (
+    curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+      -H "Content-Type: application/json" \\
+      -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+      -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" \\
+           '{taskRunId: $trid, type: "session_stop", toolName: "qwen", summary: "Session completed"}')" \\
+      >> "\${LOG_FILE}" 2>&1 || true
+  ) &
+fi
+
+# Sync memory files (best-effort)
+/root/lifecycle/memory/sync.sh >> "\${LOG_FILE}" 2>&1 || true
+
+# Create completion marker
+touch "\${GENERIC_MARKER}"
+echo "[CMUX] Qwen session complete" >> "\${LOG_FILE}"
+`;
+  files.push({
+    destinationPath: "/root/lifecycle/qwen/session-complete-hook.sh",
+    contentBase64: Buffer.from(sessionCompleteHook).toString("base64"),
+    mode: "755",
+  });
+
+  // Error hook - surfaces errors to dashboard
+  const errorHook = `#!/bin/bash
+set -eu
+LOG_FILE="/root/lifecycle/qwen-hook.log"
+ERROR_MSG="\${1:-Unknown error}"
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
+  exit 0
+fi
+# Post error activity event (non-blocking)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" --arg msg "$ERROR_MSG" \\
+         '{taskRunId: $trid, type: "error", toolName: "qwen", summary: $msg}')" \\
+    >> "\${LOG_FILE}" 2>&1 || true
+) &
+exit 0
+`;
+  files.push({
+    destinationPath: "/root/lifecycle/qwen/error-hook.sh",
+    contentBase64: Buffer.from(errorHook).toString("base64"),
+    mode: "755",
+  });
+
+  // Fire session start hook on sandbox initialization
+  startupCommands.push("/root/lifecycle/qwen/session-start-hook.sh &");
 
   type QwenSettings = {
     selectedAuthType?: string;
