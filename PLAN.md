@@ -91,11 +91,13 @@ Based on [[cmux-self-improving-memory-roadmap]]:
 - [x] S17: Skill candidate schema and UI (agentOrchestrationSkillCandidates table, SkillsList.tsx)
 - [ ] **VALIDATION**: Real-world E2E testing of learning → promotion → injection cycle
 
-### Phase 22: Agent Memory Spike Validation — PLANNED
+### Phase 22: Agent Memory Spike Validation — UNIT TESTS PASS
 Based on [[cmux-agent-dev-roadmap]] spike status:
-- [ ] S1: Real-world validation of file-based memory protocol
-- [ ] S2: Two-agent coordination via MAILBOX.json validation
-- [ ] S3: Convex sync observability validation
+- [x] S1: File-based memory protocol (41 tests in agent-memory-protocol.test.ts)
+- [x] S2: Mailbox/coordination (81 tests in devsh-memory-mcp)
+- [x] S3: Convex sync (129 passing tests, 32 skip without Stack Auth)
+- [ ] **E2E**: Run scripts/test-memory-protocol.sh with live sandbox
+- [ ] **E2E**: Run scripts/test-two-agent-coordination.sh with live sandbox
 
 ### Backlog / future
 - Swift app (mobile client)
