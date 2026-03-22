@@ -13,6 +13,9 @@ const CODEX_NOTIFY_LINE = 'notify = ["/root/lifecycle/codex-notify.sh"]';
 const CODEX_SANDBOX_MODE_LINE = 'sandbox_mode = "danger-full-access"';
 const CODEX_APPROVAL_POLICY_LINE = 'approval_policy = "never"';
 const CODEX_DISABLE_RESPONSE_STORAGE_LINE = "disable_response_storage = true";
+// Enable experimental hooks engine for dashboard integration (Codex 0.114.0+)
+const CODEX_HOOKS_FEATURE_SECTION = `[features]
+codex_hooks = true`;
 const MANAGED_MEMORY_SERVER_NAME = "devsh-memory";
 const WEB_PREVIEW_AGENT_BUILTINS = {
   claude: [
@@ -717,6 +720,7 @@ export function ensureCodexDefaults(toml: string): string {
   const hasApprovalPolicy = /(^|\n)\s*approval_policy\s*=/.test(toml);
   const hasDisableResponseStorage = /(^|\n)\s*disable_response_storage\s*=/.test(toml);
   const hasLegacyAskForApproval = /(^|\n)\s*ask_for_approval\s*=/.test(toml);
+  const hasCodexHooksFeature = /\[features\][\s\S]*?codex_hooks\s*=\s*true/.test(toml);
 
   let result = toml;
   if (hasApprovalPolicy) {
@@ -756,7 +760,15 @@ export function ensureCodexDefaults(toml: string): string {
     defaults.push(CODEX_DISABLE_RESPONSE_STORAGE_LINE);
   }
 
-  return result ? `${defaults.join("\n")}\n${result}` : defaults.join("\n");
+  // Build the base config with top-level defaults
+  let baseConfig = result ? `${defaults.join("\n")}\n${result}` : defaults.join("\n");
+
+  // Add [features] section at the end if not present (TOML sections must come after top-level keys)
+  if (!hasCodexHooksFeature) {
+    baseConfig = `${baseConfig.trimEnd()}\n\n${CODEX_HOOKS_FEATURE_SECTION}`;
+  }
+
+  return baseConfig;
 }
 
 export function stripMcpServerBlocksByName(toml: string, names: string[]): string {
