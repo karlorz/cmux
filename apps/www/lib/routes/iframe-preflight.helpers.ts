@@ -30,6 +30,53 @@ const ALLOWED_EXACT_HOSTS = new Set<string>([
 
 const DEV_ONLY_HOSTS = new Set<string>(["localhost", "127.0.0.1", "::1"]);
 
+function normalizeAllowedHostname(candidate: string | undefined): string | null {
+  if (!candidate) {
+    return null;
+  }
+
+  let value = candidate.trim().toLowerCase();
+  if (!value) {
+    return null;
+  }
+
+  if (value.includes("://")) {
+    try {
+      value = new URL(value).hostname.toLowerCase();
+    } catch {
+      return null;
+    }
+  }
+
+  if (value.endsWith(".")) {
+    value = value.slice(0, -1);
+  }
+
+  if (!value || value.includes("/") || value.includes(" ")) {
+    return null;
+  }
+
+  return value;
+}
+
+function getDynamicAllowedExactHosts(): Set<string> {
+  const hosts = new Set<string>();
+
+  for (const candidate of [
+    process.env.NEXT_PUBLIC_CLIENT_ORIGIN,
+    process.env.NEXT_PUBLIC_WWW_ORIGIN,
+    process.env.NEXT_PUBLIC_SERVER_ORIGIN,
+    process.env.NEXT_PUBLIC_BASE_APP_URL,
+  ]) {
+    const normalized = normalizeAllowedHostname(candidate);
+    if (normalized) {
+      hosts.add(normalized);
+    }
+  }
+
+  return hosts;
+}
+
 function getDynamicAllowedHostSuffixes(): string[] {
   const suffixes: string[] = [];
   if (env.PVE_PUBLIC_DOMAIN) {
@@ -42,6 +89,11 @@ export function isAllowedHost(hostname: string): boolean {
   const normalized = hostname.toLowerCase();
 
   if (ALLOWED_EXACT_HOSTS.has(normalized)) {
+    return true;
+  }
+
+  const dynamicExactHosts = getDynamicAllowedExactHosts();
+  if (dynamicExactHosts.has(normalized)) {
     return true;
   }
 
