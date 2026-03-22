@@ -420,6 +420,100 @@ exit 0`;
     mode: "755",
   });
 
+  // Permission hook script - bridges Claude permission requests to cmux approval broker
+  // This enables human-in-the-loop approval via the cmux dashboard
+  const permissionHookScript = `#!/bin/bash
+# Claude Code permission hook - bridges to cmux approval broker
+# Fires on PermissionRequest: before showing permission dialog
+set -eu
+REQUEST=$(cat)
+
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_ID:-}" ]; then
+  # No cmux context - fall through to default permission dialog
+  exit 1
+fi
+
+TOOL_NAME=$(echo "$REQUEST" | jq -r '.tool_name // "unknown"')
+TOOL_INPUT=$(echo "$REQUEST" | jq -r '.tool_input | tostring' | head -c 500)
+PERMISSION_MODE=$(echo "$REQUEST" | jq -r '.permission_mode // "default"')
+
+# Only intercept in default/plan modes - bypass modes should not trigger approvals
+if [ "$PERMISSION_MODE" != "default" ] && [ "$PERMISSION_MODE" != "plan" ]; then
+  exit 1
+fi
+
+# Create approval request
+RESPONSE=$(curl -s -X POST "\${CMUX_CALLBACK_URL}/api/approvals/create" \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer \${CMUX_TASK_RUN_JWT}" \\
+  -d "$(jq -n \\
+    --arg action "Permission: $TOOL_NAME" \\
+    --arg tool "$TOOL_NAME" \\
+    --arg input "$TOOL_INPUT" \\
+    '{
+      source: "tool_use",
+      approvalType: "tool_permission",
+      action: $action,
+      context: {
+        agentName: "claude",
+        command: $input,
+        toolName: $tool,
+        riskLevel: "medium"
+      }
+    }')" 2>/dev/null)
+
+REQUEST_ID=$(echo "$RESPONSE" | jq -r '.requestId // empty')
+
+if [ -z "$REQUEST_ID" ]; then
+  # Failed to create approval - fall through to default dialog
+  echo "[permission-hook] Failed to create approval: $RESPONSE" >> /root/lifecycle/permission-hook.log 2>&1
+  exit 1
+fi
+
+echo "[permission-hook] Created approval $REQUEST_ID for $TOOL_NAME" >> /root/lifecycle/permission-hook.log 2>&1
+
+# Poll for resolution (timeout 5 minutes = 60 * 5 seconds)
+for i in {1..60}; do
+  RESULT=$(curl -s "\${CMUX_CALLBACK_URL}/api/approvals/$REQUEST_ID" \\
+    -H "Authorization: Bearer \${CMUX_TASK_RUN_JWT}" 2>/dev/null)
+  STATUS=$(echo "$RESULT" | jq -r '.status // "pending"')
+  RESOLUTION=$(echo "$RESULT" | jq -r '.resolution // empty')
+
+  if [ "$STATUS" = "resolved" ]; then
+    echo "[permission-hook] Approval $REQUEST_ID resolved: $RESOLUTION" >> /root/lifecycle/permission-hook.log 2>&1
+
+    # Map resolution to Claude decision
+    case "$RESOLUTION" in
+      allow|allow_once|allow_session)
+        echo "{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PermissionRequest\\\", \\\"decision\\\": {\\\"behavior\\\": \\\"allow\\\"}}}"
+        exit 0
+        ;;
+      deny|deny_always)
+        NOTE=$(echo "$RESULT" | jq -r '.resolutionNote // "Denied by cmux approval broker"')
+        echo "{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PermissionRequest\\\", \\\"decision\\\": {\\\"behavior\\\": \\\"deny\\\", \\\"message\\\": \\\"$NOTE\\\"}}}"
+        exit 0
+        ;;
+    esac
+  elif [ "$STATUS" = "expired" ]; then
+    echo "[permission-hook] Approval $REQUEST_ID expired" >> /root/lifecycle/permission-hook.log 2>&1
+    echo "{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PermissionRequest\\\", \\\"decision\\\": {\\\"behavior\\\": \\\"deny\\\", \\\"message\\\": \\\"Approval request expired\\\"}}}"
+    exit 0
+  fi
+
+  sleep 5
+done
+
+# Timeout - default deny
+echo "[permission-hook] Approval $REQUEST_ID timed out" >> /root/lifecycle/permission-hook.log 2>&1
+echo "{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PermissionRequest\\\", \\\"decision\\\": {\\\"behavior\\\": \\\"deny\\\", \\\"message\\\": \\\"Approval timeout (5 minutes)\\\"}}}"
+exit 0`;
+
+  files.push({
+    destinationPath: `${claudeLifecycleDir}/permission-hook.sh`,
+    contentBase64: Buffer.from(permissionHookScript).toString("base64"),
+    mode: "755",
+  });
+
   // Check if user has provided an OAuth token (preferred) or API key
   const hasOAuthToken =
     ctx.apiKeys?.CLAUDE_CODE_OAUTH_TOKEN &&
@@ -488,6 +582,18 @@ exit 0`;
             {
               type: "command",
               command: `${claudeLifecycleDir}/error-hook.sh`,
+            },
+          ],
+        },
+      ],
+      // Permission approval: bridges Claude permission requests to cmux approval broker
+      // Enables human-in-the-loop approval via dashboard instead of terminal
+      PermissionRequest: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${claudeLifecycleDir}/permission-hook.sh`,
             },
           ],
         },
