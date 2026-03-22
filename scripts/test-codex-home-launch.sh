@@ -66,6 +66,10 @@ trap cleanup EXIT
 
 mkdir -p "$FAKE_HOME/.codex" "$FAKE_BIN"
 printf '%s\n' 'auth-token' > "$FAKE_HOME/.codex/auth.json"
+mkdir -p "$FAKE_HOME/.codex/worktrees" "$FAKE_HOME/.codex/sessions"
+printf '%s\n' 'stale-worktree' > "$FAKE_HOME/.codex/worktrees/marker.txt"
+printf '%s\n' 'stale-session' > "$FAKE_HOME/.codex/sessions/marker.txt"
+printf '%s\n' 'old-history' > "$FAKE_HOME/.codex/history.jsonl"
 cat >"$FAKE_HOME/.codex/hooks.json" <<'EOF'
 {
   "hooks": {
@@ -102,6 +106,21 @@ elif [ -f "$ACTIVE_HOME/auth.json" ]; then
 else
   printf 'auth=missing\n' >> "$CMUX_TEST_OUTPUT"
 fi
+if [ -e "$ACTIVE_HOME/worktrees" ]; then
+  printf 'worktrees=present\n' >> "$CMUX_TEST_OUTPUT"
+else
+  printf 'worktrees=absent\n' >> "$CMUX_TEST_OUTPUT"
+fi
+if [ -e "$ACTIVE_HOME/sessions" ]; then
+  printf 'sessions=present\n' >> "$CMUX_TEST_OUTPUT"
+else
+  printf 'sessions=absent\n' >> "$CMUX_TEST_OUTPUT"
+fi
+if [ -e "$ACTIVE_HOME/history.jsonl" ]; then
+  printf 'history=present\n' >> "$CMUX_TEST_OUTPUT"
+else
+  printf 'history=absent\n' >> "$CMUX_TEST_OUTPUT"
+fi
 printf 'argv=%s\n' "$*" >> "$CMUX_TEST_OUTPUT"
 EOF
 chmod +x "$FAKE_BIN/codex"
@@ -133,6 +152,18 @@ assert_contains \
   "ordinary repo-local codex stages auth via symlinked temp CODEX_HOME" \
   "$OUTPUT_FILE" \
   "auth=symlink"
+assert_contains \
+  "ordinary repo-local codex does not expose stale Codex worktrees" \
+  "$OUTPUT_FILE" \
+  "worktrees=absent"
+assert_contains \
+  "ordinary repo-local codex does not expose persisted Codex sessions" \
+  "$OUTPUT_FILE" \
+  "sessions=absent"
+assert_contains \
+  "ordinary repo-local codex does not expose persisted Codex history" \
+  "$OUTPUT_FILE" \
+  "history=absent"
 assert_not_contains \
   "ordinary repo-local codex does not copy home hook payloads" \
   "$OUTPUT_FILE" \

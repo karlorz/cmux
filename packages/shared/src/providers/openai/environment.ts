@@ -354,6 +354,19 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+should_skip_home_entry() {
+  name="$1"
+  case "$name" in
+    .|..|.DS_Store|hooks.json|archived_sessions|history.jsonl|log|session_index.jsonl|sessions|shell_snapshots|sqlite|tmp|worktrees)
+      return 0
+      ;;
+    logs_*.sqlite|logs_*.sqlite-*|state_*.sqlite|state_*.sqlite-*)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
 if [ ! -f "$HOOKS_TEMPLATE" ]; then
   echo "Missing Codex hooks template: $HOOKS_TEMPLATE" >&2
   exit 1
@@ -365,7 +378,7 @@ if [ -d "$BASE_HOME" ]; then
   for path in "$BASE_HOME"/* "$BASE_HOME"/.[!.]* "$BASE_HOME"/..?*; do
     [ -e "$path" ] || continue
     name="$(basename "$path")"
-    if [ "$name" = "." ] || [ "$name" = ".." ] || [ "$name" = "hooks.json" ]; then
+    if should_skip_home_entry "$name"; then
       continue
     fi
     ln -s "$path" "$TEMP_HOME/$name"

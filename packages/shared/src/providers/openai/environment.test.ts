@@ -663,6 +663,10 @@ foo = "bar"
 
     const codexWrapper = decodeEnvironmentFile(result, CODEX_HOOKED_COMMAND_PATH);
     expect(codexWrapper).toContain('HOOKS_TEMPLATE="/root/lifecycle/codex-hooks.json"');
+    expect(codexWrapper).toContain('should_skip_home_entry() {');
+    expect(codexWrapper).toContain('worktrees');
+    expect(codexWrapper).toContain('sessions');
+    expect(codexWrapper).toContain('history.jsonl');
     expect(codexWrapper).toContain('cp "$HOOKS_TEMPLATE" "$TEMP_HOME/hooks.json"');
     expect(codexWrapper).toContain('export CODEX_HOME="$TEMP_HOME"');
     expect(codexWrapper).toContain('exec codex "$@"');

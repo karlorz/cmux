@@ -345,7 +345,7 @@ link_codex_home_entries() {
   shopt -s dotglob nullglob
   for path in "$source_home"/*; do
     name="$(basename "$path")"
-    if [[ "$name" = "." || "$name" = ".." || "$name" = "hooks.json" ]]; then
+    if should_skip_codex_home_entry "$name"; then
       continue
     fi
     ln -s "$path" "$target_home/$name"
@@ -357,6 +357,19 @@ link_codex_home_entries() {
   if [[ "$had_nullglob" -eq 0 ]]; then
     shopt -u nullglob
   fi
+}
+
+should_skip_codex_home_entry() {
+  local name="$1"
+  case "$name" in
+    .|..|.DS_Store|hooks.json|archived_sessions|history.jsonl|log|session_index.jsonl|sessions|shell_snapshots|sqlite|tmp|worktrees)
+      return 0
+      ;;
+    logs_*.sqlite|logs_*.sqlite-*|state_*.sqlite|state_*.sqlite-*)
+      return 0
+      ;;
+  esac
+  return 1
 }
 
 ensure_codex_autopilot_home() {
