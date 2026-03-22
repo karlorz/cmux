@@ -65,21 +65,25 @@ jobs:
         if: steps.release_changes.outputs.proceed == 'true'
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+        shell: bash
         run: |
           set -euo pipefail
 
           for attempt in 1 2 3; do
+            echo "bun install attempt $attempt of 3..."
+
             if bun install --frozen-lockfile; then
-              exit 0
+              echo "bun install succeeded on attempt $attempt"
+              break
             fi
 
-            if [ "$attempt" -eq 3 ]; then
-              echo "bun install failed after $attempt attempts" >&2
+            if [[ $attempt -eq 3 ]]; then
+              echo "bun install failed after 3 attempts" >&2
               exit 1
             fi
 
-            echo "bun install failed on attempt $attempt, retrying in 15 seconds..." >&2
-            sleep 15
+            echo "bun install failed on attempt $attempt, retrying in 10 seconds..." >&2
+            sleep 10
           done
 
       - name: Configure git user
