@@ -70,21 +70,23 @@ export const ANTHROPIC_BASE_URL_KEY: ProviderBaseUrlKey = {
   envVar: "ANTHROPIC_BASE_URL",
   displayName: "Anthropic Base URL",
   description:
-    "Custom API endpoint for Anthropic/Claude models (e.g., self-hosted proxy).",
-  placeholder: "https://api.anthropic.com (without /v1 suffix)",
+    "Custom API endpoint for Anthropic/Claude models. Origin preferred; /v1 suffix accepted and handled automatically.",
+  placeholder: "https://api.anthropic.com",
 };
 
 export const OPENAI_BASE_URL_KEY: ProviderBaseUrlKey = {
   envVar: "OPENAI_BASE_URL",
   displayName: "OpenAI Base URL",
-  description: "Custom API endpoint for OpenAI/Codex models.",
+  description:
+    "Custom API endpoint for OpenAI/Codex models. Origin or /v1 suffix accepted.",
   placeholder: "https://api.openai.com/v1",
 };
 
 export const GEMINI_BASE_URL_KEY: ProviderBaseUrlKey = {
   envVar: "GEMINI_BASE_URL",
   displayName: "Gemini Base URL",
-  description: "Custom API endpoint for Google Gemini models.",
+  description:
+    "Custom API endpoint for Google Gemini models. Origin or /v1beta suffix accepted.",
   placeholder: "https://generativelanguage.googleapis.com/v1beta",
 };
 
