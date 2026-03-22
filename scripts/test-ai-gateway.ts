@@ -183,7 +183,7 @@ function createProvider(
 
 /** Per-provider maxOutputTokens override (MiniMax needs headroom for thinking). */
 const PROVIDER_DEFAULT_MAX_OUTPUT_TOKENS: Partial<Record<PlatformAiProvider, number>> = {
-  anthropic: 1000,
+  anthropic: 2000,
 };
 
 type CliOptions = {
