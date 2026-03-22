@@ -13,6 +13,7 @@ export * from "./utils/anthropic";
 export * from "./utils/openai";
 export * from "./utils/gemini";
 export * from "./utils/platform-ai";
+export * from "./utils/provider-url";
 export * from "./utils/parse-github-repo-url";
 export * from "./utils/reserved-cmux-ports";
 export * from "./utils/validate-exposed-ports";

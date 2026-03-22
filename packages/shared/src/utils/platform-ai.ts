@@ -1,6 +1,7 @@
 import { CLOUDFLARE_ANTHROPIC_BASE_URL, normalizeAnthropicBaseUrl } from "./anthropic";
 import { CLOUDFLARE_GEMINI_BASE_URL } from "./gemini";
 import { CLOUDFLARE_OPENAI_BASE_URL } from "./openai";
+import { normalizeOpenAiBaseUrl, normalizeGeminiBaseUrl } from "./provider-url";
 
 export const PLATFORM_AI_PROVIDERS = ["anthropic", "openai", "gemini"] as const;
 export type PlatformAiProvider = (typeof PLATFORM_AI_PROVIDERS)[number];
@@ -135,8 +136,12 @@ export function normalizePlatformAiBaseUrl(
   provider: PlatformAiProvider,
   baseUrl: string
 ): string {
-  if (provider === "anthropic") {
-    return normalizeAnthropicBaseUrl(baseUrl).forAiSdk;
+  switch (provider) {
+    case "anthropic":
+      return normalizeAnthropicBaseUrl(baseUrl).forAiSdk;
+    case "openai":
+      return normalizeOpenAiBaseUrl(baseUrl).forAiSdk;
+    case "gemini":
+      return normalizeGeminiBaseUrl(baseUrl).forAiSdk;
   }
-  return baseUrl;
 }

@@ -217,7 +217,7 @@ describe("www platform-ai runtime", () => {
     );
   });
 
-  it("keeps OpenAI resolution unchanged", async () => {
+  it("normalizes OpenAI base URL for SDK", async () => {
     const { resolveWwwPlatformAiModel } = await loadPlatformAiModule({
       OPENAI_API_KEY: "openai-key",
     });
@@ -231,16 +231,17 @@ describe("www platform-ai runtime", () => {
       modelId,
       rawBaseUrl: CLOUDFLARE_OPENAI_BASE_URL,
     });
+    // OpenAI URLs get /v1 appended for AI SDK
     expect(openAiCalls).toEqual([
       {
         apiKey: "openai-key",
-        baseURL: CLOUDFLARE_OPENAI_BASE_URL,
+        baseURL: `${CLOUDFLARE_OPENAI_BASE_URL}/v1`,
         modelId,
       },
     ]);
   });
 
-  it("keeps Gemini resolution unchanged", async () => {
+  it("keeps Gemini base URL unchanged when already has /v1beta", async () => {
     const { resolveWwwPlatformAiModel } = await loadPlatformAiModule({
       GEMINI_API_KEY: "gemini-key",
     });
@@ -254,6 +255,7 @@ describe("www platform-ai runtime", () => {
       modelId,
       rawBaseUrl: CLOUDFLARE_GEMINI_BASE_URL,
     });
+    // Gemini default URL already has /v1beta, so stays unchanged
     expect(geminiCalls).toEqual([
       {
         apiKey: "gemini-key",

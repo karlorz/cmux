@@ -65,13 +65,26 @@ describe("platform-ai", () => {
     ).toBe(`${CLOUDFLARE_ANTHROPIC_BASE_URL}/v1`);
   });
 
-  it("leaves non-anthropic base urls unchanged", () => {
+  it("normalizes openai base urls for AI SDK usage", () => {
+    // OpenAI URLs get /v1 appended for AI SDK
     expect(
       normalizePlatformAiBaseUrl("openai", CLOUDFLARE_OPENAI_BASE_URL)
-    ).toBe(CLOUDFLARE_OPENAI_BASE_URL);
+    ).toBe(`${CLOUDFLARE_OPENAI_BASE_URL}/v1`);
+    // URLs already ending in /v1 stay unchanged
+    expect(
+      normalizePlatformAiBaseUrl("openai", "https://api.openai.com/v1")
+    ).toBe("https://api.openai.com/v1");
+  });
+
+  it("normalizes gemini base urls for AI SDK usage", () => {
+    // Gemini default already has /v1beta, so stays unchanged
     expect(
       normalizePlatformAiBaseUrl("gemini", CLOUDFLARE_GEMINI_BASE_URL)
     ).toBe(CLOUDFLARE_GEMINI_BASE_URL);
+    // Bare URL gets /v1beta appended
+    expect(
+      normalizePlatformAiBaseUrl("gemini", "https://generativelanguage.googleapis.com")
+    ).toBe("https://generativelanguage.googleapis.com/v1beta");
   });
 
   it("returns maxOutputTokens for provider/tier", () => {
