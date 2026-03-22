@@ -1,2 +1,5 @@
-[features]
-codex_hooks = true
+# Repo-local Codex hooks stay disabled by default so ordinary interactive
+# sessions do not show CMUX_AUTOPILOT hook status lines.
+#
+# CMUX_AUTOPILOT enables `codex_hooks` explicitly in
+# `scripts/agent-autopilot.sh`.

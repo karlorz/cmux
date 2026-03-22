@@ -228,9 +228,9 @@ write_header_both() {
   local turn_file="$1"
   local content="$2"
   if [[ "$FOLLOW" -eq 1 ]]; then
-    printf '%b' "$content" | tee -a "$turn_file" -a "$run_log"
+    printf '%b' "$content" | tee -a "$turn_file" "$run_log"
   else
-    printf '%b' "$content" | tee -a "$turn_file" -a "$run_log" >/dev/null
+    printf '%b' "$content" | tee -a "$turn_file" "$run_log" >/dev/null
   fi
 }
 
@@ -240,10 +240,10 @@ run_and_tee() {
   local -a cmd=("$@")
   local rc=0
   if [[ "$FOLLOW" -eq 1 ]]; then
-    "${cmd[@]}" 2>&1 | tee -a "$turn_file" -a "$run_log"
+    "${cmd[@]}" 2>&1 | tee -a "$turn_file" "$run_log"
     rc="${PIPESTATUS[0]}"
   else
-    "${cmd[@]}" 2>&1 | tee -a "$turn_file" -a "$run_log" >/dev/null
+    "${cmd[@]}" 2>&1 | tee -a "$turn_file" "$run_log" >/dev/null
     rc="${PIPESTATUS[0]}"
   fi
   return "$rc"
@@ -565,6 +565,8 @@ run_codex_native_autopilot() {
   local turn_file="$3"
   local max_turns="$4"
 
+  # Keep repo-local Codex hooks opt-in. Ordinary interactive sessions stay
+  # quiet unless the autopilot launcher explicitly enables codex_hooks.
   local -a base=(codex -a never -s workspace-write --enable codex_hooks)
   if [[ -n "$MODEL" ]]; then
     base+=(-m "$MODEL")
