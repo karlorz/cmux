@@ -2,6 +2,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import {
+  CMUX_ANTHROPIC_PROXY_PLACEHOLDER_API_KEY,
   getDefaultPlatformAiBaseUrl,
   getPlatformAiModelIdForService,
   getPlatformAiProviderName,
@@ -26,12 +27,66 @@ export type ResolvedWwwPlatformAiModel = {
   rawBaseUrl: string;
 };
 
+type ResolvedWwwPlatformAiProviderRuntime = {
+  apiKey: string;
+  rawBaseUrl: string;
+  createModel: (apiKey: string, modelId: string, rawBaseUrl: string) => LanguageModel;
+};
+
 type WwwPlatformAiProviderRuntime = {
   createModel: (apiKey: string, modelId: string, rawBaseUrl: string) => LanguageModel;
-  getApiKey: () => string | undefined;
-  getRawBaseUrl: () => string;
+  resolveRuntime: () => ResolvedWwwPlatformAiProviderRuntime | null;
   missingApiKeyMessage: string;
 };
+
+function getConvexHttpActionBaseUrl(): string | null {
+  if (env.CONVEX_SITE_URL) {
+    return env.CONVEX_SITE_URL.replace(/\/$/, "");
+  }
+
+  const url = env.NEXT_PUBLIC_CONVEX_URL;
+  if (!url) {
+    return null;
+  }
+
+  return url.replace(".convex.cloud", ".convex.site").replace(/\/$/, "");
+}
+
+function resolveAnthropicRuntime(): ResolvedWwwPlatformAiProviderRuntime | null {
+  const directApiKey = env.ANTHROPIC_API_KEY;
+  if (directApiKey) {
+    return {
+      apiKey: directApiKey,
+      rawBaseUrl:
+        process.env.AIGATEWAY_ANTHROPIC_BASE_URL ||
+        getDefaultPlatformAiBaseUrl("anthropic"),
+      createModel: (apiKey, modelId, rawBaseUrl) =>
+        createAnthropic({
+          apiKey,
+          baseURL: normalizePlatformAiBaseUrl("anthropic", rawBaseUrl),
+        })(modelId),
+    };
+  }
+
+  if (!env.AWS_BEARER_TOKEN_BEDROCK) {
+    return null;
+  }
+
+  const convexHttpActionBaseUrl = getConvexHttpActionBaseUrl();
+  if (!convexHttpActionBaseUrl) {
+    return null;
+  }
+
+  return {
+    apiKey: CMUX_ANTHROPIC_PROXY_PLACEHOLDER_API_KEY,
+    rawBaseUrl: `${convexHttpActionBaseUrl}/api/anthropic`,
+    createModel: (apiKey, modelId, rawBaseUrl) =>
+      createAnthropic({
+        apiKey,
+        baseURL: normalizePlatformAiBaseUrl("anthropic", rawBaseUrl),
+      })(modelId),
+  };
+}
 
 const WWW_PLATFORM_AI_PROVIDER_RUNTIME: Record<
   PlatformAiProvider,
@@ -43,12 +98,9 @@ const WWW_PLATFORM_AI_PROVIDER_RUNTIME: Record<
         apiKey,
         baseURL: normalizePlatformAiBaseUrl("anthropic", rawBaseUrl),
       })(modelId),
-    getApiKey: () => env.ANTHROPIC_API_KEY,
-    getRawBaseUrl: () =>
-      process.env.AIGATEWAY_ANTHROPIC_BASE_URL ||
-      getDefaultPlatformAiBaseUrl("anthropic"),
+    resolveRuntime: resolveAnthropicRuntime,
     missingApiKeyMessage:
-      "ANTHROPIC_API_KEY environment variable is required for Anthropic review models.",
+      "Anthropic review models require ANTHROPIC_API_KEY or AWS_BEARER_TOKEN_BEDROCK environment variables.",
   },
   openai: {
     createModel: (apiKey, modelId, rawBaseUrl) =>
@@ -56,10 +108,20 @@ const WWW_PLATFORM_AI_PROVIDER_RUNTIME: Record<
         apiKey,
         baseURL: rawBaseUrl,
       })(modelId),
-    getApiKey: () => env.OPENAI_API_KEY,
-    getRawBaseUrl: () =>
-      process.env.AIGATEWAY_OPENAI_BASE_URL ||
-      getDefaultPlatformAiBaseUrl("openai"),
+    resolveRuntime: () => {
+      const apiKey = env.OPENAI_API_KEY;
+      if (!apiKey) {
+        return null;
+      }
+
+      return {
+        apiKey,
+        rawBaseUrl:
+          process.env.AIGATEWAY_OPENAI_BASE_URL ||
+          getDefaultPlatformAiBaseUrl("openai"),
+        createModel: WWW_PLATFORM_AI_PROVIDER_RUNTIME.openai.createModel,
+      };
+    },
     missingApiKeyMessage:
       "OPENAI_API_KEY environment variable is required for OpenAI review models.",
   },
@@ -69,21 +131,33 @@ const WWW_PLATFORM_AI_PROVIDER_RUNTIME: Record<
         apiKey,
         baseURL: rawBaseUrl,
       })(modelId),
-    getApiKey: () => env.GEMINI_API_KEY,
-    getRawBaseUrl: () =>
-      process.env.AIGATEWAY_GEMINI_BASE_URL ||
-      getDefaultPlatformAiBaseUrl("gemini"),
+    resolveRuntime: () => {
+      const apiKey = env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return null;
+      }
+
+      return {
+        apiKey,
+        rawBaseUrl:
+          process.env.AIGATEWAY_GEMINI_BASE_URL ||
+          getDefaultPlatformAiBaseUrl("gemini"),
+        createModel: WWW_PLATFORM_AI_PROVIDER_RUNTIME.gemini.createModel,
+      };
+    },
     missingApiKeyMessage:
       "GEMINI_API_KEY environment variable is required for Gemini review models.",
   },
 };
 
-function getWwwPlatformAiApiKey(provider: PlatformAiProvider): string | undefined {
-  return WWW_PLATFORM_AI_PROVIDER_RUNTIME[provider].getApiKey();
+function resolveWwwPlatformAiProviderRuntime(
+  provider: PlatformAiProvider
+): ResolvedWwwPlatformAiProviderRuntime | null {
+  return WWW_PLATFORM_AI_PROVIDER_RUNTIME[provider].resolveRuntime();
 }
 
-export function getWwwPlatformAiRawBaseUrl(provider: PlatformAiProvider): string {
-  return WWW_PLATFORM_AI_PROVIDER_RUNTIME[provider].getRawBaseUrl();
+export function getWwwPlatformAiRawBaseUrl(provider: PlatformAiProvider): string | null {
+  return resolveWwwPlatformAiProviderRuntime(provider)?.rawBaseUrl ?? null;
 }
 
 export function getWwwPlatformAiMissingApiKeyMessage(
@@ -95,22 +169,17 @@ export function getWwwPlatformAiMissingApiKeyMessage(
 export function createWwwPlatformAiModel(
   config: WwwPlatformAiModelConfig
 ): ResolvedWwwPlatformAiModel | null {
-  const apiKey = getWwwPlatformAiApiKey(config.provider);
-  if (!apiKey) {
+  const runtime = resolveWwwPlatformAiProviderRuntime(config.provider);
+  if (!runtime) {
     return null;
   }
 
-  const rawBaseUrl = getWwwPlatformAiRawBaseUrl(config.provider);
   return {
-    model: WWW_PLATFORM_AI_PROVIDER_RUNTIME[config.provider].createModel(
-      apiKey,
-      config.model,
-      rawBaseUrl
-    ),
+    model: runtime.createModel(runtime.apiKey, config.model, runtime.rawBaseUrl),
     modelId: config.model,
     provider: config.provider,
     providerName: getPlatformAiProviderName(config.provider),
-    rawBaseUrl,
+    rawBaseUrl: runtime.rawBaseUrl,
   };
 }
 
