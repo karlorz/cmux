@@ -3,7 +3,11 @@ import { CODEX_AUTH_JSON, OPENAI_API_KEY } from "../../apiKeys";
 import { checkOpenAIRequirements } from "./check-requirements";
 // Lazy-load Node-only completion detector to avoid bundling fs in browser
 import { startCodexCompletionDetector } from "./completion-detector";
-import { applyCodexApiKeys, getOpenAIEnvironment } from "./environment";
+import {
+  applyCodexApiKeys,
+  CODEX_HOOKED_COMMAND_PATH,
+  getOpenAIEnvironment,
+} from "./environment";
 
 // Factory types and helpers
 type CodexReasoningEffort = "xhigh" | "high" | "medium" | "low" | "minimal";
@@ -22,7 +26,7 @@ function createCodexConfig(spec: CodexModelSpec): AgentConfig {
     : [];
   return {
     name: `codex/${nameSuffix}`,
-    command: "codex",
+    command: CODEX_HOOKED_COMMAND_PATH,
     args: [
       "--model",
       spec.model,

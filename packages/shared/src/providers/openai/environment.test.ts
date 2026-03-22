@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   applyCodexApiKeys,
+  CODEX_HOOKED_COMMAND_PATH,
   getOpenAIEnvironment,
   stripFilteredConfigKeys,
 } from "./environment";
@@ -644,7 +645,37 @@ foo = "bar"
     ).toString("utf-8");
 
     expect(resumeScript).toContain('SESSION_ID_FILE="/root/lifecycle/codex-session-id.txt"');
-    expect(resumeScript).toContain('exec codex resume "$THREAD_ID"');
+    expect(resumeScript).toContain(`exec ${CODEX_HOOKED_COMMAND_PATH} resume "$THREAD_ID"`);
+  });
+
+  it("stores Codex hooks as a template and keeps ordinary sessions hook-free by default", async () => {
+    const result = await getOpenAIEnvironment({} as never);
+
+    const liveHooksFile = result.files?.find(
+      (file) => file.destinationPath === "$HOME/.codex/hooks.json"
+    );
+    expect(liveHooksFile).toBeUndefined();
+
+    const hooksTemplate = decodeEnvironmentFile(result, "/root/lifecycle/codex-hooks.json");
+    expect(hooksTemplate).toContain('"Stop"');
+    expect(hooksTemplate).toContain("/root/lifecycle/codex-stop-hook.sh");
+    expect(hooksTemplate).toContain("/root/lifecycle/codex-session-start-hook.sh");
+
+    const codexWrapper = decodeEnvironmentFile(result, CODEX_HOOKED_COMMAND_PATH);
+    expect(codexWrapper).toContain('HOOKS_TEMPLATE="/root/lifecycle/codex-hooks.json"');
+    expect(codexWrapper).toContain('cp "$HOOKS_TEMPLATE" "$TEMP_HOME/hooks.json"');
+    expect(codexWrapper).toContain('export CODEX_HOME="$TEMP_HOME"');
+    expect(codexWrapper).toContain('exec codex "$@"');
+
+    const shellHelpers = decodeEnvironmentFile(result, "/root/lifecycle/codex-shell-helpers.sh");
+    expect(shellHelpers).toContain('if [ "${CMUX_AUTOPILOT_ENABLED:-0}" = "1" ]');
+    expect(shellHelpers).toContain('command codex "$@"');
+    expect(result.startupCommands).toContain(
+      "touch ~/.bashrc && grep -F '/root/lifecycle/codex-shell-helpers.sh' ~/.bashrc >/dev/null || printf '\\n[ -f /root/lifecycle/codex-shell-helpers.sh ] && . /root/lifecycle/codex-shell-helpers.sh\\n' >> ~/.bashrc"
+    );
+    expect(result.startupCommands).toContain(
+      "touch ~/.zshrc && grep -F '/root/lifecycle/codex-shell-helpers.sh' ~/.zshrc >/dev/null || printf '\\n[ -f /root/lifecycle/codex-shell-helpers.sh ] && . /root/lifecycle/codex-shell-helpers.sh\\n' >> ~/.zshrc"
+    );
   });
 
   it("injects gh and git wrappers for task-backed sandboxes", async () => {
@@ -812,6 +843,8 @@ foo = "bar"
     expect(autopilotScript).toContain(
       "Continue from where you left off. Do not ask whether to continue."
     );
+    expect(autopilotScript).toContain(`CODEX_RUNNER="${CODEX_HOOKED_COMMAND_PATH}"`);
+    expect(autopilotScript).toContain('"$CODEX_RUNNER" exec');
     expect(autopilotScript).toContain(
       "Final turn (wrap up). Time left: ${TIME_LEFT}s. Stop starting large new work. Stabilize and write a summary."
     );
