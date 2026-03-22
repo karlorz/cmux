@@ -219,6 +219,159 @@ export interface ProviderSessionBoundEvent extends AgentCommEventBase {
 }
 
 // =============================================================================
+// Session Lifecycle Events (Phase 4: Provider-Neutral Lifecycle)
+// =============================================================================
+
+/**
+ * A session has started for an agent.
+ */
+export interface SessionStartedEvent extends AgentCommEventBase {
+  type: "session_started";
+  taskId?: string;
+  taskRunId?: string;
+  provider: string;
+  providerSessionId?: string;
+  mode?: "head" | "worker" | "reviewer";
+}
+
+/**
+ * A session was resumed from a previous state.
+ */
+export interface SessionResumedEvent extends AgentCommEventBase {
+  type: "session_resumed";
+  taskId?: string;
+  taskRunId?: string;
+  provider: string;
+  providerSessionId?: string;
+  previousSessionId?: string;
+}
+
+/**
+ * A session stop was requested (by user, autopilot, or policy).
+ */
+export interface SessionStopRequestedEvent extends AgentCommEventBase {
+  type: "session_stop_requested";
+  taskId?: string;
+  taskRunId?: string;
+  provider: string;
+  providerSessionId?: string;
+  source: "user" | "hook" | "autopilot" | "policy" | "timeout" | "error";
+  reason?: string;
+}
+
+/**
+ * A session stop was blocked (by hook, approval, or policy).
+ */
+export interface SessionStopBlockedEvent extends AgentCommEventBase {
+  type: "session_stop_blocked";
+  taskId?: string;
+  taskRunId?: string;
+  provider: string;
+  providerSessionId?: string;
+  reason: string;
+  source: "hook" | "approval" | "policy" | "autopilot";
+  continuationPrompt?: string;
+}
+
+/**
+ * A session stop failed (unexpected error during shutdown).
+ */
+export interface SessionStopFailedEvent extends AgentCommEventBase {
+  type: "session_stop_failed";
+  taskId?: string;
+  taskRunId?: string;
+  provider: string;
+  providerSessionId?: string;
+  error: string;
+  exitCode?: number;
+}
+
+// =============================================================================
+// Memory and Instructions Events (Phase 4: Context Health)
+// =============================================================================
+
+/**
+ * Instructions were loaded into the agent context.
+ */
+export interface InstructionsLoadedEvent extends AgentCommEventBase {
+  type: "instructions_loaded";
+  taskId?: string;
+  taskRunId?: string;
+  provider: string;
+  sources: string[];
+  totalBytes?: number;
+  fileCount?: number;
+}
+
+/**
+ * Memory was loaded into the agent context.
+ */
+export interface MemoryLoadedEvent extends AgentCommEventBase {
+  type: "memory_loaded";
+  taskId?: string;
+  taskRunId?: string;
+  provider: string;
+  memoryType: "knowledge" | "tasks" | "mailbox" | "daily" | "behavior";
+  sources: string[];
+  totalBytes?: number;
+  entryCount?: number;
+}
+
+/**
+ * Memory was updated during the session.
+ */
+export interface MemoryUpdatedEvent extends AgentCommEventBase {
+  type: "memory_updated";
+  taskId?: string;
+  taskRunId?: string;
+  provider: string;
+  memoryType: "knowledge" | "tasks" | "mailbox" | "daily" | "behavior";
+  action: "create" | "update" | "delete" | "archive";
+  path?: string;
+  deltaBytes?: number;
+}
+
+// =============================================================================
+// Context Health Events (Phase 4: Context Pressure Visibility)
+// =============================================================================
+
+/**
+ * A context health warning was detected.
+ */
+export interface ContextWarningEvent extends AgentCommEventBase {
+  type: "context_warning";
+  taskId?: string;
+  taskRunId?: string;
+  provider: string;
+  severity: "info" | "warning" | "critical";
+  warningType:
+    | "memory_bloat"
+    | "tool_output"
+    | "prompt_size"
+    | "capacity"
+    | "token_limit";
+  summary: string;
+  currentUsage?: number;
+  maxCapacity?: number;
+  usagePercent?: number;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Context was compacted to reduce size.
+ */
+export interface ContextCompactedEvent extends AgentCommEventBase {
+  type: "context_compacted";
+  taskId?: string;
+  taskRunId?: string;
+  provider: string;
+  previousBytes?: number;
+  newBytes?: number;
+  reductionPercent?: number;
+  summary?: string;
+}
+
+// =============================================================================
 // Union Type
 // =============================================================================
 
@@ -236,7 +389,20 @@ export type AgentCommEvent =
   | ApprovalResolvedEvent
   | PlanUpdatedEvent
   | OrchestrationCompletedEvent
-  | ProviderSessionBoundEvent;
+  | ProviderSessionBoundEvent
+  // Session Lifecycle Events (Phase 4)
+  | SessionStartedEvent
+  | SessionResumedEvent
+  | SessionStopRequestedEvent
+  | SessionStopBlockedEvent
+  | SessionStopFailedEvent
+  // Memory and Instructions Events (Phase 4)
+  | InstructionsLoadedEvent
+  | MemoryLoadedEvent
+  | MemoryUpdatedEvent
+  // Context Health Events (Phase 4)
+  | ContextWarningEvent
+  | ContextCompactedEvent;
 
 /**
  * Extract event type string from event union.
@@ -421,4 +587,48 @@ export function isTerminalEvent(
   event: AgentCommEvent
 ): event is OrchestrationCompletedEvent {
   return event.type === "orchestration_completed";
+}
+
+/**
+ * Check if an event is a session lifecycle event.
+ */
+export function isSessionLifecycleEvent(
+  event: AgentCommEvent
+): event is
+  | SessionStartedEvent
+  | SessionResumedEvent
+  | SessionStopRequestedEvent
+  | SessionStopBlockedEvent
+  | SessionStopFailedEvent {
+  return (
+    event.type === "session_started" ||
+    event.type === "session_resumed" ||
+    event.type === "session_stop_requested" ||
+    event.type === "session_stop_blocked" ||
+    event.type === "session_stop_failed"
+  );
+}
+
+/**
+ * Check if an event is a memory-related event.
+ */
+export function isMemoryEvent(
+  event: AgentCommEvent
+): event is InstructionsLoadedEvent | MemoryLoadedEvent | MemoryUpdatedEvent {
+  return (
+    event.type === "instructions_loaded" ||
+    event.type === "memory_loaded" ||
+    event.type === "memory_updated"
+  );
+}
+
+/**
+ * Check if an event is a context health event.
+ */
+export function isContextHealthEvent(
+  event: AgentCommEvent
+): event is ContextWarningEvent | ContextCompactedEvent {
+  return (
+    event.type === "context_warning" || event.type === "context_compacted"
+  );
 }
