@@ -19,7 +19,7 @@ echo ""
 
 # Configuration
 TEAM="${CMUX_TEST_TEAM:-default}"
-API_URL="${CMUX_SERVER_URL:-https://cmux.sh}"
+API_URL="${CMUX_API_URL:-https://cmux-www.karldigi.dev}"
 SKIP_CLEANUP="false"
 CREATED_RULE_IDS=()
 
@@ -42,7 +42,7 @@ while [[ $# -gt 0 ]]; do
       echo ""
       echo "Options:"
       echo "  --team <slug>      Team slug (default: default)"
-      echo "  --api-url <url>    API URL (default: https://cmux.sh)"
+      echo "  --api-url <url>    API URL (default: https://cmux-www.karldigi.dev)"
       echo "  --skip-cleanup     Keep created test rules"
       exit 0
       ;;
