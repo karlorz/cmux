@@ -12,6 +12,7 @@ import {
 import { buildGeminiMdContent } from "../../agent-instruction-pack";
 import { buildGeminiMcpServers } from "../../mcp-injection";
 import { getTaskSandboxWrapperFiles } from "../common/task-sandbox-wrappers";
+import { buildStandardLifecycleHooks } from "../../provider-lifecycle-adapter";
 
 type GeminiModelSettings = {
   skipNextSpeakerCheck?: boolean;
@@ -72,92 +73,23 @@ export async function getGeminiEnvironment(
   // Ensure .gemini directory exists
   startupCommands.push("mkdir -p ~/.gemini");
   startupCommands.push("mkdir -p ~/.gemini/commands");
-  startupCommands.push("mkdir -p /root/lifecycle/gemini");
 
   // Clean up any old Gemini telemetry files from previous runs
   // The actual telemetry path will be set by the agent spawner with the task ID
   startupCommands.push("rm -f /tmp/gemini-telemetry-*.log 2>/dev/null || true");
 
-  // Session start hook - posts activity event when Gemini session begins
-  const sessionStartHook = `#!/bin/bash
-set -eu
-LOG_FILE="/root/lifecycle/gemini-hook.log"
-if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
-  exit 0
-fi
-# Post session start activity event (non-blocking)
-(
-  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
-    -H "Content-Type: application/json" \\
-    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
-    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" \\
-         '{taskRunId: $trid, type: "session_start", toolName: "gemini", summary: "Session started"}')" \\
-    >> "\${LOG_FILE}" 2>&1 || true
-) &
-exit 0
-`;
-  files.push({
-    destinationPath: "/root/lifecycle/gemini/session-start-hook.sh",
-    contentBase64: Buffer.from(sessionStartHook).toString("base64"),
-    mode: "755",
-  });
-
-  // Session completion hook - posts activity event when Gemini session ends
-  const sessionCompleteHook = `#!/bin/bash
-set -eu
-LOG_FILE="/root/lifecycle/gemini-hook.log"
-MARKER_DIR="/root/lifecycle"
-GENERIC_MARKER="\${MARKER_DIR}/done.txt"
-
-# Post session completion activity event (non-blocking)
-if [ -n "\${CMUX_TASK_RUN_JWT:-}" ] && [ -n "\${CMUX_CALLBACK_URL:-}" ]; then
-  (
-    curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
-      -H "Content-Type: application/json" \\
-      -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
-      -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" \\
-           '{taskRunId: $trid, type: "session_stop", toolName: "gemini", summary: "Session completed"}')" \\
-      >> "\${LOG_FILE}" 2>&1 || true
-  ) &
-fi
-
-# Sync memory files (best-effort)
-/root/lifecycle/memory/sync.sh >> "\${LOG_FILE}" 2>&1 || true
-
-# Create completion marker
-touch "\${GENERIC_MARKER}"
-echo "[CMUX] Gemini session complete" >> "\${LOG_FILE}"
-`;
-  files.push({
-    destinationPath: "/root/lifecycle/gemini/session-complete-hook.sh",
-    contentBase64: Buffer.from(sessionCompleteHook).toString("base64"),
-    mode: "755",
-  });
-
-  // Error hook - surfaces errors to dashboard
-  const errorHook = `#!/bin/bash
-set -eu
-LOG_FILE="/root/lifecycle/gemini-hook.log"
-ERROR_MSG="\${1:-Unknown error}"
-if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
-  exit 0
-fi
-# Post error activity event (non-blocking)
-(
-  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
-    -H "Content-Type: application/json" \\
-    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
-    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" --arg msg "$ERROR_MSG" \\
-         '{taskRunId: $trid, type: "error", toolName: "gemini", summary: $msg}')" \\
-    >> "\${LOG_FILE}" 2>&1 || true
-) &
-exit 0
-`;
-  files.push({
-    destinationPath: "/root/lifecycle/gemini/error-hook.sh",
-    contentBase64: Buffer.from(errorHook).toString("base64"),
-    mode: "755",
-  });
+  // Build standard lifecycle hooks using shared adapter
+  const lifecycleHooks = buildStandardLifecycleHooks(
+    {
+      provider: "gemini",
+      taskRunId: ctx.taskRunId,
+      includeMemorySync: true,
+      createCompletionMarker: true,
+    },
+    Buffer.from.bind(Buffer)
+  );
+  files.push(...lifecycleHooks.files);
+  startupCommands.push(...lifecycleHooks.startupCommands);
 
   // Fire session start hook on sandbox initialization
   startupCommands.push("/root/lifecycle/gemini/session-start-hook.sh &");

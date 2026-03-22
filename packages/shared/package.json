@@ -202,6 +202,10 @@
       "import": "./src/agent-instruction-pack.ts",
       "types": "./src/agent-instruction-pack.ts"
     },
+    "./provider-lifecycle-adapter": {
+      "import": "./src/provider-lifecycle-adapter.ts",
+      "types": "./src/provider-lifecycle-adapter.ts"
+    },
     "./observability": {
       "import": "./src/observability/index.ts",
       "types": "./src/observability/index.ts"
