@@ -61,9 +61,26 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Install dependencies (bun)
+      - name: Install dependencies (skip Electron download, retry on transient failure)
         if: steps.release_changes.outputs.proceed == 'true'
-        run: bun install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+        run: |
+          set -euo pipefail
+
+          for attempt in 1 2 3; do
+            if bun install --frozen-lockfile; then
+              exit 0
+            fi
+
+            if [ "$attempt" -eq 3 ]; then
+              echo "bun install failed after $attempt attempts" >&2
+              exit 1
+            fi
+
+            echo "bun install failed on attempt $attempt, retrying in 15 seconds..." >&2
+            sleep 15
+          done
 
       - name: Configure git user
         if: steps.release_changes.outputs.proceed == 'true'
