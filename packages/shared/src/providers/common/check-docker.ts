@@ -10,12 +10,15 @@ const execAsync = promisify(childProcessExec);
 
 const DOCKER_BINARY_NAME = process.platform === "win32" ? "docker.exe" : "docker";
 const PATH_DELIMITER = process.platform === "win32" ? ";" : ":";
+const DOCKER_COMMAND_TIMEOUT_MS = 3_000;
 
 const DOCKER_INFO_COMMAND = "docker info --format '{{json .ServerVersion}}'";
 const DOCKER_VERSION_COMMAND = "docker version --format '{{.Server.Version}}'";
 
 interface ExecError extends Error {
   code?: string | number;
+  killed?: boolean;
+  signal?: NodeJS.Signals | null;
   stderr?: string | Buffer;
   stdout?: string | Buffer;
 }
@@ -202,7 +205,11 @@ function describeExecError(error: unknown): string {
     return "Unknown error";
   }
 
-  const { stderr, message } = error;
+  const { stderr, message, killed } = error;
+
+  if (killed || message.includes("timed out")) {
+    return `Docker command timed out after ${DOCKER_COMMAND_TIMEOUT_MS}ms`;
+  }
 
   if (stderr) {
     const text = typeof stderr === "string"
@@ -232,6 +239,10 @@ function parseVersion(output: string): string | undefined {
   return trimmed;
 }
 
+function execDockerCommand(command: string) {
+  return execAsync(command, { timeout: DOCKER_COMMAND_TIMEOUT_MS });
+}
+
 async function dockerSocketExists(): Promise<DockerSocketStatus> {
   const { remoteHost, candidates } = getDockerSocketCandidates();
   if (remoteHost) {
@@ -257,7 +268,7 @@ async function dockerSocketExists(): Promise<DockerSocketStatus> {
 
 export async function ensureDockerDaemonReady(): Promise<DockerDaemonReadiness> {
   try {
-    const { stdout } = await execAsync(DOCKER_INFO_COMMAND);
+    const { stdout } = await execDockerCommand(DOCKER_INFO_COMMAND);
     const version = parseVersion(stdout);
     return { ready: true, version };
   } catch (error) {
@@ -271,7 +282,7 @@ export async function ensureDockerDaemonReady(): Promise<DockerDaemonReadiness> 
 export async function checkDockerStatus(): Promise<DockerStatus> {
   try {
     // Ensure Docker CLI is installed
-    await execAsync("docker --version");
+    await execDockerCommand("docker --version");
   } catch (error) {
     return {
       isRunning: false,
@@ -302,7 +313,7 @@ export async function checkDockerStatus(): Promise<DockerStatus> {
   }
 
   try {
-    await execAsync("docker ps");
+    await execDockerCommand("docker ps");
   } catch (error) {
     return {
       isRunning: false,
@@ -313,7 +324,7 @@ export async function checkDockerStatus(): Promise<DockerStatus> {
   let version = readiness.version;
   if (!version) {
     try {
-      const { stdout } = await execAsync(DOCKER_VERSION_COMMAND);
+      const { stdout } = await execDockerCommand(DOCKER_VERSION_COMMAND);
       version = parseVersion(stdout);
     } catch {
       // Ignore failure to parse version
@@ -324,7 +335,7 @@ export async function checkDockerStatus(): Promise<DockerStatus> {
     process.env.WORKER_IMAGE_NAME ?? "docker.io/karl8080/cmux:latest";
 
   try {
-    await execAsync(`docker image inspect "${imageName.replace(/"/g, '\\"')}"`);
+    await execDockerCommand(`docker image inspect "${imageName.replace(/"/g, '\\"')}"`);
     return {
       isRunning: true,
       version,
@@ -348,7 +359,7 @@ export async function checkDockerStatus(): Promise<DockerStatus> {
     }
 
     try {
-      const { stdout } = await execAsync(
+      const { stdout } = await execDockerCommand(
         "docker ps -a --format '{{.Command}}'"
       );
       const isPulling = stdout.includes("pull ") && stdout.includes(imageName);
