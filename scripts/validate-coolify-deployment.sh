@@ -3,7 +3,7 @@
 #
 # Usage:
 #   ./scripts/validate-coolify-deployment.sh
-#   ./scripts/validate-coolify-deployment.sh --client-url https://app.cmux.sh
+#   ./scripts/validate-coolify-deployment.sh --client-url https://cmux.karldigi.dev --www-url https://cmux-www.karldigi.dev --server-url https://cmux-server.karldigi.dev
 #
 # Checks:
 #   1. Client health endpoint (nginx)
