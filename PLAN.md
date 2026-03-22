@@ -120,8 +120,19 @@ All 11 Claude Code v2.1.78 hooks integrated:
 - [x] Error hook for error surfacing
 - [x] Startup command to fire session start
 
-### Phase 17: Cursor Activity Stream Integration — PR #767
-- [x] Session start hook with activity event
+### Phase 17: Cursor Activity Stream Integration — MERGED
+- [x] Session start hook with activity event (PR #767)
 - [x] Session completion hook with activity event
 - [x] Error hook for error surfacing
 - [x] Startup command to fire session start
+
+### Activity Stream Integration Summary (Phases 11-17)
+All 8 providers now have real-time dashboard activity streaming:
+- Claude Code (anthropic) - Phases 5-10 hooks
+- Codex CLI (openai) - Phase 11
+- OpenCode - Phase 12
+- Gemini CLI - Phase 13
+- Amp - Phase 14
+- Grok - Phase 15
+- Qwen - Phase 16
+- Cursor - Phase 17
