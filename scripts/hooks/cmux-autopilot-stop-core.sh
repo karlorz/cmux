@@ -146,6 +146,50 @@ cleanup_ralph_state() {
   log_debug "ralph: cleaned up state files"
 }
 
+# Report session_stop_blocked event to cmux API (best-effort, non-blocking)
+report_session_stop_blocked() {
+  local reason="$1"
+  local source="$2"
+  local continuation_prompt="$3"
+
+  # Only report if we have the necessary env vars
+  if [ -z "${CMUX_CALLBACK_URL:-}" ] || [ -z "${CMUX_TASK_RUN_JWT:-}" ]; then
+    log_debug "skip session event: missing CMUX_CALLBACK_URL or CMUX_TASK_RUN_JWT"
+    return 0
+  fi
+
+  # Fire and forget - don't block the hook on API latency
+  (
+    curl -sf -X POST \
+      "${CMUX_CALLBACK_URL}/api/autopilot/session-event" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer ${CMUX_TASK_RUN_JWT}" \
+      -d "$(jq -cn \
+        --arg eventType "session_stop_blocked" \
+        --arg provider "$PROVIDER" \
+        --arg reason "$reason" \
+        --arg source "$source" \
+        --arg continuationPrompt "$continuation_prompt" \
+        --arg turnCount "$TURN_COUNT" \
+        --arg maxTurns "$MAX_TURNS" \
+        '{
+          eventType: $eventType,
+          provider: $provider,
+          reason: $reason,
+          source: $source,
+          continuationPrompt: $continuationPrompt,
+          metadata: {
+            turnCount: ($turnCount | tonumber),
+            maxTurns: (if $maxTurns == "-1" then -1 else ($maxTurns | tonumber) end),
+            ralphMode: (env.RALPH_MODE == "1")
+          }
+        }')" \
+      2>/dev/null || true
+  ) &
+
+  log_debug "session_stop_blocked event dispatched (background)"
+}
+
 # Ralph Mode: check for completion signal in last assistant message
 check_ralph_completion() {
   if [ "$RALPH_MODE" != "1" ]; then
@@ -370,6 +414,15 @@ ${WAIT_INSTRUCTION}"
   fi
   REASON="${REASON}
 End with: Progress, Commands run, Files changed, Next."
+fi
+
+# Report the block event to cmux (best-effort)
+if [ "$RALPH_MODE" = "1" ]; then
+  report_session_stop_blocked "ralph_loop_continuation" "autopilot" "$REASON"
+elif [ -n "$WRAPUP_SOURCE" ]; then
+  report_session_stop_blocked "wrapup_phase" "autopilot" "$REASON"
+else
+  report_session_stop_blocked "turn_continuation" "autopilot" "$REASON"
 fi
 
 jq -cn --arg reason "$REASON" '{"decision":"block","reason":$reason}'

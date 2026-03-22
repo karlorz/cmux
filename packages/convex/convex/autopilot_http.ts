@@ -8,6 +8,7 @@
  * - POST /api/autopilot/heartbeat - Update heartbeat timestamp
  * - POST /api/autopilot/thread-id - Store Codex thread-id for resume
  * - POST /api/autopilot/status - Update autopilot status
+ * - POST /api/autopilot/session-event - Log session lifecycle events
  * - GET /api/autopilot/info - Get autopilot info for resume
  */
 
@@ -183,6 +184,106 @@ export const autopilotStatus = httpAction(async (ctx, req) => {
   } catch (error) {
     console.error("[autopilot_http] Failed to update status", error);
     const message = error instanceof Error ? error.message : "Failed to update status";
+    return jsonResponse({ code: 500, message }, 500);
+  }
+});
+
+/**
+ * POST /api/autopilot/session-event
+ *
+ * Log a session lifecycle event (session_stop_blocked, session_stop_requested, etc.).
+ * Called by the autopilot stop hook when blocking or allowing a session stop.
+ */
+export const autopilotSessionEvent = httpAction(async (ctx, req) => {
+  const contentTypeError = requireJsonContentType(req);
+  if (contentTypeError) return contentTypeError;
+
+  const authResult = await authenticateRequest(req);
+  if (authResult instanceof Response) return authResult;
+  const { taskRunId } = authResult;
+
+  // Parse and validate body
+  const SessionEventSchema = z.object({
+    eventType: z.enum([
+      "session_started",
+      "session_resumed",
+      "session_stop_requested",
+      "session_stop_blocked",
+      "session_stop_failed",
+    ]),
+    provider: z.string(),
+    providerSessionId: z.string().optional(),
+    // For session_stop_blocked
+    reason: z.string().optional(),
+    source: z.enum(["hook", "approval", "policy", "autopilot", "user", "timeout", "error"]).optional(),
+    continuationPrompt: z.string().optional(),
+    // For session_stop_failed
+    error: z.string().optional(),
+    exitCode: z.number().optional(),
+    // Generic metadata
+    metadata: z.record(z.string(), z.unknown()).optional(),
+  });
+
+  let payload: z.infer<typeof SessionEventSchema>;
+  try {
+    const parsed = await req.json();
+    const validation = SessionEventSchema.safeParse(parsed);
+    if (!validation.success) {
+      return jsonResponse(
+        { code: 400, message: `Invalid payload: ${validation.error.message}` },
+        400
+      );
+    }
+    payload = validation.data;
+  } catch {
+    return jsonResponse({ code: 400, message: "Invalid JSON" }, 400);
+  }
+
+  try {
+    // Get task run to find teamId and orchestrationId
+    const taskRunDoc = await ctx.runQuery(internal.taskRuns.getById, {
+      id: taskRunId as Id<"taskRuns">,
+    });
+
+    if (!taskRunDoc) {
+      return jsonResponse({ code: 404, message: "Task run not found" }, 404);
+    }
+
+    // Generate event ID
+    const timestamp = Date.now().toString(36);
+    const random = Math.random().toString(36).substring(2, 10);
+    const eventId = `evt_${timestamp}_${random}`;
+
+    // Use taskRunId as orchestrationId fallback if not set
+    const orchestrationId = taskRunDoc.orchestrationId ?? taskRunId;
+
+    // Log the event
+    await ctx.runMutation(internal.orchestrationEvents.logEventInternal, {
+      teamId: taskRunDoc.teamId,
+      eventId,
+      orchestrationId,
+      eventType: payload.eventType,
+      taskRunId: taskRunId as Id<"taskRuns">,
+      payload: {
+        provider: payload.provider,
+        providerSessionId: payload.providerSessionId,
+        reason: payload.reason,
+        source: payload.source,
+        continuationPrompt: payload.continuationPrompt,
+        error: payload.error,
+        exitCode: payload.exitCode,
+        metadata: payload.metadata,
+      },
+    });
+
+    return jsonResponse({
+      ok: true,
+      eventId,
+      eventType: payload.eventType,
+    });
+  } catch (error) {
+    console.error("[autopilot_http] Failed to log session event", error);
+    const message = error instanceof Error ? error.message : "Failed to log session event";
     return jsonResponse({ code: 500, message }, 500);
   }
 });
