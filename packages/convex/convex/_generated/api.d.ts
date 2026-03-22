@@ -22,6 +22,7 @@ import type * as analytics from "../analytics.js";
 import type * as anthropic_http from "../anthropic_http.js";
 import type * as apiKeys from "../apiKeys.js";
 import type * as approvalBroker from "../approvalBroker.js";
+import type * as approvalBroker_http from "../approvalBroker_http.js";
 import type * as autopilot_http from "../autopilot_http.js";
 import type * as backfill from "../backfill.js";
 import type * as bedrock_utils from "../bedrock_utils.js";
@@ -171,6 +172,7 @@ declare const fullApi: ApiFromModules<{
   anthropic_http: typeof anthropic_http;
   apiKeys: typeof apiKeys;
   approvalBroker: typeof approvalBroker;
+  approvalBroker_http: typeof approvalBroker_http;
   autopilot_http: typeof autopilot_http;
   backfill: typeof backfill;
   bedrock_utils: typeof bedrock_utils;

@@ -743,3 +743,18 @@ export const countPendingByTeam = internalQuery({
     return pending.length;
   },
 });
+
+/**
+ * Get approval request by ID internally (no auth).
+ */
+export const getByRequestIdInternal = internalQuery({
+  args: {
+    requestId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return ctx.db
+      .query("approvalRequests")
+      .withIndex("by_request_id", (q) => q.eq("requestId", args.requestId))
+      .first();
+  },
+});
