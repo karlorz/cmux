@@ -35,6 +35,11 @@ Evaluate lighter spawn path for sandbox agents.
 
 **Effort:** 2-3 days
 
+**Status (2026-03-22):** EVALUATED - NOT recommended for cmux task sandboxes.
+- `--bare` disables hooks needed for activity streaming, error surfacing, and autopilot continuation
+- Minor startup latency improvement (~0.5-1s) not worth losing dashboard visibility
+- See `/root/Documents/obsidian_vault/5️⃣-Projects/GitHub/cmux/dev-log/2026-03-22-bare-mode-evaluation.md`
+
 ---
 
 ### Phase 2: Approval Channel Bridge (Week 1-2)
@@ -50,6 +55,12 @@ Map Claude's `--channels` approval relay to cmux's approval broker.
 - `packages/convex/convex/approvals.ts`
 
 **Effort:** 3-4 days
+
+**Status (2026-03-22):** DESIGNED - Implementation deferred.
+- Design documented in `/root/Documents/obsidian_vault/5️⃣-Projects/GitHub/cmux/cmux-claude-channels-approval-bridge.md`
+- Recommended approach: MCP Permission Hook (Option C)
+- Uses existing PermissionRequest hook + cmux approval broker
+- Would need HTTP endpoints for approval creation/polling
 
 ---
 
@@ -105,8 +116,8 @@ Leverage 1M context for Opus 4.6.
 
 | Phase | Feature | User Impact | Effort | Status |
 |-------|---------|-------------|--------|--------|
-| 1 | `--bare` Mode | Medium | 2-3 days | Deferred |
-| 2 | Approval Bridge | High | 3-4 days | Deferred |
+| 1 | `--bare` Mode | Medium | 2-3 days | **EVALUATED** - NOT recommended (disables hooks) |
+| 2 | Approval Bridge | High | 3-4 days | **DESIGNED** - See cmux-claude-channels-approval-bridge.md |
 | 3 | Memory Freshness | High | 1 week | **COMPLETE** |
 | 4 | Tool Suggestions | Medium | 1 week | **COMPLETE** |
 | 5 | Context Optimization | Medium | 3-4 days | **COMPLETE** |
