@@ -31,6 +31,14 @@ describe("isAllowedHost", () => {
     expect(isAllowedHost("cmux-server.karldigi.dev")).toBe(true);
   });
 
+  it("allows multiple client origins from comma-separated env config", () => {
+    process.env.NEXT_PUBLIC_CLIENT_ORIGIN =
+      "https://cmux.karldigi.dev,https://preview.karldigi.dev";
+
+    expect(isAllowedHost("cmux.karldigi.dev")).toBe(true);
+    expect(isAllowedHost("preview.karldigi.dev")).toBe(true);
+  });
+
   it("allows configured host suffixes", () => {
     expect(isAllowedHost("preview.cmux.app")).toBe(true);
     expect(isAllowedHost("port-39379-morphvm-abc.http.cloud.morph.so")).toBe(
