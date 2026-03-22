@@ -1,7 +1,10 @@
 #!/usr/bin/env bun
 /**
  * Test script for platform AI gateway endpoints.
- * Usage: bun run --env-file .env scripts/test-ai-gateway.ts [provider]
+ * Usage:
+ *   bun run --env-file .env scripts/test-ai-gateway.ts [provider]
+ *   bun run --env-file .env scripts/test-ai-gateway.ts [provider] --max-output-tokens 1000
+ *   bun run --env-file .env scripts/test-ai-gateway.ts [provider] --prompt "Say hello."
  *
  * Examples:
  *   bun run --env-file .env scripts/test-ai-gateway.ts
@@ -16,11 +19,12 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { generateText, type LanguageModel } from "ai";
 import {
   getDefaultPlatformAiBaseUrl,
+  getPlatformAiMaxOutputTokens,
+  getPlatformAiModelId,
   getPlatformAiProviderName,
   getPlatformAiProviderOrder,
   getPlatformAiServiceProfile,
   normalizePlatformAiBaseUrl,
-  PLATFORM_AI_MODELS,
   PLATFORM_AI_SERVICES,
   PLATFORM_AI_TIERS,
   type PlatformAiProvider,
@@ -57,6 +61,67 @@ interface TestResult {
   response?: string;
   error?: string;
   latencyMs: number;
+  finishReason?: string;
+  reasoningText?: string;
+  upstreamModelId?: string;
+  warnings: string[];
+}
+
+type TestProviderOptions = {
+  anthropic:
+    | Record<string, never>
+    | {
+        sendReasoning: false;
+        thinking: {
+          type: "disabled";
+        };
+      };
+  openai:
+    | Record<string, never>
+    | {
+        reasoningEffort: "none";
+      };
+  google:
+    | Record<string, never>
+    | {
+        thinkingConfig: {
+          includeThoughts: false;
+          thinkingLevel: "minimal";
+        };
+      };
+};
+
+function getProviderOptions(provider: PlatformAiProvider): TestProviderOptions {
+  switch (provider) {
+    case "anthropic":
+      // MiniMax-M2.7 behind the Anthropic gateway does not honor
+      // thinking: { type: "disabled" }, so we leave anthropic options
+      // empty and rely on a higher maxOutputTokens budget instead.
+      return {
+        anthropic: {},
+        openai: {},
+        google: {},
+      };
+    case "openai":
+      return {
+        anthropic: {},
+        openai: {
+          reasoningEffort: "none",
+        },
+        google: {},
+      };
+    case "gemini":
+      return {
+        anthropic: {},
+        openai: {},
+        google: {
+          thinkingConfig: {
+            includeThoughts: false,
+            thinkingLevel: "minimal",
+          },
+        },
+      };
+  }
 }
 
 function isValidApiKey(key: string | undefined): boolean {
@@ -117,12 +182,75 @@ function createProvider(
   }
 }
 
+
+type CliOptions = {
+  specificProvider?: PlatformAiProvider;
+  /** Only set when --max-output-tokens is passed; otherwise uses catalog values */
+  maxOutputTokens?: number;
+  prompt: string;
+};
+
+function parseCliOptions(args: string[]): CliOptions {
+  let specificProvider: PlatformAiProvider | undefined;
+  let maxOutputTokens: number | undefined;
+  let prompt = "Reply with exactly five words.";
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (!arg) {
+      continue;
+    }
+
+    if (!arg.startsWith("--")) {
+      if (specificProvider) {
+        throw new Error(`Unexpected extra argument: ${arg}`);
+      }
+      if (!isPlatformAiProvider(arg)) {
+        throw new Error(
+          `Unknown provider: ${arg}. Available providers: ${getPlatformAiProviderOrder().join(", ")}`
+        );
+      }
+      specificProvider = arg;
+      continue;
+    }
+
+    if (arg === "--max-output-tokens") {
+      const rawValue = args[index + 1];
+      if (!rawValue) {
+        throw new Error("Missing value for --max-output-tokens");
+      }
+      const parsedValue = Number.parseInt(rawValue, 10);
+      if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
+        throw new Error(`Invalid --max-output-tokens value: ${rawValue}`);
+      }
+      maxOutputTokens = parsedValue;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--prompt") {
+      const rawPrompt = args[index + 1];
+      if (!rawPrompt) {
+        throw new Error("Missing value for --prompt");
+      }
+      prompt = rawPrompt;
+      index += 1;
+      continue;
+    }
+
+    throw new Error(`Unknown option: ${arg}`);
+  }
+
+  return { specificProvider, maxOutputTokens, prompt };
+}
+
 async function testModel(
   provider: PlatformAiProvider,
-  tier: PlatformAiTier
+  tier: PlatformAiTier,
+  options: CliOptions
 ): Promise<TestResult> {
   const start = Date.now();
-  const modelId = PLATFORM_AI_MODELS[provider][tier];
+  const modelId = getPlatformAiModelId(provider, tier);
   const result: TestResult = {
     provider,
     tier,
@@ -130,6 +258,7 @@ async function testModel(
     baseUrl: getProviderResolvedBaseUrl(provider),
     success: false,
     latencyMs: 0,
+    warnings: [],
   };
 
   const providerConfig = createProvider(provider, modelId);
@@ -140,15 +269,41 @@ async function testModel(
   }
 
   try {
-    const { text } = await generateText({
+    const effectiveMaxTokens =
+      options.maxOutputTokens ?? getPlatformAiMaxOutputTokens(provider, tier);
+    const { text, reasoning, finishReason, response } = await generateText({
       model: providerConfig.model,
-      prompt: "Reply with exactly five words.",
-      maxOutputTokens: 50,
+      prompt: options.prompt,
+      maxOutputTokens: effectiveMaxTokens,
+      providerOptions: getProviderOptions(provider),
     });
 
-    result.success = true;
+    result.finishReason = finishReason;
+    result.upstreamModelId = response.modelId;
+    result.reasoningText =
+      reasoning
+        .map((part) => ("text" in part && typeof part.text === "string" ? part.text : ""))
+        .join(" ")
+        .trim();
     result.response = text.trim();
     result.latencyMs = Date.now() - start;
+
+    if (response.modelId !== modelId) {
+      // Model rewriting is expected when the gateway maps Claude
+      // model IDs to a different backend (e.g. MiniMax-M2.7).
+      result.warnings.push(
+        `Requested ${modelId}, but upstream returned ${response.modelId}`
+      );
+    }
+
+    if (result.response.length > 0) {
+      result.success = true;
+      return result;
+    }
+
+    result.error =
+      `No text returned (finishReason=${finishReason}, upstreamModel=${response.modelId}` +
+      `${result.reasoningText ? ", received reasoning-only content" : ""})`;
   } catch (error) {
     result.error =
       error instanceof Error ? error.message : "Unknown error";
@@ -158,7 +313,10 @@ async function testModel(
   return result;
 }
 
-async function testProvider(provider: PlatformAiProvider): Promise<TestResult[]> {
+async function testProvider(
+  provider: PlatformAiProvider,
+  options: CliOptions
+): Promise<TestResult[]> {
   const envConfig = PROVIDER_ENV_CONFIG[provider];
   const results: TestResult[] = [];
 
@@ -168,15 +326,23 @@ async function testProvider(provider: PlatformAiProvider): Promise<TestResult[]>
   console.log(`Using Base URL: ${getProviderResolvedBaseUrl(provider)}`);
 
   for (const tier of PLATFORM_AI_TIERS) {
-    const modelId = PLATFORM_AI_MODELS[provider][tier];
+    const modelId = getPlatformAiModelId(provider, tier);
     process.stdout.write(`  Testing ${tier} (${modelId})... `);
-    const result = await testModel(provider, tier);
+    const result = await testModel(provider, tier, options);
     results.push(result);
 
     if (result.success) {
       console.log(`OK (${result.latencyMs}ms) - "${result.response}"`);
     } else {
       console.log(`FAILED (${result.latencyMs}ms) - ${result.error}`);
+      if (result.reasoningText) {
+        console.log(
+          `    reasoning preview: ${JSON.stringify(result.reasoningText.slice(0, 160))}`
+        );
+      }
+    }
+    for (const warning of result.warnings) {
+      console.log(`    warning: ${warning}`);
     }
   }
 
@@ -194,8 +360,7 @@ function logPlatformServiceProfiles(): void {
 }
 
 async function main(): Promise<void> {
-  const args = process.argv.slice(2);
-  const specificProvider = args[0]?.toLowerCase();
+  const options = parseCliOptions(process.argv.slice(2));
 
   console.log("===========================================");
   console.log("Platform AI Gateway Test");
@@ -213,23 +378,21 @@ async function main(): Promise<void> {
       `  ${provider}: API_KEY=${hasValidKey ? "SET" : "NOT SET"}, BASE_URL=${configuredBaseUrl || "(default)"}`
     );
   }
+  console.log(`Prompt: ${JSON.stringify(options.prompt)}`);
+  if (options.maxOutputTokens !== undefined) {
+    console.log(`maxOutputTokens: ${options.maxOutputTokens} (explicit)`);
+  } else {
+    console.log(`maxOutputTokens: (per-model from catalog)`);
+  }
 
   const allResults: TestResult[] = [];
 
-  if (specificProvider) {
-    if (!isPlatformAiProvider(specificProvider)) {
-      console.error(`\nUnknown provider: ${specificProvider}`);
-      console.error(
-        `Available providers: ${getPlatformAiProviderOrder().join(", ")}`
-      );
-      process.exit(1);
-    }
-
-    const results = await testProvider(specificProvider);
+  if (options.specificProvider) {
+    const results = await testProvider(options.specificProvider, options);
     allResults.push(...results);
   } else {
     for (const provider of getPlatformAiProviderOrder()) {
-      const results = await testProvider(provider);
+      const results = await testProvider(provider, options);
       allResults.push(...results);
     }
   }
@@ -260,6 +423,18 @@ async function main(): Promise<void> {
       console.log(
         `  - ${result.provider}/${result.tier}/${result.model} (${result.latencyMs}ms)`
       );
+    }
+  }
+
+  const warned = allResults.filter((result) => result.warnings.length > 0);
+  if (warned.length > 0) {
+    console.log("\nWarnings:");
+    for (const result of warned) {
+      for (const warning of result.warnings) {
+        console.log(
+          `  - ${result.provider}/${result.tier}/${result.model}: ${warning}`
+        );
+      }
     }
   }
 
