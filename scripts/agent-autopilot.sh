@@ -86,6 +86,7 @@ PREFER_JSON=0
 FOLLOW=0
 OPEN_MONITOR=0
 DRY_RUN=0
+CODEX_AUTOPILOT_HOME=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -309,7 +310,71 @@ cleanup_watcher() {
     kill "$WATCHER_PID" 2>/dev/null || true
   fi
 }
-trap cleanup_watcher EXIT
+
+cleanup_codex_autopilot_home() {
+  if [[ -n "$CODEX_AUTOPILOT_HOME" ]] && [[ -d "$CODEX_AUTOPILOT_HOME" ]]; then
+    rm -rf "$CODEX_AUTOPILOT_HOME"
+  fi
+}
+
+cleanup_runtime() {
+  cleanup_watcher
+  cleanup_codex_autopilot_home
+}
+trap cleanup_runtime EXIT
+
+link_codex_home_entries() {
+  local source_home="$1"
+  local target_home="$2"
+  local path=""
+  local name=""
+  local had_dotglob=0
+  local had_nullglob=0
+
+  if [[ ! -d "$source_home" ]]; then
+    return 0
+  fi
+
+  if shopt -q dotglob; then
+    had_dotglob=1
+  fi
+  if shopt -q nullglob; then
+    had_nullglob=1
+  fi
+
+  shopt -s dotglob nullglob
+  for path in "$source_home"/*; do
+    name="$(basename "$path")"
+    if [[ "$name" = "." || "$name" = ".." || "$name" = "hooks.json" ]]; then
+      continue
+    fi
+    ln -s "$path" "$target_home/$name"
+  done
+
+  if [[ "$had_dotglob" -eq 0 ]]; then
+    shopt -u dotglob
+  fi
+  if [[ "$had_nullglob" -eq 0 ]]; then
+    shopt -u nullglob
+  fi
+}
+
+ensure_codex_autopilot_home() {
+  local base_home=""
+  local hooks_template=""
+
+  if [[ -n "$CODEX_AUTOPILOT_HOME" ]] && [[ -d "$CODEX_AUTOPILOT_HOME" ]]; then
+    return 0
+  fi
+
+  base_home="${CODEX_HOME:-$HOME/.codex}"
+  hooks_template="$CWD/.codex/autopilot-hooks.json"
+  [[ -f "$hooks_template" ]] || die "Missing Codex autopilot hooks template: $hooks_template"
+
+  CODEX_AUTOPILOT_HOME="$(mktemp -d "${TMPDIR:-/tmp}/cmux-codex-autopilot-home-XXXXXX")"
+  link_codex_home_entries "$base_home" "$CODEX_AUTOPILOT_HOME"
+  cp "$hooks_template" "$CODEX_AUTOPILOT_HOME/hooks.json"
+}
 
 build_start_prompt() {
   local now_epoch="$1"
@@ -564,9 +629,12 @@ run_codex_native_autopilot() {
   local prompt="$2"
   local turn_file="$3"
   local max_turns="$4"
+  local hooks_template="$CWD/.codex/autopilot-hooks.json"
 
   # Keep repo-local Codex hooks opt-in. Ordinary interactive sessions stay
-  # quiet unless the autopilot launcher explicitly enables codex_hooks.
+  # quiet because the live repo does not expose `.codex/hooks.json`; autopilot
+  # stages its template into a temporary CODEX_HOME just for this run.
+  ensure_codex_autopilot_home
   local -a base=(codex -a never -s workspace-write --enable codex_hooks)
   if [[ -n "$MODEL" ]]; then
     base+=(-m "$MODEL")
@@ -590,6 +658,8 @@ run_codex_native_autopilot() {
   header+="mode: $mode\n"
   header+="cwd: $CWD\n"
   header+="command: $(format_cmd "${cmd[@]}")\n"
+  header+="codex_home: $CODEX_AUTOPILOT_HOME\n"
+  header+="hooks_template: $hooks_template\n"
   header+="max_turns: $max_turns\n"
   header+="stop_file: $STOP_FILE\n"
   header+="\n"
@@ -618,6 +688,7 @@ run_codex_native_autopilot() {
     WATCHER_PID=$!
 
     set +e
+    CODEX_HOME="$CODEX_AUTOPILOT_HOME" \
     AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
       AUTOPILOT_ENABLED=1 \
       AUTOPILOT_STOP_FILE="$STOP_FILE" \
