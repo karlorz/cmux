@@ -7,6 +7,7 @@ unset CMUX_AUTOPILOT_DELAY CMUX_AUTOPILOT_IDLE_THRESHOLD CMUX_AUTOPILOT_MAX_TURN
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 HOOK="$SCRIPT_DIR/autopilot-stop.sh"
+HOOKS_TEMPLATE="$PROJECT_DIR/.codex/autopilot-hooks.json"
 TEST_SESSION="codex-hook-test-$$"
 STOP_FILE="/tmp/codex-test-stop-${TEST_SESSION}"
 FAKE_BIN_DIR="/tmp/codex-hook-bin-${TEST_SESSION}"
@@ -134,7 +135,7 @@ echo "=== Codex autopilot hook smoke test ==="
 
 assert "Codex Stop hook timeout allows hidden monitoring sleeps" jq -e '
   .hooks.Stop[0].hooks[0].timeout >= 75
-' "$PROJECT_DIR/.codex/hooks.json"
+' "$HOOKS_TEMPLATE"
 
 cleanup
 touch "$STOP_FILE"
