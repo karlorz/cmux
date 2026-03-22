@@ -1,0 +1,131 @@
+# Unified Docker Compose for Coolify deployment
+#
+# Deploys all three cmux web services using pre-built images from GHCR.
+# Images are built by GitHub Actions workflows.
+#
+# Usage:
+#   1. In Coolify, create a new Docker Compose application
+#   2. Point to this file: docker-compose.coolify.yml
+#   3. Set required environment variables via Coolify UI
+#   4. Deploy
+#
+# Service Ports:
+#   - cmux-client: 8080 (Vite SPA via nginx)
+#   - cmux-www: 9779 (Next.js API)
+#   - cmux-server: 9776 (WebSocket/API server)
+
+services:
+  # =============================================================================
+  # cmux-client: Vite SPA frontend served via nginx
+  # =============================================================================
+  cmux-client:
+    image: ${CLIENT_IMAGE:-ghcr.io/karlorz/cmux-client:latest}
+    container_name: cmux-client
+    restart: unless-stopped
+    ports:
+      - "${CLIENT_PORT:-8080}:8080"
+    environment:
+      - TZ=${TZ:-Asia/Hong_Kong}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  # =============================================================================
+  # cmux-www: Next.js API server (standalone output)
+  # =============================================================================
+  cmux-www:
+    image: ${WWW_IMAGE:-ghcr.io/karlorz/cmux-www:latest}
+    container_name: cmux-www
+    restart: unless-stopped
+    ports:
+      - "${WWW_PORT:-9779}:9779"
+    environment:
+      - NODE_ENV=production
+      - PORT=9779
+      - TZ=${TZ:-Asia/Hong_Kong}
+      # Convex
+      - NEXT_PUBLIC_CONVEX_URL=${NEXT_PUBLIC_CONVEX_URL}
+      - CONVEX_SITE_URL=${CONVEX_SITE_URL:-}
+      # Stack Auth
+      - NEXT_PUBLIC_STACK_PROJECT_ID=${NEXT_PUBLIC_STACK_PROJECT_ID}
+      - NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY=${NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY}
+      - STACK_SECRET_SERVER_KEY=${STACK_SECRET_SERVER_KEY}
+      - STACK_SUPER_SECRET_ADMIN_KEY=${STACK_SUPER_SECRET_ADMIN_KEY:-}
+      - STACK_DATA_VAULT_SECRET=${STACK_DATA_VAULT_SECRET:-}
+      # GitHub App
+      - NEXT_PUBLIC_GITHUB_APP_SLUG=${NEXT_PUBLIC_GITHUB_APP_SLUG:-}
+      - CMUX_GITHUB_APP_ID=${CMUX_GITHUB_APP_ID:-}
+      - CMUX_GITHUB_APP_PRIVATE_KEY=${CMUX_GITHUB_APP_PRIVATE_KEY:-}
+      # Origins
+      - NEXT_PUBLIC_WWW_ORIGIN=${NEXT_PUBLIC_WWW_ORIGIN}
+      - NEXT_PUBLIC_CLIENT_ORIGIN=${NEXT_PUBLIC_CLIENT_ORIGIN}
+      - NEXT_PUBLIC_SERVER_ORIGIN=${NEXT_PUBLIC_SERVER_ORIGIN:-}
+      # Sandbox providers
+      - MORPH_API_KEY=${MORPH_API_KEY:-}
+      - E2B_API_KEY=${E2B_API_KEY:-}
+      - PVE_API_URL=${PVE_API_URL:-}
+      - PVE_API_TOKEN=${PVE_API_TOKEN:-}
+      # JWT
+      - CMUX_TASK_RUN_JWT_SECRET=${CMUX_TASK_RUN_JWT_SECRET}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9779/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+
+  # =============================================================================
+  # cmux-server: WebSocket and real-time API server
+  # =============================================================================
+  cmux-server:
+    image: ${SERVER_IMAGE:-ghcr.io/karlorz/cmux-server:latest}
+    container_name: cmux-server
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-9776}:9776"
+    environment:
+      - NODE_ENV=production
+      - PORT=9776
+      - TZ=${TZ:-Asia/Hong_Kong}
+      # Convex
+      - NEXT_PUBLIC_CONVEX_URL=${NEXT_PUBLIC_CONVEX_URL}
+      - CONVEX_SITE_URL=${CONVEX_SITE_URL:-}
+      # CORS
+      - CMUX_ALLOWED_SOCKET_ORIGINS=${CMUX_ALLOWED_SOCKET_ORIGINS}
+      # Origins
+      - NEXT_PUBLIC_WWW_ORIGIN=${NEXT_PUBLIC_WWW_ORIGIN:-}
+      # Mode
+      - NEXT_PUBLIC_WEB_MODE=${NEXT_PUBLIC_WEB_MODE:-true}
+      - DEFAULT_SANDBOX_TIMEZONE=${DEFAULT_SANDBOX_TIMEZONE:-Asia/Hong_Kong}
+      # JWT
+      - CMUX_TASK_RUN_JWT_SECRET=${CMUX_TASK_RUN_JWT_SECRET}
+    healthcheck:
+      test: ["CMD", "bun", "-e", "const net = require('net'); const s = net.createConnection(9776, 'localhost'); s.on('connect', () => process.exit(0)); s.on('error', () => process.exit(1));"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+
+# Note: Traefik/Caddy reverse proxy configuration should be handled by Coolify
+# or a separate edge router. Each service exposes its own port for Coolify to route.

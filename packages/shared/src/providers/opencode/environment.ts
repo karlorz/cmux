@@ -116,6 +116,18 @@ LOG_FILE="/root/lifecycle/opencode-hook.log"
 
 mkdir -p "\${MARKER_DIR}"
 
+# Post session completion activity event to dashboard (non-blocking)
+if [ -n "\${CMUX_TASK_RUN_JWT:-}" ] && [ -n "\${CMUX_CALLBACK_URL:-}" ]; then
+  (
+    curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+      -H "Content-Type: application/json" \\
+      -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+      -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" \\
+           '{taskRunId: $trid, type: "session_stop", toolName: "opencode", summary: "Session completed"}')" \\
+      >> "\${LOG_FILE}" 2>&1 || true
+  ) &
+fi
+
 # Sync memory files to Convex (best-effort, before completion marker)
 echo "[CMUX] Syncing memory files..." >> "\${LOG_FILE}"
 /root/lifecycle/memory/sync.sh >> "\${LOG_FILE}" 2>&1 || true
@@ -138,16 +150,79 @@ ls -la "\${MARKER_FILE}" >> "\${LOG_FILE}" 2>&1
     mode: "755",
   });
 
+  // Session start hook - posts activity event when OpenCode session begins
+  const sessionStartHook = `#!/bin/bash
+set -eu
+LOG_FILE="/root/lifecycle/opencode-hook.log"
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
+  exit 0
+fi
+# Post session start activity event (non-blocking)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" \\
+         '{taskRunId: $trid, type: "session_start", toolName: "opencode", summary: "Session started"}')" \\
+    >> "\${LOG_FILE}" 2>&1 || true
+) &
+exit 0
+`;
+  files.push({
+    destinationPath: "/root/lifecycle/opencode/session-start-hook.sh",
+    contentBase64: Buffer.from(sessionStartHook).toString("base64"),
+    mode: "755",
+  });
+
+  // Error hook - surfaces errors to dashboard
+  const errorHook = `#!/bin/bash
+set -eu
+LOG_FILE="/root/lifecycle/opencode-hook.log"
+ERROR_MSG="\${1:-Unknown error}"
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
+  exit 0
+fi
+# Post error activity event (non-blocking)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" --arg msg "$ERROR_MSG" \\
+         '{taskRunId: $trid, type: "error", toolName: "opencode", summary: $msg}')" \\
+    >> "\${LOG_FILE}" 2>&1 || true
+) &
+exit 0
+`;
+  files.push({
+    destinationPath: "/root/lifecycle/opencode/error-hook.sh",
+    contentBase64: Buffer.from(errorHook).toString("base64"),
+    mode: "755",
+  });
+
   // Install OpenCode Notification plugin to invoke completion hook
   // Only fires completion when session is idle AND has assistant messages (not just errors)
+  // Also fires session start hook on first activity and error hook on failures
   const pluginContent = `\
 export const NotificationPlugin = async ({ project: _project, client, $, directory: _directory, worktree: _worktree }) => {
   let completionFired = false;
+  let sessionStartFired = false;
   const fs = await import("node:fs");
   const path = await import("node:path");
   const log = (msg) => {
     const line = "[" + new Date().toISOString() + "] " + msg + "\\n";
     fs.appendFileSync("/root/lifecycle/opencode-plugin.log", line);
+  };
+
+  // Fire session start hook on first event (once per session)
+  const fireSessionStart = async () => {
+    if (sessionStartFired) return;
+    sessionStartFired = true;
+    try {
+      await $\`/root/lifecycle/opencode/session-start-hook.sh\`;
+      log("Session start hook fired");
+    } catch (e) {
+      log("Session start hook failed: " + e);
+    }
   };
 
   const normalizeMessage = (raw) => {
@@ -247,6 +322,9 @@ export const NotificationPlugin = async ({ project: _project, client, $, directo
 
   return {
     event: async ({ event }) => {
+      // Fire session start on first event
+      await fireSessionStart();
+
       // Prevent duplicate completion hooks
       if (completionFired) return;
 

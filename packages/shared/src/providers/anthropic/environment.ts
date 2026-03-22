@@ -420,6 +420,367 @@ exit 0`;
     mode: "755",
   });
 
+  // Permission hook script - bridges Claude permission requests to cmux approval broker
+  // This enables human-in-the-loop approval via the cmux dashboard
+  const permissionHookScript = `#!/bin/bash
+# Claude Code permission hook - bridges to cmux approval broker
+# Fires on PermissionRequest: before showing permission dialog
+set -eu
+REQUEST=$(cat)
+
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_ID:-}" ]; then
+  # No cmux context - fall through to default permission dialog
+  exit 1
+fi
+
+TOOL_NAME=$(echo "$REQUEST" | jq -r '.tool_name // "unknown"')
+TOOL_INPUT=$(echo "$REQUEST" | jq -r '.tool_input | tostring' | head -c 500)
+PERMISSION_MODE=$(echo "$REQUEST" | jq -r '.permission_mode // "default"')
+
+# Only intercept in default/plan modes - bypass modes should not trigger approvals
+if [ "$PERMISSION_MODE" != "default" ] && [ "$PERMISSION_MODE" != "plan" ]; then
+  exit 1
+fi
+
+# Create approval request
+RESPONSE=$(curl -s -X POST "\${CMUX_CALLBACK_URL}/api/approvals/create" \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer \${CMUX_TASK_RUN_JWT}" \\
+  -d "$(jq -n \\
+    --arg action "Permission: $TOOL_NAME" \\
+    --arg tool "$TOOL_NAME" \\
+    --arg input "$TOOL_INPUT" \\
+    '{
+      source: "tool_use",
+      approvalType: "tool_permission",
+      action: $action,
+      context: {
+        agentName: "claude",
+        command: $input,
+        toolName: $tool,
+        riskLevel: "medium"
+      }
+    }')" 2>/dev/null)
+
+REQUEST_ID=$(echo "$RESPONSE" | jq -r '.requestId // empty')
+
+if [ -z "$REQUEST_ID" ]; then
+  # Failed to create approval - fall through to default dialog
+  echo "[permission-hook] Failed to create approval: $RESPONSE" >> /root/lifecycle/permission-hook.log 2>&1
+  exit 1
+fi
+
+echo "[permission-hook] Created approval $REQUEST_ID for $TOOL_NAME" >> /root/lifecycle/permission-hook.log 2>&1
+
+# Poll for resolution (timeout 5 minutes = 60 * 5 seconds)
+for i in {1..60}; do
+  RESULT=$(curl -s "\${CMUX_CALLBACK_URL}/api/approvals/$REQUEST_ID" \\
+    -H "Authorization: Bearer \${CMUX_TASK_RUN_JWT}" 2>/dev/null)
+  STATUS=$(echo "$RESULT" | jq -r '.status // "pending"')
+  RESOLUTION=$(echo "$RESULT" | jq -r '.resolution // empty')
+
+  if [ "$STATUS" = "resolved" ]; then
+    echo "[permission-hook] Approval $REQUEST_ID resolved: $RESOLUTION" >> /root/lifecycle/permission-hook.log 2>&1
+
+    # Map resolution to Claude decision
+    case "$RESOLUTION" in
+      allow|allow_once|allow_session)
+        echo "{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PermissionRequest\\\", \\\"decision\\\": {\\\"behavior\\\": \\\"allow\\\"}}}"
+        exit 0
+        ;;
+      deny|deny_always)
+        NOTE=$(echo "$RESULT" | jq -r '.resolutionNote // "Denied by cmux approval broker"')
+        echo "{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PermissionRequest\\\", \\\"decision\\\": {\\\"behavior\\\": \\\"deny\\\", \\\"message\\\": \\\"$NOTE\\\"}}}"
+        exit 0
+        ;;
+    esac
+  elif [ "$STATUS" = "expired" ]; then
+    echo "[permission-hook] Approval $REQUEST_ID expired" >> /root/lifecycle/permission-hook.log 2>&1
+    echo "{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PermissionRequest\\\", \\\"decision\\\": {\\\"behavior\\\": \\\"deny\\\", \\\"message\\\": \\\"Approval request expired\\\"}}}"
+    exit 0
+  fi
+
+  sleep 5
+done
+
+# Timeout - default deny
+echo "[permission-hook] Approval $REQUEST_ID timed out" >> /root/lifecycle/permission-hook.log 2>&1
+echo "{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PermissionRequest\\\", \\\"decision\\\": {\\\"behavior\\\": \\\"deny\\\", \\\"message\\\": \\\"Approval timeout (5 minutes)\\\"}}}"
+exit 0`;
+
+  files.push({
+    destinationPath: `${claudeLifecycleDir}/permission-hook.sh`,
+    contentBase64: Buffer.from(permissionHookScript).toString("base64"),
+    mode: "755",
+  });
+
+  // PreCompact hook script - syncs memory to Convex before context compression
+  // This ensures memory state is persisted before the context window gets summarized
+  const preCompactHookScript = `#!/bin/bash
+# Claude Code pre-compact hook - syncs memory before context compression
+# Fires on PreCompact: before context window gets compressed/summarized
+set -eu
+REQUEST=$(cat)
+
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_ID:-}" ]; then
+  # No cmux context - allow compaction to proceed
+  echo '{"continue": true}'
+  exit 0
+fi
+
+TRIGGER=$(echo "$REQUEST" | jq -r '.trigger // "auto"')
+SESSION_ID=$(echo "$REQUEST" | jq -r '.session_id // empty')
+
+echo "[precompact-hook] Trigger: $TRIGGER, Session: $SESSION_ID" >> /root/lifecycle/precompact-hook.log 2>&1
+
+# Sync memory to Convex before compaction (background, don't block)
+(
+  # Read current memory state
+  MEMORY_CONTENT=""
+  if [ -f "/root/lifecycle/memory/knowledge/MEMORY.md" ]; then
+    MEMORY_CONTENT=$(cat /root/lifecycle/memory/knowledge/MEMORY.md | head -c 50000 | base64 -w 0)
+  fi
+
+  TASKS_CONTENT=""
+  if [ -f "/root/lifecycle/memory/TASKS.json" ]; then
+    TASKS_CONTENT=$(cat /root/lifecycle/memory/TASKS.json | head -c 20000 | base64 -w 0)
+  fi
+
+  # Post to memory sync endpoint
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/memory/sync" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n \\
+      --arg trid "\${CMUX_TASK_RUN_ID}" \\
+      --arg trigger "$TRIGGER" \\
+      --arg memory "$MEMORY_CONTENT" \\
+      --arg tasks "$TASKS_CONTENT" \\
+      '{taskRunId: $trid, trigger: $trigger, memoryBase64: $memory, tasksBase64: $tasks}')" \\
+    >> /root/lifecycle/precompact-hook.log 2>&1 || true
+
+  # Also post a context_warning activity event
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n \\
+      --arg trid "\${CMUX_TASK_RUN_ID}" \\
+      --arg trigger "$TRIGGER" \\
+      '{taskRunId: $trid, type: "context_warning", summary: ("Context compaction triggered: " + $trigger)}')" \\
+    >> /root/lifecycle/precompact-hook.log 2>&1 || true
+) &
+
+# Allow compaction to proceed
+echo '{"continue": true}'
+exit 0`;
+
+  files.push({
+    destinationPath: `${claudeLifecycleDir}/precompact-hook.sh`,
+    contentBase64: Buffer.from(preCompactHookScript).toString("base64"),
+    mode: "755",
+  });
+
+  // SubagentStart hook script - tracks when Claude spawns sub-agents
+  const subagentStartHookScript = `#!/bin/bash
+# Claude Code subagent-start hook - tracks sub-agent spawning in cmux dashboard
+# Fires on SubagentStart: when a subagent is spawned via Agent tool
+set -eu
+REQUEST=$(cat)
+
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_ID:-}" ]; then
+  exit 0
+fi
+
+AGENT_ID=$(echo "$REQUEST" | jq -r '.agent_id // "unknown"')
+AGENT_TYPE=$(echo "$REQUEST" | jq -r '.agent_type // "unknown"')
+
+echo "[subagent-start] Agent $AGENT_ID ($AGENT_TYPE) spawned" >> /root/lifecycle/subagent-hook.log 2>&1
+
+# Post activity event to dashboard (background, don't block)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n \\
+      --arg trid "\${CMUX_TASK_RUN_ID}" \\
+      --arg agentId "$AGENT_ID" \\
+      --arg agentType "$AGENT_TYPE" \\
+      '{taskRunId: $trid, type: "subagent_start", toolName: "Agent", summary: ("Spawned " + $agentType + " subagent: " + $agentId)}')" \\
+    >> /root/lifecycle/subagent-hook.log 2>&1 || true
+) &
+exit 0`;
+
+  files.push({
+    destinationPath: `${claudeLifecycleDir}/subagent-start-hook.sh`,
+    contentBase64: Buffer.from(subagentStartHookScript).toString("base64"),
+    mode: "755",
+  });
+
+  // SubagentStop hook script - tracks when Claude sub-agents complete
+  const subagentStopHookScript = `#!/bin/bash
+# Claude Code subagent-stop hook - tracks sub-agent completion in cmux dashboard
+# Fires on SubagentStop: when a subagent finishes responding
+set -eu
+REQUEST=$(cat)
+
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_ID:-}" ]; then
+  exit 0
+fi
+
+AGENT_ID=$(echo "$REQUEST" | jq -r '.agent_id // "unknown"')
+AGENT_TYPE=$(echo "$REQUEST" | jq -r '.agent_type // "unknown"')
+LAST_MESSAGE=$(echo "$REQUEST" | jq -r '.last_assistant_message // ""' | head -c 200)
+
+echo "[subagent-stop] Agent $AGENT_ID ($AGENT_TYPE) completed" >> /root/lifecycle/subagent-hook.log 2>&1
+
+# Post activity event to dashboard (background, don't block)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n \\
+      --arg trid "\${CMUX_TASK_RUN_ID}" \\
+      --arg agentId "$AGENT_ID" \\
+      --arg agentType "$AGENT_TYPE" \\
+      --arg summary "$LAST_MESSAGE" \\
+      '{taskRunId: $trid, type: "subagent_stop", toolName: "Agent", summary: ($agentType + " subagent completed: " + ($summary | if length > 100 then (.[0:100] + "...") else . end))}')" \\
+    >> /root/lifecycle/subagent-hook.log 2>&1 || true
+) &
+exit 0`;
+
+  files.push({
+    destinationPath: `${claudeLifecycleDir}/subagent-stop-hook.sh`,
+    contentBase64: Buffer.from(subagentStopHookScript).toString("base64"),
+    mode: "755",
+  });
+
+  // UserPromptSubmit hook script - tracks when user submits prompts
+  // Useful for session activity monitoring and interaction tracking
+  const userPromptSubmitHookScript = `#!/bin/bash
+# Claude Code user-prompt-submit hook - tracks user prompt submissions
+# Fires on UserPromptSubmit: when user submits a prompt, before Claude processes it
+set -eu
+REQUEST=$(cat)
+
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_ID:-}" ]; then
+  exit 0
+fi
+
+PROMPT=$(echo "$REQUEST" | jq -r '.prompt // ""' | head -c 200)
+SESSION_ID=$(echo "$REQUEST" | jq -r '.session_id // ""')
+
+# Only log non-empty prompts
+if [ -z "$PROMPT" ]; then
+  exit 0
+fi
+
+echo "[user-prompt] Session $SESSION_ID: $PROMPT" >> /root/lifecycle/prompt-hook.log 2>&1
+
+# Post activity event to dashboard (background, don't block prompt processing)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n \\
+      --arg trid "\${CMUX_TASK_RUN_ID}" \\
+      --arg prompt "$PROMPT" \\
+      '{taskRunId: $trid, type: "user_prompt", summary: ("User: " + ($prompt | if length > 100 then (.[0:100] + "...") else . end))}')" \\
+    >> /root/lifecycle/prompt-hook.log 2>&1 || true
+) &
+exit 0`;
+
+  files.push({
+    destinationPath: `${claudeLifecycleDir}/user-prompt-hook.sh`,
+    contentBase64: Buffer.from(userPromptSubmitHookScript).toString("base64"),
+    mode: "755",
+  });
+
+  // Notification hook script - fires when Claude needs user attention
+  // Useful for surfacing permission prompts and idle states to dashboard
+  const notificationHookScript = `#!/bin/bash
+# Claude Code notification hook - surfaces attention requests to dashboard
+# Fires on Notification: when Claude needs user attention (permission prompt, idle, etc.)
+set -eu
+REQUEST=$(cat)
+
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_ID:-}" ]; then
+  exit 0
+fi
+
+NOTIFICATION_TYPE=$(echo "$REQUEST" | jq -r '.notification_type // "unknown"')
+MESSAGE=$(echo "$REQUEST" | jq -r '.message // ""' | head -c 200)
+
+echo "[notification] Type: $NOTIFICATION_TYPE - $MESSAGE" >> /root/lifecycle/notification-hook.log 2>&1
+
+# Post activity event to dashboard (background, don't block)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n \\
+      --arg trid "\${CMUX_TASK_RUN_ID}" \\
+      --arg notifType "$NOTIFICATION_TYPE" \\
+      --arg msg "$MESSAGE" \\
+      '{taskRunId: $trid, type: "notification", summary: ($notifType + ": " + ($msg | if length > 100 then (.[0:100] + "...") else . end))}')" \\
+    >> /root/lifecycle/notification-hook.log 2>&1 || true
+) &
+exit 0`;
+
+  files.push({
+    destinationPath: `${claudeLifecycleDir}/notification-hook.sh`,
+    contentBase64: Buffer.from(notificationHookScript).toString("base64"),
+    mode: "755",
+  });
+
+  // PostCompact hook script - fires after context compression completes
+  // Can re-inject critical context and log compaction events
+  const postCompactHookScript = `#!/bin/bash
+# Claude Code post-compact hook - fires after context compression
+# Useful for re-injecting critical context and logging compaction events
+set -eu
+REQUEST=$(cat)
+
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_ID:-}" ]; then
+  exit 0
+fi
+
+TRIGGER=$(echo "$REQUEST" | jq -r '.trigger // "auto"')
+SUMMARY=$(echo "$REQUEST" | jq -r '.summary // ""' | head -c 300)
+
+echo "[postcompact] Trigger: $TRIGGER, Summary length: \${#SUMMARY}" >> /root/lifecycle/postcompact-hook.log 2>&1
+
+# Post activity event to dashboard (background)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n \\
+      --arg trid "\${CMUX_TASK_RUN_ID}" \\
+      --arg trigger "$TRIGGER" \\
+      '{taskRunId: $trid, type: "context_compacted", summary: ("Context compacted (" + $trigger + ")")}')" \\
+    >> /root/lifecycle/postcompact-hook.log 2>&1 || true
+) &
+
+# Re-inject critical task context after compaction
+# This ensures agent remembers its core mission even after context is summarized
+TASK_CONTEXT=""
+if [ -f "/root/lifecycle/memory/knowledge/MEMORY.md" ]; then
+  # Extract P0 (Core) entries - most critical to preserve
+  TASK_CONTEXT=$(grep -A 50 "## P0 Core" /root/lifecycle/memory/knowledge/MEMORY.md 2>/dev/null | head -20 || true)
+fi
+
+if [ -n "$TASK_CONTEXT" ]; then
+  echo "Critical context from MEMORY.md (P0 Core):"
+  echo "$TASK_CONTEXT"
+fi
+
+exit 0`;
+
+  files.push({
+    destinationPath: `${claudeLifecycleDir}/postcompact-hook.sh`,
+    contentBase64: Buffer.from(postCompactHookScript).toString("base64"),
+    mode: "755",
+  });
+
   // Check if user has provided an OAuth token (preferred) or API key
   const hasOAuthToken =
     ctx.apiKeys?.CLAUDE_CODE_OAUTH_TOKEN &&
@@ -488,6 +849,84 @@ exit 0`;
             {
               type: "command",
               command: `${claudeLifecycleDir}/error-hook.sh`,
+            },
+          ],
+        },
+      ],
+      // Permission approval: bridges Claude permission requests to cmux approval broker
+      // Enables human-in-the-loop approval via dashboard instead of terminal
+      PermissionRequest: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${claudeLifecycleDir}/permission-hook.sh`,
+            },
+          ],
+        },
+      ],
+      // Pre-compaction: sync memory to Convex before context compression
+      // Ensures memory state is persisted before context window gets summarized
+      PreCompact: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${claudeLifecycleDir}/precompact-hook.sh`,
+            },
+          ],
+        },
+      ],
+      // Post-compaction: re-inject critical context after compression
+      PostCompact: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${claudeLifecycleDir}/postcompact-hook.sh`,
+            },
+          ],
+        },
+      ],
+      // Subagent lifecycle: track sub-agent spawning/completion in dashboard
+      SubagentStart: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${claudeLifecycleDir}/subagent-start-hook.sh`,
+            },
+          ],
+        },
+      ],
+      SubagentStop: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${claudeLifecycleDir}/subagent-stop-hook.sh`,
+            },
+          ],
+        },
+      ],
+      // User prompt tracking: logs when user submits prompts for session activity
+      UserPromptSubmit: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${claudeLifecycleDir}/user-prompt-hook.sh`,
+            },
+          ],
+        },
+      ],
+      // Notification: fires when Claude needs user attention (permission prompt, idle, etc.)
+      Notification: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${claudeLifecycleDir}/notification-hook.sh`,
             },
           ],
         },

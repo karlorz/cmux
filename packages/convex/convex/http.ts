@@ -85,12 +85,19 @@ import {
   autopilotHeartbeat,
   autopilotThreadId,
   autopilotStatus,
+  autopilotSessionEvent,
   autopilotInfo,
+  autopilotContextHealth,
 } from "./autopilot_http";
 import {
   recordStart as sessionActivityRecordStart,
   recordEnd as sessionActivityRecordEnd,
 } from "./sessionActivity_http";
+import {
+  createApproval,
+  getApproval,
+  resolveApproval,
+} from "./approvalBroker_http";
 
 const http = httpRouter();
 
@@ -532,9 +539,21 @@ http.route({
 });
 
 http.route({
+  path: "/api/autopilot/session-event",
+  method: "POST",
+  handler: autopilotSessionEvent,
+});
+
+http.route({
   path: "/api/autopilot/info",
   method: "GET",
   handler: autopilotInfo,
+});
+
+http.route({
+  path: "/api/autopilot/context-health",
+  method: "GET",
+  handler: autopilotContextHealth,
 });
 
 // =============================================================================
@@ -551,6 +570,28 @@ http.route({
   path: "/api/session-activity/end",
   method: "POST",
   handler: sessionActivityRecordEnd,
+});
+
+// =============================================================================
+// Approval Broker API - JWT-authenticated endpoints for permission hooks
+// =============================================================================
+
+http.route({
+  path: "/api/approvals/create",
+  method: "POST",
+  handler: createApproval,
+});
+
+http.route({
+  pathPrefix: "/api/approvals/",
+  method: "GET",
+  handler: getApproval,
+});
+
+http.route({
+  pathPrefix: "/api/approvals/",
+  method: "POST",
+  handler: resolveApproval,
 });
 
 export default http;

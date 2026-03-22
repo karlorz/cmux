@@ -35,6 +35,11 @@ Evaluate lighter spawn path for sandbox agents.
 
 **Effort:** 2-3 days
 
+**Status (2026-03-22):** EVALUATED - NOT recommended for cmux task sandboxes.
+- `--bare` disables hooks needed for activity streaming, error surfacing, and autopilot continuation
+- Minor startup latency improvement (~0.5-1s) not worth losing dashboard visibility
+- See `/root/Documents/obsidian_vault/5️⃣-Projects/GitHub/cmux/dev-log/2026-03-22-bare-mode-evaluation.md`
+
 ---
 
 ### Phase 2: Approval Channel Bridge (Week 1-2)
@@ -50,6 +55,13 @@ Map Claude's `--channels` approval relay to cmux's approval broker.
 - `packages/convex/convex/approvals.ts`
 
 **Effort:** 3-4 days
+
+**Status (2026-03-22):** COMPLETE (ALL MERGED)
+- Design documented in `/root/Documents/obsidian_vault/5️⃣-Projects/GitHub/cmux/cmux-claude-channels-approval-bridge.md`
+- Implemented approach: MCP Permission Hook (Option C)
+- HTTP endpoints for approval broker: PR #754 (merged)
+- PermissionRequest hook + settings.json wiring: PR #755 (merged)
+- Additional hooks merged: PreCompact (#756), SubagentStart/Stop (#757), UserPromptSubmit (#758), Notification (#759), PostCompact (#760)
 
 ---
 
@@ -105,13 +117,22 @@ Leverage 1M context for Opus 4.6.
 
 | Phase | Feature | User Impact | Effort | Status |
 |-------|---------|-------------|--------|--------|
-| 1 | `--bare` Mode | Medium | 2-3 days | Deferred |
-| 2 | Approval Bridge | High | 3-4 days | Deferred |
+| 1 | `--bare` Mode | Medium | 2-3 days | **EVALUATED** - NOT recommended (disables hooks) |
+| 2 | Approval Bridge + All Hooks | High | 3-4 days | **COMPLETE** - PRs #754-#760 merged |
 | 3 | Memory Freshness | High | 1 week | **COMPLETE** |
 | 4 | Tool Suggestions | Medium | 1 week | **COMPLETE** |
 | 5 | Context Optimization | Medium | 3-4 days | **COMPLETE** |
 
-## Implementation Summary (2026-03-21)
+## Implementation Summary (2026-03-22)
+
+**Phase 2 (Approval Bridge + Hooks):**
+- HTTP endpoints: PR #754 (merged)
+- PermissionRequest hook: PR #755 (merged)
+- PreCompact hook: PR #756 (merged)
+- SubagentStart/Stop hooks: PR #757 (merged)
+- UserPromptSubmit hook: PR #758 (merged)
+- Notification hook: PR #759 (merged)
+- PostCompact hook: PR #760 (merged)
 
 **Phase 3 (Memory Freshness):**
 - Usage tracking: 499661720

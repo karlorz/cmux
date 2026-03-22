@@ -224,6 +224,119 @@ exit 1
     mode: "755",
   });
 
+  // Codex Stop hook - fires when Codex session ends
+  // Posts activity event to dashboard and syncs memory
+  const codexStopHookScript = `#!/bin/bash
+# Codex CLI stop hook - posts session completion to cmux dashboard
+set -eu
+REQUEST=$(cat)
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
+  echo '{"decision":"allow"}'
+  exit 0
+fi
+# Extract stop reason from request
+REASON=$(echo "$REQUEST" | jq -r '.reason // "completed"')
+# Post activity event in background (non-blocking)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" --arg reason "$REASON" \\
+         '{taskRunId: $trid, type: "session_stop", toolName: "codex", summary: ("Session stopped: " + $reason)}')" \\
+    >> /root/lifecycle/activity-hook.log 2>&1 || true
+  # Final memory sync
+  /root/lifecycle/memory/sync.sh >> /root/lifecycle/memory-sync.log 2>&1 || true
+) &
+echo '{"decision":"allow"}'
+exit 0
+`;
+  files.push({
+    destinationPath: "/root/lifecycle/codex-stop-hook.sh",
+    contentBase64: Buffer.from(codexStopHookScript).toString("base64"),
+    mode: "755",
+  });
+
+  // Codex SessionStart hook - fires when Codex session begins
+  const codexSessionStartHookScript = `#!/bin/bash
+# Codex CLI session start hook - posts session start to cmux dashboard
+set -eu
+REQUEST=$(cat)
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
+  exit 0
+fi
+# Extract session info
+SESSION_ID=$(echo "$REQUEST" | jq -r '.session_id // .thread_id // "unknown"')
+MODEL=$(echo "$REQUEST" | jq -r '.model // "codex"')
+# Post activity event in background (non-blocking)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" --arg sid "$SESSION_ID" --arg model "$MODEL" \\
+         '{taskRunId: $trid, type: "session_start", toolName: "codex", summary: ("Session started: " + $model)}')" \\
+    >> /root/lifecycle/activity-hook.log 2>&1 || true
+) &
+exit 0
+`;
+  files.push({
+    destinationPath: "/root/lifecycle/codex-session-start-hook.sh",
+    contentBase64: Buffer.from(codexSessionStartHookScript).toString("base64"),
+    mode: "755",
+  });
+
+  // Codex error hook - fires on API errors, rate limits, etc.
+  const codexErrorHookScript = `#!/bin/bash
+# Codex CLI error hook - surfaces errors to cmux dashboard
+set -eu
+REQUEST=$(cat)
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
+  exit 0
+fi
+# Extract error info
+ERROR_TYPE=$(echo "$REQUEST" | jq -r '.error_type // .type // "unknown"')
+ERROR_MSG=$(echo "$REQUEST" | jq -r '.message // .error // "Unknown error"' | head -c 500)
+# Post error event in background (non-blocking)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" --arg etype "$ERROR_TYPE" --arg emsg "$ERROR_MSG" \\
+         '{taskRunId: $trid, type: "error", toolName: "codex", summary: ($etype + ": " + $emsg)}')" \\
+    >> /root/lifecycle/activity-hook.log 2>&1 || true
+) &
+exit 0
+`;
+  files.push({
+    destinationPath: "/root/lifecycle/codex-error-hook.sh",
+    contentBase64: Buffer.from(codexErrorHookScript).toString("base64"),
+    mode: "755",
+  });
+
+  // Create hooks.json for Codex CLI (requires codex_hooks feature flag)
+  // Format: https://github.com/openai/codex - hooks.json schema
+  const codexHooksConfig = {
+    Stop: [
+      {
+        command: "/root/lifecycle/codex-stop-hook.sh",
+      },
+    ],
+    SessionStart: [
+      {
+        command: "/root/lifecycle/codex-session-start-hook.sh",
+      },
+    ],
+    StopFailure: [
+      {
+        command: "/root/lifecycle/codex-error-hook.sh",
+      },
+    ],
+  };
+  files.push({
+    destinationPath: "$HOME/.codex/hooks.json",
+    contentBase64: Buffer.from(JSON.stringify(codexHooksConfig, null, 2)).toString("base64"),
+    mode: "644",
+  });
+
   // Block dangerous commands in task sandboxes (when enabled via settings)
   // Disabled by default - use permission deny rules or policy rules instead
   if (hasTaskRunJwt && ctx.enableShellWrappers) {

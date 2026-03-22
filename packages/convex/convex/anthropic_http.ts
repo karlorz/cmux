@@ -539,6 +539,7 @@ export const anthropicProxy = httpAction(async (ctx, req) => {
             inputTokens,
             outputTokens,
             contextWindow: getModelContextWindow(requestedModel),
+            provider: "anthropic",
           }).catch(() => {}); // Ignore errors to not block response
         }
       } else {
@@ -673,6 +674,7 @@ export const anthropicProxy = httpAction(async (ctx, req) => {
             inputTokens,
             outputTokens,
             contextWindow: getModelContextWindow(requestedModel),
+            provider: "anthropic",
           }).catch(() => {}); // Ignore errors to not block response
         }
       } else {
