@@ -9,6 +9,10 @@ import {
 } from "../../agent-memory-protocol";
 import { buildGenericInstructionsContent } from "../../agent-instruction-pack";
 import { buildOpencodeMcpConfig } from "../../mcp-injection";
+import {
+  buildSessionStartHook,
+  buildErrorHook,
+} from "../../provider-lifecycle-adapter";
 
 // Opencode HTTP API configuration
 export const OPENCODE_HTTP_HOST = "127.0.0.1";
@@ -147,52 +151,23 @@ ls -la "\${MARKER_FILE}" >> "\${LOG_FILE}" 2>&1
     mode: "755",
   });
 
-  // Session start hook - posts activity event when OpenCode session begins
-  const sessionStartHook = `#!/bin/bash
-set -eu
-LOG_FILE="/root/lifecycle/opencode-hook.log"
-if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
-  exit 0
-fi
-# Post session start activity event (non-blocking)
-(
-  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
-    -H "Content-Type: application/json" \\
-    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
-    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" \\
-         '{taskRunId: $trid, type: "session_start", toolName: "opencode", summary: "Session started"}')" \\
-    >> "\${LOG_FILE}" 2>&1 || true
-) &
-exit 0
-`;
+  // Session start and error hooks use shared adapter
+  // (completion hook remains custom due to task-specific marker file logic)
+  const lifecycleCtx = {
+    provider: "opencode" as const,
+    taskRunId: ctx.taskRunId,
+  };
+  const sessionStartScript = buildSessionStartHook(lifecycleCtx);
   files.push({
     destinationPath: "/root/lifecycle/opencode/session-start-hook.sh",
-    contentBase64: Buffer.from(sessionStartHook).toString("base64"),
+    contentBase64: Buffer.from(sessionStartScript).toString("base64"),
     mode: "755",
   });
 
-  // Error hook - surfaces errors to dashboard
-  const errorHook = `#!/bin/bash
-set -eu
-LOG_FILE="/root/lifecycle/opencode-hook.log"
-ERROR_MSG="\${1:-Unknown error}"
-if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
-  exit 0
-fi
-# Post error activity event (non-blocking)
-(
-  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
-    -H "Content-Type: application/json" \\
-    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
-    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" --arg msg "$ERROR_MSG" \\
-         '{taskRunId: $trid, type: "error", toolName: "opencode", summary: $msg}')" \\
-    >> "\${LOG_FILE}" 2>&1 || true
-) &
-exit 0
-`;
+  const errorScript = buildErrorHook(lifecycleCtx);
   files.push({
     destinationPath: "/root/lifecycle/opencode/error-hook.sh",
-    contentBase64: Buffer.from(errorHook).toString("base64"),
+    contentBase64: Buffer.from(errorScript).toString("base64"),
     mode: "755",
   });
 
