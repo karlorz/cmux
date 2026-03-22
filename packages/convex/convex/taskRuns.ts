@@ -3227,12 +3227,17 @@ export const initializeAutopilot = authMutation({
  * Update context usage tracking for a task run (Phase 5c).
  * Called from anthropic_http when token usage is available.
  */
+// Context warning thresholds
+const CONTEXT_WARNING_THRESHOLD = 80; // Emit warning at 80%
+const CONTEXT_CRITICAL_THRESHOLD = 95; // Emit critical at 95%
+
 export const updateContextUsage = internalMutation({
   args: {
     id: v.id("taskRuns"),
     inputTokens: v.number(),
     outputTokens: v.number(),
     contextWindow: v.optional(v.number()),
+    provider: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const doc = await ctx.db.get(args.id);
@@ -3251,6 +3256,8 @@ export const updateContextUsage = internalMutation({
       ? Math.round((totalInputTokens / contextWindow) * 100)
       : undefined;
 
+    const previousUsagePercent = existing?.usagePercent;
+
     await ctx.db.patch(args.id, {
       contextUsage: {
         totalInputTokens,
@@ -3260,6 +3267,41 @@ export const updateContextUsage = internalMutation({
         lastUpdated: Date.now(),
       },
     });
+
+    // Emit context_warning event when crossing thresholds
+    if (usagePercent !== undefined && contextWindow) {
+      const crossedWarning = previousUsagePercent !== undefined
+        ? previousUsagePercent < CONTEXT_WARNING_THRESHOLD && usagePercent >= CONTEXT_WARNING_THRESHOLD
+        : usagePercent >= CONTEXT_WARNING_THRESHOLD;
+      const crossedCritical = previousUsagePercent !== undefined
+        ? previousUsagePercent < CONTEXT_CRITICAL_THRESHOLD && usagePercent >= CONTEXT_CRITICAL_THRESHOLD
+        : usagePercent >= CONTEXT_CRITICAL_THRESHOLD;
+
+      if (crossedWarning || crossedCritical) {
+        const severity = crossedCritical ? "critical" : "warning";
+        const timestamp = Date.now().toString(36);
+        const random = Math.random().toString(36).substring(2, 10);
+        const eventId = `evt_${timestamp}_${random}`;
+
+        // Log the context warning event
+        await ctx.runMutation(internal.orchestrationEvents.logEventInternal, {
+          teamId: doc.teamId,
+          eventId,
+          orchestrationId: doc.orchestrationId ?? args.id,
+          eventType: "context_warning",
+          taskRunId: args.id,
+          payload: {
+            provider: args.provider ?? doc.agentName ?? "unknown",
+            severity,
+            warningType: "capacity",
+            summary: `Context window at ${usagePercent}% capacity (${totalInputTokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens)`,
+            currentUsage: totalInputTokens,
+            maxCapacity: contextWindow,
+            usagePercent,
+          },
+        });
+      }
+    }
 
     return { totalInputTokens, totalOutputTokens, usagePercent };
   },
