@@ -59,12 +59,55 @@
 - [x] UserPromptSubmit hook (PR #758)
 - [x] Activity events for user prompt submissions
 
+### Phase 18: Coolify Web Stack Migration — PLANNED
+Based on [[cmux-coolify-all-in-one-stack-study]] recommendations:
+- [ ] Phase 18a: Migrate apps/client to Coolify (easiest, static frontend)
+- [ ] Phase 18b: Migrate apps/www to Coolify (standalone + Hono entrypoint ready)
+- [ ] Phase 18c: Unify into single Docker Compose application
+- [ ] Validate env/domain wiring per cutover validation matrix
+
+### Phase 19: MCP Tool Suggestions — PLANNED
+Based on Codex `tool_suggest` pattern from [[research-extended-2026-03-21]]:
+- [ ] AI-powered tool recommendation for task prompts
+- [ ] Surface recommended MCP tools before spawn
+- [ ] Learn from user selections (future)
+
+### Phase 20: Memory Forgetting Policy — PLANNED
+Based on Codex memory refinements from [[research-weekly-2026-03-19]]:
+- [ ] Diff-based forgetting for stale memories
+- [ ] Usage-aware selection (prioritize frequently-read entries)
+- [ ] Explicit pruning/demotion rules
+
+### Phase 21: Self-Improving Memory (Orchestrator Learning) — CODE COMPLETE
+Based on [[cmux-self-improving-memory-roadmap]]:
+- [x] S12: Typed learning capture via `log_learning` MCP tool (devsh-memory-mcp)
+- [x] S13: Learning events captured with provenance (agentOrchestrationLearning.ts)
+- [x] S14: Rule promotion with `promoteRule`/`bulkPromoteRules` mutations
+- [x] S15: Active rules loaded into head-agent context (orchestration_http.ts)
+- [x] S16: UI panel for rules, candidates, and skill candidates (OrchestrationRulesSection)
+- [x] S17: Skill candidate schema and UI (agentOrchestrationSkillCandidates table, SkillsList.tsx)
+- [ ] **VALIDATION**: Real-world E2E testing of learning → promotion → injection cycle
+
+### Phase 22: Agent Memory Spike Validation — PLANNED
+Based on [[cmux-agent-dev-roadmap]] spike status:
+- [ ] S1: Real-world validation of file-based memory protocol
+- [ ] S2: Two-agent coordination via MAILBOX.json validation
+- [ ] S3: Convex sync observability validation
+
 ### Backlog / future
 - Swift app (mobile client)
 - D5.6: Native agent instruction injection (blocked on upstream CLI support)
+- `--bare` mode evaluation (NOT recommended - disables critical hooks, see [[dev-log/2026-03-22-bare-mode-evaluation]])
+- `--channels` approval bridge (blocked - flag not in CLI v2.1.79)
+- Cost reduction roadmap: OpenRouter for 20-30% savings, local AI routing (see [[cmux-costreduce-roadmap]])
+- Sandbox prewarming for faster agent startup
 
 ### Open Issues
 - #735: PVE-LXC exec connectivity failure (infrastructure)
+
+### Enablement Checklist (CODE COMPLETE, needs config)
+- [ ] **Phase 1**: Enable `issue_comment` webhook in GitHub App settings
+- [ ] **Phase 2**: Set `CMUX_ENABLE_OPERATOR_VERIFICATION=true` in production env
 
 ### Phase 9: Notification Hook — MERGED
 - [x] Notification hook (PR #759)
