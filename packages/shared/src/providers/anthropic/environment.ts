@@ -653,6 +653,47 @@ exit 0`;
     mode: "755",
   });
 
+  // UserPromptSubmit hook script - tracks when user submits prompts
+  // Useful for session activity monitoring and interaction tracking
+  const userPromptSubmitHookScript = `#!/bin/bash
+# Claude Code user-prompt-submit hook - tracks user prompt submissions
+# Fires on UserPromptSubmit: when user submits a prompt, before Claude processes it
+set -eu
+REQUEST=$(cat)
+
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_ID:-}" ]; then
+  exit 0
+fi
+
+PROMPT=$(echo "$REQUEST" | jq -r '.prompt // ""' | head -c 200)
+SESSION_ID=$(echo "$REQUEST" | jq -r '.session_id // ""')
+
+# Only log non-empty prompts
+if [ -z "$PROMPT" ]; then
+  exit 0
+fi
+
+echo "[user-prompt] Session $SESSION_ID: $PROMPT" >> /root/lifecycle/prompt-hook.log 2>&1
+
+# Post activity event to dashboard (background, don't block prompt processing)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n \\
+      --arg trid "\${CMUX_TASK_RUN_ID}" \\
+      --arg prompt "$PROMPT" \\
+      '{taskRunId: $trid, type: "user_prompt", summary: ("User: " + ($prompt | if length > 100 then (.[0:100] + "...") else . end))}')" \\
+    >> /root/lifecycle/prompt-hook.log 2>&1 || true
+) &
+exit 0`;
+
+  files.push({
+    destinationPath: `${claudeLifecycleDir}/user-prompt-hook.sh`,
+    contentBase64: Buffer.from(userPromptSubmitHookScript).toString("base64"),
+    mode: "755",
+  });
+
   // Check if user has provided an OAuth token (preferred) or API key
   const hasOAuthToken =
     ctx.apiKeys?.CLAUDE_CODE_OAUTH_TOKEN &&
@@ -766,6 +807,17 @@ exit 0`;
             {
               type: "command",
               command: `${claudeLifecycleDir}/subagent-stop-hook.sh`,
+            },
+          ],
+        },
+      ],
+      // User prompt tracking: logs when user submits prompts for session activity
+      UserPromptSubmit: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${claudeLifecycleDir}/user-prompt-hook.sh`,
             },
           ],
         },
