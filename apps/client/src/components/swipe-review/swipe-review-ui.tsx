@@ -14,6 +14,7 @@ import {
   AlertCircle,
   SkipForward,
   Zap,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -22,11 +23,18 @@ import { FileReviewCard } from "./file-review-card";
 
 type ReviewDecision = "pending" | "approved" | "changes_requested" | "skipped";
 
+interface HighlightedLine {
+  lineNumber: number;
+  content: string;
+  score: number;
+}
+
 interface FileWithDecision {
   path: string;
   decision: ReviewDecision;
   riskScore?: number;
   comment?: string;
+  topHighlightedLines?: HighlightedLine[];
 }
 
 interface SwipeReviewUIProps {
@@ -42,6 +50,8 @@ export function SwipeReviewUI({
 }: SwipeReviewUIProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [currentComment, setCurrentComment] = useState("");
+  const [showCommentInput, setShowCommentInput] = useState(false);
 
   // Fetch or create session
   const session = useQuery(
@@ -66,13 +76,46 @@ export function SwipeReviewUI({
 
     try {
       const heatmap = JSON.parse(session.heatmapData);
+
+      interface HeatmapLine {
+        lineNumber?: number;
+        line?: number;
+        content?: string;
+        text?: string;
+        score?: number;
+        riskScore?: number;
+      }
+
+      interface HeatmapFile {
+        path: string;
+        heatmap?: {
+          overallRiskScore?: number;
+          lines?: HeatmapLine[];
+          highlightedLines?: HeatmapLine[];
+        };
+      }
+
       const heatmapFiles =
-        heatmap.files?.map(
-          (f: { path: string; heatmap?: { overallRiskScore?: number } }) => ({
+        heatmap.files?.map((f: HeatmapFile) => {
+          // Extract top highlighted lines (sorted by score)
+          const lines: HeatmapLine[] =
+            f.heatmap?.lines || f.heatmap?.highlightedLines || [];
+          const topLines = lines
+            .map((l: HeatmapLine) => ({
+              lineNumber: l.lineNumber ?? l.line ?? 0,
+              content: l.content ?? l.text ?? "",
+              score: l.score ?? l.riskScore ?? 0,
+            }))
+            .filter((l) => l.lineNumber > 0 && l.score > 0)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 5);
+
+          return {
             path: f.path,
             riskScore: f.heatmap?.overallRiskScore,
-          })
-        ) ?? [];
+            topHighlightedLines: topLines.length > 0 ? topLines : undefined,
+          };
+        }) ?? [];
 
       // Merge with existing decisions
       const decisionMap = new Map(
@@ -80,13 +123,18 @@ export function SwipeReviewUI({
       );
 
       return heatmapFiles.map(
-        (f: { path: string; riskScore?: number }): FileWithDecision => {
+        (f: {
+          path: string;
+          riskScore?: number;
+          topHighlightedLines?: HighlightedLine[];
+        }): FileWithDecision => {
           const existing = decisionMap.get(f.path);
           return {
             path: f.path,
             decision: existing?.decision ?? "pending",
             riskScore: f.riskScore,
             comment: existing?.comment,
+            topHighlightedLines: f.topHighlightedLines,
           };
         }
       );
@@ -142,7 +190,12 @@ export function SwipeReviewUI({
           filePath: currentFile.path,
           decision,
           riskScore: currentFile.riskScore,
+          comment: currentComment.trim() || undefined,
         });
+
+        // Clear comment input after submission
+        setCurrentComment("");
+        setShowCommentInput(false);
 
         // Auto-advance to next pending file
         const nextPendingIndex = files.findIndex(
@@ -165,6 +218,7 @@ export function SwipeReviewUI({
     [
       currentFile,
       currentIndex,
+      currentComment,
       files,
       initialSessionId,
       recordDecision,
@@ -362,7 +416,57 @@ export function SwipeReviewUI({
             decision={currentFile.decision}
             riskScore={currentFile.riskScore}
             teamSlugOrId={teamSlugOrId}
+            topHighlightedLines={currentFile.topHighlightedLines}
+            onSwipeLeft={() => handleDecision("changes_requested")}
+            onSwipeRight={() => handleDecision("approved")}
+            onSwipeDown={() => handleDecision("skipped")}
           />
+        )}
+      </div>
+
+      {/* Comment input */}
+      <div className="px-6 pb-2">
+        {showCommentInput ? (
+          <div className="max-w-2xl mx-auto">
+            <textarea
+              placeholder="Add a comment for this file (optional)"
+              value={currentComment}
+              onChange={(e) => setCurrentComment(e.target.value)}
+              className={cn(
+                "w-full p-3 text-sm rounded-lg border resize-none",
+                "border-neutral-200 dark:border-neutral-700",
+                "bg-white dark:bg-neutral-900",
+                "placeholder:text-neutral-400",
+                "focus:outline-none focus:ring-2 focus:ring-blue-500"
+              )}
+              rows={2}
+              autoFocus
+            />
+            <div className="flex justify-end mt-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowCommentInput(false);
+                  setCurrentComment("");
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex justify-center">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+              onClick={() => setShowCommentInput(true)}
+            >
+              <MessageSquare className="w-4 h-4 mr-1" />
+              Add comment
+            </Button>
+          </div>
         )}
       </div>
 
