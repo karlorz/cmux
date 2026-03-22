@@ -3,7 +3,6 @@ import {
   defaultHostConfig,
   getHostUrl,
   isTrustedProxyHostname,
-  normalizeOrigin,
 } from "@cmux/shared";
 import { githubPrsBackfillRepoRouter } from "@/lib/routes/github.prs.backfill-repo.route";
 import { githubPrsBackfillRouter } from "@/lib/routes/github.prs.backfill.route";
@@ -16,6 +15,7 @@ import { githubPrsPatchRouter } from "@/lib/routes/github.prs.patch.route";
 import { githubPrsRouter } from "@/lib/routes/github.prs.route";
 import { githubProjectsRouter } from "@/lib/routes/github.projects.route";
 import { githubReposRouter } from "@/lib/routes/github.repos.route";
+import { getConfiguredOrigins } from "@/lib/utils/configured-origins";
 import {
   booksRouter,
   branchRouter,
@@ -66,27 +66,11 @@ import { decodeJwt } from "jose";
 import { setupHonoErrorHandler } from "@sentry/node";
 
 function getConfiguredCorsOrigins(): string[] {
-  const origins = new Set<string>();
-
-  const addOrigin = (candidate: string | undefined) => {
-    if (!candidate) {
-      return;
-    }
-
-    for (const rawPart of candidate.split(",")) {
-      const normalized = normalizeOrigin(rawPart.trim());
-      if (normalized) {
-        origins.add(normalized);
-      }
-    }
-  };
-
-  // Supports comma-separated values for multi-origin client setups.
-  addOrigin(process.env.NEXT_PUBLIC_CLIENT_ORIGIN);
-  addOrigin(process.env.NEXT_PUBLIC_WWW_ORIGIN);
-  addOrigin(process.env.NEXT_PUBLIC_BASE_APP_URL);
-
-  return [...origins];
+  return getConfiguredOrigins([
+    process.env.NEXT_PUBLIC_CLIENT_ORIGIN,
+    process.env.NEXT_PUBLIC_WWW_ORIGIN,
+    process.env.NEXT_PUBLIC_BASE_APP_URL,
+  ]);
 }
 
 const staticCorsOrigins = new Set([

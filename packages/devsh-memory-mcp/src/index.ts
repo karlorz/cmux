@@ -45,6 +45,7 @@ export interface MemoryMcpConfig {
 }
 
 const DEFAULT_MEMORY_DIR = "/root/lifecycle/memory";
+const DEFAULT_CMUX_API_BASE_URL = "https://cmux-www.karldigi.dev";
 
 export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
   const memoryDir = config?.memoryDir ?? DEFAULT_MEMORY_DIR;
@@ -205,6 +206,10 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
     if (!fs.existsSync(dirPath)) {
       fs.mkdirSync(dirPath, { recursive: true });
     }
+  }
+
+  function getCmuxApiBaseUrl(): string {
+    return process.env.CMUX_API_BASE_URL ?? DEFAULT_CMUX_API_BASE_URL;
   }
 
   // Orchestration types and helpers
@@ -1579,7 +1584,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         const { orchestrationId: argOrchId } = args as { orchestrationId?: string };
         const orchestrationId = argOrchId ?? process.env.CMUX_ORCHESTRATION_ID;
         const jwt = process.env.CMUX_TASK_RUN_JWT;
-        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux-www.karldigi.dev";
+        const apiBaseUrl = getCmuxApiBaseUrl();
 
         if (!orchestrationId) {
           return {
@@ -1726,7 +1731,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         };
         const orchestrationId = argOrchId ?? process.env.CMUX_ORCHESTRATION_ID;
         const jwt = process.env.CMUX_TASK_RUN_JWT;
-        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux-www.karldigi.dev";
+        const apiBaseUrl = getCmuxApiBaseUrl();
 
         if (!orchestrationId) {
           return {
@@ -2154,7 +2159,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         const { status: filterStatus } = args as { status?: string };
 
         const jwt = process.env.CMUX_TASK_RUN_JWT;
-        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux-www.karldigi.dev";
+        const apiBaseUrl = getCmuxApiBaseUrl();
         const orchestrationId = process.env.CMUX_ORCHESTRATION_ID;
 
         if (!jwt) {
@@ -2224,7 +2229,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         };
 
         const jwt = process.env.CMUX_TASK_RUN_JWT;
-        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux-www.karldigi.dev";
+        const apiBaseUrl = getCmuxApiBaseUrl();
 
         if (!jwt) {
           return {
@@ -2302,7 +2307,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
 
       case "get_orchestration_summary": {
         const jwt = process.env.CMUX_TASK_RUN_JWT;
-        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux-www.karldigi.dev";
+        const apiBaseUrl = getCmuxApiBaseUrl();
         const orchestrationId = process.env.CMUX_ORCHESTRATION_ID;
 
         if (!jwt) {
@@ -2503,7 +2508,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         };
 
         const jwt = process.env.CMUX_TASK_RUN_JWT;
-        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux-www.karldigi.dev";
+        const apiBaseUrl = getCmuxApiBaseUrl();
         const orchestrationId = process.env.CMUX_ORCHESTRATION_ID;
         const taskRunId = process.env.CMUX_TASK_RUN_ID;
 
@@ -2573,7 +2578,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         const { taskId: providedTaskId } = args as { taskId?: string };
 
         const jwt = process.env.CMUX_TASK_RUN_JWT;
-        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux-www.karldigi.dev";
+        const apiBaseUrl = getCmuxApiBaseUrl();
         const taskId = providedTaskId ?? process.env.CMUX_TASK_RUN_ID;
 
         if (!jwt) {
@@ -2662,7 +2667,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         };
 
         const jwt = process.env.CMUX_TASK_RUN_JWT;
-        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux-www.karldigi.dev";
+        const apiBaseUrl = getCmuxApiBaseUrl();
 
         if (!jwt) {
           return {
@@ -2798,7 +2803,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         const { orchestrationId: providedOrchId } = args as { orchestrationId?: string };
 
         const jwt = process.env.CMUX_TASK_RUN_JWT;
-        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux-www.karldigi.dev";
+        const apiBaseUrl = getCmuxApiBaseUrl();
         const orchestrationId = providedOrchId ?? process.env.CMUX_ORCHESTRATION_ID;
 
         if (!jwt) {
@@ -2869,7 +2874,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         };
 
         const jwt = process.env.CMUX_TASK_RUN_JWT;
-        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux-www.karldigi.dev";
+        const apiBaseUrl = getCmuxApiBaseUrl();
 
         if (!jwt) {
           return {
@@ -3153,7 +3158,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
 
       case "log_learning": {
         const jwt = process.env.CMUX_TASK_RUN_JWT;
-        const apiBase = process.env.CMUX_API_BASE_URL ?? "https://cmux-www.karldigi.dev";
+        const apiBase = getCmuxApiBaseUrl();
 
         if (!jwt) {
           return {
@@ -3228,7 +3233,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
 
       case "get_active_orchestration_rules": {
         const jwt = process.env.CMUX_TASK_RUN_JWT;
-        const apiBase = process.env.CMUX_API_BASE_URL ?? "https://cmux-www.karldigi.dev";
+        const apiBase = getCmuxApiBaseUrl();
 
         if (!jwt) {
           return {
