@@ -579,6 +579,80 @@ exit 0`;
     mode: "755",
   });
 
+  // SubagentStart hook script - tracks when Claude spawns sub-agents
+  const subagentStartHookScript = `#!/bin/bash
+# Claude Code subagent-start hook - tracks sub-agent spawning in cmux dashboard
+# Fires on SubagentStart: when a subagent is spawned via Agent tool
+set -eu
+REQUEST=$(cat)
+
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_ID:-}" ]; then
+  exit 0
+fi
+
+AGENT_ID=$(echo "$REQUEST" | jq -r '.agent_id // "unknown"')
+AGENT_TYPE=$(echo "$REQUEST" | jq -r '.agent_type // "unknown"')
+
+echo "[subagent-start] Agent $AGENT_ID ($AGENT_TYPE) spawned" >> /root/lifecycle/subagent-hook.log 2>&1
+
+# Post activity event to dashboard (background, don't block)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n \\
+      --arg trid "\${CMUX_TASK_RUN_ID}" \\
+      --arg agentId "$AGENT_ID" \\
+      --arg agentType "$AGENT_TYPE" \\
+      '{taskRunId: $trid, type: "subagent_start", toolName: "Agent", summary: ("Spawned " + $agentType + " subagent: " + $agentId)}')" \\
+    >> /root/lifecycle/subagent-hook.log 2>&1 || true
+) &
+exit 0`;
+
+  files.push({
+    destinationPath: `${claudeLifecycleDir}/subagent-start-hook.sh`,
+    contentBase64: Buffer.from(subagentStartHookScript).toString("base64"),
+    mode: "755",
+  });
+
+  // SubagentStop hook script - tracks when Claude sub-agents complete
+  const subagentStopHookScript = `#!/bin/bash
+# Claude Code subagent-stop hook - tracks sub-agent completion in cmux dashboard
+# Fires on SubagentStop: when a subagent finishes responding
+set -eu
+REQUEST=$(cat)
+
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_ID:-}" ]; then
+  exit 0
+fi
+
+AGENT_ID=$(echo "$REQUEST" | jq -r '.agent_id // "unknown"')
+AGENT_TYPE=$(echo "$REQUEST" | jq -r '.agent_type // "unknown"')
+LAST_MESSAGE=$(echo "$REQUEST" | jq -r '.last_assistant_message // ""' | head -c 200)
+
+echo "[subagent-stop] Agent $AGENT_ID ($AGENT_TYPE) completed" >> /root/lifecycle/subagent-hook.log 2>&1
+
+# Post activity event to dashboard (background, don't block)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n \\
+      --arg trid "\${CMUX_TASK_RUN_ID}" \\
+      --arg agentId "$AGENT_ID" \\
+      --arg agentType "$AGENT_TYPE" \\
+      --arg summary "$LAST_MESSAGE" \\
+      '{taskRunId: $trid, type: "subagent_stop", toolName: "Agent", summary: ($agentType + " subagent completed: " + ($summary | if length > 100 then (.[0:100] + "...") else . end))}')" \\
+    >> /root/lifecycle/subagent-hook.log 2>&1 || true
+) &
+exit 0`;
+
+  files.push({
+    destinationPath: `${claudeLifecycleDir}/subagent-stop-hook.sh`,
+    contentBase64: Buffer.from(subagentStopHookScript).toString("base64"),
+    mode: "755",
+  });
+
   // Check if user has provided an OAuth token (preferred) or API key
   const hasOAuthToken =
     ctx.apiKeys?.CLAUDE_CODE_OAUTH_TOKEN &&
@@ -671,6 +745,27 @@ exit 0`;
             {
               type: "command",
               command: `${claudeLifecycleDir}/precompact-hook.sh`,
+            },
+          ],
+        },
+      ],
+      // Subagent lifecycle: track sub-agent spawning/completion in dashboard
+      SubagentStart: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${claudeLifecycleDir}/subagent-start-hook.sh`,
+            },
+          ],
+        },
+      ],
+      SubagentStop: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${claudeLifecycleDir}/subagent-stop-hook.sh`,
             },
           ],
         },
