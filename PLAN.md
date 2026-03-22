@@ -34,6 +34,9 @@
 - [x] AI-assisted risk scoring via packages/pr-heatmap
 - [x] Merge queue backend (prMergeQueue.ts)
 - [x] GitHub API integration for PR reviews
+- [x] Touch swipe gestures with visual feedback (PR #773)
+- [x] Diff preview showing top highlighted lines (PR #773)
+- [x] Inline comment input for file reviews (PR #773)
 
 ### Phase 4: Memory Quality & Lifecycle — COMPLETE
 - [x] Memory freshness scoring (agentMemoryFreshness.ts)
