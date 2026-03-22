@@ -584,7 +584,7 @@ export function getEnvironmentOverridesForAgent(
           options.openAiBaseUrl,
         ),
       };
-    case "google":
+    case "gemini":
       return {
         mcpServerConfigs: options.mcpConfigs.gemini,
         workspaceSettings: options.workspaceSettings ?? undefined,
