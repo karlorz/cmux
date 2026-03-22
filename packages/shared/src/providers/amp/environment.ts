@@ -45,6 +45,91 @@ export async function getAmpEnvironment(
   // Ensure .config/amp and .local/share/amp directories exist
   startupCommands.push("mkdir -p ~/.config/amp");
   startupCommands.push("mkdir -p ~/.local/share/amp");
+  startupCommands.push("mkdir -p /root/lifecycle/amp");
+
+  // Session start hook - posts activity event when Amp session begins
+  const sessionStartHook = `#!/bin/bash
+set -eu
+LOG_FILE="/root/lifecycle/amp-hook.log"
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
+  exit 0
+fi
+# Post session start activity event (non-blocking)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" \\
+         '{taskRunId: $trid, type: "session_start", toolName: "amp", summary: "Session started"}')" \\
+    >> "\${LOG_FILE}" 2>&1 || true
+) &
+exit 0
+`;
+  files.push({
+    destinationPath: "/root/lifecycle/amp/session-start-hook.sh",
+    contentBase64: Buffer.from(sessionStartHook).toString("base64"),
+    mode: "755",
+  });
+
+  // Session completion hook - posts activity event when Amp session ends
+  const sessionCompleteHook = `#!/bin/bash
+set -eu
+LOG_FILE="/root/lifecycle/amp-hook.log"
+MARKER_DIR="/root/lifecycle"
+GENERIC_MARKER="\${MARKER_DIR}/done.txt"
+
+# Post session completion activity event (non-blocking)
+if [ -n "\${CMUX_TASK_RUN_JWT:-}" ] && [ -n "\${CMUX_CALLBACK_URL:-}" ]; then
+  (
+    curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+      -H "Content-Type: application/json" \\
+      -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+      -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" \\
+           '{taskRunId: $trid, type: "session_stop", toolName: "amp", summary: "Session completed"}')" \\
+      >> "\${LOG_FILE}" 2>&1 || true
+  ) &
+fi
+
+# Sync memory files (best-effort)
+/root/lifecycle/memory/sync.sh >> "\${LOG_FILE}" 2>&1 || true
+
+# Create completion marker
+touch "\${GENERIC_MARKER}"
+echo "[CMUX] Amp session complete" >> "\${LOG_FILE}"
+`;
+  files.push({
+    destinationPath: "/root/lifecycle/amp/session-complete-hook.sh",
+    contentBase64: Buffer.from(sessionCompleteHook).toString("base64"),
+    mode: "755",
+  });
+
+  // Error hook - surfaces errors to dashboard
+  const errorHook = `#!/bin/bash
+set -eu
+LOG_FILE="/root/lifecycle/amp-hook.log"
+ERROR_MSG="\${1:-Unknown error}"
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
+  exit 0
+fi
+# Post error activity event (non-blocking)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" --arg msg "$ERROR_MSG" \\
+         '{taskRunId: $trid, type: "error", toolName: "amp", summary: $msg}')" \\
+    >> "\${LOG_FILE}" 2>&1 || true
+) &
+exit 0
+`;
+  files.push({
+    destinationPath: "/root/lifecycle/amp/error-hook.sh",
+    contentBase64: Buffer.from(errorHook).toString("base64"),
+    mode: "755",
+  });
+
+  // Fire session start hook on sandbox initialization
+  startupCommands.push("/root/lifecycle/amp/session-start-hook.sh &");
 
   // Transfer settings.json from host (desktop mode only)
   let settingsAdded = false;
