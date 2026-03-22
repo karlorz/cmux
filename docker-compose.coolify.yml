@@ -109,6 +109,9 @@ services:
       - CMUX_ALLOWED_SOCKET_ORIGINS=${CMUX_ALLOWED_SOCKET_ORIGINS}
       # Origins
       - NEXT_PUBLIC_WWW_ORIGIN=${NEXT_PUBLIC_WWW_ORIGIN:-}
+      # Internal service URLs for inter-container communication
+      - CMUX_SERVER_URL=${CMUX_SERVER_URL:-http://cmux-server:9776}
+      - WWW_INTERNAL_URL=${WWW_INTERNAL_URL:-http://cmux-www:9779}
       # Mode
       - NEXT_PUBLIC_WEB_MODE=${NEXT_PUBLIC_WEB_MODE:-true}
       - DEFAULT_SANDBOX_TIMEZONE=${DEFAULT_SANDBOX_TIMEZONE:-Asia/Hong_Kong}
