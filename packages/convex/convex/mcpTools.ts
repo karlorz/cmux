@@ -272,6 +272,136 @@ export const setTeamToolPreference = mutation({
   },
 });
 
+// Track tool selection for learning (Phase 19 enhancement)
+export const trackToolSelection = mutation({
+  args: {
+    teamId: v.string(),
+    toolName: v.string(),
+    promptKeywords: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("toolUsageStats")
+      .withIndex("by_team_tool", (q) =>
+        q.eq("teamId", args.teamId).eq("toolName", args.toolName)
+      )
+      .first();
+
+    const now = Date.now();
+
+    if (existing) {
+      // Merge recent keywords (keep last 20 unique)
+      const existingKeywords = existing.recentPromptKeywords ?? [];
+      const newKeywords = args.promptKeywords ?? [];
+      const mergedKeywords = [
+        ...new Set([...newKeywords, ...existingKeywords]),
+      ].slice(0, 20);
+
+      await ctx.db.patch(existing._id, {
+        selectionCount: existing.selectionCount + 1,
+        lastSelectedAt: now,
+        recentPromptKeywords: mergedKeywords,
+      });
+      return existing._id;
+    }
+
+    return await ctx.db.insert("toolUsageStats", {
+      teamId: args.teamId,
+      toolName: args.toolName,
+      selectionCount: 1,
+      lastSelectedAt: now,
+      recentPromptKeywords: args.promptKeywords,
+    });
+  },
+});
+
+// Get team's tool usage stats for boosting suggestions
+export const getTeamUsageStats = query({
+  args: { teamId: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("toolUsageStats")
+      .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
+      .collect();
+  },
+});
+
+// Enhanced suggestion with team usage learning
+export const suggestForPromptWithLearning = query({
+  args: {
+    prompt: v.string(),
+    teamId: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 5;
+    const allTools = await ctx.db.query("mcpTools").collect();
+
+    // Tokenize prompt
+    const promptTokens = new Set(
+      args.prompt
+        .toLowerCase()
+        .split(/\W+/)
+        .filter((w) => w.length > 2)
+    );
+
+    // Get team usage stats if teamId provided
+    const teamId = args.teamId;
+    const usageStats = teamId
+      ? await ctx.db
+          .query("toolUsageStats")
+          .withIndex("by_team", (q) => q.eq("teamId", teamId))
+          .collect()
+      : [];
+
+    const usageMap = new Map(usageStats.map((s) => [s.toolName, s]));
+
+    // Detect intent boosts
+    const categoryBoosts = detectIntentBoosts(args.prompt);
+
+    // Score tools with learning boost
+    const scoredTools = allTools.map((tool) => {
+      // Base keyword matching
+      const keywordMatches = tool.keywords.filter((kw) =>
+        promptTokens.has(kw.toLowerCase())
+      ).length;
+      const descriptionMatches = tool.description
+        .toLowerCase()
+        .split(/\W+/)
+        .filter((w) => promptTokens.has(w)).length;
+
+      let score = keywordMatches * 2 + descriptionMatches;
+
+      // Intent boost
+      const intentBoost = categoryBoosts[tool.category] ?? 0;
+      score += intentBoost;
+
+      // Learning boost based on team usage
+      const usage = usageMap.get(tool.name);
+      if (usage) {
+        // Logarithmic boost to prevent runaway scores
+        const usageBoost = Math.log2(usage.selectionCount + 1);
+        score += usageBoost;
+
+        // Extra boost if prompt matches learned keywords
+        const learnedKeywords = usage.recentPromptKeywords ?? [];
+        const learnedMatches = learnedKeywords.filter((kw) =>
+          promptTokens.has(kw.toLowerCase())
+        ).length;
+        score += learnedMatches * 0.5;
+      }
+
+      return { tool, score, usageCount: usage?.selectionCount ?? 0 };
+    });
+
+    return scoredTools
+      .filter((t) => t.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map((t) => ({ ...t.tool, usageCount: t.usageCount }));
+  },
+});
+
 // Seed initial tools (run once during setup)
 export const seedInitialTools = mutation({
   args: {},
