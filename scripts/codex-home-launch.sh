@@ -14,6 +14,19 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM HUP
 
+should_skip_home_entry() {
+  name=$1
+  case "$name" in
+    .|..|.DS_Store|hooks.json|archived_sessions|history.jsonl|log|session_index.jsonl|sessions|shell_snapshots|sqlite|tmp|worktrees)
+      return 0
+      ;;
+    logs_*.sqlite|logs_*.sqlite-*|state_*.sqlite|state_*.sqlite-*)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
 debug_log() {
   if [ "${CMUX_CODEX_WRAPPER_DEBUG:-0}" = "1" ]; then
     printf '%s\n' "cmux codex wrapper: $*" >&2
@@ -31,7 +44,7 @@ if [ -d "$BASE_HOME" ]; then
   for path in "$BASE_HOME"/* "$BASE_HOME"/.[!.]* "$BASE_HOME"/..?*; do
     [ -e "$path" ] || continue
     name=$(basename "$path")
-    if [ "$name" = "." ] || [ "$name" = ".." ] || [ "$name" = "hooks.json" ]; then
+    if should_skip_home_entry "$name"; then
       continue
     fi
     ln -s "$path" "$TEMP_HOME/$name"
