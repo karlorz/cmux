@@ -89,3 +89,10 @@ All 11 Claude Code v2.1.78 hooks integrated:
 - [x] StopFailure hook for error surfacing
 - [x] hooks.json configuration file
 - [x] Enable `codex_hooks = true` feature flag in config.toml
+
+### Phase 12: OpenCode Activity Stream Integration — IN PROGRESS
+- [x] Session completion activity event posting
+- [x] Session start hook with activity event
+- [x] Error hook for error surfacing
+- [x] Plugin integration for session lifecycle
+- [ ] Testing and PR merge
