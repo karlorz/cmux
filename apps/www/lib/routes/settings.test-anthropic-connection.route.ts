@@ -1,6 +1,7 @@
 import { getUserFromRequest } from "@/lib/utils/auth";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { isAllowedBaseUrl } from "./settings.helpers";
+import { normalizeAnthropicBaseUrl } from "@cmux/shared";
 
 const TestAnthropicConnectionBody = z
   .object({
@@ -69,7 +70,8 @@ settingsTestAnthropicConnectionRouter.openapi(
     }
 
     const { baseUrl, apiKey } = c.req.valid("json");
-    const normalizedBaseUrl = baseUrl.replace(/\/v1\/?$/, "").replace(/\/+$/, "");
+    // Use shared normalizer - forRawFetch returns origin without /v1 suffix
+    const normalizedBaseUrl = normalizeAnthropicBaseUrl(baseUrl).forRawFetch;
 
     const urlValidation = isAllowedBaseUrl(normalizedBaseUrl);
     if (!urlValidation.allowed) {

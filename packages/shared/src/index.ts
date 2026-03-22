@@ -23,6 +23,7 @@ export * from "./utils/openai";
 export * from "./utils/gemini";
 export * from "./utils/platform-ai";
 export * from "./utils/provider-url";
+export * from "./utils/provider-url-normalizer";
 export * from "./utils/validate-exposed-ports";
 export * from "./utils/generate-workspace-name";
 export * from "./utils/derive-repo-base-name";
