@@ -66,17 +66,20 @@ Based on [[cmux-coolify-all-in-one-stack-study]] recommendations:
 - [ ] Phase 18c: Unify into single Docker Compose application
 - [ ] Validate env/domain wiring per cutover validation matrix
 
-### Phase 19: MCP Tool Suggestions — PLANNED
+### Phase 19: MCP Tool Suggestions — COMPLETE
 Based on Codex `tool_suggest` pattern from [[research-extended-2026-03-21]]:
-- [ ] AI-powered tool recommendation for task prompts
-- [ ] Surface recommended MCP tools before spawn
-- [ ] Learn from user selections (future)
+- [x] Tool registry in Convex (mcpTools table)
+- [x] Keyword-based suggestion algorithm
+- [x] UI integration with suggested tools chips
+- [x] Intent-based enhancement (lite pattern matching)
+- [ ] **FUTURE**: Full AI analysis, semantic matching, learning from selections
 
-### Phase 20: Memory Forgetting Policy — PLANNED
+### Phase 20: Memory Forgetting Policy — COMPLETE
 Based on Codex memory refinements from [[research-weekly-2026-03-19]]:
-- [ ] Diff-based forgetting for stale memories
-- [ ] Usage-aware selection (prioritize frequently-read entries)
-- [ ] Explicit pruning/demotion rules
+- [x] Usage tracking (lastRead, readCount, lastWrite metadata)
+- [x] Freshness scoring algorithm with recommendations
+- [x] `forget_stale_memories` MCP tool with dry-run mode
+- [x] Guardrails (duplicate detection, contradiction warnings, validation)
 
 ### Phase 21: Self-Improving Memory (Orchestrator Learning) — CODE COMPLETE
 Based on [[cmux-self-improving-memory-roadmap]]:
