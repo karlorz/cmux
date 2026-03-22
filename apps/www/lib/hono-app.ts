@@ -72,6 +72,8 @@ const additionalClientOrigins =
 const staticCorsOrigins = new Set([
   getHostUrl(defaultHostConfig.client),
   getHostUrl(defaultHostConfig.server),
+  "https://cmux.karldigi.dev",
+  "https://cmux-www.karldigi.dev",
   "https://cmux.sh",
   "https://www.cmux.sh",
   "https://cmux.com",
