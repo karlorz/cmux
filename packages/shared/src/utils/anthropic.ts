@@ -2,6 +2,8 @@
  * Utilities for working with Anthropic API configuration.
  */
 
+import { normalizeAnthropicUrl as normalizeAnthropicUrlImpl } from "./provider-url-normalizer";
+
 /** Cloudflare AI Gateway URL for proxying Anthropic requests */
 export const CLOUDFLARE_ANTHROPIC_BASE_URL =
   "https://gateway.ai.cloudflare.com/v1/0c1675e0def6de1ab3a50a4e17dc5656/cmux-ai-proxy/anthropic";
@@ -22,7 +24,7 @@ export type NormalizedAnthropicBaseUrl = {
 
 /**
  * Normalizes an Anthropic API base URL to consistent formats.
- * Handles both URLs with and without /v1 suffix.
+ * Handles both URLs with and without /v1 suffix, including custom proxy paths.
  *
  * @param url - The base URL to normalize
  * @returns Object with normalized URLs for different SDK contexts
@@ -34,27 +36,34 @@ export type NormalizedAnthropicBaseUrl = {
  *
  * normalizeAnthropicBaseUrl("https://api.anthropic.com/v1")
  * // { forAiSdk: "https://api.anthropic.com/v1", forRawFetch: "https://api.anthropic.com" }
+ *
+ * // Custom proxy paths are preserved
+ * normalizeAnthropicBaseUrl("https://proxy.example.com/anthropic")
+ * // { forAiSdk: "https://proxy.example.com/anthropic/v1", forRawFetch: "https://proxy.example.com/anthropic" }
  * ```
  */
 export function normalizeAnthropicBaseUrl(
   url: string,
 ): NormalizedAnthropicBaseUrl {
-  const trimmed = url.trim().replace(/\/+$/, "");
+  const trimmed = url.trim();
   if (trimmed.length === 0) {
     return { forAiSdk: "", forRawFetch: "" };
   }
 
-  if (trimmed.endsWith("/v1")) {
+  try {
+    const result = normalizeAnthropicUrlImpl(trimmed);
     return {
-      forAiSdk: trimmed,
-      forRawFetch: trimmed.slice(0, -3),
+      forAiSdk: result.forAiSdk(),
+      forRawFetch: result.forCliOrRawFetch(),
+    };
+  } catch {
+    // Fallback for invalid URLs - return as-is with basic cleanup
+    const cleaned = trimmed.replace(/\/+$/, "");
+    return {
+      forAiSdk: cleaned.endsWith("/v1") ? cleaned : `${cleaned}/v1`,
+      forRawFetch: cleaned.endsWith("/v1") ? cleaned.slice(0, -3) : cleaned,
     };
   }
-
-  return {
-    forAiSdk: `${trimmed}/v1`,
-    forRawFetch: trimmed,
-  };
 }
 
 /**
