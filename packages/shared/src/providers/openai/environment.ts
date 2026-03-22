@@ -84,6 +84,9 @@ const CODEX_AUTOPILOT_CONTINUE_LINE =
 
 // Custom provider name for cmux-managed proxy endpoints
 const CMUX_CUSTOM_PROVIDER_NAME = "cmux-proxy";
+export const CODEX_HOOKED_COMMAND_PATH = "/root/lifecycle/codex-with-hooks.sh";
+const CODEX_HOOKS_TEMPLATE_PATH = "/root/lifecycle/codex-hooks.json";
+const CODEX_SHELL_HELPERS_PATH = "/root/lifecycle/codex-shell-helpers.sh";
 
 /**
  * Generate the model_provider top-level key for custom provider.
@@ -211,7 +214,7 @@ SESSION_ID_FILE="/root/lifecycle/codex-session-id.txt"
 if [ -f "$SESSION_ID_FILE" ]; then
   THREAD_ID="$(cat "$SESSION_ID_FILE")"
   if [ -n "$THREAD_ID" ]; then
-    exec codex resume "$THREAD_ID"
+    exec ${CODEX_HOOKED_COMMAND_PATH} resume "$THREAD_ID"
   fi
 fi
 
@@ -312,7 +315,9 @@ exit 0
     mode: "755",
   });
 
-  // Create hooks.json for Codex CLI (requires codex_hooks feature flag)
+  // Store a hooks template for Codex CLI (requires codex_hooks feature flag).
+  // Automated cmux entrypoints stage this into a temporary CODEX_HOME so
+  // ordinary interactive terminal sessions stay silent by default.
   // Format: https://github.com/openai/codex - hooks.json schema
   const codexHooksConfig = {
     Stop: [
@@ -332,10 +337,86 @@ exit 0
     ],
   };
   files.push({
-    destinationPath: "$HOME/.codex/hooks.json",
+    destinationPath: CODEX_HOOKS_TEMPLATE_PATH,
     contentBase64: Buffer.from(JSON.stringify(codexHooksConfig, null, 2)).toString("base64"),
     mode: "644",
   });
+
+  const codexHookedWrapperScript = `#!/usr/bin/env sh
+set -eu
+
+BASE_HOME="\${CODEX_HOME:-$HOME/.codex}"
+TEMP_HOME="$(mktemp -d "\${TMPDIR:-/tmp}/cmux-codex-home-XXXXXX")"
+HOOKS_TEMPLATE="${CODEX_HOOKS_TEMPLATE_PATH}"
+
+cleanup() {
+  rm -rf "$TEMP_HOME"
+}
+trap cleanup EXIT INT TERM
+
+if [ ! -f "$HOOKS_TEMPLATE" ]; then
+  echo "Missing Codex hooks template: $HOOKS_TEMPLATE" >&2
+  exit 1
+fi
+
+mkdir -p "$TEMP_HOME"
+
+if [ -d "$BASE_HOME" ]; then
+  for path in "$BASE_HOME"/* "$BASE_HOME"/.[!.]* "$BASE_HOME"/..?*; do
+    [ -e "$path" ] || continue
+    name="$(basename "$path")"
+    if [ "$name" = "." ] || [ "$name" = ".." ] || [ "$name" = "hooks.json" ]; then
+      continue
+    fi
+    ln -s "$path" "$TEMP_HOME/$name"
+  done
+fi
+
+cp "$HOOKS_TEMPLATE" "$TEMP_HOME/hooks.json"
+export CODEX_HOME="$TEMP_HOME"
+
+exec codex "$@"
+`;
+  files.push({
+    destinationPath: CODEX_HOOKED_COMMAND_PATH,
+    contentBase64: Buffer.from(codexHookedWrapperScript).toString("base64"),
+    mode: "755",
+  });
+
+  const codexShellHelpersScript = `codex() {
+  if [ "\${CMUX_CODEX_USE_HOME_HOOKS:-0}" = "1" ]; then
+    command codex "$@"
+    return $?
+  fi
+
+  repo_root=""
+  if command -v git >/dev/null 2>&1; then
+    repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  fi
+
+  if [ -n "$repo_root" ] && [ -x "$repo_root/scripts/codex-home-launch.sh" ] && [ -f "$repo_root/.codex/autopilot-hooks.json" ]; then
+    if [ "\${CMUX_CODEX_WRAPPER_DEBUG:-0}" = "1" ]; then
+      echo "cmux codex shell helper: using repo launcher from $repo_root" >&2
+    fi
+    "$repo_root/scripts/codex-home-launch.sh" "$@"
+  elif [ "\${CMUX_AUTOPILOT_ENABLED:-0}" = "1" ] || [ "\${CMUX_CODEX_HOOKS_ENABLED:-0}" = "1" ]; then
+    ${CODEX_HOOKED_COMMAND_PATH} "$@"
+  else
+    command codex "$@"
+  fi
+}
+`;
+  files.push({
+    destinationPath: CODEX_SHELL_HELPERS_PATH,
+    contentBase64: Buffer.from(codexShellHelpersScript).toString("base64"),
+    mode: "644",
+  });
+  startupCommands.push(
+    `touch ~/.bashrc && grep -F '${CODEX_SHELL_HELPERS_PATH}' ~/.bashrc >/dev/null || printf '\\n[ -f ${CODEX_SHELL_HELPERS_PATH} ] && . ${CODEX_SHELL_HELPERS_PATH}\\n' >> ~/.bashrc`
+  );
+  startupCommands.push(
+    `touch ~/.zshrc && grep -F '${CODEX_SHELL_HELPERS_PATH}' ~/.zshrc >/dev/null || printf '\\n[ -f ${CODEX_SHELL_HELPERS_PATH} ] && . ${CODEX_SHELL_HELPERS_PATH}\\n' >> ~/.zshrc`
+  );
 
   // Block dangerous commands in task sandboxes (when enabled via settings)
   // Disabled by default - use permission deny rules or policy rules instead
@@ -355,6 +436,7 @@ CMUX_AUTOPILOT_WRAPUP_MINUTES="\${CMUX_AUTOPILOT_WRAPUP_MINUTES:-3}"
 CMUX_CALLBACK_URL="\${CMUX_CALLBACK_URL:-}"
 CMUX_TASK_RUN_JWT="\${CMUX_TASK_RUN_JWT:-}"
 CMUX_PROMPT="\${CMUX_PROMPT:-}"
+CODEX_RUNNER="${CODEX_HOOKED_COMMAND_PATH}"
 
 # Derived values
 START_EPOCH=\$(date +%s)
@@ -467,12 +549,12 @@ ${CODEX_AUTOPILOT_TURN_SUMMARY_LINE}"
     THREAD_ID=\$(cat "\$SESSION_FILE")
     if [ -n "\$THREAD_ID" ]; then
       log "Resuming session: \$THREAD_ID"
-      codex exec resume --last "\$PROMPT" 2>&1 | tee -a "\$TURN_FILE" || CODEX_EXIT=\$?
+      "\$CODEX_RUNNER" exec resume --last "\$PROMPT" 2>&1 | tee -a "\$TURN_FILE" || CODEX_EXIT=\$?
     else
-      codex exec "\$PROMPT" 2>&1 | tee -a "\$TURN_FILE" || CODEX_EXIT=\$?
+      "\$CODEX_RUNNER" exec "\$PROMPT" 2>&1 | tee -a "\$TURN_FILE" || CODEX_EXIT=\$?
     fi
   else
-    codex exec "\$PROMPT" 2>&1 | tee -a "\$TURN_FILE" || CODEX_EXIT=\$?
+    "\$CODEX_RUNNER" exec "\$PROMPT" 2>&1 | tee -a "\$TURN_FILE" || CODEX_EXIT=\$?
   fi
 
   # Report errors to dashboard

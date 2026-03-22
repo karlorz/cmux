@@ -1,5 +1,7 @@
-# Repo-local CMUX_AUTOPILOT hooks stay inactive during ordinary interactive
-# Codex sessions.
+# Repo-local Codex sessions shadow any global ~/.codex/hooks.json via
+# `scripts/codex-home-launch.sh`, so ordinary interactive runs stay silent by
+# default.
 #
-# `scripts/agent-autopilot.sh` stages `.codex/autopilot-hooks.json` into a
-# temporary CODEX_HOME and enables `codex_hooks` only for that launcher path.
+# `scripts/agent-autopilot.sh` and `.codex/codex-shell-helpers.sh` only stage
+# `.codex/autopilot-hooks.json` into a temporary CODEX_HOME when
+# `CMUX_AUTOPILOT_ENABLED=1` or `CMUX_CODEX_HOOKS_ENABLED=1`.
