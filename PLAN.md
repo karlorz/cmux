@@ -69,3 +69,8 @@
 ### Phase 9: Notification Hook — CODE COMPLETE
 - [x] Notification hook (PR #759)
 - [x] Activity events for attention requests
+
+### Phase 10: PostCompact Context Re-injection — CODE COMPLETE
+- [x] PostCompact hook (PR #760)
+- [x] Re-inject P0 Core memory after compaction
+- [x] Activity events for compaction completion
