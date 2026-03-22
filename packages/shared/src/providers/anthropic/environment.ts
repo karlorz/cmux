@@ -731,6 +731,56 @@ exit 0`;
     mode: "755",
   });
 
+  // PostCompact hook script - fires after context compression completes
+  // Can re-inject critical context and log compaction events
+  const postCompactHookScript = `#!/bin/bash
+# Claude Code post-compact hook - fires after context compression
+# Useful for re-injecting critical context and logging compaction events
+set -eu
+REQUEST=$(cat)
+
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_ID:-}" ]; then
+  exit 0
+fi
+
+TRIGGER=$(echo "$REQUEST" | jq -r '.trigger // "auto"')
+SUMMARY=$(echo "$REQUEST" | jq -r '.summary // ""' | head -c 300)
+
+echo "[postcompact] Trigger: $TRIGGER, Summary length: \${#SUMMARY}" >> /root/lifecycle/postcompact-hook.log 2>&1
+
+# Post activity event to dashboard (background)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n \\
+      --arg trid "\${CMUX_TASK_RUN_ID}" \\
+      --arg trigger "$TRIGGER" \\
+      '{taskRunId: $trid, type: "context_compacted", summary: ("Context compacted (" + $trigger + ")")}')" \\
+    >> /root/lifecycle/postcompact-hook.log 2>&1 || true
+) &
+
+# Re-inject critical task context after compaction
+# This ensures agent remembers its core mission even after context is summarized
+TASK_CONTEXT=""
+if [ -f "/root/lifecycle/memory/knowledge/MEMORY.md" ]; then
+  # Extract P0 (Core) entries - most critical to preserve
+  TASK_CONTEXT=$(grep -A 50 "## P0 Core" /root/lifecycle/memory/knowledge/MEMORY.md 2>/dev/null | head -20 || true)
+fi
+
+if [ -n "$TASK_CONTEXT" ]; then
+  echo "Critical context from MEMORY.md (P0 Core):"
+  echo "$TASK_CONTEXT"
+fi
+
+exit 0`;
+
+  files.push({
+    destinationPath: `${claudeLifecycleDir}/postcompact-hook.sh`,
+    contentBase64: Buffer.from(postCompactHookScript).toString("base64"),
+    mode: "755",
+  });
+
   // Check if user has provided an OAuth token (preferred) or API key
   const hasOAuthToken =
     ctx.apiKeys?.CLAUDE_CODE_OAUTH_TOKEN &&
@@ -823,6 +873,17 @@ exit 0`;
             {
               type: "command",
               command: `${claudeLifecycleDir}/precompact-hook.sh`,
+            },
+          ],
+        },
+      ],
+      // Post-compaction: re-inject critical context after compression
+      PostCompact: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${claudeLifecycleDir}/postcompact-hook.sh`,
             },
           ],
         },
