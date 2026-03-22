@@ -55,6 +55,10 @@
 - [x] SubagentStop hook (PR #757)
 - [x] Activity events for sub-agent spawning/completion
 
+### Phase 8: User Prompt Tracking — CODE COMPLETE
+- [x] UserPromptSubmit hook (PR #758)
+- [x] Activity events for user prompt submissions
+
 ### Backlog / future
 - Swift app (mobile client)
 - D5.6: Native agent instruction injection (blocked on upstream CLI support)
