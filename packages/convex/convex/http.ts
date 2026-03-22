@@ -87,6 +87,7 @@ import {
   autopilotStatus,
   autopilotSessionEvent,
   autopilotInfo,
+  autopilotContextHealth,
 } from "./autopilot_http";
 import {
   recordStart as sessionActivityRecordStart,
@@ -542,6 +543,12 @@ http.route({
   path: "/api/autopilot/info",
   method: "GET",
   handler: autopilotInfo,
+});
+
+http.route({
+  path: "/api/autopilot/context-health",
+  method: "GET",
+  handler: autopilotContextHealth,
 });
 
 // =============================================================================

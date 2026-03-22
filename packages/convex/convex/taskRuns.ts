@@ -3321,6 +3321,77 @@ export const getContextUsage = internalQuery({
 });
 
 /**
+ * Get context health summary for a task run (Phase 4).
+ * Aggregates context usage and recent warning events into a compact summary.
+ */
+export const getContextHealthSummary = internalQuery({
+  args: {
+    id: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.id);
+    if (!doc) {
+      return null;
+    }
+
+    const contextUsage = doc.contextUsage;
+    const orchestrationId = doc.orchestrationId ?? args.id;
+
+    // Get recent context_warning events for this task run
+    const recentWarnings = await ctx.db
+      .query("orchestrationEvents")
+      .withIndex("by_orchestration_type", (q) =>
+        q.eq("orchestrationId", orchestrationId).eq("eventType", "context_warning")
+      )
+      .order("desc")
+      .take(5);
+
+    // Determine latest severity from warnings
+    let latestWarningSeverity: "info" | "warning" | "critical" | null = null;
+    const warningReasons: string[] = [];
+
+    for (const event of recentWarnings) {
+      const payload = event.payload as { severity?: string; summary?: string } | undefined;
+      if (payload?.severity) {
+        if (!latestWarningSeverity || payload.severity === "critical") {
+          latestWarningSeverity = payload.severity as "info" | "warning" | "critical";
+        }
+      }
+      if (payload?.summary && !warningReasons.includes(payload.summary)) {
+        warningReasons.push(payload.summary);
+      }
+    }
+
+    // Get recent context_compacted events
+    const recentCompactions = await ctx.db
+      .query("orchestrationEvents")
+      .withIndex("by_orchestration_type", (q) =>
+        q.eq("orchestrationId", orchestrationId).eq("eventType", "context_compacted")
+      )
+      .order("desc")
+      .take(3);
+
+    return {
+      taskRunId: args.id,
+      provider: doc.agentName ?? "unknown",
+      // Context usage stats
+      totalInputTokens: contextUsage?.totalInputTokens ?? 0,
+      totalOutputTokens: contextUsage?.totalOutputTokens ?? 0,
+      contextWindow: contextUsage?.contextWindow,
+      usagePercent: contextUsage?.usagePercent,
+      // Warning state
+      latestWarningSeverity,
+      topWarningReasons: warningReasons.slice(0, 3),
+      warningCount: recentWarnings.length,
+      // Compaction state
+      recentCompactionCount: recentCompactions.length,
+      // Timestamps
+      lastUpdatedAt: contextUsage?.lastUpdated ?? doc.updatedAt,
+    };
+  },
+});
+
+/**
  * Get autopilot info for resume.
  * Returns thread-id and config for resuming an autopilot session.
  */
