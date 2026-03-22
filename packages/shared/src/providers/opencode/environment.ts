@@ -570,6 +570,13 @@ log "Post-start script end"
     mode: "644",
   });
 
+  // Provider config override for custom API endpoints
+  // OpenCode uses provider-specific env vars; override Anthropic base URL
+  // since that's the primary model provider for OpenCode
+  if (ctx.providerConfig?.isOverridden && ctx.providerConfig.baseUrl) {
+    env.ANTHROPIC_BASE_URL = ctx.providerConfig.baseUrl;
+  }
+
   return { files, env, startupCommands, postStartCommands: [] };
 }
 

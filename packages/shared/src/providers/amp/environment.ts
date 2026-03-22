@@ -159,5 +159,11 @@ export async function getAmpEnvironment(
     files.push(...getTaskSandboxWrapperFiles(Buffer));
   }
 
+  // Provider config override for custom API endpoints
+  // This overrides the upstream URL that the proxy targets
+  if (ctx.providerConfig?.isOverridden && ctx.providerConfig.baseUrl) {
+    env.AMP_UPSTREAM_URL = ctx.providerConfig.baseUrl;
+  }
+
   return { files, env, startupCommands };
 }

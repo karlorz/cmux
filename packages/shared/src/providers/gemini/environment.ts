@@ -302,5 +302,13 @@ export async function getGeminiEnvironment(
     files.push(...getTaskSandboxWrapperFiles(Buffer));
   }
 
-  return { files, env, startupCommands };}
+  // Provider config override for custom API endpoints (e.g., NewAPI gateway)
+  // Only apply when team has explicitly configured an override
+  if (ctx.providerConfig?.isOverridden && ctx.providerConfig.baseUrl) {
+    // Gemini CLI uses GEMINI_API_BASE for custom endpoints
+    env.GEMINI_API_BASE = ctx.providerConfig.baseUrl;
+  }
+
+  return { files, env, startupCommands };
+}
 

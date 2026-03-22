@@ -172,5 +172,10 @@ export async function getCursorEnvironment(
     files.push(...getTaskSandboxWrapperFiles(Buffer));
   }
 
+  // Provider config override for custom API endpoints
+  if (ctx.providerConfig?.isOverridden && ctx.providerConfig.baseUrl) {
+    env.CURSOR_API_BASE_URL = ctx.providerConfig.baseUrl;
+  }
+
   return { files, env, startupCommands };
 }
