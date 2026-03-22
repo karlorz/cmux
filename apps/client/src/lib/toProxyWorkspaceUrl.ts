@@ -272,6 +272,86 @@ export function resolveBrowserPreviewUrl(input: {
 }
 
 /**
+ * Resolve a VNC WebSocket URL for direct noVNC/RFB connection.
+ * This is the canonical client-side helper for browser preview transport resolution.
+ *
+ * Priority:
+ * 1. If vncUrl is provided:
+ *    - If it has ?path=..., extract that as the WebSocket pathname
+ *    - Otherwise convert to wss:// with /websockify pathname
+ * 2. Fall back to deriving WebSocket URL from workspaceUrl
+ *
+ * @returns wss:// URL for direct VNC connection, or null if unresolvable
+ */
+export function resolveBrowserPreviewWebsocketUrl(input: {
+  vncUrl?: string | null;
+  workspaceUrl?: string | null;
+}): string | null {
+  if (input.vncUrl) {
+    const wsUrl = toVncWebsocketUrlWithPath(input.vncUrl);
+    if (wsUrl) {
+      return wsUrl;
+    }
+  }
+
+  if (input.workspaceUrl) {
+    return toGenericVncWebsocketUrl(input.workspaceUrl);
+  }
+
+  return null;
+}
+
+/**
+ * Convert a VNC URL to WebSocket URL, handling ?path= query parameter if present.
+ * Some VNC providers route via ?path=vnc/websockify instead of direct /websockify.
+ */
+function toVncWebsocketUrlWithPath(vncBaseUrl: string): string | null {
+  if (!vncBaseUrl) {
+    return null;
+  }
+
+  try {
+    const url = new URL(vncBaseUrl);
+
+    // Check for ?path= query parameter (some providers use this for WebSocket routing)
+    const pathParam = url.searchParams.get("path");
+    if (pathParam) {
+      // Convert protocol and use the path param as pathname
+      url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+      url.pathname = pathParam.startsWith("/") ? pathParam : `/${pathParam}`;
+      url.search = "";
+      url.hash = "";
+      return url.toString();
+    }
+
+    // Check if URL ends in viewer HTML paths - extract base and convert
+    const normalizedPath = url.pathname.toLowerCase();
+    if (
+      normalizedPath.endsWith("/vnc.html") ||
+      normalizedPath.endsWith("/viewer.html")
+    ) {
+      // Replace the HTML viewer path with websockify on same base
+      const basePath = url.pathname.slice(0, url.pathname.lastIndexOf("/"));
+      url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+      url.pathname = basePath ? `${basePath}/websockify` : "/websockify";
+      url.search = "";
+      url.hash = "";
+      return url.toString();
+    }
+
+    // Standard conversion - just set /websockify
+    return toVncWebsocketUrl(vncBaseUrl);
+  } catch (error) {
+    console.debug(
+      "[toProxyWorkspaceUrl] Invalid VNC WebSocket URL with path:",
+      vncBaseUrl,
+      error
+    );
+    return null;
+  }
+}
+
+/**
  * Convert a direct VNC base URL to a WebSocket URL for noVNC/RFB connection.
  * Works with any VNC URL (PVE LXC, Morph, etc.) by converting protocol and setting /websockify path.
  *

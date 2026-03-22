@@ -6,9 +6,16 @@
  * - Raw fetch and CLI tools often expect origin-only URLs
  *
  * These normalizers handle both input formats and provide both output formats.
+ *
+ * Note: This module re-exports from provider-url-normalizer.ts which contains
+ * the unified implementation. The functions here are adapters for backward compatibility.
  */
 
 import { normalizeAnthropicBaseUrl, type NormalizedAnthropicBaseUrl } from "./anthropic";
+import {
+  normalizeOpenAIUrl as normalizeOpenAIUrlImpl,
+  normalizeGoogleUrl as normalizeGoogleUrlImpl,
+} from "./provider-url-normalizer";
 
 /**
  * Normalized provider base URLs for different SDK contexts.
@@ -25,7 +32,7 @@ export { normalizeAnthropicBaseUrl, type NormalizedAnthropicBaseUrl };
 
 /**
  * Normalizes an OpenAI API base URL to consistent formats.
- * Handles URLs with or without /v1 suffix.
+ * Handles URLs with or without /v1 suffix, including custom proxy paths.
  *
  * @param url - The base URL to normalize
  * @returns Object with normalized URLs for different SDK contexts
@@ -44,29 +51,34 @@ export { normalizeAnthropicBaseUrl, type NormalizedAnthropicBaseUrl };
  * ```
  */
 export function normalizeOpenAiBaseUrl(url: string): NormalizedProviderUrl {
-  const trimmed = url.trim().replace(/\/+$/, "");
+  const trimmed = url.trim();
   if (trimmed.length === 0) {
     return { forAiSdk: "", forRawFetch: "" };
   }
 
-  // If URL ends with /v1, strip it for forRawFetch
-  if (trimmed.endsWith("/v1")) {
+  try {
+    const result = normalizeOpenAIUrlImpl(trimmed);
+    // For OpenAI, forRawFetch still needs the /v1 suffix (unlike Anthropic)
+    // because OpenAI CLI tools expect /v1 in the base URL
+    const sdkUrl = result.forAiSdk();
+    const rawUrl = sdkUrl.endsWith("/v1") ? sdkUrl.slice(0, -3) : sdkUrl;
     return {
-      forAiSdk: trimmed,
-      forRawFetch: trimmed.slice(0, -3),
+      forAiSdk: sdkUrl,
+      forRawFetch: rawUrl,
+    };
+  } catch {
+    // Fallback for invalid URLs - return as-is with basic cleanup
+    const cleaned = trimmed.replace(/\/+$/, "");
+    return {
+      forAiSdk: cleaned.endsWith("/v1") ? cleaned : `${cleaned}/v1`,
+      forRawFetch: cleaned.endsWith("/v1") ? cleaned.slice(0, -3) : cleaned,
     };
   }
-
-  // Otherwise, append /v1 for forAiSdk
-  return {
-    forAiSdk: `${trimmed}/v1`,
-    forRawFetch: trimmed,
-  };
 }
 
 /**
  * Normalizes a Gemini API base URL to consistent formats.
- * Handles URLs with or without /v1beta suffix.
+ * Handles URLs with or without /v1beta suffix, including custom proxy paths.
  *
  * Note: Gemini uses /v1beta instead of /v1 for its API version.
  *
@@ -84,35 +96,47 @@ export function normalizeOpenAiBaseUrl(url: string): NormalizedProviderUrl {
  * // Custom proxy paths are preserved
  * normalizeGeminiBaseUrl("https://proxy.example.com/gemini")
  * // { forAiSdk: "https://proxy.example.com/gemini/v1beta", forRawFetch: "https://proxy.example.com/gemini" }
+ *
+ * // Wrong version suffix is corrected
+ * normalizeGeminiBaseUrl("https://proxy.example.com/v1")
+ * // { forAiSdk: "https://proxy.example.com/v1beta", forRawFetch: "https://proxy.example.com" }
  * ```
  */
 export function normalizeGeminiBaseUrl(url: string): NormalizedProviderUrl {
-  const trimmed = url.trim().replace(/\/+$/, "");
+  const trimmed = url.trim();
   if (trimmed.length === 0) {
     return { forAiSdk: "", forRawFetch: "" };
   }
 
-  // If URL ends with /v1beta, strip it for forRawFetch
-  if (trimmed.endsWith("/v1beta")) {
+  try {
+    const result = normalizeGoogleUrlImpl(trimmed);
+    const sdkUrl = result.forAiSdk();
+    // Strip /v1beta suffix for forRawFetch
+    const rawUrl = sdkUrl.endsWith("/v1beta") ? sdkUrl.slice(0, -7) : sdkUrl;
     return {
-      forAiSdk: trimmed,
-      forRawFetch: trimmed.slice(0, -7),
+      forAiSdk: sdkUrl,
+      forRawFetch: rawUrl,
+    };
+  } catch {
+    // Fallback for invalid URLs - return as-is with basic cleanup
+    const cleaned = trimmed.replace(/\/+$/, "");
+    if (cleaned.endsWith("/v1beta")) {
+      return {
+        forAiSdk: cleaned,
+        forRawFetch: cleaned.slice(0, -7),
+      };
+    }
+    if (cleaned.endsWith("/v1")) {
+      return {
+        forAiSdk: `${cleaned.slice(0, -3)}/v1beta`,
+        forRawFetch: cleaned.slice(0, -3),
+      };
+    }
+    return {
+      forAiSdk: `${cleaned}/v1beta`,
+      forRawFetch: cleaned,
     };
   }
-
-  // If URL ends with /v1 (wrong version for Gemini), replace with /v1beta
-  if (trimmed.endsWith("/v1")) {
-    return {
-      forAiSdk: `${trimmed.slice(0, -3)}/v1beta`,
-      forRawFetch: trimmed.slice(0, -3),
-    };
-  }
-
-  // Otherwise, append /v1beta for forAiSdk
-  return {
-    forAiSdk: `${trimmed}/v1beta`,
-    forRawFetch: trimmed,
-  };
 }
 
 /**

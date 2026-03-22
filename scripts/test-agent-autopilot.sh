@@ -6,6 +6,8 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CODEX_CONFIG_FILE="$PROJECT_DIR/.codex/config.toml"
 AUTOPILOT_HOOKS_TEMPLATE="$PROJECT_DIR/.codex/autopilot-hooks.json"
 LIVE_HOOKS_FILE="$PROJECT_DIR/.codex/hooks.json"
+CODEX_LAUNCHER="$PROJECT_DIR/scripts/codex-home-launch.sh"
+CODEX_SHELL_HELPERS="$PROJECT_DIR/.codex/codex-shell-helpers.sh"
 
 PASS=0
 FAIL=0
@@ -80,6 +82,12 @@ assert_not_contains \
 assert_file_exists \
   "autopilot hooks template exists" \
   "$AUTOPILOT_HOOKS_TEMPLATE"
+assert_file_exists \
+  "repo-local Codex launcher exists" \
+  "$CODEX_LAUNCHER"
+assert_file_exists \
+  "repo-local Codex shell helpers exist" \
+  "$CODEX_SHELL_HELPERS"
 assert_file_not_exists \
   "ordinary sessions do not see a live repo hooks.json" \
   "$LIVE_HOOKS_FILE"

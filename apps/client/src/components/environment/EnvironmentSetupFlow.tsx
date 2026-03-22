@@ -28,7 +28,10 @@ import {
   postApiSandboxesByIdEnvMutation,
   postApiSandboxesByIdRunScriptsMutation,
 } from "@cmux/www-openapi-client/react-query";
-import { resolveBrowserPreviewUrl } from "@/lib/toProxyWorkspaceUrl";
+import {
+  resolveBrowserPreviewUrl,
+  resolveBrowserPreviewWebsocketUrl,
+} from "@/lib/toProxyWorkspaceUrl";
 import { useMutation as useRQMutation, useQuery as useRQQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -128,6 +131,16 @@ export function EnvironmentSetupFlow({
   const browserHtmlUrl = useMemo(
     () =>
       resolveBrowserPreviewUrl({
+        vncUrl: vncUrlFromStatus,
+        workspaceUrl: vscodeUrl,
+      }) ?? undefined,
+    [vncUrlFromStatus, vscodeUrl]
+  );
+
+  // WebSocket URL for direct VncViewer connection (preferred over iframe)
+  const vncWebsocketUrl = useMemo(
+    () =>
+      resolveBrowserPreviewWebsocketUrl({
         vncUrl: vncUrlFromStatus,
         workspaceUrl: vscodeUrl,
       }) ?? undefined,
@@ -474,6 +487,7 @@ export function EnvironmentSetupFlow({
       exposedPorts={exposedPorts}
       vscodeUrl={vscodeUrl}
       browserHtmlUrl={browserHtmlUrl}
+      vncWebsocketUrl={vncWebsocketUrl}
       browserPersistKey={
         instanceId
           ? `env-workspace-config:browser:${instanceId}`
