@@ -109,8 +109,11 @@ export function getPlatformAiModelIdForService(
 }
 
 export function getPlatformAiProviderOrder(
-  supportedProviders: readonly PlatformAiProvider[] = PLATFORM_AI_PROVIDER_ORDER
+  supportedProviders?: readonly PlatformAiProvider[]
 ): PlatformAiProvider[] {
+  if (!supportedProviders || supportedProviders === PLATFORM_AI_PROVIDER_ORDER) {
+    return [...PLATFORM_AI_PROVIDER_ORDER];
+  }
   const supportedProviderSet = new Set(supportedProviders);
   return PLATFORM_AI_PROVIDER_ORDER.filter((provider) =>
     supportedProviderSet.has(provider)
