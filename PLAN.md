@@ -1,5 +1,7 @@
 ## Living plan
 
+> **Status (2026-03-22):** All implementation complete. Remaining items are OPS/config tasks.
+
 ### Phase 0: Housekeeping — COMPLETE
 - [x] Merge 20 passing test PRs from coverage sprint
 - [x] Start Coolify web stack migration (workflows deployed)
