@@ -59,6 +59,17 @@ function normalizeAllowedHostname(candidate: string | undefined): string | null 
   return value;
 }
 
+function getNormalizedAllowedHostnames(candidate: string | undefined): string[] {
+  if (!candidate) {
+    return [];
+  }
+
+  return candidate
+    .split(",")
+    .map((part) => normalizeAllowedHostname(part))
+    .filter((value): value is string => Boolean(value));
+}
+
 function getDynamicAllowedExactHosts(): Set<string> {
   const hosts = new Set<string>();
 
@@ -68,8 +79,7 @@ function getDynamicAllowedExactHosts(): Set<string> {
     process.env.NEXT_PUBLIC_SERVER_ORIGIN,
     process.env.NEXT_PUBLIC_BASE_APP_URL,
   ]) {
-    const normalized = normalizeAllowedHostname(candidate);
-    if (normalized) {
+    for (const normalized of getNormalizedAllowedHostnames(candidate)) {
       hosts.add(normalized);
     }
   }

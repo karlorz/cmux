@@ -65,22 +65,40 @@ import { prettyJSON } from "hono/pretty-json";
 import { decodeJwt } from "jose";
 import { setupHonoErrorHandler } from "@sentry/node";
 
-// Additional client origins from env (for custom domains, Coolify, or preview URLs)
-// Supports comma-separated values: NEXT_PUBLIC_CLIENT_ORIGIN=https://a.com,https://b.com
-const additionalClientOrigins =
-  process.env.NEXT_PUBLIC_CLIENT_ORIGIN?.split(",").map((s) => normalizeOrigin(s.trim())).filter(Boolean) ?? [];
+function getConfiguredCorsOrigins(): string[] {
+  const origins = new Set<string>();
+
+  const addOrigin = (candidate: string | undefined) => {
+    if (!candidate) {
+      return;
+    }
+
+    for (const rawPart of candidate.split(",")) {
+      const normalized = normalizeOrigin(rawPart.trim());
+      if (normalized) {
+        origins.add(normalized);
+      }
+    }
+  };
+
+  // Supports comma-separated values for multi-origin client setups.
+  addOrigin(process.env.NEXT_PUBLIC_CLIENT_ORIGIN);
+  addOrigin(process.env.NEXT_PUBLIC_WWW_ORIGIN);
+  addOrigin(process.env.NEXT_PUBLIC_BASE_APP_URL);
+
+  return [...origins];
+}
+
 const staticCorsOrigins = new Set([
   getHostUrl(defaultHostConfig.client),
   getHostUrl(defaultHostConfig.server),
-  "https://cmux.karldigi.dev",
-  "https://cmux-www.karldigi.dev",
   "https://cmux.sh",
   "https://www.cmux.sh",
   "https://cmux.com",
   "https://www.cmux.com",
   "https://manaflow.com",
   "https://www.manaflow.com",
-  ...additionalClientOrigins,
+  ...getConfiguredCorsOrigins(),
 ]);
 const trustedProxyDomains = buildTrustedProxyDomainSet([
   process.env.PVE_PUBLIC_DOMAIN,
