@@ -10,6 +10,7 @@
  * - POST /api/autopilot/status - Update autopilot status
  * - POST /api/autopilot/session-event - Log session lifecycle events
  * - GET /api/autopilot/info - Get autopilot info for resume
+ * - GET /api/autopilot/context-health - Get context health summary
  */
 
 import { verifyTaskRunToken } from "../../shared/src/convex-safe";
@@ -323,6 +324,34 @@ export const autopilotInfo = httpAction(async (ctx, req) => {
   } catch (error) {
     console.error("[autopilot_http] Failed to get autopilot info", error);
     const message = error instanceof Error ? error.message : "Failed to get autopilot info";
+    return jsonResponse({ code: 500, message }, 500);
+  }
+});
+
+/**
+ * GET /api/autopilot/context-health
+ *
+ * Get context health summary for a task run.
+ * Returns aggregated context usage and warning state.
+ */
+export const autopilotContextHealth = httpAction(async (ctx, req) => {
+  const authResult = await authenticateRequest(req);
+  if (authResult instanceof Response) return authResult;
+  const { taskRunId } = authResult;
+
+  try {
+    const summary = await ctx.runQuery(internal.taskRuns.getContextHealthSummary, {
+      id: taskRunId as Id<"taskRuns">,
+    });
+
+    if (!summary) {
+      return jsonResponse({ code: 404, message: "Task run not found" }, 404);
+    }
+
+    return jsonResponse(summary);
+  } catch (error) {
+    console.error("[autopilot_http] Failed to get context health", error);
+    const message = error instanceof Error ? error.message : "Failed to get context health";
     return jsonResponse({ code: 500, message }, 500);
   }
 });

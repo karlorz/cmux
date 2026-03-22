@@ -828,6 +828,16 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         },
       },
       {
+        name: "get_context_health",
+        description:
+          "Get context health summary for the current task run. Returns context window usage, warning state, and recent compaction events. " +
+          "Use this to monitor context pressure and decide when to summarize or archive context.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {},
+        },
+      },
+      {
         name: "bind_provider_session",
         description:
           "Bind a provider-specific session ID to the current task. Use to enable session resume on task retry. " +
@@ -2390,6 +2400,96 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
             content: [{
               type: "text",
               text: `Error getting orchestration summary: ${errorMsg}`,
+            }],
+          };
+        }
+      }
+
+      case "get_context_health": {
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        const callbackUrl = process.env.CMUX_CALLBACK_URL;
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "CMUX_TASK_RUN_JWT environment variable not set. This tool requires JWT authentication.",
+            }],
+          };
+        }
+
+        if (!callbackUrl) {
+          return {
+            content: [{
+              type: "text",
+              text: "CMUX_CALLBACK_URL environment variable not set.",
+            }],
+          };
+        }
+
+        try {
+          const url = `${callbackUrl}/api/autopilot/context-health`;
+          const response = await fetch(url, {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${jwt}`,
+            },
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({})) as { message?: string };
+            return {
+              content: [{
+                type: "text",
+                text: `Error getting context health: ${response.status} ${errorData.message ?? response.statusText}`,
+              }],
+            };
+          }
+
+          const data = await response.json() as {
+            taskRunId: string;
+            provider: string;
+            totalInputTokens: number;
+            totalOutputTokens: number;
+            contextWindow?: number;
+            usagePercent?: number;
+            latestWarningSeverity: string | null;
+            topWarningReasons: string[];
+            warningCount: number;
+            recentCompactionCount: number;
+            lastUpdatedAt: number;
+          };
+
+          // Format a human-readable summary
+          const usageStr = data.contextWindow
+            ? `${data.totalInputTokens.toLocaleString()} / ${data.contextWindow.toLocaleString()} tokens (${data.usagePercent ?? 0}%)`
+            : `${data.totalInputTokens.toLocaleString()} input tokens`;
+
+          const warningStr = data.latestWarningSeverity
+            ? `${data.latestWarningSeverity.toUpperCase()} - ${data.topWarningReasons[0] ?? "No details"}`
+            : "None";
+
+          const summary = [
+            `Provider: ${data.provider}`,
+            `Context Usage: ${usageStr}`,
+            `Output Tokens: ${data.totalOutputTokens.toLocaleString()}`,
+            `Warning State: ${warningStr}`,
+            `Warning Count: ${data.warningCount}`,
+            `Compaction Count: ${data.recentCompactionCount}`,
+          ].join("\n");
+
+          return {
+            content: [{
+              type: "text",
+              text: `Context Health Summary:\n${summary}\n\nRaw Data:\n${JSON.stringify(data, null, 2)}`,
+            }],
+          };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{
+              type: "text",
+              text: `Error getting context health: ${errorMsg}`,
             }],
           };
         }
