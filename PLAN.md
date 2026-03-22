@@ -59,12 +59,15 @@
 - [x] UserPromptSubmit hook (PR #758)
 - [x] Activity events for user prompt submissions
 
-### Phase 18: Coolify Web Stack Migration — PLANNED
+### Phase 18: Coolify Web Stack Migration — DOCKERFILES READY
 Based on [[cmux-coolify-all-in-one-stack-study]] recommendations:
-- [ ] Phase 18a: Migrate apps/client to Coolify (easiest, static frontend)
-- [ ] Phase 18b: Migrate apps/www to Coolify (standalone + Hono entrypoint ready)
-- [ ] Phase 18c: Unify into single Docker Compose application
-- [ ] Validate env/domain wiring per cutover validation matrix
+- [x] Phase 18a: apps/client Dockerfile + nginx config (Vite SPA → nginx:alpine)
+- [x] Phase 18b: apps/www Dockerfile (Next.js standalone output)
+- [x] GitHub Actions: docker-client-build.yml, docker-www-build.yml
+- [x] Coolify workflows: coolify-client-deployments.yml, coolify-www-deployments.yml
+- [ ] **OPS**: Deploy apps/client to Coolify and validate
+- [ ] **OPS**: Deploy apps/www to Coolify and validate
+- [ ] Phase 18c: Unified docker-compose.coolify.yml for all services
 
 ### Phase 19: MCP Tool Suggestions — COMPLETE
 Based on Codex `tool_suggest` pattern from [[research-extended-2026-03-21]]:
