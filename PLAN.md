@@ -78,14 +78,15 @@ Based on Codex memory refinements from [[research-weekly-2026-03-19]]:
 - [ ] Usage-aware selection (prioritize frequently-read entries)
 - [ ] Explicit pruning/demotion rules
 
-### Phase 21: Self-Improving Memory (Orchestrator Learning) — PLANNED
+### Phase 21: Self-Improving Memory (Orchestrator Learning) — CODE COMPLETE
 Based on [[cmux-self-improving-memory-roadmap]]:
-- [ ] S12: Seed typed behavior files (LEARNINGS.jsonl, ERRORS.jsonl, FEATURE_REQUESTS.jsonl)
-- [ ] S13: Capture orchestration failures and wins from stop hooks and reviews
-- [ ] S14: Promote proven rules to behavior/HOT.md with provenance links
-- [ ] S15: Load promoted rules into head-agent startup context
-- [ ] S16: UI panel for learnings, rule provenance, and skill candidates
-- [ ] S17: Skill extraction from repeated orchestration patterns
+- [x] S12: Typed learning capture via `log_learning` MCP tool (devsh-memory-mcp)
+- [x] S13: Learning events captured with provenance (agentOrchestrationLearning.ts)
+- [x] S14: Rule promotion with `promoteRule`/`bulkPromoteRules` mutations
+- [x] S15: Active rules loaded into head-agent context (orchestration_http.ts)
+- [x] S16: UI panel for rules, candidates, and skill candidates (OrchestrationRulesSection)
+- [x] S17: Skill candidate schema and UI (agentOrchestrationSkillCandidates table, SkillsList.tsx)
+- [ ] **VALIDATION**: Real-world E2E testing of learning → promotion → injection cycle
 
 ### Phase 22: Agent Memory Spike Validation — PLANNED
 Based on [[cmux-agent-dev-roadmap]] spike status:
