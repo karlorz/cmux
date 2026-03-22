@@ -514,6 +514,71 @@ exit 0`;
     mode: "755",
   });
 
+  // PreCompact hook script - syncs memory to Convex before context compression
+  // This ensures memory state is persisted before the context window gets summarized
+  const preCompactHookScript = `#!/bin/bash
+# Claude Code pre-compact hook - syncs memory before context compression
+# Fires on PreCompact: before context window gets compressed/summarized
+set -eu
+REQUEST=$(cat)
+
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_ID:-}" ]; then
+  # No cmux context - allow compaction to proceed
+  echo '{"continue": true}'
+  exit 0
+fi
+
+TRIGGER=$(echo "$REQUEST" | jq -r '.trigger // "auto"')
+SESSION_ID=$(echo "$REQUEST" | jq -r '.session_id // empty')
+
+echo "[precompact-hook] Trigger: $TRIGGER, Session: $SESSION_ID" >> /root/lifecycle/precompact-hook.log 2>&1
+
+# Sync memory to Convex before compaction (background, don't block)
+(
+  # Read current memory state
+  MEMORY_CONTENT=""
+  if [ -f "/root/lifecycle/memory/knowledge/MEMORY.md" ]; then
+    MEMORY_CONTENT=$(cat /root/lifecycle/memory/knowledge/MEMORY.md | head -c 50000 | base64 -w 0)
+  fi
+
+  TASKS_CONTENT=""
+  if [ -f "/root/lifecycle/memory/TASKS.json" ]; then
+    TASKS_CONTENT=$(cat /root/lifecycle/memory/TASKS.json | head -c 20000 | base64 -w 0)
+  fi
+
+  # Post to memory sync endpoint
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/memory/sync" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n \\
+      --arg trid "\${CMUX_TASK_RUN_ID}" \\
+      --arg trigger "$TRIGGER" \\
+      --arg memory "$MEMORY_CONTENT" \\
+      --arg tasks "$TASKS_CONTENT" \\
+      '{taskRunId: $trid, trigger: $trigger, memoryBase64: $memory, tasksBase64: $tasks}')" \\
+    >> /root/lifecycle/precompact-hook.log 2>&1 || true
+
+  # Also post a context_warning activity event
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n \\
+      --arg trid "\${CMUX_TASK_RUN_ID}" \\
+      --arg trigger "$TRIGGER" \\
+      '{taskRunId: $trid, type: "context_warning", summary: ("Context compaction triggered: " + $trigger)}')" \\
+    >> /root/lifecycle/precompact-hook.log 2>&1 || true
+) &
+
+# Allow compaction to proceed
+echo '{"continue": true}'
+exit 0`;
+
+  files.push({
+    destinationPath: `${claudeLifecycleDir}/precompact-hook.sh`,
+    contentBase64: Buffer.from(preCompactHookScript).toString("base64"),
+    mode: "755",
+  });
+
   // Check if user has provided an OAuth token (preferred) or API key
   const hasOAuthToken =
     ctx.apiKeys?.CLAUDE_CODE_OAUTH_TOKEN &&
@@ -594,6 +659,18 @@ exit 0`;
             {
               type: "command",
               command: `${claudeLifecycleDir}/permission-hook.sh`,
+            },
+          ],
+        },
+      ],
+      // Pre-compaction: sync memory to Convex before context compression
+      // Ensures memory state is persisted before context window gets summarized
+      PreCompact: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${claudeLifecycleDir}/precompact-hook.sh`,
             },
           ],
         },
