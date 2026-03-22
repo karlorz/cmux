@@ -694,6 +694,43 @@ exit 0`;
     mode: "755",
   });
 
+  // Notification hook script - fires when Claude needs user attention
+  // Useful for surfacing permission prompts and idle states to dashboard
+  const notificationHookScript = `#!/bin/bash
+# Claude Code notification hook - surfaces attention requests to dashboard
+# Fires on Notification: when Claude needs user attention (permission prompt, idle, etc.)
+set -eu
+REQUEST=$(cat)
+
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_ID:-}" ]; then
+  exit 0
+fi
+
+NOTIFICATION_TYPE=$(echo "$REQUEST" | jq -r '.notification_type // "unknown"')
+MESSAGE=$(echo "$REQUEST" | jq -r '.message // ""' | head -c 200)
+
+echo "[notification] Type: $NOTIFICATION_TYPE - $MESSAGE" >> /root/lifecycle/notification-hook.log 2>&1
+
+# Post activity event to dashboard (background, don't block)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n \\
+      --arg trid "\${CMUX_TASK_RUN_ID}" \\
+      --arg notifType "$NOTIFICATION_TYPE" \\
+      --arg msg "$MESSAGE" \\
+      '{taskRunId: $trid, type: "notification", summary: ($notifType + ": " + ($msg | if length > 100 then (.[0:100] + "...") else . end))}')" \\
+    >> /root/lifecycle/notification-hook.log 2>&1 || true
+) &
+exit 0`;
+
+  files.push({
+    destinationPath: `${claudeLifecycleDir}/notification-hook.sh`,
+    contentBase64: Buffer.from(notificationHookScript).toString("base64"),
+    mode: "755",
+  });
+
   // Check if user has provided an OAuth token (preferred) or API key
   const hasOAuthToken =
     ctx.apiKeys?.CLAUDE_CODE_OAUTH_TOKEN &&
@@ -818,6 +855,17 @@ exit 0`;
             {
               type: "command",
               command: `${claudeLifecycleDir}/user-prompt-hook.sh`,
+            },
+          ],
+        },
+      ],
+      // Notification: fires when Claude needs user attention (permission prompt, idle, etc.)
+      Notification: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${claudeLifecycleDir}/notification-hook.sh`,
             },
           ],
         },
