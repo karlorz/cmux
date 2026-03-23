@@ -9,6 +9,8 @@ export const list = query({
       v.union(
         v.literal("task_completed"),
         v.literal("task_failed"),
+        v.literal("task_interrupted"),
+        v.literal("task_resumed"),
         v.literal("pr_merged"),
         v.literal("pr_opened"),
         v.literal("pr_closed"),

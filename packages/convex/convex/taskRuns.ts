@@ -910,6 +910,142 @@ export const updateStatus = internalMutation({
   },
 });
 
+// Interruption state validator - matches schema definition
+const interruptionStatusValidator = v.union(
+  v.literal("none"),
+  v.literal("approval_pending"),
+  v.literal("paused_by_operator"),
+  v.literal("sandbox_paused"),
+  v.literal("context_overflow"),
+  v.literal("rate_limited"),
+  v.literal("timed_out")
+);
+
+/**
+ * Set interruption state on a task run.
+ * Used when an agent is blocked (approval needed, sandbox paused, etc.)
+ */
+export const setInterruptionState = internalMutation({
+  args: {
+    taskRunId: v.id("taskRuns"),
+    status: interruptionStatusValidator,
+    reason: v.optional(v.string()),
+    approvalRequestId: v.optional(v.string()),
+    expiresAt: v.optional(v.number()),
+    resumeToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.taskRunId);
+    if (!run) {
+      throw new Error("Task run not found");
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(args.taskRunId, {
+      interruptionState: {
+        status: args.status,
+        reason: args.reason,
+        approvalRequestId: args.approvalRequestId,
+        blockedAt: now,
+        expiresAt: args.expiresAt,
+        resumeToken: args.resumeToken,
+      },
+      updatedAt: now,
+    });
+
+    // Create feed event for interruption
+    const task = await ctx.db.get(run.taskId);
+    const reasonText = args.reason ? `: ${args.reason}` : "";
+    // Note: eventType validated in feedEvents.ts and schema.ts, types regenerate at dev time
+    await ctx.runMutation(internal.feedEvents.create, {
+      teamId: run.teamId,
+      userId: run.userId,
+      eventType: "task_interrupted" as "approval_required",
+      title: `Agent paused (${args.status})${reasonText}`,
+      description: args.reason,
+      taskId: run.taskId,
+      taskRunId: args.taskRunId,
+      agentName: run.agentName,
+      repoFullName: task?.projectFullName,
+    });
+  },
+});
+
+/**
+ * Resolve an interruption (approval granted, resume from pause, etc.)
+ */
+export const resolveInterruption = internalMutation({
+  args: {
+    taskRunId: v.id("taskRuns"),
+    resolvedBy: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.taskRunId);
+    if (!run) {
+      throw new Error("Task run not found");
+    }
+
+    if (!run.interruptionState || run.interruptionState.status === "none") {
+      // Already resolved or never interrupted
+      return;
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(args.taskRunId, {
+      interruptionState: {
+        ...run.interruptionState,
+        status: "none",
+        resolvedAt: now,
+        resolvedBy: args.resolvedBy,
+      },
+      updatedAt: now,
+    });
+
+    // Create feed event for resolution
+    const task = await ctx.db.get(run.taskId);
+    // Note: eventType validated in feedEvents.ts and schema.ts, types regenerate at dev time
+    await ctx.runMutation(internal.feedEvents.create, {
+      teamId: run.teamId,
+      userId: run.userId,
+      eventType: "task_resumed" as "approval_resolved",
+      title: `Agent resumed${args.resolvedBy ? ` by ${args.resolvedBy}` : ""}`,
+      taskId: run.taskId,
+      taskRunId: args.taskRunId,
+      agentName: run.agentName,
+      repoFullName: task?.projectFullName,
+    });
+  },
+});
+
+/**
+ * Query to check if a task run is currently interrupted.
+ */
+export const isInterrupted = internalQuery({
+  args: {
+    taskRunId: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.taskRunId);
+    if (!run) {
+      return { interrupted: false, status: "none" as const };
+    }
+
+    const state = run.interruptionState;
+    if (!state || state.status === "none") {
+      return { interrupted: false, status: "none" as const };
+    }
+
+    return {
+      interrupted: true,
+      status: state.status,
+      reason: state.reason,
+      blockedAt: state.blockedAt,
+      expiresAt: state.expiresAt,
+      approvalRequestId: state.approvalRequestId,
+    };
+  },
+});
+
 export const getRunDiffContext = authQuery({
   args: {
     teamSlugOrId: v.string(),
