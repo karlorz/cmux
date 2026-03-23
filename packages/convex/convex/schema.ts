@@ -675,13 +675,26 @@ const convexSchema = defineSchema({
     .index("by_team_user", ["teamId", "userId"]),
   taskRunActivity: defineTable({
     taskRunId: v.id("taskRuns"),
-    type: v.string(), // tool_call, file_edit, file_read, bash_command, test_run, git_commit, error
+    // Activity type: tool_call, file_edit, file_read, bash_command, test_run, git_commit, error,
+    // session_start, session_stop, context_warning, context_compacted, memory_loaded,
+    // user_prompt, subagent_start, subagent_stop, notification
+    type: v.string(),
     toolName: v.optional(v.string()),
     summary: v.string(),
     detail: v.optional(v.string()),
     durationMs: v.optional(v.number()),
     teamId: v.string(),
     createdAt: v.number(),
+    // Context health fields (for context_warning/context_compacted events)
+    severity: v.optional(v.string()), // "info", "warning", "critical"
+    warningType: v.optional(v.string()), // "memory_bloat", "tool_output", "prompt_size", "capacity", "token_limit"
+    currentUsage: v.optional(v.number()),
+    maxCapacity: v.optional(v.number()),
+    usagePercent: v.optional(v.number()),
+    // Context compacted fields
+    previousBytes: v.optional(v.number()),
+    newBytes: v.optional(v.number()),
+    reductionPercent: v.optional(v.number()),
   })
     .index("by_task_run", ["taskRunId", "createdAt"])
     .index("by_team", ["teamId", "createdAt"]),

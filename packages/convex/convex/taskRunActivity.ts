@@ -4,6 +4,8 @@ import { internalMutation, query } from "./_generated/server";
 /**
  * Internal mutation called by the HTTP endpoint after JWT validation.
  * Inserts a single agent activity event for real-time dashboard streaming.
+ *
+ * Extended to support canonical lifecycle events (context health, session lifecycle).
  */
 export const insert = internalMutation({
   args: {
@@ -14,6 +16,16 @@ export const insert = internalMutation({
     detail: v.optional(v.string()),
     durationMs: v.optional(v.number()),
     teamId: v.string(),
+    // Context health fields (for context_warning/context_compacted events)
+    severity: v.optional(v.string()),
+    warningType: v.optional(v.string()),
+    currentUsage: v.optional(v.number()),
+    maxCapacity: v.optional(v.number()),
+    usagePercent: v.optional(v.number()),
+    // Context compacted fields
+    previousBytes: v.optional(v.number()),
+    newBytes: v.optional(v.number()),
+    reductionPercent: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     await ctx.db.insert("taskRunActivity", {
