@@ -15,6 +15,7 @@ describe("SANDBOX_PROVIDER_DISPLAY_NAMES", () => {
     expect(SANDBOX_PROVIDER_DISPLAY_NAMES.morph).toBe("Morph Cloud");
     expect(SANDBOX_PROVIDER_DISPLAY_NAMES["pve-lxc"]).toBe("Proxmox LXC");
     expect(SANDBOX_PROVIDER_DISPLAY_NAMES["pve-vm"]).toBe("Proxmox VM");
+    expect(SANDBOX_PROVIDER_DISPLAY_NAMES.e2b).toBe("E2B Cloud");
   });
 });
 
@@ -39,6 +40,15 @@ describe("SANDBOX_PROVIDER_CAPABILITIES", () => {
     expect(caps.supportsSnapshots).toBe(true);
     expect(caps.supportsNestedVirt).toBe(true);
     expect(caps.supportsGpu).toBe(true);
+  });
+
+  it("has capabilities for e2b provider", () => {
+    const caps = SANDBOX_PROVIDER_CAPABILITIES.e2b;
+    expect(caps.supportsHibernate).toBe(true);
+    expect(caps.supportsSnapshots).toBe(true);
+    expect(caps.supportsResize).toBe(false);
+    expect(caps.supportsNestedVirt).toBe(false);
+    expect(caps.supportsGpu).toBe(false);
   });
 });
 
@@ -160,5 +170,11 @@ describe("resolveSnapshotId", () => {
     await expect(
       resolveSnapshotId("snapshot_test", "pve-vm")
     ).rejects.toThrow("PVE VM provider not yet implemented");
+  });
+
+  it("throws for e2b provider (not implemented)", async () => {
+    await expect(
+      resolveSnapshotId("snapshot_test", "e2b")
+    ).rejects.toThrow("E2B snapshot resolution not yet implemented");
   });
 });

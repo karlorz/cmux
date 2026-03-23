@@ -286,4 +286,32 @@ describe("getClaudeEnvironment", () => {
 
     expect(settings.permissions).toBeUndefined();
   });
+
+  it("permission hook includes risk classification function", async () => {
+    const result = await getClaudeEnvironment(BASE_CONTEXT);
+
+    const permissionHook = result.files.find(
+      (f) => f.destinationPath === "/root/lifecycle/claude/permission-hook.sh"
+    );
+    expect(permissionHook).toBeDefined();
+
+    const script = Buffer.from(permissionHook!.contentBase64, "base64").toString("utf-8");
+
+    // Verify classify_risk function exists
+    expect(script).toContain("classify_risk()");
+    expect(script).toContain("RISK_LEVEL=$(classify_risk");
+
+    // Verify risk patterns are covered
+    expect(script).toContain("git\\s+push\\s+(-f|--force)");
+    expect(script).toContain("rm\\s+(-rf|--recursive)");
+    expect(script).toContain("sudo\\s");
+
+    // Verify low-risk patterns
+    expect(script).toContain("Read|Glob|Grep");
+    expect(script).toContain("git\\s+(status|log|diff|show|branch|tag)");
+
+    // Verify $RISK_LEVEL is used in the approval request
+    expect(script).toContain('--arg risk "$RISK_LEVEL"');
+    expect(script).toContain('riskLevel: $risk');
+  });
 });

@@ -38,6 +38,7 @@ import {
 import { runWithAuth, runWithAuthToken } from "./utils/requestContext";
 import { env } from "./utils/server-env";
 import { getResponseErrorMessage } from "./utils/httpError";
+import { buildTaskRunCreateArgs } from "./utils/taskRunCreateArgs";
 
 interface StartTaskRequest {
   // Required fields
@@ -536,13 +537,17 @@ async function handleCreateCloudWorkspace(
       const now = Date.now();
 
       // Create a taskRun for the workspace (agentName: "cloud-workspace")
-      const taskRunResult = await convex.mutation(api.taskRuns.create, {
-        teamSlugOrId,
-        taskId: taskId as Id<"tasks">,
-        prompt: "Cloud Workspace",
-        agentName: "cloud-workspace",
-        environmentId: environmentId as Id<"environments"> | undefined,
-      });
+      const taskRunResult = await convex.mutation(
+        api.taskRuns.create,
+        buildTaskRunCreateArgs({
+          teamSlugOrId,
+          taskId: taskId as Id<"tasks">,
+          prompt: "Cloud Workspace",
+          agentName: "cloud-workspace",
+          environmentId: environmentId as Id<"environments"> | undefined,
+          isOrchestrationHead: true,
+        }),
+      );
       const taskRunId = taskRunResult.taskRunId;
       createdTaskRunId = taskRunId; // Save for error handling
       const taskRunJwt = taskRunResult.jwt;
@@ -994,14 +999,18 @@ async function handleOrchestrationSpawn(
       const taskId = taskResult.taskId;
 
       // Create task run record
-      const taskRunResult = await getConvex().mutation(api.taskRuns.create, {
-        teamSlugOrId,
-        taskId,
-        prompt,
-        agentName: agent,
-        newBranch: "",
-        environmentId: environmentId as Id<"environments"> | undefined,
-      });
+      const taskRunResult = await getConvex().mutation(
+        api.taskRuns.create,
+        buildTaskRunCreateArgs({
+          teamSlugOrId,
+          taskId,
+          prompt,
+          agentName: agent,
+          newBranch: "",
+          environmentId: environmentId as Id<"environments"> | undefined,
+          isOrchestrationHead,
+        }),
+      );
 
       const taskRunId = taskRunResult.taskRunId;
 
@@ -1819,14 +1828,18 @@ Orchestration ID: ${orchestrationId}`;
       const taskId = taskResult.taskId;
 
       // Create task run record
-      const taskRunResult = await getConvex().mutation(api.taskRuns.create, {
-        teamSlugOrId,
-        taskId,
-        prompt: headAgentPrompt,
-        agentName: headAgent,
-        newBranch: "",
-        environmentId: environmentId as Id<"environments"> | undefined,
-      });
+      const taskRunResult = await getConvex().mutation(
+        api.taskRuns.create,
+        buildTaskRunCreateArgs({
+          teamSlugOrId,
+          taskId,
+          prompt: headAgentPrompt,
+          agentName: headAgent,
+          newBranch: "",
+          environmentId: environmentId as Id<"environments"> | undefined,
+          isOrchestrationHead: true,
+        }),
+      );
       const taskRunId = taskRunResult.taskRunId;
 
       // Create orchestration task record

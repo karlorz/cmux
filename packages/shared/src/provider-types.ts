@@ -36,7 +36,7 @@ export const DEVBOX_PROVIDERS = [
 ] as const;
 
 /** Providers that support configuration via the sandbox config API */
-export const CONFIG_PROVIDERS = ["morph", "pve-lxc", "pve-vm"] as const;
+export const CONFIG_PROVIDERS = ["morph", "pve-lxc", "pve-vm", "e2b"] as const;
 
 /** A provider that can execute workspace containers at runtime */
 export type RuntimeProvider = (typeof RUNTIME_PROVIDERS)[number];

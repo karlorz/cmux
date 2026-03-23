@@ -1010,6 +1010,65 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
           },
         },
       },
+      // Operator Input Queue Tools (Active-Turn Steering)
+      {
+        name: "get_pending_operator_inputs",
+        description:
+          "Check if there are pending operator steering inputs in the queue. " +
+          "Call this at turn boundaries to see if the operator has sent guidance. " +
+          "Returns queue status without draining.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            orchestrationId: {
+              type: "string",
+              description: "The orchestration ID (optional, uses CMUX_ORCHESTRATION_ID env var if not provided)",
+            },
+          },
+        },
+      },
+      {
+        name: "acknowledge_operator_inputs",
+        description:
+          "Drain and acknowledge all pending operator inputs. " +
+          "Returns merged content (newline-separated, priority-ordered). " +
+          "Call this at turn boundaries to process operator steering.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            orchestrationId: {
+              type: "string",
+              description: "The orchestration ID (optional, uses CMUX_ORCHESTRATION_ID env var if not provided)",
+            },
+          },
+        },
+      },
+      {
+        name: "queue_operator_input",
+        description:
+          "Queue an operator steering input for the agent. " +
+          "Use this as a head agent to send guidance to workers, or for testing. " +
+          "Returns QUEUE_FULL error if at capacity.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            orchestrationId: {
+              type: "string",
+              description: "The orchestration ID (optional, uses CMUX_ORCHESTRATION_ID env var if not provided)",
+            },
+            content: {
+              type: "string",
+              description: "The steering instruction content",
+            },
+            priority: {
+              type: "string",
+              enum: ["high", "normal", "low"],
+              description: "Input priority (default: normal). High for interrupts, low for background guidance.",
+            },
+          },
+          required: ["content"],
+        },
+      },
     ],
   }));
 
@@ -3304,6 +3363,274 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
             content: [{
               type: "text",
               text: `Error fetching orchestration rules: ${errorMsg}`,
+            }],
+          };
+        }
+      }
+
+      // Operator Input Queue Tools (Active-Turn Steering)
+      case "get_pending_operator_inputs": {
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        const apiBase = getCmuxApiBaseUrl();
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "Error: CMUX_TASK_RUN_JWT not set. This tool requires authentication.",
+            }],
+          };
+        }
+
+        const { orchestrationId: inputOrchId } = args as { orchestrationId?: string };
+        const orchestrationId = inputOrchId ?? process.env.CMUX_ORCHESTRATION_ID;
+
+        if (!orchestrationId) {
+          return {
+            content: [{
+              type: "text",
+              text: "Error: No orchestration ID provided and CMUX_ORCHESTRATION_ID not set.",
+            }],
+          };
+        }
+
+        try {
+          const response = await fetch(
+            `${apiBase}/api/orchestrate/input/${orchestrationId}/status`,
+            {
+              method: "GET",
+              headers: {
+                "x-cmux-token": jwt,
+              },
+            }
+          );
+
+          if (!response.ok) {
+            const errText = await response.text();
+            return {
+              content: [{
+                type: "text",
+                text: `Error getting queue status: ${response.status} ${errText}`,
+              }],
+            };
+          }
+
+          const status = await response.json();
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                hasPendingInputs: status.hasPendingInputs,
+                depth: status.depth,
+                capacity: status.capacity,
+                oldestInputAt: status.oldestInputAt,
+                message: status.hasPendingInputs
+                  ? `${status.depth} pending operator input(s). Call acknowledge_operator_inputs to process.`
+                  : "No pending operator inputs.",
+              }, null, 2),
+            }],
+          };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{
+              type: "text",
+              text: `Error checking operator inputs: ${errorMsg}`,
+            }],
+          };
+        }
+      }
+
+      case "acknowledge_operator_inputs": {
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        const apiBase = getCmuxApiBaseUrl();
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "Error: CMUX_TASK_RUN_JWT not set. This tool requires authentication.",
+            }],
+          };
+        }
+
+        const { orchestrationId: ackOrchId } = args as { orchestrationId?: string };
+        const orchestrationId = ackOrchId ?? process.env.CMUX_ORCHESTRATION_ID;
+
+        if (!orchestrationId) {
+          return {
+            content: [{
+              type: "text",
+              text: "Error: No orchestration ID provided and CMUX_ORCHESTRATION_ID not set.",
+            }],
+          };
+        }
+
+        try {
+          const response = await fetch(
+            `${apiBase}/api/orchestrate/input/${orchestrationId}/drain`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-cmux-token": jwt,
+              },
+              body: JSON.stringify({}),
+            }
+          );
+
+          if (!response.ok) {
+            const errText = await response.text();
+            return {
+              content: [{
+                type: "text",
+                text: `Error draining operator inputs: ${response.status} ${errText}`,
+              }],
+            };
+          }
+
+          const result = await response.json();
+
+          if (result.count === 0) {
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({
+                  count: 0,
+                  content: "",
+                  batchId: result.batchId,
+                  message: "No operator inputs to process.",
+                }, null, 2),
+              }],
+            };
+          }
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                count: result.count,
+                content: result.content,
+                batchId: result.batchId,
+                inputIds: result.inputIds,
+                message: `Processed ${result.count} operator input(s). Content merged above.`,
+              }, null, 2),
+            }],
+          };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{
+              type: "text",
+              text: `Error acknowledging operator inputs: ${errorMsg}`,
+            }],
+          };
+        }
+      }
+
+      case "queue_operator_input": {
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        const apiBase = getCmuxApiBaseUrl();
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "Error: CMUX_TASK_RUN_JWT not set. This tool requires authentication.",
+            }],
+          };
+        }
+
+        const {
+          orchestrationId: queueOrchId,
+          content,
+          priority,
+        } = args as {
+          orchestrationId?: string;
+          content: string;
+          priority?: "high" | "normal" | "low";
+        };
+        const orchestrationId = queueOrchId ?? process.env.CMUX_ORCHESTRATION_ID;
+
+        if (!orchestrationId) {
+          return {
+            content: [{
+              type: "text",
+              text: "Error: No orchestration ID provided and CMUX_ORCHESTRATION_ID not set.",
+            }],
+          };
+        }
+
+        if (!content || content.trim().length === 0) {
+          return {
+            content: [{
+              type: "text",
+              text: "Error: Content is required.",
+            }],
+          };
+        }
+
+        try {
+          const response = await fetch(
+            `${apiBase}/api/orchestrate/input/${orchestrationId}`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-cmux-token": jwt,
+              },
+              body: JSON.stringify({
+                content: content.trim(),
+                priority: priority ?? "normal",
+              }),
+            }
+          );
+
+          if (!response.ok) {
+            const errText = await response.text();
+            return {
+              content: [{
+                type: "text",
+                text: `Error queuing input: ${response.status} ${errText}`,
+              }],
+            };
+          }
+
+          const result = await response.json();
+
+          if (!result.success) {
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({
+                  queued: false,
+                  error: result.error,
+                  queueDepth: result.queueDepth,
+                  queueCapacity: result.queueCapacity,
+                  message: `Queue is full (${result.queueDepth}/${result.queueCapacity}). Wait for agent to drain before sending more.`,
+                }, null, 2),
+              }],
+            };
+          }
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                queued: true,
+                inputId: result.inputId,
+                queueDepth: result.queueDepth,
+                priority: priority ?? "normal",
+                message: `Input queued successfully (${result.queueDepth} in queue).`,
+              }, null, 2),
+            }],
+          };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{
+              type: "text",
+              text: `Error queuing operator input: ${errorMsg}`,
             }],
           };
         }

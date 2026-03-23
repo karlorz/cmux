@@ -19,6 +19,13 @@ export const orchestrateSyncRouter = new OpenAPIHono();
 // Schemas
 // ============================================================================
 
+const TurnStateSchema = z.object({
+  turnNumber: z.number().openapi({ description: "Current turn number (increments on each drain)" }),
+  awaitingOperatorInput: z.boolean().openapi({ description: "Whether agent is waiting for operator input" }),
+  pendingInputs: z.number().openapi({ description: "Number of pending inputs in queue" }),
+  queueCapacity: z.number().openapi({ description: "Maximum queue capacity" }),
+}).openapi("TurnState");
+
 const OrchestrationSyncResponseSchema = z
   .object({
     tasks: z.array(
@@ -54,6 +61,9 @@ const OrchestrationSyncResponseSchema = z
       running: z.number(),
       failed: z.number(),
       pending: z.number(),
+    }),
+    turnState: TurnStateSchema.optional().openapi({
+      description: "Operator input queue state (for active-turn steering)",
     }),
   })
   .openapi("OrchestrationSyncResponse");
@@ -219,10 +229,37 @@ orchestrateSyncRouter.openapi(
         completedAt: t.completedAt ? new Date(t.completedAt).toISOString() : undefined,
       }));
 
+      // Fetch operator input queue status for turn state
+      let turnState: {
+        turnNumber: number;
+        awaitingOperatorInput: boolean;
+        pendingInputs: number;
+        queueCapacity: number;
+      } | undefined;
+
+      try {
+        const queueStatus = await convex.query(api.operatorInputQueue.getQueueStatus, {
+          teamSlugOrId,
+          orchestrationId,
+        });
+        // Turn number could be tracked in orchestration metadata; for now use 0
+        // and let agents track their own turn count locally
+        turnState = {
+          turnNumber: 0, // TODO: Track in orchestration metadata
+          awaitingOperatorInput: queueStatus.hasPendingInputs,
+          pendingInputs: queueStatus.depth,
+          queueCapacity: queueStatus.capacity,
+        };
+      } catch (queueErr) {
+        // Queue status is optional; don't fail sync if unavailable
+        console.warn("[orchestrate] Could not fetch queue status:", queueErr);
+      }
+
       return c.json({
         tasks: syncTasks,
         messages,
         aggregatedStatus: statusCounts,
+        turnState,
       });
     } catch (error) {
       console.error("[orchestrate] Failed to sync orchestration:", error);
