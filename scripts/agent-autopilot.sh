@@ -36,6 +36,7 @@ Examples:
 Notes:
   - Logs are written under: <log-dir>/<tool>/<timestamp>/
   - For Codex CLI, this uses: -a never -s workspace-write (unattended + sandboxed).
+  - Codex autopilot relies on the managed ~/.codex home Stop hook installed by scripts/install-codex-home-hooks.sh.
   - For Claude Code and OpenCode, this relies on their own permission/config defaults.
 EOF
 }
@@ -86,7 +87,7 @@ PREFER_JSON=0
 FOLLOW=0
 OPEN_MONITOR=0
 DRY_RUN=0
-CODEX_AUTOPILOT_HOME=""
+CODEX_HOME_HOOKS_INSTALLED=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -311,82 +312,25 @@ cleanup_watcher() {
   fi
 }
 
-cleanup_codex_autopilot_home() {
-  if [[ -n "$CODEX_AUTOPILOT_HOME" ]] && [[ -d "$CODEX_AUTOPILOT_HOME" ]]; then
-    rm -rf "$CODEX_AUTOPILOT_HOME"
-  fi
-}
-
 cleanup_runtime() {
   cleanup_watcher
-  cleanup_codex_autopilot_home
 }
 trap cleanup_runtime EXIT
 
-link_codex_home_entries() {
-  local source_home="$1"
-  local target_home="$2"
-  local path=""
-  local name=""
-  local had_dotglob=0
-  local had_nullglob=0
+ensure_codex_home_hooks_installed() {
+  local installer="$CWD/scripts/install-codex-home-hooks.sh"
 
-  if [[ ! -d "$source_home" ]]; then
+  if [[ "$CODEX_HOME_HOOKS_INSTALLED" -eq 1 ]]; then
     return 0
   fi
 
-  if shopt -q dotglob; then
-    had_dotglob=1
-  fi
-  if shopt -q nullglob; then
-    had_nullglob=1
-  fi
+  [[ -f "$installer" ]] || die "Missing Codex home hook installer: $installer"
 
-  shopt -s dotglob nullglob
-  for path in "$source_home"/*; do
-    name="$(basename "$path")"
-    if should_skip_codex_home_entry "$name"; then
-      continue
-    fi
-    ln -s "$path" "$target_home/$name"
-  done
-
-  if [[ "$had_dotglob" -eq 0 ]]; then
-    shopt -u dotglob
-  fi
-  if [[ "$had_nullglob" -eq 0 ]]; then
-    shopt -u nullglob
-  fi
-}
-
-should_skip_codex_home_entry() {
-  local name="$1"
-  case "$name" in
-    .|..|.DS_Store|hooks.json|archived_sessions|history.jsonl|log|session_index.jsonl|sessions|shell_snapshots|sqlite|tmp|worktrees)
-      return 0
-      ;;
-    logs_*.sqlite|logs_*.sqlite-*|state_*.sqlite|state_*.sqlite-*)
-      return 0
-      ;;
-  esac
-  return 1
-}
-
-ensure_codex_autopilot_home() {
-  local base_home=""
-  local hooks_template=""
-
-  if [[ -n "$CODEX_AUTOPILOT_HOME" ]] && [[ -d "$CODEX_AUTOPILOT_HOME" ]]; then
-    return 0
+  if [[ "$DRY_RUN" -eq 0 ]]; then
+    bash "$installer" >/dev/null
   fi
 
-  base_home="${CODEX_HOME:-$HOME/.codex}"
-  hooks_template="$CWD/.codex/autopilot-hooks.json"
-  [[ -f "$hooks_template" ]] || die "Missing Codex autopilot hooks template: $hooks_template"
-
-  CODEX_AUTOPILOT_HOME="$(mktemp -d "${TMPDIR:-/tmp}/cmux-codex-autopilot-home-XXXXXX")"
-  link_codex_home_entries "$base_home" "$CODEX_AUTOPILOT_HOME"
-  cp "$hooks_template" "$CODEX_AUTOPILOT_HOME/hooks.json"
+  CODEX_HOME_HOOKS_INSTALLED=1
 }
 
 build_start_prompt() {
@@ -642,13 +586,10 @@ run_codex_native_autopilot() {
   local prompt="$2"
   local turn_file="$3"
   local max_turns="$4"
-  local hooks_template="$CWD/.codex/autopilot-hooks.json"
+  local hooks_installer="$CWD/scripts/install-codex-home-hooks.sh"
 
-  # Keep repo-local Codex hooks opt-in. Ordinary interactive sessions stay
-  # quiet because the live repo does not expose `.codex/hooks.json`; autopilot
-  # stages its template into a temporary CODEX_HOME just for this run.
-  ensure_codex_autopilot_home
-  local -a base=(codex -a never -s workspace-write --enable codex_hooks)
+  ensure_codex_home_hooks_installed
+  local -a base=(codex -a never -s workspace-write)
   if [[ -n "$MODEL" ]]; then
     base+=(-m "$MODEL")
   fi
@@ -671,8 +612,8 @@ run_codex_native_autopilot() {
   header+="mode: $mode\n"
   header+="cwd: $CWD\n"
   header+="command: $(format_cmd "${cmd[@]}")\n"
-  header+="codex_home: $CODEX_AUTOPILOT_HOME\n"
-  header+="hooks_template: $hooks_template\n"
+  header+="home_hooks: managed\n"
+  header+="hooks_installer: $hooks_installer\n"
   header+="max_turns: $max_turns\n"
   header+="stop_file: $STOP_FILE\n"
   header+="\n"
@@ -684,7 +625,7 @@ run_codex_native_autopilot() {
 
   local rc=0
   if [[ "$DRY_RUN" -eq 1 ]]; then
-    write_header_both "$turn_file" "(dry-run) skipping codex native-hook invocation\n"
+    write_header_both "$turn_file" "(dry-run) skipping codex managed-home-hook invocation\n"
     rc=0
   else
     (
@@ -701,12 +642,12 @@ run_codex_native_autopilot() {
     WATCHER_PID=$!
 
     set +e
-    CODEX_HOME="$CODEX_AUTOPILOT_HOME" \
     AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
       AUTOPILOT_ENABLED=1 \
       AUTOPILOT_STOP_FILE="$STOP_FILE" \
       AUTOPILOT_MAX_TURNS="$max_turns" \
       CMUX_AUTOPILOT_ENABLED=1 \
+      CMUX_CODEX_HOOKS_ENABLED=1 \
       CMUX_AUTOPILOT_STOP_FILE="$STOP_FILE" \
       CMUX_AUTOPILOT_MAX_TURNS="$max_turns" \
       CMUX_AUTOPILOT_INLINE_WRAPUP=1 \

@@ -7,6 +7,7 @@ import {
   buildMergedOpencodePreview,
   deriveEffectiveMcpPreviewConfigs,
   deriveEffectiveMcpPreviewConfigsByAgent,
+  ensureCodexHooksFeature,
   formatPreviewNameList,
   getMcpPreviewScopeDescription,
   getWebPreviewBuiltinMcpServers,
@@ -240,6 +241,25 @@ describe("buildMergedClaudeConfig", () => {
 });
 
 describe("buildMergedCodexConfigToml", () => {
+  it("ensures the codex hooks feature even when the host config already has all other defaults", () => {
+    const toml = buildMergedCodexConfigToml({
+      hostConfigText: `notify = ["/tmp/notify.sh"]
+sandbox_mode = "workspace-write"
+approval_policy = "never"
+disable_response_storage = true
+
+[profiles.default]
+color = "blue"
+`,
+      mcpServerConfigs: [],
+      agentName: "codex/gpt-5.4",
+    });
+
+    expect(toml).toContain('[features]');
+    expect(toml).toContain("codex_hooks = true");
+    expect(toml).toContain('[profiles.default]');
+  });
+
   it("strips filtered keys, preserves unrelated sections, replaces stale devsh-memory, and appends managed MCP blocks", () => {
     const toml = buildMergedCodexConfigToml({
       hostConfigText: `model = "gpt-5"
@@ -287,6 +307,24 @@ TOKEN = "stale"
     expect(toml).toContain('[mcp_servers."remote-api"]');
     expect(toml).toContain('[mcp_servers."remote-api".headers]');
     expect(toml.match(/\[mcp_servers\.context7\]/g)).toHaveLength(1);
+  });
+});
+
+describe("ensureCodexHooksFeature", () => {
+  it("updates an existing features section in place", () => {
+    const toml = ensureCodexHooksFeature(`[features]
+other_flag = true
+codex_hooks = false
+
+[profiles.default]
+color = "blue"
+`);
+
+    expect(toml).toContain('[features]');
+    expect(toml).toContain('other_flag = true');
+    expect(toml).toContain('codex_hooks = true');
+    expect(toml).not.toContain('codex_hooks = false');
+    expect(toml).toContain('[profiles.default]');
   });
 });
 
