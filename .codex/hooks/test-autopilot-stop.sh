@@ -7,11 +7,13 @@ unset CMUX_AUTOPILOT_DELAY CMUX_AUTOPILOT_IDLE_THRESHOLD CMUX_AUTOPILOT_MAX_TURN
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 HOOK="$SCRIPT_DIR/autopilot-stop.sh"
-HOOKS_TEMPLATE="$PROJECT_DIR/.codex/autopilot-hooks.json"
+HOME_HOOK_INSTALLER="$PROJECT_DIR/scripts/install-codex-home-hooks.sh"
 TEST_SESSION="codex-hook-test-$$"
 STOP_FILE="/tmp/codex-test-stop-${TEST_SESSION}"
 FAKE_BIN_DIR="/tmp/codex-hook-bin-${TEST_SESSION}"
 FAKE_SLEEP_LOG="/tmp/codex-hook-sleep-${TEST_SESSION}.log"
+HOME_HOOK_TEST_DIR="/tmp/codex-hook-home-${TEST_SESSION}"
+HOME_HOOKS_FILE="${HOME_HOOK_TEST_DIR}/.codex/hooks.json"
 PASS=0
 FAIL=0
 CONDITIONAL_WAIT_TEXT="Only if you are blocked on external work and are about to poll status"
@@ -28,6 +30,7 @@ cleanup() {
   rm -f "/tmp/codex-autopilot-wrapup-${TEST_SESSION}"
   rm -f "$FAKE_SLEEP_LOG"
   rm -rf "$FAKE_BIN_DIR"
+  rm -rf "$HOME_HOOK_TEST_DIR"
 }
 trap cleanup EXIT
 
@@ -133,9 +136,12 @@ run_hidden_sleep_monitoring_hook() {
 
 echo "=== Codex autopilot hook smoke test ==="
 
+mkdir -p "$HOME_HOOK_TEST_DIR"
+bash "$HOME_HOOK_INSTALLER" --home "$HOME_HOOK_TEST_DIR" >/dev/null
+
 assert "Codex Stop hook timeout allows hidden monitoring sleeps" jq -e '
   .hooks.Stop[0].hooks[0].timeout >= 75
-' "$HOOKS_TEMPLATE"
+' "$HOME_HOOKS_FILE"
 
 cleanup
 touch "$STOP_FILE"
