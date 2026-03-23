@@ -439,6 +439,72 @@ if [ "$PERMISSION_MODE" != "default" ] && [ "$PERMISSION_MODE" != "plan" ]; then
   exit 1
 fi
 
+# Risk classification function - mirrors approval-risk-classifier.ts
+classify_risk() {
+  local tool="$1"
+  local input="$2"
+  local is_head="\${CMUX_IS_ORCHESTRATION_HEAD:-}"
+
+  # Low-risk tools
+  case "$tool" in
+    Read|Glob|Grep|LS|ListDir|Search|Find)
+      echo "low"
+      return
+      ;;
+    WebFetch|WebSearch)
+      echo "high"
+      return
+      ;;
+    Write|Edit|NotebookEdit)
+      echo "medium"
+      return
+      ;;
+  esac
+
+  # For Bash/Shell, check patterns
+  if [ "$tool" = "Bash" ] || [ "$tool" = "Shell" ] || [ "$tool" = "Execute" ]; then
+    # High-risk patterns (always high, even for head agents)
+    if echo "$input" | grep -qE 'git\\s+push\\s+(-f|--force)'; then echo "high"; return; fi
+    if echo "$input" | grep -qE 'git\\s+reset\\s+--hard'; then echo "high"; return; fi
+    if echo "$input" | grep -qE 'rm\\s+(-rf|--recursive)'; then echo "high"; return; fi
+    if echo "$input" | grep -qE 'rm\\s+-[^r]*f'; then echo "high"; return; fi
+    if echo "$input" | grep -qE 'sudo\\s'; then echo "high"; return; fi
+    if echo "$input" | grep -qiE 'DROP\\s+(TABLE|DATABASE)'; then echo "high"; return; fi
+    if echo "$input" | grep -qiE 'TRUNCATE\\s+TABLE'; then echo "high"; return; fi
+
+    # Head-agent-managed operations (medium for head, high otherwise)
+    if echo "$input" | grep -qE 'gh\\s+pr\\s+(create|merge|close)'; then
+      [ -n "$is_head" ] && echo "medium" || echo "high"
+      return
+    fi
+    if echo "$input" | grep -qE 'gh\\s+workflow\\s+run'; then
+      [ -n "$is_head" ] && echo "medium" || echo "high"
+      return
+    fi
+    if echo "$input" | grep -qE 'devsh\\s+(start|delete|pause|resume)'; then
+      [ -n "$is_head" ] && echo "medium" || echo "high"
+      return
+    fi
+    if echo "$input" | grep -qE 'cloudrouter\\s+(start|delete|stop)'; then
+      [ -n "$is_head" ] && echo "medium" || echo "high"
+      return
+    fi
+
+    # Low-risk read operations
+    if echo "$input" | grep -qE '^(cat|head|tail|less|more)\\s'; then echo "low"; return; fi
+    if echo "$input" | grep -qE '^ls\\s'; then echo "low"; return; fi
+    if echo "$input" | grep -qE '^(grep|rg|ag)\\s'; then echo "low"; return; fi
+    if echo "$input" | grep -qE '^git\\s+(status|log|diff|show|branch|tag)(\\s|\$)'; then echo "low"; return; fi
+    if echo "$input" | grep -qE '^gh\\s+(pr|issue)\\s+(list|view|status)'; then echo "low"; return; fi
+    if echo "$input" | grep -qE '^(npm|yarn|pnpm|bun)\\s+(list|ls|outdated|audit)'; then echo "low"; return; fi
+  fi
+
+  # Default to medium
+  echo "medium"
+}
+
+RISK_LEVEL=$(classify_risk "$TOOL_NAME" "$TOOL_INPUT")
+
 # Create approval request
 RESPONSE=$(curl -s -X POST "\${CMUX_CALLBACK_URL}/api/approvals/create" \\
   -H "Content-Type: application/json" \\
@@ -447,6 +513,7 @@ RESPONSE=$(curl -s -X POST "\${CMUX_CALLBACK_URL}/api/approvals/create" \\
     --arg action "Permission: $TOOL_NAME" \\
     --arg tool "$TOOL_NAME" \\
     --arg input "$TOOL_INPUT" \\
+    --arg risk "$RISK_LEVEL" \\
     '{
       source: "tool_use",
       approvalType: "tool_permission",
@@ -455,7 +522,7 @@ RESPONSE=$(curl -s -X POST "\${CMUX_CALLBACK_URL}/api/approvals/create" \\
         agentName: "claude",
         command: $input,
         toolName: $tool,
-        riskLevel: "medium"
+        riskLevel: $risk
       }
     }')" 2>/dev/null)
 
