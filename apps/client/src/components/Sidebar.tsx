@@ -209,20 +209,15 @@ export function Sidebar({
   };
 
   const visiblePinnedTasks = useMemo(() => {
-    const relevanceCutoff = Date.now() - RELEVANT_WINDOW_MS;
+    // Pinned tasks are always considered relevant - user explicitly pinned them
     const pinned = (pinnedData ?? []).filter((task) => !task.isArchived);
-    const filtered = filterRelevant(pinned, workspacePreferences.showFilter, (task) => {
-      if (task.hasUnread) return true;
-      const activityAt = task.lastActivityAt ?? task.updatedAt ?? task.createdAt ?? 0;
-      return activityAt >= relevanceCutoff;
-    });
 
-    return sortItems(filtered, (task) =>
+    return sortItems(pinned, (task) =>
       workspacePreferences.sortBy === "updated"
         ? (task.lastActivityAt ?? task.updatedAt ?? task.createdAt ?? 0)
         : (task.createdAt ?? task.updatedAt ?? task.lastActivityAt ?? 0)
     );
-  }, [pinnedData, workspacePreferences.showFilter, workspacePreferences.sortBy]);
+  }, [pinnedData, workspacePreferences.sortBy]);
 
   const visibleWorkspaceTasks = useMemo(() => {
     const relevanceCutoff = Date.now() - RELEVANT_WINDOW_MS;
