@@ -7,12 +7,19 @@ import {
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
 import { useSocket } from "@/contexts/socket/use-socket";
 import { useTheme } from "@/components/theme/use-theme";
+import { preloadTaskRunIframes } from "@/lib/preloadTaskRunIframes";
+import {
+  rewriteLocalWorkspaceUrlIfNeeded,
+  toProxyWorkspaceUrl,
+} from "@/lib/toProxyWorkspaceUrl";
+import { useLocalVSCodeServeWebQuery } from "@/queries/local-vscode-serve-web";
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
 import type {
   CreateLocalWorkspaceResponse,
   CreateCloudWorkspaceResponse,
 } from "@cmux/shared";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useMutation } from "convex/react";
 import { Cloud, Loader2, Monitor } from "lucide-react";
 import { useCallback, useState } from "react";
@@ -32,11 +39,15 @@ export function WorkspaceCreationButtons({
   const { socket } = useSocket();
   const { addTaskToExpand } = useExpandTasks();
   const { theme } = useTheme();
+  const navigate = useNavigate();
+  const router = useRouter();
+  const localServeWeb = useLocalVSCodeServeWebQuery();
   const [isCreatingLocal, setIsCreatingLocal] = useState(false);
   const [isCreatingCloud, setIsCreatingCloud] = useState(false);
 
   const reserveLocalWorkspace = useMutation(api.localWorkspaces.reserve);
   const createTask = useMutation(api.tasks.create);
+  const failTaskRun = useMutation(api.taskRuns.fail);
 
   const handleCreateLocalWorkspace = useCallback(async () => {
     if (!socket) {
@@ -58,6 +69,7 @@ export function WorkspaceCreationButtons({
     const repoUrl = `https://github.com/${projectFullName}.git`;
 
     setIsCreatingLocal(true);
+    let reservedTaskRunId: Id<"taskRuns"> | null = null;
 
     try {
       const reservation = await reserveLocalWorkspace({
@@ -71,6 +83,7 @@ export function WorkspaceCreationButtons({
       }
 
       addTaskToExpand(reservation.taskId);
+      reservedTaskRunId = reservation.taskRunId;
 
       await new Promise<void>((resolve) => {
         socket.emit(
@@ -85,16 +98,82 @@ export function WorkspaceCreationButtons({
             descriptor: reservation.descriptor,
           },
           async (response: CreateLocalWorkspaceResponse) => {
-            if (response.success) {
+            try {
+              if (!response.success) {
+                const message =
+                  response.error ||
+                  `Failed to create local workspace for ${projectFullName}`;
+                if (reservedTaskRunId) {
+                  await failTaskRun({
+                    teamSlugOrId,
+                    id: reservedTaskRunId,
+                    errorMessage: message,
+                  }).catch(() => undefined);
+                }
+                toast.error(message);
+                return;
+              }
+
+              const effectiveTaskId = response.taskId ?? reservation.taskId;
+              const effectiveTaskRunId =
+                response.taskRunId ?? reservation.taskRunId;
+              const normalizedWorkspaceUrl = response.workspaceUrl
+                ? rewriteLocalWorkspaceUrlIfNeeded(
+                    response.workspaceUrl,
+                    localServeWeb.data?.baseUrl
+                  )
+                : null;
+
+              if (response.workspaceUrl && effectiveTaskRunId) {
+                const proxiedUrl = toProxyWorkspaceUrl(
+                  response.workspaceUrl,
+                  localServeWeb.data?.baseUrl
+                );
+                if (proxiedUrl) {
+                  void preloadTaskRunIframes([
+                    {
+                      url: proxiedUrl,
+                      taskRunId: effectiveTaskRunId,
+                    },
+                  ]).catch(() => undefined);
+                }
+              }
+
               toast.success(
                 `Local workspace "${reservation.workspaceName}" created successfully`
               );
-            } else {
-              toast.error(
-                response.error || "Failed to create local workspace"
+
+              if (effectiveTaskId && effectiveTaskRunId) {
+                void router
+                  .preloadRoute({
+                    to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+                    params: {
+                      teamSlugOrId,
+                      taskId: effectiveTaskId,
+                      runId: effectiveTaskRunId,
+                    },
+                  })
+                  .catch(() => undefined);
+                void navigate({
+                  to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+                  params: {
+                    teamSlugOrId,
+                    taskId: effectiveTaskId,
+                    runId: effectiveTaskRunId,
+                  },
+                });
+              } else if (normalizedWorkspaceUrl) {
+                window.location.assign(normalizedWorkspaceUrl);
+              }
+            } catch (callbackError) {
+              console.error(
+                "Error creating local workspace:",
+                callbackError
               );
+              toast.error("Failed to create local workspace");
+            } finally {
+              resolve();
             }
-            resolve();
           }
         );
       });
@@ -111,6 +190,10 @@ export function WorkspaceCreationButtons({
     teamSlugOrId,
     reserveLocalWorkspace,
     addTaskToExpand,
+    failTaskRun,
+    localServeWeb.data?.baseUrl,
+    navigate,
+    router,
   ]);
 
   const handleCreateCloudWorkspace = useCallback(async () => {
@@ -164,14 +247,48 @@ export function WorkspaceCreationButtons({
             theme,
           },
           async (response: CreateCloudWorkspaceResponse) => {
-            if (response.success) {
+            try {
+              if (!response.success) {
+                toast.error(
+                  response.error || "Failed to create cloud workspace"
+                );
+                return;
+              }
+
+              const effectiveTaskId = response.taskId ?? taskId;
+              const effectiveTaskRunId = response.taskRunId;
+
               toast.success("Cloud workspace created successfully");
-            } else {
-              toast.error(
-                response.error || "Failed to create cloud workspace"
+
+              if (effectiveTaskId && effectiveTaskRunId) {
+                void router
+                  .preloadRoute({
+                    to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+                    params: {
+                      teamSlugOrId,
+                      taskId: effectiveTaskId,
+                      runId: effectiveTaskRunId,
+                    },
+                  })
+                  .catch(() => undefined);
+                void navigate({
+                  to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+                  params: {
+                    teamSlugOrId,
+                    taskId: effectiveTaskId,
+                    runId: effectiveTaskRunId,
+                  },
+                });
+              }
+            } catch (callbackError) {
+              console.error(
+                "Error creating cloud workspace:",
+                callbackError
               );
+              toast.error("Failed to create cloud workspace");
+            } finally {
+              resolve();
             }
-            resolve();
           }
         );
       });
@@ -191,12 +308,14 @@ export function WorkspaceCreationButtons({
     createTask,
     addTaskToExpand,
     theme,
+    navigate,
+    router,
   ]);
 
   const canCreateLocal = selectedProject.length > 0 && !isEnvSelected;
   const canCreateCloud = selectedProject.length > 0 && isEnvSelected;
 
-  const SHOW_WORKSPACE_BUTTONS = false;
+  const SHOW_WORKSPACE_BUTTONS = true;
 
   if (!SHOW_WORKSPACE_BUTTONS) {
     return null;
