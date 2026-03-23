@@ -386,16 +386,21 @@ ${gitDiff || "<no code changes captured>"}
 INSTRUCTIONS
 - Base your summary strictly on the provided diffs and request.
 - Be specific about files and functions when possible.
-- Prefer clear bullet points over prose. Keep it under ~300 words.
 - If there are no code changes, say so explicitly and suggest next steps.
 
-OUTPUT FORMAT (Markdown)
-## PR Review Summary
-- What Changed: bullet list
-- Changes Flowchart: A mermaid \`flowchart TD\` diagram showing what changed and how components connect. 5-15 nodes, grouped by area in subgraphs, new/modified components highlighted with fill colors (#d4edda for new, #fff3cd for modified). Wrap in a \`\`\`mermaid code block.
-- Review Focus: bullet list (risks/edge cases)
-- Test Plan: bullet list of practical steps
-- Follow-ups: optional bullets if applicable
+OUTPUT FORMAT (JSON)
+Return a JSON object with this exact structure:
+{
+  "summary": "<markdown-formatted string with the following sections:
+    ## PR Review Summary
+    - **What Changed**: bullet list of changes
+    - **Changes Flowchart**: A mermaid flowchart TD diagram (wrapped in \`\`\`mermaid code block) showing what changed and how components connect. 5-15 nodes, grouped by area in subgraphs, new/modified components highlighted with fill colors (#d4edda for new, #fff3cd for modified).
+    - **Review Focus**: bullet list (risks/edge cases)
+    - **Test Plan**: bullet list of practical steps
+    - **Follow-ups**: optional bullets if applicable
+    Keep under ~300 words.>",
+  "executionSummary": "<optional one-line summary of execution>"
+}
 `;
 
   const attemptErrors: Array<{ attempt: number; error: unknown }> = [];
