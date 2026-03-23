@@ -619,6 +619,8 @@ export const StartSandboxBody = z
     taskRunId: z.string().optional(),
     taskRunJwt: z.string().optional(),
     isCloudWorkspace: z.boolean().optional(),
+    /** Mark as orchestration head agent (can spawn sub-agents, gets full capabilities) */
+    isOrchestrationHead: z.boolean().optional(),
     // Optional hydration parameters to clone a repo into the sandbox on start
     repoUrl: z.string().optional(),
     branch: z.string().optional(),

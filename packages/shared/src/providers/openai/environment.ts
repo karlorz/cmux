@@ -528,6 +528,24 @@ log "Autopilot completed after \$ITER turns"
     env.OPENAI_BASE_URL = customProviderConfig;
   }
 
+  // Add orchestration head env vars for durable shell-level access
+  // This ensures fresh zsh sessions and child processes inherit head-agent context
+  if (ctx.isOrchestrationHead) {
+    env.CMUX_IS_ORCHESTRATION_HEAD = "1";
+    if (ctx.orchestrationEnv?.CMUX_SERVER_URL) {
+      env.CMUX_SERVER_URL = ctx.orchestrationEnv.CMUX_SERVER_URL;
+    }
+    if (ctx.orchestrationEnv?.CMUX_API_BASE_URL) {
+      env.CMUX_API_BASE_URL = ctx.orchestrationEnv.CMUX_API_BASE_URL;
+    }
+    if (ctx.taskRunJwt) {
+      env.CMUX_TASK_RUN_JWT = ctx.taskRunJwt;
+    }
+    if (ctx.orchestrationOptions?.orchestrationId) {
+      env.CMUX_ORCHESTRATION_ID = ctx.orchestrationOptions.orchestrationId;
+    }
+  }
+
   // Copy instructions.md from host and append memory protocol instructions (desktop mode)
   // For server mode, only include memory protocol instructions to avoid leaking host-specific content
   // Uses shared instruction pack builder for consistent assembly across providers

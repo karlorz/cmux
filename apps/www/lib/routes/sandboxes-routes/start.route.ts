@@ -655,6 +655,9 @@ sandboxesStartRouter.openapi(
                 return null;
               }),
           ]);
+          // Determine if this is an orchestration head agent
+          // Explicit flag takes precedence, otherwise cloud workspaces are head agents
+          const isOrchestrationHead = body.isOrchestrationHead ?? isCloudWorkspace;
           const result = await setupProviderAuth(instance, convex, {
             teamSlugOrId: body.teamSlugOrId,
             projectFullName: parsedRepoUrl?.fullName,
@@ -664,6 +667,7 @@ sandboxesStartRouter.openapi(
             previousKnowledge,
             previousMailbox,
             agentName: body.agentName,
+            isOrchestrationHead,
           });
           if (result.providers.length > 0) {
             console.log(
