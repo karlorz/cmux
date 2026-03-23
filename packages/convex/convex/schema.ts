@@ -1681,11 +1681,26 @@ const convexSchema = defineSchema({
     usageCount: v.optional(v.number()), // How many times loaded
     freshnessScore: v.optional(v.number()), // 0.0-1.0, decays over time
     lastFreshnessUpdate: v.optional(v.number()), // When freshness was last calculated
+    // Phase 5: Memory scope model (IronClaw-inspired)
+    // Enables layered reads with write isolation per scope
+    scope: v.optional(
+      v.union(
+        v.literal("team"), // team/shared - org-wide policy & runbooks
+        v.literal("repo"), // repo/shared - project conventions
+        v.literal("user"), // user/private - operator preferences
+        v.literal("run") // run/local - ephemeral task notes
+      )
+    ),
+    projectFullName: v.optional(v.string()), // For repo-scoped memory (e.g., "owner/repo")
   })
     .index("by_task_run", ["taskRunId", "memoryType"])
     .index("by_team_type", ["teamId", "memoryType", "createdAt"])
     .index("by_team_created", ["teamId", "createdAt"])
-    .index("by_team_freshness", ["teamId", "memoryType", "freshnessScore"]),
+    .index("by_team_freshness", ["teamId", "memoryType", "freshnessScore"])
+    // Phase 5: Scoped memory indexes
+    .index("by_team_scope_type", ["teamId", "scope", "memoryType", "createdAt"])
+    .index("by_repo_type", ["projectFullName", "memoryType", "createdAt"])
+    .index("by_user_type", ["userId", "memoryType", "createdAt"]),
 
   // Normalized behavior rules for self-improving memory (S15 provenance)
   // Enables fast querying, cross-run seeding, and provenance tracking
