@@ -232,6 +232,93 @@ export const getByTaskRun = authQuery({
 });
 
 /**
+ * Resume ancestry summary for UI display.
+ * Returns session binding info with ancestry context:
+ * - Whether this run has a bound provider session
+ * - Whether it's a resumed session (has prior activity)
+ * - Provider-specific resume identifiers
+ */
+export interface ResumeAncestry {
+  /** Whether a session binding exists */
+  hasBoundSession: boolean;
+  /** Provider name (claude, codex, etc.) */
+  provider: string | null;
+  /** Agent mode (head, worker, reviewer) */
+  mode: string | null;
+  /** Provider-specific session ID (Claude) */
+  providerSessionId: string | null;
+  /** Provider-specific thread ID (Codex) */
+  providerThreadId: string | null;
+  /** Session status */
+  status: "active" | "suspended" | "expired" | "terminated" | null;
+  /** When session was created */
+  createdAt: number | null;
+  /** When session was last active */
+  lastActiveAt: number | null;
+  /** Whether this appears to be a resumed session */
+  isResumedSession: boolean;
+  /** Reply channel preference */
+  replyChannel: "mailbox" | "sse" | "pty" | "ui" | null;
+}
+
+export const getResumeAncestry = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    taskRunId: v.id("taskRuns"),
+  },
+  handler: async (ctx, args): Promise<ResumeAncestry> => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+
+    // Get binding for this task run
+    const binding = await ctx.db
+      .query("providerSessionBindings")
+      .withIndex("by_task_run", (q) => q.eq("taskRunId", args.taskRunId))
+      .first();
+
+    if (!binding || binding.teamId !== teamId) {
+      return {
+        hasBoundSession: false,
+        provider: null,
+        mode: null,
+        providerSessionId: null,
+        providerThreadId: null,
+        status: null,
+        createdAt: null,
+        lastActiveAt: null,
+        isResumedSession: false,
+        replyChannel: null,
+      };
+    }
+
+    // Check if this is a resumed session by looking at task-level bindings
+    // A session is considered "resumed" if the task had a prior binding before this run
+    const taskBinding = await ctx.db
+      .query("providerSessionBindings")
+      .withIndex("by_task", (q) => q.eq("taskId", binding.taskId))
+      .first();
+
+    const isResumedSession =
+      taskBinding !== null &&
+      taskBinding.createdAt !== null &&
+      binding.createdAt !== null &&
+      taskBinding.createdAt < binding.createdAt;
+
+    return {
+      hasBoundSession: true,
+      provider: binding.provider,
+      mode: binding.mode,
+      providerSessionId: binding.providerSessionId ?? null,
+      providerThreadId: binding.providerThreadId ?? null,
+      status: binding.status,
+      createdAt: binding.createdAt ?? null,
+      lastActiveAt: binding.lastActiveAt ?? null,
+      isResumedSession,
+      replyChannel: binding.replyChannel ?? null,
+    };
+  },
+});
+
+/**
  * Get all session bindings for an orchestration.
  */
 export const getByOrchestration = authQuery({
