@@ -1,10 +1,12 @@
 import { isFakeConvexId } from "@/lib/fakeConvexId";
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
-import { useQuery } from "convex/react";
-// Read team slug from path to avoid route type coupling
-import { Trophy } from "lucide-react";
+import { useMutation, useQuery } from "convex/react";
+import { RefreshCw, Trophy } from "lucide-react";
+import { useState } from "react";
+import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { ConfirmDialog } from "./ui/confirm-dialog";
 
 interface CrownEvaluationProps {
   taskId: Id<"tasks">;
@@ -24,9 +26,34 @@ export function CrownEvaluation({
     isFakeConvexId(taskId) ? "skip" : { teamSlugOrId, taskId }
   );
 
+  const refreshCrownMutation = useMutation(api.crown.refreshCrownEvaluation);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showRefreshConfirm, setShowRefreshConfirm] = useState(false);
+
   if (!evaluation || !crownedRun) {
     return null;
   }
+
+  const handleRefreshClick = () => {
+    // Require confirmation if evaluation didn't have empty diffs
+    if (!evaluation.hadEmptyDiffs) {
+      setShowRefreshConfirm(true);
+      return;
+    }
+    executeRefresh();
+  };
+
+  const executeRefresh = async () => {
+    setIsRefreshing(true);
+    setShowRefreshConfirm(false);
+    try {
+      await refreshCrownMutation({ teamSlugOrId, taskId });
+    } catch (error) {
+      console.error("[CrownEvaluation] Failed to refresh:", error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // Prefer stored agentName, use "Unknown" when missing
   const crownedPullRequests = crownedRun.pullRequests ?? [];
@@ -43,9 +70,21 @@ export function CrownEvaluation({
   return (
     <Card className="border-yellow-200 dark:border-yellow-900 bg-yellow-50 dark:bg-yellow-950/20">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <Trophy className="w-5 h-5 text-yellow-600 dark:text-yellow-500" />
-          Crown Winner: {agentName}
+        <CardTitle className="flex items-center justify-between text-lg">
+          <div className="flex items-center gap-2">
+            <Trophy className="w-5 h-5 text-yellow-600 dark:text-yellow-500" />
+            Crown Winner: {agentName}
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleRefreshClick}
+            disabled={isRefreshing}
+            className="text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+            title="Refresh crown evaluation"
+          >
+            <RefreshCw className={`size-4 ${isRefreshing ? "animate-spin" : ""}`} />
+          </Button>
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -112,6 +151,16 @@ export function CrownEvaluation({
           </div>
         </div>
       </CardContent>
+
+      <ConfirmDialog
+        open={showRefreshConfirm}
+        onOpenChange={setShowRefreshConfirm}
+        title="This evaluation appears complete."
+        description="Re-running may produce different results. Continue?"
+        confirmLabel="OK"
+        cancelLabel="Cancel"
+        onConfirm={executeRefresh}
+      />
     </Card>
   );
 }
