@@ -235,7 +235,7 @@ All 8 providers already use shared builders:
 | **2** | ~~Add E2B provider to devsh~~ | 4 hours | High (parity) | ✅ Done |
 | **3** | Set PVE-LXC as default provider | 1 hour | High (cost) | OPS |
 | **4** | Configure AI gateway routing | 2 hours | Medium (cost) | OPS |
-| **5** | Update docs (devsh as primary CLI) | 2 hours | Medium (UX) | Pending |
+| **5** | ~~Update docs (devsh as primary CLI)~~ | 2 hours | Medium (UX) | ✅ Done (CLI_GUIDE.md) |
 | **6** | ~~Flatten rules pipeline (3 statuses)~~ | 4 hours | Low (simplicity) | ✅ Done (PR #849) |
 
 ---
