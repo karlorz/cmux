@@ -26,7 +26,7 @@ describe("configRouter", () => {
 
       if (res.response.status === 200 && res.data) {
         expect(res.data).toHaveProperty("provider");
-        expect(["morph", "pve-lxc", "pve-vm"]).toContain(res.data.provider);
+        expect(["morph", "pve-lxc", "pve-vm", "e2b"]).toContain(res.data.provider);
       }
     });
 

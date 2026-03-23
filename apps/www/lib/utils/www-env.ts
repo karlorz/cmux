@@ -9,6 +9,7 @@ const getSandboxProviderSchema = () => {
   const provider = process.env.SANDBOX_PROVIDER;
   const isMorphRequired = !provider || provider === "morph";
   const isPveRequired = provider === "pve-lxc" || provider === "pve-vm";
+  const isE2bRequired = provider === "e2b";
 
   return {
     // Morph Cloud - required only if provider is "morph" or not specified
@@ -20,6 +21,10 @@ const getSandboxProviderSchema = () => {
       ? z.string().url()
       : z.string().url().optional(),
     PVE_API_TOKEN: isPveRequired
+      ? z.string().min(1)
+      : z.string().min(1).optional(),
+    // E2B Cloud - required only if provider is "e2b"
+    E2B_API_KEY: isE2bRequired
       ? z.string().min(1)
       : z.string().min(1).optional(),
   };
@@ -67,6 +72,8 @@ export const env = isTest ? (testEnv as unknown as ReturnType<typeof createEnv>)
     PVE_API_URL: sandboxProviderSchema.PVE_API_URL,
     PVE_API_TOKEN: sandboxProviderSchema.PVE_API_TOKEN,
     PVE_NODE: z.string().min(1).optional(),
+    // E2B Cloud - required if SANDBOX_PROVIDER is "e2b"
+    E2B_API_KEY: sandboxProviderSchema.E2B_API_KEY,
     // Public domain for PVE sandbox URLs via Cloudflare Tunnel (e.g., "example.com")
     // When set, generates URLs like https://port-{port}-{instanceId}.example.com
     PVE_PUBLIC_DOMAIN: z.string().min(1).optional(),

@@ -29,6 +29,7 @@ export const SANDBOX_PROVIDER_DISPLAY_NAMES: Record<SandboxProviderType, string>
   morph: "Morph Cloud",
   "pve-lxc": "Proxmox LXC",
   "pve-vm": "Proxmox VM",
+  e2b: "E2B Cloud",
 };
 
 /**
@@ -72,6 +73,13 @@ export const SANDBOX_PROVIDER_CAPABILITIES: Record<SandboxProviderType, SandboxP
     supportsResize: true,
     supportsNestedVirt: true,
     supportsGpu: true,
+  },
+  e2b: {
+    supportsHibernate: true, // E2B betaPause() preserves RAM state
+    supportsSnapshots: true, // E2B supports snapshots
+    supportsResize: false,
+    supportsNestedVirt: false,
+    supportsGpu: false,
   },
 };
 
@@ -125,6 +133,7 @@ export const UI_VISIBLE_PRESET_IDS_BY_PROVIDER: Record<SandboxProviderType, read
   // Keep in sync with the latest pve-lxc snapshot manifest; disk size bumped to 40GB
   "pve-lxc": ["4vcpu_8gb_32gb", "6vcpu_8gb_40gb"],
   "pve-vm": [], // TODO: Add when PVE VM presets are defined
+  e2b: [], // E2B uses template-based presets, not resource-based
 };
 
 /**
@@ -134,6 +143,7 @@ export const UI_VISIBLE_PRESET_IDS = [
   ...UI_VISIBLE_PRESET_IDS_BY_PROVIDER.morph,
   ...UI_VISIBLE_PRESET_IDS_BY_PROVIDER["pve-lxc"],
   ...UI_VISIBLE_PRESET_IDS_BY_PROVIDER["pve-vm"],
+  ...UI_VISIBLE_PRESET_IDS_BY_PROVIDER.e2b,
 ] as const;
 
 /**
@@ -228,6 +238,11 @@ export async function resolveSnapshotId(
     case "pve-vm": {
       // TODO: Implement when PVE VM is added
       throw new Error("PVE VM provider not yet implemented");
+    }
+
+    case "e2b": {
+      // E2B uses template-based snapshots via E2B SDK
+      throw new Error("E2B snapshot resolution not yet implemented");
     }
 
     default: {

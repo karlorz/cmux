@@ -44,6 +44,7 @@ export const create = authMutation({
       v.literal("pve-lxc"),
       v.literal("pve-vm"),
       v.literal("docker"),
+      v.literal("e2b"),
       v.literal("daytona"),
       v.literal("other")
     ),
@@ -210,6 +211,7 @@ export const findBySnapshotId = authQuery({
         v.literal("pve-lxc"),
         v.literal("pve-vm"),
         v.literal("docker"),
+        v.literal("e2b"),
         v.literal("daytona"),
         v.literal("other")
       )

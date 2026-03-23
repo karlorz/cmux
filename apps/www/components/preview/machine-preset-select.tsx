@@ -128,6 +128,7 @@ const ALLOWED_PRESET_IDS_BY_PROVIDER: Record<
   morph: ["4vcpu_16gb_48gb", "8vcpu_32gb_48gb"],
   "pve-lxc": ["4vcpu_8gb_32gb", "6vcpu_8gb_40gb"],
   "pve-vm": [],
+  e2b: [], // E2B uses template-based presets
 };
 
 export function MachinePresetSelect({

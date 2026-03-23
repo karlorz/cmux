@@ -1661,7 +1661,7 @@ export type SandboxProviderCapabilities = {
 };
 
 export type SandboxConfig = {
-    provider: 'morph' | 'pve-lxc' | 'pve-vm';
+    provider: 'morph' | 'pve-lxc' | 'pve-vm' | 'e2b';
     providerDisplayName: string;
     presets: Array<SandboxPreset>;
     defaultPresetId: string;
