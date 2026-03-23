@@ -29,12 +29,15 @@ type WorkspaceCreationButtonsProps = {
   teamSlugOrId: string;
   selectedProject: string[];
   isEnvSelected: boolean;
+  /** Resolved environment name from environments query (avoids parsing selectedProject) */
+  selectedEnvironmentName?: string | null;
 };
 
 export function WorkspaceCreationButtons({
   teamSlugOrId,
   selectedProject,
   isEnvSelected,
+  selectedEnvironmentName,
 }: WorkspaceCreationButtonsProps) {
   const { socket } = useSocket();
   const { addTaskToExpand } = useExpandTasks();
@@ -218,8 +221,8 @@ export function WorkspaceCreationButtons({
       ""
     ) as Id<"environments">;
 
-    // Extract environment name from the selectedProject (format is "env:id:name")
-    const environmentName = projectFullName.split(":")[2] || "Unknown Environment";
+    // Use resolved environment name from props (falls back to "Unknown Environment" if unavailable)
+    const environmentName = selectedEnvironmentName || "Unknown Environment";
 
     setIsCreatingCloud(true);
 
@@ -304,6 +307,7 @@ export function WorkspaceCreationButtons({
     socket,
     selectedProject,
     isEnvSelected,
+    selectedEnvironmentName,
     teamSlugOrId,
     createTask,
     addTaskToExpand,
