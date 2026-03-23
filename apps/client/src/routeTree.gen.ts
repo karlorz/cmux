@@ -33,6 +33,7 @@ import { Route as LayoutTeamSlugOrIdProjectsRouteImport } from './routes/_layout
 import { Route as LayoutTeamSlugOrIdPreviewsRouteImport } from './routes/_layout.$teamSlugOrId.previews'
 import { Route as LayoutTeamSlugOrIdOrchestrationRouteImport } from './routes/_layout.$teamSlugOrId.orchestration'
 import { Route as LayoutTeamSlugOrIdNotificationsRouteImport } from './routes/_layout.$teamSlugOrId.notifications'
+import { Route as LayoutTeamSlugOrIdMergeQueueRouteImport } from './routes/_layout.$teamSlugOrId.merge-queue'
 import { Route as LayoutTeamSlugOrIdLogsRouteImport } from './routes/_layout.$teamSlugOrId.logs'
 import { Route as LayoutTeamSlugOrIdEnvironmentsRouteImport } from './routes/_layout.$teamSlugOrId.environments'
 import { Route as LayoutTeamSlugOrIdDiffRouteImport } from './routes/_layout.$teamSlugOrId.diff'
@@ -190,6 +191,12 @@ const LayoutTeamSlugOrIdNotificationsRoute =
   LayoutTeamSlugOrIdNotificationsRouteImport.update({
     id: '/notifications',
     path: '/notifications',
+    getParentRoute: () => LayoutTeamSlugOrIdRoute,
+  } as any)
+const LayoutTeamSlugOrIdMergeQueueRoute =
+  LayoutTeamSlugOrIdMergeQueueRouteImport.update({
+    id: '/merge-queue',
+    path: '/merge-queue',
     getParentRoute: () => LayoutTeamSlugOrIdRoute,
   } as any)
 const LayoutTeamSlugOrIdLogsRoute = LayoutTeamSlugOrIdLogsRouteImport.update({
@@ -397,6 +404,7 @@ export interface FileRoutesByFullPath {
   '/$teamSlugOrId/diff': typeof LayoutTeamSlugOrIdDiffRoute
   '/$teamSlugOrId/environments': typeof LayoutTeamSlugOrIdEnvironmentsRouteWithChildren
   '/$teamSlugOrId/logs': typeof LayoutTeamSlugOrIdLogsRoute
+  '/$teamSlugOrId/merge-queue': typeof LayoutTeamSlugOrIdMergeQueueRoute
   '/$teamSlugOrId/notifications': typeof LayoutTeamSlugOrIdNotificationsRoute
   '/$teamSlugOrId/orchestration': typeof LayoutTeamSlugOrIdOrchestrationRouteWithChildren
   '/$teamSlugOrId/previews': typeof LayoutTeamSlugOrIdPreviewsRoute
@@ -452,6 +460,7 @@ export interface FileRoutesByTo {
   '/$teamSlugOrId/dashboard': typeof LayoutTeamSlugOrIdDashboardRoute
   '/$teamSlugOrId/diff': typeof LayoutTeamSlugOrIdDiffRoute
   '/$teamSlugOrId/logs': typeof LayoutTeamSlugOrIdLogsRoute
+  '/$teamSlugOrId/merge-queue': typeof LayoutTeamSlugOrIdMergeQueueRoute
   '/$teamSlugOrId/notifications': typeof LayoutTeamSlugOrIdNotificationsRoute
   '/$teamSlugOrId/orchestration': typeof LayoutTeamSlugOrIdOrchestrationRouteWithChildren
   '/$teamSlugOrId/previews': typeof LayoutTeamSlugOrIdPreviewsRoute
@@ -508,6 +517,7 @@ export interface FileRoutesById {
   '/_layout/$teamSlugOrId/diff': typeof LayoutTeamSlugOrIdDiffRoute
   '/_layout/$teamSlugOrId/environments': typeof LayoutTeamSlugOrIdEnvironmentsRouteWithChildren
   '/_layout/$teamSlugOrId/logs': typeof LayoutTeamSlugOrIdLogsRoute
+  '/_layout/$teamSlugOrId/merge-queue': typeof LayoutTeamSlugOrIdMergeQueueRoute
   '/_layout/$teamSlugOrId/notifications': typeof LayoutTeamSlugOrIdNotificationsRoute
   '/_layout/$teamSlugOrId/orchestration': typeof LayoutTeamSlugOrIdOrchestrationRouteWithChildren
   '/_layout/$teamSlugOrId/previews': typeof LayoutTeamSlugOrIdPreviewsRoute
@@ -566,6 +576,7 @@ export interface FileRouteTypes {
     | '/$teamSlugOrId/diff'
     | '/$teamSlugOrId/environments'
     | '/$teamSlugOrId/logs'
+    | '/$teamSlugOrId/merge-queue'
     | '/$teamSlugOrId/notifications'
     | '/$teamSlugOrId/orchestration'
     | '/$teamSlugOrId/previews'
@@ -621,6 +632,7 @@ export interface FileRouteTypes {
     | '/$teamSlugOrId/dashboard'
     | '/$teamSlugOrId/diff'
     | '/$teamSlugOrId/logs'
+    | '/$teamSlugOrId/merge-queue'
     | '/$teamSlugOrId/notifications'
     | '/$teamSlugOrId/orchestration'
     | '/$teamSlugOrId/previews'
@@ -676,6 +688,7 @@ export interface FileRouteTypes {
     | '/_layout/$teamSlugOrId/diff'
     | '/_layout/$teamSlugOrId/environments'
     | '/_layout/$teamSlugOrId/logs'
+    | '/_layout/$teamSlugOrId/merge-queue'
     | '/_layout/$teamSlugOrId/notifications'
     | '/_layout/$teamSlugOrId/orchestration'
     | '/_layout/$teamSlugOrId/previews'
@@ -895,6 +908,13 @@ declare module '@tanstack/react-router' {
       path: '/notifications'
       fullPath: '/$teamSlugOrId/notifications'
       preLoaderRoute: typeof LayoutTeamSlugOrIdNotificationsRouteImport
+      parentRoute: typeof LayoutTeamSlugOrIdRoute
+    }
+    '/_layout/$teamSlugOrId/merge-queue': {
+      id: '/_layout/$teamSlugOrId/merge-queue'
+      path: '/merge-queue'
+      fullPath: '/$teamSlugOrId/merge-queue'
+      preLoaderRoute: typeof LayoutTeamSlugOrIdMergeQueueRouteImport
       parentRoute: typeof LayoutTeamSlugOrIdRoute
     }
     '/_layout/$teamSlugOrId/logs': {
@@ -1265,6 +1285,7 @@ interface LayoutTeamSlugOrIdRouteChildren {
   LayoutTeamSlugOrIdDiffRoute: typeof LayoutTeamSlugOrIdDiffRoute
   LayoutTeamSlugOrIdEnvironmentsRoute: typeof LayoutTeamSlugOrIdEnvironmentsRouteWithChildren
   LayoutTeamSlugOrIdLogsRoute: typeof LayoutTeamSlugOrIdLogsRoute
+  LayoutTeamSlugOrIdMergeQueueRoute: typeof LayoutTeamSlugOrIdMergeQueueRoute
   LayoutTeamSlugOrIdNotificationsRoute: typeof LayoutTeamSlugOrIdNotificationsRoute
   LayoutTeamSlugOrIdOrchestrationRoute: typeof LayoutTeamSlugOrIdOrchestrationRouteWithChildren
   LayoutTeamSlugOrIdPreviewsRoute: typeof LayoutTeamSlugOrIdPreviewsRoute
@@ -1286,6 +1307,7 @@ const LayoutTeamSlugOrIdRouteChildren: LayoutTeamSlugOrIdRouteChildren = {
   LayoutTeamSlugOrIdEnvironmentsRoute:
     LayoutTeamSlugOrIdEnvironmentsRouteWithChildren,
   LayoutTeamSlugOrIdLogsRoute: LayoutTeamSlugOrIdLogsRoute,
+  LayoutTeamSlugOrIdMergeQueueRoute: LayoutTeamSlugOrIdMergeQueueRoute,
   LayoutTeamSlugOrIdNotificationsRoute: LayoutTeamSlugOrIdNotificationsRoute,
   LayoutTeamSlugOrIdOrchestrationRoute:
     LayoutTeamSlugOrIdOrchestrationRouteWithChildren,

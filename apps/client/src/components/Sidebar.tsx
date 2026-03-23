@@ -19,7 +19,7 @@ import { api } from "@cmux/convex/api";
 import { useQuery } from "convex/react";
 import type { LinkProps } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
-import { Bell, Calendar, ChevronLeft, FolderKanban, Home, Plus, Server, Settings, SwatchBook, Users, X } from "lucide-react";
+import { Bell, Calendar, ChevronLeft, FolderKanban, GitMerge, Home, Plus, Server, Settings, SwatchBook, Users, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -125,6 +125,12 @@ const navItems: SidebarNavItemWithBadge[] = [
     to: "/$teamSlugOrId/review",
     exact: true,
     icon: SwatchBook,
+  },
+  {
+    label: "Merge Queue",
+    to: "/$teamSlugOrId/merge-queue",
+    exact: true,
+    icon: GitMerge,
   },
   {
     label: "Settings",
