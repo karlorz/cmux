@@ -2,7 +2,7 @@
 set -euo pipefail
 
 emit_allow() {
-  jq -nc '{decision: "allow"}'
+  jq -nc '{}'
 }
 
 trimmed_non_empty() {

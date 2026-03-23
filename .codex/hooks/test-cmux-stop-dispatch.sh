@@ -55,7 +55,7 @@ EOF
 chmod +x "$WORKSPACE/.codex/hooks/autopilot-stop.sh"
 
 NO_STATE_OUTPUT="$(cd "$WORKSPACE" && printf '%s' "$(make_stop_payload "$WORKSPACE" "")" | bash "$DISPATCH_SCRIPT")"
-assert_eq "$(jq -r '.decision' <<<"$NO_STATE_OUTPUT")" "allow" "dispatcher should allow when Ralph and autopilot are inactive"
+assert_eq "$(jq -c . <<<"$NO_STATE_OUTPUT")" "{}" "dispatcher should emit an empty JSON object when Ralph and autopilot are inactive"
 
 cat >"$WORKSPACE/.codex/ralph-loop-state.json" <<'EOF'
 {
