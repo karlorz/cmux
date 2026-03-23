@@ -26,8 +26,26 @@ route_to_workspace_hook() {
   local hook_path="${workspace_root}/${relative_hook_path}"
 
   if [[ ! -f "$hook_path" ]]; then
-    emit_allow
-    return 0
+    return 1
+  fi
+
+  printf '%s' "$HOOK_INPUT" | bash "$hook_path"
+}
+
+route_to_home_hook() {
+  local hook_name="$1"
+  local codex_home=""
+  local hook_path=""
+
+  if [[ -n "${CODEX_HOME:-}" ]]; then
+    codex_home="$CODEX_HOME"
+  else
+    codex_home="$HOME/.codex"
+  fi
+
+  hook_path="${codex_home}/hooks/${hook_name}"
+  if [[ ! -f "$hook_path" ]]; then
+    return 1
   fi
 
   printf '%s' "$HOOK_INPUT" | bash "$hook_path"
@@ -39,12 +57,24 @@ WORKSPACE_ROOT="$(resolve_workspace_root "$HOOK_CWD")"
 RALPH_STATE_FILE="${WORKSPACE_ROOT}/.codex/ralph-loop-state.json"
 
 if [[ -f "$RALPH_STATE_FILE" ]]; then
-  route_to_workspace_hook "$WORKSPACE_ROOT" ".codex/hooks/ralph-loop-stop.sh"
+  if route_to_workspace_hook "$WORKSPACE_ROOT" ".codex/hooks/ralph-loop-stop.sh"; then
+    exit 0
+  fi
+
+  if route_to_home_hook "ralph-loop-stop.sh"; then
+    exit 0
+  fi
+
+  emit_allow
   exit 0
 fi
 
 if [[ "${CMUX_AUTOPILOT_ENABLED:-0}" = "1" ]] || [[ "${CMUX_CODEX_HOOKS_ENABLED:-0}" = "1" ]]; then
-  route_to_workspace_hook "$WORKSPACE_ROOT" ".codex/hooks/autopilot-stop.sh"
+  if route_to_workspace_hook "$WORKSPACE_ROOT" ".codex/hooks/autopilot-stop.sh"; then
+    exit 0
+  fi
+
+  emit_allow
   exit 0
 fi
 
