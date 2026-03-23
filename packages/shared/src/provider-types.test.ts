@@ -70,14 +70,15 @@ describe("provider-types", () => {
   });
 
   describe("CONFIG_PROVIDERS", () => {
-    it("contains morph, pve-lxc, pve-vm", () => {
+    it("contains morph, pve-lxc, pve-vm, e2b", () => {
       expect(CONFIG_PROVIDERS).toContain("morph");
       expect(CONFIG_PROVIDERS).toContain("pve-lxc");
       expect(CONFIG_PROVIDERS).toContain("pve-vm");
+      expect(CONFIG_PROVIDERS).toContain("e2b");
     });
 
-    it("has exactly 3 providers", () => {
-      expect(CONFIG_PROVIDERS.length).toBe(3);
+    it("has exactly 4 providers", () => {
+      expect(CONFIG_PROVIDERS.length).toBe(4);
     });
 
     it("has no duplicates", () => {

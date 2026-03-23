@@ -99,7 +99,17 @@ export function getActiveSandboxProvider(): SandboxProviderConfig {
     };
   }
 
-  // Unknown/external provider (e.g. "e2b", "modal", "daytona") --
+  if (explicitProvider === "e2b") {
+    if (!env.E2B_API_KEY) {
+      throw new Error("SANDBOX_PROVIDER=e2b but E2B_API_KEY is not set.");
+    }
+    return {
+      provider: "e2b",
+      apiKey: env.E2B_API_KEY,
+    };
+  }
+
+  // Unknown/external provider (e.g. "modal", "daytona") --
   // the www sandbox provisioning layer only knows morph / pve-lxc / pve-vm,
   // so skip credential auto-detect and fall back to DEFAULT_SANDBOX_PROVIDER.
   // The raw SANDBOX_PROVIDER value is still available via env.SANDBOX_PROVIDER
@@ -116,6 +126,13 @@ export function getActiveSandboxProvider(): SandboxProviderConfig {
     return {
       provider: "morph",
       apiKey: env.MORPH_API_KEY,
+    };
+  }
+
+  if (env.E2B_API_KEY) {
+    return {
+      provider: "e2b",
+      apiKey: env.E2B_API_KEY,
     };
   }
 
@@ -147,15 +164,25 @@ export function isProxmoxAvailable(): boolean {
 }
 
 /**
+ * Check if E2B provider is available
+ */
+export function isE2bAvailable(): boolean {
+  return Boolean(env.E2B_API_KEY);
+}
+
+/**
  * Get a list of all available sandbox providers
  */
-export function getAvailableSandboxProviders(): Array<Extract<ConfigProvider, "morph" | "pve-lxc">> {
-  const providers: Array<Extract<ConfigProvider, "morph" | "pve-lxc">> = [];
+export function getAvailableSandboxProviders(): Array<Extract<ConfigProvider, "morph" | "pve-lxc" | "e2b">> {
+  const providers: Array<Extract<ConfigProvider, "morph" | "pve-lxc" | "e2b">> = [];
   if (isMorphAvailable()) {
     providers.push("morph");
   }
   if (isProxmoxAvailable()) {
     providers.push("pve-lxc");
+  }
+  if (isE2bAvailable()) {
+    providers.push("e2b");
   }
   return providers;
 }
