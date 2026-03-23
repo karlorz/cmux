@@ -85,6 +85,7 @@ import type * as models from "../models.js";
 import type * as morphInstanceMaintenance from "../morphInstanceMaintenance.js";
 import type * as morphInstances from "../morphInstances.js";
 import type * as notifications_http from "../notifications_http.js";
+import type * as operatorInputQueue from "../operatorInputQueue.js";
 import type * as operatorVerification from "../operatorVerification.js";
 import type * as operatorVerification_actions from "../operatorVerification_actions.js";
 import type * as orchestrate from "../orchestrate.js";
@@ -236,6 +237,7 @@ declare const fullApi: ApiFromModules<{
   morphInstanceMaintenance: typeof morphInstanceMaintenance;
   morphInstances: typeof morphInstances;
   notifications_http: typeof notifications_http;
+  operatorInputQueue: typeof operatorInputQueue;
   operatorVerification: typeof operatorVerification;
   operatorVerification_actions: typeof operatorVerification_actions;
   orchestrate: typeof orchestrate;

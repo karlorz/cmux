@@ -773,6 +773,28 @@ export type OrchestrationSummary = {
     }>;
 };
 
+/**
+ * Operator input queue state (for active-turn steering)
+ */
+export type TurnState = {
+    /**
+     * Current turn number (increments on each drain)
+     */
+    turnNumber: number;
+    /**
+     * Whether agent is waiting for operator input
+     */
+    awaitingOperatorInput: boolean;
+    /**
+     * Number of pending inputs in queue
+     */
+    pendingInputs: number;
+    /**
+     * Maximum queue capacity
+     */
+    queueCapacity: number;
+};
+
 export type OrchestrationSyncResponse = {
     tasks: Array<{
         id: string;
@@ -804,6 +826,7 @@ export type OrchestrationSyncResponse = {
         failed: number;
         pending: number;
     };
+    turnState?: TurnState;
 };
 
 export type OrchestrationPushResponse = {
@@ -924,6 +947,78 @@ export type ApprovalRequest = {
      * Creation timestamp
      */
     createdAt: number;
+};
+
+export type QueueInputResponse = {
+    success: true;
+    /**
+     * ID of queued input
+     */
+    inputId: string;
+    /**
+     * Current queue depth after insert
+     */
+    queueDepth: number;
+} | {
+    success: false;
+    error: 'QUEUE_FULL';
+    /**
+     * Current queue depth
+     */
+    queueDepth: number;
+    /**
+     * Maximum queue capacity
+     */
+    queueCapacity: number;
+};
+
+export type QueueStatusResponse = {
+    /**
+     * Current number of pending inputs
+     */
+    depth: number;
+    /**
+     * Maximum queue capacity
+     */
+    capacity: number;
+    /**
+     * Whether there are pending inputs
+     */
+    hasPendingInputs: boolean;
+    /**
+     * Timestamp of oldest pending input
+     */
+    oldestInputAt?: number;
+};
+
+export type DrainInputsResponse = {
+    /**
+     * Merged input content (newline separated)
+     */
+    content: string;
+    /**
+     * Number of inputs drained
+     */
+    count: number;
+    /**
+     * Batch ID for tracking
+     */
+    batchId: string;
+    /**
+     * IDs of drained inputs
+     */
+    inputIds: Array<string>;
+};
+
+export type ClearQueueResponse = {
+    /**
+     * Number of inputs cleared
+     */
+    clearedCount: number;
+    /**
+     * Batch ID for tracking
+     */
+    batchId: string;
 };
 
 export type ProjectGoal = {
@@ -4249,6 +4344,186 @@ export type GetApiV1CmuxOrchestrationRulesResponses = {
 };
 
 export type GetApiV1CmuxOrchestrationRulesResponse = GetApiV1CmuxOrchestrationRulesResponses[keyof GetApiV1CmuxOrchestrationRulesResponses];
+
+export type PostApiOrchestrateInputByOrchestrationIdData = {
+    body: {
+        /**
+         * The steering instruction
+         */
+        content: string;
+        /**
+         * Input priority (high for interrupts, normal for guidance, low for background)
+         */
+        priority?: 'high' | 'normal' | 'low';
+        /**
+         * Team slug or ID (extracted from JWT if not provided)
+         */
+        teamSlugOrId?: string;
+        /**
+         * Specific task run to target (optional)
+         */
+        taskRunId?: string;
+        /**
+         * Override default queue capacity
+         */
+        queueCapacity?: number;
+    };
+    path: {
+        /**
+         * Orchestration ID
+         */
+        orchestrationId: string;
+    };
+    query?: never;
+    url: '/api/orchestrate/input/{orchestrationId}';
+};
+
+export type PostApiOrchestrateInputByOrchestrationIdErrors = {
+    /**
+     * Invalid request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiOrchestrateInputByOrchestrationIdResponses = {
+    /**
+     * Input queued or queue full response
+     */
+    200: QueueInputResponse;
+};
+
+export type PostApiOrchestrateInputByOrchestrationIdResponse = PostApiOrchestrateInputByOrchestrationIdResponses[keyof PostApiOrchestrateInputByOrchestrationIdResponses];
+
+export type GetApiOrchestrateInputByOrchestrationIdStatusData = {
+    body?: never;
+    path: {
+        /**
+         * Orchestration ID
+         */
+        orchestrationId: string;
+    };
+    query?: {
+        /**
+         * Team slug or ID (extracted from JWT if not provided)
+         */
+        teamSlugOrId?: string;
+        /**
+         * Override default queue capacity for status
+         */
+        queueCapacity?: number | null;
+    };
+    url: '/api/orchestrate/input/{orchestrationId}/status';
+};
+
+export type GetApiOrchestrateInputByOrchestrationIdStatusErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiOrchestrateInputByOrchestrationIdStatusResponses = {
+    /**
+     * Queue status retrieved successfully
+     */
+    200: QueueStatusResponse;
+};
+
+export type GetApiOrchestrateInputByOrchestrationIdStatusResponse = GetApiOrchestrateInputByOrchestrationIdStatusResponses[keyof GetApiOrchestrateInputByOrchestrationIdStatusResponses];
+
+export type PostApiOrchestrateInputByOrchestrationIdDrainData = {
+    body: {
+        /**
+         * Team slug or ID (extracted from JWT if not provided)
+         */
+        teamSlugOrId?: string;
+        /**
+         * Filter by specific task run
+         */
+        taskRunId?: string;
+    };
+    path: {
+        /**
+         * Orchestration ID
+         */
+        orchestrationId: string;
+    };
+    query?: never;
+    url: '/api/orchestrate/input/{orchestrationId}/drain';
+};
+
+export type PostApiOrchestrateInputByOrchestrationIdDrainErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiOrchestrateInputByOrchestrationIdDrainResponses = {
+    /**
+     * Inputs drained successfully
+     */
+    200: DrainInputsResponse;
+};
+
+export type PostApiOrchestrateInputByOrchestrationIdDrainResponse = PostApiOrchestrateInputByOrchestrationIdDrainResponses[keyof PostApiOrchestrateInputByOrchestrationIdDrainResponses];
+
+export type PostApiOrchestrateInputByOrchestrationIdClearData = {
+    body: {
+        /**
+         * Team slug or ID (extracted from JWT if not provided)
+         */
+        teamSlugOrId?: string;
+        /**
+         * Filter by specific task run
+         */
+        taskRunId?: string;
+    };
+    path: {
+        /**
+         * Orchestration ID
+         */
+        orchestrationId: string;
+    };
+    query?: never;
+    url: '/api/orchestrate/input/{orchestrationId}/clear';
+};
+
+export type PostApiOrchestrateInputByOrchestrationIdClearErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiOrchestrateInputByOrchestrationIdClearResponses = {
+    /**
+     * Queue cleared successfully
+     */
+    200: ClearQueueResponse;
+};
+
+export type PostApiOrchestrateInputByOrchestrationIdClearResponse = PostApiOrchestrateInputByOrchestrationIdClearResponses[keyof PostApiOrchestrateInputByOrchestrationIdClearResponses];
 
 export type GetApiProjectsData = {
     body?: never;
