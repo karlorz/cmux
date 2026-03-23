@@ -542,6 +542,7 @@ async function handleCreateCloudWorkspace(
         prompt: "Cloud Workspace",
         agentName: "cloud-workspace",
         environmentId: environmentId as Id<"environments"> | undefined,
+        isOrchestrationHead: true,
       });
       const taskRunId = taskRunResult.taskRunId;
       createdTaskRunId = taskRunId; // Save for error handling
@@ -1001,6 +1002,7 @@ async function handleOrchestrationSpawn(
         agentName: agent,
         newBranch: "",
         environmentId: environmentId as Id<"environments"> | undefined,
+        isOrchestrationHead,
       });
 
       const taskRunId = taskRunResult.taskRunId;
@@ -1826,6 +1828,7 @@ Orchestration ID: ${orchestrationId}`;
         agentName: headAgent,
         newBranch: "",
         environmentId: environmentId as Id<"environments"> | undefined,
+        isOrchestrationHead: true,
       });
       const taskRunId = taskRunResult.taskRunId;
 

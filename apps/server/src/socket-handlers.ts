@@ -2210,6 +2210,7 @@ export function setupSocketHandlers(
             prompt: "Cloud Workspace",
             agentName: "cloud-workspace",
             environmentId,
+            isOrchestrationHead: true,
           });
           taskRunId = taskRunResult.taskRunId;
           const taskRunJwt = taskRunResult.jwt;

@@ -262,6 +262,7 @@ export async function spawnAgent(
           agentName: agent.name,
           newBranch,
           environmentId: options.environmentId,
+          isOrchestrationHead: options.isOrchestrationHead,
         });
       taskRunId = createdTaskRunId;
       taskRunJwt = jwt;
