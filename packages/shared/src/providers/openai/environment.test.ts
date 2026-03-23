@@ -1,11 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   applyCodexApiKeys,
-  CODEX_HOOKED_COMMAND_PATH,
+  CODEX_HOME_HOOK_DISPATCH_PATH,
   getOpenAIEnvironment,
   stripFilteredConfigKeys,
 } from "./environment";
@@ -645,112 +645,116 @@ foo = "bar"
     ).toString("utf-8");
 
     expect(resumeScript).toContain('SESSION_ID_FILE="/root/lifecycle/codex-session-id.txt"');
-    expect(resumeScript).toContain(`exec ${CODEX_HOOKED_COMMAND_PATH} resume "$THREAD_ID"`);
+    expect(resumeScript).toContain('exec codex resume "$THREAD_ID"');
   });
 
-  it("stores Codex hooks as a template and keeps ordinary sessions hook-free by default", async () => {
+  it("installs managed home hooks and removes shell-helper bootstrap assumptions", async () => {
     const result = await getOpenAIEnvironment({} as never);
 
-    const liveHooksFile = result.files?.find(
-      (file) => file.destinationPath === "$HOME/.codex/hooks.json"
+    const hooksFile = decodeEnvironmentFile(result, "$HOME/.codex/hooks.json");
+    expect(hooksFile).toContain('"Stop"');
+    expect(hooksFile).toContain('cmux-stop-dispatch.sh');
+
+    const dispatcher = decodeEnvironmentFile(result, CODEX_HOME_HOOK_DISPATCH_PATH);
+    expect(dispatcher).toContain('RALPH_STATE_FILE="${WORKSPACE_ROOT}/.codex/ralph-loop-state.json"');
+    expect(dispatcher).toContain('.codex/hooks/ralph-loop-stop.sh');
+    expect(dispatcher).toContain('.codex/hooks/autopilot-stop.sh');
+
+    const legacyHooksTemplate = result.files?.find(
+      (file) => file.destinationPath === "/root/lifecycle/codex-hooks.json"
     );
-    expect(liveHooksFile).toBeUndefined();
+    expect(legacyHooksTemplate).toBeUndefined();
 
-    const hooksTemplate = decodeEnvironmentFile(result, "/root/lifecycle/codex-hooks.json");
-    expect(hooksTemplate).toContain('"Stop"');
-    expect(hooksTemplate).toContain("/root/lifecycle/codex-stop-hook.sh");
-    expect(hooksTemplate).toContain("/root/lifecycle/codex-session-start-hook.sh");
+    const shellHelpers = result.files?.find(
+      (file) => file.destinationPath === "/root/lifecycle/codex-shell-helpers.sh"
+    );
+    expect(shellHelpers).toBeUndefined();
 
-    const codexWrapper = decodeEnvironmentFile(result, CODEX_HOOKED_COMMAND_PATH);
-    expect(codexWrapper).toContain('HOOKS_TEMPLATE="/root/lifecycle/codex-hooks.json"');
-    expect(codexWrapper).toContain('should_skip_home_entry() {');
-    expect(codexWrapper).toContain('worktrees');
-    expect(codexWrapper).toContain('sessions');
-    expect(codexWrapper).toContain('history.jsonl');
-    expect(codexWrapper).toContain('cp "$HOOKS_TEMPLATE" "$TEMP_HOME/hooks.json"');
-    expect(codexWrapper).toContain('export CODEX_HOME="$TEMP_HOME"');
-    expect(codexWrapper).toContain('exec codex "$@"');
-
-    const shellHelpers = decodeEnvironmentFile(result, "/root/lifecycle/codex-shell-helpers.sh");
-    expect(shellHelpers).toContain('if [ "${CMUX_CODEX_USE_HOME_HOOKS:-0}" = "1" ]');
-    expect(shellHelpers).toContain('repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"');
-    expect(shellHelpers).toContain('"$repo_root/scripts/codex-home-launch.sh" "$@"');
-    expect(shellHelpers).toContain('command codex "$@"');
     expect(result.startupCommands).toContain(
-      "touch ~/.bashrc && grep -F '/root/lifecycle/codex-shell-helpers.sh' ~/.bashrc >/dev/null || printf '\\n[ -f /root/lifecycle/codex-shell-helpers.sh ] && . /root/lifecycle/codex-shell-helpers.sh\\n' >> ~/.bashrc"
+      `if [ -f ~/.bashrc ]; then tmp="$(mktemp)"; grep -Fv 'codex-shell-helpers.sh' ~/.bashrc > "$tmp" || true; mv "$tmp" ~/.bashrc; fi`
     );
     expect(result.startupCommands).toContain(
-      "touch ~/.zshrc && grep -F '/root/lifecycle/codex-shell-helpers.sh' ~/.zshrc >/dev/null || printf '\\n[ -f /root/lifecycle/codex-shell-helpers.sh ] && . /root/lifecycle/codex-shell-helpers.sh\\n' >> ~/.zshrc"
+      `if [ -f ~/.zshrc ]; then tmp="$(mktemp)"; grep -Fv 'codex-shell-helpers.sh' ~/.zshrc > "$tmp" || true; mv "$tmp" ~/.zshrc; fi`
     );
   });
 
-  it("prefers the repo-local Codex launcher from the sandbox shell helper", async () => {
+  it("routes the managed home stop dispatcher to Ralph before autopilot", async () => {
     const result = await getOpenAIEnvironment({} as never);
-    const shellHelpers = decodeEnvironmentFile(result, "/root/lifecycle/codex-shell-helpers.sh");
-    const tempDir = await mkdtemp(join(tmpdir(), "cmux-openai-codex-helper-"));
+    const dispatcher = decodeEnvironmentFile(result, CODEX_HOME_HOOK_DISPATCH_PATH);
+    const tempDir = await mkdtemp(join(tmpdir(), "cmux-openai-codex-dispatch-"));
 
     try {
-      const helperPath = join(tempDir, "codex-shell-helpers.sh");
-      const binDir = join(tempDir, "bin");
-      const repoRoot = join(tempDir, "repo");
-      const repoCodexDir = join(repoRoot, ".codex");
-      const repoScriptsDir = join(repoRoot, "scripts");
-      const logPath = join(tempDir, "codex-invocation.log");
-      const gitPath = join(binDir, "git");
-      const codexPath = join(binDir, "codex");
-      const launcherPath = join(repoScriptsDir, "codex-home-launch.sh");
+      const dispatcherPath = join(tempDir, "cmux-stop-dispatch.sh");
+      const workspaceRoot = join(tempDir, "workspace");
+      const hooksDir = join(workspaceRoot, ".codex", "hooks");
+      const stateFile = join(workspaceRoot, ".codex", "ralph-loop-state.json");
 
-      await mkdir(binDir, { recursive: true });
-      await mkdir(repoCodexDir, { recursive: true });
-      await mkdir(repoScriptsDir, { recursive: true });
-      await writeFile(helperPath, shellHelpers, "utf-8");
-      await writeFile(join(repoCodexDir, "autopilot-hooks.json"), '{"hooks":{"Stop":[]}}', "utf-8");
+      await mkdir(hooksDir, { recursive: true });
+      await writeFile(dispatcherPath, dispatcher, "utf-8");
       await writeFile(
-        launcherPath,
+        join(hooksDir, "ralph-loop-stop.sh"),
         `#!/usr/bin/env sh
 set -eu
-printf 'launcher:%s\\n' "$*" > "${logPath}"
+printf '{"decision":"block","reason":"ralph"}\\n'
 `,
         "utf-8"
       );
       await writeFile(
-        gitPath,
+        join(hooksDir, "autopilot-stop.sh"),
         `#!/usr/bin/env sh
 set -eu
-if [ "\${1:-}" = "rev-parse" ] && [ "\${2:-}" = "--show-toplevel" ]; then
-  printf '%s\\n' "${repoRoot}"
-  exit 0
-fi
-exit 1
+printf '{"decision":"block","reason":"autopilot"}\\n'
 `,
         "utf-8"
       );
       await writeFile(
-        codexPath,
-        `#!/usr/bin/env sh
-set -eu
-printf 'binary:%s\\n' "$*" > "${logPath}"
-`,
+        stateFile,
+        JSON.stringify({ active: true }),
         "utf-8"
       );
-      await chmod(launcherPath, 0o755);
-      await chmod(gitPath, 0o755);
-      await chmod(codexPath, 0o755);
+      await chmod(dispatcherPath, 0o755);
+      await chmod(join(hooksDir, "ralph-loop-stop.sh"), 0o755);
+      await chmod(join(hooksDir, "autopilot-stop.sh"), 0o755);
 
-      const run = spawnSync(
+      const ralphRun = spawnSync(
         "bash",
-        ["-c", `source "${helperPath}"; cd "${repoRoot}"; codex --version`],
+        [dispatcherPath],
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH ?? ""}`,
+            CMUX_AUTOPILOT_ENABLED: "1",
           },
+          input: JSON.stringify({ cwd: workspaceRoot }),
           encoding: "utf-8",
         }
       );
 
-      expect(run.status).toBe(0);
-      expect(await readFile(logPath, "utf-8")).toContain("launcher:--version");
+      expect(ralphRun.status).toBe(0);
+      expect(JSON.parse(ralphRun.stdout)).toEqual({
+        decision: "block",
+        reason: "ralph",
+      });
+
+      await rm(stateFile, { force: true });
+
+      const autopilotRun = spawnSync(
+        "bash",
+        [dispatcherPath],
+        {
+          env: {
+            ...process.env,
+            CMUX_AUTOPILOT_ENABLED: "1",
+          },
+          input: JSON.stringify({ cwd: workspaceRoot }),
+          encoding: "utf-8",
+        }
+      );
+
+      expect(autopilotRun.status).toBe(0);
+      expect(JSON.parse(autopilotRun.stdout)).toEqual({
+        decision: "block",
+        reason: "autopilot",
+      });
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }
