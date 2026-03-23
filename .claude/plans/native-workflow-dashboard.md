@@ -167,43 +167,35 @@ Uses `useQuery(api.taskRunActivity.getByTaskRunId)` for real-time Convex subscri
 
 ### Effort: 3-5 days for Claude foundation, +2 days for Codex fallback
 
-## Phase 2: Live Diff Panel
+## Phase 2: Live Diff Panel - COMPLETE
 
 ### What
 Show code changes as they happen, without needing the VS Code iframe.
 
-### Implementation
-- Use existing Rust git diff module (`apps/server/native/core`)
-- Add SSE endpoint: `/api/task-run/:id/diff-stream`
-- Poll git status every 5 seconds in sandbox, POST diff summary
-- Render with existing `heatmap-diff-viewer.tsx` component (already works outside iframe)
+### Implementation - DONE
+- `LiveDiffPanel.tsx` - Real-time diff viewer with fallback to committed diff
+- `useLiveDiff.ts` - Hook for fetching live git diff from running sandboxes
+- Polls every 10s while running, shows committed diff when stopped
 
-### Effort: 3-5 days
-
-## Phase 3: Structured Test Results
+## Phase 3: Structured Test Results - COMPLETE
 
 ### What
 Parse test output into structured pass/fail badges.
 
-### Implementation
-- Parse terminal output for common test runner formats (vitest, jest, pytest, go test)
-- POST structured results: `{ passed: 12, failed: 1, skipped: 0, details: [...] }`
-- Dashboard shows green/red badges with expandable failure details
+### Implementation - DONE
+- `TestResultsPanel.tsx` - Dashboard component with pass/fail badges
+- `parse-test-output.ts` - Parser for vitest, jest, pytest, go test formats
+- Real-time updates via Convex subscription
 
-### Effort: 2-3 days
-
-## Phase 4: Error Surfacing
+## Phase 4: Error Surfacing - COMPLETE
 
 ### What
 Agent errors visible immediately in dashboard, not buried in terminal scroll.
 
-### Implementation
-- Claude: `StopFailure` hook event (already exists in v2.1.78)
-- Codex: Error patterns in terminal output
-- POST error events to Convex → real-time subscription in dashboard
-- Red banner with "Agent encountered error" + expandable details
-
-### Effort: 1-2 days
+### Implementation - DONE
+- `error-hook.sh` - Claude StopFailure hook posts to activity endpoint
+- Activity stream shows error events with red banner styling
+- Real-time via Convex subscription
 
 ## Updated Priority Matrix
 
