@@ -2267,6 +2267,7 @@ export function setupSocketHandlers(
               taskRunId,
               taskRunJwt,
               isCloudWorkspace: true,
+              isOrchestrationHead: true,
               ...(environmentId
                 ? { environmentId }
                 : { projectFullName, repoUrl }),
