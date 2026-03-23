@@ -3,7 +3,6 @@ import {
   defaultHostConfig,
   getHostUrl,
   isTrustedProxyHostname,
-  normalizeOrigin,
 } from "@cmux/shared";
 import { githubPrsBackfillRepoRouter } from "@/lib/routes/github.prs.backfill-repo.route";
 import { githubPrsBackfillRouter } from "@/lib/routes/github.prs.backfill.route";
@@ -16,6 +15,7 @@ import { githubPrsPatchRouter } from "@/lib/routes/github.prs.patch.route";
 import { githubPrsRouter } from "@/lib/routes/github.prs.route";
 import { githubProjectsRouter } from "@/lib/routes/github.projects.route";
 import { githubReposRouter } from "@/lib/routes/github.repos.route";
+import { getConfiguredOrigins } from "@/lib/utils/configured-origins";
 import {
   booksRouter,
   branchRouter,
@@ -65,10 +65,14 @@ import { prettyJSON } from "hono/pretty-json";
 import { decodeJwt } from "jose";
 import { setupHonoErrorHandler } from "@sentry/node";
 
-// Additional client origins from env (for custom domains, Coolify, or preview URLs)
-// Supports comma-separated values: NEXT_PUBLIC_CLIENT_ORIGIN=https://a.com,https://b.com
-const additionalClientOrigins =
-  process.env.NEXT_PUBLIC_CLIENT_ORIGIN?.split(",").map((s) => normalizeOrigin(s.trim())).filter(Boolean) ?? [];
+function getConfiguredCorsOrigins(): string[] {
+  return getConfiguredOrigins([
+    process.env.NEXT_PUBLIC_CLIENT_ORIGIN,
+    process.env.NEXT_PUBLIC_WWW_ORIGIN,
+    process.env.NEXT_PUBLIC_BASE_APP_URL,
+  ]);
+}
+
 const staticCorsOrigins = new Set([
   getHostUrl(defaultHostConfig.client),
   getHostUrl(defaultHostConfig.server),
@@ -78,7 +82,7 @@ const staticCorsOrigins = new Set([
   "https://www.cmux.com",
   "https://manaflow.com",
   "https://www.manaflow.com",
-  ...additionalClientOrigins,
+  ...getConfiguredCorsOrigins(),
 ]);
 const trustedProxyDomains = buildTrustedProxyDomainSet([
   process.env.PVE_PUBLIC_DOMAIN,

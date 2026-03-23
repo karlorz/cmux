@@ -293,8 +293,10 @@ IMPORTANT: Respond ONLY with the JSON object, no other text.`;
         prompt: evaluationPrompt,
         maxRetries: 2,
         // Use outputFormat mode for Anthropic to avoid tool-use which CF gateway doesn't proxy correctly
+        // Also enable OpenAI structured outputs in case OpenAI fallback is used
         providerOptions: {
           anthropic: { structuredOutputMode: "outputFormat" },
+          openai: { structuredOutputs: true },
         },
       });
 
@@ -412,8 +414,10 @@ OUTPUT FORMAT (Markdown)
         prompt: summarizationPrompt,
         maxRetries: 2,
         // Use outputFormat mode for Anthropic to avoid tool-use which CF gateway doesn't proxy correctly
+        // Also enable OpenAI structured outputs in case OpenAI fallback is used
         providerOptions: {
           anthropic: { structuredOutputMode: "outputFormat" },
+          openai: { structuredOutputs: true },
         },
       });
 

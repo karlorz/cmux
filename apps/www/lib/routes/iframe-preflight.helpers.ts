@@ -1,4 +1,5 @@
 import { env } from "@/lib/utils/www-env";
+import { getConfiguredOriginHostnames } from "@/lib/utils/configured-origins";
 import type { IframePreflightResult } from "@cmux/shared";
 
 const ALLOWED_HOST_SUFFIXES = [
@@ -30,6 +31,17 @@ const ALLOWED_EXACT_HOSTS = new Set<string>([
 
 const DEV_ONLY_HOSTS = new Set<string>(["localhost", "127.0.0.1", "::1"]);
 
+function getDynamicAllowedExactHosts(): Set<string> {
+  return new Set(
+    getConfiguredOriginHostnames([
+      process.env.NEXT_PUBLIC_CLIENT_ORIGIN,
+      process.env.NEXT_PUBLIC_WWW_ORIGIN,
+      process.env.NEXT_PUBLIC_SERVER_ORIGIN,
+      process.env.NEXT_PUBLIC_BASE_APP_URL,
+    ]),
+  );
+}
+
 function getDynamicAllowedHostSuffixes(): string[] {
   const suffixes: string[] = [];
   if (env.PVE_PUBLIC_DOMAIN) {
@@ -42,6 +54,11 @@ export function isAllowedHost(hostname: string): boolean {
   const normalized = hostname.toLowerCase();
 
   if (ALLOWED_EXACT_HOSTS.has(normalized)) {
+    return true;
+  }
+
+  const dynamicExactHosts = getDynamicAllowedExactHosts();
+  if (dynamicExactHosts.has(normalized)) {
     return true;
   }
 
