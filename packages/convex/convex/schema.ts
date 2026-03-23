@@ -2008,7 +2008,11 @@ const convexSchema = defineSchema({
       v.literal("memory_pruned"), // Legacy alias for memory_updated with action=archive
       // Context health events (Phase 4)
       v.literal("context_warning"),
-      v.literal("context_compacted")
+      v.literal("context_compacted"),
+      // Operator input queue events
+      v.literal("operator_input_queued"),
+      v.literal("operator_input_drained"),
+      v.literal("queue_full_rejected")
     ),
     teamId: v.string(),
     taskId: v.optional(v.string()), // Related orchestration task ID
@@ -2023,6 +2027,27 @@ const convexSchema = defineSchema({
     .index("by_task", ["taskId", "createdAt"])
     .index("by_task_run", ["taskRunId", "createdAt"])
     .index("by_event_id", ["eventId"]),
+
+  // Operator input queue for steering head agents during active turns
+  // Bounded queue that holds operator instructions until next turn boundary
+  operatorInputQueue: defineTable({
+    orchestrationId: v.string(), // Orchestration this input is for
+    taskRunId: v.optional(v.id("taskRuns")), // Specific task run (optional)
+    teamId: v.string(),
+    userId: v.string(), // User who submitted the input
+    content: v.string(), // The steering instruction
+    priority: v.union(
+      v.literal("high"), // Process first (interrupts, urgent corrections)
+      v.literal("normal"), // Default priority
+      v.literal("low") // Background guidance
+    ),
+    queuedAt: v.number(), // When input was queued
+    processedAt: v.optional(v.number()), // When input was drained (null = pending)
+    drainedBatchId: v.optional(v.string()), // Groups inputs drained together
+  })
+    .index("by_orchestration_pending", ["orchestrationId", "processedAt", "priority", "queuedAt"])
+    .index("by_task_run_pending", ["taskRunId", "processedAt", "priority", "queuedAt"])
+    .index("by_team", ["teamId", "queuedAt"]),
 
   // Provider session bindings for task-bound resume and continuity
   // Persists provider-specific session IDs (Claude session, Codex thread) per task

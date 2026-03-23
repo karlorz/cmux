@@ -45,6 +45,7 @@ export * from "./mcp-form";
 export * from "./mcp-preview";
 export * from "./agent-comm-events";
 export * from "./a2a-protocol";
+export * from "./approval-risk-classifier";
 export * from "./timezone-constants";
 // Note: useNetwork hook is NOT exported here to avoid SSR issues.
 // Import directly from "@cmux/shared/hooks/use-network" in client components.

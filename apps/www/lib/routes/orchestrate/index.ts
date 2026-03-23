@@ -20,6 +20,7 @@ import { orchestrateSessionsRouter } from "./sessions.route";
 import { orchestrateEventsRouter } from "./events.route";
 import { orchestrateApprovalsRouter } from "./approvals.route";
 import { orchestrateLearningRouter } from "./learning.route";
+import { orchestrateInputRouter } from "./input.route";
 
 export const orchestrateRouter = new OpenAPIHono();
 
@@ -30,6 +31,7 @@ orchestrateRouter.route("/", orchestrateSessionsRouter);
 orchestrateRouter.route("/", orchestrateEventsRouter);
 orchestrateRouter.route("/", orchestrateApprovalsRouter);
 orchestrateRouter.route("/", orchestrateLearningRouter);
+orchestrateRouter.route("/", orchestrateInputRouter);
 
 // Re-export for backwards compatibility
 export { orchestrateTasksRouter } from "./tasks.route";
@@ -38,3 +40,4 @@ export { orchestrateSessionsRouter } from "./sessions.route";
 export { orchestrateEventsRouter } from "./events.route";
 export { orchestrateApprovalsRouter } from "./approvals.route";
 export { orchestrateLearningRouter } from "./learning.route";
+export { orchestrateInputRouter } from "./input.route";
