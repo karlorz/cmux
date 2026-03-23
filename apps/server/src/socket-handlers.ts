@@ -68,6 +68,7 @@ import {
 import { refreshGitHubData } from "./utils/refreshGitHubData";
 import { runWithAuth, runWithAuthToken } from "./utils/requestContext";
 import { extractSandboxStartError } from "./utils/sandboxErrors";
+import { buildTaskRunCreateArgs } from "./utils/taskRunCreateArgs";
 import { getWwwClient } from "./utils/wwwClient";
 import { getWwwOpenApiModule } from "./utils/wwwOpenApiModule";
 import { CmuxVSCodeInstance } from "./vscode/CmuxVSCodeInstance";
@@ -2204,13 +2205,17 @@ export function setupSocketHandlers(
 
           // Create a taskRun for the workspace
           const now = Date.now();
-          const taskRunResult = await convex.mutation(api.taskRuns.create, {
-            teamSlugOrId,
-            taskId,
-            prompt: "Cloud Workspace",
-            agentName: "cloud-workspace",
-            environmentId,
-          });
+          const taskRunResult = await convex.mutation(
+            api.taskRuns.create,
+            buildTaskRunCreateArgs({
+              teamSlugOrId,
+              taskId,
+              prompt: "Cloud Workspace",
+              agentName: "cloud-workspace",
+              environmentId,
+              isOrchestrationHead: true,
+            }),
+          );
           taskRunId = taskRunResult.taskRunId;
           const taskRunJwt = taskRunResult.jwt;
 

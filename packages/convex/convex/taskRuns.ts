@@ -630,6 +630,7 @@ export const create = authMutation({
     agentName: v.optional(v.string()),
     newBranch: v.optional(v.string()),
     environmentId: v.optional(v.id("environments")),
+    isOrchestrationHead: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
@@ -666,6 +667,7 @@ export const create = authMutation({
       environmentId: args.environmentId,
       isLocalWorkspace: task.isLocalWorkspace,
       isCloudWorkspace: task.isCloudWorkspace,
+      isOrchestrationHead: args.isOrchestrationHead,
     });
 
     // Update task's lastActivityAt for sorting
