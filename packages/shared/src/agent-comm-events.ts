@@ -332,6 +332,50 @@ export interface MemoryUpdatedEvent extends AgentCommEventBase {
 }
 
 // =============================================================================
+// Operator Input Queue Events (Active-Turn Steering)
+// =============================================================================
+
+/**
+ * An operator input was queued for the next turn boundary.
+ */
+export interface OperatorInputQueuedEvent extends AgentCommEventBase {
+  type: "operator_input_queued";
+  taskId?: string;
+  taskRunId?: string;
+  inputId: string;
+  priority: "high" | "normal" | "low";
+  queueDepth: number;
+  queueCapacity: number;
+  userId: string;
+}
+
+/**
+ * Operator inputs were drained and merged at turn boundary.
+ */
+export interface OperatorInputDrainedEvent extends AgentCommEventBase {
+  type: "operator_input_drained";
+  taskId?: string;
+  taskRunId?: string;
+  batchId: string;
+  inputCount: number;
+  mergedContentLength: number;
+  inputIds: string[];
+}
+
+/**
+ * An operator input was rejected because the queue is at capacity.
+ */
+export interface QueueFullRejectedEvent extends AgentCommEventBase {
+  type: "queue_full_rejected";
+  taskId?: string;
+  taskRunId?: string;
+  queueDepth: number;
+  queueCapacity: number;
+  rejectedContent: string;
+  userId: string;
+}
+
+// =============================================================================
 // Context Health Events (Phase 4: Context Pressure Visibility)
 // =============================================================================
 
@@ -402,7 +446,11 @@ export type AgentCommEvent =
   | MemoryUpdatedEvent
   // Context Health Events (Phase 4)
   | ContextWarningEvent
-  | ContextCompactedEvent;
+  | ContextCompactedEvent
+  // Operator Input Queue Events
+  | OperatorInputQueuedEvent
+  | OperatorInputDrainedEvent
+  | QueueFullRejectedEvent;
 
 /**
  * Extract event type string from event union.
