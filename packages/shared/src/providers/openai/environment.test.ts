@@ -1105,4 +1105,44 @@ printf '{"decision":"block","reason":"autopilot"}\\n'
     // Should NOT set OPENAI_BASE_URL
     expect(result.env?.OPENAI_BASE_URL).toBeUndefined();
   });
+
+  it("injects orchestration head env vars when isOrchestrationHead is true", async () => {
+    const result = await getOpenAIEnvironment({
+      isOrchestrationHead: true,
+      taskRunJwt: "test-jwt-token",
+      orchestrationEnv: {
+        CMUX_SERVER_URL: "https://server.example.com",
+        CMUX_API_BASE_URL: "https://api.example.com",
+      },
+      orchestrationOptions: {
+        orchestrationId: "orch-123",
+      },
+    } as never);
+
+    // Shell env vars should be set for durable access
+    expect(result.env?.CMUX_IS_ORCHESTRATION_HEAD).toBe("1");
+    expect(result.env?.CMUX_SERVER_URL).toBe("https://server.example.com");
+    expect(result.env?.CMUX_API_BASE_URL).toBe("https://api.example.com");
+    expect(result.env?.CMUX_TASK_RUN_JWT).toBe("test-jwt-token");
+    expect(result.env?.CMUX_ORCHESTRATION_ID).toBe("orch-123");
+
+    // MCP config should also include orchestration env
+    const toml = decodeConfigToml(result);
+    expect(toml).toContain('CMUX_IS_ORCHESTRATION_HEAD = "1"');
+    expect(toml).toContain('CMUX_TASK_RUN_JWT = "test-jwt-token"');
+  });
+
+  it("does not inject orchestration head env vars when isOrchestrationHead is false", async () => {
+    const result = await getOpenAIEnvironment({
+      isOrchestrationHead: false,
+      taskRunJwt: "test-jwt-token",
+      orchestrationEnv: {
+        CMUX_SERVER_URL: "https://server.example.com",
+      },
+    } as never);
+
+    // Should NOT have head agent env vars
+    expect(result.env?.CMUX_IS_ORCHESTRATION_HEAD).toBeUndefined();
+    expect(result.env?.CMUX_SERVER_URL).toBeUndefined();
+  });
 });
