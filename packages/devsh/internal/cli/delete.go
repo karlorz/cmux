@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/karlorz/devsh/internal/auth"
+	"github.com/karlorz/devsh/internal/e2b"
 	"github.com/karlorz/devsh/internal/provider"
 	"github.com/karlorz/devsh/internal/pvelxc"
 	"github.com/karlorz/devsh/internal/vm"
@@ -62,6 +63,21 @@ Examples:
 
 			if err := client.StopInstance(ctx, instanceID); err != nil {
 				return fmt.Errorf("failed to delete VM: %w", err)
+			}
+		case provider.E2B:
+			teamSlug, err := auth.GetTeamSlug()
+			if err != nil {
+				return fmt.Errorf("failed to get team: %w", err)
+			}
+
+			client, err := e2b.NewClient()
+			if err != nil {
+				return fmt.Errorf("failed to create E2B client: %w", err)
+			}
+			client.SetTeamSlug(teamSlug)
+
+			if err := client.StopInstance(ctx, instanceID); err != nil {
+				return fmt.Errorf("failed to delete sandbox: %w", err)
 			}
 		default:
 			return fmt.Errorf("unsupported provider: %s", selected)

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/karlorz/devsh/internal/auth"
+	"github.com/karlorz/devsh/internal/e2b"
 	"github.com/karlorz/devsh/internal/provider"
 	"github.com/karlorz/devsh/internal/pvelxc"
 	"github.com/karlorz/devsh/internal/state"
@@ -121,6 +122,44 @@ Examples:
 			fmt.Printf("  ID:       %s\n", instance.ID)
 			fmt.Printf("  VS Code:  %s\n", codeAuthURL)
 			fmt.Printf("  VNC:      %s\n", vncAuthURL)
+			return nil
+		case provider.E2B:
+			teamSlug, err := auth.GetTeamSlug()
+			if err != nil {
+				return fmt.Errorf("failed to get team: %w", err)
+			}
+
+			client, err := e2b.NewClient()
+			if err != nil {
+				return fmt.Errorf("failed to create E2B client: %w", err)
+			}
+			client.SetTeamSlug(teamSlug)
+
+			if err := client.ResumeInstance(ctx, instanceID); err != nil {
+				return fmt.Errorf("failed to resume sandbox: %w", err)
+			}
+
+			// Wait for ready
+			fmt.Println("Waiting for sandbox to be ready...")
+			instance, err := client.WaitForReady(ctx, instanceID, 2*time.Minute)
+			if err != nil {
+				return fmt.Errorf("sandbox failed to resume: %w", err)
+			}
+
+			// Save as last used
+			state.SetLastInstance(instanceID, teamSlug)
+
+			fmt.Println("\n✓ Sandbox resumed!")
+			fmt.Printf("  ID:       %s\n", instance.ID)
+			if instance.VSCodeURL != "" {
+				fmt.Printf("  VS Code:  %s\n", instance.VSCodeURL)
+			}
+			if instance.VNCURL != "" {
+				fmt.Printf("  VNC:      %s\n", instance.VNCURL)
+			}
+			if instance.XTermURL != "" {
+				fmt.Printf("  XTerm:    %s\n", instance.XTermURL)
+			}
 			return nil
 		default:
 			return fmt.Errorf("unsupported provider: %s", selected)
