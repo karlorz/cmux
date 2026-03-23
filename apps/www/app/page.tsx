@@ -19,6 +19,7 @@ import cmuxDemo2 from "@/docs/assets/cmux2.png";
 import cmuxDemo3 from "@/docs/assets/cmux3.png";
 import { fetchLatestRelease } from "@/lib/fetch-latest-release";
 import { fetchGithubRepoStats } from "@/lib/fetch-github-stars";
+import { env } from "@/lib/utils/www-env";
 
 const heroHighlights = [
   {
@@ -151,6 +152,8 @@ const verificationHighlights = [
 export default async function LandingPage() {
   const [{ fallbackUrl, latestVersion, macDownloadUrls }, githubRepo] =
     await Promise.all([fetchLatestRelease(), fetchGithubRepoStats()]);
+  const webUrl = env.NEXT_PUBLIC_CLIENT_ORIGIN ?? "https://cmux.karldigi.dev";
+  const webHostname = new URL(webUrl).host;
 
   return (
     <div className="relative flex min-h-dvh flex-col bg-[#030712] text-foreground">
@@ -164,14 +167,14 @@ export default async function LandingPage() {
       </div>
 
       <a
-        href="https://cmux.com/"
+        href={webUrl}
         target="_blank"
         rel="noopener noreferrer"
         className="group relative z-10 flex items-center justify-center gap-2.5 bg-sky-950/80 px-4 py-2.5 text-sm transition-colors hover:bg-sky-900/80"
       >
         <CmuxIcon className="h-3.5 w-3.5" aria-hidden />
         <span className="text-sky-100/90">
-          <span className="font-medium text-white">cmux.com</span>
+          <span className="font-medium text-white">{webHostname}</span>
           <span className="hidden sm:inline"> — The Open Source Terminal for Coding Agents</span>
         </span>
         <ArrowRight className="h-3.5 w-3.5 text-sky-300/60 transition-transform group-hover:translate-x-0.5 group-hover:text-sky-200" aria-hidden />
@@ -183,6 +186,7 @@ export default async function LandingPage() {
         macDownloadUrls={macDownloadUrls}
         githubStars={githubRepo.stars}
         githubUrl={githubRepo.url}
+        webUrl={webUrl}
       />
 
       <main className="relative z-10 flex-1">
@@ -226,7 +230,7 @@ export default async function LandingPage() {
               <div className="flex flex-col gap-3 sm:flex-row">
                 <a
                   className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/20 bg-white px-4 py-3 text-sm font-semibold text-black shadow-xl transition hover:bg-neutral-100"
-                  href="https://cmux.sh"
+                  href={webUrl}
                   rel="noopener noreferrer"
                   target="_blank"
                 >

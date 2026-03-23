@@ -83,7 +83,9 @@ const DEFAULT_PROXY_LOGGING_ENABLED = envFlagEnabled(
   process.env.CMUX_PREVIEW_PROXY_LOG ?? process.env.CMUX_PREVIEW_PROXY_LOGGING,
   false
 );
-const CMUX_DOMAINS = [
+// Legacy compatibility only. These alias domains are inherited from upstream
+// routing patterns and should not be treated as this fork's owned defaults.
+const LEGACY_CMUX_ALIAS_DOMAINS = [
   "cmux.app",
   "cmux.sh",
   "cmux.dev",
@@ -118,7 +120,7 @@ const ENABLE_TLS_MITM =
 interface ProxyRoute {
   morphId: string;
   scope: string;
-  domainSuffix: (typeof CMUX_DOMAINS)[number];
+  domainSuffix: (typeof LEGACY_CMUX_ALIAS_DOMAINS)[number];
   cmuxProxyOrigin?: string;
 }
 
@@ -282,7 +284,8 @@ export async function configurePreviewProxyForView(
   });
   const route = deriveRoute(initialUrl);
   if (!route) {
-    logger.warn("Preview proxy skipped; unable to parse cmux host", {
+    logger.warn("Preview proxy skipped; unable to parse preview route", {
+      // Route parsing supports direct Morph/PVE proxy URLs plus legacy alias hosts.
       url: initialUrl,
       persistKey,
     });
@@ -2329,7 +2332,7 @@ function deriveRoute(url: string): ProxyRoute | null {
         };
       }
     }
-    for (const domain of CMUX_DOMAINS) {
+    for (const domain of LEGACY_CMUX_ALIAS_DOMAINS) {
       const suffix = `.${domain}`;
       if (!hostname.endsWith(suffix)) {
         continue;
