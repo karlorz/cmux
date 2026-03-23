@@ -52,6 +52,7 @@ export function SwipeReviewUI({
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [currentComment, setCurrentComment] = useState("");
   const [showCommentInput, setShowCommentInput] = useState(false);
+  const [enqueueForMerge, setEnqueueForMerge] = useState(true);
 
   // Fetch or create session
   const session = useQuery(
@@ -320,18 +321,23 @@ export function SwipeReviewUI({
     if (!initialSessionId) return;
 
     try {
-      await completeSession({
+      const result = await completeSession({
         teamSlugOrId,
         sessionId: initialSessionId as Id<"prReviewSessions">,
         submitToGitHub: true,
+        enqueueForMerge,
       });
 
-      toast.success("Review completed!");
+      if (result.enqueuedForMerge) {
+        toast.success("Review completed and PR queued for merge!");
+      } else {
+        toast.success("Review completed!");
+      }
     } catch (err) {
       console.error("Failed to complete review:", err);
       toast.error("Failed to complete review");
     }
-  }, [initialSessionId, teamSlugOrId, completeSession]);
+  }, [initialSessionId, teamSlugOrId, completeSession, enqueueForMerge]);
 
   // Loading state
   if (!session && initialSessionId) {
@@ -387,6 +393,15 @@ export function SwipeReviewUI({
             <Zap className="w-4 h-4 mr-1" />
             Auto-approve low risk
           </Button>
+          <label className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
+            <input
+              type="checkbox"
+              checked={enqueueForMerge}
+              onChange={(e) => setEnqueueForMerge(e.target.checked)}
+              className="rounded border-neutral-300 dark:border-neutral-600"
+            />
+            Queue for merge
+          </label>
           <Button
             size="sm"
             onClick={handleComplete}
