@@ -13,7 +13,7 @@
     {
       "publisher": "ms-vscode",
       "name": "vscode-typescript-next",
-      "version": "6.0.20260319"
+      "version": "6.0.20260321"
     },
     {
       "publisher": "ms-python",
@@ -33,7 +33,7 @@
     "opencode-ai": "1.2.27",
     "codebuff": "1.0.633",
     "@devcontainers/cli": "0.84.1",
-    "@sourcegraph/amp": "0.0.1774037043-gf69b11",
+    "@sourcegraph/amp": "0.0.1774195348-g48946d",
     "devsh": "0.1.22"
   }
 }

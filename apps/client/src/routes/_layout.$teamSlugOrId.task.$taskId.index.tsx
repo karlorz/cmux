@@ -31,7 +31,6 @@ import {
 } from "@/lib/persistent-webview-keys";
 import {
   resolveBrowserPreviewUrl,
-  resolveBrowserPreviewWebsocketUrl,
   toMorphXtermBaseUrl,
 } from "@/lib/toProxyWorkspaceUrl";
 import { getWorkspaceUrl } from "@/lib/workspace-url";
@@ -726,15 +725,6 @@ function TaskDetailPage() {
       }),
     [rawBrowserUrl, selectedRun?.vscode?.vncUrl]
   );
-  // WebSocket URL for direct VncViewer connection (preferred over iframe)
-  const vncWebsocketUrl = useMemo(
-    () =>
-      resolveBrowserPreviewWebsocketUrl({
-        vncUrl: selectedRun?.vscode?.vncUrl,
-        workspaceUrl: rawBrowserUrl,
-      }),
-    [rawBrowserUrl, selectedRun?.vscode?.vncUrl]
-  );
   const browserPersistKey = selectedRunId
     ? getTaskRunBrowserPersistKey(selectedRunId)
     : null;
@@ -965,7 +955,6 @@ function TaskDetailPage() {
       workspacePlaceholder,
       rawWorkspaceUrl,
       browserUrl,
-      vncWebsocketUrl,
       browserPersistKey,
       browserStatus,
       setBrowserStatus: handleBrowserStatusChange,
@@ -1007,7 +996,6 @@ function TaskDetailPage() {
       workspacePlaceholder,
       rawWorkspaceUrl,
       browserUrl,
-      vncWebsocketUrl,
       browserPersistKey,
       browserStatus,
       handleBrowserStatusChange,
