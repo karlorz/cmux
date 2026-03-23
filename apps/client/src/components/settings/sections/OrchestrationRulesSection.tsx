@@ -2,7 +2,7 @@ import { SettingSection } from "@/components/settings/SettingSection";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormDialog } from "@/components/ui/form-dialog";
-import { Check, Loader2, Plus } from "lucide-react";
+import { Check, ChevronDown, Loader2, Plus } from "lucide-react";
 import { useCallback, useState } from "react";
 import { RulesList } from "./RulesList";
 import { SkillsList } from "./SkillsList";
@@ -17,19 +17,30 @@ interface OrchestrationRulesSectionProps {
   teamSlugOrId: string;
 }
 
-const TAB_DEFINITIONS: { key: TabView; label: string }[] = [
+// Default tabs shown to all users
+const DEFAULT_TABS: { key: TabView; label: string }[] = [
   { key: "active", label: "Active" },
   { key: "candidates", label: "Candidates" },
+];
+
+// Advanced tab for skill candidates (hidden by default)
+const ADVANCED_TABS: { key: TabView; label: string }[] = [
   { key: "skills", label: "Skill Candidates" },
 ];
 
 export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSectionProps) {
   const [activeTab, setActiveTab] = useState<TabView>("active");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [suppressTarget, setSuppressTarget] = useState<OrchestrationRule | null>(null);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addForm, setAddForm] = useState({ text: "", lane: "hot" as RuleLane });
   const [promoteTarget, setPromoteTarget] = useState<OrchestrationRule | null>(null);
   const [promoteForm, setPromoteForm] = useState({ text: "", lane: "hot" as RuleLane });
+
+  // Combine tabs based on advanced mode
+  const visibleTabs = showAdvanced
+    ? [...DEFAULT_TABS, ...ADVANCED_TABS]
+    : DEFAULT_TABS;
 
   const {
     filteredActiveRules,
@@ -104,20 +115,45 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
       {/* Tab bar */}
       <div className="border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
         <div className="flex items-center justify-between gap-4">
-          <div className="flex gap-1">
-            {TAB_DEFINITIONS.map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => setActiveTab(key)}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                  activeTab === key
-                    ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
-                    : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
-                }`}
-              >
-                {label} ({tabCounts[key]})
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <div className="flex gap-1">
+              {visibleTabs.map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setActiveTab(key)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                    activeTab === key
+                      ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
+                      : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                  }`}
+                >
+                  {label} ({tabCounts[key]})
+                </button>
+              ))}
+            </div>
+            {/* Advanced toggle */}
+            <button
+              onClick={() => {
+                setShowAdvanced(!showAdvanced);
+                // Reset to default tab if hiding advanced and currently on skills
+                if (showAdvanced && activeTab === "skills") {
+                  setActiveTab("active");
+                }
+              }}
+              className={`flex items-center gap-1 rounded-md px-2 py-1.5 text-xs transition-colors ${
+                showAdvanced
+                  ? "text-neutral-900 dark:text-neutral-100"
+                  : "text-neutral-400 hover:text-neutral-600 dark:text-neutral-500 dark:hover:text-neutral-300"
+              }`}
+              title={showAdvanced ? "Hide advanced options" : "Show advanced options"}
+            >
+              <ChevronDown
+                className={`h-3.5 w-3.5 transition-transform ${showAdvanced ? "rotate-180" : ""}`}
+              />
+              {!showAdvanced && tabCounts.skills > 0 && (
+                <span className="text-neutral-400">+{tabCounts.skills}</span>
+              )}
+            </button>
           </div>
           <div className="flex items-center gap-2">
             {activeTab === "candidates" && selectedRuleIds.size > 0 && (

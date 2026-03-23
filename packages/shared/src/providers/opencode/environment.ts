@@ -5,13 +5,14 @@ import type {
 import {
   getMemoryStartupCommand,
   getMemorySeedFiles,
-  getMemoryProtocolInstructions,
   getProjectContextFile,
-  getPolicyRulesInstructions,
-  getOrchestrationRulesInstructions,
-  extractBehaviorRulesSection,
 } from "../../agent-memory-protocol";
+import { buildGenericInstructionsContent } from "../../agent-instruction-pack";
 import { buildOpencodeMcpConfig } from "../../mcp-injection";
+import {
+  buildSessionStartHook,
+  buildErrorHook,
+} from "../../provider-lifecycle-adapter";
 
 // Opencode HTTP API configuration
 export const OPENCODE_HTTP_HOST = "127.0.0.1";
@@ -150,52 +151,23 @@ ls -la "\${MARKER_FILE}" >> "\${LOG_FILE}" 2>&1
     mode: "755",
   });
 
-  // Session start hook - posts activity event when OpenCode session begins
-  const sessionStartHook = `#!/bin/bash
-set -eu
-LOG_FILE="/root/lifecycle/opencode-hook.log"
-if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
-  exit 0
-fi
-# Post session start activity event (non-blocking)
-(
-  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
-    -H "Content-Type: application/json" \\
-    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
-    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" \\
-         '{taskRunId: $trid, type: "session_start", toolName: "opencode", summary: "Session started"}')" \\
-    >> "\${LOG_FILE}" 2>&1 || true
-) &
-exit 0
-`;
+  // Session start and error hooks use shared adapter
+  // (completion hook remains custom due to task-specific marker file logic)
+  const lifecycleCtx = {
+    provider: "opencode" as const,
+    taskRunId: ctx.taskRunId,
+  };
+  const sessionStartScript = buildSessionStartHook(lifecycleCtx);
   files.push({
     destinationPath: "/root/lifecycle/opencode/session-start-hook.sh",
-    contentBase64: Buffer.from(sessionStartHook).toString("base64"),
+    contentBase64: Buffer.from(sessionStartScript).toString("base64"),
     mode: "755",
   });
 
-  // Error hook - surfaces errors to dashboard
-  const errorHook = `#!/bin/bash
-set -eu
-LOG_FILE="/root/lifecycle/opencode-hook.log"
-ERROR_MSG="\${1:-Unknown error}"
-if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
-  exit 0
-fi
-# Post error activity event (non-blocking)
-(
-  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
-    -H "Content-Type: application/json" \\
-    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
-    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" --arg msg "$ERROR_MSG" \\
-         '{taskRunId: $trid, type: "error", toolName: "opencode", summary: $msg}')" \\
-    >> "\${LOG_FILE}" 2>&1 || true
-) &
-exit 0
-`;
+  const errorScript = buildErrorHook(lifecycleCtx);
   files.push({
     destinationPath: "/root/lifecycle/opencode/error-hook.sh",
-    contentBase64: Buffer.from(errorHook).toString("base64"),
+    contentBase64: Buffer.from(errorScript).toString("base64"),
     mode: "755",
   });
 
@@ -568,19 +540,12 @@ log "Post-start script end"
   }
 
   // Add AGENTS.md with memory protocol instructions at the user-level OpenCode path
-  const policyRulesSection = ctx.policyRules && ctx.policyRules.length > 0
-    ? `\n${getPolicyRulesInstructions(ctx.policyRules)}\n`
-    : "";
-  const orchestrationRulesSection = ctx.orchestrationRules && ctx.orchestrationRules.length > 0
-    ? `\n${getOrchestrationRulesInstructions(ctx.orchestrationRules, { isOrchestrationHead: ctx.isOrchestrationHead })}\n`
-    : "";
-  const behaviorRulesSection = ctx.previousBehavior
-    ? `\n${extractBehaviorRulesSection(ctx.previousBehavior)}\n`
-    : "";
-  const opencodeAgentsContent = `# cmux Project Instructions
-${policyRulesSection}${orchestrationRulesSection}${behaviorRulesSection}
-${getMemoryProtocolInstructions()}
-`;
+  const opencodeAgentsContent = buildGenericInstructionsContent({
+    policyRules: ctx.policyRules,
+    orchestrationRules: ctx.orchestrationRules,
+    previousBehavior: ctx.previousBehavior,
+    isOrchestrationHead: ctx.isOrchestrationHead,
+  }, "# cmux Project Instructions");
   files.push({
     destinationPath: "$HOME/.config/opencode/AGENTS.md",
     contentBase64: Buffer.from(opencodeAgentsContent).toString("base64"),
@@ -604,6 +569,13 @@ ${getMemoryProtocolInstructions()}
     ).toString("base64"),
     mode: "644",
   });
+
+  // Provider config override for custom API endpoints
+  // OpenCode uses provider-specific env vars; override Anthropic base URL
+  // since that's the primary model provider for OpenCode
+  if (ctx.providerConfig?.isOverridden && ctx.providerConfig.baseUrl) {
+    env.ANTHROPIC_BASE_URL = ctx.providerConfig.baseUrl;
+  }
 
   return { files, env, startupCommands, postStartCommands: [] };
 }

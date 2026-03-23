@@ -374,6 +374,7 @@ export const complete = authMutation({
     teamSlugOrId: v.string(),
     sessionId: v.id("prReviewSessions"),
     submitToGitHub: v.optional(v.boolean()),
+    enqueueForMerge: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const teamId = await getTeamId(ctx, args.teamSlugOrId);
@@ -419,7 +420,60 @@ export const complete = authMutation({
       );
     }
 
-    return { ok: true };
+    // Enqueue to merge queue if all files approved
+    const allApproved =
+      session.approvedFiles === session.totalFiles && session.totalFiles > 0;
+    if (
+      args.enqueueForMerge &&
+      allApproved &&
+      session.repoFullName &&
+      session.prNumber &&
+      session.prUrl
+    ) {
+      // Calculate average risk score from heatmap data
+      let riskScore: number | undefined;
+      if (session.heatmapData) {
+        try {
+          const heatmap = JSON.parse(session.heatmapData);
+          if (heatmap.files && Array.isArray(heatmap.files)) {
+            const scores = heatmap.files
+              .map((f: { heatmap?: { overallRiskScore?: number } }) =>
+                f.heatmap?.overallRiskScore
+              )
+              .filter((s: unknown): s is number => typeof s === "number");
+            if (scores.length > 0) {
+              riskScore = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+            }
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      }
+
+      // Get current queue size for position
+      const queuedItems = await ctx.db
+        .query("prMergeQueue")
+        .withIndex("by_team_status", (q) =>
+          q.eq("teamId", teamId).eq("status", "queued")
+        )
+        .collect();
+
+      await ctx.db.insert("prMergeQueue", {
+        teamId,
+        userId,
+        repoFullName: session.repoFullName,
+        prNumber: session.prNumber,
+        prUrl: session.prUrl,
+        sessionId: args.sessionId,
+        status: "queued",
+        position: queuedItems.length,
+        riskScore,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    return { ok: true, enqueuedForMerge: args.enqueueForMerge && allApproved };
   },
 });
 

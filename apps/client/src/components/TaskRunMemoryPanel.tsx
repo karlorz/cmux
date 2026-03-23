@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
-import { Brain, FileText, Calendar, CheckSquare, Mail, AlertCircle, Clock, ArrowRight, Megaphone, MessageSquare, CheckCheck, Zap, ListChecks, FolderTree, Sparkles, Eye } from "lucide-react";
+import { Brain, FileText, Calendar, CheckSquare, Mail, AlertCircle, Clock, ArrowRight, Megaphone, MessageSquare, CheckCheck, Zap, ListChecks, FolderTree, Sparkles, Eye, Activity, ChevronDown, ChevronUp, TriangleAlert, Layers } from "lucide-react";
 import clsx from "clsx";
 
 export interface TaskRunMemoryPanelProps {
@@ -58,6 +58,7 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
   const [selectedCategory, setSelectedCategory] = useState<MemoryCategory>("factual");
   const [selectedType, setSelectedType] = useState<MemoryType>("knowledge");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [showHealthDetails, setShowHealthDetails] = useState(false);
 
   const snapshots = useQuery(
     api.agentMemoryQueries.getByTaskRun,
@@ -68,6 +69,12 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
   const provenance = useQuery(
     api.agentMemoryQueries.getBehaviorRulesForTaskRun,
     taskRunId ? { teamSlugOrId, taskRunId } : "skip"
+  );
+
+  // Query context health summary (P5)
+  const contextHealth = useQuery(
+    api.taskRuns.getContextHealth,
+    taskRunId ? { teamSlugOrId, id: taskRunId } : "skip"
   );
 
   // Group snapshots by type
@@ -344,6 +351,15 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {/* Context Health Summary (P5) */}
+      {contextHealth && (
+        <ContextHealthSummary
+          health={contextHealth}
+          expanded={showHealthDetails}
+          onToggle={() => setShowHealthDetails(!showHealthDetails)}
+        />
+      )}
+
       {/* Category selector */}
       <div className="flex items-center gap-1 border-b border-neutral-200 px-2 py-1.5 dark:border-neutral-800">
         {renderCategoryButton("factual", "Factual", Brain)}
@@ -787,6 +803,198 @@ function BehaviorProvenanceView({ provenance }: { provenance: { rules: unknown[]
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// Context health summary type
+interface ContextHealthData {
+  taskRunId: string;
+  provider: string;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  contextWindow?: number;
+  usagePercent?: number;
+  latestWarningSeverity: "info" | "warning" | "critical" | null;
+  topWarningReasons: string[];
+  warningCount: number;
+  recentCompactionCount: number;
+  lastUpdatedAt?: number;
+}
+
+// Context health summary component (P5)
+function ContextHealthSummary({
+  health,
+  expanded,
+  onToggle,
+}: {
+  health: ContextHealthData;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const usagePercent = health.usagePercent ?? 0;
+  const hasWarnings = health.warningCount > 0;
+  const hasCompactions = health.recentCompactionCount > 0;
+
+  // Determine overall status color
+  const statusColor =
+    health.latestWarningSeverity === "critical"
+      ? "text-red-600 dark:text-red-400"
+      : health.latestWarningSeverity === "warning"
+        ? "text-amber-600 dark:text-amber-400"
+        : usagePercent > 80
+          ? "text-amber-600 dark:text-amber-400"
+          : "text-green-600 dark:text-green-400";
+
+  const bgColor =
+    health.latestWarningSeverity === "critical"
+      ? "bg-red-50 dark:bg-red-900/20"
+      : health.latestWarningSeverity === "warning"
+        ? "bg-amber-50 dark:bg-amber-900/20"
+        : "bg-neutral-50 dark:bg-neutral-900";
+
+  // Format token counts
+  const formatTokens = (n: number) => {
+    if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+    return n.toString();
+  };
+
+  return (
+    <div className={clsx("border-b border-neutral-200 dark:border-neutral-800", bgColor)}>
+      {/* Compact summary row (always visible) */}
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50"
+      >
+        <Activity className={clsx("size-4", statusColor)} />
+        <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+          Context Health
+        </span>
+
+        {/* Quick stats */}
+        <div className="flex items-center gap-3 text-xs text-neutral-500 dark:text-neutral-400">
+          {health.contextWindow && (
+            <span title="Context usage">
+              {Math.round(usagePercent)}% of {formatTokens(health.contextWindow)}
+            </span>
+          )}
+          {hasCompactions && (
+            <span className="flex items-center gap-1" title="Compactions">
+              <Layers className="size-3" />
+              {health.recentCompactionCount}
+            </span>
+          )}
+          {hasWarnings && (
+            <span
+              className={clsx(
+                "flex items-center gap-1",
+                health.latestWarningSeverity === "critical"
+                  ? "text-red-600 dark:text-red-400"
+                  : "text-amber-600 dark:text-amber-400"
+              )}
+              title="Warnings"
+            >
+              <TriangleAlert className="size-3" />
+              {health.warningCount}
+            </span>
+          )}
+        </div>
+
+        <span className="ml-auto">
+          {expanded ? (
+            <ChevronUp className="size-4 text-neutral-400" />
+          ) : (
+            <ChevronDown className="size-4 text-neutral-400" />
+          )}
+        </span>
+      </button>
+
+      {/* Expanded details */}
+      {expanded && (
+        <div className="border-t border-neutral-200 px-3 py-2 dark:border-neutral-700">
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            {/* Token usage */}
+            <div>
+              <span className="font-medium text-neutral-600 dark:text-neutral-400">Tokens</span>
+              <div className="mt-1 flex items-center gap-2 text-neutral-700 dark:text-neutral-300">
+                <span>In: {formatTokens(health.totalInputTokens)}</span>
+                <span>Out: {formatTokens(health.totalOutputTokens)}</span>
+              </div>
+            </div>
+
+            {/* Context window */}
+            {health.contextWindow && (
+              <div>
+                <span className="font-medium text-neutral-600 dark:text-neutral-400">Context</span>
+                <div className="mt-1">
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 flex-1 rounded-full bg-neutral-200 dark:bg-neutral-700">
+                      <div
+                        className={clsx(
+                          "h-full rounded-full transition-all",
+                          usagePercent > 90
+                            ? "bg-red-500"
+                            : usagePercent > 80
+                              ? "bg-amber-500"
+                              : "bg-green-500"
+                        )}
+                        style={{ width: `${Math.min(usagePercent, 100)}%` }}
+                      />
+                    </div>
+                    <span className="text-neutral-600 dark:text-neutral-400">
+                      {Math.round(usagePercent)}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Compactions */}
+            <div>
+              <span className="font-medium text-neutral-600 dark:text-neutral-400">Compactions</span>
+              <div className="mt-1 flex items-center gap-1 text-neutral-700 dark:text-neutral-300">
+                <Layers className="size-3" />
+                {health.recentCompactionCount} recent
+              </div>
+            </div>
+
+            {/* Provider */}
+            <div>
+              <span className="font-medium text-neutral-600 dark:text-neutral-400">Provider</span>
+              <div className="mt-1 text-neutral-700 dark:text-neutral-300">
+                {health.provider}
+              </div>
+            </div>
+          </div>
+
+          {/* Warning reasons */}
+          {health.topWarningReasons.length > 0 && (
+            <div className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 dark:border-amber-800 dark:bg-amber-900/20">
+              <span className="text-xs font-medium text-amber-800 dark:text-amber-300">
+                Warnings
+              </span>
+              <ul className="mt-1 space-y-0.5 text-xs text-amber-700 dark:text-amber-400">
+                {health.topWarningReasons.map((reason, i) => (
+                  <li key={i} className="flex items-start gap-1">
+                    <TriangleAlert className="mt-0.5 size-3 flex-shrink-0" />
+                    {reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Last updated */}
+          {health.lastUpdatedAt && (
+            <div className="mt-2 flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500">
+              <Clock className="size-3" />
+              Last updated: {new Date(health.lastUpdatedAt).toLocaleString()}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

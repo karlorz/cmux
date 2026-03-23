@@ -6,15 +6,13 @@ import { getGeminiTelemetryPath } from "./telemetry";
 import {
   getMemoryStartupCommand,
   getMemorySeedFiles,
-  getMemoryProtocolInstructions,
   getProjectContextFile,
   getCrossToolSymlinkCommands,
-  getPolicyRulesInstructions,
-  getOrchestrationRulesInstructions,
-  extractBehaviorRulesSection,
 } from "../../agent-memory-protocol";
+import { buildGeminiMdContent } from "../../agent-instruction-pack";
 import { buildGeminiMcpServers } from "../../mcp-injection";
 import { getTaskSandboxWrapperFiles } from "../common/task-sandbox-wrappers";
+import { buildStandardLifecycleHooks } from "../../provider-lifecycle-adapter";
 
 type GeminiModelSettings = {
   skipNextSpeakerCheck?: boolean;
@@ -75,92 +73,23 @@ export async function getGeminiEnvironment(
   // Ensure .gemini directory exists
   startupCommands.push("mkdir -p ~/.gemini");
   startupCommands.push("mkdir -p ~/.gemini/commands");
-  startupCommands.push("mkdir -p /root/lifecycle/gemini");
 
   // Clean up any old Gemini telemetry files from previous runs
   // The actual telemetry path will be set by the agent spawner with the task ID
   startupCommands.push("rm -f /tmp/gemini-telemetry-*.log 2>/dev/null || true");
 
-  // Session start hook - posts activity event when Gemini session begins
-  const sessionStartHook = `#!/bin/bash
-set -eu
-LOG_FILE="/root/lifecycle/gemini-hook.log"
-if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
-  exit 0
-fi
-# Post session start activity event (non-blocking)
-(
-  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
-    -H "Content-Type: application/json" \\
-    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
-    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" \\
-         '{taskRunId: $trid, type: "session_start", toolName: "gemini", summary: "Session started"}')" \\
-    >> "\${LOG_FILE}" 2>&1 || true
-) &
-exit 0
-`;
-  files.push({
-    destinationPath: "/root/lifecycle/gemini/session-start-hook.sh",
-    contentBase64: Buffer.from(sessionStartHook).toString("base64"),
-    mode: "755",
-  });
-
-  // Session completion hook - posts activity event when Gemini session ends
-  const sessionCompleteHook = `#!/bin/bash
-set -eu
-LOG_FILE="/root/lifecycle/gemini-hook.log"
-MARKER_DIR="/root/lifecycle"
-GENERIC_MARKER="\${MARKER_DIR}/done.txt"
-
-# Post session completion activity event (non-blocking)
-if [ -n "\${CMUX_TASK_RUN_JWT:-}" ] && [ -n "\${CMUX_CALLBACK_URL:-}" ]; then
-  (
-    curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
-      -H "Content-Type: application/json" \\
-      -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
-      -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" \\
-           '{taskRunId: $trid, type: "session_stop", toolName: "gemini", summary: "Session completed"}')" \\
-      >> "\${LOG_FILE}" 2>&1 || true
-  ) &
-fi
-
-# Sync memory files (best-effort)
-/root/lifecycle/memory/sync.sh >> "\${LOG_FILE}" 2>&1 || true
-
-# Create completion marker
-touch "\${GENERIC_MARKER}"
-echo "[CMUX] Gemini session complete" >> "\${LOG_FILE}"
-`;
-  files.push({
-    destinationPath: "/root/lifecycle/gemini/session-complete-hook.sh",
-    contentBase64: Buffer.from(sessionCompleteHook).toString("base64"),
-    mode: "755",
-  });
-
-  // Error hook - surfaces errors to dashboard
-  const errorHook = `#!/bin/bash
-set -eu
-LOG_FILE="/root/lifecycle/gemini-hook.log"
-ERROR_MSG="\${1:-Unknown error}"
-if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
-  exit 0
-fi
-# Post error activity event (non-blocking)
-(
-  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
-    -H "Content-Type: application/json" \\
-    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
-    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" --arg msg "$ERROR_MSG" \\
-         '{taskRunId: $trid, type: "error", toolName: "gemini", summary: $msg}')" \\
-    >> "\${LOG_FILE}" 2>&1 || true
-) &
-exit 0
-`;
-  files.push({
-    destinationPath: "/root/lifecycle/gemini/error-hook.sh",
-    contentBase64: Buffer.from(errorHook).toString("base64"),
-    mode: "755",
-  });
+  // Build standard lifecycle hooks using shared adapter
+  const lifecycleHooks = buildStandardLifecycleHooks(
+    {
+      provider: "gemini",
+      taskRunId: ctx.taskRunId,
+      includeMemorySync: true,
+      createCompletionMarker: true,
+    },
+    Buffer.from.bind(Buffer)
+  );
+  files.push(...lifecycleHooks.files);
+  startupCommands.push(...lifecycleHooks.startupCommands);
 
   // Fire session start hook on sandbox initialization
   startupCommands.push("/root/lifecycle/gemini/session-start-hook.sh &");
@@ -353,19 +282,13 @@ exit 0
   // This is created at user-level ~/.gemini/GEMINI.md (not in workspace)
   // If Claude's CLAUDE.md exists, the symlink from getCrossToolSymlinkCommands()
   // will override this file, ensuring all tools share the same instructions
-  const policyRulesSection = ctx.policyRules && ctx.policyRules.length > 0
-    ? `\n${getPolicyRulesInstructions(ctx.policyRules)}\n`
-    : "";
-  const orchestrationRulesSection = ctx.orchestrationRules && ctx.orchestrationRules.length > 0
-    ? `\n${getOrchestrationRulesInstructions(ctx.orchestrationRules, { isOrchestrationHead: ctx.isOrchestrationHead })}\n`
-    : "";
-  const behaviorRulesSection = ctx.previousBehavior
-    ? `\n${extractBehaviorRulesSection(ctx.previousBehavior)}\n`
-    : "";
-  const geminiMdContent = `# cmux Project Instructions
-${policyRulesSection}${orchestrationRulesSection}${behaviorRulesSection}
-${getMemoryProtocolInstructions()}
-`;
+  // Uses shared instruction pack builder for consistent assembly across providers
+  const geminiMdContent = buildGeminiMdContent({
+    policyRules: ctx.policyRules,
+    orchestrationRules: ctx.orchestrationRules,
+    previousBehavior: ctx.previousBehavior,
+    isOrchestrationHead: ctx.isOrchestrationHead,
+  });
   files.push({
     destinationPath: "$HOME/.gemini/GEMINI.md",
     contentBase64: Buffer.from(geminiMdContent).toString("base64"),
@@ -379,5 +302,13 @@ ${getMemoryProtocolInstructions()}
     files.push(...getTaskSandboxWrapperFiles(Buffer));
   }
 
-  return { files, env, startupCommands };}
+  // Provider config override for custom API endpoints (e.g., NewAPI gateway)
+  // Only apply when team has explicitly configured an override
+  if (ctx.providerConfig?.isOverridden && ctx.providerConfig.baseUrl) {
+    // Gemini CLI uses GEMINI_API_BASE for custom endpoints
+    env.GEMINI_API_BASE = ctx.providerConfig.baseUrl;
+  }
+
+  return { files, env, startupCommands };
+}
 

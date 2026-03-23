@@ -9,13 +9,11 @@ import {
 import {
   getMemoryStartupCommand,
   getMemorySeedFiles,
-  getMemoryProtocolInstructions,
   getProjectContextFile,
-  getPolicyRulesInstructions,
-  getOrchestrationRulesInstructions,
-  extractBehaviorRulesSection,
 } from "../../agent-memory-protocol";
+import { buildGenericInstructionsContent } from "../../agent-instruction-pack";
 import { getTaskSandboxWrapperFiles } from "../common/task-sandbox-wrappers";
+import { buildStandardLifecycleHooks } from "../../provider-lifecycle-adapter";
 
 export async function getAmpEnvironment(
   ctx: EnvironmentContext
@@ -45,88 +43,19 @@ export async function getAmpEnvironment(
   // Ensure .config/amp and .local/share/amp directories exist
   startupCommands.push("mkdir -p ~/.config/amp");
   startupCommands.push("mkdir -p ~/.local/share/amp");
-  startupCommands.push("mkdir -p /root/lifecycle/amp");
 
-  // Session start hook - posts activity event when Amp session begins
-  const sessionStartHook = `#!/bin/bash
-set -eu
-LOG_FILE="/root/lifecycle/amp-hook.log"
-if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
-  exit 0
-fi
-# Post session start activity event (non-blocking)
-(
-  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
-    -H "Content-Type: application/json" \\
-    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
-    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" \\
-         '{taskRunId: $trid, type: "session_start", toolName: "amp", summary: "Session started"}')" \\
-    >> "\${LOG_FILE}" 2>&1 || true
-) &
-exit 0
-`;
-  files.push({
-    destinationPath: "/root/lifecycle/amp/session-start-hook.sh",
-    contentBase64: Buffer.from(sessionStartHook).toString("base64"),
-    mode: "755",
-  });
-
-  // Session completion hook - posts activity event when Amp session ends
-  const sessionCompleteHook = `#!/bin/bash
-set -eu
-LOG_FILE="/root/lifecycle/amp-hook.log"
-MARKER_DIR="/root/lifecycle"
-GENERIC_MARKER="\${MARKER_DIR}/done.txt"
-
-# Post session completion activity event (non-blocking)
-if [ -n "\${CMUX_TASK_RUN_JWT:-}" ] && [ -n "\${CMUX_CALLBACK_URL:-}" ]; then
-  (
-    curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
-      -H "Content-Type: application/json" \\
-      -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
-      -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" \\
-           '{taskRunId: $trid, type: "session_stop", toolName: "amp", summary: "Session completed"}')" \\
-      >> "\${LOG_FILE}" 2>&1 || true
-  ) &
-fi
-
-# Sync memory files (best-effort)
-/root/lifecycle/memory/sync.sh >> "\${LOG_FILE}" 2>&1 || true
-
-# Create completion marker
-touch "\${GENERIC_MARKER}"
-echo "[CMUX] Amp session complete" >> "\${LOG_FILE}"
-`;
-  files.push({
-    destinationPath: "/root/lifecycle/amp/session-complete-hook.sh",
-    contentBase64: Buffer.from(sessionCompleteHook).toString("base64"),
-    mode: "755",
-  });
-
-  // Error hook - surfaces errors to dashboard
-  const errorHook = `#!/bin/bash
-set -eu
-LOG_FILE="/root/lifecycle/amp-hook.log"
-ERROR_MSG="\${1:-Unknown error}"
-if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
-  exit 0
-fi
-# Post error activity event (non-blocking)
-(
-  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
-    -H "Content-Type: application/json" \\
-    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
-    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" --arg msg "$ERROR_MSG" \\
-         '{taskRunId: $trid, type: "error", toolName: "amp", summary: $msg}')" \\
-    >> "\${LOG_FILE}" 2>&1 || true
-) &
-exit 0
-`;
-  files.push({
-    destinationPath: "/root/lifecycle/amp/error-hook.sh",
-    contentBase64: Buffer.from(errorHook).toString("base64"),
-    mode: "755",
-  });
+  // Build standard lifecycle hooks using shared adapter
+  const lifecycleHooks = buildStandardLifecycleHooks(
+    {
+      provider: "amp",
+      taskRunId: ctx.taskRunId,
+      includeMemorySync: true,
+      createCompletionMarker: true,
+    },
+    Buffer.from.bind(Buffer)
+  );
+  files.push(...lifecycleHooks.files);
+  startupCommands.push(...lifecycleHooks.startupCommands);
 
   // Fire session start hook on sandbox initialization
   startupCommands.push("/root/lifecycle/amp/session-start-hook.sh &");
@@ -211,19 +140,12 @@ exit 0
   }
 
   // Add AMP.md with memory protocol instructions for the project
-  const policyRulesSection = ctx.policyRules && ctx.policyRules.length > 0
-    ? `\n${getPolicyRulesInstructions(ctx.policyRules)}\n`
-    : "";
-  const orchestrationRulesSection = ctx.orchestrationRules && ctx.orchestrationRules.length > 0
-    ? `\n${getOrchestrationRulesInstructions(ctx.orchestrationRules, { isOrchestrationHead: ctx.isOrchestrationHead })}\n`
-    : "";
-  const behaviorRulesSection = ctx.previousBehavior
-    ? `\n${extractBehaviorRulesSection(ctx.previousBehavior)}\n`
-    : "";
-  const ampMdContent = `# cmux Project Instructions
-${policyRulesSection}${orchestrationRulesSection}${behaviorRulesSection}
-${getMemoryProtocolInstructions()}
-`;
+  const ampMdContent = buildGenericInstructionsContent({
+    policyRules: ctx.policyRules,
+    orchestrationRules: ctx.orchestrationRules,
+    previousBehavior: ctx.previousBehavior,
+    isOrchestrationHead: ctx.isOrchestrationHead,
+  }, "# cmux Project Instructions");
   files.push({
     destinationPath: "/root/workspace/AMP.md",
     contentBase64: Buffer.from(ampMdContent).toString("base64"),
@@ -235,6 +157,12 @@ ${getMemoryProtocolInstructions()}
   const hasTaskRunJwt = ctx.taskRunJwt.trim().length > 0;
   if (hasTaskRunJwt && ctx.enableShellWrappers) {
     files.push(...getTaskSandboxWrapperFiles(Buffer));
+  }
+
+  // Provider config override for custom API endpoints
+  // This overrides the upstream URL that the proxy targets
+  if (ctx.providerConfig?.isOverridden && ctx.providerConfig.baseUrl) {
+    env.AMP_UPSTREAM_URL = ctx.providerConfig.baseUrl;
   }
 
   return { files, env, startupCommands };

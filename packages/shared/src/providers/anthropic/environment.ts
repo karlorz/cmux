@@ -9,13 +9,10 @@ import {
 import {
   getMemoryStartupCommand,
   getMemorySeedFiles,
-  getMemoryProtocolInstructions,
   getProjectContextFile,
   getCrossToolSymlinkCommands,
-  getPolicyRulesInstructions,
-  getOrchestrationRulesInstructions,
-  extractBehaviorRulesSection,
 } from "../../agent-memory-protocol";
+import { buildClaudeMdContent } from "../../agent-instruction-pack";
 import { buildMergedClaudeConfig } from "../../mcp-preview";
 
 export const CLAUDE_KEY_ENV_VARS_TO_UNSET = [
@@ -1053,21 +1050,13 @@ echo ${apiKeyToOutput}`;
   // - User memory (~/.claude/CLAUDE.md) applies to all projects
   // - Stored outside git workspace to avoid pollution
   // See: https://code.claude.com/docs/en/memory.md
-  const policyRulesSection = ctx.policyRules && ctx.policyRules.length > 0
-    ? `\n${getPolicyRulesInstructions(ctx.policyRules)}\n`
-    : "";
-  const orchestrationRulesSection = ctx.orchestrationRules && ctx.orchestrationRules.length > 0
-    ? `\n${getOrchestrationRulesInstructions(ctx.orchestrationRules, { isOrchestrationHead: ctx.isOrchestrationHead })}\n`
-    : "";
-  // Extract and inject behavior rules from previous session's HOT.md
-  // This makes behavior rules "always-loaded" without requiring agent to read the file
-  const behaviorRulesSection = ctx.previousBehavior
-    ? `\n${extractBehaviorRulesSection(ctx.previousBehavior)}\n`
-    : "";
-  const claudeMdContent = `# cmux Agent Instructions
-${policyRulesSection}${orchestrationRulesSection}${behaviorRulesSection}
-${getMemoryProtocolInstructions()}
-`;
+  // Uses shared instruction pack builder for consistent assembly across providers
+  const claudeMdContent = buildClaudeMdContent({
+    policyRules: ctx.policyRules,
+    orchestrationRules: ctx.orchestrationRules,
+    previousBehavior: ctx.previousBehavior,
+    isOrchestrationHead: ctx.isOrchestrationHead,
+  });
   files.push({
     destinationPath: "$HOME/.claude/CLAUDE.md",
     contentBase64: Buffer.from(claudeMdContent).toString("base64"),

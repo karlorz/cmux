@@ -31,6 +31,7 @@ import type { LiveDiffPanelProps } from "./LiveDiffPanel";
 import type { TestResultsPanelProps } from "./TestResultsPanel";
 import { shouldUseServerIframePreflight } from "@/hooks/useIframePreflight";
 import { useVncClipboardBridge } from "@/hooks/useVncClipboardBridge";
+import { VncViewer } from "@cmux/shared/components/vnc-viewer";
 
 const PANEL_DRAG_START_EVENT = "cmux:panel-drag-start";
 const PANEL_DRAG_END_EVENT = "cmux:panel-drag-end";
@@ -177,6 +178,8 @@ interface PanelFactoryProps {
   rawWorkspaceUrl?: string | null;
   // Browser panel props
   browserUrl?: string | null;
+  /** VNC WebSocket URL for direct noVNC/RFB connection (preferred over browserUrl iframe) */
+  vncWebsocketUrl?: string | null;
   browserPersistKey?: string | null;
   browserStatus?: PersistentIframeStatus;
   setBrowserStatus?: (status: PersistentIframeStatus) => void;
@@ -212,9 +215,12 @@ interface PanelFactoryProps {
 /**
  * Browser panel content wrapper that includes VNC clipboard bridge.
  * This is a separate component so we can use hooks (useVncClipboardBridge).
+ * Prefers direct VncViewer when vncWebsocketUrl is available, falls back to iframe.
  */
 interface BrowserPanelContentProps {
   browserUrl: string;
+  /** VNC WebSocket URL for direct noVNC/RFB connection (preferred over iframe) */
+  vncWebsocketUrl?: string | null;
   browserPersistKey: string;
   isExpanded: boolean;
   isAnyPanelExpanded: boolean;
@@ -230,6 +236,7 @@ interface BrowserPanelContentProps {
 
 function BrowserPanelContent({
   browserUrl,
+  vncWebsocketUrl,
   browserPersistKey,
   isExpanded,
   isAnyPanelExpanded,
@@ -242,40 +249,57 @@ function BrowserPanelContent({
   TASK_RUN_IFRAME_ALLOW,
   TASK_RUN_IFRAME_SANDBOX,
 }: BrowserPanelContentProps): ReactNode {
-  // Enable clipboard bridge for VNC panel (vnc.html URLs)
-  const isVncPanel = browserUrl.includes("/vnc.html");
+  // Prefer direct VncViewer when websocket URL is available
+  const useDirectVncViewer = Boolean(vncWebsocketUrl);
+
+  // Enable clipboard bridge only for VNC iframe fallback (not direct VncViewer)
+  const isVncIframeFallback = !useDirectVncViewer && browserUrl.includes("/vnc.html");
   useVncClipboardBridge({
     persistKey: browserPersistKey,
-    enabled: isVncPanel,
+    enabled: isVncIframeFallback,
   });
+
+  const loadingFallback = (
+    <WorkspaceLoadingIndicator variant="browser" status="loading" />
+  );
+  const errorFallback = (
+    <WorkspaceLoadingIndicator variant="browser" status="error" />
+  );
 
   return (
     <div className={clsx("relative flex-1", isExpanded && "h-full")} aria-busy={isBrowserBusy}>
-      <PersistentWebView
-        key={browserPersistKey}
-        persistKey={browserPersistKey}
-        src={browserUrl}
-        className="flex h-full"
-        iframeClassName={clsx("select-none")}
-        persistentWrapperClassName={isExpanded ? "z-[var(--z-maximized-iframe)]" : undefined}
-        allow={TASK_RUN_IFRAME_ALLOW}
-        sandbox={TASK_RUN_IFRAME_SANDBOX}
-        retainOnUnmount
-        onStatusChange={setBrowserStatus}
-        fallback={
-          <WorkspaceLoadingIndicator variant="browser" status="loading" />
-        }
-        fallbackClassName="bg-neutral-50 dark:bg-black"
-        errorFallback={
-          <WorkspaceLoadingIndicator variant="browser" status="error" />
-        }
-        errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
-        loadTimeoutMs={45_000}
-        isExpanded={isExpanded}
-        isAnyPanelExpanded={isAnyPanelExpanded}
-        isFocusEligible={isActivePanel}
-        onActivate={handleActivate}
-      />
+      {useDirectVncViewer && vncWebsocketUrl ? (
+        <VncViewer
+          url={vncWebsocketUrl}
+          autoConnect
+          scaleViewport
+          className="flex h-full"
+          loadingFallback={loadingFallback}
+          errorFallback={errorFallback}
+        />
+      ) : (
+        <PersistentWebView
+          key={browserPersistKey}
+          persistKey={browserPersistKey}
+          src={browserUrl}
+          className="flex h-full"
+          iframeClassName={clsx("select-none")}
+          persistentWrapperClassName={isExpanded ? "z-[var(--z-maximized-iframe)]" : undefined}
+          allow={TASK_RUN_IFRAME_ALLOW}
+          sandbox={TASK_RUN_IFRAME_SANDBOX}
+          retainOnUnmount
+          onStatusChange={setBrowserStatus}
+          fallback={loadingFallback}
+          fallbackClassName="bg-neutral-50 dark:bg-black"
+          errorFallback={errorFallback}
+          errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
+          loadTimeoutMs={45_000}
+          isExpanded={isExpanded}
+          isAnyPanelExpanded={isAnyPanelExpanded}
+          isFocusEligible={isActivePanel}
+          onActivate={handleActivate}
+        />
+      )}
     </div>
   );
 }
@@ -632,6 +656,7 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
     case "browser": {
       const {
         browserUrl,
+        vncWebsocketUrl,
         browserPersistKey,
         setBrowserStatus,
         browserPlaceholder,
@@ -656,6 +681,7 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
         browserUrl && browserPersistKey ? (
           <BrowserPanelContent
             browserUrl={browserUrl}
+            vncWebsocketUrl={vncWebsocketUrl}
             browserPersistKey={browserPersistKey}
             isExpanded={isExpanded}
             isAnyPanelExpanded={isAnyPanelExpanded}

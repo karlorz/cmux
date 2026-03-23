@@ -5,13 +5,11 @@ import type {
 import {
   getMemoryStartupCommand,
   getMemorySeedFiles,
-  getMemoryProtocolInstructions,
   getProjectContextFile,
-  getPolicyRulesInstructions,
-  getOrchestrationRulesInstructions,
-  extractBehaviorRulesSection,
 } from "../../agent-memory-protocol";
+import { buildGenericInstructionsContent } from "../../agent-instruction-pack";
 import { getTaskSandboxWrapperFiles } from "../common/task-sandbox-wrappers";
+import { buildStandardLifecycleHooks } from "../../provider-lifecycle-adapter";
 
 export async function getCursorEnvironment(
   ctx: EnvironmentContext
@@ -122,88 +120,19 @@ export async function getCursorEnvironment(
   startupCommands.push("mkdir -p ~/.cursor");
   startupCommands.push("mkdir -p ~/.config/cursor");
   startupCommands.push("mkdir -p /root/workspace/.cursor/rules");
-  startupCommands.push("mkdir -p /root/lifecycle/cursor");
 
-  // Session start hook - posts activity event when Cursor session begins
-  const sessionStartHook = `#!/bin/bash
-set -eu
-LOG_FILE="/root/lifecycle/cursor-hook.log"
-if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
-  exit 0
-fi
-# Post session start activity event (non-blocking)
-(
-  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
-    -H "Content-Type: application/json" \\
-    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
-    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" \\
-         '{taskRunId: $trid, type: "session_start", toolName: "cursor", summary: "Session started"}')" \\
-    >> "\${LOG_FILE}" 2>&1 || true
-) &
-exit 0
-`;
-  files.push({
-    destinationPath: "/root/lifecycle/cursor/session-start-hook.sh",
-    contentBase64: Buffer.from(sessionStartHook).toString("base64"),
-    mode: "755",
-  });
-
-  // Session completion hook - posts activity event when Cursor session ends
-  const sessionCompleteHook = `#!/bin/bash
-set -eu
-LOG_FILE="/root/lifecycle/cursor-hook.log"
-MARKER_DIR="/root/lifecycle"
-GENERIC_MARKER="\${MARKER_DIR}/done.txt"
-
-# Post session completion activity event (non-blocking)
-if [ -n "\${CMUX_TASK_RUN_JWT:-}" ] && [ -n "\${CMUX_CALLBACK_URL:-}" ]; then
-  (
-    curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
-      -H "Content-Type: application/json" \\
-      -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
-      -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" \\
-           '{taskRunId: $trid, type: "session_stop", toolName: "cursor", summary: "Session completed"}')" \\
-      >> "\${LOG_FILE}" 2>&1 || true
-  ) &
-fi
-
-# Sync memory files (best-effort)
-/root/lifecycle/memory/sync.sh >> "\${LOG_FILE}" 2>&1 || true
-
-# Create completion marker
-touch "\${GENERIC_MARKER}"
-echo "[CMUX] Cursor session complete" >> "\${LOG_FILE}"
-`;
-  files.push({
-    destinationPath: "/root/lifecycle/cursor/session-complete-hook.sh",
-    contentBase64: Buffer.from(sessionCompleteHook).toString("base64"),
-    mode: "755",
-  });
-
-  // Error hook - surfaces errors to dashboard
-  const errorHook = `#!/bin/bash
-set -eu
-LOG_FILE="/root/lifecycle/cursor-hook.log"
-ERROR_MSG="\${1:-Unknown error}"
-if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
-  exit 0
-fi
-# Post error activity event (non-blocking)
-(
-  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
-    -H "Content-Type: application/json" \\
-    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
-    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" --arg msg "$ERROR_MSG" \\
-         '{taskRunId: $trid, type: "error", toolName: "cursor", summary: $msg}')" \\
-    >> "\${LOG_FILE}" 2>&1 || true
-) &
-exit 0
-`;
-  files.push({
-    destinationPath: "/root/lifecycle/cursor/error-hook.sh",
-    contentBase64: Buffer.from(errorHook).toString("base64"),
-    mode: "755",
-  });
+  // Build standard lifecycle hooks using shared adapter
+  const lifecycleHooks = buildStandardLifecycleHooks(
+    {
+      provider: "cursor",
+      taskRunId: ctx.taskRunId,
+      includeMemorySync: true,
+      createCompletionMarker: true,
+    },
+    Buffer.from.bind(Buffer)
+  );
+  files.push(...lifecycleHooks.files);
+  startupCommands.push(...lifecycleHooks.startupCommands);
 
   // Fire session start hook on sandbox initialization
   startupCommands.push("/root/lifecycle/cursor/session-start-hook.sh &");
@@ -224,19 +153,12 @@ exit 0
   }
 
   // Add CURSOR.md with memory protocol instructions for the project
-  const policyRulesSection = ctx.policyRules && ctx.policyRules.length > 0
-    ? `\n${getPolicyRulesInstructions(ctx.policyRules)}\n`
-    : "";
-  const orchestrationRulesSection = ctx.orchestrationRules && ctx.orchestrationRules.length > 0
-    ? `\n${getOrchestrationRulesInstructions(ctx.orchestrationRules, { isOrchestrationHead: ctx.isOrchestrationHead })}\n`
-    : "";
-  const behaviorRulesSection = ctx.previousBehavior
-    ? `\n${extractBehaviorRulesSection(ctx.previousBehavior)}\n`
-    : "";
-  const cursorMdContent = `# cmux Project Instructions
-${policyRulesSection}${orchestrationRulesSection}${behaviorRulesSection}
-${getMemoryProtocolInstructions()}
-`;
+  const cursorMdContent = buildGenericInstructionsContent({
+    policyRules: ctx.policyRules,
+    orchestrationRules: ctx.orchestrationRules,
+    previousBehavior: ctx.previousBehavior,
+    isOrchestrationHead: ctx.isOrchestrationHead,
+  }, "# cmux Project Instructions");
   files.push({
     destinationPath: "/root/workspace/.cursor/rules/cmux-memory-protocol.mdc",
     contentBase64: Buffer.from(cursorMdContent).toString("base64"),
@@ -248,6 +170,11 @@ ${getMemoryProtocolInstructions()}
   const hasTaskRunJwt = ctx.taskRunJwt.trim().length > 0;
   if (hasTaskRunJwt && ctx.enableShellWrappers) {
     files.push(...getTaskSandboxWrapperFiles(Buffer));
+  }
+
+  // Provider config override for custom API endpoints
+  if (ctx.providerConfig?.isOverridden && ctx.providerConfig.baseUrl) {
+    env.CURSOR_API_BASE_URL = ctx.providerConfig.baseUrl;
   }
 
   return { files, env, startupCommands };

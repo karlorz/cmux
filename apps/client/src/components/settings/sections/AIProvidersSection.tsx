@@ -340,9 +340,6 @@ export function AIProvidersSection({
                           </label>
                           <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
                             {baseUrlKey.description}
-                            {baseUrlKey.envVar === ANTHROPIC_BASE_URL_KEY.envVar
-                              ? " Enter the base URL without the /v1 suffix. Example: https://my-proxy.example.com"
-                              : ""}
                           </p>
 
                           <div className="flex flex-col gap-2 sm:flex-row">
