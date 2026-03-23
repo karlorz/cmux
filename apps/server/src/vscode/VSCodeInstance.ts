@@ -22,6 +22,10 @@ export interface VSCodeInstanceConfig {
   taskRunJwt?: string;
   // Optional: environment variables to pass to the container
   envVars?: Record<string, string>;
+  // Optional: mark as cloud workspace (long-lived, not auto-paused)
+  isCloudWorkspace?: boolean;
+  // Optional: mark as orchestration head agent (can spawn sub-agents)
+  isOrchestrationHead?: boolean;
 }
 
 export interface VSCodeInstanceInfo {

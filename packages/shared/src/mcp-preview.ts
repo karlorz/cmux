@@ -714,13 +714,37 @@ export function stripFilteredConfigKeys(toml: string): string {
   return result.replace(/\n{3,}/g, "\n\n").trim();
 }
 
+export function ensureCodexHooksFeature(toml: string): string {
+  if (!toml.trim()) {
+    return `${CODEX_HOOKS_FEATURE_SECTION}\n`;
+  }
+
+  const featuresSectionPattern = /(^|\n)\[features\]\n([\s\S]*?)(?=\n\[|$)/;
+  if (!featuresSectionPattern.test(toml)) {
+    return `${toml.trimEnd()}\n\n${CODEX_HOOKS_FEATURE_SECTION}\n`;
+  }
+
+  return toml.replace(featuresSectionPattern, (_match, prefix: string, body: string) => {
+    const codexHooksLinePattern = /(^|\n)\s*codex_hooks\s*=\s*.*(?=\n|$)/;
+    if (codexHooksLinePattern.test(body)) {
+      const updatedBody = body.replace(
+        codexHooksLinePattern,
+        "$1codex_hooks = true",
+      );
+      return `${prefix}[features]\n${updatedBody}`;
+    }
+
+    const normalizedBody = body.length > 0 ? `codex_hooks = true\n${body}` : "codex_hooks = true";
+    return `${prefix}[features]\n${normalizedBody}`;
+  });
+}
+
 export function ensureCodexDefaults(toml: string): string {
   const hasNotify = /(^|\n)\s*notify\s*=/.test(toml);
   const hasSandboxMode = /(^|\n)\s*sandbox_mode\s*=/.test(toml);
   const hasApprovalPolicy = /(^|\n)\s*approval_policy\s*=/.test(toml);
   const hasDisableResponseStorage = /(^|\n)\s*disable_response_storage\s*=/.test(toml);
   const hasLegacyAskForApproval = /(^|\n)\s*ask_for_approval\s*=/.test(toml);
-  const hasCodexHooksFeature = /\[features\][\s\S]*?codex_hooks\s*=\s*true/.test(toml);
 
   let result = toml;
   if (hasApprovalPolicy) {
@@ -741,9 +765,9 @@ export function ensureCodexDefaults(toml: string): string {
 
   if (hasAllDefaults) {
     if (hasLegacyAskForApproval && !hasApprovalPolicy) {
-      return `${CODEX_APPROVAL_POLICY_LINE}\n${result.trim()}`;
+      return ensureCodexHooksFeature(`${CODEX_APPROVAL_POLICY_LINE}\n${result.trim()}`);
     }
-    return result;
+    return ensureCodexHooksFeature(result);
   }
 
   const defaults: string[] = [];
@@ -761,14 +785,8 @@ export function ensureCodexDefaults(toml: string): string {
   }
 
   // Build the base config with top-level defaults
-  let baseConfig = result ? `${defaults.join("\n")}\n${result}` : defaults.join("\n");
-
-  // Add [features] section at the end if not present (TOML sections must come after top-level keys)
-  if (!hasCodexHooksFeature) {
-    baseConfig = `${baseConfig.trimEnd()}\n\n${CODEX_HOOKS_FEATURE_SECTION}`;
-  }
-
-  return baseConfig;
+  const baseConfig = result ? `${defaults.join("\n")}\n${result}` : defaults.join("\n");
+  return ensureCodexHooksFeature(baseConfig);
 }
 
 export function stripMcpServerBlocksByName(toml: string, names: string[]): string {

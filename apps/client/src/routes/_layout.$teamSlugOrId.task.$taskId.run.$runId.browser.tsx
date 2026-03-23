@@ -9,11 +9,7 @@ import {
   TASK_RUN_IFRAME_ALLOW,
   TASK_RUN_IFRAME_SANDBOX,
 } from "@/lib/preloadTaskRunIframes";
-import {
-  resolveBrowserPreviewUrl,
-  resolveBrowserPreviewWebsocketUrl,
-} from "@/lib/toProxyWorkspaceUrl";
-import { VncViewer } from "@cmux/shared/components/vnc-viewer";
+import { resolveBrowserPreviewUrl } from "@/lib/toProxyWorkspaceUrl";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { api } from "@cmux/convex/api";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
@@ -65,29 +61,16 @@ function BrowserComponent() {
     [vscodeInfo?.vncUrl, rawBrowserUrl]
   );
 
-  // WebSocket URL for direct VncViewer connection (preferred over iframe)
-  const vncWebsocketUrl = useMemo(
-    () =>
-      resolveBrowserPreviewWebsocketUrl({
-        vncUrl: vscodeInfo?.vncUrl,
-        workspaceUrl: rawBrowserUrl,
-      }),
-    [vscodeInfo?.vncUrl, rawBrowserUrl]
-  );
-
-  // Use direct VncViewer when websocket URL is available
-  const useDirectVncViewer = Boolean(vncWebsocketUrl);
-
   const persistKey = useMemo(
     () => getTaskRunBrowserPersistKey(taskRunId),
     [taskRunId]
   );
 
-  // Enable clipboard bridge only for iframe fallback path (not direct VncViewer)
-  const isVncIframeFallback = !useDirectVncViewer && Boolean(browserUrl?.includes("/vnc.html"));
+  // Enable clipboard bridge for VNC iframes
+  const isVncIframe = Boolean(browserUrl?.includes("/vnc.html"));
   useVncClipboardBridge({
     persistKey,
-    enabled: isVncIframeFallback,
+    enabled: isVncIframe,
   });
 
   const hasBrowserView = Boolean(browserUrl);
@@ -148,7 +131,7 @@ function BrowserComponent() {
     []
   );
 
-  const hasBrowserConnection = Boolean(vncWebsocketUrl || browserUrl);
+  const hasBrowserConnection = Boolean(browserUrl);
   const isBrowserBusy = !hasBrowserConnection || browserStatus !== "loaded";
 
   return (
@@ -158,18 +141,7 @@ function BrowserComponent() {
           className="flex flex-row grow min-h-0 relative"
           aria-busy={isBrowserBusy}
         >
-          {/* Prefer direct VncViewer when websocket URL is available */}
-          {useDirectVncViewer && vncWebsocketUrl ? (
-            <VncViewer
-              url={vncWebsocketUrl}
-              autoConnect
-              scaleViewport
-              className="grow flex"
-              loadingFallback={loadingFallback}
-              errorFallback={errorFallback}
-            />
-          ) : browserUrl ? (
-            /* Fallback to iframe when only HTML URL is available */
+          {browserUrl ? (
             <PersistentWebView
               key={persistKey}
               persistKey={persistKey}

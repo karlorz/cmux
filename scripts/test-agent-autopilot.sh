@@ -4,10 +4,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CODEX_CONFIG_FILE="$PROJECT_DIR/.codex/config.toml"
-AUTOPILOT_HOOKS_TEMPLATE="$PROJECT_DIR/.codex/autopilot-hooks.json"
 LIVE_HOOKS_FILE="$PROJECT_DIR/.codex/hooks.json"
-CODEX_LAUNCHER="$PROJECT_DIR/scripts/codex-home-launch.sh"
-CODEX_SHELL_HELPERS="$PROJECT_DIR/.codex/codex-shell-helpers.sh"
+CODEX_HOME_INSTALLER="$PROJECT_DIR/scripts/install-codex-home-hooks.sh"
+CODEX_STOP_DISPATCH="$PROJECT_DIR/.codex/hooks/cmux-stop-dispatch.sh"
+LEGACY_AUTOPILOT_TEMPLATE="$PROJECT_DIR/.codex/autopilot-hooks.json"
+LEGACY_RALPH_TEMPLATE="$PROJECT_DIR/.codex/ralph-loop-hooks.json"
+LEGACY_CODEX_LAUNCHER="$PROJECT_DIR/scripts/codex-home-launch.sh"
+LEGACY_CODEX_SHELL_HELPERS="$PROJECT_DIR/.codex/codex-shell-helpers.sh"
 
 PASS=0
 FAIL=0
@@ -80,14 +83,23 @@ assert_not_contains \
   "$CODEX_CONFIG_FILE" \
   "codex_hooks = true"
 assert_file_exists \
-  "autopilot hooks template exists" \
-  "$AUTOPILOT_HOOKS_TEMPLATE"
+  "Codex home hook installer exists" \
+  "$CODEX_HOME_INSTALLER"
 assert_file_exists \
-  "repo-local Codex launcher exists" \
-  "$CODEX_LAUNCHER"
-assert_file_exists \
-  "repo-local Codex shell helpers exist" \
-  "$CODEX_SHELL_HELPERS"
+  "managed stop dispatcher exists" \
+  "$CODEX_STOP_DISPATCH"
+assert_file_not_exists \
+  "legacy autopilot hooks template has been removed" \
+  "$LEGACY_AUTOPILOT_TEMPLATE"
+assert_file_not_exists \
+  "legacy Ralph hooks template has been removed" \
+  "$LEGACY_RALPH_TEMPLATE"
+assert_file_not_exists \
+  "legacy Codex launcher has been removed" \
+  "$LEGACY_CODEX_LAUNCHER"
+assert_file_not_exists \
+  "legacy Codex shell helpers have been removed" \
+  "$LEGACY_CODEX_SHELL_HELPERS"
 assert_file_not_exists \
   "ordinary sessions do not see a live repo hooks.json" \
   "$LIVE_HOOKS_FILE"
@@ -106,8 +118,16 @@ bash "$PROJECT_DIR/scripts/agent-autopilot.sh" \
 
 TURN_LOG="$(find "$TEST_LOG_DIR" -path '*/turn-001.log' | head -n 1)"
 assert "dry-run creates the first turn log" test -n "$TURN_LOG"
-assert "Codex autopilot still enables codex_hooks explicitly" grep -F -- "--enable codex_hooks" "$TURN_LOG"
-assert "Codex autopilot uses the repo hooks template" grep -F -- "hooks_template: $AUTOPILOT_HOOKS_TEMPLATE" "$TURN_LOG"
+assert "Codex autopilot records managed home hooks in the turn log" grep -F -- "home_hooks: managed" "$TURN_LOG"
+assert "Codex autopilot records the installer path" grep -F -- "hooks_installer: $CODEX_HOME_INSTALLER" "$TURN_LOG"
+assert_not_contains \
+  "Codex autopilot no longer relies on repo-local hook templates" \
+  "$TURN_LOG" \
+  "hooks_template:"
+assert_not_contains \
+  "Codex autopilot no longer passes the legacy codex_hooks flag" \
+  "$TURN_LOG" \
+  "--enable codex_hooks"
 
 echo
 echo "Passed: $PASS/$TOTAL"

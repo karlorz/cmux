@@ -53,6 +53,11 @@ if [[ -n "$NO_STATE_OUTPUT" ]]; then
 fi
 TESTS_PASSED=$((TESTS_PASSED + 1))
 
+printf '%s\n' '{invalid-json' >"$WORKSPACE/.codex/ralph-loop-state.json"
+INVALID_JSON_OUTPUT="$(printf '%s' "$(make_stop_payload "$WORKSPACE" "")" | bash "$HOOK_SCRIPT")"
+assert_eq "$(jq -r '.systemMessage | contains("invalid JSON")' <<<"$INVALID_JSON_OUTPUT")" "true" "invalid state should emit a cancellation message"
+assert_eq "$([[ -f "$WORKSPACE/.codex/ralph-loop-state.json" ]] && echo yes || echo no)" "no" "invalid state should be cleaned up"
+
 cat >"$WORKSPACE/.codex/ralph-loop-state.json" <<'EOF'
 {
   "active": true,
