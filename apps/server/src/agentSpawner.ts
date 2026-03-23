@@ -142,6 +142,16 @@ export interface PreFetchedSpawnConfig {
   policyRules?: PolicyRuleForInstructions[];
   /** Orchestration rules learned from previous runs (self-improving memory) */
   orchestrationRules?: OrchestrationRuleForInstructions[];
+  /** Phase 5: Scoped knowledge with team/repo/user precedence */
+  scopedKnowledge?: {
+    content: string | null;
+    sources: Array<{
+      scope: "team" | "repo" | "user" | "run";
+      hasContent: boolean;
+      byteSize: number;
+    }>;
+    totalByteSize: number;
+  };
 }
 
 /** Autopilot mode configuration for long-running agent sessions (Phase 6) */
@@ -660,11 +670,24 @@ export async function spawnAgent(
       workspaceSettings = options.preFetchedConfig.workspaceSettings;
       providerOverrides = options.preFetchedConfig.providerOverrides;
       mcpServerConfigs = options.preFetchedConfig.mcpServerConfigs;
-      previousKnowledge = options.preFetchedConfig.previousKnowledge;
+      // Phase 5: Prefer scoped knowledge over legacy previousKnowledge
+      previousKnowledge = options.preFetchedConfig.scopedKnowledge?.content
+        ?? options.preFetchedConfig.previousKnowledge;
       previousMailbox = options.preFetchedConfig.previousMailbox;
       previousBehavior = options.preFetchedConfig.previousBehavior;
       policyRules = options.preFetchedConfig.policyRules;
       orchestrationRules = options.preFetchedConfig.orchestrationRules;
+      // Log scoped knowledge sources for observability
+      if (options.preFetchedConfig.scopedKnowledge?.sources) {
+        const activeSources = options.preFetchedConfig.scopedKnowledge.sources
+          .filter((s) => s.hasContent)
+          .map((s) => `${s.scope}(${s.byteSize}b)`);
+        if (activeSources.length > 0) {
+          serverLogger.info(
+            `[AgentSpawner] Scoped knowledge sources: ${activeSources.join(", ")}`
+          );
+        }
+      }
     } else {
       // Fetch from Convex (Stack Auth available)
       const results = await Promise.all([
