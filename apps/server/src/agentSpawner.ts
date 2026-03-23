@@ -50,6 +50,7 @@ import {
   type UserUploadedEditorSettings,
 } from "./utils/editorSettings";
 import { env, getServerBaseUrl, getWwwBaseUrl } from "./utils/server-env";
+import { buildTaskRunCreateArgs } from "./utils/taskRunCreateArgs";
 import { getWwwClient } from "./utils/wwwClient";
 import { getWwwOpenApiModule } from "./utils/wwwOpenApiModule";
 import { buildSystemTimezoneStartupCommand } from "./utils/timezone";
@@ -255,15 +256,18 @@ export async function spawnAgent(
     } else {
       // Create a task run for this specific agent (legacy path)
       const { taskRunId: createdTaskRunId, jwt } =
-        await getConvex().mutation(api.taskRuns.create, {
-          teamSlugOrId,
-          taskId: taskId,
-          prompt: options.taskDescription,
-          agentName: agent.name,
-          newBranch,
-          environmentId: options.environmentId,
-          isOrchestrationHead: options.isOrchestrationHead,
-        });
+        await getConvex().mutation(
+          api.taskRuns.create,
+          buildTaskRunCreateArgs({
+            teamSlugOrId,
+            taskId: taskId,
+            prompt: options.taskDescription,
+            agentName: agent.name,
+            newBranch,
+            environmentId: options.environmentId,
+            isOrchestrationHead: options.isOrchestrationHead,
+          }),
+        );
       taskRunId = createdTaskRunId;
       taskRunJwt = jwt;
     }
