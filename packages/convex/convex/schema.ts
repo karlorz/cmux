@@ -675,13 +675,26 @@ const convexSchema = defineSchema({
     .index("by_team_user", ["teamId", "userId"]),
   taskRunActivity: defineTable({
     taskRunId: v.id("taskRuns"),
-    type: v.string(), // tool_call, file_edit, file_read, bash_command, test_run, git_commit, error
+    // Activity type: tool_call, file_edit, file_read, bash_command, test_run, git_commit, error,
+    // session_start, session_stop, context_warning, context_compacted, memory_loaded,
+    // user_prompt, subagent_start, subagent_stop, notification
+    type: v.string(),
     toolName: v.optional(v.string()),
     summary: v.string(),
     detail: v.optional(v.string()),
     durationMs: v.optional(v.number()),
     teamId: v.string(),
     createdAt: v.number(),
+    // Context health fields (for context_warning/context_compacted events)
+    severity: v.optional(v.string()), // "info", "warning", "critical"
+    warningType: v.optional(v.string()), // "memory_bloat", "tool_output", "prompt_size", "capacity", "token_limit"
+    currentUsage: v.optional(v.number()),
+    maxCapacity: v.optional(v.number()),
+    usagePercent: v.optional(v.number()),
+    // Context compacted fields
+    previousBytes: v.optional(v.number()),
+    newBytes: v.optional(v.number()),
+    reductionPercent: v.optional(v.number()),
   })
     .index("by_task_run", ["taskRunId", "createdAt"])
     .index("by_team", ["teamId", "createdAt"]),
@@ -1681,11 +1694,26 @@ const convexSchema = defineSchema({
     usageCount: v.optional(v.number()), // How many times loaded
     freshnessScore: v.optional(v.number()), // 0.0-1.0, decays over time
     lastFreshnessUpdate: v.optional(v.number()), // When freshness was last calculated
+    // Phase 5: Memory scope model (IronClaw-inspired)
+    // Enables layered reads with write isolation per scope
+    scope: v.optional(
+      v.union(
+        v.literal("team"), // team/shared - org-wide policy & runbooks
+        v.literal("repo"), // repo/shared - project conventions
+        v.literal("user"), // user/private - operator preferences
+        v.literal("run") // run/local - ephemeral task notes
+      )
+    ),
+    projectFullName: v.optional(v.string()), // For repo-scoped memory (e.g., "owner/repo")
   })
     .index("by_task_run", ["taskRunId", "memoryType"])
     .index("by_team_type", ["teamId", "memoryType", "createdAt"])
     .index("by_team_created", ["teamId", "createdAt"])
-    .index("by_team_freshness", ["teamId", "memoryType", "freshnessScore"]),
+    .index("by_team_freshness", ["teamId", "memoryType", "freshnessScore"])
+    // Phase 5: Scoped memory indexes
+    .index("by_team_scope_type", ["teamId", "scope", "memoryType", "createdAt"])
+    .index("by_repo_type", ["projectFullName", "memoryType", "createdAt"])
+    .index("by_user_type", ["userId", "memoryType", "createdAt"]),
 
   // Normalized behavior rules for self-improving memory (S15 provenance)
   // Enables fast querying, cross-run seeding, and provenance tracking

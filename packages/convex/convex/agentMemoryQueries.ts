@@ -527,3 +527,232 @@ export const getCandidateBehaviorRules = authQuery({
       .take(limit);
   },
 });
+
+// =============================================================================
+// Scoped Memory Queries (Phase 5: IronClaw-inspired memory scope model)
+// =============================================================================
+
+/**
+ * Memory scope type for layered reads.
+ * Read precedence: run > user > repo > team (most specific wins)
+ */
+type MemoryScope = "team" | "repo" | "user" | "run";
+
+/**
+ * Result of scoped knowledge query with merged content.
+ */
+interface ScopedKnowledgeResult {
+  /** Merged knowledge content with scope precedence applied */
+  content: string | null;
+  /** Which scopes contributed content */
+  sources: {
+    scope: MemoryScope;
+    hasContent: boolean;
+    byteSize: number;
+  }[];
+  /** Total byte size of merged content */
+  totalByteSize: number;
+}
+
+/**
+ * Get knowledge memory with scope precedence.
+ * Merges content from team → repo → user → run scopes.
+ * More specific scopes take precedence for conflicting keys.
+ *
+ * @param teamSlugOrId - Team identifier
+ * @param projectFullName - Optional repo for repo-scoped memory
+ * @param includeRunScope - Whether to include run/local ephemeral content
+ */
+export const getScopedKnowledge = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    projectFullName: v.optional(v.string()),
+    includeRunScope: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args): Promise<ScopedKnowledgeResult> => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+    const userId = ctx.identity?.subject;
+
+    const sources: ScopedKnowledgeResult["sources"] = [];
+    const contentParts: string[] = [];
+
+    // 1. Team-scoped knowledge (lowest precedence)
+    const teamKnowledge = await ctx.db
+      .query("agentMemorySnapshots")
+      .withIndex("by_team_scope_type", (q) =>
+        q.eq("teamId", teamId).eq("scope", "team").eq("memoryType", "knowledge")
+      )
+      .order("desc")
+      .first();
+
+    if (teamKnowledge?.content) {
+      contentParts.push(`# Team Knowledge\n\n${teamKnowledge.content}`);
+      sources.push({
+        scope: "team",
+        hasContent: true,
+        byteSize: Buffer.byteLength(teamKnowledge.content, "utf-8"),
+      });
+    } else {
+      sources.push({ scope: "team", hasContent: false, byteSize: 0 });
+    }
+
+    // 2. Repo-scoped knowledge (if projectFullName provided)
+    if (args.projectFullName) {
+      const repoKnowledge = await ctx.db
+        .query("agentMemorySnapshots")
+        .withIndex("by_repo_type", (q) =>
+          q.eq("projectFullName", args.projectFullName).eq("memoryType", "knowledge")
+        )
+        .order("desc")
+        .first();
+
+      if (repoKnowledge?.content) {
+        contentParts.push(`# Repo Knowledge (${args.projectFullName})\n\n${repoKnowledge.content}`);
+        sources.push({
+          scope: "repo",
+          hasContent: true,
+          byteSize: Buffer.byteLength(repoKnowledge.content, "utf-8"),
+        });
+      } else {
+        sources.push({ scope: "repo", hasContent: false, byteSize: 0 });
+      }
+    }
+
+    // 3. User-scoped knowledge
+    if (userId) {
+      const userKnowledge = await ctx.db
+        .query("agentMemorySnapshots")
+        .withIndex("by_user_type", (q) =>
+          q.eq("userId", userId).eq("memoryType", "knowledge")
+        )
+        .filter((q) => q.eq(q.field("scope"), "user"))
+        .order("desc")
+        .first();
+
+      if (userKnowledge?.content) {
+        contentParts.push(`# User Knowledge\n\n${userKnowledge.content}`);
+        sources.push({
+          scope: "user",
+          hasContent: true,
+          byteSize: Buffer.byteLength(userKnowledge.content, "utf-8"),
+        });
+      } else {
+        sources.push({ scope: "user", hasContent: false, byteSize: 0 });
+      }
+    }
+
+    // 4. Run-scoped knowledge (ephemeral, only if requested)
+    if (args.includeRunScope) {
+      sources.push({ scope: "run", hasContent: false, byteSize: 0 });
+      // Run-scoped content is not merged here - it's task-specific
+    }
+
+    const mergedContent = contentParts.length > 0 ? contentParts.join("\n\n---\n\n") : null;
+
+    return {
+      content: mergedContent,
+      sources,
+      totalByteSize: mergedContent ? Buffer.byteLength(mergedContent, "utf-8") : 0,
+    };
+  },
+});
+
+/**
+ * Internal version of getScopedKnowledge for JWT-based spawns.
+ * Used by orchestration HTTP endpoints when Stack Auth is not available.
+ */
+export const getScopedKnowledgeInternal = internalQuery({
+  args: {
+    teamId: v.string(),
+    userId: v.optional(v.string()),
+    projectFullName: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<ScopedKnowledgeResult> => {
+    const sources: ScopedKnowledgeResult["sources"] = [];
+    const contentParts: string[] = [];
+
+    // 1. Team-scoped knowledge
+    const teamKnowledge = await ctx.db
+      .query("agentMemorySnapshots")
+      .withIndex("by_team_scope_type", (q) =>
+        q.eq("teamId", args.teamId).eq("scope", "team").eq("memoryType", "knowledge")
+      )
+      .order("desc")
+      .first();
+
+    if (teamKnowledge?.content) {
+      contentParts.push(`# Team Knowledge\n\n${teamKnowledge.content}`);
+      sources.push({
+        scope: "team",
+        hasContent: true,
+        byteSize: Buffer.byteLength(teamKnowledge.content, "utf-8"),
+      });
+    } else {
+      sources.push({ scope: "team", hasContent: false, byteSize: 0 });
+    }
+
+    // 2. Repo-scoped knowledge
+    if (args.projectFullName) {
+      const repoKnowledge = await ctx.db
+        .query("agentMemorySnapshots")
+        .withIndex("by_repo_type", (q) =>
+          q.eq("projectFullName", args.projectFullName).eq("memoryType", "knowledge")
+        )
+        .order("desc")
+        .first();
+
+      if (repoKnowledge?.content) {
+        contentParts.push(`# Repo Knowledge (${args.projectFullName})\n\n${repoKnowledge.content}`);
+        sources.push({
+          scope: "repo",
+          hasContent: true,
+          byteSize: Buffer.byteLength(repoKnowledge.content, "utf-8"),
+        });
+      } else {
+        sources.push({ scope: "repo", hasContent: false, byteSize: 0 });
+      }
+    }
+
+    // 3. User-scoped knowledge
+    if (args.userId) {
+      const userIdValue = args.userId; // Narrow type for index query
+      const userKnowledge = await ctx.db
+        .query("agentMemorySnapshots")
+        .withIndex("by_user_type", (q) =>
+          q.eq("userId", userIdValue).eq("memoryType", "knowledge")
+        )
+        .filter((q) => q.eq(q.field("scope"), "user"))
+        .order("desc")
+        .first();
+
+      if (userKnowledge?.content) {
+        contentParts.push(`# User Knowledge\n\n${userKnowledge.content}`);
+        sources.push({
+          scope: "user",
+          hasContent: true,
+          byteSize: Buffer.byteLength(userKnowledge.content, "utf-8"),
+        });
+      } else {
+        sources.push({ scope: "user", hasContent: false, byteSize: 0 });
+      }
+    }
+
+    const mergedContent = contentParts.length > 0 ? contentParts.join("\n\n---\n\n") : null;
+
+    return {
+      content: mergedContent,
+      sources,
+      totalByteSize: mergedContent ? Buffer.byteLength(mergedContent, "utf-8") : 0,
+    };
+  },
+});
+
+/**
+ * Check if a memory type is an identity file that should never cascade across scopes.
+ * Identity files include IDENTITY.md, USER.md, SOUL.md - these must stay local.
+ */
+export function isIdentityMemoryType(fileName: string | undefined): boolean {
+  if (!fileName) return false;
+  const identityFiles = ["IDENTITY.md", "USER.md", "SOUL.md", "IDENTITY", "USER", "SOUL"];
+  return identityFiles.some((f) => fileName.toUpperCase().includes(f.toUpperCase()));
+}

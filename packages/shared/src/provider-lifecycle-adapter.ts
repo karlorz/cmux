@@ -13,6 +13,33 @@
  * - Single point of maintenance for shell hook scripts
  * - Canonical event types match agent-comm-events.ts
  * - Testable without spinning up provider environments
+ *
+ * ## Canonical Event Shape
+ *
+ * Shell hooks emit JSON payloads matching AgentCommEvent types from
+ * agent-comm-events.ts. The activity endpoint accepts a simplified
+ * payload that is expanded server-side to the full canonical shape.
+ *
+ * Activity payload format:
+ * ```json
+ * {
+ *   "taskRunId": "...",
+ *   "type": "context_warning" | "context_compacted" | "session_start" | ...,
+ *   "toolName": "claude" | "codex" | "gemini" | ...,
+ *   "summary": "Human-readable description"
+ * }
+ * ```
+ *
+ * For context health events, additional fields are included:
+ * ```json
+ * {
+ *   "severity": "info" | "warning" | "critical",
+ *   "warningType": "capacity" | "token_limit" | "memory_bloat" | ...,
+ *   "currentUsage": 85000,
+ *   "maxCapacity": 100000,
+ *   "usagePercent": 85
+ * }
+ * ```
  */
 
 import type { EnvironmentResult } from "./providers/common/environment-result";
@@ -293,6 +320,206 @@ fi
 ${options?.epilog ?? ""}
 exit 0
 `;
+}
+
+// =============================================================================
+// Canonical Event Payload Builders
+// =============================================================================
+
+/**
+ * Canonical event types for activity API.
+ * Maps to AgentCommEvent types from agent-comm-events.ts.
+ */
+export type CanonicalActivityType =
+  | "session_start"
+  | "session_stop"
+  | "session_resumed"
+  | "error"
+  | "context_warning"
+  | "context_compacted"
+  | "memory_loaded"
+  | "tool_call"
+  | "file_edit"
+  | "file_read"
+  | "bash_command"
+  | "user_prompt"
+  | "subagent_start"
+  | "subagent_stop"
+  | "notification";
+
+/**
+ * Context warning subtypes for canonical events.
+ */
+export type ContextWarningType =
+  | "memory_bloat"
+  | "tool_output"
+  | "prompt_size"
+  | "capacity"
+  | "token_limit";
+
+/**
+ * Severity levels for context warnings.
+ */
+export type ContextWarningSeverity = "info" | "warning" | "critical";
+
+/**
+ * Base payload for activity events.
+ */
+export interface ActivityPayloadBase {
+  taskRunId: string;
+  type: CanonicalActivityType;
+  toolName: ProviderName;
+  summary: string;
+}
+
+/**
+ * Extended payload for context warning events.
+ */
+export interface ContextWarningPayload extends ActivityPayloadBase {
+  type: "context_warning";
+  severity: ContextWarningSeverity;
+  warningType: ContextWarningType;
+  currentUsage?: number;
+  maxCapacity?: number;
+  usagePercent?: number;
+}
+
+/**
+ * Extended payload for context compacted events.
+ */
+export interface ContextCompactedPayload extends ActivityPayloadBase {
+  type: "context_compacted";
+  previousBytes?: number;
+  newBytes?: number;
+  reductionPercent?: number;
+}
+
+/**
+ * Build a canonical activity payload (TypeScript).
+ * Use this when building payloads in Node.js code rather than shell scripts.
+ */
+export function buildActivityPayload(
+  taskRunId: string,
+  type: CanonicalActivityType,
+  provider: ProviderName,
+  summary: string
+): ActivityPayloadBase {
+  return { taskRunId, type, toolName: provider, summary };
+}
+
+/**
+ * Build a canonical context warning payload (TypeScript).
+ */
+export function buildContextWarningPayload(
+  taskRunId: string,
+  provider: ProviderName,
+  options: {
+    severity: ContextWarningSeverity;
+    warningType: ContextWarningType;
+    summary: string;
+    currentUsage?: number;
+    maxCapacity?: number;
+    usagePercent?: number;
+  }
+): ContextWarningPayload {
+  return {
+    taskRunId,
+    type: "context_warning",
+    toolName: provider,
+    summary: options.summary,
+    severity: options.severity,
+    warningType: options.warningType,
+    currentUsage: options.currentUsage,
+    maxCapacity: options.maxCapacity,
+    usagePercent: options.usagePercent,
+  };
+}
+
+/**
+ * Build a canonical context compacted payload (TypeScript).
+ */
+export function buildContextCompactedPayload(
+  taskRunId: string,
+  provider: ProviderName,
+  options: {
+    summary: string;
+    previousBytes?: number;
+    newBytes?: number;
+    reductionPercent?: number;
+  }
+): ContextCompactedPayload {
+  return {
+    taskRunId,
+    type: "context_compacted",
+    toolName: provider,
+    summary: options.summary,
+    previousBytes: options.previousBytes,
+    newBytes: options.newBytes,
+    reductionPercent: options.reductionPercent,
+  };
+}
+
+/**
+ * Generate a jq command for building canonical activity payloads in shell.
+ * Returns the jq expression (without the jq -n prefix).
+ */
+export function shellJqActivityPayload(
+  type: CanonicalActivityType,
+  provider: ProviderName,
+  summaryExpr: string
+): string {
+  return `--arg trid "\${CMUX_TASK_RUN_ID:-}" '{taskRunId: $trid, type: "${type}", toolName: "${provider}", summary: ${summaryExpr}}'`;
+}
+
+/**
+ * Generate a jq command for context warning payloads in shell.
+ * Includes severity and warningType fields.
+ */
+export function shellJqContextWarningPayload(
+  provider: ProviderName,
+  options: {
+    severity: ContextWarningSeverity;
+    warningType: ContextWarningType;
+    summaryExpr: string;
+  }
+): string {
+  return `--arg trid "\${CMUX_TASK_RUN_ID:-}" --arg sev "${options.severity}" --arg wtype "${options.warningType}" '{taskRunId: $trid, type: "context_warning", toolName: "${provider}", summary: ${options.summaryExpr}, severity: $sev, warningType: $wtype}'`;
+}
+
+/**
+ * Generate a full curl command for posting activity events from shell.
+ * Handles background execution and logging.
+ */
+export function shellCurlActivityPost(
+  type: CanonicalActivityType,
+  provider: ProviderName,
+  summaryExpr: string,
+  options?: {
+    background?: boolean;
+    logFile?: string;
+    extraJqArgs?: string;
+    extraJqFields?: string;
+  }
+): string {
+  const background = options?.background !== false;
+  const logFile = options?.logFile ?? '"\${LOG_FILE}"';
+  const extraArgs = options?.extraJqArgs ?? "";
+  const extraFields = options?.extraJqFields ?? "";
+
+  const jqPayload = `'{taskRunId: $trid, type: "${type}", toolName: "${provider}", summary: ${summaryExpr}${extraFields}}'`;
+
+  const curlCmd = `curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" ${extraArgs} ${jqPayload})" \\
+    >> ${logFile} 2>&1 || true`;
+
+  if (background) {
+    return `(
+  ${curlCmd}
+) &`;
+  }
+  return curlCmd;
 }
 
 /**

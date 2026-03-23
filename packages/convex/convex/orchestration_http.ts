@@ -49,6 +49,16 @@ export interface SpawnConfigData {
     confidence: number;
     projectFullName?: string;
   }>;
+  /** Scoped knowledge metadata (Phase 5: memory scope model) */
+  scopedKnowledge?: {
+    content: string | null;
+    sources: Array<{
+      scope: "team" | "repo" | "user" | "run";
+      hasContent: boolean;
+      byteSize: number;
+    }>;
+    totalByteSize: number;
+  };
 }
 
 const CreateTaskAndRunSchema = z.object({
@@ -475,6 +485,7 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
       previousKnowledge,
       previousMailbox,
       previousBehavior,
+      scopedKnowledge,
       orchestrationRulesRaw,
     ] = await Promise.all([
       ctx.runQuery(internal.apiKeys.getAllForAgentsInternal, { teamId, userId }),
@@ -503,6 +514,12 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
       ctx.runQuery(internal.agentMemoryQueries.getLatestTeamKnowledgeInternal, { teamId }),
       ctx.runQuery(internal.agentMemoryQueries.getLatestTeamMailboxInternal, { teamId }),
       ctx.runQuery(internal.agentMemoryQueries.getLatestTeamBehaviorHotInternal, { teamId }),
+      // Phase 5: Scoped knowledge with team/repo/user precedence
+      ctx.runQuery(internal.agentMemoryQueries.getScopedKnowledgeInternal, {
+        teamId,
+        userId,
+        ...(projectFullName ? { projectFullName } : {}),
+      }),
       ctx.runQuery(internal.agentOrchestrationLearning.getActiveRulesInternal, {
         teamId,
         ...(projectFullName ? { projectFullName } : {}),
@@ -541,6 +558,14 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
         confidence: r.confidence,
         projectFullName: r.projectFullName,
       })),
+      // Phase 5: Scoped knowledge with merged team/repo/user content
+      scopedKnowledge: scopedKnowledge
+        ? {
+            content: scopedKnowledge.content,
+            sources: scopedKnowledge.sources,
+            totalByteSize: scopedKnowledge.totalByteSize,
+          }
+        : undefined,
     };
 
     return jsonResponse(config);
