@@ -292,6 +292,10 @@ IMPORTANT: Respond ONLY with the JSON object, no other text.`;
           "You select the best implementation from structured diff inputs and explain briefly why.",
         prompt: evaluationPrompt,
         maxRetries: 2,
+        // Use outputFormat mode for Anthropic to avoid tool-use which CF gateway doesn't proxy correctly
+        providerOptions: {
+          anthropic: { structuredOutputMode: "outputFormat" },
+        },
       });
 
       console.info(`[convex.crown] Evaluation completed via ${provider}`);
@@ -407,6 +411,10 @@ OUTPUT FORMAT (Markdown)
           "You are an expert reviewer summarizing pull requests. Provide a clear, concise summary following the requested format.",
         prompt: summarizationPrompt,
         maxRetries: 2,
+        // Use outputFormat mode for Anthropic to avoid tool-use which CF gateway doesn't proxy correctly
+        providerOptions: {
+          anthropic: { structuredOutputMode: "outputFormat" },
+        },
       });
 
       console.info(`[convex.crown] Summarization completed via ${provider}`);
