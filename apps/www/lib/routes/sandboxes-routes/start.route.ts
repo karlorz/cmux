@@ -58,6 +58,7 @@ import {
   type PveLxcInstance,
   type SandboxInstance,
 } from "./_helpers";
+import { buildSystemSandboxEnvContent } from "./system-sandbox-env";
 
 export const sandboxesStartRouter = new OpenAPIHono();
 
@@ -344,6 +345,7 @@ sandboxesStartRouter.openapi(
         body.isCloudWorkspace !== undefined
           ? body.isCloudWorkspace
           : !body.taskRunId;
+      const isOrchestrationHead = body.isOrchestrationHead ?? isCloudWorkspace;
 
       const scriptIdentifiers =
         maintenanceScript || devScript ? allocateScriptIdentifiers() : null;
@@ -572,25 +574,28 @@ sandboxesStartRouter.openapi(
 
       const environmentEnvVarsContent = await environmentEnvVarsPromise;
 
-      let envVarsToApply =
+      if (body.taskRunJwt && !env.CMUX_TASK_RUN_JWT_SECRET) {
+        console.warn(
+          "[sandboxes.start] CMUX_TASK_RUN_JWT_SECRET not configured, image uploads will not work",
+        );
+      }
+
+      const systemSandboxEnvContent = buildSystemSandboxEnvContent({
+        taskRunId: body.taskRunId,
+        taskRunJwt: body.taskRunJwt,
+        taskRunJwtSecret: env.CMUX_TASK_RUN_JWT_SECRET,
+        isCloudWorkspace,
+        isOrchestrationHead,
+      });
+      const envVarsToApply =
         concatConfigBlocks(
-          [workspaceEnvVarsContent, environmentEnvVarsContent],
+          [
+            workspaceEnvVarsContent,
+            environmentEnvVarsContent,
+            systemSandboxEnvContent,
+          ],
           "\n",
         ) ?? "";
-
-      if (body.taskRunId) {
-        envVarsToApply += `\nCMUX_TASK_RUN_ID="${body.taskRunId}"`;
-      }
-      if (body.taskRunJwt) {
-        envVarsToApply += `\nCMUX_TASK_RUN_JWT="${body.taskRunJwt}"`;
-        if (env.CMUX_TASK_RUN_JWT_SECRET) {
-          envVarsToApply += `\nCMUX_TASK_RUN_JWT_SECRET="${env.CMUX_TASK_RUN_JWT_SECRET}"`;
-        } else {
-          console.warn(
-            "[sandboxes.start] CMUX_TASK_RUN_JWT_SECRET not configured, image uploads will not work",
-          );
-        }
-      }
 
       if (envVarsToApply.trim().length > 0) {
         try {
@@ -655,9 +660,6 @@ sandboxesStartRouter.openapi(
                 return null;
               }),
           ]);
-          // Determine if this is an orchestration head agent
-          // Explicit flag takes precedence, otherwise cloud workspaces are head agents
-          const isOrchestrationHead = body.isOrchestrationHead ?? isCloudWorkspace;
           const result = await setupProviderAuth(instance, convex, {
             teamSlugOrId: body.teamSlugOrId,
             projectFullName: parsedRepoUrl?.fullName,
