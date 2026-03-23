@@ -397,6 +397,36 @@ export const remove = authMutation({
 });
 
 /**
+ * Trigger a scheduled task to run immediately (manual trigger for testing).
+ */
+export const triggerNow = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    scheduledTaskId: v.id("scheduledTasks"),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+    const userId = ctx.identity.subject;
+
+    const task = await ctx.db.get(args.scheduledTaskId);
+    if (!task || task.teamId !== teamId || task.userId !== userId) {
+      throw new Error("Scheduled task not found or unauthorized");
+    }
+
+    if (task.status === "disabled") {
+      throw new Error("Cannot trigger a disabled task");
+    }
+
+    // Schedule immediate execution
+    await ctx.scheduler.runAfter(0, internal.scheduledTasks.startRun, {
+      scheduledTaskId: args.scheduledTaskId,
+    });
+
+    return { ok: true, message: "Task triggered" };
+  },
+});
+
+/**
  * Get run history for a scheduled task.
  */
 export const getRunHistory = authQuery({

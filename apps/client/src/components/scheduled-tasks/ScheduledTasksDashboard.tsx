@@ -10,6 +10,7 @@ import {
   Plus,
   History,
   RefreshCw,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -105,6 +106,7 @@ export function ScheduledTasksDashboard({ teamSlugOrId }: ScheduledTasksDashboar
   const pauseTask = useMutation(api.scheduledTasks.pause);
   const resumeTask = useMutation(api.scheduledTasks.resume);
   const removeTask = useMutation(api.scheduledTasks.remove);
+  const triggerTask = useMutation(api.scheduledTasks.triggerNow);
 
   const handlePause = (scheduledTaskId: Id<"scheduledTasks">) => {
     pauseTask({ teamSlugOrId, scheduledTaskId });
@@ -112,6 +114,10 @@ export function ScheduledTasksDashboard({ teamSlugOrId }: ScheduledTasksDashboar
 
   const handleResume = (scheduledTaskId: Id<"scheduledTasks">) => {
     resumeTask({ teamSlugOrId, scheduledTaskId });
+  };
+
+  const handleTrigger = (scheduledTaskId: Id<"scheduledTasks">) => {
+    triggerTask({ teamSlugOrId, scheduledTaskId });
   };
 
   const handleRemove = (scheduledTaskId: Id<"scheduledTasks">) => {
@@ -173,6 +179,16 @@ export function ScheduledTasksDashboard({ teamSlugOrId }: ScheduledTasksDashboar
                     </CardDescription>
                   </div>
                   <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => handleTrigger(task._id)}
+                      disabled={task.status === "disabled"}
+                      title="Run now"
+                    >
+                      <Zap className="w-4 h-4" />
+                    </Button>
                     <Button
                       variant="ghost"
                       size="icon"
