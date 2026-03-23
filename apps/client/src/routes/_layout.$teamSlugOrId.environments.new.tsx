@@ -2,6 +2,7 @@ import { EnvironmentSetupFlow } from "@/components/environment";
 import { FloatingPane } from "@/components/floating-pane";
 import { RepositoryPicker } from "@/components/RepositoryPicker";
 import { TitleBar } from "@/components/TitleBar";
+import { resolveEnvironmentSetupInitialLayoutPhase } from "@/lib/environment-setup-layout-phase";
 import { resolveCanonicalSandboxSnapshotId } from "@/lib/sandbox-config-snapshot";
 import {
   clearEnvironmentDraft,
@@ -91,6 +92,11 @@ function EnvironmentsPage() {
   const activeStep = draft?.step ?? stepFromSearch;
   const activeSelectedRepos = draft?.selectedRepos ?? urlSelectedRepos;
   const activeInstanceId = draft?.instanceId ?? urlInstanceId;
+  const initialLayoutPhase = resolveEnvironmentSetupInitialLayoutPhase({
+    activeStep,
+    activeInstanceId,
+    draftLayoutPhase: draft?.layoutPhase,
+  });
   // Normalize snapshotId to canonical form (e.g., "4vcpu_8gb_32gb" -> "snapshot_xxx")
   const rawSnapshotId = draft?.snapshotId ?? searchSnapshotId;
   const activeSnapshotId = useMemo(() => {
@@ -298,7 +304,7 @@ function EnvironmentsPage() {
             initialDevScript={draft?.config?.devScript}
             initialExposedPorts={draft?.config?.exposedPorts}
             initialEnvVars={draft?.config?.envVars}
-            initialLayoutPhase={draft?.layoutPhase}
+            initialLayoutPhase={initialLayoutPhase}
             initialConfigStep={draft?.configStep}
             onEnvironmentSaved={handleResetDraft}
             onBack={handleBackToRepositorySelection}
