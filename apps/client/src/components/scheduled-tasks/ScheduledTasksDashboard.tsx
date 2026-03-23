@@ -11,6 +11,7 @@ import {
   History,
   RefreshCw,
   Zap,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +23,7 @@ import {
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { CreateScheduledTaskDialog } from "./CreateScheduledTaskDialog";
+import { EditScheduledTaskDialog } from "./EditScheduledTaskDialog";
 import { ScheduledTaskRunHistory } from "./ScheduledTaskRunHistory";
 import type { Doc, Id } from "@cmux/convex/dataModel";
 
@@ -99,6 +101,7 @@ function StatusBadge({ status }: { status: ScheduledTask["status"] }) {
 export function ScheduledTasksDashboard({ teamSlugOrId }: ScheduledTasksDashboardProps) {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<Id<"scheduledTasks"> | null>(null);
+  const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
 
   const tasks = useQuery(api.scheduledTasks.list, { teamSlugOrId });
   const isLoading = tasks === undefined;
@@ -193,6 +196,15 @@ export function ScheduledTasksDashboard({ teamSlugOrId }: ScheduledTasksDashboar
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8"
+                      onClick={() => setEditingTask(task)}
+                      title="Edit task"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
                       onClick={() => setSelectedTaskId(task._id)}
                       title="View run history"
                     >
@@ -273,6 +285,14 @@ export function ScheduledTasksDashboard({ teamSlugOrId }: ScheduledTasksDashboar
           onOpenChange={(open) => !open && setSelectedTaskId(null)}
         />
       )}
+
+      <EditScheduledTaskDialog
+        teamSlugOrId={teamSlugOrId}
+        task={editingTask}
+        open={!!editingTask}
+        onOpenChange={(open) => !open && setEditingTask(null)}
+        onUpdated={() => setEditingTask(null)}
+      />
     </div>
   );
 }
