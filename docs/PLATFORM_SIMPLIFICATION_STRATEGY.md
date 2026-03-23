@@ -214,14 +214,14 @@ All 8 providers already use shared builders:
 | Task monitoring | ✅ | ✅ | ❌ |
 | Orchestration | ✅ | ✅ | ❌ |
 | PVE-LXC provider | ✅ | ✅ | ✅ |
-| E2B provider | ✅ | ❌ | ✅ |
+| E2B provider | ✅ | ✅ | ✅ |
 | Browser automation | ✅ | ✅ | ✅ |
 | Local captain mode | ❌ | ✅ | ❌ |
 | GPU support | ❌ | ❌ | ✅ |
 
 ### Recommended Actions
 
-1. **Add E2B to devsh**: Enable `devsh start --provider e2b`
+1. ~~**Add E2B to devsh**: Enable `devsh start --provider e2b`~~ ✅ Complete (2026-03-23)
 2. **Add task commands to cloudrouter**: Or document that devsh is primary
 3. **Add local replay to web**: Port `devsh orchestrate view` to dashboard
 
@@ -229,14 +229,14 @@ All 8 providers already use shared builders:
 
 ## 6. Recommended Implementation Order
 
-| Phase | Task | Effort | Impact |
-|-------|------|--------|--------|
-| **1** | Coolify web stack cutover | 1 day | High (cost) |
-| **2** | Add E2B provider to devsh | 4 hours | High (parity) |
-| **3** | Set PVE-LXC as default provider | 1 hour | High (cost) |
-| **4** | Configure AI gateway routing | 2 hours | Medium (cost) |
-| **5** | Update docs (devsh as primary CLI) | 2 hours | Medium (UX) |
-| **6** | Flatten rules pipeline (3 statuses) | 4 hours | Low (simplicity) |
+| Phase | Task | Effort | Impact | Status |
+|-------|------|--------|--------|--------|
+| **1** | Coolify web stack cutover | 1 day | High (cost) | OPS |
+| **2** | ~~Add E2B provider to devsh~~ | 4 hours | High (parity) | ✅ Done |
+| **3** | Set PVE-LXC as default provider | 1 hour | High (cost) | OPS |
+| **4** | Configure AI gateway routing | 2 hours | Medium (cost) | OPS |
+| **5** | Update docs (devsh as primary CLI) | 2 hours | Medium (UX) | Pending |
+| **6** | Flatten rules pipeline (3 statuses) | 4 hours | Low (simplicity) | Pending |
 
 ---
 
