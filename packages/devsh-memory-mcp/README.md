@@ -125,7 +125,7 @@ Logged items are reviewed by team leads and may be promoted to active orchestrat
 |----------|-------------|
 | `CMUX_TASK_RUN_JWT` | JWT for authenticating orchestration API calls |
 | `CMUX_ORCHESTRATION_ID` | Current orchestration session ID |
-| `CMUX_API_BASE_URL` | API base URL (default: https://cmux.sh) |
+| `CMUX_API_BASE_URL` | API base URL (default: https://cmux-www.karldigi.dev) |
 
 ## Memory Directory Structure
 

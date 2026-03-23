@@ -25,6 +25,7 @@ type SiteHeaderProps = {
   extraEndContent?: ReactNode;
   githubUrl?: string;
   githubStars?: number | null;
+  webUrl?: string;
 };
 
 const DEFAULT_DOWNLOAD_URLS: MacDownloadUrls = {
@@ -65,6 +66,7 @@ export function SiteHeader({
   extraEndContent,
   githubUrl = DEFAULT_GITHUB_URL,
   githubStars = null,
+  webUrl = "https://cmux.karldigi.dev",
 }: SiteHeaderProps) {
   const effectiveUrls = macDownloadUrls ?? DEFAULT_DOWNLOAD_URLS;
   const [isScrolled, setIsScrolled] = useState(false);
@@ -153,7 +155,7 @@ export function SiteHeader({
           ) : null}
           <a
             className="hidden md:inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-black shadow-sm transition hover:bg-neutral-100"
-            href="https://cmux.sh"
+            href={webUrl}
             rel="noopener noreferrer"
             target="_blank"
           >
