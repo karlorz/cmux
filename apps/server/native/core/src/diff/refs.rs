@@ -272,7 +272,10 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
                             _d_head.as_millis(),
                             cwd,
                         );
-                        return Ok(Vec::new());
+                        return Err(anyhow::anyhow!(
+                            "Branch '{}' not found. It may have been deleted after the PR was merged.",
+                            head_ref
+                        ));
                     }
                 } else {
                     let _d_head = t_head.elapsed();
@@ -283,7 +286,10 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
                         _d_head.as_millis(),
                         cwd,
                     );
-                    return Ok(Vec::new());
+                    return Err(anyhow::anyhow!(
+                        "Branch '{}' not found. It may have been deleted after the PR was merged.",
+                        head_ref
+                    ));
                 }
             } else {
                 let _d_head = t_head.elapsed();
@@ -294,7 +300,10 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
                     _d_head.as_millis(),
                     cwd,
                 );
-                return Ok(Vec::new());
+                return Err(anyhow::anyhow!(
+                    "Branch '{}' not found. It may have been deleted after the PR was merged.",
+                    head_ref
+                ));
             }
         }
     };
