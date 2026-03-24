@@ -8,6 +8,8 @@ import { typedZid } from "@cmux/shared/utils/typed-zid";
 /**
  * Activity event types for dashboard timeline.
  * Extended to include canonical lifecycle events from agent-comm-events.ts.
+ *
+ * Phase 4 additions align with provider-lifecycle-adapter.ts for full parity.
  */
 const ACTIVITY_TYPES = [
   // Tool-use events (original)
@@ -23,11 +25,22 @@ const ACTIVITY_TYPES = [
   "session_start",
   "session_stop",
   "session_resumed",
+  // Stop lifecycle events (Phase 4 - lifecycle parity)
+  "stop_requested",
+  "stop_blocked",
+  "stop_failed",
   // Context health events (Phase 2)
   "context_warning",
   "context_compacted",
-  // Memory events (Phase 2)
+  // Memory events (Phase 2 + Phase 4)
   "memory_loaded",
+  "memory_scope_changed",
+  // Tool lifecycle events (Phase 4 - detailed tool tracking)
+  "tool_requested",
+  "tool_completed",
+  // Approval flow events (Phase 4 - runtime interruptions)
+  "approval_requested",
+  "approval_resolved",
   // Interaction events (Phase 2)
   "user_prompt",
   "subagent_start",
@@ -41,6 +54,9 @@ const ACTIVITY_TYPES = [
  * Base fields (required): taskRunId, type, summary
  * Tool fields (optional): toolName, detail, durationMs
  * Context health fields (optional): severity, warningType, currentUsage, maxCapacity, usagePercent
+ * Stop lifecycle fields (optional): stopSource, exitCode, continuationPrompt
+ * Approval fields (optional): approvalId, resolution, resolvedBy
+ * Memory scope fields (optional): scopeType, scopeBytes, scopeAction
  */
 const ActivityEventSchema = z.object({
   taskRunId: typedZid("taskRuns"),
@@ -61,6 +77,20 @@ const ActivityEventSchema = z.object({
   previousBytes: z.number().nonnegative().optional(),
   newBytes: z.number().nonnegative().optional(),
   reductionPercent: z.number().min(0).max(100).optional(),
+  // Stop lifecycle fields (Phase 4 - stop_requested/blocked/failed events)
+  stopSource: z.enum(["user", "hook", "autopilot", "policy", "timeout", "error"]).optional(),
+  exitCode: z.number().optional(),
+  continuationPrompt: z.string().max(2000).optional(),
+  // Approval fields (Phase 4 - approval_requested/resolved events)
+  approvalId: z.string().max(100).optional(),
+  resolution: z
+    .enum(["allow", "allow_once", "allow_session", "deny", "deny_always", "timeout"])
+    .optional(),
+  resolvedBy: z.string().max(100).optional(),
+  // Memory scope fields (Phase 4 - memory_scope_changed events)
+  scopeType: z.enum(["team", "repo", "user", "run"]).optional(),
+  scopeBytes: z.number().nonnegative().optional(),
+  scopeAction: z.enum(["injected", "updated", "cleared"]).optional(),
 });
 
 /**
