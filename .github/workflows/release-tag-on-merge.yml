@@ -74,3 +74,19 @@ jobs:
           git tag "$tag" "$GITHUB_SHA"
           git push origin "refs/tags/$tag"
           echo "Created and pushed $tag at ${GITHUB_SHA}." >> "$GITHUB_STEP_SUMMARY"
+
+      # Trigger the Electron build workflow via workflow_dispatch since tags pushed
+      # by GITHUB_TOKEN don't trigger other workflows (GitHub Actions limitation)
+      - name: Trigger Electron build workflow
+        if: steps.resolve.outputs.should_tag == 'true' && steps.existing.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.resolve.outputs.tag }}"
+          echo "Triggering release-on-tag.yml for $tag"
+          gh workflow run "Build & Publish Electron Updates (GitHub Releases) on Tag" \
+            --ref main \
+            -f release_tag="$tag"
+          echo "Triggered Electron build workflow for $tag" >> "$GITHUB_STEP_SUMMARY"
