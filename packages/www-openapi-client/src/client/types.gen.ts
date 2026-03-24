@@ -32,6 +32,40 @@ export type SandboxHealth = {
     timestamp: string;
 };
 
+export type PveLxcHealth = {
+    ok: boolean;
+    /**
+     * PVE API URL (masked for security)
+     */
+    apiUrl: string;
+    /**
+     * Active PVE node
+     */
+    node: string | null;
+    /**
+     * Public domain for sandbox URLs
+     */
+    publicDomain: string | null;
+    /**
+     * Number of cmux containers running
+     */
+    containerCount?: number;
+    /**
+     * Error message if not ok
+     */
+    error?: string;
+    timestamp: string;
+    /**
+     * Environment variable configuration status
+     */
+    envConfigured: {
+        PVE_API_URL: boolean;
+        PVE_API_TOKEN: boolean;
+        PVE_NODE: boolean;
+        PVE_PUBLIC_DOMAIN: boolean;
+    };
+};
+
 export type AnonymousSignUpResponse = {
     success: boolean;
     userId?: string;
@@ -2325,6 +2359,22 @@ export type GetApiHealthSandboxResponses = {
 };
 
 export type GetApiHealthSandboxResponse = GetApiHealthSandboxResponses[keyof GetApiHealthSandboxResponses];
+
+export type GetApiHealthPveLxcData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/health/pve-lxc';
+};
+
+export type GetApiHealthPveLxcResponses = {
+    /**
+     * PVE LXC health status
+     */
+    200: PveLxcHealth;
+};
+
+export type GetApiHealthPveLxcResponse = GetApiHealthPveLxcResponses[keyof GetApiHealthPveLxcResponses];
 
 export type PostApiAuthAnonymousSignUpData = {
     body?: never;
