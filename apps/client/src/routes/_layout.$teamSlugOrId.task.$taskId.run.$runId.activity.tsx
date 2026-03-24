@@ -11,6 +11,7 @@ import { CompactErrorFallback, ErrorBoundary } from "@/components/ErrorBoundary"
 import { LiveDiffStats } from "@/components/LiveDiffStats";
 import { CostEstimationCard } from "@/components/dashboard/CostEstimationCard";
 import { ResourceUsageCard } from "@/components/dashboard/ResourceUsageCard";
+import { SessionBindingCard } from "@/components/dashboard/SessionBindingCard";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 
 const paramsSchema = z.object({
@@ -87,7 +88,7 @@ function TaskRunActivity() {
 
       {showMetrics && (
         <div className="px-4 pb-4">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             <ErrorBoundary
               key={`${resetKey}-resource-usage`}
               name="Resource Usage"
@@ -101,6 +102,13 @@ function TaskRunActivity() {
               fallback={<CompactErrorFallback name="Cost Estimation" />}
             >
               <CostEstimationCard taskRunId={taskRunId} teamSlugOrId={teamSlugOrId} />
+            </ErrorBoundary>
+            <ErrorBoundary
+              key={`${resetKey}-session-binding`}
+              name="Session Binding"
+              fallback={<CompactErrorFallback name="Session Binding" />}
+            >
+              <SessionBindingCard taskRunId={taskRunId} teamSlugOrId={teamSlugOrId} />
             </ErrorBoundary>
           </div>
         </div>
