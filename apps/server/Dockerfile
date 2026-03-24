@@ -79,9 +79,18 @@ RUN npm install @napi-rs/cli
 # Pin crates to versions compatible with stable Rust 1.85
 # - home 0.5.12 requires Rust 1.88
 # - human_format 1.2.1 uses unstable let-chains feature
+# - unicode-segmentation 1.13.0 uses unstable unsigned_is_multiple_of feature
 RUN cargo update home --precise 0.5.11 && \
-    cargo update human_format --precise 1.1.0
+    cargo update human_format --precise 1.1.0 && \
+    cargo update unicode-segmentation --precise 1.12.0
 RUN npx napi build --platform --release
+
+# Verify native module was built successfully (supports both x64 and arm64)
+RUN echo "[Dockerfile] Verifying native module build..." && \
+    ls -la *.node && \
+    NODE_FILE=$(ls cmux_native_core.linux-*.node 2>/dev/null | head -1) && \
+    test -n "$NODE_FILE" && \
+    echo "[Dockerfile] Native module verified: $NODE_FILE"
 
 # =============================================================================
 # Stage 3: Production

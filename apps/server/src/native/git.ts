@@ -46,7 +46,29 @@ type NativeGitModule = {
   >;
 };
 
+// Debug logging - enabled via CMUX_NATIVE_DEBUG=1 or always in production
+const DEBUG = process.env.CMUX_NATIVE_DEBUG === "1" || process.env.NODE_ENV === "production";
+
+function debugLog(...args: unknown[]): void {
+  if (DEBUG) {
+    console.log("[native-git]", ...args);
+  }
+}
+
+function debugWarn(...args: unknown[]): void {
+  if (DEBUG) {
+    console.warn("[native-git]", ...args);
+  }
+}
+
+function debugError(...args: unknown[]): void {
+  // Always log errors
+  console.error("[native-git]", ...args);
+}
+
 function tryLoadNative(): NativeGitModule | null {
+  debugLog(`Starting native module load - platform: ${process.platform}, arch: ${process.arch}`);
+
   try {
     const nodeRequire = createRequire(import.meta.url);
     const here = path.dirname(fileURLToPath(import.meta.url));
@@ -72,25 +94,51 @@ function tryLoadNative(): NativeGitModule | null {
       path.resolve(process.cwd(), "server/native/core"),
     ];
 
+    debugLog(`Searching ${dirCandidates.length} candidate directories`);
+
     for (const maybeDir of dirCandidates) {
       const nativeDir = maybeDir ?? "";
       if (!nativeDir) continue;
       try {
         const files = fs.readdirSync(nativeDir);
         const nodes = files.filter((f) => f.endsWith(".node"));
+        debugLog(`Dir ${nativeDir}: found ${nodes.length} .node file(s):`, nodes);
+
         const preferred =
           nodes.find((f) => f.includes(plat) && f.includes(arch)) || nodes[0];
-        if (!preferred) continue;
-        const mod = nodeRequire(
-          path.join(nativeDir, preferred)
-        ) as unknown as NativeGitModule;
-        return mod ?? null;
-      } catch {
-        // try next
+        if (!preferred) {
+          debugLog(`Dir ${nativeDir}: no matching .node file for ${plat}-${arch}`);
+          continue;
+        }
+
+        const fullPath = path.join(nativeDir, preferred);
+        debugLog(`Attempting to load: ${fullPath}`);
+
+        // Check file exists and is readable before loading
+        try {
+          const stat = fs.statSync(fullPath);
+          debugLog(`File stats: size=${stat.size}, mode=${stat.mode.toString(8)}`);
+        } catch (statErr) {
+          debugError(`Cannot stat ${fullPath}:`, statErr);
+          continue;
+        }
+
+        const mod = nodeRequire(fullPath) as unknown as NativeGitModule;
+
+        if (mod) {
+          const functions = Object.keys(mod).filter((k) => typeof (mod as Record<string, unknown>)[k] === "function");
+          debugLog(`Successfully loaded native module with functions:`, functions);
+          return mod;
+        }
+        debugWarn(`Module loaded but is null/undefined`);
+      } catch (err) {
+        debugError(`Failed to load from ${nativeDir}:`, err);
       }
     }
+    debugWarn("No valid .node file found in any candidate directory");
     return null;
-  } catch {
+  } catch (err) {
+    debugError("Unexpected error in tryLoadNative:", err);
     return null;
   }
 }
@@ -101,6 +149,27 @@ export function loadNativeGit(): NativeGitModule | null {
     cachedNative = tryLoadNative();
   }
   return cachedNative ?? null;
+}
+
+/**
+ * Returns diagnostic info about native module status.
+ * Used for health checks and debugging.
+ */
+export function getNativeGitStatus(): {
+  available: boolean;
+  gitDiff: boolean;
+  gitListRemoteBranches: boolean;
+  platform: string;
+  arch: string;
+} {
+  const mod = loadNativeGit();
+  return {
+    available: mod !== null,
+    gitDiff: typeof mod?.gitDiff === "function",
+    gitListRemoteBranches: typeof mod?.gitListRemoteBranches === "function",
+    platform: process.platform,
+    arch: process.arch,
+  };
 }
 
 export async function gitDiff(opts: GitDiffOptions): Promise<ReplaceDiffEntry[]> {

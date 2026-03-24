@@ -21,6 +21,7 @@ import {
 } from "@cmux/convex/orchestrationQueries";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { spawnAgent, spawnAllAgents, type PreFetchedSpawnConfig } from "./agentSpawner";
+import { getNativeGitStatus } from "./native/git";
 import { getProviderHealthMonitor } from "@cmux/shared/resilience/provider-health";
 import {
   DEFAULT_BRANCH_PREFIX,
@@ -2286,6 +2287,17 @@ export function handleHttpRequest(
   // Route: GET /api/health
   if (method === "GET" && path === "/api/health") {
     jsonResponse(res, 200, { status: "ok", service: "apps-server" });
+    return true;
+  }
+
+  // Route: GET /api/health/native - Check native module status
+  if (method === "GET" && path === "/api/health/native") {
+    const nativeStatus = getNativeGitStatus();
+    const status = nativeStatus.available ? "ok" : "unavailable";
+    jsonResponse(res, nativeStatus.available ? 200 : 503, {
+      status,
+      ...nativeStatus,
+    });
     return true;
   }
 

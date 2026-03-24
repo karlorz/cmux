@@ -1,4 +1,16 @@
 import { startServer } from "./server";
+import { getNativeGitStatus } from "./native/git";
+
+// Log native module status early (before any git diff operations fail)
+const nativeStatus = getNativeGitStatus();
+console.log(`[startup] Native git module: ${nativeStatus.available ? "LOADED" : "NOT AVAILABLE"}`);
+if (nativeStatus.available) {
+  console.log(`[startup]   gitDiff: ${nativeStatus.gitDiff ? "yes" : "no"}`);
+  console.log(`[startup]   gitListRemoteBranches: ${nativeStatus.gitListRemoteBranches ? "yes" : "no"}`);
+} else {
+  console.warn(`[startup] WARNING: Git diff panels will not work without native module`);
+  console.warn(`[startup]   platform: ${nativeStatus.platform}, arch: ${nativeStatus.arch}`);
+}
 
 // Validate critical shared exports are resolvable at startup.
 // Bun caches module resolution at startup and does NOT watch package.json files.
