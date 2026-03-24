@@ -83,6 +83,13 @@ RUN cargo update home --precise 0.5.11 && \
     cargo update human_format --precise 1.1.0
 RUN npx napi build --platform --release
 
+# Verify native module was built successfully (supports both x64 and arm64)
+RUN echo "[Dockerfile] Verifying native module build..." && \
+    ls -la *.node && \
+    NODE_FILE=$(ls cmux_native_core.linux-*.node 2>/dev/null | head -1) && \
+    test -n "$NODE_FILE" && \
+    echo "[Dockerfile] Native module verified: $NODE_FILE"
+
 # =============================================================================
 # Stage 3: Production
 # =============================================================================
