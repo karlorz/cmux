@@ -152,6 +152,13 @@ export interface PreFetchedSpawnConfig {
     }>;
     totalByteSize: number;
   };
+  /** Orchestration settings for auto-spawn sub-agents */
+  orchestrationSettings?: {
+    autoSpawnEnabled: boolean;
+    defaultCodingAgent: string;
+    maxConcurrentSubAgents: number;
+    maxTaskDurationMinutes: number;
+  };
 }
 
 /** Autopilot mode configuration for long-running agent sessions (Phase 6) */
@@ -544,6 +551,18 @@ export async function spawnAgent(
     if (options.isOrchestrationHead) {
       systemEnvVars.CMUX_IS_ORCHESTRATION_HEAD = "1";
       serverLogger.info("[AgentSpawner] Orchestration head mode enabled");
+    }
+    // Add auto-spawn sub-agents settings from pre-fetched config
+    if (options.preFetchedConfig?.orchestrationSettings?.autoSpawnEnabled) {
+      systemEnvVars.CMUX_AUTO_SPAWN_ENABLED = "1";
+      systemEnvVars.CMUX_DEFAULT_CODING_AGENT = options.preFetchedConfig.orchestrationSettings.defaultCodingAgent;
+      systemEnvVars.CMUX_MAX_CONCURRENT_SUBAGENTS = String(options.preFetchedConfig.orchestrationSettings.maxConcurrentSubAgents);
+      systemEnvVars.CMUX_MAX_TASK_DURATION_MINUTES = String(options.preFetchedConfig.orchestrationSettings.maxTaskDurationMinutes);
+      serverLogger.info(
+        `[AgentSpawner] Auto-spawn enabled: agent=${options.preFetchedConfig.orchestrationSettings.defaultCodingAgent}, ` +
+        `max=${options.preFetchedConfig.orchestrationSettings.maxConcurrentSubAgents}, ` +
+        `timeout=${options.preFetchedConfig.orchestrationSettings.maxTaskDurationMinutes}min`
+      );
     }
     if (options.isCloudWorkspace) {
       systemEnvVars.CMUX_IS_CLOUD_WORKSPACE = "1";

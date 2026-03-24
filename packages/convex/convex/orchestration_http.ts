@@ -59,6 +59,13 @@ export interface SpawnConfigData {
     }>;
     totalByteSize: number;
   };
+  /** Orchestration settings for auto-spawn sub-agents */
+  orchestrationSettings?: {
+    autoSpawnEnabled: boolean;
+    defaultCodingAgent: string;
+    maxConcurrentSubAgents: number;
+    maxTaskDurationMinutes: number;
+  };
 }
 
 const CreateTaskAndRunSchema = z.object({
@@ -487,6 +494,7 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
       previousBehavior,
       scopedKnowledge,
       orchestrationRulesRaw,
+      orchestrationSettings,
     ] = await Promise.all([
       ctx.runQuery(internal.apiKeys.getAllForAgentsInternal, { teamId, userId }),
       ctx.runQuery(internal.workspaceSettings.getByTeamAndUserInternal, { teamId, userId }),
@@ -525,6 +533,8 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
         ...(projectFullName ? { projectFullName } : {}),
         minConfidence: 0.3, // Only inject rules with at least 30% confidence into agent context
       }),
+      // Orchestration settings for auto-spawn sub-agents
+      ctx.runQuery(internal.orchestrationSettings.getByTeamIdInternal, { teamId }),
     ]);
 
     const config: SpawnConfigData = {
@@ -566,6 +576,13 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
             totalByteSize: scopedKnowledge.totalByteSize,
           }
         : undefined,
+      // Orchestration settings for auto-spawn sub-agents
+      orchestrationSettings: {
+        autoSpawnEnabled: orchestrationSettings.autoSpawnEnabled,
+        defaultCodingAgent: orchestrationSettings.defaultCodingAgent,
+        maxConcurrentSubAgents: orchestrationSettings.maxConcurrentSubAgents,
+        maxTaskDurationMinutes: orchestrationSettings.maxTaskDurationMinutes,
+      },
     };
 
     return jsonResponse(config);

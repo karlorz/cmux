@@ -327,6 +327,31 @@ orchestration/
 | `CMUX_TASK_RUN_JWT` | JWT for authenticating sub-agent spawns |
 | `CMUX_HEAD_AGENT` | Name of the head agent coordinating |
 | `CMUX_PARENT_TASK_RUN_ID` | Parent task run ID for nested orchestration |
+| `CMUX_AUTO_SPAWN_ENABLED` | Set to `1` when auto-spawn sub-agents is enabled in team settings |
+| `CMUX_DEFAULT_CODING_AGENT` | Default agent model for spawned sub-agents (e.g., `codex/gpt-5.1-codex-mini`) |
+| `CMUX_MAX_CONCURRENT_SUBAGENTS` | Maximum number of concurrent sub-agents allowed |
+| `CMUX_MAX_TASK_DURATION_MINUTES` | Maximum duration in minutes for sub-agent tasks |
+
+### Auto-Spawn Settings
+
+When `CMUX_AUTO_SPAWN_ENABLED=1` is set, head agents can spawn sub-agents using the `spawn_agent` MCP tool. The settings are configured via the Orchestration Settings UI:
+
+- **Auto-Spawn Sub-Agents toggle**: Enables/disables the auto-spawn capability
+- **Default Coding Agent**: The preferred agent model for delegated coding tasks
+- **Max Concurrent Sub-Agents**: Limits parallel sub-agent execution
+- **Max Task Duration**: Timeout for sub-agent tasks
+
+Example usage in a head agent:
+
+```typescript
+if (process.env.CMUX_AUTO_SPAWN_ENABLED === "1") {
+  const defaultAgent = process.env.CMUX_DEFAULT_CODING_AGENT || "codex/gpt-5.1-codex-mini";
+  await spawn_agent({
+    prompt: "Implement the feature",
+    agentName: defaultAgent,
+  });
+}
+```
 
 ## Best Practices
 
