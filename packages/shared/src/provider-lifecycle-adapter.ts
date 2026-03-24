@@ -65,16 +65,22 @@ export type ProviderName =
  * - tool_requested / tool_completed for full tool lifecycle
  * - approval_requested / approval_resolved for approval flow
  * - memory_scope_changed for scope transitions
+ * - prompt_submitted / session_finished / run_resumed for turn tracking
+ * - mcp_capabilities_negotiated for MCP runtime state
  */
 export type LifecycleEventType =
   // Session lifecycle
   | "session_start"
   | "session_stop"
   | "session_resumed"
+  | "session_finished"
   // Stop lifecycle (Priority 1)
   | "stop_requested"
   | "stop_blocked"
   | "stop_failed"
+  // Prompt and turn tracking (P1 Lifecycle Parity)
+  | "prompt_submitted"
+  | "run_resumed"
   // Error
   | "error"
   // Context health
@@ -89,7 +95,9 @@ export type LifecycleEventType =
   | "tool_completed"
   // Approval lifecycle (Priority 1)
   | "approval_requested"
-  | "approval_resolved";
+  | "approval_resolved"
+  // MCP runtime (P5 Lifecycle Parity)
+  | "mcp_capabilities_negotiated";
 
 /**
  * Context for building lifecycle hooks.
@@ -987,4 +995,208 @@ curl -s -X POST "\${CMUX_CALLBACK_URL}/api/runtime/interrupt" \\
 ${options?.epilog ?? ""}
 exit 0
 `;
+}
+
+// =============================================================================
+// P1 Lifecycle Parity: Prompt and Turn Tracking
+// =============================================================================
+
+/**
+ * Payload for prompt_submitted events.
+ */
+export interface PromptSubmittedPayload {
+  taskRunId: string;
+  type: "prompt_submitted";
+  toolName: string;
+  summary: string;
+  source: "user" | "operator" | "hook" | "queue" | "handoff";
+  turnNumber?: number;
+  promptLength?: number;
+  providerSessionId?: string;
+}
+
+/**
+ * P1: Build a prompt_submitted payload (TypeScript).
+ * Use when tracking prompts/turns submitted to the agent.
+ */
+export function buildPromptSubmittedPayload(
+  taskRunId: string,
+  provider: ProviderName,
+  source: PromptSubmittedPayload["source"],
+  options?: {
+    turnNumber?: number;
+    promptLength?: number;
+    providerSessionId?: string;
+    summary?: string;
+  }
+): PromptSubmittedPayload {
+  return {
+    taskRunId,
+    type: "prompt_submitted",
+    toolName: provider,
+    summary: options?.summary ?? `Turn ${options?.turnNumber ?? "?"} submitted`,
+    source,
+    turnNumber: options?.turnNumber,
+    promptLength: options?.promptLength,
+    providerSessionId: options?.providerSessionId,
+  };
+}
+
+/**
+ * Payload for session_finished events.
+ */
+export interface SessionFinishedPayload {
+  taskRunId: string;
+  type: "session_finished";
+  toolName: string;
+  summary: string;
+  exitCode?: number;
+  turnCount?: number;
+  durationMs?: number;
+  providerSessionId?: string;
+}
+
+/**
+ * P1: Build a session_finished payload (TypeScript).
+ * Use when a session completes cleanly (not error).
+ */
+export function buildSessionFinishedPayload(
+  taskRunId: string,
+  provider: ProviderName,
+  options?: {
+    exitCode?: number;
+    turnCount?: number;
+    durationMs?: number;
+    providerSessionId?: string;
+    summary?: string;
+  }
+): SessionFinishedPayload {
+  const turns = options?.turnCount ? ` (${options.turnCount} turns)` : "";
+  const duration = options?.durationMs
+    ? ` in ${Math.round(options.durationMs / 1000)}s`
+    : "";
+  return {
+    taskRunId,
+    type: "session_finished",
+    toolName: provider,
+    summary: options?.summary ?? `Session finished${turns}${duration}`,
+    exitCode: options?.exitCode,
+    turnCount: options?.turnCount,
+    durationMs: options?.durationMs,
+    providerSessionId: options?.providerSessionId,
+  };
+}
+
+/**
+ * Payload for run_resumed events.
+ */
+export interface RunResumedPayload {
+  taskRunId: string;
+  type: "run_resumed";
+  toolName: string;
+  summary: string;
+  resumeReason: "checkpoint" | "reconnect" | "handoff" | "retry" | "manual";
+  previousTaskRunId?: string;
+  previousSessionId?: string;
+  checkpointRef?: string;
+  providerSessionId?: string;
+}
+
+/**
+ * P1: Build a run_resumed payload (TypeScript).
+ * Use when resuming from a previous checkpoint or session.
+ */
+export function buildRunResumedPayload(
+  taskRunId: string,
+  provider: ProviderName,
+  resumeReason: RunResumedPayload["resumeReason"],
+  options?: {
+    previousTaskRunId?: string;
+    previousSessionId?: string;
+    checkpointRef?: string;
+    providerSessionId?: string;
+    summary?: string;
+  }
+): RunResumedPayload {
+  return {
+    taskRunId,
+    type: "run_resumed",
+    toolName: provider,
+    summary: options?.summary ?? `Run resumed (${resumeReason})`,
+    resumeReason,
+    previousTaskRunId: options?.previousTaskRunId,
+    previousSessionId: options?.previousSessionId,
+    checkpointRef: options?.checkpointRef,
+    providerSessionId: options?.providerSessionId,
+  };
+}
+
+// =============================================================================
+// P5 Lifecycle Parity: MCP Runtime Events
+// =============================================================================
+
+/**
+ * Payload for mcp_capabilities_negotiated events.
+ */
+export interface McpCapabilitiesPayload {
+  taskRunId: string;
+  type: "mcp_capabilities_negotiated";
+  toolName: string;
+  summary: string;
+  serverName: string;
+  serverId?: string;
+  protocolVersion?: string;
+  transport: "stdio" | "http" | "sse" | "websocket";
+  capabilities: {
+    tools?: boolean;
+    resources?: boolean;
+    prompts?: boolean;
+    tasks?: boolean;
+    logging?: boolean;
+    completions?: boolean;
+  };
+  toolCount?: number;
+  resourceCount?: number;
+  sessionId?: string;
+}
+
+/**
+ * P5: Build an mcp_capabilities_negotiated payload (TypeScript).
+ * Use when MCP server capabilities are negotiated.
+ */
+export function buildMcpCapabilitiesPayload(
+  taskRunId: string,
+  provider: ProviderName,
+  serverName: string,
+  transport: McpCapabilitiesPayload["transport"],
+  capabilities: McpCapabilitiesPayload["capabilities"],
+  options?: {
+    serverId?: string;
+    protocolVersion?: string;
+    toolCount?: number;
+    resourceCount?: number;
+    sessionId?: string;
+    summary?: string;
+  }
+): McpCapabilitiesPayload {
+  const capList = Object.entries(capabilities)
+    .filter(([, v]) => v)
+    .map(([k]) => k);
+  const toolInfo = options?.toolCount ? `, ${options.toolCount} tools` : "";
+  return {
+    taskRunId,
+    type: "mcp_capabilities_negotiated",
+    toolName: provider,
+    summary:
+      options?.summary ??
+      `MCP ${serverName}: ${capList.join(", ")}${toolInfo}`,
+    serverName,
+    serverId: options?.serverId,
+    protocolVersion: options?.protocolVersion,
+    transport,
+    capabilities,
+    toolCount: options?.toolCount,
+    resourceCount: options?.resourceCount,
+    sessionId: options?.sessionId,
+  };
 }
