@@ -2353,6 +2353,50 @@ const convexSchema = defineSchema({
     .index("by_team_type", ["teamId", "eventType", "createdAt"])
     .index("by_team_repo", ["teamId", "repoFullName", "createdAt"]),
 
+  // MCP runtime capabilities - negotiated capabilities from active MCP sessions
+  // Stores the actual capabilities that were negotiated at runtime, separate from
+  // static server configuration. Used for operator visibility into what tools,
+  // resources, and prompts are actually available during a task run.
+  mcpRuntimeCapabilities: defineTable({
+    // Link to task run where capability was negotiated
+    taskRunId: v.id("taskRuns"),
+    teamId: v.string(),
+    // Server identity
+    serverName: v.string(),
+    configId: v.optional(v.id("mcpServerConfigs")),
+    // Protocol info
+    protocolVersion: v.string(),
+    // Negotiated capabilities
+    capabilities: v.object({
+      tools: v.optional(v.array(v.string())),
+      resources: v.optional(v.array(v.string())),
+      prompts: v.optional(v.array(v.string())),
+      tasks: v.optional(v.boolean()),
+      roots: v.optional(v.boolean()),
+      sampling: v.optional(v.boolean()),
+      elicitation: v.optional(v.boolean()),
+    }),
+    // Transport info
+    transport: v.union(v.literal("stdio"), v.literal("http"), v.literal("sse")),
+    sessionId: v.optional(v.string()),
+    // Connection state
+    status: v.union(
+      v.literal("connecting"),
+      v.literal("connected"),
+      v.literal("disconnected"),
+      v.literal("error")
+    ),
+    errorMessage: v.optional(v.string()),
+    // Timestamps
+    connectedAt: v.optional(v.number()),
+    lastActiveAt: v.number(),
+    disconnectedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_task_run", ["taskRunId"])
+    .index("by_team", ["teamId"])
+    .index("by_server", ["serverName", "taskRunId"]),
+
   // MCP server configurations (central, cloud-based MCP management)
   // Users configure MCP servers in the web UI; these are injected into sandboxes
   // at startup. Borrows the per-agent enable pattern from cc-switch.
