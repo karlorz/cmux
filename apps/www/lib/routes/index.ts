@@ -100,3 +100,4 @@ export { apiKeysRouter } from "./api-keys.route";
 export { mcpServersListRouter } from "./mcp-servers.list.route";
 export { mcpServersWriteRouter } from "./mcp-servers.write.route";
 export { mcpServersRouter } from "./mcp-servers.route";
+export { providerControlPlaneRouter } from "./provider-control-plane.route";
