@@ -48,7 +48,16 @@ export function gitDiffQueryOptions({
     ],
     queryFn: async () => {
       const socket = await waitForConnectedSocket();
+      const TIMEOUT_MS = 60_000; // 60 second timeout for large repos
       return await new Promise<ReplaceDiffEntry[]>((resolve, reject) => {
+        let didRespond = false;
+        const timeout = setTimeout(() => {
+          if (!didRespond) {
+            didRespond = true;
+            reject(new Error("Git diff request timed out. The repository may be large or the server is busy."));
+          }
+        }, TIMEOUT_MS);
+
         socket.emit(
           "git-diff",
           {
@@ -65,15 +74,22 @@ export function gitDiffQueryOptions({
           },
           (
             resp:
-              | { ok: true; diffs: ReplaceDiffEntry[] }
-              | { ok: false; error: string; diffs?: [] }
+              | { ok: true; diffs: ReplaceDiffEntry[]; branchDeleted?: boolean }
+              | { ok: false; error: string; diffs?: []; branchDeleted?: boolean }
           ) => {
+            if (didRespond) return;
+            didRespond = true;
+            clearTimeout(timeout);
+
             if (resp.ok) {
               resolve(resp.diffs);
             } else {
-              reject(
-                new Error(resp.error || "Failed to load repository diffs")
-              );
+              // Provide more specific error messages
+              let errorMessage = resp.error || "Failed to load repository diffs";
+              if (resp.branchDeleted) {
+                errorMessage = `Branch '${canonicalHeadRef}' was not found. It may have been deleted after the PR was merged.`;
+              }
+              reject(new Error(errorMessage));
             }
           }
         );
