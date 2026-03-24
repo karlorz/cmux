@@ -15,8 +15,9 @@ interface OrchestrationSettingsSectionProps {
 }
 
 const CODING_AGENT_OPTIONS = [
-  { value: "codex/gpt-5.1-codex-mini", label: "Codex Mini (Fast)" },
-  { value: "codex/gpt-5.4-xhigh", label: "Codex XHigh (Powerful)" },
+  { value: "codex/gpt-5.4-mini", label: "Codex 5.4 Mini (Fast & Low-Cost)" },
+  { value: "codex/gpt-5.1-codex-mini", label: "Codex 5.1 Mini (Fast)" },
+  { value: "codex/gpt-5.4-xhigh", label: "Codex 5.4 XHigh (Powerful)" },
   { value: "claude/haiku-4.5", label: "Claude Haiku (Fast)" },
   { value: "claude/sonnet-4", label: "Claude Sonnet (Balanced)" },
   { value: "claude/opus-4.5", label: "Claude Opus (Powerful)" },

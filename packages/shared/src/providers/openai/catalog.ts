@@ -45,6 +45,17 @@ export const CODEX_CATALOG: AgentCatalogEntry[] = [
     requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
     tier: "paid",
   },
+  // GPT-5.4-mini - low-cost fast model
+  {
+    name: "codex/gpt-5.4-mini",
+    displayName: "GPT-5.4 Mini (Fast & Low-Cost)",
+    vendor: "openai",
+    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
+    tier: "paid",
+    tags: ["fast", "low-cost"],
+    contextWindow: 128000,
+    maxOutputTokens: 16000,
+  },
   // GPT-5.3-codex variants
   {
     name: "codex/gpt-5.3-codex-xhigh",
