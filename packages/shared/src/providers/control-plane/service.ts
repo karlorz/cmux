@@ -7,7 +7,7 @@
 
 import type { AgentConfigApiKey } from "../../agentConfig";
 import type { ProviderSpec } from "../base-providers";
-import type { ProviderOverride, ResolvedProvider } from "../../provider-registry";
+import type { ProviderOverride } from "../../provider-registry";
 import {
   type AuthMethodType,
   type ProviderAuthMethod,
