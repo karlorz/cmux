@@ -430,6 +430,73 @@ export function generateRecommendations(notes: ObsidianNote[]): RecommendedActio
 }
 
 // ============================================================================
+// Single Note Reader (GitHub)
+// ============================================================================
+
+/**
+ * Read a single note from a GitHub repository by path.
+ * More efficient than reading the entire vault when you only need one note.
+ */
+export async function readNoteGitHub(
+  options: GitHubVaultOptions & { notePath: string }
+): Promise<ObsidianNote | null> {
+  const { owner, repo, path: vaultPath, token, branch = "main", notePath } = options;
+
+  // Construct full path to the note
+  const fullPath = vaultPath ? `${vaultPath}/${notePath}` : notePath;
+
+  // Fetch file content directly using GitHub Contents API
+  const contentsUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(fullPath)}?ref=${branch}`;
+
+  try {
+    const response = await fetch(contentsUrl, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github.v3+json",
+      },
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        return null;
+      }
+      throw new Error(`Failed to fetch note: ${response.status} ${response.statusText}`);
+    }
+
+    const data = (await response.json()) as {
+      content: string;
+      encoding: string;
+      name: string;
+      path: string;
+    };
+
+    // Decode content (GitHub returns base64)
+    const content =
+      data.encoding === "base64"
+        ? Buffer.from(data.content, "base64").toString("utf-8")
+        : data.content;
+
+    const { frontmatter, body } = parseFrontmatter(content);
+    const todos = extractTodos(body);
+    const fileName = path.basename(data.name);
+    const modifiedAt = new Date(); // GitHub Contents API doesn't easily give modification time
+
+    return {
+      path: notePath,
+      title: fileName.replace(/\.md$/, ""),
+      content: body,
+      modifiedAt,
+      frontmatter,
+      todos,
+      status: getNoteStatus(frontmatter, modifiedAt, notePath),
+    };
+  } catch (error) {
+    console.error(`[obsidian-reader] Error fetching note ${notePath}:`, error);
+    throw error;
+  }
+}
+
+// ============================================================================
 // Utility Functions
 // ============================================================================
 

@@ -3025,6 +3025,19 @@ const convexSchema = defineSchema({
     .index("by_team", ["teamId"])
     .index("by_team_tool", ["teamId", "toolName"])
     .index("by_selection_count", ["teamId", "selectionCount"]),
+
+  // Vault note access tracking - tracks when agents/users access Obsidian vault notes
+  vaultNoteAccess: defineTable({
+    teamId: v.string(), // canonical team UUID (string, not Id, for consistency with other tables)
+    notePath: v.string(), // e.g., "5-Projects/GitHub/cmux/_Overview.md"
+    noteTitle: v.optional(v.string()),
+    lastAccessedAt: v.number(), // timestamp
+    lastAccessedBy: v.optional(v.string()), // agent name or user email
+    accessCount: v.number(),
+  })
+    .index("by_team", ["teamId"])
+    .index("by_team_path", ["teamId", "notePath"])
+    .index("by_team_recent", ["teamId", "lastAccessedAt"]),
 });
 
 export default convexSchema;

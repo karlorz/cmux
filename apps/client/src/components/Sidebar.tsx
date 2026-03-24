@@ -19,7 +19,7 @@ import { api } from "@cmux/convex/api";
 import { useQuery } from "convex/react";
 import type { LinkProps } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
-import { Bell, Calendar, ChevronLeft, FolderKanban, GitMerge, Home, Plus, Server, Settings, SwatchBook, Users, X } from "lucide-react";
+import { Bell, BookOpen, Calendar, ChevronLeft, FolderKanban, GitMerge, Home, Plus, Server, Settings, SwatchBook, Users, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -113,6 +113,12 @@ const navItems: SidebarNavItemWithBadge[] = [
     to: "/$teamSlugOrId/projects",
     exact: true,
     icon: FolderKanban,
+  },
+  {
+    label: "Vault",
+    to: "/$teamSlugOrId/vault",
+    exact: true,
+    icon: BookOpen,
   },
   {
     label: "Scheduled Tasks",
