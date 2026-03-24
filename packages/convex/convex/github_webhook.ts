@@ -39,6 +39,38 @@ const AGENT_FLAG_PATTERN = /^--agent\s+(\S+)\s+(.+)/is;
 // Default agent when none specified
 const DEFAULT_AGENT = "claude/sonnet-4";
 
+// Command shortcuts - expand short commands into full prompts
+const COMMAND_SHORTCUTS: Record<string, string> = {
+  "/review": "Review the PR diff and provide feedback on code quality, potential bugs, and improvements. Focus on the changes only.",
+  "/test": "Run the test suite and fix any failing tests. If all tests pass, report the results.",
+  "/fix": "Analyze the failing CI checks or tests and fix the issues. Commit the fixes.",
+  "/lint": "Run linting and fix any lint errors. Commit the fixes.",
+  "/docs": "Update documentation to reflect the changes in this PR.",
+  "/refactor": "Refactor the changed code for better readability and maintainability while preserving behavior.",
+};
+
+/**
+ * Expand command shortcuts into full prompts.
+ * Supports: @cmux /review, @cmux /fix, etc.
+ * Commands can have additional context: @cmux /review focus on security
+ */
+function expandCommandShortcut(prompt: string): string {
+  const trimmed = prompt.trim();
+
+  // Check if prompt starts with a command
+  for (const [command, expansion] of Object.entries(COMMAND_SHORTCUTS)) {
+    if (trimmed.toLowerCase() === command) {
+      return expansion;
+    }
+    if (trimmed.toLowerCase().startsWith(command + " ")) {
+      const additionalContext = trimmed.slice(command.length).trim();
+      return `${expansion} Additional context: ${additionalContext}`;
+    }
+  }
+
+  return prompt;
+}
+
 /**
  * Validate agent name by checking if it has a known provider prefix.
  * Uses the same logic as getProviderIdFromAgentName from shared package.
@@ -295,7 +327,10 @@ export const githubWebhook = httpAction(async (_ctx, req) => {
           }
 
           // Parse agent selection from prompt (e.g., @cmux --agent claude/opus-4.5 fix the bug)
-          const { agentName, prompt } = parseAgentFromPrompt(rawPrompt);
+          const { agentName, prompt: parsedPrompt } = parseAgentFromPrompt(rawPrompt);
+
+          // Expand command shortcuts (e.g., @cmux /review -> full review prompt)
+          const prompt = expandCommandShortcut(parsedPrompt);
 
           // Get repo and installation info
           const repoFullName = String(commentPayload.repository?.full_name ?? "");
