@@ -2011,6 +2011,101 @@ export type ProviderStatusListResponse = {
     providers: Array<ProviderStatus>;
 };
 
+export type AuthMethod = {
+    id: string;
+    type: 'api_key' | 'oauth_token' | 'json_blob' | 'custom_endpoint';
+    displayName: string;
+    description?: string;
+    envVar: string;
+    preferred?: boolean;
+    placeholder?: string;
+    multiline?: boolean;
+};
+
+export type ConnectionState = {
+    isConnected: boolean;
+    source: 'env' | 'stored_api_key' | 'stored_oauth_token' | 'stored_json_blob' | 'override' | 'free';
+    configuredEnvVars: Array<string>;
+    hasFreeModels: boolean;
+    lastVerifiedAt?: number;
+    error?: string;
+};
+
+export type DefaultModel = {
+    name: string;
+    displayName: string;
+    reason?: string;
+};
+
+export type ControlPlaneProvider = {
+    id: string;
+    name: string;
+    defaultBaseUrl: string;
+    effectiveBaseUrl: string;
+    apiFormat: 'anthropic' | 'openai' | 'bedrock' | 'vertex' | 'passthrough';
+    authMethods: Array<AuthMethod>;
+    connectionState: ConnectionState;
+    defaultModel?: DefaultModel;
+    isOverridden: boolean;
+    customHeaders?: {
+        [key: string]: string;
+    };
+};
+
+export type ListProvidersResponse = {
+    providers: Array<ControlPlaneProvider>;
+    generatedAt: number;
+};
+
+export type ControlPlaneModel = {
+    name: string;
+    displayName: string;
+    providerId: string;
+    vendor: string;
+    isAvailable: boolean;
+    tier: 'free' | 'paid';
+    requiredApiKeys: Array<string>;
+    tags: Array<string>;
+    sortOrder: number;
+    disabled?: boolean;
+    disabledReason?: string;
+};
+
+export type ListModelsResponse = {
+    models: Array<ControlPlaneModel>;
+    defaultsByProvider: {
+        [key: string]: DefaultModel;
+    };
+    view: 'all' | 'connected' | 'vendor';
+    filter?: string;
+    refreshedAt?: number;
+    generatedAt: number;
+};
+
+export type DiscoveryFreshness = {
+    providerId: string;
+    isStale: boolean;
+    lastDiscoveredAt?: number;
+    error?: string;
+    modelCount: number;
+};
+
+export type ConnectResponse = {
+    action: 'created' | 'updated';
+    envVar: string;
+};
+
+export type DisconnectResponse = {
+    action: 'deleted' | 'not_found';
+    envVar: string;
+};
+
+export type RefreshResponse = {
+    action: 'refresh_requested';
+    providerId: string;
+    teamId: string;
+};
+
 export type ApiKey = {
     envVar: string;
     displayName: string;
@@ -7237,6 +7332,168 @@ export type GetApiProvidersStatusResponses = {
 };
 
 export type GetApiProvidersStatusResponse = GetApiProvidersStatusResponses[keyof GetApiProvidersStatusResponses];
+
+export type GetApiProviderControlPlaneData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/provider-control-plane';
+};
+
+export type GetApiProviderControlPlaneErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiProviderControlPlaneResponses = {
+    /**
+     * Provider list
+     */
+    200: ListProvidersResponse;
+};
+
+export type GetApiProviderControlPlaneResponse = GetApiProviderControlPlaneResponses[keyof GetApiProviderControlPlaneResponses];
+
+export type GetApiProviderControlPlaneModelsData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+        view?: 'all' | 'connected' | 'vendor';
+        providerId?: string;
+        includeDisabled?: boolean | null;
+    };
+    url: '/api/provider-control-plane/models';
+};
+
+export type GetApiProviderControlPlaneModelsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiProviderControlPlaneModelsResponses = {
+    /**
+     * Model list
+     */
+    200: ListModelsResponse;
+};
+
+export type GetApiProviderControlPlaneModelsResponse = GetApiProviderControlPlaneModelsResponses[keyof GetApiProviderControlPlaneModelsResponses];
+
+export type GetApiProviderControlPlaneDiscoveryFreshnessData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+        staleDurationMs?: number | null;
+    };
+    url: '/api/provider-control-plane/discovery-freshness';
+};
+
+export type GetApiProviderControlPlaneDiscoveryFreshnessErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiProviderControlPlaneDiscoveryFreshnessResponses = {
+    /**
+     * Discovery freshness
+     */
+    200: {
+        freshness: Array<DiscoveryFreshness>;
+    };
+};
+
+export type GetApiProviderControlPlaneDiscoveryFreshnessResponse = GetApiProviderControlPlaneDiscoveryFreshnessResponses[keyof GetApiProviderControlPlaneDiscoveryFreshnessResponses];
+
+export type PostApiProviderControlPlaneConnectData = {
+    body: {
+        teamSlugOrId: string;
+        envVar: string;
+        value: string;
+        displayName: string;
+        description?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/provider-control-plane/connect';
+};
+
+export type PostApiProviderControlPlaneConnectErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiProviderControlPlaneConnectResponses = {
+    /**
+     * Connection result
+     */
+    200: ConnectResponse;
+};
+
+export type PostApiProviderControlPlaneConnectResponse = PostApiProviderControlPlaneConnectResponses[keyof PostApiProviderControlPlaneConnectResponses];
+
+export type PostApiProviderControlPlaneDisconnectData = {
+    body: {
+        teamSlugOrId: string;
+        envVar: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/provider-control-plane/disconnect';
+};
+
+export type PostApiProviderControlPlaneDisconnectErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiProviderControlPlaneDisconnectResponses = {
+    /**
+     * Disconnection result
+     */
+    200: DisconnectResponse;
+};
+
+export type PostApiProviderControlPlaneDisconnectResponse = PostApiProviderControlPlaneDisconnectResponses[keyof PostApiProviderControlPlaneDisconnectResponses];
+
+export type PostApiProviderControlPlaneRefreshData = {
+    body: {
+        teamSlugOrId: string;
+        providerId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/provider-control-plane/refresh';
+};
+
+export type PostApiProviderControlPlaneRefreshErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiProviderControlPlaneRefreshResponses = {
+    /**
+     * Refresh result
+     */
+    200: RefreshResponse;
+};
+
+export type PostApiProviderControlPlaneRefreshResponse = PostApiProviderControlPlaneRefreshResponses[keyof PostApiProviderControlPlaneRefreshResponses];
 
 export type GetApiApiKeysData = {
     body?: never;
