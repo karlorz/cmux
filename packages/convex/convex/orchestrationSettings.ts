@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query } from "./_generated/server";
+import { internalQuery } from "./_generated/server";
 import { resolveTeamIdLoose } from "../_shared/team";
 import { authMutation, authQuery } from "./users/utils";
 
@@ -166,7 +166,7 @@ export const toggleAutoSpawn = authMutation({
 /**
  * Internal query for spawn path to get settings without auth.
  */
-export const getByTeamIdInternal = query({
+export const getByTeamIdInternal = internalQuery({
   args: {
     teamId: v.string(),
   },
