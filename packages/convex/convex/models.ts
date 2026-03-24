@@ -468,6 +468,53 @@ export const deleteStale = internalMutation({
 });
 
 /**
+ * Internal mutation: delete stale discovered models from a specific provider.
+ * Models are considered stale if they haven't been seen in discovery for the threshold period.
+ * This prevents accumulation of deprecated/removed models in the catalog.
+ */
+export const deleteStaleDiscovered = internalMutation({
+  args: {
+    discoveredFrom: v.string(),
+    currentModelNames: v.array(v.string()),
+    staleThresholdMs: v.optional(v.number()), // Default: 7 days
+  },
+  handler: async (ctx, args) => {
+    const currentNameSet = new Set(args.currentModelNames);
+    const threshold = args.staleThresholdMs ?? 7 * 24 * 60 * 60 * 1000; // 7 days default
+    const cutoffTime = Date.now() - threshold;
+
+    // Query discovered models from this source
+    const allModels = await ctx.db
+      .query("models")
+      .withIndex("by_source", (q) => q.eq("source", "discovered"))
+      .collect();
+
+    // Filter to models from this discoveredFrom source that are:
+    // 1. Not in the current discovery results
+    // 2. Were last discovered before the cutoff time
+    const modelsToDelete = allModels.filter((m) => {
+      if (m.discoveredFrom !== args.discoveredFrom) return false;
+      if (currentNameSet.has(m.name)) return false;
+      // If discoveredAt is missing or older than cutoff, consider stale
+      const lastSeen = m.discoveredAt ?? 0;
+      return lastSeen < cutoffTime;
+    });
+
+    if (modelsToDelete.length > 0) {
+      console.log(
+        `[models.deleteStaleDiscovered] Deleting ${modelsToDelete.length} stale models from ${args.discoveredFrom}: ${modelsToDelete.map((m) => m.name).join(", ")}`
+      );
+      await Promise.all(modelsToDelete.map((model) => ctx.db.delete(model._id)));
+    }
+
+    return {
+      deletedCount: modelsToDelete.length,
+      deletedNames: modelsToDelete.map((m) => m.name),
+    };
+  },
+});
+
+/**
  * Internal query: check if curated models need seeding.
  * Returns true if there are no curated models in the database.
  * Used by listAvailable to trigger auto-seeding.
