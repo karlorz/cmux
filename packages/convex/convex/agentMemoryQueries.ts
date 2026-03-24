@@ -756,3 +756,153 @@ export function isIdentityMemoryType(fileName: string | undefined): boolean {
   const identityFiles = ["IDENTITY.md", "USER.md", "SOUL.md", "IDENTITY", "USER", "SOUL"];
   return identityFiles.some((f) => fileName.toUpperCase().includes(f.toUpperCase()));
 }
+
+// =============================================================================
+// Memory Scope Summary for UI (Priority 3: Operator visibility)
+// =============================================================================
+
+/**
+ * Memory scope summary for task run UI.
+ * Shows what memory was injected from each scope level.
+ */
+interface MemoryScopeSummary {
+  /** Scope breakdown with content sizes */
+  scopes: Array<{
+    scope: MemoryScope;
+    label: string;
+    hasContent: boolean;
+    byteSize: number;
+    snapshotCount: number;
+    lastSyncedAt?: number;
+  }>;
+  /** Total memory injected */
+  totalByteSize: number;
+  /** Whether memory injection is enabled */
+  memoryEnabled: boolean;
+}
+
+/**
+ * Get memory scope summary for a task run.
+ * Shows what memory was seeded from each scope level (team, repo, user, run).
+ * Used by TaskRunMemoryPanel to visualize memory scope breakdown.
+ */
+export const getMemoryScopeSummary = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    taskRunId: v.id("taskRuns"),
+  },
+  handler: async (ctx, args): Promise<MemoryScopeSummary> => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+    const userId = ctx.identity?.subject;
+
+    // Get task run to find project info
+    const taskRun = await ctx.db.get(args.taskRunId);
+    if (!taskRun || taskRun.teamId !== teamId) {
+      return {
+        scopes: [],
+        totalByteSize: 0,
+        memoryEnabled: false,
+      };
+    }
+
+    // Get the task to find projectFullName
+    const task = await ctx.db.get(taskRun.taskId);
+    const projectFullName = task?.projectFullName;
+
+    const scopes: MemoryScopeSummary["scopes"] = [];
+    let totalByteSize = 0;
+
+    // 1. Team scope
+    const teamSnapshots = await ctx.db
+      .query("agentMemorySnapshots")
+      .withIndex("by_team_scope_type", (q) =>
+        q.eq("teamId", teamId).eq("scope", "team").eq("memoryType", "knowledge")
+      )
+      .collect();
+    const teamByteSize = teamSnapshots.reduce(
+      (sum, s) => sum + (s.content ? Buffer.byteLength(s.content, "utf-8") : 0),
+      0
+    );
+    scopes.push({
+      scope: "team",
+      label: "Team (shared)",
+      hasContent: teamByteSize > 0,
+      byteSize: teamByteSize,
+      snapshotCount: teamSnapshots.length,
+      lastSyncedAt: teamSnapshots[0]?.createdAt,
+    });
+    totalByteSize += teamByteSize;
+
+    // 2. Repo scope (if project exists)
+    if (projectFullName) {
+      const repoSnapshots = await ctx.db
+        .query("agentMemorySnapshots")
+        .withIndex("by_repo_type", (q) =>
+          q.eq("projectFullName", projectFullName).eq("memoryType", "knowledge")
+        )
+        .collect();
+      const repoByteSize = repoSnapshots.reduce(
+        (sum, s) => sum + (s.content ? Buffer.byteLength(s.content, "utf-8") : 0),
+        0
+      );
+      scopes.push({
+        scope: "repo",
+        label: `Repo (${projectFullName.split("/")[1] || projectFullName})`,
+        hasContent: repoByteSize > 0,
+        byteSize: repoByteSize,
+        snapshotCount: repoSnapshots.length,
+        lastSyncedAt: repoSnapshots[0]?.createdAt,
+      });
+      totalByteSize += repoByteSize;
+    }
+
+    // 3. User scope
+    if (userId) {
+      const userSnapshots = await ctx.db
+        .query("agentMemorySnapshots")
+        .withIndex("by_user_type", (q) =>
+          q.eq("userId", userId).eq("memoryType", "knowledge")
+        )
+        .filter((q) => q.eq(q.field("scope"), "user"))
+        .collect();
+      const userByteSize = userSnapshots.reduce(
+        (sum, s) => sum + (s.content ? Buffer.byteLength(s.content, "utf-8") : 0),
+        0
+      );
+      scopes.push({
+        scope: "user",
+        label: "User (personal)",
+        hasContent: userByteSize > 0,
+        byteSize: userByteSize,
+        snapshotCount: userSnapshots.length,
+        lastSyncedAt: userSnapshots[0]?.createdAt,
+      });
+      totalByteSize += userByteSize;
+    }
+
+    // 4. Run scope (task-specific ephemeral memory)
+    const runSnapshots = await ctx.db
+      .query("agentMemorySnapshots")
+      .withIndex("by_task_run", (q) => q.eq("taskRunId", args.taskRunId))
+      .collect();
+    const runByteSize = runSnapshots.reduce(
+      (sum, s) => sum + (s.content ? Buffer.byteLength(s.content, "utf-8") : 0),
+      0
+    );
+    scopes.push({
+      scope: "run",
+      label: "Run (ephemeral)",
+      hasContent: runByteSize > 0,
+      byteSize: runByteSize,
+      snapshotCount: runSnapshots.length,
+      lastSyncedAt: runSnapshots[0]?.createdAt,
+    });
+    totalByteSize += runByteSize;
+
+    return {
+      scopes,
+      totalByteSize,
+      memoryEnabled: true,
+    };
+  },
+});
