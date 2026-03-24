@@ -30,8 +30,8 @@ const FEATURE_FLAGS = {
   prCommentTriggerEnabled: true,
 };
 
-// Bot mention pattern - matches @cmux or @cmux-bot followed by the prompt
-const CMUX_MENTION_PATTERN = /@cmux(?:-bot)?\s+(.+)/is;
+// Bot mention pattern - matches @cmux, @cmux-bot, @cmux-local-dev, or @cmux-local-dev[bot] followed by the prompt
+const CMUX_MENTION_PATTERN = /@cmux(?:-(?:bot|local-dev))?(?:\[bot\])?\s+(.+)/is;
 
 // Agent selection pattern - matches --agent <agent-name> at the start of the prompt
 const AGENT_FLAG_PATTERN = /^--agent\s+(\S+)\s+(.+)/is;
