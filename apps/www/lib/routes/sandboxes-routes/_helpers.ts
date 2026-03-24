@@ -274,6 +274,13 @@ export function getSandboxStartErrorMessage(error: unknown): string {
   if (message.includes("capacity") || message.includes("unavailable")) {
     return `${baseMessage}: sandbox provider capacity unavailable`;
   }
+  // Proxmox/PVE API specific errors
+  if (message.includes("pve api network error") || message.includes("check pve_api_url")) {
+    return `${baseMessage}: PVE API not reachable (check Cloudflare Tunnel or firewall)`;
+  }
+  if (message.includes("no available server") || message.includes("503")) {
+    return `${baseMessage}: sandbox provider returned 503 (service unavailable)`;
+  }
 
   // Snapshot issues
   if (message.includes("snapshot") && (message.includes("not found") || message.includes("invalid"))) {
