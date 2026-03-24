@@ -168,7 +168,7 @@ export function getProviderIdFromAgentName(agentName: string): string | undefine
     codex: "openai",
     gemini: "gemini",
     grok: "xai",
-    opencode: "openrouter", // OpenCode uses OpenRouter by default
+    opencode: "opencode", // OpenCode has its own provider plugin (uses OpenRouter as backend)
     amp: "amp",
     cursor: "cursor",
     qwen: "modelstudio",
