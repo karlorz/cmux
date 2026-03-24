@@ -62,6 +62,13 @@ export const CODEX_AUTH_JSON: AgentConfigApiKey = {
     "Contents of ~/.codex/auth.json. Copy and paste the full JSON contents here.",
 };
 
+export const OPENCODE_AUTH_JSON: AgentConfigApiKey = {
+  envVar: "OPENCODE_AUTH_JSON",
+  displayName: "OpenCode Auth JSON",
+  description:
+    "Contents of ~/.local/share/opencode/auth.json. Copy and paste the full JSON contents here for OpenCode agent authentication.",
+};
+
 export type ProviderBaseUrlKey = AgentConfigApiKey & {
   placeholder: string;
 };
@@ -138,6 +145,7 @@ export const ALL_API_KEYS: AgentConfigApiKey[] = [
   ANTHROPIC_API_KEY,
   OPENAI_API_KEY,
   CODEX_AUTH_JSON,
+  OPENCODE_AUTH_JSON,
   OPENROUTER_API_KEY,
   GEMINI_API_KEY,
   MODEL_STUDIO_API_KEY,
