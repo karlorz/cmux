@@ -26,16 +26,18 @@ type ModelVariant struct {
 	Description string `json:"description,omitempty"`
 }
 
-// ModelInfo describes an available AI model (from server API)
+// ModelInfo describes an available AI model (unified format)
 type ModelInfo struct {
 	Name            string         `json:"name"`
 	DisplayName     string         `json:"displayName"`
 	Vendor          string         `json:"vendor"`
+	ProviderID      string         `json:"providerId,omitempty"`
 	RequiredApiKeys []string       `json:"requiredApiKeys"`
 	Tier            string         `json:"tier"`
-	Source          string         `json:"source,omitempty"`          // "curated" or "discovered"
-	DiscoveredFrom  string         `json:"discoveredFrom,omitempty"`  // e.g., "openrouter"
-	DiscoveredAt    int64          `json:"discoveredAt,omitempty"`    // Unix timestamp
+	Source          string         `json:"source,omitempty"`         // "curated" or "discovered"
+	DiscoveredFrom  string         `json:"discoveredFrom,omitempty"` // e.g., "openrouter"
+	DiscoveredAt    int64          `json:"discoveredAt,omitempty"`   // Unix timestamp
+	IsAvailable     bool           `json:"isAvailable"`
 	Disabled        bool           `json:"disabled"`
 	DisabledReason  *string        `json:"disabledReason"`
 	Tags            []string       `json:"tags"`
@@ -43,9 +45,40 @@ type ModelInfo struct {
 	DefaultVariant  string         `json:"defaultVariant"`
 }
 
-// ModelsListResponse from /api/models
+// ModelsListResponse from /api/models (legacy)
 type ModelsListResponse struct {
 	Models []ModelInfo `json:"models"`
+}
+
+// ControlPlaneModelsResponse from /api/provider-control-plane/models
+type ControlPlaneModelsResponse struct {
+	Models             []ControlPlaneModel            `json:"models"`
+	DefaultsByProvider map[string]ControlPlaneDefault `json:"defaultsByProvider"`
+	View               string                         `json:"view"`
+	Filter             string                         `json:"filter,omitempty"`
+	RefreshedAt        *int64                         `json:"refreshedAt,omitempty"`
+	GeneratedAt        int64                          `json:"generatedAt"`
+}
+
+// ControlPlaneModel represents a model from the control plane
+type ControlPlaneModel struct {
+	Name            string   `json:"name"`
+	DisplayName     string   `json:"displayName"`
+	ProviderID      string   `json:"providerId"`
+	Vendor          string   `json:"vendor"`
+	IsAvailable     bool     `json:"isAvailable"`
+	Tier            string   `json:"tier"`
+	RequiredApiKeys []string `json:"requiredApiKeys"`
+	Tags            []string `json:"tags"`
+	SortOrder       int      `json:"sortOrder"`
+	Disabled        bool     `json:"disabled,omitempty"`
+	DisabledReason  string   `json:"disabledReason,omitempty"`
+}
+
+// ControlPlaneDefault represents a default model for a provider
+type ControlPlaneDefault struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"displayName"`
 }
 
 // cachedModels stores fetched models to avoid repeated API calls
@@ -164,7 +197,7 @@ func runModelsList(cmd *cobra.Command, args []string) error {
 	// Decide filtering approach
 	if useLocal {
 		// Local credential filtering: fetch all models, then filter client-side
-		models, err = FetchModelsFiltered(ctx, true, provider)
+		models, err = FetchModelsFromControlPlane(ctx, "all", provider)
 		if err != nil {
 			return fmt.Errorf("failed to fetch models: %w", err)
 		}
@@ -174,12 +207,16 @@ func runModelsList(cmd *cobra.Command, args []string) error {
 			models = filterByAvailability(models, providerStatus)
 		}
 	} else {
-		// Server-side credential filtering (default): let the API filter by credentials
-		models, err = FetchModelsFiltered(ctx, showAll, provider)
+		// Server-side credential filtering (default): use control plane with connected view
+		view := "connected"
+		if showAll {
+			view = "all"
+		}
+		models, err = FetchModelsFromControlPlane(ctx, view, provider)
 		if err != nil {
 			// Fall back to all models + local filtering on error
 			fmt.Fprintf(os.Stderr, "Warning: server-side filtering failed (%v), falling back to local checks\n", err)
-			models, err = FetchModelsFiltered(ctx, true, provider)
+			models, err = FetchModelsFromControlPlane(ctx, "all", provider)
 			if err != nil {
 				return fmt.Errorf("failed to fetch models: %w", err)
 			}
@@ -219,17 +256,26 @@ func runModelsList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// FetchModels retrieves model list from server API
+// FetchModels retrieves model list from server API (legacy interface)
 func FetchModels(ctx context.Context) ([]ModelInfo, error) {
-	return FetchModelsFiltered(ctx, false, "")
+	return FetchModelsFromControlPlane(ctx, "connected", "")
 }
 
-// FetchModelsFiltered retrieves model list from server API with optional filtering
-// If showAll is false and auth is available, server-side credential filtering is applied
-// vendorFilter optionally filters by vendor (e.g., "anthropic", "opencode")
+// FetchModelsFiltered retrieves model list from server API with optional filtering (legacy interface)
 func FetchModelsFiltered(ctx context.Context, showAll bool, vendorFilter string) ([]ModelInfo, error) {
-	// Use cache only for unfiltered requests
-	if len(cachedModels) > 0 && showAll && vendorFilter == "" {
+	view := "connected"
+	if showAll {
+		view = "all"
+	}
+	return FetchModelsFromControlPlane(ctx, view, vendorFilter)
+}
+
+// FetchModelsFromControlPlane retrieves model list from the control plane API
+// view can be "all", "connected", or "vendor"
+// vendorFilter optionally filters by vendor/provider ID (e.g., "anthropic", "opencode")
+func FetchModelsFromControlPlane(ctx context.Context, view string, vendorFilter string) ([]ModelInfo, error) {
+	// Use cache only for connected requests with no filter
+	if len(cachedModels) > 0 && view == "connected" && vendorFilter == "" {
 		return cachedModels, nil
 	}
 
@@ -239,7 +285,7 @@ func FetchModelsFiltered(ctx context.Context, showAll bool, vendorFilter string)
 	}
 
 	// Build URL with query params
-	endpoint := cfg.ServerURL + "/api/models"
+	endpoint := cfg.ServerURL + "/api/provider-control-plane/models"
 	params := url.Values{}
 
 	// Try to get auth token for server-side credential filtering
@@ -248,12 +294,14 @@ func FetchModelsFiltered(ctx context.Context, showAll bool, vendorFilter string)
 
 	if accessToken != "" && teamSlug != "" {
 		params.Set("teamSlugOrId", teamSlug)
-		if showAll {
-			params.Set("all", "true")
-		}
+		params.Set("view", view)
+	} else {
+		// Without auth, always use "all" view
+		params.Set("view", "all")
 	}
+
 	if vendorFilter != "" {
-		params.Set("vendor", vendorFilter)
+		params.Set("providerId", vendorFilter)
 	}
 
 	if len(params) > 0 {
@@ -282,17 +330,39 @@ func FetchModelsFiltered(ctx context.Context, showAll bool, vendorFilter string)
 		return nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result ModelsListResponse
+	var result ControlPlaneModelsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	// Cache unfiltered results only
-	if showAll && vendorFilter == "" {
-		cachedModels = result.Models
+	// Convert control plane models to ModelInfo
+	models := make([]ModelInfo, 0, len(result.Models))
+	for _, m := range result.Models {
+		var disabledReason *string
+		if m.DisabledReason != "" {
+			disabledReason = &m.DisabledReason
+		}
+
+		models = append(models, ModelInfo{
+			Name:            m.Name,
+			DisplayName:     m.DisplayName,
+			Vendor:          m.Vendor,
+			ProviderID:      m.ProviderID,
+			RequiredApiKeys: m.RequiredApiKeys,
+			Tier:            m.Tier,
+			IsAvailable:     m.IsAvailable,
+			Disabled:        m.Disabled,
+			DisabledReason:  disabledReason,
+			Tags:            m.Tags,
+		})
 	}
 
-	return result.Models, nil
+	// Cache connected results only
+	if view == "connected" && vendorFilter == "" {
+		cachedModels = models
+	}
+
+	return models, nil
 }
 
 func filterModels(models []ModelInfo, provider string, enabledOnly bool, filter string) []ModelInfo {

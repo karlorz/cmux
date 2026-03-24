@@ -38,11 +38,13 @@ func init() {
 
 // ProviderOutput represents a provider for JSON output
 type ProviderOutput struct {
-	Name      string   `json:"name"`
-	Status    string   `json:"status"`
-	Source    string   `json:"source,omitempty"`
-	Available bool     `json:"available"`
-	Agents    []string `json:"agents,omitempty"`
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Status       string   `json:"status"`
+	Source       string   `json:"source,omitempty"`
+	Available    bool     `json:"available"`
+	DefaultModel string   `json:"defaultModel,omitempty"`
+	Agents       []string `json:"agents,omitempty"`
 }
 
 func runProviders(cmd *cobra.Command, args []string) error {
@@ -55,11 +57,11 @@ func runProviders(cmd *cobra.Command, args []string) error {
 		return printLocalProvidersTable(status)
 	}
 
-	// Default: server-side checks from Convex-stored API keys
+	// Default: server-side checks from control plane
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	serverStatus, err := fetchServerProviderStatus(ctx)
+	controlPlane, err := fetchControlPlaneProviders(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not fetch server provider status (%v), falling back to local checks\n", err)
 		status := credentials.CheckAllProviders()
@@ -70,12 +72,105 @@ func runProviders(cmd *cobra.Command, args []string) error {
 	}
 
 	if flagJSON {
-		return printServerProvidersJSON(serverStatus)
+		return printControlPlaneProvidersJSON(controlPlane)
 	}
-	return printServerProvidersTable(serverStatus)
+	return printControlPlaneProvidersTable(controlPlane)
 }
 
-// --- Server-side display functions ---
+// --- Control Plane display functions ---
+
+func printControlPlaneProvidersTable(resp *ControlPlaneProvidersResponse) error {
+	fmt.Println("AI Providers Status (Remote)")
+	fmt.Println("============================")
+	fmt.Println()
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "PROVIDER\tSTATUS\tSOURCE\tDEFAULT MODEL")
+	fmt.Fprintln(w, "--------\t------\t------\t-------------")
+
+	for _, p := range resp.Providers {
+		statusStr := "Not configured"
+		source := "-"
+		if p.ConnectionState.IsConnected {
+			statusStr = "Connected"
+			if p.ConnectionState.Source != nil {
+				source = formatConnectionSource(*p.ConnectionState.Source)
+			}
+		}
+
+		defaultModel := "-"
+		if p.DefaultModel != nil {
+			defaultModel = p.DefaultModel.Name
+		}
+
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", p.Name, statusStr, source, defaultModel)
+	}
+
+	w.Flush()
+	return nil
+}
+
+func printControlPlaneProvidersJSON(resp *ControlPlaneProvidersResponse) error {
+	var providers []ProviderOutput
+
+	for _, p := range resp.Providers {
+		statusStr := "Not configured"
+		source := ""
+		if p.ConnectionState.IsConnected {
+			statusStr = "Connected"
+			if p.ConnectionState.Source != nil {
+				source = *p.ConnectionState.Source
+			}
+		}
+
+		defaultModel := ""
+		if p.DefaultModel != nil {
+			defaultModel = p.DefaultModel.Name
+		}
+
+		providers = append(providers, ProviderOutput{
+			ID:           p.ID,
+			Name:         p.Name,
+			Status:       statusStr,
+			Source:       source,
+			Available:    p.ConnectionState.IsConnected,
+			DefaultModel: defaultModel,
+		})
+	}
+
+	data, err := json.MarshalIndent(map[string]interface{}{
+		"source":      "control-plane",
+		"providers":   providers,
+		"generatedAt": resp.GeneratedAt,
+	}, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
+	return nil
+}
+
+// formatConnectionSource converts the source enum to a human-readable string
+func formatConnectionSource(source string) string {
+	switch source {
+	case "stored_api_key":
+		return "API Key"
+	case "stored_oauth_token":
+		return "OAuth"
+	case "stored_json_blob":
+		return "Auth JSON"
+	case "env":
+		return "Env Var"
+	case "override":
+		return "Override"
+	case "free":
+		return "Free Tier"
+	default:
+		return source
+	}
+}
+
+// --- Legacy server display functions (used by backwards compat path) ---
 
 func printServerProvidersTable(status *ServerProvidersResponse) error {
 	fmt.Println("AI Providers Status (Remote)")
