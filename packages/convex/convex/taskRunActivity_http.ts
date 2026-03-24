@@ -25,6 +25,7 @@ const ACTIVITY_TYPES = [
   "session_start",
   "session_stop",
   "session_resumed",
+  "session_finished", // P1: Clean session exit (distinct from error)
   // Stop lifecycle events (Phase 4 - lifecycle parity)
   "stop_requested",
   "stop_blocked",
@@ -46,6 +47,11 @@ const ACTIVITY_TYPES = [
   "subagent_start",
   "subagent_stop",
   "notification",
+  // Prompt/Turn tracking events (P1 Lifecycle Parity)
+  "prompt_submitted", // P1: Track prompts/turns submitted to agent
+  "run_resumed", // P1: Resume from checkpoint/session
+  // MCP runtime events (P5 Lifecycle Parity)
+  "mcp_capabilities_negotiated", // P5: MCP server capability negotiation
 ] as const;
 
 /**
@@ -91,6 +97,33 @@ const ActivityEventSchema = z.object({
   scopeType: z.enum(["team", "repo", "user", "run"]).optional(),
   scopeBytes: z.number().nonnegative().optional(),
   scopeAction: z.enum(["injected", "updated", "cleared"]).optional(),
+  // Prompt/Turn tracking fields (P1 Lifecycle Parity - prompt_submitted/session_finished/run_resumed)
+  promptSource: z.enum(["user", "operator", "hook", "queue", "handoff"]).optional(),
+  turnNumber: z.number().nonnegative().optional(),
+  promptLength: z.number().nonnegative().optional(),
+  turnCount: z.number().nonnegative().optional(),
+  providerSessionId: z.string().max(200).optional(),
+  // Resume fields (P1 - run_resumed events)
+  resumeReason: z.enum(["checkpoint", "reconnect", "handoff", "retry", "manual"]).optional(),
+  previousTaskRunId: z.string().max(100).optional(),
+  previousSessionId: z.string().max(200).optional(),
+  checkpointRef: z.string().max(200).optional(),
+  // MCP runtime fields (P5 Lifecycle Parity - mcp_capabilities_negotiated)
+  serverName: z.string().max(100).optional(),
+  serverId: z.string().max(100).optional(),
+  protocolVersion: z.string().max(20).optional(),
+  transport: z.enum(["stdio", "http", "sse", "websocket"]).optional(),
+  mcpCapabilities: z.object({
+    tools: z.boolean().optional(),
+    resources: z.boolean().optional(),
+    prompts: z.boolean().optional(),
+    tasks: z.boolean().optional(),
+    logging: z.boolean().optional(),
+    completions: z.boolean().optional(),
+  }).optional(),
+  toolCount: z.number().nonnegative().optional(),
+  resourceCount: z.number().nonnegative().optional(),
+  mcpSessionId: z.string().max(200).optional(),
 });
 
 /**

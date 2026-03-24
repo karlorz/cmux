@@ -2087,7 +2087,13 @@ const convexSchema = defineSchema({
       // Operator input queue events
       v.literal("operator_input_queued"),
       v.literal("operator_input_drained"),
-      v.literal("queue_full_rejected")
+      v.literal("queue_full_rejected"),
+      // Prompt/Turn tracking events (P1 Lifecycle Parity)
+      v.literal("prompt_submitted"),
+      v.literal("session_finished"),
+      v.literal("run_resumed"),
+      // MCP runtime events (P5 Lifecycle Parity)
+      v.literal("mcp_capabilities_negotiated")
     ),
     teamId: v.string(),
     taskId: v.optional(v.string()), // Related orchestration task ID

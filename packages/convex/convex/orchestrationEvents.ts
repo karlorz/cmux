@@ -46,7 +46,13 @@ const eventTypeValidator = v.union(
   v.literal("memory_pruned"), // Legacy alias for memory_updated with action=archive
   // Context health events (Phase 4)
   v.literal("context_warning"),
-  v.literal("context_compacted")
+  v.literal("context_compacted"),
+  // Prompt/Turn tracking events (P1 Lifecycle Parity)
+  v.literal("prompt_submitted"),
+  v.literal("session_finished"),
+  v.literal("run_resumed"),
+  // MCP runtime events (P5 Lifecycle Parity)
+  v.literal("mcp_capabilities_negotiated")
 );
 
 // =============================================================================
