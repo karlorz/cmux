@@ -17,6 +17,7 @@
 
 import { v } from "convex/values";
 import { getTeamId } from "../_shared/team";
+import { internal } from "./_generated/api";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { authMutation, authQuery } from "./users/utils";
 import {
@@ -152,6 +153,17 @@ export const createRequest = authMutation({
       createdAt: now,
     });
 
+    // Set interruption state on the task run to enable unified pause/approval handling
+    if (args.taskRunId) {
+      await ctx.runMutation(internal.taskRuns.setInterruptionState, {
+        taskRunId: args.taskRunId,
+        status: "approval_pending",
+        reason: args.action,
+        approvalRequestId: requestId,
+        expiresAt: args.expiresInMs ? now + args.expiresInMs : undefined,
+      });
+    }
+
     return { requestId, docId: requestDoc };
   },
 });
@@ -226,6 +238,14 @@ export const resolveRequest = authMutation({
       payload: event,
       createdAt: now,
     });
+
+    // Resolve interruption state on the task run
+    if (request.taskRunId) {
+      await ctx.runMutation(internal.taskRuns.resolveInterruption, {
+        taskRunId: request.taskRunId,
+        resolvedBy: userId,
+      });
+    }
 
     return { success: true, status };
   },
@@ -599,6 +619,17 @@ export const createRequestInternal = internalMutation({
       createdAt: now,
     });
 
+    // Set interruption state on the task run to enable unified pause/approval handling
+    if (args.taskRunId) {
+      await ctx.runMutation(internal.taskRuns.setInterruptionState, {
+        taskRunId: args.taskRunId,
+        status: "approval_pending",
+        reason: args.action,
+        approvalRequestId: requestId,
+        expiresAt: args.expiresInMs ? now + args.expiresInMs : undefined,
+      });
+    }
+
     return { requestId, docId: requestDoc };
   },
 });
@@ -665,6 +696,14 @@ export const resolveRequestInternal = internalMutation({
       payload: event,
       createdAt: now,
     });
+
+    // Resolve interruption state on the task run
+    if (request.taskRunId) {
+      await ctx.runMutation(internal.taskRuns.resolveInterruption, {
+        taskRunId: request.taskRunId,
+        resolvedBy: args.resolvedBy ?? "system",
+      });
+    }
 
     return { success: true, status };
   },

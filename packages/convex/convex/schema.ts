@@ -406,6 +406,29 @@ const convexSchema = defineSchema({
         lastUpdated: v.number(), // Timestamp of last update
       })
     ),
+    // Interruption state (Phase 7: Unified pause/approval model)
+    // Tracks when an agent is blocked and why, enabling unified handling of
+    // approvals, operator pauses, and sandbox pauses across all providers
+    interruptionState: v.optional(
+      v.object({
+        status: v.union(
+          v.literal("none"), // Not interrupted
+          v.literal("approval_pending"), // Waiting for approval (linked to approvalRequests)
+          v.literal("paused_by_operator"), // Operator requested pause
+          v.literal("sandbox_paused"), // Underlying sandbox is paused
+          v.literal("context_overflow"), // Context window exceeded
+          v.literal("rate_limited"), // Provider rate limit hit
+          v.literal("timed_out") // Approval or action timed out
+        ),
+        reason: v.optional(v.string()), // Human-readable explanation
+        approvalRequestId: v.optional(v.string()), // Link to approvalRequests.requestId
+        blockedAt: v.number(), // When interruption started
+        expiresAt: v.optional(v.number()), // Auto-resume or expire time
+        resumeToken: v.optional(v.string()), // Provider-specific resume state
+        resolvedAt: v.optional(v.number()), // When interruption was resolved
+        resolvedBy: v.optional(v.string()), // User ID who resolved
+      })
+    ),
   })
     .index("by_task", ["taskId", "createdAt"])
     .index("by_parent", ["parentRunId"])
@@ -2296,6 +2319,8 @@ const convexSchema = defineSchema({
     eventType: v.union(
       v.literal("task_completed"),
       v.literal("task_failed"),
+      v.literal("task_interrupted"),
+      v.literal("task_resumed"),
       v.literal("pr_merged"),
       v.literal("pr_opened"),
       v.literal("pr_closed"),
