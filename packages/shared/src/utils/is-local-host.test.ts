@@ -61,6 +61,30 @@ describe("isLocalHostname", () => {
       expect(isLocalHostname(host)).toBe(false);
     }
   });
+
+  it("returns true for Docker Compose internal service hostnames", () => {
+    const hosts = [
+      "cmux-www",
+      "cmux-server",
+      "cmux-client",
+      "cmux-worker",
+    ];
+
+    for (const host of hosts) {
+      expect(isLocalHostname(host)).toBe(true);
+    }
+  });
+
+  it("returns false for cmux hostnames with dots (external domains)", () => {
+    const hosts = [
+      "cmux-www.karldigi.dev",
+      "cmux-server.example.com",
+    ];
+
+    for (const host of hosts) {
+      expect(isLocalHostname(host)).toBe(false);
+    }
+  });
 });
 
 describe("isLoopbackHostname", () => {
