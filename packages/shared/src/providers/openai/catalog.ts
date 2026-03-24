@@ -1,42 +1,28 @@
 import type { AgentCatalogEntry } from "../../agent-catalog";
 
+/**
+ * Codex Catalog - Flagship models only.
+ *
+ * This catalog contains only the recommended flagship models with full metadata.
+ * Additional models (older versions, variants) are auto-discovered via the
+ * OpenAI API discovery cron and stored in the database.
+ *
+ * Flagship selection criteria:
+ * - Latest generation (GPT-5.4)
+ * - Fast/low-cost option (GPT-5.4-mini)
+ * - Legacy fast option for compatibility (GPT-5.1-codex-mini)
+ */
 export const CODEX_CATALOG: AgentCatalogEntry[] = [
-  // GPT-5.4 variants (flagship frontier model)
+  // GPT-5.4 - Latest flagship frontier model
   {
     name: "codex/gpt-5.4-xhigh",
     displayName: "GPT-5.4 (XHigh)",
     vendor: "openai",
     requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
     tier: "paid",
-    tags: ["latest", "reasoning"],
+    tags: ["latest", "recommended", "reasoning"],
     contextWindow: 256000,
     maxOutputTokens: 32000,
-  },
-  {
-    name: "codex/gpt-5.4-high",
-    displayName: "GPT-5.4 (High)",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["reasoning"],
-    contextWindow: 256000,
-    maxOutputTokens: 32000,
-  },
-  {
-    name: "codex/gpt-5.4-medium",
-    displayName: "GPT-5.4 (Medium)",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["reasoning"],
-  },
-  {
-    name: "codex/gpt-5.4-low",
-    displayName: "GPT-5.4 (Low)",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["reasoning"],
   },
   {
     name: "codex/gpt-5.4",
@@ -44,8 +30,11 @@ export const CODEX_CATALOG: AgentCatalogEntry[] = [
     vendor: "openai",
     requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
     tier: "paid",
+    tags: ["latest"],
+    contextWindow: 256000,
+    maxOutputTokens: 32000,
   },
-  // GPT-5.4-mini - low-cost fast model
+  // GPT-5.4-mini - Fast & low-cost option
   {
     name: "codex/gpt-5.4-mini",
     displayName: "GPT-5.4 Mini (Fast & Low-Cost)",
@@ -56,194 +45,13 @@ export const CODEX_CATALOG: AgentCatalogEntry[] = [
     contextWindow: 128000,
     maxOutputTokens: 16000,
   },
-  // GPT-5.3-codex variants
-  {
-    name: "codex/gpt-5.3-codex-xhigh",
-    displayName: "GPT-5.3 Codex (XHigh)",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["reasoning"],
-  },
-  {
-    name: "codex/gpt-5.3-codex-high",
-    displayName: "GPT-5.3 Codex (High)",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["reasoning"],
-  },
-  {
-    name: "codex/gpt-5.3-codex-medium",
-    displayName: "GPT-5.3 Codex (Medium)",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["reasoning"],
-  },
-  {
-    name: "codex/gpt-5.3-codex-low",
-    displayName: "GPT-5.3 Codex (Low)",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["reasoning"],
-  },
-  {
-    name: "codex/gpt-5.3-codex",
-    displayName: "GPT-5.3 Codex",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-  },
-  // GPT-5.2-codex variants
-  {
-    name: "codex/gpt-5.2-codex-xhigh",
-    displayName: "GPT-5.2 Codex (XHigh)",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["reasoning"],
-  },
-  {
-    name: "codex/gpt-5.2-codex-high",
-    displayName: "GPT-5.2 Codex (High)",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["reasoning"],
-  },
-  {
-    name: "codex/gpt-5.2-codex-medium",
-    displayName: "GPT-5.2 Codex (Medium)",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["reasoning"],
-  },
-  {
-    name: "codex/gpt-5.2-codex-low",
-    displayName: "GPT-5.2 Codex (Low)",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["reasoning"],
-  },
-  {
-    name: "codex/gpt-5.2-codex",
-    displayName: "GPT-5.2 Codex",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-  },
-  // GPT-5.1-codex-max variants
-  {
-    name: "codex/gpt-5.1-codex-max-xhigh",
-    displayName: "GPT-5.1 Codex Max (XHigh)",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["reasoning"],
-  },
-  {
-    name: "codex/gpt-5.1-codex-max-high",
-    displayName: "GPT-5.1 Codex Max (High)",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["reasoning"],
-  },
-  {
-    name: "codex/gpt-5.1-codex-max-medium",
-    displayName: "GPT-5.1 Codex Max (Medium)",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["reasoning"],
-  },
-  {
-    name: "codex/gpt-5.1-codex-max-low",
-    displayName: "GPT-5.1 Codex Max (Low)",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["reasoning"],
-  },
-  {
-    name: "codex/gpt-5.1-codex-max",
-    displayName: "GPT-5.1 Codex Max",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-  },
-  // GPT-5.1 variants
-  {
-    name: "codex/gpt-5.1-codex-high",
-    displayName: "GPT-5.1 Codex (High)",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["reasoning"],
-  },
-  {
-    name: "codex/gpt-5.1-codex",
-    displayName: "GPT-5.1 Codex",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-  },
+  // GPT-5.1-codex-mini - Legacy fast option for compatibility
   {
     name: "codex/gpt-5.1-codex-mini",
     displayName: "GPT-5.1 Codex Mini",
     vendor: "openai",
     requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
     tier: "paid",
-  },
-  {
-    name: "codex/gpt-5.1",
-    displayName: "GPT-5.1",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-  },
-  // GPT-5.2 base variants
-  {
-    name: "codex/gpt-5.2",
-    displayName: "GPT-5.2",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-  },
-  {
-    name: "codex/gpt-5.2-xhigh",
-    displayName: "GPT-5.2 (XHigh)",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["reasoning"],
-  },
-  {
-    name: "codex/gpt-5.2-high",
-    displayName: "GPT-5.2 (High)",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["reasoning"],
-  },
-  {
-    name: "codex/gpt-5.2-medium",
-    displayName: "GPT-5.2 (Medium)",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["reasoning"],
-  },
-  {
-    name: "codex/gpt-5.2-low",
-    displayName: "GPT-5.2 (Low)",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["reasoning"],
+    tags: ["fast", "legacy"],
   },
 ];
