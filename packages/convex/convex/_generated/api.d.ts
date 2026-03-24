@@ -92,6 +92,7 @@ import type * as operatorVerification_actions from "../operatorVerification_acti
 import type * as orchestrate from "../orchestrate.js";
 import type * as orchestrationEvents from "../orchestrationEvents.js";
 import type * as orchestrationQueries from "../orchestrationQueries.js";
+import type * as orchestrationSettings from "../orchestrationSettings.js";
 import type * as orchestrationWorker from "../orchestrationWorker.js";
 import type * as orchestration_http from "../orchestration_http.js";
 import type * as permissionDenyRules from "../permissionDenyRules.js";
@@ -247,6 +248,7 @@ declare const fullApi: ApiFromModules<{
   orchestrate: typeof orchestrate;
   orchestrationEvents: typeof orchestrationEvents;
   orchestrationQueries: typeof orchestrationQueries;
+  orchestrationSettings: typeof orchestrationSettings;
   orchestrationWorker: typeof orchestrationWorker;
   orchestration_http: typeof orchestration_http;
   permissionDenyRules: typeof permissionDenyRules;

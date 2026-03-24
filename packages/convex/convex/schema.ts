@@ -2519,6 +2519,30 @@ const convexSchema = defineSchema({
     .index("by_team", ["teamId"])
     .index("by_team_name", ["teamId", "name"]),
 
+  // Team orchestration settings - controls auto head-agent and sub-agent behavior
+  orchestrationSettings: defineTable({
+    teamId: v.string(),
+    // Auto head-agent mode: when enabled, cloud workspaces automatically act as head agents
+    autoHeadAgent: v.optional(v.boolean()), // Default: false
+    // Default coding agent for sub-agent spawning
+    defaultCodingAgent: v.optional(v.string()), // e.g. "codex/gpt-5.4-xhigh"
+    // Default supervisor profile for head agents
+    defaultSupervisorProfileId: v.optional(v.id("supervisorProfiles")),
+    // Auto-spawn settings
+    autoSpawnEnabled: v.optional(v.boolean()), // Allow head agents to auto-spawn sub-agents
+    maxConcurrentSubAgents: v.optional(v.number()), // Limit concurrent sub-agents (default: 3)
+    // Allowed repos for auto-orchestration (empty = all repos)
+    allowedRepos: v.optional(v.array(v.string())), // ["owner/repo1", "owner/repo2"]
+    // Sub-agent provider preferences
+    preferredProviders: v.optional(v.array(v.string())), // ["codex", "claude", "gemini"]
+    // Cost controls
+    dailyBudgetCents: v.optional(v.number()), // Daily spending limit in cents
+    maxTaskDurationMinutes: v.optional(v.number()), // Max duration per sub-agent task
+    // Ownership
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_team", ["teamId"]),
+
   // Session activity tracking for visual change dashboards
   sessionActivity: defineTable({
     // Link to task run
