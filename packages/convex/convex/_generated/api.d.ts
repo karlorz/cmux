@@ -108,6 +108,7 @@ import type * as preview_jobs_http from "../preview_jobs_http.js";
 import type * as preview_jobs_worker from "../preview_jobs_worker.js";
 import type * as preview_screenshots_http from "../preview_screenshots_http.js";
 import type * as projectQueries from "../projectQueries.js";
+import type * as providerControlPlane from "../providerControlPlane.js";
 import type * as providerOverrides from "../providerOverrides.js";
 import type * as providerSessions from "../providerSessions.js";
 import type * as pushNotificationsActions from "../pushNotificationsActions.js";
@@ -261,6 +262,7 @@ declare const fullApi: ApiFromModules<{
   preview_jobs_worker: typeof preview_jobs_worker;
   preview_screenshots_http: typeof preview_screenshots_http;
   projectQueries: typeof projectQueries;
+  providerControlPlane: typeof providerControlPlane;
   providerOverrides: typeof providerOverrides;
   providerSessions: typeof providerSessions;
   pushNotificationsActions: typeof pushNotificationsActions;
