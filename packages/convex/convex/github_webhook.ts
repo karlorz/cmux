@@ -33,6 +33,39 @@ const FEATURE_FLAGS = {
 // Bot mention pattern - matches @cmux or @cmux-bot followed by the prompt
 const CMUX_MENTION_PATTERN = /@cmux(?:-bot)?\s+(.+)/is;
 
+// Agent selection pattern - matches --agent <agent-name> at the start of the prompt
+const AGENT_FLAG_PATTERN = /^--agent\s+(\S+)\s+(.+)/is;
+
+// Default agent when none specified
+const DEFAULT_AGENT = "claude/sonnet-4";
+
+// Valid agent prefixes for validation
+const VALID_AGENT_PREFIXES = ["claude", "codex", "gemini", "opencode", "grok", "amp", "cursor", "qwen"];
+
+/**
+ * Parse agent selection from prompt.
+ * Supports: @cmux --agent claude/opus-4.5 fix the bug
+ * Returns: { agentName: "claude/opus-4.5", prompt: "fix the bug" }
+ */
+function parseAgentFromPrompt(rawPrompt: string): { agentName: string; prompt: string } {
+  const match = rawPrompt.match(AGENT_FLAG_PATTERN);
+  if (!match) {
+    return { agentName: DEFAULT_AGENT, prompt: rawPrompt };
+  }
+
+  const requestedAgent = match[1];
+  const remainingPrompt = match[2].trim();
+
+  // Validate agent name format (prefix/model)
+  const agentPrefix = requestedAgent.split("/")[0];
+  if (!agentPrefix || !VALID_AGENT_PREFIXES.includes(agentPrefix)) {
+    // Invalid agent prefix, treat as part of prompt
+    return { agentName: DEFAULT_AGENT, prompt: rawPrompt };
+  }
+
+  return { agentName: requestedAgent, prompt: remainingPrompt };
+}
+
 async function verifySignature(
   secret: string,
   payload: string,
@@ -248,11 +281,14 @@ export const githubWebhook = httpAction(async (_ctx, req) => {
             break; // No @cmux mention
           }
 
-          const prompt = match[1].trim();
-          if (!prompt) {
+          const rawPrompt = match[1].trim();
+          if (!rawPrompt) {
             console.log("[issue_comment] Empty prompt after @cmux mention", { delivery });
             break;
           }
+
+          // Parse agent selection from prompt (e.g., @cmux --agent claude/opus-4.5 fix the bug)
+          const { agentName, prompt } = parseAgentFromPrompt(rawPrompt);
 
           // Get repo and installation info
           const repoFullName = String(commentPayload.repository?.full_name ?? "");
@@ -315,6 +351,7 @@ export const githubWebhook = httpAction(async (_ctx, req) => {
             repoFullName,
             prNumber,
             commentAuthor,
+            agentName,
             promptPreview: prompt.substring(0, 100),
             delivery,
           });
@@ -329,13 +366,13 @@ export const githubWebhook = httpAction(async (_ctx, req) => {
             baseBranch: baseBranch ?? "main",
           });
 
-          // Create task run with default agent and link to source comment
+          // Create task run with selected agent and link to source comment
           await _ctx.runMutation(internal.taskRuns.createInternal, {
             taskId,
             teamId,
             userId,
             prompt,
-            agentName: "claude/sonnet-4", // Default agent
+            agentName, // Parsed from --agent flag or default
             newBranch: prBranch, // Use PR head branch if available
             githubCommentId: commentId,
             githubCommentUrl: commentUrl,
