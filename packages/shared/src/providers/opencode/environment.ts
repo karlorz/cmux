@@ -84,22 +84,35 @@ async function buildOpencodeEnvironment(
   startupCommands.push("rm -f /root/lifecycle/opencode-complete-* 2>/dev/null || true");
 
   // Copy auth.json unless explicitly skipped (grok-code doesn't need it)
-  // Only read from host filesystem in desktop mode
-  if (!opts.skipAuth && useHostConfig) {
-    const { readFile } = await import("node:fs/promises");
-    const { homedir } = await import("node:os");
-    try {
-      const authContent = await readFile(
-        `${homedir()}/.local/share/opencode/auth.json`,
-        "utf-8"
-      );
+  // Priority: 1) Stored OPENCODE_AUTH_JSON from team credentials
+  //           2) Host filesystem (desktop mode only)
+  if (!opts.skipAuth) {
+    let authContent: string | null = null;
+
+    // First, try stored OPENCODE_AUTH_JSON from team credentials
+    if (ctx.apiKeys?.OPENCODE_AUTH_JSON) {
+      authContent = ctx.apiKeys.OPENCODE_AUTH_JSON;
+    }
+    // Fallback to host filesystem only in desktop mode
+    else if (useHostConfig) {
+      const { readFile } = await import("node:fs/promises");
+      const { homedir } = await import("node:os");
+      try {
+        authContent = await readFile(
+          `${homedir()}/.local/share/opencode/auth.json`,
+          "utf-8"
+        );
+      } catch (error) {
+        console.warn("Failed to read opencode auth.json from host:", error);
+      }
+    }
+
+    if (authContent) {
       files.push({
         destinationPath: "$HOME/.local/share/opencode/auth.json",
         contentBase64: Buffer.from(authContent).toString("base64"),
         mode: "600",
       });
-    } catch (error) {
-      console.warn("Failed to read opencode auth.json:", error);
     }
   }
   // Install OpenCode lifecycle completion hook script
