@@ -39,8 +39,17 @@ const AGENT_FLAG_PATTERN = /^--agent\s+(\S+)\s+(.+)/is;
 // Default agent when none specified
 const DEFAULT_AGENT = "claude/sonnet-4";
 
-// Valid agent prefixes for validation
-const VALID_AGENT_PREFIXES = ["claude", "codex", "gemini", "opencode", "grok", "amp", "cursor", "qwen"];
+/**
+ * Validate agent name by checking if it has a known provider prefix.
+ * Uses the same logic as getProviderIdFromAgentName from shared package.
+ */
+function isValidAgentName(agentName: string): boolean {
+  const prefix = agentName.split("/")[0];
+  if (!prefix) return false;
+  // Known provider prefixes (kept in sync with base-providers.ts prefixToProvider)
+  const knownPrefixes = ["claude", "codex", "gemini", "grok", "opencode", "amp", "cursor", "qwen"];
+  return knownPrefixes.includes(prefix);
+}
 
 /**
  * Parse agent selection from prompt.
@@ -56,9 +65,7 @@ function parseAgentFromPrompt(rawPrompt: string): { agentName: string; prompt: s
   const requestedAgent = match[1];
   const remainingPrompt = match[2].trim();
 
-  // Validate agent name format (prefix/model)
-  const agentPrefix = requestedAgent.split("/")[0];
-  if (!agentPrefix || !VALID_AGENT_PREFIXES.includes(agentPrefix)) {
+  if (!isValidAgentName(requestedAgent)) {
     // Invalid agent prefix, treat as part of prompt
     return { agentName: DEFAULT_AGENT, prompt: rawPrompt };
   }
