@@ -25,6 +25,7 @@ import { Route as LayoutDebugRouteImport } from './routes/_layout.debug'
 import { Route as LayoutTeamSlugOrIdRouteImport } from './routes/_layout.$teamSlugOrId'
 import { Route as TeamSlugOrIdFeedRouteImport } from './routes/$teamSlugOrId.feed'
 import { Route as LayoutTeamSlugOrIdWorkspacesRouteImport } from './routes/_layout.$teamSlugOrId.workspaces'
+import { Route as LayoutTeamSlugOrIdVaultRouteImport } from './routes/_layout.$teamSlugOrId.vault'
 import { Route as LayoutTeamSlugOrIdSettingsRouteImport } from './routes/_layout.$teamSlugOrId.settings'
 import { Route as LayoutTeamSlugOrIdScheduledTasksRouteImport } from './routes/_layout.$teamSlugOrId.scheduled-tasks'
 import { Route as LayoutTeamSlugOrIdReviewRouteImport } from './routes/_layout.$teamSlugOrId.review'
@@ -146,6 +147,11 @@ const LayoutTeamSlugOrIdWorkspacesRoute =
     path: '/workspaces',
     getParentRoute: () => LayoutTeamSlugOrIdRoute,
   } as any)
+const LayoutTeamSlugOrIdVaultRoute = LayoutTeamSlugOrIdVaultRouteImport.update({
+  id: '/vault',
+  path: '/vault',
+  getParentRoute: () => LayoutTeamSlugOrIdRoute,
+} as any)
 const LayoutTeamSlugOrIdSettingsRoute =
   LayoutTeamSlugOrIdSettingsRouteImport.update({
     id: '/settings',
@@ -413,6 +419,7 @@ export interface FileRoutesByFullPath {
   '/$teamSlugOrId/review': typeof LayoutTeamSlugOrIdReviewRoute
   '/$teamSlugOrId/scheduled-tasks': typeof LayoutTeamSlugOrIdScheduledTasksRoute
   '/$teamSlugOrId/settings': typeof LayoutTeamSlugOrIdSettingsRouteWithChildren
+  '/$teamSlugOrId/vault': typeof LayoutTeamSlugOrIdVaultRoute
   '/$teamSlugOrId/workspaces': typeof LayoutTeamSlugOrIdWorkspacesRoute
   '/$teamSlugOrId/environments/$environmentId': typeof LayoutTeamSlugOrIdEnvironmentsEnvironmentIdRoute
   '/$teamSlugOrId/environments/new': typeof LayoutTeamSlugOrIdEnvironmentsNewRoute
@@ -468,6 +475,7 @@ export interface FileRoutesByTo {
   '/$teamSlugOrId/review': typeof LayoutTeamSlugOrIdReviewRoute
   '/$teamSlugOrId/scheduled-tasks': typeof LayoutTeamSlugOrIdScheduledTasksRoute
   '/$teamSlugOrId/settings': typeof LayoutTeamSlugOrIdSettingsRouteWithChildren
+  '/$teamSlugOrId/vault': typeof LayoutTeamSlugOrIdVaultRoute
   '/$teamSlugOrId/workspaces': typeof LayoutTeamSlugOrIdWorkspacesRoute
   '/$teamSlugOrId/environments/$environmentId': typeof LayoutTeamSlugOrIdEnvironmentsEnvironmentIdRoute
   '/$teamSlugOrId/environments/new': typeof LayoutTeamSlugOrIdEnvironmentsNewRoute
@@ -526,6 +534,7 @@ export interface FileRoutesById {
   '/_layout/$teamSlugOrId/review': typeof LayoutTeamSlugOrIdReviewRoute
   '/_layout/$teamSlugOrId/scheduled-tasks': typeof LayoutTeamSlugOrIdScheduledTasksRoute
   '/_layout/$teamSlugOrId/settings': typeof LayoutTeamSlugOrIdSettingsRouteWithChildren
+  '/_layout/$teamSlugOrId/vault': typeof LayoutTeamSlugOrIdVaultRoute
   '/_layout/$teamSlugOrId/workspaces': typeof LayoutTeamSlugOrIdWorkspacesRoute
   '/_layout/$teamSlugOrId/environments/$environmentId': typeof LayoutTeamSlugOrIdEnvironmentsEnvironmentIdRoute
   '/_layout/$teamSlugOrId/environments/new': typeof LayoutTeamSlugOrIdEnvironmentsNewRoute
@@ -585,6 +594,7 @@ export interface FileRouteTypes {
     | '/$teamSlugOrId/review'
     | '/$teamSlugOrId/scheduled-tasks'
     | '/$teamSlugOrId/settings'
+    | '/$teamSlugOrId/vault'
     | '/$teamSlugOrId/workspaces'
     | '/$teamSlugOrId/environments/$environmentId'
     | '/$teamSlugOrId/environments/new'
@@ -640,6 +650,7 @@ export interface FileRouteTypes {
     | '/$teamSlugOrId/review'
     | '/$teamSlugOrId/scheduled-tasks'
     | '/$teamSlugOrId/settings'
+    | '/$teamSlugOrId/vault'
     | '/$teamSlugOrId/workspaces'
     | '/$teamSlugOrId/environments/$environmentId'
     | '/$teamSlugOrId/environments/new'
@@ -697,6 +708,7 @@ export interface FileRouteTypes {
     | '/_layout/$teamSlugOrId/review'
     | '/_layout/$teamSlugOrId/scheduled-tasks'
     | '/_layout/$teamSlugOrId/settings'
+    | '/_layout/$teamSlugOrId/vault'
     | '/_layout/$teamSlugOrId/workspaces'
     | '/_layout/$teamSlugOrId/environments/$environmentId'
     | '/_layout/$teamSlugOrId/environments/new'
@@ -852,6 +864,13 @@ declare module '@tanstack/react-router' {
       path: '/workspaces'
       fullPath: '/$teamSlugOrId/workspaces'
       preLoaderRoute: typeof LayoutTeamSlugOrIdWorkspacesRouteImport
+      parentRoute: typeof LayoutTeamSlugOrIdRoute
+    }
+    '/_layout/$teamSlugOrId/vault': {
+      id: '/_layout/$teamSlugOrId/vault'
+      path: '/vault'
+      fullPath: '/$teamSlugOrId/vault'
+      preLoaderRoute: typeof LayoutTeamSlugOrIdVaultRouteImport
       parentRoute: typeof LayoutTeamSlugOrIdRoute
     }
     '/_layout/$teamSlugOrId/settings': {
@@ -1294,6 +1313,7 @@ interface LayoutTeamSlugOrIdRouteChildren {
   LayoutTeamSlugOrIdReviewRoute: typeof LayoutTeamSlugOrIdReviewRoute
   LayoutTeamSlugOrIdScheduledTasksRoute: typeof LayoutTeamSlugOrIdScheduledTasksRoute
   LayoutTeamSlugOrIdSettingsRoute: typeof LayoutTeamSlugOrIdSettingsRouteWithChildren
+  LayoutTeamSlugOrIdVaultRoute: typeof LayoutTeamSlugOrIdVaultRoute
   LayoutTeamSlugOrIdWorkspacesRoute: typeof LayoutTeamSlugOrIdWorkspacesRoute
   LayoutTeamSlugOrIdTaskTaskIdRoute: typeof LayoutTeamSlugOrIdTaskTaskIdRouteWithChildren
   LayoutTeamSlugOrIdPrsOnlyOwnerRepoNumberRoute: typeof LayoutTeamSlugOrIdPrsOnlyOwnerRepoNumberRoute
@@ -1317,6 +1337,7 @@ const LayoutTeamSlugOrIdRouteChildren: LayoutTeamSlugOrIdRouteChildren = {
   LayoutTeamSlugOrIdReviewRoute: LayoutTeamSlugOrIdReviewRoute,
   LayoutTeamSlugOrIdScheduledTasksRoute: LayoutTeamSlugOrIdScheduledTasksRoute,
   LayoutTeamSlugOrIdSettingsRoute: LayoutTeamSlugOrIdSettingsRouteWithChildren,
+  LayoutTeamSlugOrIdVaultRoute: LayoutTeamSlugOrIdVaultRoute,
   LayoutTeamSlugOrIdWorkspacesRoute: LayoutTeamSlugOrIdWorkspacesRoute,
   LayoutTeamSlugOrIdTaskTaskIdRoute:
     LayoutTeamSlugOrIdTaskTaskIdRouteWithChildren,

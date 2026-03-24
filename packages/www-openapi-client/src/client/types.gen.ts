@@ -4953,6 +4953,145 @@ export type PostApiVaultDispatchResponses = {
 
 export type PostApiVaultDispatchResponse = PostApiVaultDispatchResponses[keyof PostApiVaultDispatchResponses];
 
+export type GetApiVaultNoteData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId: string;
+        /**
+         * Note path relative to vault root
+         */
+        path: string;
+        /**
+         * Agent or user accessing the note
+         */
+        accessedBy?: string;
+    };
+    url: '/api/vault/note';
+};
+
+export type GetApiVaultNoteErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Note not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiVaultNoteResponses = {
+    /**
+     * Note retrieved successfully
+     */
+    200: {
+        /**
+         * Note path
+         */
+        path: string;
+        /**
+         * Note title
+         */
+        title: string;
+        /**
+         * Note content (markdown body)
+         */
+        content: string;
+        /**
+         * Parsed frontmatter
+         */
+        frontmatter: {
+            [key: string]: unknown;
+        };
+        /**
+         * Access tracking info
+         */
+        access: {
+            /**
+             * Timestamp of last access
+             */
+            lastAccessedAt: number;
+            /**
+             * Who last accessed the note
+             */
+            lastAccessedBy: string | null;
+            /**
+             * Total number of accesses
+             */
+            accessCount: number;
+        } | null;
+    };
+};
+
+export type GetApiVaultNoteResponse = GetApiVaultNoteResponses[keyof GetApiVaultNoteResponses];
+
+export type GetApiVaultAccessRecentData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId: string;
+        /**
+         * Maximum notes to return (default 50)
+         */
+        limit?: number | null;
+    };
+    url: '/api/vault/access/recent';
+};
+
+export type GetApiVaultAccessRecentErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiVaultAccessRecentResponses = {
+    /**
+     * Access list retrieved successfully
+     */
+    200: {
+        notes: Array<{
+            /**
+             * Note path
+             */
+            notePath: string;
+            /**
+             * Note title
+             */
+            noteTitle: string | null;
+            /**
+             * Timestamp of last access
+             */
+            lastAccessedAt: number;
+            /**
+             * Who last accessed the note
+             */
+            lastAccessedBy: string | null;
+            /**
+             * Total number of accesses
+             */
+            accessCount: number;
+        }>;
+    };
+};
+
+export type GetApiVaultAccessRecentResponse = GetApiVaultAccessRecentResponses[keyof GetApiVaultAccessRecentResponses];
+
 export type GetApiVaultNotesData = {
     body?: never;
     path?: never;
