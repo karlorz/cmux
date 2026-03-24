@@ -167,6 +167,12 @@ Uses `useQuery(api.taskRunActivity.getByTaskRunId)` for real-time Convex subscri
 
 ### Effort: 3-5 days for Claude foundation, +2 days for Codex fallback
 
+### Implementation Status - COMPLETE
+- `taskRunActivity.ts` - Convex mutations + queries
+- `taskRunActivity_http.ts` - HTTP endpoint for agent hooks
+- `ActivityStream.tsx` - Dashboard UI component with filtering, search, export
+- Route integrated into task run view
+
 ## Phase 2: Live Diff Panel - COMPLETE
 
 ### What
