@@ -406,9 +406,9 @@ const convexSchema = defineSchema({
         lastUpdated: v.number(), // Timestamp of last update
       })
     ),
-    // Interruption state (Phase 7: Unified pause/approval model)
+    // Interruption state (Phase 7: Unified pause/approval model, P2: Runtime interruptions)
     // Tracks when an agent is blocked and why, enabling unified handling of
-    // approvals, operator pauses, and sandbox pauses across all providers
+    // approvals, operator pauses, sandbox pauses, and checkpoint-based resume
     interruptionState: v.optional(
       v.object({
         status: v.union(
@@ -418,7 +418,11 @@ const convexSchema = defineSchema({
           v.literal("sandbox_paused"), // Underlying sandbox is paused
           v.literal("context_overflow"), // Context window exceeded
           v.literal("rate_limited"), // Provider rate limit hit
-          v.literal("timed_out") // Approval or action timed out
+          v.literal("timed_out"), // Approval or action timed out
+          // P2: Extended interruption types for generalized runtime model
+          v.literal("checkpoint_pending"), // Waiting for checkpoint save to complete
+          v.literal("handoff_pending"), // Waiting for handoff to another agent
+          v.literal("user_input_required") // Waiting for user elicitation response
         ),
         reason: v.optional(v.string()), // Human-readable explanation
         approvalRequestId: v.optional(v.string()), // Link to approvalRequests.requestId
@@ -427,6 +431,12 @@ const convexSchema = defineSchema({
         resumeToken: v.optional(v.string()), // Provider-specific resume state
         resolvedAt: v.optional(v.number()), // When interruption was resolved
         resolvedBy: v.optional(v.string()), // User ID who resolved
+        // P2: Provider session binding for resume ancestry
+        providerSessionId: v.optional(v.string()), // Provider's session/thread ID (e.g., Codex thread_id)
+        resumeTargetId: v.optional(v.string()), // Target for SendMessage resume (agent or session ID)
+        // P2: Checkpoint reference for replay-safe resume
+        checkpointRef: v.optional(v.string()), // Reference to checkpoint state (LangGraph-style)
+        checkpointGeneration: v.optional(v.number()), // Monotonic counter for checkpoint ordering
       })
     ),
   })

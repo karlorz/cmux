@@ -853,3 +853,138 @@ export function buildExtendedLifecycleHooks(
 
   return result;
 }
+
+// =============================================================================
+// P2: Runtime Interruption Payload Builders
+// =============================================================================
+
+/**
+ * P2: Interruption status types for the generalized runtime model.
+ */
+export type InterruptionStatusType =
+  | "none"
+  | "approval_pending"
+  | "paused_by_operator"
+  | "sandbox_paused"
+  | "context_overflow"
+  | "rate_limited"
+  | "timed_out"
+  | "checkpoint_pending"
+  | "handoff_pending"
+  | "user_input_required";
+
+/**
+ * P2: Payload for reporting a runtime interruption.
+ */
+export interface RuntimeInterruptionPayload {
+  taskRunId: string;
+  status: InterruptionStatusType;
+  reason?: string;
+  expiresInMs?: number;
+  resumeToken?: string;
+  // Provider session binding
+  providerSessionId?: string;
+  resumeTargetId?: string;
+  // Checkpoint reference
+  checkpointRef?: string;
+  checkpointGeneration?: number;
+  // Link to approval if applicable
+  approvalRequestId?: string;
+}
+
+/**
+ * P2: Build a runtime interruption payload (TypeScript).
+ * Use when agents need to report blocking states to the control plane.
+ */
+export function buildRuntimeInterruptionPayload(
+  taskRunId: string,
+  status: InterruptionStatusType,
+  options?: {
+    reason?: string;
+    expiresInMs?: number;
+    resumeToken?: string;
+    providerSessionId?: string;
+    resumeTargetId?: string;
+    checkpointRef?: string;
+    checkpointGeneration?: number;
+    approvalRequestId?: string;
+  }
+): RuntimeInterruptionPayload {
+  return {
+    taskRunId,
+    status,
+    reason: options?.reason,
+    expiresInMs: options?.expiresInMs,
+    resumeToken: options?.resumeToken,
+    providerSessionId: options?.providerSessionId,
+    resumeTargetId: options?.resumeTargetId,
+    checkpointRef: options?.checkpointRef,
+    checkpointGeneration: options?.checkpointGeneration,
+    approvalRequestId: options?.approvalRequestId,
+  };
+}
+
+/**
+ * P2: Generate shell curl command for reporting runtime interruptions.
+ */
+export function shellCurlInterruptionPost(
+  status: InterruptionStatusType,
+  options?: {
+    background?: boolean;
+    logFile?: string;
+    reasonExpr?: string;
+  }
+): string {
+  const background = options?.background !== false;
+  const logFile = options?.logFile ?? '"\${LOG_FILE}"';
+  const reasonArg = options?.reasonExpr
+    ? `--arg reason ${options.reasonExpr}`
+    : '--arg reason ""';
+
+  const jqPayload = `'{taskRunId: $trid, status: "${status}", reason: $reason}'`;
+
+  const curlCmd = `curl -s -X POST "\${CMUX_CALLBACK_URL}/api/runtime/interrupt" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n --arg trid "\${CMUX_TASK_RUN_ID:-}" ${reasonArg} ${jqPayload})" \\
+    >> ${logFile} 2>&1 || true`;
+
+  if (background) {
+    return `(
+  ${curlCmd}
+) &`;
+  }
+  return curlCmd;
+}
+
+/**
+ * P2: Build interruption hook script for checkpoint-based pauses.
+ * Called when an agent wants to save a checkpoint and pause.
+ */
+export function buildCheckpointInterruptionHook(
+  ctx: LifecycleAdapterContext,
+  options?: HookScriptOptions
+): string {
+  const preamble = buildHookPreamble(ctx);
+
+  return `${preamble}
+CHECKPOINT_REF="\${1:-}"
+REASON="\${2:-Checkpoint saved}"
+${options?.prolog ?? ""}
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
+  exit 0
+fi
+# Report checkpoint interruption
+curl -s -X POST "\${CMUX_CALLBACK_URL}/api/runtime/interrupt" \\
+  -H "Content-Type: application/json" \\
+  -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+  -d "$(jq -n \\
+    --arg trid "\${CMUX_TASK_RUN_ID:-}" \\
+    --arg cpref "$CHECKPOINT_REF" \\
+    --arg reason "$REASON" \\
+    '{taskRunId: $trid, status: "checkpoint_pending", reason: $reason, checkpointRef: $cpref}')" \\
+  >> "\${LOG_FILE}" 2>&1 || true
+${options?.epilog ?? ""}
+exit 0
+`;
+}
