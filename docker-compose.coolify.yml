@@ -19,7 +19,7 @@ services:
   # cmux-client: Vite SPA frontend served via nginx
   # =============================================================================
   cmux-client:
-    image: ${CLIENT_IMAGE:-ghcr.io/karlorz/cmux-client:latest}
+    image: ghcr.io/karlorz/cmux-client:latest
     container_name: cmux-client
     restart: unless-stopped
     ports:
@@ -43,7 +43,7 @@ services:
   # cmux-www: Next.js API server (standalone output)
   # =============================================================================
   cmux-www:
-    image: ${WWW_IMAGE:-ghcr.io/karlorz/cmux-www:latest}
+    image: ghcr.io/karlorz/cmux-www:latest
     container_name: cmux-www
     restart: unless-stopped
     ports:
@@ -93,7 +93,7 @@ services:
   # cmux-server: WebSocket and real-time API server
   # =============================================================================
   cmux-server:
-    image: ${SERVER_IMAGE:-ghcr.io/karlorz/cmux-server:latest}
+    image: ghcr.io/karlorz/cmux-server:latest
     container_name: cmux-server
     restart: unless-stopped
     ports:
