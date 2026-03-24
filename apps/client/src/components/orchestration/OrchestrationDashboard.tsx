@@ -6,6 +6,7 @@ import { OrchestrationTaskList } from "./OrchestrationTaskList";
 import { OrchestrationSpawnDialog } from "./OrchestrationSpawnDialog";
 import { OrchestrationDependencyGraph } from "./OrchestrationDependencyGraph";
 import { OrchestrationEventStream } from "./OrchestrationEventStream";
+import { OrchestrationEventAnalytics } from "./OrchestrationEventAnalytics";
 import { ProjectKanbanView } from "../projects/ProjectKanbanView";
 import { STATUS_CONFIG, type TaskStatus } from "./status-config";
 import type { Doc, Id } from "@cmux/convex/dataModel";
@@ -43,6 +44,18 @@ interface OrchestrationSummary {
   }>;
 }
 
+interface EventAnalytics {
+  totalEvents: number;
+  countsByType: Record<string, number>;
+  categories: {
+    taskLifecycle: number;
+    sessionLifecycle: number;
+    approvals: number;
+    contextHealth: number;
+  };
+  sinceTimestamp: number;
+}
+
 interface OrchestrationDashboardProps {
   teamSlugOrId: string;
   summary?: OrchestrationSummary;
@@ -51,6 +64,8 @@ interface OrchestrationDashboardProps {
   tasksLoading: boolean;
   statusFilter: string;
   orchestrationId?: string;
+  eventAnalytics?: EventAnalytics;
+  eventAnalyticsLoading?: boolean;
 }
 
 export function OrchestrationDashboard({
@@ -61,6 +76,8 @@ export function OrchestrationDashboard({
   tasksLoading,
   statusFilter,
   orchestrationId,
+  eventAnalytics,
+  eventAnalyticsLoading,
 }: OrchestrationDashboardProps) {
   const navigate = useNavigate();
   const [spawnDialogOpen, setSpawnDialogOpen] = useState(false);
@@ -180,6 +197,12 @@ export function OrchestrationDashboard({
             loading={summaryLoading}
             onFilterChange={handleStatusFilterChange}
             activeFilter={statusFilter}
+          />
+
+          {/* Event Analytics */}
+          <OrchestrationEventAnalytics
+            analytics={eventAnalytics}
+            loading={eventAnalyticsLoading ?? false}
           />
 
           {/* Event Stream (when orchestrationId provided) */}
