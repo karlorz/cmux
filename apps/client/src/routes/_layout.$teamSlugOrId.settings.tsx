@@ -13,6 +13,7 @@ import { PolicyRulesSection } from "@/components/settings/sections/PolicyRulesSe
 import { PermissionRulesSection } from "@/components/settings/sections/PermissionRulesSection";
 import { AgentConfigsSection } from "@/components/settings/sections/AgentConfigsSection";
 import { OrchestrationRulesSection } from "@/components/settings/sections/OrchestrationRulesSection";
+import { OrchestrationSettingsSection } from "@/components/settings/sections/OrchestrationSettingsSection";
 import { ModelCatalogSection } from "@/components/settings/sections/ModelCatalogSection";
 import { ModelManagementSection } from "@/components/settings/sections/ModelManagementSection";
 import { WorktreesSection } from "@/components/settings/sections/WorktreesSection";
@@ -55,6 +56,7 @@ export const settingsSectionSchema = z.enum([
   "permission-rules",
   "agent-configs",
   "orchestration-rules",
+  "orchestration-settings",
   "git",
   "worktrees",
   "archived",
@@ -1050,6 +1052,8 @@ function SettingsComponent() {
             <AgentConfigsSection teamSlugOrId={teamSlugOrId} />
           ) : activeSection === "orchestration-rules" ? (
             <OrchestrationRulesSection teamSlugOrId={teamSlugOrId} />
+          ) : activeSection === "orchestration-settings" ? (
+            <OrchestrationSettingsSection teamSlugOrId={teamSlugOrId} />
           ) : activeSection === "git" ? (
             <GitSection
               branchPrefix={branchPrefix}
