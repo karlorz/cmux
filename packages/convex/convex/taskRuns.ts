@@ -910,7 +910,7 @@ export const updateStatus = internalMutation({
   },
 });
 
-// Interruption state validator - matches schema definition
+// Interruption state validator - matches schema definition (P2: Runtime interruptions)
 const interruptionStatusValidator = v.union(
   v.literal("none"),
   v.literal("approval_pending"),
@@ -918,12 +918,19 @@ const interruptionStatusValidator = v.union(
   v.literal("sandbox_paused"),
   v.literal("context_overflow"),
   v.literal("rate_limited"),
-  v.literal("timed_out")
+  v.literal("timed_out"),
+  // P2: Extended interruption types for generalized runtime model
+  v.literal("checkpoint_pending"),
+  v.literal("handoff_pending"),
+  v.literal("user_input_required")
 );
 
 /**
  * Set interruption state on a task run.
- * Used when an agent is blocked (approval needed, sandbox paused, etc.)
+ * Used when an agent is blocked (approval needed, sandbox paused, checkpoint, handoff, etc.)
+ *
+ * P2: Extended to support provider session binding and checkpoint references for
+ * replay-safe resume and explicit resume ancestry.
  */
 export const setInterruptionState = internalMutation({
   args: {
@@ -933,6 +940,12 @@ export const setInterruptionState = internalMutation({
     approvalRequestId: v.optional(v.string()),
     expiresAt: v.optional(v.number()),
     resumeToken: v.optional(v.string()),
+    // P2: Provider session binding for resume ancestry
+    providerSessionId: v.optional(v.string()),
+    resumeTargetId: v.optional(v.string()),
+    // P2: Checkpoint reference for replay-safe resume
+    checkpointRef: v.optional(v.string()),
+    checkpointGeneration: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const run = await ctx.db.get(args.taskRunId);
@@ -941,15 +954,25 @@ export const setInterruptionState = internalMutation({
     }
 
     const now = Date.now();
+
+    // Build interruption state with P2 fields
+    const interruptionState: NonNullable<typeof run.interruptionState> = {
+      status: args.status,
+      reason: args.reason,
+      approvalRequestId: args.approvalRequestId,
+      blockedAt: now,
+      expiresAt: args.expiresAt,
+      resumeToken: args.resumeToken,
+      // P2: Include provider session binding if provided
+      providerSessionId: args.providerSessionId,
+      resumeTargetId: args.resumeTargetId,
+      // P2: Include checkpoint reference if provided
+      checkpointRef: args.checkpointRef,
+      checkpointGeneration: args.checkpointGeneration,
+    };
+
     await ctx.db.patch(args.taskRunId, {
-      interruptionState: {
-        status: args.status,
-        reason: args.reason,
-        approvalRequestId: args.approvalRequestId,
-        blockedAt: now,
-        expiresAt: args.expiresAt,
-        resumeToken: args.resumeToken,
-      },
+      interruptionState,
       updatedAt: now,
     });
 
@@ -1018,7 +1041,7 @@ export const resolveInterruption = internalMutation({
 });
 
 /**
- * Query to check if a task run is currently interrupted.
+ * Query to check if a task run is currently interrupted (internal).
  */
 export const isInterrupted = internalQuery({
   args: {
@@ -1042,9 +1065,96 @@ export const isInterrupted = internalQuery({
       blockedAt: state.blockedAt,
       expiresAt: state.expiresAt,
       approvalRequestId: state.approvalRequestId,
+      // P2: Include provider session and checkpoint info
+      providerSessionId: state.providerSessionId,
+      resumeTargetId: state.resumeTargetId,
+      checkpointRef: state.checkpointRef,
+      checkpointGeneration: state.checkpointGeneration,
     };
   },
 });
+
+/**
+ * P2: Public query to get full interruption state for UI visibility.
+ * Returns the complete interruption state including provider session binding
+ * and checkpoint references for operator-facing dashboards.
+ */
+export const getInterruptionState = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    taskRunId: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+
+    const run = await ctx.db.get(args.taskRunId);
+    if (!run || run.teamId !== teamId) {
+      return null;
+    }
+
+    const state = run.interruptionState;
+    if (!state || state.status === "none") {
+      return {
+        interrupted: false,
+        status: "none" as const,
+        taskRunId: args.taskRunId,
+        agentName: run.agentName,
+      };
+    }
+
+    return {
+      interrupted: true,
+      taskRunId: args.taskRunId,
+      agentName: run.agentName,
+      // Core interruption fields
+      status: state.status,
+      reason: state.reason,
+      blockedAt: state.blockedAt,
+      expiresAt: state.expiresAt,
+      resolvedAt: state.resolvedAt,
+      resolvedBy: state.resolvedBy,
+      // Approval link
+      approvalRequestId: state.approvalRequestId,
+      // P2: Provider session binding
+      providerSessionId: state.providerSessionId,
+      resumeTargetId: state.resumeTargetId,
+      resumeToken: state.resumeToken,
+      // P2: Checkpoint reference
+      checkpointRef: state.checkpointRef,
+      checkpointGeneration: state.checkpointGeneration,
+      // Computed: is resumable?
+      canResume: canResumeFromInterruption(state),
+    };
+  },
+});
+
+/**
+ * P2: Determine if an interruption can be resumed.
+ * Used by UI to show/hide resume buttons appropriately.
+ */
+function canResumeFromInterruption(state: {
+  status: string;
+  resumeToken?: string;
+  providerSessionId?: string;
+  checkpointRef?: string;
+}): boolean {
+  // Cannot resume if already resolved
+  if (state.status === "none") return false;
+
+  // Approval-based interruptions require resolution through approval flow
+  if (state.status === "approval_pending") return false;
+
+  // Checkpoint-based resume requires a checkpoint reference
+  if (state.status === "checkpoint_pending") {
+    return !!state.checkpointRef;
+  }
+
+  // Handoff requires a target
+  if (state.status === "handoff_pending") return false;
+
+  // Other interruptions can be resumed if we have session or token
+  return !!(state.resumeToken || state.providerSessionId);
+}
 
 export const getRunDiffContext = authQuery({
   args: {

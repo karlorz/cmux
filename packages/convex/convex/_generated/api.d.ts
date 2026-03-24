@@ -117,6 +117,7 @@ import type * as pveLxcInstances from "../pveLxcInstances.js";
 import type * as pve_lxc_actions from "../pve_lxc_actions.js";
 import type * as resultAggregation from "../resultAggregation.js";
 import type * as resume_tasks from "../resume_tasks.js";
+import type * as runtimeInterruptions_http from "../runtimeInterruptions_http.js";
 import type * as sandboxInstanceMaintenance from "../sandboxInstanceMaintenance.js";
 import type * as sandboxInstances from "../sandboxInstances.js";
 import type * as scheduledTasks from "../scheduledTasks.js";
@@ -271,6 +272,7 @@ declare const fullApi: ApiFromModules<{
   pve_lxc_actions: typeof pve_lxc_actions;
   resultAggregation: typeof resultAggregation;
   resume_tasks: typeof resume_tasks;
+  runtimeInterruptions_http: typeof runtimeInterruptions_http;
   sandboxInstanceMaintenance: typeof sandboxInstanceMaintenance;
   sandboxInstances: typeof sandboxInstances;
   scheduledTasks: typeof scheduledTasks;
