@@ -58,17 +58,38 @@ export type ProviderName =
   | "cursor";
 
 /**
- * Lifecycle event types that can be emitted.
+ * Lifecycle event types that can be emitted from provider hooks.
+ *
+ * Extended in Priority 1 (lifecycle normalization) to include:
+ * - stop_requested / stop_blocked / stop_failed for graceful shutdown
+ * - tool_requested / tool_completed for full tool lifecycle
+ * - approval_requested / approval_resolved for approval flow
+ * - memory_scope_changed for scope transitions
  */
 export type LifecycleEventType =
+  // Session lifecycle
   | "session_start"
   | "session_stop"
   | "session_resumed"
+  // Stop lifecycle (Priority 1)
+  | "stop_requested"
+  | "stop_blocked"
+  | "stop_failed"
+  // Error
   | "error"
+  // Context health
   | "context_warning"
   | "context_compacted"
+  // Memory
   | "memory_loaded"
-  | "tool_call";
+  | "memory_scope_changed"
+  // Tool lifecycle (Priority 1)
+  | "tool_call"
+  | "tool_requested"
+  | "tool_completed"
+  // Approval lifecycle (Priority 1)
+  | "approval_requested"
+  | "approval_resolved";
 
 /**
  * Context for building lifecycle hooks.
@@ -329,22 +350,47 @@ exit 0
 /**
  * Canonical event types for activity API.
  * Maps to AgentCommEvent types from agent-comm-events.ts.
+ *
+ * Extended in Priority 1 (lifecycle normalization) to include:
+ * - stop_requested / stop_blocked / stop_failed for graceful shutdown
+ * - tool_requested / tool_completed for full tool lifecycle
+ * - approval_requested / approval_resolved for approval flow
+ * - memory_scope_changed for scope transitions
  */
 export type CanonicalActivityType =
+  // Session lifecycle
   | "session_start"
   | "session_stop"
   | "session_resumed"
+  // Stop lifecycle (Priority 1 additions)
+  | "stop_requested"
+  | "stop_blocked"
+  | "stop_failed"
+  // Error
   | "error"
+  // Context health
   | "context_warning"
   | "context_compacted"
+  // Memory
   | "memory_loaded"
+  | "memory_scope_changed"
+  // Tool lifecycle (Priority 1: split into requested/completed)
   | "tool_call"
+  | "tool_requested"
+  | "tool_completed"
+  // Specific tool types
   | "file_edit"
   | "file_read"
   | "bash_command"
+  // User interaction
   | "user_prompt"
+  // Subagent lifecycle
   | "subagent_start"
   | "subagent_stop"
+  // Approval lifecycle (Priority 1 additions)
+  | "approval_requested"
+  | "approval_resolved"
+  // Notifications
   | "notification";
 
 /**
@@ -458,6 +504,159 @@ export function buildContextCompactedPayload(
     reductionPercent: options.reductionPercent,
   };
 }
+
+// =============================================================================
+// Priority 1: Additional Canonical Payload Builders
+// =============================================================================
+
+/**
+ * Extended payload for stop lifecycle events.
+ */
+export interface StopLifecyclePayload extends ActivityPayloadBase {
+  type: "stop_requested" | "stop_blocked" | "stop_failed";
+  reason?: string;
+  blockedBy?: string;
+  errorMessage?: string;
+}
+
+/**
+ * Extended payload for tool lifecycle events.
+ */
+export interface ToolLifecyclePayload extends ActivityPayloadBase {
+  type: "tool_requested" | "tool_completed";
+  toolAction: string;
+  filePath?: string;
+  command?: string;
+  durationMs?: number;
+  exitCode?: number;
+}
+
+/**
+ * Extended payload for approval lifecycle events.
+ */
+export interface ApprovalLifecyclePayload extends ActivityPayloadBase {
+  type: "approval_requested" | "approval_resolved";
+  approvalRequestId: string;
+  action: string;
+  resolution?: "allow" | "allow_once" | "allow_session" | "deny" | "deny_always";
+}
+
+/**
+ * Extended payload for memory scope events.
+ */
+export interface MemoryScopePayload extends ActivityPayloadBase {
+  type: "memory_scope_changed";
+  previousScope?: string;
+  newScope: string;
+  reason?: string;
+}
+
+/**
+ * Build a stop lifecycle event payload (TypeScript).
+ */
+export function buildStopLifecyclePayload(
+  taskRunId: string,
+  provider: ProviderName,
+  type: "stop_requested" | "stop_blocked" | "stop_failed",
+  options: {
+    summary: string;
+    reason?: string;
+    blockedBy?: string;
+    errorMessage?: string;
+  }
+): StopLifecyclePayload {
+  return {
+    taskRunId,
+    type,
+    toolName: provider,
+    summary: options.summary,
+    reason: options.reason,
+    blockedBy: options.blockedBy,
+    errorMessage: options.errorMessage,
+  };
+}
+
+/**
+ * Build a tool lifecycle event payload (TypeScript).
+ */
+export function buildToolLifecyclePayload(
+  taskRunId: string,
+  provider: ProviderName,
+  type: "tool_requested" | "tool_completed",
+  options: {
+    summary: string;
+    toolAction: string;
+    filePath?: string;
+    command?: string;
+    durationMs?: number;
+    exitCode?: number;
+  }
+): ToolLifecyclePayload {
+  return {
+    taskRunId,
+    type,
+    toolName: provider,
+    summary: options.summary,
+    toolAction: options.toolAction,
+    filePath: options.filePath,
+    command: options.command,
+    durationMs: options.durationMs,
+    exitCode: options.exitCode,
+  };
+}
+
+/**
+ * Build an approval lifecycle event payload (TypeScript).
+ */
+export function buildApprovalLifecyclePayload(
+  taskRunId: string,
+  provider: ProviderName,
+  type: "approval_requested" | "approval_resolved",
+  options: {
+    summary: string;
+    approvalRequestId: string;
+    action: string;
+    resolution?: "allow" | "allow_once" | "allow_session" | "deny" | "deny_always";
+  }
+): ApprovalLifecyclePayload {
+  return {
+    taskRunId,
+    type,
+    toolName: provider,
+    summary: options.summary,
+    approvalRequestId: options.approvalRequestId,
+    action: options.action,
+    resolution: options.resolution,
+  };
+}
+
+/**
+ * Build a memory scope change event payload (TypeScript).
+ */
+export function buildMemoryScopePayload(
+  taskRunId: string,
+  provider: ProviderName,
+  options: {
+    summary: string;
+    previousScope?: string;
+    newScope: string;
+    reason?: string;
+  }
+): MemoryScopePayload {
+  return {
+    taskRunId,
+    type: "memory_scope_changed",
+    toolName: provider,
+    summary: options.summary,
+    previousScope: options.previousScope,
+    newScope: options.newScope,
+    reason: options.reason,
+  };
+}
+
+// =============================================================================
+// Shell Helpers
+// =============================================================================
 
 /**
  * Generate a jq command for building canonical activity payloads in shell.
