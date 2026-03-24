@@ -699,8 +699,10 @@ const convexSchema = defineSchema({
   taskRunActivity: defineTable({
     taskRunId: v.id("taskRuns"),
     // Activity type: tool_call, file_edit, file_read, bash_command, test_run, git_commit, error,
-    // session_start, session_stop, context_warning, context_compacted, memory_loaded,
-    // user_prompt, subagent_start, subagent_stop, notification
+    // session_start, session_stop, session_resumed, context_warning, context_compacted,
+    // memory_loaded, memory_scope_changed, user_prompt, subagent_start, subagent_stop,
+    // notification, stop_requested, stop_blocked, stop_failed, tool_requested, tool_completed,
+    // approval_requested, approval_resolved (Phase 4 lifecycle parity)
     type: v.string(),
     toolName: v.optional(v.string()),
     summary: v.string(),
@@ -718,6 +720,18 @@ const convexSchema = defineSchema({
     previousBytes: v.optional(v.number()),
     newBytes: v.optional(v.number()),
     reductionPercent: v.optional(v.number()),
+    // Stop lifecycle fields (Phase 4 - stop_requested/blocked/failed events)
+    stopSource: v.optional(v.string()), // "user", "hook", "autopilot", "policy", "timeout", "error"
+    exitCode: v.optional(v.number()),
+    continuationPrompt: v.optional(v.string()),
+    // Approval fields (Phase 4 - approval_requested/resolved events)
+    approvalId: v.optional(v.string()),
+    resolution: v.optional(v.string()), // "allow", "allow_once", "allow_session", "deny", "deny_always", "timeout"
+    resolvedBy: v.optional(v.string()),
+    // Memory scope fields (Phase 4 - memory_scope_changed events)
+    scopeType: v.optional(v.string()), // "team", "repo", "user", "run"
+    scopeBytes: v.optional(v.number()),
+    scopeAction: v.optional(v.string()), // "injected", "updated", "cleared"
   })
     .index("by_task_run", ["taskRunId", "createdAt"])
     .index("by_team", ["teamId", "createdAt"]),
