@@ -58,27 +58,30 @@ function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.Uri): s
   const styleUri = webview.asWebviewUri(
     vscode.Uri.joinPath(extensionUri, 'out', 'webview', 'ghostty-terminal.css')
   );
+  const wasmUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(extensionUri, 'out', 'webview', 'ghostty-vt.wasm')
+  );
 
   // Use bundled assets with proper CSP
-  // CSP allows scripts/styles from webview origin only
+  // CSP allows scripts/styles from webview origin, WASM from same origin
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${webview.cspSource} 'nonce-${nonce}'; style-src ${webview.cspSource} 'unsafe-inline'; connect-src ws://localhost:* http://localhost:*;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${webview.cspSource} 'nonce-${nonce}' 'wasm-unsafe-eval'; style-src ${webview.cspSource} 'unsafe-inline'; connect-src ws://localhost:* http://localhost:*; img-src ${webview.cspSource};">
   <title>Ghostty Terminal</title>
   <link rel="stylesheet" href="${styleUri}">
+  <script nonce="${nonce}">
+    // Pass WASM URL to webview script
+    window.__GHOSTTY_WASM_URL__ = "${wasmUri}";
+  </script>
 </head>
 <body>
   <div id="terminal-container">
     <div class="placeholder">
       <h2>Ghostty Terminal</h2>
-      <p>Connecting to PTY session...</p>
-      <p class="note">
-        Webview asset pipeline ready.<br/>
-        ghostty-web WASM integration pending.
-      </p>
+      <p>Loading WASM terminal...</p>
     </div>
   </div>
   <div id="status" class="status connecting">Initializing...</div>
