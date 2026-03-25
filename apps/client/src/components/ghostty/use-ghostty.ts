@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 export interface UseGhosttyProps {
   addons?: ITerminalAddon[];
+  /** Initial options for terminal creation. Changes after mount are ignored - use terminal.options directly. */
   options?: ITerminalOptions;
   listeners?: {
     onBinary?(data: string): void;
@@ -34,10 +35,15 @@ export function useGhostty({ options, addons, listeners }: UseGhosttyProps = {})
   const listenersRef = useRef<UseGhosttyProps["listeners"]>(listeners);
   const [terminalInstance, setTerminalInstance] = useState<Terminal | null>(null);
 
+  // Store initial options in a ref to avoid recreating terminal on options changes
+  const initialOptionsRef = useRef(options);
+
   useEffect(() => {
     listenersRef.current = listeners;
   }, [listeners]);
 
+  // Terminal creation effect - only runs once per mount
+  // Options changes should be applied via terminal.options, not by recreating
   useEffect(() => {
     let cancelled = false;
     let instance: Terminal | null = null;
@@ -51,7 +57,7 @@ export function useGhostty({ options, addons, listeners }: UseGhosttyProps = {})
 
         instance = new Terminal({
           cursorBlink: true,
-          ...options,
+          ...initialOptionsRef.current,
         });
 
         addons?.forEach((addon) => instance?.loadAddon(addon));
@@ -103,7 +109,8 @@ export function useGhostty({ options, addons, listeners }: UseGhosttyProps = {})
       instance?.dispose();
       setTerminalInstance(null);
     };
-  }, [addons, options]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- options intentionally excluded; use terminal.options for updates
+  }, [addons]);
 
   return {
     ref: terminalRef,
