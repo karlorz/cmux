@@ -55,20 +55,20 @@ function useTerminalSocket({
   isActive,
   terminal,
   terminalId,
-  measureAndQueueResize,
-  flushPendingResize,
+  socketRef,
+  measureAndQueueResizeRef,
+  flushPendingResizeRef,
   notifyConnectionState,
 }: {
   baseUrl: string;
   isActive: boolean;
   terminal: ResizableTerminal | null;
   terminalId: string;
-  measureAndQueueResize: () => void;
-  flushPendingResize: () => void;
+  socketRef: RefObject<WebSocket | null>;
+  measureAndQueueResizeRef: RefObject<() => void>;
+  flushPendingResizeRef: RefObject<() => void>;
   notifyConnectionState: (next: TerminalConnectionState) => void;
 }) {
-  const socketRef = useRef<WebSocket | null>(null);
-
   useEffect(() => {
     if (!terminal) {
       notifyConnectionState("connecting");
@@ -89,7 +89,7 @@ function useTerminalSocket({
 
     const socket = new WebSocket(wsUrl);
     socket.binaryType = "arraybuffer";
-    socketRef.current = socket;
+    (socketRef as React.MutableRefObject<WebSocket | null>).current = socket;
 
     notifyConnectionState("connecting");
 
@@ -98,8 +98,8 @@ function useTerminalSocket({
         return;
       }
       notifyConnectionState("open");
-      measureAndQueueResize();
-      flushPendingResize();
+      measureAndQueueResizeRef.current?.();
+      flushPendingResizeRef.current?.();
     };
 
     const handleMessage = (event: MessageEvent<ArrayBuffer | string>) => {
@@ -134,6 +134,9 @@ function useTerminalSocket({
     socket.addEventListener("close", handleClose);
     socket.addEventListener("error", handleError);
 
+    // Capture ref for cleanup comparison
+    const currentSocketRef = socketRef;
+
     return () => {
       cancelled = true;
       socket.removeEventListener("open", handleOpen);
@@ -145,21 +148,20 @@ function useTerminalSocket({
         socket.close();
       }
 
-      if (socketRef.current === socket) {
-        socketRef.current = null;
+      if (currentSocketRef.current === socket) {
+        (currentSocketRef as React.MutableRefObject<WebSocket | null>).current = null;
       }
     };
   }, [
     baseUrl,
-    flushPendingResize,
+    flushPendingResizeRef,
     isActive,
-    measureAndQueueResize,
+    measureAndQueueResizeRef,
     notifyConnectionState,
+    socketRef,
     terminal,
     terminalId,
   ]);
-
-  return socketRef;
 }
 
 function useTerminalResize({
@@ -417,13 +419,22 @@ function XTermTaskRunTerminalSession({
       terminal,
     });
 
+  // Store callbacks in refs to avoid triggering WebSocket reconnections
+  const measureAndQueueResizeRef = useRef(measureAndQueueResize);
+  const flushPendingResizeRef = useRef(flushPendingResize);
+  useEffect(() => {
+    measureAndQueueResizeRef.current = measureAndQueueResize;
+    flushPendingResizeRef.current = flushPendingResize;
+  }, [measureAndQueueResize, flushPendingResize]);
+
   useTerminalSocket({
     baseUrl,
     isActive,
     terminal,
     terminalId,
-    measureAndQueueResize,
-    flushPendingResize,
+    socketRef,
+    measureAndQueueResizeRef,
+    flushPendingResizeRef,
     notifyConnectionState,
   });
 
@@ -489,8 +500,7 @@ function GhosttyTaskRunTerminalSession({
     }
   }, []);
 
-  const scrollback = getScrollbackForState(isActive);
-
+  // Use active scrollback for initial creation, update dynamically via effect
   const ghosttyOptions = useMemo(
     () => ({
       cols: 80,
@@ -499,10 +509,10 @@ function GhosttyTaskRunTerminalSession({
       fontFamily: DEFAULT_TERMINAL_CONFIG.fontFamily,
       cursorStyle: DEFAULT_TERMINAL_CONFIG.cursorStyle,
       cursorBlink: true,
-      scrollback,
+      scrollback: ACTIVE_TERMINAL_SCROLLBACK,
       theme: DEFAULT_TERMINAL_CONFIG.theme,
     }),
-    [scrollback]
+    []
   );
 
   const { ref: containerRef, instance: terminal } = useGhostty({
@@ -511,6 +521,8 @@ function GhosttyTaskRunTerminalSession({
     },
     options: ghosttyOptions,
   });
+
+  const scrollback = getScrollbackForState(isActive);
 
   useEffect(() => {
     if (!terminal) {
@@ -553,13 +565,22 @@ function GhosttyTaskRunTerminalSession({
       terminal,
     });
 
+  // Store callbacks in refs to avoid triggering WebSocket reconnections
+  const measureAndQueueResizeRef = useRef(measureAndQueueResize);
+  const flushPendingResizeRef = useRef(flushPendingResize);
+  useEffect(() => {
+    measureAndQueueResizeRef.current = measureAndQueueResize;
+    flushPendingResizeRef.current = flushPendingResize;
+  }, [measureAndQueueResize, flushPendingResize]);
+
   useTerminalSocket({
     baseUrl,
     isActive,
     terminal,
     terminalId,
-    measureAndQueueResize,
-    flushPendingResize,
+    socketRef,
+    measureAndQueueResizeRef,
+    flushPendingResizeRef,
     notifyConnectionState,
   });
 
