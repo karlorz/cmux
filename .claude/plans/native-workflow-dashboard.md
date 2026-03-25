@@ -29,7 +29,7 @@ Agent in Sandbox
   └── Git commits ──────→ Convex events ──→ Dashboard: Commit Timeline
 ```
 
-## Phase 1: Agent Activity Stream (Foundation)
+## Phase 1: Agent Activity Stream (Foundation) - COMPLETE
 
 ### What
 A real-time activity stream showing what the agent is doing right now.
