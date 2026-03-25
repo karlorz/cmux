@@ -134,6 +134,42 @@ const parseStoredAgentSelection = (stored: string | null): string[] => {
   }
 };
 
+// One-time migration from legacy global localStorage keys to team-scoped keys.
+// This runs once per team when the user first visits the dashboard after the migration.
+// After migration, the legacy global keys are removed to prevent cross-team state leakage.
+const LEGACY_MIGRATION_VERSION = 1;
+function migrateLegacyLocalStorageKeys(teamSlugOrId: string) {
+  const migrationKey = `dashboard-migration-v${LEGACY_MIGRATION_VERSION}-${teamSlugOrId}`;
+  if (localStorage.getItem(migrationKey)) return; // Already migrated
+
+  // Migrate selectedAgents
+  const legacyAgents = localStorage.getItem("selectedAgents");
+  const teamAgentsKey = `selectedAgents-${teamSlugOrId}`;
+  if (legacyAgents && !localStorage.getItem(teamAgentsKey)) {
+    localStorage.setItem(teamAgentsKey, legacyAgents);
+  }
+  localStorage.removeItem("selectedAgents");
+
+  // Migrate isCloudMode
+  const legacyCloudMode = localStorage.getItem("isCloudMode");
+  const teamCloudModeKey = `isCloudMode-${teamSlugOrId}`;
+  if (legacyCloudMode && !localStorage.getItem(teamCloudModeKey)) {
+    localStorage.setItem(teamCloudModeKey, legacyCloudMode);
+  }
+  localStorage.removeItem("isCloudMode");
+
+  // Migrate isRalphMode
+  const legacyRalphMode = localStorage.getItem("isRalphMode");
+  const teamRalphModeKey = `isRalphMode-${teamSlugOrId}`;
+  if (legacyRalphMode && !localStorage.getItem(teamRalphModeKey)) {
+    localStorage.setItem(teamRalphModeKey, legacyRalphMode);
+  }
+  localStorage.removeItem("isRalphMode");
+
+  // Mark migration complete for this team
+  localStorage.setItem(migrationKey, "1");
+}
+
 function DashboardComponent() {
   const { teamSlugOrId } = Route.useParams();
   const searchParams = Route.useSearch() as { environmentId?: string };
@@ -144,6 +180,9 @@ function DashboardComponent() {
   const dockerPullToastIdRef = useRef<
     ReturnType<typeof toast.custom> | undefined
   >(undefined);
+
+  // Run one-time migration before reading localStorage state
+  migrateLegacyLocalStorageKeys(teamSlugOrId);
 
   const renderDockerPullToast = useCallback(
     (progress: DockerPullProgress) => () => {
@@ -260,10 +299,10 @@ function DashboardComponent() {
   const [selectedBranch, setSelectedBranch] = useState<string[]>([]);
 
   const [selectedAgents, setSelectedAgentsState] = useState<string[]>(() => {
-    // Try team-scoped key first, then fall back to legacy global key for migration
+    // Read from team-scoped key only (legacy keys migrated on component mount)
     const teamScopedKey = `selectedAgents-${teamSlugOrId}`;
     const storedAgents = parseStoredAgentSelection(
-      localStorage.getItem(teamScopedKey) ?? localStorage.getItem("selectedAgents")
+      localStorage.getItem(teamScopedKey)
     );
 
     if (storedAgents.length > 0) {
@@ -300,17 +339,17 @@ function DashboardComponent() {
   // In web mode, always force cloud mode
   const [isCloudMode, setIsCloudMode] = useState<boolean>(() => {
     if (env.NEXT_PUBLIC_WEB_MODE) return true;
-    // Try team-scoped key first, then fall back to legacy global key for migration
+    // Read from team-scoped key only (legacy keys migrated on component mount)
     const teamScopedKey = `isCloudMode-${teamSlugOrId}`;
-    const stored = localStorage.getItem(teamScopedKey) ?? localStorage.getItem("isCloudMode");
+    const stored = localStorage.getItem(teamScopedKey);
     return stored ? JSON.parse(stored) : true;
   });
 
   // Ralph Mode: keep working until explicit completion signal
   const [isRalphMode, setIsRalphMode] = useState<boolean>(() => {
-    // Try team-scoped key first, then fall back to legacy global key for migration
+    // Read from team-scoped key only (legacy keys migrated on component mount)
     const teamScopedKey = `isRalphMode-${teamSlugOrId}`;
-    const stored = localStorage.getItem(teamScopedKey) ?? localStorage.getItem("isRalphMode");
+    const stored = localStorage.getItem(teamScopedKey);
     return stored ? JSON.parse(stored) : false;
   });
 
