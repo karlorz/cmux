@@ -115,12 +115,12 @@ crons.interval(
   internal.codexTokenRefresh.refreshExpiring
 );
 
-// Poll orchestration tasks every minute for auto-spawning
+// Poll orchestration tasks every 5 minutes for auto-spawning
 // This enables autonomous multi-agent orchestration
 // The worker uses task-run JWTs for authentication (bypasses Stack Auth)
 crons.interval(
   "poll orchestration tasks",
-  { minutes: 1 },
+  { minutes: 5 },
   internal.orchestrationWorker.pollReadyTasks
 );
 
@@ -159,10 +159,10 @@ crons.daily(
 
 // Scheduled Tasks: Poll for tasks ready to run
 // Checks for active scheduled tasks whose nextRunAt has passed
-// Runs every minute to enable near-real-time task triggering
+// Runs every 5 minutes to reduce traffic while maintaining reasonable latency
 crons.interval(
   "poll scheduled tasks",
-  { minutes: 1 },
+  { minutes: 5 },
   internal.scheduledTasks.pollAndStartReadyTasks
 );
 
