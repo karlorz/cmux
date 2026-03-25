@@ -4670,6 +4670,180 @@ export type PostApiOrchestrateInputByOrchestrationIdClearResponses = {
 
 export type PostApiOrchestrateInputByOrchestrationIdClearResponse = PostApiOrchestrateInputByOrchestrationIdClearResponses[keyof PostApiOrchestrateInputByOrchestrationIdClearResponses];
 
+export type PostApiV1CmuxOrchestrationSimplifyMarkPassedData = {
+    body: {
+        /**
+         * Which /simplify mode was used
+         */
+        mode?: 'quick' | 'full' | 'staged-only';
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/cmux/orchestration/simplify/mark-passed';
+};
+
+export type PostApiV1CmuxOrchestrationSimplifyMarkPassedErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Task run not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiV1CmuxOrchestrationSimplifyMarkPassedResponses = {
+    /**
+     * /simplify marked as passed
+     */
+    200: {
+        success: boolean;
+        message: string;
+        /**
+         * Timestamp when /simplify passed
+         */
+        passedAt?: number;
+    };
+};
+
+export type PostApiV1CmuxOrchestrationSimplifyMarkPassedResponse = PostApiV1CmuxOrchestrationSimplifyMarkPassedResponses[keyof PostApiV1CmuxOrchestrationSimplifyMarkPassedResponses];
+
+export type PostApiV1CmuxOrchestrationSimplifySkipData = {
+    body: {
+        /**
+         * Reason for skipping /simplify requirement
+         */
+        reason: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/cmux/orchestration/simplify/skip';
+};
+
+export type PostApiV1CmuxOrchestrationSimplifySkipErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Task run not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiV1CmuxOrchestrationSimplifySkipResponses = {
+    /**
+     * /simplify requirement skipped
+     */
+    200: {
+        success: boolean;
+        message: string;
+    };
+};
+
+export type PostApiV1CmuxOrchestrationSimplifySkipResponse = PostApiV1CmuxOrchestrationSimplifySkipResponses[keyof PostApiV1CmuxOrchestrationSimplifySkipResponses];
+
+export type GetApiV1CmuxOrchestrationSimplifySettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/cmux/orchestration/simplify/settings';
+};
+
+export type GetApiV1CmuxOrchestrationSimplifySettingsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiV1CmuxOrchestrationSimplifySettingsResponses = {
+    /**
+     * Settings retrieved successfully
+     */
+    200: {
+        /**
+         * Whether /simplify is required before merge
+         */
+        requireSimplifyBeforeMerge: boolean;
+        /**
+         * Default /simplify mode
+         */
+        simplifyMode: 'quick' | 'full' | 'staged-only';
+        /**
+         * Timeout for /simplify in minutes
+         */
+        simplifyTimeoutMinutes: number;
+    };
+};
+
+export type GetApiV1CmuxOrchestrationSimplifySettingsResponse = GetApiV1CmuxOrchestrationSimplifySettingsResponses[keyof GetApiV1CmuxOrchestrationSimplifySettingsResponses];
+
+export type GetApiV1CmuxOrchestrationSimplifyStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/cmux/orchestration/simplify/status';
+};
+
+export type GetApiV1CmuxOrchestrationSimplifyStatusErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Task run not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiV1CmuxOrchestrationSimplifyStatusResponses = {
+    /**
+     * Status retrieved successfully
+     */
+    200: {
+        /**
+         * Whether /simplify is required for this task
+         */
+        required: boolean;
+        /**
+         * Whether /simplify has passed
+         */
+        passed: boolean;
+        /**
+         * Timestamp when /simplify passed
+         */
+        passedAt?: number;
+        /**
+         * Which /simplify mode was used
+         */
+        mode?: 'quick' | 'full' | 'staged-only';
+        /**
+         * Reason if /simplify was skipped
+         */
+        skippedReason?: string;
+    };
+};
+
+export type GetApiV1CmuxOrchestrationSimplifyStatusResponse = GetApiV1CmuxOrchestrationSimplifyStatusResponses[keyof GetApiV1CmuxOrchestrationSimplifyStatusResponses];
+
 export type GetApiProjectsData = {
     body?: never;
     path?: never;

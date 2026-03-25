@@ -3783,3 +3783,16 @@ export const getAutopilotInfo = internalQuery({
     };
   },
 });
+
+/**
+ * Internal query to get full task run data including simplify fields.
+ * Used by /simplify status endpoint.
+ */
+export const getInternal = internalQuery({
+  args: {
+    id: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id);
+  },
+});
