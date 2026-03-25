@@ -45,14 +45,30 @@ HOOKS_FILE="${CODEX_DIR}/hooks.json"
 CONFIG_FILE="${CODEX_DIR}/config.toml"
 DISPATCH_SOURCE="${REPO_ROOT}/.codex/hooks/cmux-stop-dispatch.sh"
 DISPATCH_TARGET="${HOOKS_DIR}/cmux-stop-dispatch.sh"
+SESSION_START_SOURCE="${REPO_ROOT}/.codex/hooks/managed-session-start.sh"
+SESSION_START_TARGET="${HOOKS_DIR}/managed-session-start.sh"
 
 mkdir -p "$HOOKS_DIR"
 cp "$DISPATCH_SOURCE" "$DISPATCH_TARGET"
 chmod 755 "$DISPATCH_TARGET"
+cp "$SESSION_START_SOURCE" "$SESSION_START_TARGET"
+chmod 755 "$SESSION_START_TARGET"
 
 cat >"$HOOKS_FILE" <<'EOF'
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'exec \"$HOME/.codex/hooks/managed-session-start.sh\"'",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

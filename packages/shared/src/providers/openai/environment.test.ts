@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyCodexApiKeys,
   CODEX_HOME_HOOK_DISPATCH_PATH,
+  CODEX_HOME_SESSION_START_PATH,
   getOpenAIEnvironment,
   stripFilteredConfigKeys,
 } from "./environment";
@@ -652,13 +653,20 @@ foo = "bar"
     const result = await getOpenAIEnvironment({} as never);
 
     const hooksFile = decodeEnvironmentFile(result, "$HOME/.codex/hooks.json");
+    expect(hooksFile).toContain('"SessionStart"');
     expect(hooksFile).toContain('"Stop"');
+    expect(hooksFile).toContain('managed-session-start.sh');
     expect(hooksFile).toContain('cmux-stop-dispatch.sh');
 
     const dispatcher = decodeEnvironmentFile(result, CODEX_HOME_HOOK_DISPATCH_PATH);
     expect(dispatcher).toContain('RALPH_STATE_FILE="${WORKSPACE_ROOT}/.codex/ralph-loop-state.json"');
+    expect(dispatcher).toContain('read_session_workspace_root');
     expect(dispatcher).toContain('.codex/hooks/ralph-loop-stop.sh');
     expect(dispatcher).toContain('.codex/hooks/autopilot-stop.sh');
+
+    const sessionStart = decodeEnvironmentFile(result, CODEX_HOME_SESSION_START_PATH);
+    expect(sessionStart).toContain('codex-session-workspace-root-%s');
+    expect(sessionStart).toContain('.codex/hooks/session-start.sh');
 
     const legacyHooksTemplate = result.files?.find(
       (file) => file.destinationPath === "/root/lifecycle/codex-hooks.json"
@@ -752,6 +760,33 @@ printf '{"decision":"block","reason":"autopilot"}\\n'
 
       expect(autopilotRun.status).toBe(0);
       expect(JSON.parse(autopilotRun.stdout)).toEqual({
+        decision: "block",
+        reason: "autopilot",
+      });
+
+      const sessionWorkspaceFile = join(tempDir, "codex-session-workspace-root-session-1");
+
+      await writeFile(sessionWorkspaceFile, `${workspaceRoot}\n`, "utf-8");
+
+      const fallbackRun = spawnSync(
+        "bash",
+        [dispatcherPath],
+        {
+          env: {
+            ...process.env,
+            CMUX_AUTOPILOT_ENABLED: "1",
+            CMUX_CODEX_SESSION_WORKSPACE_FILE_TEMPLATE: join(
+              tempDir,
+              "codex-session-workspace-root-%s"
+            ),
+          },
+          input: JSON.stringify({ cwd: tempDir, session_id: "session-1" }),
+          encoding: "utf-8",
+        }
+      );
+
+      expect(fallbackRun.status).toBe(0);
+      expect(JSON.parse(fallbackRun.stdout)).toEqual({
         decision: "block",
         reason: "autopilot",
       });

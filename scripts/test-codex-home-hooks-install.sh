@@ -54,6 +54,7 @@ TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cmux-codex-home-hooks-test-XXXXXX")"
 HOME_DIR="$TEST_DIR/home"
 HOOKS_FILE="$HOME_DIR/.codex/hooks.json"
 DISPATCH_FILE="$HOME_DIR/.codex/hooks/cmux-stop-dispatch.sh"
+SESSION_START_FILE="$HOME_DIR/.codex/hooks/managed-session-start.sh"
 CONFIG_FILE="$HOME_DIR/.codex/config.toml"
 
 cleanup() {
@@ -86,10 +87,15 @@ bash "$INSTALLER" --home "$HOME_DIR" >/dev/null
 
 assert_file_exists "managed hooks.json exists" "$HOOKS_FILE"
 assert_file_exists "managed dispatcher script exists" "$DISPATCH_FILE"
+assert_file_exists "managed session-start script exists" "$SESSION_START_FILE"
 assert_contains \
   "hooks.json points to the managed home dispatcher" \
   "$HOOKS_FILE" \
   'cmux-stop-dispatch.sh'
+assert_contains \
+  "hooks.json installs SessionStart for workspace capture" \
+  "$HOOKS_FILE" \
+  'managed-session-start.sh'
 assert_contains \
   "config.toml keeps unrelated config" \
   "$CONFIG_FILE" \
