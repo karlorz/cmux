@@ -1,6 +1,6 @@
 {
   "name": "@cmux/client",
-  "version": "1.0.269-2",
+  "version": "1.0.269-3",
   "description": "cmux client application",
   "author": "cmux",
   "type": "module",
@@ -125,6 +125,7 @@
     "framer-motion": "^12.23.3",
     "fs-extra": "^11.3.1",
     "fuzzysort": "^3.1.0",
+    "ghostty-web": "0.4.0",
     "graceful-fs": "^4.2.11",
     "jose": "^6.1.0",
     "js-yaml": "^4.1.0",
