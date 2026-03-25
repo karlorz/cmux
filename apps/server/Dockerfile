@@ -86,9 +86,10 @@ RUN cargo update home --precise 0.5.11 && \
 RUN npx napi build --platform --release
 
 # Verify native module was built successfully (supports both x64 and arm64)
+# napi-rs produces index.linux-{arch}-gnu.node (e.g., index.linux-arm64-gnu.node)
 RUN echo "[Dockerfile] Verifying native module build..." && \
     ls -la *.node && \
-    NODE_FILE=$(ls cmux_native_core.linux-*.node 2>/dev/null | head -1) && \
+    NODE_FILE=$(ls index.linux-*.node 2>/dev/null | head -1) && \
     test -n "$NODE_FILE" && \
     echo "[Dockerfile] Native module verified: $NODE_FILE"
 
