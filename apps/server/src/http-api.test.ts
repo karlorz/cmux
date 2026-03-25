@@ -349,6 +349,39 @@ describe("HTTP API - apps/server", () => {
       const data = await response!.json();
       expect(data).toHaveProperty("models");
     });
+
+    itWhenServer("includes source metadata in response for diagnostics", async () => {
+      // Without valid auth, should show static source
+      const response = await safeFetch(`${SERVER_URL}/api/models`);
+      expect(response).not.toBeNull();
+      expect(response!.status).toBe(200);
+      const data = await response!.json();
+
+      // Response should always include source metadata for debugging
+      expect(data).toHaveProperty("source");
+      expect(["static", "convex"]).toContain(data.source);
+
+      // When unauthenticated, should be static and unfiltered
+      if (data.source === "static") {
+        expect(data.filtered).toBe(false);
+      }
+    });
+
+    itWhenServer("response never returns null body (regression check)", async () => {
+      // Dashboard audit found some routes returning literal null
+      // This ensures /api/models always returns a valid object
+      const response = await safeFetch(`${SERVER_URL}/api/models?teamSlugOrId=test-team`);
+      expect(response).not.toBeNull();
+      expect(response!.status).toBe(200);
+
+      const rawText = await response!.text();
+      expect(rawText).not.toBe("null");
+      expect(rawText.trim()).not.toBe("");
+
+      const data = JSON.parse(rawText);
+      expect(data).not.toBeNull();
+      expect(data).toHaveProperty("models");
+    });
   });
 
   describe("Models API - Data Integrity", () => {
