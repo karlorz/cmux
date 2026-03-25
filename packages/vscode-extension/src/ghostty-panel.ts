@@ -45,156 +45,44 @@ function getConfig() {
 
 /**
  * Get the webview HTML content with strict CSP
+ * Uses bundled assets from out/webview/
  */
-function getWebviewContent(_webview: vscode.Webview, _extensionUri: vscode.Uri): string {
+function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.Uri): string {
   // Generate nonce for CSP
   const nonce = getNonce();
 
-  // For now, use inline script until we set up proper asset bundling
-  // TODO: Move to external bundle when ghostty-web is properly packaged
+  // Get URIs for bundled webview assets
+  const scriptUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(extensionUri, 'out', 'webview', 'ghostty-terminal.js')
+  );
+  const styleUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(extensionUri, 'out', 'webview', 'ghostty-terminal.css')
+  );
+
+  // Use bundled assets with proper CSP
+  // CSP allows scripts/styles from webview origin only
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src ws://localhost:* http://localhost:*;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${webview.cspSource} 'nonce-${nonce}'; style-src ${webview.cspSource} 'unsafe-inline'; connect-src ws://localhost:* http://localhost:*;">
   <title>Ghostty Terminal</title>
-  <style nonce="${nonce}">
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    html, body {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: var(--vscode-terminal-background, #1e1e1e);
-    }
-    #terminal-container {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    #terminal {
-      width: 100%;
-      height: 100%;
-    }
-    .status {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-family: var(--vscode-font-family, monospace);
-      font-size: 12px;
-      background: var(--vscode-badge-background, #4d4d4d);
-      color: var(--vscode-badge-foreground, #fff);
-    }
-    .status.connecting {
-      background: var(--vscode-statusBarItem-warningBackground, #c9a400);
-    }
-    .status.error {
-      background: var(--vscode-statusBarItem-errorBackground, #c72e2e);
-    }
-    .placeholder {
-      color: var(--vscode-descriptionForeground, #888);
-      font-family: var(--vscode-font-family, monospace);
-      text-align: center;
-    }
-    .placeholder h2 {
-      margin-bottom: 8px;
-    }
-    .placeholder p {
-      font-size: 12px;
-    }
-  </style>
+  <link rel="stylesheet" href="${styleUri}">
 </head>
 <body>
   <div id="terminal-container">
     <div class="placeholder">
-      <h2>Ghostty Terminal (POC)</h2>
-      <p>Waiting for ghostty-web integration...</p>
-      <p style="margin-top: 16px; font-size: 11px; opacity: 0.7;">
-        This is a proof-of-concept panel.<br/>
-        Full ghostty-web requires WASM bundling.
+      <h2>Ghostty Terminal</h2>
+      <p>Connecting to PTY session...</p>
+      <p class="note">
+        Webview asset pipeline ready.<br/>
+        ghostty-web WASM integration pending.
       </p>
     </div>
   </div>
   <div id="status" class="status connecting">Initializing...</div>
-
-  <script nonce="${nonce}">
-    const vscode = acquireVsCodeApi();
-    const statusEl = document.getElementById('status');
-
-    // Restore previous state if available
-    const previousState = vscode.getState();
-    if (previousState) {
-      console.log('[ghostty-panel] Restored state:', previousState);
-    }
-
-    // Handle messages from extension host
-    window.addEventListener('message', event => {
-      const message = event.data;
-      switch (message.type) {
-        case 'connect':
-          statusEl.textContent = 'Connecting...';
-          statusEl.className = 'status connecting';
-          // Save connection attempt to state
-          vscode.setState({ ...previousState, ptyId: message.ptyId });
-          break;
-
-        case 'connected':
-          statusEl.textContent = 'Connected';
-          statusEl.className = 'status';
-          setTimeout(() => { statusEl.style.display = 'none'; }, 2000);
-          break;
-
-        case 'disconnected':
-          statusEl.textContent = 'Disconnected';
-          statusEl.className = 'status error';
-          statusEl.style.display = 'block';
-          break;
-
-        case 'output':
-          // TODO: When ghostty-web is integrated, write to terminal
-          console.log('[ghostty-panel] Output:', message.data?.length, 'bytes');
-          break;
-
-        case 'error':
-          statusEl.textContent = 'Error: ' + (message.error || 'Unknown');
-          statusEl.className = 'status error';
-          break;
-      }
-    });
-
-    // Send ready message to extension host
-    vscode.postMessage({ type: 'ready' });
-
-    // Report dimensions
-    function reportDimensions() {
-      const container = document.getElementById('terminal-container');
-      if (container) {
-        // Approximate terminal dimensions (will be refined with actual font metrics)
-        const charWidth = 9;
-        const charHeight = 17;
-        const cols = Math.floor(container.clientWidth / charWidth);
-        const rows = Math.floor(container.clientHeight / charHeight);
-        vscode.postMessage({ type: 'resize', cols, rows });
-      }
-    }
-
-    // Report initial dimensions
-    setTimeout(reportDimensions, 100);
-
-    // Handle resize
-    const resizeObserver = new ResizeObserver(() => {
-      reportDimensions();
-    });
-    resizeObserver.observe(document.getElementById('terminal-container'));
-  </script>
+  <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
 }
