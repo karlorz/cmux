@@ -42,11 +42,13 @@ export function useGhostty({ options, addons, listeners }: UseGhosttyProps = {})
     listenersRef.current = listeners;
   }, [listeners]);
 
+  // Track instance in ref for cleanup to avoid closure issues
+  const instanceRef = useRef<Terminal | null>(null);
+
   // Terminal creation effect - only runs once per mount
   // Options changes should be applied via terminal.options, not by recreating
   useEffect(() => {
     let cancelled = false;
-    let instance: Terminal | null = null;
 
     void (async () => {
       try {
@@ -55,14 +57,17 @@ export function useGhostty({ options, addons, listeners }: UseGhosttyProps = {})
           return;
         }
 
-        instance = new Terminal({
+        const instance = new Terminal({
           cursorBlink: true,
           ...initialOptionsRef.current,
         });
 
-        addons?.forEach((addon) => instance?.loadAddon(addon));
+        instanceRef.current = instance;
+
+        addons?.forEach((addon) => instance.loadAddon(addon));
 
         const l = listenersRef.current;
+        // Note: onBinary not available in ghostty-web
         if (l?.onCursorMove) {
           instance.onCursorMove(l.onCursorMove);
         }
@@ -106,7 +111,8 @@ export function useGhostty({ options, addons, listeners }: UseGhosttyProps = {})
 
     return () => {
       cancelled = true;
-      instance?.dispose();
+      instanceRef.current?.dispose();
+      instanceRef.current = null;
       setTerminalInstance(null);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- options intentionally excluded; use terminal.options for updates

@@ -272,13 +272,15 @@ function useTerminalResize({
     };
   }, [containerRef, isActive, measureAndQueueResize]);
 
+  const resetResizeTracking = useCallback(() => {
+    pendingResizeRef.current = null;
+    lastSentResizeRef.current = null;
+  }, []);
+
   return {
     flushPendingResize,
     measureAndQueueResize,
-    resetResizeTracking: () => {
-      pendingResizeRef.current = null;
-      lastSentResizeRef.current = null;
-    },
+    resetResizeTracking,
   };
 }
 
