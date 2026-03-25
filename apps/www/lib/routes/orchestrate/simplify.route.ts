@@ -9,6 +9,7 @@
  */
 
 import { getConvexAdmin } from "@/lib/utils/get-convex";
+import { publishSimplifyCheckRun } from "@/lib/utils/github-check-runs";
 import { internal } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
@@ -152,6 +153,22 @@ orchestrateSimplifyRouter.openapi(
           mode,
         }
       );
+
+      // Publish GitHub check run if PR info available
+      if (result.success && result.prInfo) {
+        const { repoFullName, headSha } = result.prInfo;
+        const taskRunUrl = `https://cmux.sh/tasks/${jwtPayload.taskRunId}`;
+
+        publishSimplifyCheckRun({
+          repoFullName,
+          headSha,
+          passed: true,
+          mode,
+          taskRunUrl,
+        }).catch((err) => {
+          console.error("[orchestrate] Failed to publish GitHub check:", err);
+        });
+      }
 
       return c.json({
         success: result.success,

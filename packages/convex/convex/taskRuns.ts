@@ -2287,7 +2287,33 @@ export const markSimplifyPassed = internalMutation({
       updatedAt: Date.now(),
     });
 
-    return { success: true };
+    // Get PR info for GitHub check publication via junction table
+    let prInfo: { repoFullName: string; headSha: string; prNumber: number } | undefined;
+    const junctions = await ctx.db
+      .query("taskRunPullRequests")
+      .withIndex("by_task_run", (q) => q.eq("taskRunId", args.taskRunId))
+      .take(1);
+
+    if (junctions.length > 0) {
+      const junction = junctions[0];
+      // Get the actual PR record for headSha
+      const prRecord = await ctx.db
+        .query("pullRequests")
+        .withIndex("by_team_repo_number", (q) =>
+          q.eq("teamId", run.teamId).eq("repoFullName", junction.repoFullName).eq("number", junction.prNumber)
+        )
+        .first();
+
+      if (prRecord?.headSha) {
+        prInfo = {
+          repoFullName: junction.repoFullName,
+          headSha: prRecord.headSha,
+          prNumber: junction.prNumber,
+        };
+      }
+    }
+
+    return { success: true, prInfo };
   },
 });
 
