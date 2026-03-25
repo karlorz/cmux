@@ -105,6 +105,23 @@ function parseAuthHeader(req: IncomingMessage): string | null {
   return authHeader.slice(7);
 }
 
+/**
+ * Parse Stack Auth header (x-stack-auth) used by browser clients.
+ * Returns the access token if valid, null otherwise.
+ */
+function parseStackAuthHeader(req: IncomingMessage): string | null {
+  const stackAuth = req.headers["x-stack-auth"];
+  if (!stackAuth || typeof stackAuth !== "string") {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(stackAuth) as { accessToken?: string };
+    return parsed.accessToken ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function readJsonBody<T>(req: IncomingMessage): Promise<T | null> {
   return new Promise((resolve) => {
     let body = "";
@@ -2385,7 +2402,8 @@ export function handleHttpRequest(
       const teamSlugOrId = url.searchParams.get("teamSlugOrId");
       const showAll = url.searchParams.get("all") === "true";
       const vendorFilter = url.searchParams.get("vendor");
-      const authToken = parseAuthHeader(req);
+      // Support both Bearer token (CLI) and x-stack-auth (browser)
+      const authToken = parseAuthHeader(req) ?? parseStackAuthHeader(req);
 
       try {
         let convexModels: Array<{
