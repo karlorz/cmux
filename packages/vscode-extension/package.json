@@ -52,6 +52,10 @@
       {
         "command": "cmux.renameTerminal",
         "title": "cmux: Rename Terminal"
+      },
+      {
+        "command": "cmux.openGhosttyPanel",
+        "title": "cmux: Open Ghostty Terminal Panel"
       }
     ],
     "terminal": {
