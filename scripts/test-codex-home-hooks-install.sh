@@ -55,6 +55,8 @@ HOME_DIR="$TEST_DIR/home"
 HOOKS_FILE="$HOME_DIR/.codex/hooks.json"
 DISPATCH_FILE="$HOME_DIR/.codex/hooks/cmux-stop-dispatch.sh"
 SESSION_START_FILE="$HOME_DIR/.codex/hooks/managed-session-start.sh"
+HOME_AUTOPILOT_STOP_FILE="$HOME_DIR/.codex/hooks/autopilot-stop.sh"
+HOME_SESSION_START_FILE="$HOME_DIR/.codex/hooks/session-start.sh"
 CONFIG_FILE="$HOME_DIR/.codex/config.toml"
 
 cleanup() {
@@ -88,6 +90,8 @@ bash "$INSTALLER" --home "$HOME_DIR" >/dev/null
 assert_file_exists "managed hooks.json exists" "$HOOKS_FILE"
 assert_file_exists "managed dispatcher script exists" "$DISPATCH_FILE"
 assert_file_exists "managed session-start script exists" "$SESSION_START_FILE"
+assert_file_exists "managed home autopilot fallback exists" "$HOME_AUTOPILOT_STOP_FILE"
+assert_file_exists "managed home session-start fallback exists" "$HOME_SESSION_START_FILE"
 assert_contains \
   "hooks.json points to the managed home dispatcher" \
   "$HOOKS_FILE" \

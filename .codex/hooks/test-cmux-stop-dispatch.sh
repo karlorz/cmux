@@ -112,6 +112,25 @@ AUTOPILOT_OUTPUT="$(printf '%s' "$(make_stop_payload "$WORKSPACE" "")" | CMUX_AU
 assert_eq "$(jq -r '.decision' <<<"$AUTOPILOT_OUTPUT")" "block" "dispatcher should route autopilot-enabled sessions to the autopilot hook"
 assert_eq "$(jq -r '.reason' <<<"$AUTOPILOT_OUTPUT")" "autopilot continuation" "dispatcher should preserve autopilot hook output"
 
+rm -f "$WORKSPACE/.codex/hooks/autopilot-stop.sh"
+cat >"$HOME_DIR/.codex/hooks/autopilot-stop.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+jq -nc '{decision: "block", reason: "home autopilot continuation"}'
+EOF
+chmod +x "$HOME_DIR/.codex/hooks/autopilot-stop.sh"
+
+HOME_AUTOPILOT_OUTPUT="$(printf '%s' "$(make_stop_payload "$WORKSPACE" "")" | HOME="$HOME_DIR" CMUX_AUTOPILOT_ENABLED=1 bash "$DISPATCH_SCRIPT")"
+assert_eq "$(jq -r '.decision' <<<"$HOME_AUTOPILOT_OUTPUT")" "block" "dispatcher should fall back to the home autopilot hook when the workspace hook is absent"
+assert_eq "$(jq -r '.reason' <<<"$HOME_AUTOPILOT_OUTPUT")" "home autopilot continuation" "dispatcher should preserve the home autopilot hook output"
+
+cat >"$WORKSPACE/.codex/hooks/autopilot-stop.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+jq -nc '{decision: "block", reason: "autopilot continuation"}'
+EOF
+chmod +x "$WORKSPACE/.codex/hooks/autopilot-stop.sh"
+
 cat >"$WORKSPACE/.codex/ralph-loop-state.json" <<'EOF'
 {
   "active": true,

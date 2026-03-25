@@ -83,6 +83,100 @@ const CODEX_AUTOPILOT_CONTINUE_LINE =
 const CMUX_CUSTOM_PROVIDER_NAME = "cmux-proxy";
 export const CODEX_HOME_HOOK_DISPATCH_PATH = "$HOME/.codex/hooks/cmux-stop-dispatch.sh";
 export const CODEX_HOME_SESSION_START_PATH = "$HOME/.codex/hooks/managed-session-start.sh";
+export const CODEX_HOME_AUTOPILOT_STOP_PATH = "$HOME/.codex/hooks/autopilot-stop.sh";
+export const CODEX_HOME_SESSION_FALLBACK_PATH = "$HOME/.codex/hooks/session-start.sh";
+
+function buildCodexHomeWorkspaceWrapperScript({
+  coreScript,
+  exportLines,
+  extraBody = "",
+}: {
+  coreScript: string;
+  exportLines: string[];
+  extraBody?: string;
+}): string {
+  const exportsBlock = exportLines.join("\n");
+  const trimmedExtraBody = extraBody.trim();
+  const extraBodyBlock = trimmedExtraBody ? `${trimmedExtraBody}\n\n` : "";
+
+  return `#!/usr/bin/env bash
+set -euo pipefail
+
+trimmed_non_empty() {
+  local value="$1"
+  [[ -n "\${value//[[:space:]]/}" ]]
+}
+
+resolve_workspace_root() {
+  local candidate="$1"
+
+  if ! trimmed_non_empty "$candidate" || [[ ! -d "$candidate" ]]; then
+    candidate="$(pwd)"
+  fi
+
+  git -C "$candidate" rev-parse --show-toplevel 2>/dev/null || printf '%s\\n' "$candidate"
+}
+
+session_workspace_file() {
+  local session_id="$1"
+  local template="\${CMUX_SESSION_WORKSPACE_FILE_TEMPLATE:-\${CMUX_CODEX_SESSION_WORKSPACE_FILE_TEMPLATE:-/tmp/codex-session-workspace-root-%s}}"
+
+  printf "$template" "$session_id"
+}
+
+read_session_workspace_root() {
+  local session_id="$1"
+  local workspace_file=""
+  local candidate=""
+  local current_file="\${CMUX_CURRENT_WORKSPACE_FILE:-\${CMUX_CODEX_CURRENT_WORKSPACE_FILE:-/tmp/codex-current-workspace-root}}"
+
+  if trimmed_non_empty "$session_id"; then
+    workspace_file="$(session_workspace_file "$session_id")"
+    if [[ -f "$workspace_file" ]]; then
+      candidate="$(tr -d '\\n' < "$workspace_file" 2>/dev/null || true)"
+    fi
+  fi
+
+  if ! trimmed_non_empty "$candidate" && [[ -f "$current_file" ]]; then
+    candidate="$(tr -d '\\n' < "$current_file" 2>/dev/null || true)"
+  fi
+
+  if trimmed_non_empty "$candidate" && [[ -d "$candidate" ]]; then
+    resolve_workspace_root "$candidate"
+    return 0
+  fi
+
+  return 1
+}
+
+workspace_has_loop_hooks() {
+  local workspace_root="$1"
+
+  [[ -f "\${workspace_root}/.codex/ralph-loop-state.json" ]] ||
+    [[ -f "\${workspace_root}/.codex/hooks/ralph-loop-stop.sh" ]] ||
+    [[ -f "\${workspace_root}/.codex/hooks/autopilot-stop.sh" ]]
+}
+
+HOOK_INPUT="$(cat)"
+HOOK_CWD="$(jq -r '.cwd // empty' <<<"$HOOK_INPUT" 2>/dev/null || true)"
+SESSION_ID="$(jq -r '.session_id // "default"' <<<"$HOOK_INPUT" 2>/dev/null || true)"
+WORKSPACE_ROOT="$(resolve_workspace_root "$HOOK_CWD")"
+
+if SESSION_WORKSPACE_ROOT="$(read_session_workspace_root "$SESSION_ID")"; then
+  if [[ "$WORKSPACE_ROOT" = "$HOME" ]] || ! workspace_has_loop_hooks "$WORKSPACE_ROOT"; then
+    WORKSPACE_ROOT="$SESSION_WORKSPACE_ROOT"
+  fi
+fi
+
+SHARED_REPO_ROOT="\${CMUX_SHARED_REPO_ROOT:-/root/workspace}"
+
+export CMUX_HOOK_PROVIDER="codex"
+export CMUX_PROJECT_DIR="\${CMUX_PROJECT_DIR:-$WORKSPACE_ROOT}"
+${exportsBlock}
+
+${extraBodyBlock}printf '%s' "$HOOK_INPUT" | bash "$SHARED_REPO_ROOT/scripts/hooks/${coreScript}"
+`;
+}
 
 /**
  * Generate the model_provider top-level key for custom provider.
@@ -350,6 +444,10 @@ if [[ "\${CMUX_AUTOPILOT_ENABLED:-0}" = "1" ]] || [[ "\${CMUX_CODEX_HOOKS_ENABLE
     exit 0
   fi
 
+  if route_to_home_hook "autopilot-stop.sh"; then
+    exit 0
+  fi
+
   emit_allow
   exit 0
 fi
@@ -370,6 +468,14 @@ trimmed_non_empty() {
   [[ -n "\${value//[[:space:]]/}" ]]
 }
 
+codex_home_dir() {
+  if [[ -n "\${CODEX_HOME:-}" ]]; then
+    printf '%s\\n' "\$CODEX_HOME"
+  else
+    printf '%s/.codex\\n' "\$HOME"
+  fi
+}
+
 resolve_workspace_root() {
   local candidate="$1"
 
@@ -387,6 +493,29 @@ session_workspace_file() {
   printf "$template" "$session_id"
 }
 
+route_to_workspace_hook() {
+  local workspace_root="$1"
+  local relative_hook_path="$2"
+  local hook_path="\${workspace_root}/\${relative_hook_path}"
+
+  if [[ ! -f "$hook_path" ]]; then
+    return 1
+  fi
+
+  printf '%s' "$HOOK_INPUT" | bash "$hook_path"
+}
+
+route_to_home_hook() {
+  local hook_name="$1"
+  local hook_path="$(codex_home_dir)/hooks/\${hook_name}"
+
+  if [[ ! -f "$hook_path" ]]; then
+    return 1
+  fi
+
+  printf '%s' "$HOOK_INPUT" | bash "$hook_path"
+}
+
 HOOK_INPUT="$(cat)"
 HOOK_CWD="$(jq -r '.cwd // empty' <<<"$HOOK_INPUT" 2>/dev/null || true)"
 read -r SESSION_ID SOURCE < <(jq -r '[.session_id // "default", .source // "startup"] | @tsv' <<<"$HOOK_INPUT" 2>/dev/null || printf 'default\\tstartup\\n')
@@ -399,9 +528,11 @@ CURRENT_FILE="\${CMUX_CODEX_CURRENT_WORKSPACE_FILE:-/tmp/codex-current-workspace
 printf '%s\\n' "$WORKSPACE_ROOT" >"$WORKSPACE_FILE"
 printf '%s\\n' "$WORKSPACE_ROOT" >"$CURRENT_FILE"
 
-WORKSPACE_SESSION_START="\${WORKSPACE_ROOT}/.codex/hooks/session-start.sh"
-if [[ -f "$WORKSPACE_SESSION_START" ]]; then
-  printf '%s' "$HOOK_INPUT" | bash "$WORKSPACE_SESSION_START"
+if route_to_workspace_hook "$WORKSPACE_ROOT" ".codex/hooks/session-start.sh"; then
+  exit 0
+fi
+
+if route_to_home_hook "session-start.sh"; then
   exit 0
 fi
 
@@ -413,6 +544,48 @@ EOF
   files.push({
     destinationPath: CODEX_HOME_SESSION_START_PATH,
     contentBase64: Buffer.from(codexSessionStartScript).toString("base64"),
+    mode: "755",
+  });
+
+  const codexHomeAutopilotStopScript = buildCodexHomeWorkspaceWrapperScript({
+    coreScript: "cmux-autopilot-stop-core.sh",
+    exportLines: [
+      'export CMUX_AUTOPILOT_ENABLED="${CMUX_AUTOPILOT_ENABLED:-0}"',
+      'export CMUX_CODEX_HOOKS_ENABLED="${CMUX_CODEX_HOOKS_ENABLED:-0}"',
+      'export CMUX_AUTOPILOT_STATE_PREFIX="${CMUX_AUTOPILOT_STATE_PREFIX:-codex-autopilot}"',
+      'export CMUX_AUTOPILOT_CURRENT_SESSION_FILE="${CMUX_AUTOPILOT_CURRENT_SESSION_FILE:-/tmp/codex-current-session-id}"',
+      'export CMUX_AUTOPILOT_ENABLE_REVIEW_WINDOW="${CMUX_AUTOPILOT_ENABLE_REVIEW_WINDOW:-0}"',
+      'export CMUX_AUTOPILOT_INLINE_WRAPUP="${CMUX_AUTOPILOT_INLINE_WRAPUP:-1}"',
+      'export CMUX_AUTOPILOT_MONITORING_THRESHOLD="${CMUX_AUTOPILOT_MONITORING_THRESHOLD:-0}"',
+      'export CMUX_SESSION_ACTIVITY_SCRIPT="${CMUX_SESSION_ACTIVITY_SCRIPT:-$WORKSPACE_ROOT/.claude/hooks/session-activity-capture.sh}"',
+    ],
+    extraBody: `if [[ "$CMUX_AUTOPILOT_ENABLED" = "1" ]] || [[ "$CMUX_CODEX_HOOKS_ENABLED" = "1" ]]; then
+  export AUTOPILOT_KEEP_RUNNING_DISABLED="\${AUTOPILOT_KEEP_RUNNING_DISABLED:-0}"
+else
+  export AUTOPILOT_KEEP_RUNNING_DISABLED="1"
+fi`,
+  });
+  files.push({
+    destinationPath: CODEX_HOME_AUTOPILOT_STOP_PATH,
+    contentBase64: Buffer.from(codexHomeAutopilotStopScript).toString("base64"),
+    mode: "755",
+  });
+
+  const codexHomeSessionStartScript = buildCodexHomeWorkspaceWrapperScript({
+    coreScript: "cmux-session-start-core.sh",
+    exportLines: [
+      'export CMUX_SESSION_START_OUTPUT_MODE="text"',
+      'export CMUX_SESSION_STATE_PREFIX="${CMUX_SESSION_STATE_PREFIX:-codex-autopilot}"',
+      'export CMUX_SESSION_FILE="${CMUX_SESSION_FILE:-/tmp/codex-current-session-id}"',
+      'export CMUX_SESSION_WORKSPACE_FILE_TEMPLATE="${CMUX_SESSION_WORKSPACE_FILE_TEMPLATE:-${CMUX_CODEX_SESSION_WORKSPACE_FILE_TEMPLATE:-/tmp/codex-session-workspace-root-%s}}"',
+      'export CMUX_CURRENT_WORKSPACE_FILE="${CMUX_CURRENT_WORKSPACE_FILE:-${CMUX_CODEX_CURRENT_WORKSPACE_FILE:-/tmp/codex-current-workspace-root}}"',
+      'export CMUX_SESSION_ACTIVITY_SCRIPT="${CMUX_SESSION_ACTIVITY_SCRIPT:-$WORKSPACE_ROOT/.claude/hooks/session-activity-capture.sh}"',
+      'export CMUX_SESSION_START_DEBUG_LOG="${CMUX_SESSION_START_DEBUG_LOG:-/tmp/codex-session-start-debug.log}"',
+    ],
+  });
+  files.push({
+    destinationPath: CODEX_HOME_SESSION_FALLBACK_PATH,
+    contentBase64: Buffer.from(codexHomeSessionStartScript).toString("base64"),
     mode: "755",
   });
 

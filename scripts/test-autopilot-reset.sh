@@ -130,5 +130,18 @@ assert_contains "status-all marks legacy blocked session as exited" "$STATUS_ALL
 assert_file_not_exists "legacy blocked flag removed" "/tmp/codex-autopilot-blocked-${LEGACY_SESSION}"
 
 echo ""
+echo "Test 4: reset targets the latest recorded session by default"
+cleanup_session "$TEST_SESSION"
+cleanup_session "$LEGACY_SESSION"
+printf '%s\n' "$TEST_SESSION" > "$CURRENT_SESSION_FILE"
+printf '5\n' > "/tmp/codex-autopilot-turns-${TEST_SESSION}"
+printf '2\n' > "/tmp/codex-autopilot-turns-${LEGACY_SESSION}"
+
+DEFAULT_RESET_OUTPUT="$(bash "$RESET_SCRIPT" --provider codex reset)"
+assert_contains "reset reports the latest recorded session" "$DEFAULT_RESET_OUTPUT" "Reset latest recorded session: ${TEST_SESSION:0:20}..."
+assert_file_not_exists "reset clears latest recorded session state" "/tmp/codex-autopilot-turns-${TEST_SESSION}"
+assert_file_exists "reset leaves older sessions untouched" "/tmp/codex-autopilot-turns-${LEGACY_SESSION}"
+
+echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

@@ -125,7 +125,7 @@ status_current() {
   sid="$(current_session_id)"
 
   if [ -z "$sid" ]; then
-    echo "Recorded session ID: (not set - restart session to enable)"
+    echo "Recorded latest session ID: (not set - restart session to enable)"
     exit 0
   fi
 
@@ -136,7 +136,7 @@ status_current() {
   fi
 
   echo "Provider: $PROVIDER"
-  echo "Recorded session ID: ${sid}"
+  echo "Recorded latest session ID: ${sid}"
   echo "Max turns: $MAX_TURNS"
   echo "Debug: $(debug_status)"
   echo "Debug log: $DEBUG_LOG"
@@ -170,7 +170,7 @@ status_all() {
   echo "Max turns: $MAX_TURNS"
   echo "Debug: $(debug_status)"
   echo "Debug log: $DEBUG_LOG"
-  echo "Recorded current session: ${current_sid:-"(not set)"}"
+  echo "Recorded latest session: ${current_sid:-"(not set)"}"
   echo ""
   echo "Recorded sessions with hook state:"
 
@@ -211,7 +211,7 @@ stop_current() {
   fi
 
   touch "/tmp/${STATE_PREFIX}-stop-${sid}"
-  echo "Stop file created for current session: ${sid:0:20}..."
+  echo "Stop file created for latest recorded session: ${sid:0:20}..."
   echo "Autopilot will stop on next turn."
 }
 
@@ -238,7 +238,7 @@ reset_current() {
   fi
 
   reset_session "$sid"
-  echo "Reset current session: ${sid:0:20}..."
+  echo "Reset latest recorded session: ${sid:0:20}..."
   echo "Next cycle will start from turn 1/$MAX_TURNS"
 }
 

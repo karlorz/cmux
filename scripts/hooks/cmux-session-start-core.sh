@@ -6,6 +6,8 @@ PROJECT_DIR="${CMUX_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || 
 OUTPUT_MODE="${CMUX_SESSION_START_OUTPUT_MODE:-text}"
 STATE_PREFIX="${CMUX_SESSION_STATE_PREFIX:-${PROVIDER}-autopilot}"
 SESSION_FILE="${CMUX_SESSION_FILE:-/tmp/${PROVIDER}-current-session-id}"
+SESSION_WORKSPACE_FILE_TEMPLATE="${CMUX_SESSION_WORKSPACE_FILE_TEMPLATE:-${CMUX_CODEX_SESSION_WORKSPACE_FILE_TEMPLATE:-/tmp/${PROVIDER}-session-workspace-root-%s}}"
+CURRENT_WORKSPACE_FILE="${CMUX_CURRENT_WORKSPACE_FILE:-${CMUX_CODEX_CURRENT_WORKSPACE_FILE:-/tmp/${PROVIDER}-current-workspace-root}}"
 SESSION_ENV_NAME="${CMUX_SESSION_ENV_NAME:-}"
 SESSION_ACTIVITY_SCRIPT="${CMUX_SESSION_ACTIVITY_SCRIPT:-}"
 
@@ -18,12 +20,19 @@ log_debug() {
   fi
 }
 
+session_workspace_file() {
+  local session_id="$1"
+  printf "$SESSION_WORKSPACE_FILE_TEMPLATE" "$session_id"
+}
+
 INPUT=$(cat)
 # Parse session_id and source in a single jq call
 read -r SESSION_ID SOURCE < <(echo "$INPUT" | jq -r '[.session_id // "default", .source // "startup"] | @tsv' 2>/dev/null || echo "default startup")
 SESSION_ID="${SESSION_ID:-default}"
 PID_FILE="${CMUX_SESSION_PID_FILE:-/tmp/${STATE_PREFIX}-pid-${SESSION_ID}}"
 SESSION_PID="${CMUX_SESSION_PID:-$PPID}"
+PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
+WORKSPACE_FILE="$(session_workspace_file "$SESSION_ID")"
 
 log_debug "provider=$PROVIDER source=$SOURCE session_id=$SESSION_ID"
 
@@ -32,6 +41,12 @@ log_debug "wrote session file: $SESSION_FILE"
 
 printf '%s\n' "$SESSION_PID" > "$PID_FILE"
 log_debug "wrote pid file: $PID_FILE pid=$SESSION_PID"
+
+printf '%s\n' "$PROJECT_DIR" > "$WORKSPACE_FILE"
+log_debug "wrote workspace file: $WORKSPACE_FILE root=$PROJECT_DIR"
+
+printf '%s\n' "$PROJECT_DIR" > "$CURRENT_WORKSPACE_FILE"
+log_debug "wrote current workspace file: $CURRENT_WORKSPACE_FILE root=$PROJECT_DIR"
 
 if [ -n "$SESSION_ACTIVITY_SCRIPT" ] && [ -f "$SESSION_ACTIVITY_SCRIPT" ]; then
   "$SESSION_ACTIVITY_SCRIPT" start "$SESSION_ID" 2>/dev/null || true
