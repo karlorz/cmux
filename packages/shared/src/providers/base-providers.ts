@@ -80,7 +80,7 @@ export const BASE_PROVIDERS: ProviderSpec[] = [
     name: "OpenAI",
     defaultBaseUrl: "https://api.openai.com/v1",
     apiFormat: "openai",
-    authEnvVars: ["OPENAI_API_KEY"],
+    authEnvVars: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
     apiKeys: [OPENAI_API_KEY, CODEX_AUTH_JSON],
     baseUrlKey: OPENAI_BASE_URL_KEY,
   },

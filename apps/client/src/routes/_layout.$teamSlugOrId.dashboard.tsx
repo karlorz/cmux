@@ -1,6 +1,7 @@
 import { env } from "@/client-env";
 import type { EditorApi } from "@/components/dashboard/DashboardInput";
 import { DashboardInputControls } from "@/components/dashboard/DashboardInputControls";
+import { isAgentBlockedByProviderStatus } from "@/components/dashboard/provider-status-meta";
 import { DashboardInputFooter } from "@/components/dashboard/DashboardInputFooter";
 import { DashboardStartTaskButton } from "@/components/dashboard/DashboardStartTaskButton";
 import { ToolSuggestions } from "@/components/dashboard/ToolSuggestions";
@@ -630,9 +631,13 @@ function DashboardComponent() {
         return agents;
       }
 
-      return agents.filter((agent) => availableAgentNames.has(agent));
+      return agents.filter(
+        (agent) =>
+          availableAgentNames.has(agent) &&
+          !isAgentBlockedByProviderStatus(agent, providerStatus)
+      );
     },
-    [availableAgentNames]
+    [availableAgentNames, providerStatus]
   );
 
   const persistAgentSelection = useCallback(

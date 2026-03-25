@@ -16,7 +16,7 @@ import {
 } from "@/lib/utils/auth";
 import { getConvex } from "@/lib/utils/get-convex";
 import { api } from "@cmux/convex/api";
-import { BASE_PROVIDERS, type ProviderSpec } from "@cmux/shared/provider-registry";
+import type { ProviderControlPlaneProvider } from "@cmux/shared/providers/control-plane";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 
 const ProviderStatusSchema = z
@@ -37,6 +37,47 @@ const ProviderStatusListResponse = z
   .openapi("ProviderStatusListResponse");
 
 export const providersStatusListRouter = new OpenAPIHono();
+
+export function toLegacyProviderStatus(
+  provider: ProviderControlPlaneProvider
+): z.infer<typeof ProviderStatusSchema> {
+  const requiredKeys = provider.authMethods
+    .filter((method) => method.type !== "custom_endpoint")
+    .map((method) => method.apiKey.envVar);
+  const configuredKeys = provider.connectionState.configuredEnvVars.filter(
+    (envVar) => requiredKeys.includes(envVar)
+  );
+
+  let source: z.infer<typeof ProviderStatusSchema>["source"] = null;
+  switch (provider.connectionState.source) {
+    case "free":
+      source = "free";
+      break;
+    case "stored_oauth_token":
+    case "stored_json_blob":
+      source = "oauth";
+      break;
+    case "env":
+    case "stored_api_key":
+      source = "apiKeys";
+      break;
+    case "override":
+      source = null;
+      break;
+    default:
+      source = null;
+      break;
+  }
+
+  return {
+    id: provider.id,
+    name: provider.name,
+    isAvailable: provider.connectionState.isConnected,
+    source,
+    configuredKeys,
+    requiredKeys,
+  };
+}
 
 providersStatusListRouter.openapi(
   createRoute({
@@ -74,35 +115,11 @@ providersStatusListRouter.openapi(
 
     const { teamSlugOrId } = c.req.valid("query");
     const convex = getConvex({ accessToken });
-
-    const apiKeys = await convex.query(api.apiKeys.getAll, { teamSlugOrId });
-    const configuredEnvVars = new Set(apiKeys.map((key) => key.envVar));
-
-    const providers = BASE_PROVIDERS.map((provider: ProviderSpec) => {
-      const configuredKeys = provider.authEnvVars.filter((envVar: string) =>
-        configuredEnvVars.has(envVar),
-      );
-
-      const isAvailable = configuredKeys.length > 0;
-
-      let source: "apiKeys" | "oauth" | "free" | null = null;
-      if (isAvailable) {
-        if (configuredKeys.some((key: string) => key.includes("OAUTH") || key.includes("AUTH_JSON"))) {
-          source = "oauth";
-        } else {
-          source = "apiKeys";
-        }
-      }
-
-      return {
-        id: provider.id,
-        name: provider.name,
-        isAvailable,
-        source,
-        configuredKeys,
-        requiredKeys: provider.authEnvVars,
-      };
-    });
+    const result = await convex.query(
+      api.providerControlPlane.listProvidersQuery,
+      { teamSlugOrId }
+    );
+    const providers = result.providers.map(toLegacyProviderStatus);
 
     return c.json({ providers });
   },
