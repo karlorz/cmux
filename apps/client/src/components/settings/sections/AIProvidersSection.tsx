@@ -47,6 +47,8 @@ interface AIProvidersSectionProps {
   overflowUsedList: Record<string, boolean>;
   usedListRefs: MutableRefObject<Record<string, HTMLSpanElement | null>>;
   showProviderStatus: boolean;
+  showProviderStatusSystemChecks?: boolean;
+  providerStatusTitle?: string;
   onApiKeyChange: (envVar: string, value: string) => void;
   onToggleShowKey: (envVar: string) => void;
   onToggleShowBaseUrls: () => void;
@@ -91,6 +93,8 @@ export function AIProvidersSection({
   overflowUsedList,
   usedListRefs,
   showProviderStatus,
+  showProviderStatusSystemChecks = true,
+  providerStatusTitle = "Provider Status",
   onApiKeyChange,
   onToggleShowKey,
   onToggleShowBaseUrls,
@@ -442,9 +446,11 @@ export function AIProvidersSection({
       </SettingSection>
 
       {showProviderStatus ? (
-        <SettingSection title="Provider Status">
+        <SettingSection title={providerStatusTitle}>
           <div className="p-4">
-            <ProviderStatusSettings />
+            <ProviderStatusSettings
+              showSystemChecks={showProviderStatusSystemChecks}
+            />
           </div>
         </SettingSection>
       ) : null}

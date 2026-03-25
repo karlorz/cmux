@@ -1079,7 +1079,13 @@ function SettingsComponent() {
               expandedUsedList={expandedUsedList}
               overflowUsedList={overflowUsedList}
               usedListRefs={usedListRefs}
-              showProviderStatus={!env.NEXT_PUBLIC_WEB_MODE}
+              showProviderStatus={true}
+              showProviderStatusSystemChecks={!env.NEXT_PUBLIC_WEB_MODE}
+              providerStatusTitle={
+                env.NEXT_PUBLIC_WEB_MODE
+                  ? "Provider Readiness"
+                  : "Provider Status"
+              }
               onApiKeyChange={handleApiKeyChange}
               onToggleShowKey={toggleShowKey}
               onToggleShowBaseUrls={() => setShowBaseUrls((prev) => !prev)}

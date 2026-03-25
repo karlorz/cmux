@@ -3,33 +3,22 @@ import type { ProviderStatus, ProviderStatusResponse } from "@cmux/shared";
 import { AlertCircle, CheckCircle2, RefreshCw, XCircle } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
-export function ProviderStatusSettings() {
-  const { socket } = useSocket();
-  const [status, setStatus] = useState<ProviderStatusResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+interface ProviderStatusSettingsProps {
+  showSystemChecks?: boolean;
+}
 
-  const checkProviderStatus = useCallback(() => {
-    if (!socket) return;
+interface ProviderStatusSettingsContentProps extends ProviderStatusSettingsProps {
+  status: ProviderStatusResponse | null;
+  loading: boolean;
+  onRefresh: () => void;
+}
 
-    setLoading(true);
-    socket.emit("check-provider-status", (response) => {
-      setLoading(false);
-      if (response.success) {
-        setStatus(response);
-      } else {
-        console.error("Failed to check provider status:", response.error);
-      }
-    });
-  }, [socket]);
-
-  // Check status on mount and every 5 seconds
-  useEffect(() => {
-    checkProviderStatus();
-    const interval = setInterval(checkProviderStatus, 5000);
-    return () => clearInterval(interval);
-  }, [checkProviderStatus]);
-
-  // Skeleton loader
+export function ProviderStatusSettingsContent({
+  status,
+  loading,
+  onRefresh,
+  showSystemChecks = true,
+}: ProviderStatusSettingsContentProps) {
   if (loading && !status) {
     return (
       <div className="space-y-3 animate-pulse">
@@ -40,21 +29,25 @@ export function ProviderStatusSettings() {
 
         {/* Combined Status Grid skeleton */}
         <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
-          {/* Docker skeleton */}
-          <div className="flex items-center gap-2">
-            <div className="w-3.5 h-3.5 rounded-full bg-neutral-300 dark:bg-neutral-600" />
-            <div className="w-20 leading-3 bg-neutral-200 text-transparent dark:bg-neutral-700 rounded text-xs">
-              loading...
-            </div>
-          </div>
+          {showSystemChecks ? (
+            <>
+              {/* Docker skeleton */}
+              <div className="flex items-center gap-2">
+                <div className="w-3.5 h-3.5 rounded-full bg-neutral-300 dark:bg-neutral-600" />
+                <div className="w-20 leading-3 bg-neutral-200 text-transparent dark:bg-neutral-700 rounded text-xs">
+                  loading...
+                </div>
+              </div>
 
-          {/* Git skeleton */}
-          <div className="flex items-center gap-2">
-            <div className="w-3.5 h-3.5 rounded-full bg-neutral-300 dark:bg-neutral-600" />
-            <div className="w-20 leading-3 bg-neutral-200 text-transparent dark:bg-neutral-700 rounded text-xs">
-              loading...
-            </div>
-          </div>
+              {/* Git skeleton */}
+              <div className="flex items-center gap-2">
+                <div className="w-3.5 h-3.5 rounded-full bg-neutral-300 dark:bg-neutral-600" />
+                <div className="w-20 leading-3 bg-neutral-200 text-transparent dark:bg-neutral-700 rounded text-xs">
+                  loading...
+                </div>
+              </div>
+            </>
+          ) : null}
 
           {/* AI Provider skeletons - typically 10 providers */}
           {[...Array(8)].map((_, i) => (
@@ -81,7 +74,7 @@ export function ProviderStatusSettings() {
       {/* Refresh button */}
       <div className="flex justify-end -mt-1 -mb-2">
         <button
-          onClick={checkProviderStatus}
+          onClick={onRefresh}
           className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
           disabled={loading}
         >
@@ -96,55 +89,59 @@ export function ProviderStatusSettings() {
 
       {/* Combined Status Grid */}
       <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
-        {/* Docker Status */}
-        <div className="flex items-center gap-2">
-          {dockerOk ? (
-            <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
-          ) : (
-            <XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
-          )}
-          <span className="text-xs text-neutral-700 dark:text-neutral-300 select-text">
-            Docker required
-            {dockerOk &&
-              status.dockerStatus?.version &&
-              ` ${status.dockerStatus.version}`}
-          </span>
-        </div>
+        {showSystemChecks ? (
+          <>
+            {/* Docker Status */}
+            <div className="flex items-center gap-2">
+              {dockerOk ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
+              ) : (
+                <XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+              )}
+              <span className="text-xs text-neutral-700 dark:text-neutral-300 select-text">
+                Docker required
+                {dockerOk &&
+                  status.dockerStatus?.version &&
+                  ` ${status.dockerStatus.version}`}
+              </span>
+            </div>
 
-        {/* Docker Image Status */}
-        {dockerImage && (
-          <div className="flex items-center gap-2">
-            {dockerImage.isAvailable ? (
-              <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
-            ) : dockerImage.isPulling ? (
-              <RefreshCw className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 animate-spin" />
-            ) : (
-              <AlertCircle className="w-3.5 h-3.5 text-yellow-500 flex-shrink-0" />
+            {/* Docker Image Status */}
+            {dockerImage && (
+              <div className="flex items-center gap-2">
+                {dockerImage.isAvailable ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
+                ) : dockerImage.isPulling ? (
+                  <RefreshCw className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 animate-spin" />
+                ) : (
+                  <AlertCircle className="w-3.5 h-3.5 text-yellow-500 flex-shrink-0" />
+                )}
+                <span className="text-xs text-neutral-700 dark:text-neutral-300 select-text">
+                  {dockerImage.name}
+                  {dockerImage.isPulling && " (pulling...)"}
+                  {!dockerImage.isAvailable &&
+                    !dockerImage.isPulling &&
+                    " (not available)"}
+                </span>
+              </div>
             )}
-            <span className="text-xs text-neutral-700 dark:text-neutral-300 select-text">
-              {dockerImage.name}
-              {dockerImage.isPulling && " (pulling...)"}
-              {!dockerImage.isAvailable &&
-                !dockerImage.isPulling &&
-                " (not available)"}
-            </span>
-          </div>
-        )}
 
-        {/* Git Status */}
-        <div className="flex items-center gap-2">
-          {gitOk ? (
-            <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
-          ) : (
-            <XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
-          )}
-          <span className="text-xs text-neutral-700 dark:text-neutral-300 select-text">
-            Git
-            {gitOk &&
-              status.gitStatus?.version &&
-              ` ${status.gitStatus.version}`}
-          </span>
-        </div>
+            {/* Git Status */}
+            <div className="flex items-center gap-2">
+              {gitOk ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
+              ) : (
+                <XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+              )}
+              <span className="text-xs text-neutral-700 dark:text-neutral-300 select-text">
+                Git
+                {gitOk &&
+                  status.gitStatus?.version &&
+                  ` ${status.gitStatus.version}`}
+              </span>
+            </div>
+          </>
+        ) : null}
 
         {/* AI Providers */}
         {status.providers?.map((provider: ProviderStatus) => {
@@ -174,5 +171,43 @@ export function ProviderStatusSettings() {
         })}
       </div>
     </div>
+  );
+}
+
+export function ProviderStatusSettings({
+  showSystemChecks = true,
+}: ProviderStatusSettingsProps) {
+  const { socket } = useSocket();
+  const [status, setStatus] = useState<ProviderStatusResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const checkProviderStatus = useCallback(() => {
+    if (!socket) return;
+
+    setLoading(true);
+    socket.emit("check-provider-status", (response) => {
+      setLoading(false);
+      if (response.success) {
+        setStatus(response);
+      } else {
+        console.error("Failed to check provider status:", response.error);
+      }
+    });
+  }, [socket]);
+
+  // Check status on mount and every 5 seconds
+  useEffect(() => {
+    checkProviderStatus();
+    const interval = setInterval(checkProviderStatus, 5000);
+    return () => clearInterval(interval);
+  }, [checkProviderStatus]);
+
+  return (
+    <ProviderStatusSettingsContent
+      status={status}
+      loading={loading}
+      onRefresh={checkProviderStatus}
+      showSystemChecks={showSystemChecks}
+    />
   );
 }
