@@ -1,41 +1,222 @@
 name: Coolify Deploy
 
-# Unified deploy workflow for the docker-compose.coolify.yml stack.
-# All three image build workflows (client, server, www) dispatch here.
-# Concurrency ensures only one deploy runs at a time.
+# Deploy the unified cmux-web Coolify stack exactly once per commit after all
+# three web images have finished building successfully. The workflow resolves
+# immutable GHCR digests, writes them into Coolify service env vars, and only
+# then triggers deployment.
 
 on:
-  repository_dispatch:
-    types: [coolify-deploy-trigger]
+  workflow_run:
+    workflows:
+      - Docker (cmux-client)
+      - Docker (cmux-www)
+      - Docker (cmux-server)
+    types:
+      - completed
   workflow_dispatch:
     inputs:
+      sha:
+        description: "Commit SHA to deploy (defaults to the current main HEAD)"
+        required: false
+        type: string
       force:
-        description: "Force deployment even if images unchanged"
+        description: "Force deployment even if images are unchanged"
         type: boolean
         default: true
 
 permissions:
+  actions: read
   contents: read
   deployments: write
+  packages: read
 
 concurrency:
-  group: coolify-deploy-unified
-  cancel-in-progress: false
+  group: coolify-deploy-${{ github.event.workflow_run.head_sha || inputs.sha || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   deploy:
     name: Deploy to Coolify
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 60
     env:
       RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
       ENVIRONMENT_NAME: Production - cmux
-      TARGET_SHA: ${{ github.event.client_payload.sha || github.sha }}
 
     steps:
+      - name: Resolve target commit
+        id: target
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const isManual = context.eventName === "workflow_dispatch";
+            let sha = "";
+            let branch = "main";
+
+            if (isManual) {
+              const requestedSha = core.getInput("sha").trim();
+              const repoInfo = await github.rest.repos.get({ owner, repo });
+              branch = repoInfo.data.default_branch;
+
+              if (requestedSha) {
+                sha = requestedSha;
+              } else {
+                const branchInfo = await github.rest.repos.getBranch({
+                  owner,
+                  repo,
+                  branch,
+                });
+                sha = branchInfo.data.commit.sha;
+              }
+            } else {
+              sha = context.payload.workflow_run.head_sha;
+              branch = context.payload.workflow_run.head_branch || "main";
+            }
+
+            if (!sha) {
+              core.setFailed("Unable to determine target SHA for Coolify deployment.");
+              return;
+            }
+
+            core.setOutput("sha", sha);
+            core.setOutput("short_sha", sha.slice(0, 7));
+            core.setOutput("branch", branch);
+
+      - name: Wait for all web image workflows
+        id: wait_for_images
+        uses: actions/github-script@v7
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        with:
+          script: |
+            const targetSha = process.env.TARGET_SHA;
+            const { owner, repo } = context.repo;
+            const workflows = [
+              { id: "docker-client-build.yml", name: "Docker (cmux-client)" },
+              { id: "docker-www-build.yml", name: "Docker (cmux-www)" },
+              { id: "docker-server-build.yml", name: "Docker (cmux-server)" },
+            ];
+
+            const timeoutMs = 40 * 60 * 1000;
+            const pollIntervalMs = 15 * 1000;
+            const deadline = Date.now() + timeoutMs;
+            const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+            while (Date.now() < deadline) {
+              let allComplete = true;
+              const statuses = [];
+
+              for (const workflow of workflows) {
+                const response = await github.rest.actions.listWorkflowRuns({
+                  owner,
+                  repo,
+                  workflow_id: workflow.id,
+                  head_sha: targetSha,
+                  per_page: 10,
+                });
+
+                const run = response.data.workflow_runs
+                  .filter((candidate) =>
+                    ["push", "workflow_dispatch", "workflow_run"].includes(candidate.event),
+                  )
+                  .sort(
+                    (left, right) =>
+                      new Date(right.created_at).getTime() -
+                      new Date(left.created_at).getTime(),
+                  )[0];
+
+                if (!run) {
+                  allComplete = false;
+                  statuses.push(`${workflow.name}: waiting for run to appear`);
+                  continue;
+                }
+
+                if (run.status !== "completed") {
+                  allComplete = false;
+                  statuses.push(`${workflow.name}: ${run.status} (${run.html_url})`);
+                  continue;
+                }
+
+                if (run.conclusion !== "success") {
+                  core.setFailed(
+                    `${workflow.name} for ${targetSha.slice(0, 7)} finished with ${run.conclusion}. ${run.html_url}`,
+                  );
+                  return;
+                }
+
+                statuses.push(`${workflow.name}: success (${run.html_url})`);
+              }
+
+              core.info(statuses.join(" | "));
+
+              if (allComplete) {
+                core.setOutput("status", "ready");
+                return;
+              }
+
+              await sleep(pollIntervalMs);
+            }
+
+            core.setFailed(
+              `Timed out waiting for Docker image workflows for ${targetSha.slice(0, 7)} to complete.`,
+            );
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve immutable image refs
+        id: image_refs
+        env:
+          IMAGE_TAG: sha-${{ steps.target.outputs.short_sha }}
+          REGISTRY_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+
+          resolve_ref() {
+            local image_name="$1"
+            local tag_ref="ghcr.io/${REGISTRY_OWNER}/${image_name}:${IMAGE_TAG}"
+            local digest
+
+            digest="$(docker buildx imagetools inspect "${tag_ref}" | sed -n 's/^Digest:[[:space:]]*//p' | head -n1)"
+            if [[ -z "${digest:-}" ]]; then
+              echo "::error::Failed to resolve digest for ${tag_ref}"
+              exit 1
+            fi
+
+            printf 'ghcr.io/%s/%s@%s\n' "${REGISTRY_OWNER}" "${image_name}" "${digest}"
+          }
+
+          client_ref="$(resolve_ref cmux-client)"
+          www_ref="$(resolve_ref cmux-www)"
+          server_ref="$(resolve_ref cmux-server)"
+
+          echo "client_ref=${client_ref}" >> "$GITHUB_OUTPUT"
+          echo "www_ref=${www_ref}" >> "$GITHUB_OUTPUT"
+          echo "server_ref=${server_ref}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Coolify Release"
+            echo
+            echo "- Commit: \`${{ steps.target.outputs.sha }}\`"
+            echo "- Client: \`${client_ref}\`"
+            echo "- WWW: \`${www_ref}\`"
+            echo "- Server: \`${server_ref}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Create GitHub deployment
         id: gh_deployment
         uses: actions/github-script@v7
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -63,190 +244,185 @@ jobs:
               deployment_id: deployment.data.id,
               state: "in_progress",
               log_url: runUrl,
-              description: "Triggering Coolify deployment",
+              description: "Updating Coolify image refs",
             });
+
+      - name: Update Coolify image env vars
+        id: update_envs
+        env:
+          COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          COOLIFY_RESOURCE_UUID: ${{ secrets.COOLIFY_SERVICE_UUID || secrets.COOLIFY_APP_UUID }}
+          CLIENT_IMAGE_REF: ${{ steps.image_refs.outputs.client_ref }}
+          WWW_IMAGE_REF: ${{ steps.image_refs.outputs.www_ref }}
+          SERVER_IMAGE_REF: ${{ steps.image_refs.outputs.server_ref }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${COOLIFY_BASE_URL:-}" || -z "${COOLIFY_API_TOKEN:-}" || -z "${COOLIFY_RESOURCE_UUID:-}" ]]; then
+            echo "::error::Missing required Coolify secrets"
+            exit 1
+          fi
+
+          base_url="${COOLIFY_BASE_URL%/}"
+          env_url="${base_url}/api/v1/services/${COOLIFY_RESOURCE_UUID}/envs"
+          auth_header="Authorization: Bearer ${COOLIFY_API_TOKEN}"
+          list_response="$(curl -sS -w '\n%{http_code}' \
+            --connect-timeout 10 --max-time 30 \
+            -H "Accept: application/json" \
+            -H "${auth_header}" \
+            "${env_url}" || true)"
+          list_http_code="$(echo "${list_response}" | tail -n1)"
+          existing_envs="$(echo "${list_response}" | sed '$d')"
+
+          if [[ "${list_http_code}" != "200" ]]; then
+            echo "::error::Failed to list Coolify service envs (HTTP ${list_http_code})"
+            echo "${existing_envs}"
+            exit 1
+          fi
+
+          upsert_env() {
+            local key="$1"
+            local value="$2"
+            local method="POST"
+            local response
+            local http_code
+            local body
+
+            if jq -e --arg key "${key}" '
+              (
+                if type == "array" then .
+                elif has("data") and (.data | type) == "array" then .data
+                else []
+                end
+              )[]?
+              | select(.key == $key)
+            ' <<< "${existing_envs}" >/dev/null; then
+              method="PATCH"
+            fi
+
+            body="$(jq -nc --arg key "${key}" --arg value "${value}" '{
+              key: $key,
+              value: $value,
+              is_preview: false,
+              is_literal: false,
+              is_multiline: false,
+              is_shown_once: false
+            }')"
+
+            response="$(curl -sS -w '\n%{http_code}' \
+              --connect-timeout 10 --max-time 30 \
+              -X "${method}" \
+              -H "Accept: application/json" \
+              -H "Content-Type: application/json" \
+              -H "${auth_header}" \
+              -d "${body}" \
+              "${env_url}" || true)"
+
+            http_code="$(echo "${response}" | tail -n1)"
+            if [[ "${http_code}" != "200" && "${http_code}" != "201" ]]; then
+              echo "::error::Failed to ${method} ${key} in Coolify (HTTP ${http_code})"
+              echo "${response}" | sed '$d'
+              exit 1
+            fi
+          }
+
+          upsert_env CLIENT_IMAGE "${CLIENT_IMAGE_REF}"
+          upsert_env WWW_IMAGE "${WWW_IMAGE_REF}"
+          upsert_env SERVER_IMAGE "${SERVER_IMAGE_REF}"
 
       - name: Trigger Coolify deploy
         id: trigger
         env:
           COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
           COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-          COOLIFY_APP_UUID: ${{ secrets.COOLIFY_APP_UUID }}
+          COOLIFY_RESOURCE_UUID: ${{ secrets.COOLIFY_SERVICE_UUID || secrets.COOLIFY_APP_UUID }}
+          MANUAL_FORCE_DEPLOY: ${{ inputs.force }}
         run: |
           set -euo pipefail
 
-          if [[ -z "${COOLIFY_BASE_URL:-}" || -z "${COOLIFY_API_TOKEN:-}" || -z "${COOLIFY_APP_UUID:-}" ]]; then
-            echo "::error::Missing required Coolify secrets"
-            echo "triggered=false" >> "$GITHUB_OUTPUT"
-            exit 1
+          base_url="${COOLIFY_BASE_URL%/}"
+          force_deploy="true"
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            force_deploy="${MANUAL_FORCE_DEPLOY}"
           fi
 
-          base_url="${COOLIFY_BASE_URL%/}"
-
-          echo "Triggering Coolify deployment..."
-
-          response=$(curl -sS -w "\n%{http_code}" \
+          response="$(curl -sS -w '\n%{http_code}' \
             --connect-timeout 10 --max-time 30 \
             -X GET \
             -H "Accept: application/json" \
             -H "Authorization: Bearer ${COOLIFY_API_TOKEN}" \
-            "${base_url}/api/v1/deploy?uuid=${COOLIFY_APP_UUID}&force=true" || true)
+            "${base_url}/api/v1/deploy?uuid=${COOLIFY_RESOURCE_UUID}&force=${force_deploy}" || true)"
 
-          http_code=$(echo "$response" | tail -n1)
-          body=$(echo "$response" | sed '$d')
+          http_code="$(echo "${response}" | tail -n1)"
+          body="$(echo "${response}" | sed '$d')"
 
-          if [[ "$http_code" == "200" || "$http_code" == "201" ]]; then
-            echo "Successfully triggered Coolify deployment"
-            echo "Response: $body"
-            echo "triggered=true" >> "$GITHUB_OUTPUT"
-          else
+          if [[ "${http_code}" != "200" && "${http_code}" != "201" ]]; then
             echo "::error::Coolify deploy trigger returned HTTP ${http_code}"
-            echo "Response: $body"
-            echo "triggered=false" >> "$GITHUB_OUTPUT"
+            echo "Response: ${body}"
             exit 1
           fi
 
-      - name: Wait for Coolify deployment
-        id: coolify
-        # Note: For Docker Compose stacks, the /applications/{uuid}/deployments endpoint
-        # may not work. Skip status tracking and assume success if trigger worked.
-        if: steps.trigger.outputs.triggered == 'true' && false
+          deployment_uuid="$(jq -r '.deployments[0].deployment_uuid // empty' <<< "${body}")"
+          if [[ -n "${deployment_uuid:-}" ]]; then
+            echo "deployment_uuid=${deployment_uuid}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Wait for service health
+        id: wait_for_service
         env:
           COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
           COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-          COOLIFY_APP_UUID: ${{ secrets.COOLIFY_APP_UUID }}
+          COOLIFY_RESOURCE_UUID: ${{ secrets.COOLIFY_SERVICE_UUID || secrets.COOLIFY_APP_UUID }}
           COOLIFY_ENV_URL: ${{ secrets.COOLIFY_ENV_URL }}
         run: |
           set -euo pipefail
 
           base_url="${COOLIFY_BASE_URL%/}"
           auth_header="Authorization: Bearer ${COOLIFY_API_TOKEN}"
+          service_url="${base_url}/api/v1/services/${COOLIFY_RESOURCE_UUID}"
 
-          tmp_dir="$(mktemp -d)"
-          trap 'rm -rf "$tmp_dir"' EXIT
+          deadline=$(( $(date +%s) + 1200 ))
+          poll_interval=10
+          tmp_file="$(mktemp)"
+          trap 'rm -f "$tmp_file"' EXIT
 
-          poll_interval_seconds=10
-          deploy_timeout_seconds=$((25 * 60))
+          while (( $(date +%s) < deadline )); do
+            http_code="$(curl -sS -o "${tmp_file}" -w '%{http_code}' \
+              --connect-timeout 10 --max-time 30 \
+              -H "Accept: application/json" \
+              -H "${auth_header}" \
+              "${service_url}" || true)"
 
-          now_epoch() { date +%s; }
-
-          http_get_json() {
-            local url="$1"
-            local out_file="$2"
-            curl -sS -o "$out_file" -w '%{http_code}' \
-              --connect-timeout 10 --max-time 30 --retry 3 --retry-delay 1 \
-              -H "Accept: application/json" -H "$auth_header" \
-              "$url" || true
-          }
-
-          normalize_status() {
-            local raw="$1"
-            raw="$(echo "$raw" | tr '[:upper:]' '[:lower:]')"
-            case "$raw" in
-              success|succeeded|finished|completed) echo "success" ;;
-              failed|failure|error|errored|cancelled|canceled) echo "failure" ;;
-              running|queued|in_progress|in-progress|pending) echo "running" ;;
-              *) echo "$raw" ;;
-            esac
-          }
-
-          is_http_url() {
-            [[ "${1:-}" =~ ^https?://[^[:space:]]+$ ]]
-          }
-
-          resolve_deployment_url() {
-            local url_raw="${1:-}"
-            if is_http_url "$url_raw"; then
-              echo "$url_raw"
-            elif is_http_url "${COOLIFY_ENV_URL:-}"; then
-              echo "${COOLIFY_ENV_URL}"
-            elif [[ -n "$url_raw" ]]; then
-              echo "${base_url}/${url_raw#/}"
-            fi
-          }
-
-          find_latest_deployment() {
-            local resp="$tmp_dir/deployments.json"
-            local code
-            local dep_uuid
-
-            code="$(http_get_json "${base_url}/api/v1/applications/${COOLIFY_APP_UUID}/deployments?skip=0&take=5" "$resp")"
-            if [[ "$code" != "200" ]]; then
-              return 1
-            fi
-
-            dep_uuid="$(jq -r '
-              (if type=="array" then .
-               elif has("data") and (.data|type)=="array" then .data
-               elif has("deployments") and (.deployments|type)=="array" then .deployments
-               else [] end)
-              | .[0]
-              | (.deployment_uuid // .uuid // empty)
-            ' "$resp" 2>/dev/null || true)"
-
-            if [[ -n "${dep_uuid:-}" && "${dep_uuid:-null}" != "null" ]]; then
-              echo "$dep_uuid"
-              return 0
-            fi
-
-            return 1
-          }
-
-          echo "Waiting for Coolify deployment to complete..."
-          start_epoch="$(now_epoch)"
-          deadline=$((start_epoch + deploy_timeout_seconds))
-
-          sleep 10
-
-          deployment_uuid="$(find_latest_deployment || true)"
-          if [[ -z "${deployment_uuid:-}" ]]; then
-            echo "::error::No deployment found for app ${COOLIFY_APP_UUID}"
-            echo "conclusion=failure" >> "$GITHUB_OUTPUT"
-            echo "coolify_status=no_deployment_found" >> "$GITHUB_OUTPUT"
-            exit 1
-          fi
-
-          echo "Found deployment UUID: ${deployment_uuid}"
-
-          detail_url="${base_url}/api/v1/deployments/${deployment_uuid}"
-          resp="$tmp_dir/detail.json"
-
-          while (( $(now_epoch) < deadline )); do
-            code="$(http_get_json "$detail_url" "$resp")"
-            if [[ "$code" != "200" ]]; then
-              echo "Coolify API returned HTTP ${code}, retrying..."
-              sleep "$poll_interval_seconds"
+            if [[ "${http_code}" != "200" ]]; then
+              echo "Coolify service API returned HTTP ${http_code}; retrying..."
+              sleep "${poll_interval}"
               continue
             fi
 
-            raw_status="$(jq -r '.status // empty' "$resp" 2>/dev/null || true)"
-            norm_status="$(normalize_status "${raw_status:-unknown}")"
+            service_status="$(jq -r '.status // "unknown"' "${tmp_file}")"
+            apps_healthy="$(jq -r '[.applications[].status == "running:healthy"] | all' "${tmp_file}")"
+            client_url="$(jq -r '.applications[] | select(.name == "cmux-client") | .fqdn // empty' "${tmp_file}")"
 
-            deployment_url_raw="$(jq -r '.deployment_url // empty' "$resp" 2>/dev/null || true)"
-            deployment_url="$(resolve_deployment_url "${deployment_url_raw:-}")"
+            echo "Coolify service status: ${service_status}"
 
-            echo "coolify_status=${raw_status:-unknown}" >> "$GITHUB_OUTPUT"
-            echo "deployment_url=${deployment_url:-}" >> "$GITHUB_OUTPUT"
+            if [[ -n "${client_url:-}" && "${client_url:-null}" != "null" ]]; then
+              echo "environment_url=${client_url%:8080}" >> "$GITHUB_OUTPUT"
+            elif [[ -n "${COOLIFY_ENV_URL:-}" ]]; then
+              echo "environment_url=${COOLIFY_ENV_URL}" >> "$GITHUB_OUTPUT"
+            fi
 
-            if [[ "$norm_status" == "success" ]]; then
+            if [[ "${service_status}" == "running:healthy" && "${apps_healthy}" == "true" ]]; then
               echo "conclusion=success" >> "$GITHUB_OUTPUT"
-              echo "Coolify deployment succeeded!"
               exit 0
             fi
 
-            if [[ "$norm_status" == "failure" ]]; then
-              echo "conclusion=failure" >> "$GITHUB_OUTPUT"
-              echo "::error::Coolify deployment failed (status: ${raw_status})"
-              exit 1
-            fi
-
-            echo "Coolify deployment status: ${raw_status:-unknown} (waiting...)"
-            sleep "$poll_interval_seconds"
+            sleep "${poll_interval}"
           done
 
           echo "conclusion=failure" >> "$GITHUB_OUTPUT"
-          echo "coolify_status=timeout" >> "$GITHUB_OUTPUT"
-          echo "::error::Timed out waiting for Coolify deployment"
+          echo "::error::Timed out waiting for Coolify service to become healthy"
           exit 1
 
       - name: Update GitHub deployment status
@@ -254,9 +430,8 @@ jobs:
         uses: actions/github-script@v7
         env:
           DEPLOYMENT_ID: ${{ steps.gh_deployment.outputs.deployment_id }}
-          CONCLUSION: ${{ steps.trigger.outputs.triggered == 'true' && 'success' || 'failure' }}
-          ENVIRONMENT_URL: ${{ steps.coolify.outputs.deployment_url }}
-          COOLIFY_STATUS: ${{ steps.coolify.outputs.coolify_status || 'unknown' }}
+          CONCLUSION: ${{ steps.wait_for_service.outputs.conclusion || 'failure' }}
+          ENVIRONMENT_URL: ${{ steps.wait_for_service.outputs.environment_url }}
         with:
           script: |
             const deploymentIdRaw = process.env.DEPLOYMENT_ID;
@@ -271,13 +446,11 @@ jobs:
             const conclusion = process.env.CONCLUSION || "failure";
             const envUrlRaw = (process.env.ENVIRONMENT_URL || "").trim();
             const envUrl = /^https?:\/\/\S+$/i.test(envUrlRaw) ? envUrlRaw : undefined;
-            const coolifyStatus = process.env.COOLIFY_STATUS || "unknown";
-
             const state = conclusion === "success" ? "success" : "failure";
             const description =
               state === "success"
                 ? "Coolify deployment succeeded"
-                : `Coolify deployment failed (${coolifyStatus})`;
+                : "Coolify deployment failed";
 
             const payload = {
               owner,
@@ -287,6 +460,7 @@ jobs:
               log_url: runUrl,
               description,
             };
+
             if (envUrl) {
               payload.environment_url = envUrl;
             }
