@@ -142,6 +142,23 @@ export interface PreFetchedSpawnConfig {
   policyRules?: PolicyRuleForInstructions[];
   /** Orchestration rules learned from previous runs (self-improving memory) */
   orchestrationRules?: OrchestrationRuleForInstructions[];
+  /** Phase 5: Scoped knowledge with team/repo/user precedence */
+  scopedKnowledge?: {
+    content: string | null;
+    sources: Array<{
+      scope: "team" | "repo" | "user" | "run";
+      hasContent: boolean;
+      byteSize: number;
+    }>;
+    totalByteSize: number;
+  };
+  /** Orchestration settings for auto-spawn sub-agents */
+  orchestrationSettings?: {
+    autoSpawnEnabled: boolean;
+    defaultCodingAgent: string;
+    maxConcurrentSubAgents: number;
+    maxTaskDurationMinutes: number;
+  };
 }
 
 /** Autopilot mode configuration for long-running agent sessions (Phase 6) */
@@ -535,6 +552,18 @@ export async function spawnAgent(
       systemEnvVars.CMUX_IS_ORCHESTRATION_HEAD = "1";
       serverLogger.info("[AgentSpawner] Orchestration head mode enabled");
     }
+    // Add auto-spawn sub-agents settings from pre-fetched config
+    if (options.preFetchedConfig?.orchestrationSettings?.autoSpawnEnabled) {
+      systemEnvVars.CMUX_AUTO_SPAWN_ENABLED = "1";
+      systemEnvVars.CMUX_DEFAULT_CODING_AGENT = options.preFetchedConfig.orchestrationSettings.defaultCodingAgent;
+      systemEnvVars.CMUX_MAX_CONCURRENT_SUBAGENTS = String(options.preFetchedConfig.orchestrationSettings.maxConcurrentSubAgents);
+      systemEnvVars.CMUX_MAX_TASK_DURATION_MINUTES = String(options.preFetchedConfig.orchestrationSettings.maxTaskDurationMinutes);
+      serverLogger.info(
+        `[AgentSpawner] Auto-spawn enabled: agent=${options.preFetchedConfig.orchestrationSettings.defaultCodingAgent}, ` +
+        `max=${options.preFetchedConfig.orchestrationSettings.maxConcurrentSubAgents}, ` +
+        `timeout=${options.preFetchedConfig.orchestrationSettings.maxTaskDurationMinutes}min`
+      );
+    }
     if (options.isCloudWorkspace) {
       systemEnvVars.CMUX_IS_CLOUD_WORKSPACE = "1";
       serverLogger.info("[AgentSpawner] Cloud workspace mode enabled");
@@ -660,11 +689,24 @@ export async function spawnAgent(
       workspaceSettings = options.preFetchedConfig.workspaceSettings;
       providerOverrides = options.preFetchedConfig.providerOverrides;
       mcpServerConfigs = options.preFetchedConfig.mcpServerConfigs;
-      previousKnowledge = options.preFetchedConfig.previousKnowledge;
+      // Phase 5: Prefer scoped knowledge over legacy previousKnowledge
+      previousKnowledge = options.preFetchedConfig.scopedKnowledge?.content
+        ?? options.preFetchedConfig.previousKnowledge;
       previousMailbox = options.preFetchedConfig.previousMailbox;
       previousBehavior = options.preFetchedConfig.previousBehavior;
       policyRules = options.preFetchedConfig.policyRules;
       orchestrationRules = options.preFetchedConfig.orchestrationRules;
+      // Log scoped knowledge sources for observability
+      if (options.preFetchedConfig.scopedKnowledge?.sources) {
+        const activeSources = options.preFetchedConfig.scopedKnowledge.sources
+          .filter((s) => s.hasContent)
+          .map((s) => `${s.scope}(${s.byteSize}b)`);
+        if (activeSources.length > 0) {
+          serverLogger.info(
+            `[AgentSpawner] Scoped knowledge sources: ${activeSources.join(", ")}`
+          );
+        }
+      }
     } else {
       // Fetch from Convex (Stack Auth available)
       const results = await Promise.all([

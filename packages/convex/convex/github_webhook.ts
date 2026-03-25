@@ -30,8 +30,80 @@ const FEATURE_FLAGS = {
   prCommentTriggerEnabled: true,
 };
 
-// Bot mention pattern - matches @cmux or @cmux-bot followed by the prompt
-const CMUX_MENTION_PATTERN = /@cmux(?:-bot)?\s+(.+)/is;
+// Bot mention pattern - matches @cmux, @cmux-bot, @cmux-local-dev, or @cmux-local-dev[bot] followed by the prompt
+const CMUX_MENTION_PATTERN = /@cmux(?:-(?:bot|local-dev))?(?:\[bot\])?\s+(.+)/is;
+
+// Agent selection pattern - matches --agent <agent-name> at the start of the prompt
+const AGENT_FLAG_PATTERN = /^--agent\s+(\S+)\s+(.+)/is;
+
+// Default agent when none specified
+const DEFAULT_AGENT = "claude/sonnet-4";
+
+// Command shortcuts - expand short commands into full prompts
+const COMMAND_SHORTCUTS: Record<string, string> = {
+  "/review": "Review the PR diff and provide feedback on code quality, potential bugs, and improvements. Focus on the changes only.",
+  "/test": "Run the test suite and fix any failing tests. If all tests pass, report the results.",
+  "/fix": "Analyze the failing CI checks or tests and fix the issues. Commit the fixes.",
+  "/lint": "Run linting and fix any lint errors. Commit the fixes.",
+  "/docs": "Update documentation to reflect the changes in this PR.",
+  "/refactor": "Refactor the changed code for better readability and maintainability while preserving behavior.",
+};
+
+/**
+ * Expand command shortcuts into full prompts.
+ * Supports: @cmux /review, @cmux /fix, etc.
+ * Commands can have additional context: @cmux /review focus on security
+ */
+function expandCommandShortcut(prompt: string): string {
+  const trimmed = prompt.trim();
+
+  // Check if prompt starts with a command
+  for (const [command, expansion] of Object.entries(COMMAND_SHORTCUTS)) {
+    if (trimmed.toLowerCase() === command) {
+      return expansion;
+    }
+    if (trimmed.toLowerCase().startsWith(command + " ")) {
+      const additionalContext = trimmed.slice(command.length).trim();
+      return `${expansion} Additional context: ${additionalContext}`;
+    }
+  }
+
+  return prompt;
+}
+
+/**
+ * Validate agent name by checking if it has a known provider prefix.
+ * Uses the same logic as getProviderIdFromAgentName from shared package.
+ */
+function isValidAgentName(agentName: string): boolean {
+  const prefix = agentName.split("/")[0];
+  if (!prefix) return false;
+  // Known provider prefixes (kept in sync with base-providers.ts prefixToProvider)
+  const knownPrefixes = ["claude", "codex", "gemini", "grok", "opencode", "amp", "cursor", "qwen"];
+  return knownPrefixes.includes(prefix);
+}
+
+/**
+ * Parse agent selection from prompt.
+ * Supports: @cmux --agent claude/opus-4.5 fix the bug
+ * Returns: { agentName: "claude/opus-4.5", prompt: "fix the bug" }
+ */
+function parseAgentFromPrompt(rawPrompt: string): { agentName: string; prompt: string } {
+  const match = rawPrompt.match(AGENT_FLAG_PATTERN);
+  if (!match) {
+    return { agentName: DEFAULT_AGENT, prompt: rawPrompt };
+  }
+
+  const requestedAgent = match[1];
+  const remainingPrompt = match[2].trim();
+
+  if (!isValidAgentName(requestedAgent)) {
+    // Invalid agent prefix, treat as part of prompt
+    return { agentName: DEFAULT_AGENT, prompt: rawPrompt };
+  }
+
+  return { agentName: requestedAgent, prompt: remainingPrompt };
+}
 
 async function verifySignature(
   secret: string,
@@ -248,11 +320,17 @@ export const githubWebhook = httpAction(async (_ctx, req) => {
             break; // No @cmux mention
           }
 
-          const prompt = match[1].trim();
-          if (!prompt) {
+          const rawPrompt = match[1].trim();
+          if (!rawPrompt) {
             console.log("[issue_comment] Empty prompt after @cmux mention", { delivery });
             break;
           }
+
+          // Parse agent selection from prompt (e.g., @cmux --agent claude/opus-4.5 fix the bug)
+          const { agentName, prompt: parsedPrompt } = parseAgentFromPrompt(rawPrompt);
+
+          // Expand command shortcuts (e.g., @cmux /review -> full review prompt)
+          const prompt = expandCommandShortcut(parsedPrompt);
 
           // Get repo and installation info
           const repoFullName = String(commentPayload.repository?.full_name ?? "");
@@ -315,6 +393,7 @@ export const githubWebhook = httpAction(async (_ctx, req) => {
             repoFullName,
             prNumber,
             commentAuthor,
+            agentName,
             promptPreview: prompt.substring(0, 100),
             delivery,
           });
@@ -329,13 +408,13 @@ export const githubWebhook = httpAction(async (_ctx, req) => {
             baseBranch: baseBranch ?? "main",
           });
 
-          // Create task run with default agent and link to source comment
+          // Create task run with selected agent and link to source comment
           await _ctx.runMutation(internal.taskRuns.createInternal, {
             taskId,
             teamId,
             userId,
             prompt,
-            agentName: "claude/sonnet-4", // Default agent
+            agentName, // Parsed from --agent flag or default
             newBranch: prBranch, // Use PR head branch if available
             githubCommentId: commentId,
             githubCommentUrl: commentUrl,

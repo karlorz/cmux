@@ -19,7 +19,7 @@ type BehaviorMemoryType = "behavior_hot" | "behavior_corrections" | "behavior_do
 type MemoryType = FactualMemoryType | BehaviorMemoryType;
 
 // Group types for tab organization
-type MemoryCategory = "factual" | "behavior";
+type MemoryCategory = "factual" | "behavior" | "scope";
 
 const MEMORY_TYPE_LABELS: Record<MemoryType, string> = {
   // Factual
@@ -75,6 +75,12 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
   const contextHealth = useQuery(
     api.taskRuns.getContextHealth,
     taskRunId ? { teamSlugOrId, id: taskRunId } : "skip"
+  );
+
+  // Query memory scope summary (Priority 3: operator visibility)
+  const scopeSummary = useQuery(
+    api.agentMemoryQueries.getMemoryScopeSummary,
+    taskRunId ? { teamSlugOrId, taskRunId } : "skip"
   );
 
   // Group snapshots by type
@@ -201,6 +207,9 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
           setSelectedCategory(category);
           // Switch to first type in category
           if (category === "factual") {
+            setSelectedType("knowledge");
+          } else if (category === "scope") {
+            // Scope view doesn't use memory types
             setSelectedType("knowledge");
           } else {
             // Find first behavior type with content (check provenance first)
@@ -364,9 +373,11 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
       <div className="flex items-center gap-1 border-b border-neutral-200 px-2 py-1.5 dark:border-neutral-800">
         {renderCategoryButton("factual", "Factual", Brain)}
         {renderCategoryButton("behavior", "Behavior", Sparkles)}
+        {renderCategoryButton("scope", "Scope", Layers)}
       </div>
 
-      {/* Type tab bar */}
+      {/* Type tab bar (not shown for scope view) */}
+      {selectedCategory !== "scope" && (
       <div className="flex items-center gap-1 border-b border-neutral-200 px-2 py-1.5 dark:border-neutral-800">
         {selectedCategory === "factual"
           ? FACTUAL_MEMORY_TYPES.map(renderTabButton)
@@ -387,10 +398,15 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
           </select>
         )}
       </div>
+      )}
 
       {/* Content area */}
       <div className="flex-1 min-h-0">
-        {renderContent()}
+        {selectedCategory === "scope" ? (
+          <MemoryScopeView scopeSummary={scopeSummary} />
+        ) : (
+          renderContent()
+        )}
       </div>
     </div>
   );
@@ -995,6 +1011,182 @@ function ContextHealthSummary({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// Memory scope summary data shape (from Convex query)
+interface ScopeSummaryData {
+  scopes: Array<{
+    scope: "team" | "repo" | "user" | "run";
+    label: string;
+    hasContent: boolean;
+    byteSize: number;
+    snapshotCount: number;
+    lastSyncedAt?: number;
+  }>;
+  totalByteSize: number;
+  memoryEnabled: boolean;
+}
+
+// Memory scope view - shows what memory was injected from each scope level
+function MemoryScopeView({ scopeSummary }: { scopeSummary: ScopeSummaryData | undefined | null }) {
+  if (!scopeSummary) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 text-neutral-500 dark:text-neutral-400">
+        <div className="size-5 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-600 dark:border-neutral-600 dark:border-t-neutral-300" />
+        <span className="text-sm">Loading scope summary...</span>
+      </div>
+    );
+  }
+
+  if (!scopeSummary.memoryEnabled) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-neutral-500 dark:text-neutral-400">
+        <Layers className="size-8 text-neutral-400 dark:text-neutral-500" />
+        <div className="text-sm font-medium text-neutral-600 dark:text-neutral-200">
+          Memory not enabled
+        </div>
+        <p className="text-xs">Task run not found or memory scope unavailable</p>
+      </div>
+    );
+  }
+
+  // Format byte size for display
+  const formatBytes = (bytes: number): string => {
+    if (bytes === 0) return "0 B";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  // Get scope color
+  const getScopeColor = (scope: string, hasContent: boolean) => {
+    if (!hasContent) return "bg-neutral-100 text-neutral-400 dark:bg-neutral-800 dark:text-neutral-500";
+    switch (scope) {
+      case "team":
+        return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400";
+      case "repo":
+        return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
+      case "user":
+        return "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400";
+      case "run":
+        return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400";
+      default:
+        return "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400";
+    }
+  };
+
+  // Get scope icon
+  const getScopeIcon = (scope: string) => {
+    switch (scope) {
+      case "team":
+        return Brain;
+      case "repo":
+        return FolderTree;
+      case "user":
+        return FileText;
+      case "run":
+        return Activity;
+      default:
+        return Layers;
+    }
+  };
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900">
+        <span className="text-xs font-medium text-neutral-600 dark:text-neutral-300">
+          Memory Scope Breakdown
+        </span>
+        <span className="text-xs text-neutral-400 dark:text-neutral-500">
+          Total: {formatBytes(scopeSummary.totalByteSize)}
+        </span>
+      </div>
+
+      {/* Scope precedence explanation */}
+      <div className="border-b border-neutral-200 bg-neutral-50/50 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900/50">
+        <div className="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+          <span className="font-medium">Read precedence:</span>
+          <span className="flex items-center gap-1">
+            run <ArrowRight className="size-3" />
+            user <ArrowRight className="size-3" />
+            repo <ArrowRight className="size-3" />
+            team
+          </span>
+        </div>
+      </div>
+
+      {/* Scope cards */}
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
+        {scopeSummary.scopes.map((scopeInfo) => {
+          const Icon = getScopeIcon(scopeInfo.scope);
+          const colorClasses = getScopeColor(scopeInfo.scope, scopeInfo.hasContent);
+
+          return (
+            <div
+              key={scopeInfo.scope}
+              className={clsx(
+                "rounded-lg border p-3",
+                scopeInfo.hasContent
+                  ? "border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900"
+                  : "border-neutral-100 bg-neutral-50 dark:border-neutral-800/50 dark:bg-neutral-900/50"
+              )}
+            >
+              {/* Scope header */}
+              <div className="flex items-center gap-2">
+                <span
+                  className={clsx(
+                    "inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium",
+                    colorClasses
+                  )}
+                >
+                  <Icon className="size-3.5" />
+                  {scopeInfo.label}
+                </span>
+                <span className="ml-auto text-xs text-neutral-500 dark:text-neutral-400">
+                  {formatBytes(scopeInfo.byteSize)}
+                </span>
+              </div>
+
+              {/* Details */}
+              {scopeInfo.hasContent ? (
+                <div className="mt-2 flex items-center gap-4 text-xs text-neutral-500 dark:text-neutral-400">
+                  <span>{scopeInfo.snapshotCount} snapshot{scopeInfo.snapshotCount !== 1 ? "s" : ""}</span>
+                  {scopeInfo.lastSyncedAt && (
+                    <span className="flex items-center gap-1">
+                      <Clock className="size-3" />
+                      {new Date(scopeInfo.lastSyncedAt).toLocaleString()}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">
+                  No memory at this scope
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Total summary */}
+        {scopeSummary.totalByteSize > 0 && (
+          <div className="rounded-lg border border-neutral-300 bg-neutral-100 p-3 dark:border-neutral-700 dark:bg-neutral-800">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                Total Memory Injected
+              </span>
+              <span className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                {formatBytes(scopeSummary.totalByteSize)}
+              </span>
+            </div>
+            <div className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+              Memory is merged at agent startup with run scope taking highest precedence.
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

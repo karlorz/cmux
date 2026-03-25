@@ -9,6 +9,7 @@
 
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { vaultDispatchRouter } from "./vault.dispatch.route";
+import { vaultNoteRouter } from "./vault.note.route";
 import { vaultNotesRouter } from "./vault.notes.route";
 import { vaultRecommendationsRouter } from "./vault.recommendations.route";
 
@@ -19,6 +20,7 @@ import { vaultRecommendationsRouter } from "./vault.recommendations.route";
 export const vaultRouter = new OpenAPIHono();
 
 vaultRouter.route("/", vaultDispatchRouter);
+vaultRouter.route("/", vaultNoteRouter);
 vaultRouter.route("/", vaultNotesRouter);
 vaultRouter.route("/", vaultRecommendationsRouter);
 

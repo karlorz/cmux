@@ -136,6 +136,26 @@ githubPrsMergeRouter.openapi(
       );
     }
 
+    // Check /simplify pre-merge gate
+    const orchestrationSettings = await convex.query(api.orchestrationSettings.get, {
+      teamSlugOrId,
+    });
+
+    if (orchestrationSettings.requireSimplifyBeforeMerge) {
+      const simplifyPassed = !!run.simplifyPassedAt || !!run.simplifySkippedReason;
+      if (!simplifyPassed) {
+        return c.json(
+          {
+            success: false,
+            results: [],
+            aggregate: emptyAggregate(),
+            error: "Merge blocked: /simplify is required before merge. Please run /simplify (or /simplify --quick) first.",
+          },
+          403,
+        );
+      }
+    }
+
     const branchName = run.newBranch?.trim();
     if (!branchName) {
       return c.json(

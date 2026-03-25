@@ -508,16 +508,35 @@ export class PveLxcClient {
 
     // Use undici's fetch directly to ensure dispatcher option works
     // (Next.js patches global fetch which ignores dispatcher)
-    const response = await undiciFetch(url, {
-      method,
-      headers,
-      body: requestBody,
-      dispatcher: this.httpsAgent,
-    });
+    let response: Awaited<ReturnType<typeof undiciFetch>>;
+    try {
+      response = await undiciFetch(url, {
+        method,
+        headers,
+        body: requestBody,
+        dispatcher: this.httpsAgent,
+      });
+    } catch (fetchError) {
+      // Network-level errors (DNS, connection refused, timeout, etc.)
+      const errMsg = fetchError instanceof Error ? fetchError.message : String(fetchError);
+      console.error(`[PveLxcClient] Network error calling PVE API: ${method} ${path}`, {
+        apiUrl: this.apiUrl,
+        error: errMsg,
+      });
+      throw new Error(`PVE API network error: ${errMsg} (check PVE_API_URL connectivity)`);
+    }
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`PVE API error ${response.status}: ${text}`);
+      // Log detailed error info for production debugging
+      console.error(`[PveLxcClient] PVE API error: ${method} ${path}`, {
+        status: response.status,
+        statusText: response.statusText,
+        apiUrl: this.apiUrl,
+        responseBody: text.slice(0, 500),
+      });
+      // Include status text in error message for better diagnostics
+      throw new Error(`PVE API error ${response.status} (${response.statusText}): ${text.slice(0, 200)}`);
     }
 
     const json = (await response.json()) as PveApiResponse<T>;
@@ -1720,5 +1739,48 @@ export class PveLxcClient {
     // Clean up in-memory service URLs
     this.instanceServices.delete(vmid);
     this.instanceHostnames.delete(vmid);
+  }
+
+  /**
+   * Health check: verify PVE API connectivity and return diagnostic info.
+   * Returns status and details useful for debugging production issues.
+   */
+  async healthCheck(): Promise<{
+    ok: boolean;
+    apiUrl: string;
+    node: string | null;
+    publicDomain: string | null;
+    error?: string;
+    nodeCount?: number;
+    containerCount?: number;
+  }> {
+    try {
+      const node = await this.getNode();
+      const containers = await this.apiRequest<PveContainerStatus[]>(
+        "GET",
+        `/api2/json/nodes/${node}/lxc`
+      );
+      const cmuxContainers = containers.filter(
+        (c) =>
+          c.name?.startsWith("cmux-") || c.name?.startsWith("pvelxc-")
+      );
+      return {
+        ok: true,
+        apiUrl: this.apiUrl,
+        node,
+        publicDomain: this.publicDomain,
+        nodeCount: 1, // We only query the active node
+        containerCount: cmuxContainers.length,
+      };
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      return {
+        ok: false,
+        apiUrl: this.apiUrl,
+        node: this.node,
+        publicDomain: this.publicDomain,
+        error: errMsg,
+      };
+    }
   }
 }

@@ -235,8 +235,9 @@ echo "  - SANDBOX_PROVIDER: $(get_env_value SANDBOX_PROVIDER)"
 # PR comment branding for fork customization
 echo "  - CMUX_BASE_URL: $(show_optional_value "$(get_env_value CMUX_BASE_URL)" 40)"
 echo "  - CMUX_BOT_NAME: $(show_optional_value "$(get_env_value CMUX_BOT_NAME)" 20)"
-# Opt-in feature flag for screenshot workflow (disabled by default)
+# Opt-in feature flags (disabled by default)
 echo "  - CMUX_ENABLE_SCREENSHOT_WORKFLOW: $(show_optional_value "$(get_env_value CMUX_ENABLE_SCREENSHOT_WORKFLOW)" 10)"
+echo "  - CMUX_ENABLE_OPERATOR_VERIFICATION: $(show_optional_value "$(get_env_value CMUX_ENABLE_OPERATOR_VERIFICATION)" 10)"
 # Note: CMUX_IS_STAGING removed from Convex - preview_jobs_worker hardcodes "false" in sandbox
 CONVEX_IS_PRODUCTION_DISPLAY=$(get_env_value CONVEX_IS_PRODUCTION)
 if [ -z "$CONVEX_IS_PRODUCTION_DISPLAY" ]; then
@@ -314,8 +315,9 @@ build_json_changes() {
   # PR comment branding: configurable base URL and bot name for fork customization
   add_optional_change "CMUX_BASE_URL" "$(get_env_value CMUX_BASE_URL)"
   add_optional_change "CMUX_BOT_NAME" "$(get_env_value CMUX_BOT_NAME)"
-  # Opt-in feature flag: set to "true" to enable, delete (null) when not set to disable
+  # Opt-in feature flags: set to "true" to enable, delete (null) when not set to disable
   add_optional_change "CMUX_ENABLE_SCREENSHOT_WORKFLOW" "$(get_env_value CMUX_ENABLE_SCREENSHOT_WORKFLOW)"
+  add_optional_change "CMUX_ENABLE_OPERATOR_VERIFICATION" "$(get_env_value CMUX_ENABLE_OPERATOR_VERIFICATION)"
   # Note: CMUX_IS_STAGING removed from Convex schema - preview_jobs_worker hardcodes "false" in sandbox
 
   # Set CONVEX_IS_PRODUCTION: first check env file, then fall back to MODE

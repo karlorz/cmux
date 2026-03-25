@@ -90,6 +90,18 @@ export const discoverOpencodeModels = internalAction({
       );
     }
 
+    // Clean up stale models no longer returned by the API
+    const currentNames = modelsToUpsert.map((m) => m.name);
+    const staleResult = await ctx.runMutation(internal.models.deleteStaleDiscovered, {
+      discoveredFrom: "opencode-zen",
+      currentModelNames: currentNames,
+    });
+    if (staleResult.deletedCount > 0) {
+      console.log(
+        `[modelDiscovery] Cleaned up ${staleResult.deletedCount} stale OpenCode models`
+      );
+    }
+
     return {
       discovered: modelIds.length,
       free: freeCount,
@@ -166,6 +178,18 @@ export const discoverOpenRouterModels = internalAction({
       });
       console.log(
         `[modelDiscovery] Upserted ${result.upsertedCount} OpenRouter models`
+      );
+    }
+
+    // Clean up stale models no longer returned by the API
+    const currentNames = modelsToUpsert.map((m) => m.name);
+    const staleResult = await ctx.runMutation(internal.models.deleteStaleDiscovered, {
+      discoveredFrom: "openrouter-api",
+      currentModelNames: currentNames,
+    });
+    if (staleResult.deletedCount > 0) {
+      console.log(
+        `[modelDiscovery] Cleaned up ${staleResult.deletedCount} stale OpenRouter models`
       );
     }
 
@@ -275,6 +299,18 @@ export const discoverOpenAIModels = internalAction({
       );
     }
 
+    // Clean up stale models no longer returned by the API
+    const currentNames = modelsToUpsert.map((m) => m.name);
+    const staleResult = await ctx.runMutation(internal.models.deleteStaleDiscovered, {
+      discoveredFrom: "openai-api",
+      currentModelNames: currentNames,
+    });
+    if (staleResult.deletedCount > 0) {
+      console.log(
+        `[modelDiscovery] Cleaned up ${staleResult.deletedCount} stale OpenAI models`
+      );
+    }
+
     return {
       discovered: allModels.length,
       codexRelevant: relevantModels.length,
@@ -375,6 +411,18 @@ export const discoverAnthropicModels = internalAction({
       });
       console.log(
         `[modelDiscovery] Upserted ${result.upsertedCount} Anthropic/Claude models`
+      );
+    }
+
+    // Clean up stale models no longer returned by the API
+    const currentNames = modelsToUpsert.map((m) => m.name);
+    const staleResult = await ctx.runMutation(internal.models.deleteStaleDiscovered, {
+      discoveredFrom: "anthropic-api",
+      currentModelNames: currentNames,
+    });
+    if (staleResult.deletedCount > 0) {
+      console.log(
+        `[modelDiscovery] Cleaned up ${staleResult.deletedCount} stale Anthropic models`
       );
     }
 

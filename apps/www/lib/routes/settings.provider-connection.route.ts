@@ -1,3 +1,16 @@
+/**
+ * @deprecated Legacy provider connection testing route.
+ *
+ * For new integrations, use the Provider Control Plane API:
+ *   POST /api/provider-control-plane/connect
+ *   POST /api/provider-control-plane/disconnect
+ *
+ * The control plane handles credential storage and connection validation
+ * consistently across all providers.
+ *
+ * This route is kept for backwards compatibility during the migration.
+ */
+
 import { getUserFromRequest } from "@/lib/utils/auth";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { normalizeProviderBaseUrlForRawFetch } from "@cmux/shared";

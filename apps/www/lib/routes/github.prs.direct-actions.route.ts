@@ -119,6 +119,38 @@ githubPrsDirectActionsRouter.openapi(
       );
     }
 
+    // Check /simplify pre-merge gate for linked task runs
+    const orchestrationSettings = await convex.query(api.orchestrationSettings.get, {
+      teamSlugOrId,
+    });
+
+    if (orchestrationSettings.requireSimplifyBeforeMerge) {
+      // Find task runs linked to this PR
+      const linkedRuns = await convex.query(api.taskRuns.findByPullRequest, {
+        teamSlugOrId,
+        repoFullName,
+        prNumber: number,
+      });
+
+      if (linkedRuns.length > 0) {
+        // Check if ANY linked task run has simplify passed
+        const anySimplifyPassed = linkedRuns.some(
+          (run) => !!run.simplifyPassedAt || !!run.simplifySkippedReason
+        );
+
+        if (!anySimplifyPassed) {
+          return c.json(
+            {
+              success: false,
+              message: "Merge blocked: /simplify is required before merge. Please run /simplify on the linked task first.",
+            },
+            403,
+          );
+        }
+      }
+      // If no linked task runs, allow merge (PR created outside cmux)
+    }
+
     const octokit = createOctokit(githubAccessToken);
 
     try {

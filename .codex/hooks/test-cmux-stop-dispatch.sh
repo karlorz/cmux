@@ -42,8 +42,9 @@ make_stop_payload() {
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+HOME_DIR="$TMP_DIR/home"
 WORKSPACE="$TMP_DIR/workspace"
-mkdir -p "$WORKSPACE/.codex/hooks"
+mkdir -p "$WORKSPACE/.codex/hooks" "$HOME_DIR/.codex/hooks"
 
 cp "$RALPH_STOP_SCRIPT" "$WORKSPACE/.codex/hooks/ralph-loop-stop.sh"
 
@@ -54,7 +55,7 @@ jq -nc '{decision: "block", reason: "autopilot continuation"}'
 EOF
 chmod +x "$WORKSPACE/.codex/hooks/autopilot-stop.sh"
 
-NO_STATE_OUTPUT="$(cd "$WORKSPACE" && printf '%s' "$(make_stop_payload "$WORKSPACE" "")" | bash "$DISPATCH_SCRIPT")"
+NO_STATE_OUTPUT="$(cd "$WORKSPACE" && printf '%s' "$(make_stop_payload "$WORKSPACE" "")" | env -u CMUX_AUTOPILOT_ENABLED -u CMUX_CODEX_HOOKS_ENABLED bash "$DISPATCH_SCRIPT")"
 assert_eq "$(jq -c . <<<"$NO_STATE_OUTPUT")" "{}" "dispatcher should emit an empty JSON object when Ralph and autopilot are inactive"
 
 cat >"$WORKSPACE/.codex/ralph-loop-state.json" <<'EOF'
@@ -71,13 +72,41 @@ cat >"$WORKSPACE/.codex/ralph-loop-state.json" <<'EOF'
 }
 EOF
 
-FIRST_OUTPUT="$(cd "$TMP_DIR" && printf '%s' "$(make_stop_payload "$WORKSPACE" "draft one")" | bash "$DISPATCH_SCRIPT")"
+FIRST_OUTPUT="$(cd "$TMP_DIR" && printf '%s' "$(make_stop_payload "$WORKSPACE" "draft one")" | env -u CMUX_AUTOPILOT_ENABLED -u CMUX_CODEX_HOOKS_ENABLED bash "$DISPATCH_SCRIPT")"
 assert_eq "$(jq -r '.decision' <<<"$FIRST_OUTPUT")" "block" "dispatcher should route Ralph state to the Ralph stop hook"
 assert_eq "$(jq -r '.iteration' "$WORKSPACE/.codex/ralph-loop-state.json")" "1" "dispatcher should preserve Ralph iteration updates"
 
-COMPLETION_OUTPUT="$(printf '%s' "$(make_stop_payload "$WORKSPACE" "<promise>DONE</promise>")" | bash "$DISPATCH_SCRIPT")"
+COMPLETION_OUTPUT="$(printf '%s' "$(make_stop_payload "$WORKSPACE" "<promise>DONE</promise>")" | env -u CMUX_AUTOPILOT_ENABLED -u CMUX_CODEX_HOOKS_ENABLED bash "$DISPATCH_SCRIPT")"
 assert_eq "$(jq -r '.systemMessage | contains("completion signal detected")' <<<"$COMPLETION_OUTPUT")" "true" "dispatcher should allow when Ralph emits the completion signal"
 assert_eq "$([[ -f "$WORKSPACE/.codex/ralph-loop-state.json" ]] && echo yes || echo no)" "no" "dispatcher should let Ralph clean up state after completion"
+
+rm -f "$WORKSPACE/.codex/hooks/ralph-loop-stop.sh"
+cat >"$HOME_DIR/.codex/hooks/ralph-loop-stop.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+jq -nc '{decision: "block", reason: "home ralph continuation"}'
+EOF
+chmod +x "$HOME_DIR/.codex/hooks/ralph-loop-stop.sh"
+
+cat >"$WORKSPACE/.codex/ralph-loop-state.json" <<'EOF'
+{
+  "active": true,
+  "prompt": "Fallback to home Ralph hook",
+  "iteration": 0,
+  "max_iterations": 2,
+  "completion_promise": "DONE",
+  "completion_signal": "<promise>DONE</promise>",
+  "created_at": "2026-03-23T00:00:00Z",
+  "updated_at": "2026-03-23T00:00:00Z",
+  "state_version": 1
+}
+EOF
+
+HOME_FALLBACK_OUTPUT="$(printf '%s' "$(make_stop_payload "$WORKSPACE" "draft one")" | HOME="$HOME_DIR" env -u CMUX_AUTOPILOT_ENABLED -u CMUX_CODEX_HOOKS_ENABLED bash "$DISPATCH_SCRIPT")"
+assert_eq "$(jq -r '.decision' <<<"$HOME_FALLBACK_OUTPUT")" "block" "dispatcher should fall back to the home Ralph hook when the workspace hook is absent"
+assert_eq "$(jq -r '.reason' <<<"$HOME_FALLBACK_OUTPUT")" "home ralph continuation" "dispatcher should preserve the home Ralph hook output"
+rm -f "$WORKSPACE/.codex/ralph-loop-state.json"
+cp "$RALPH_STOP_SCRIPT" "$WORKSPACE/.codex/hooks/ralph-loop-stop.sh"
 
 AUTOPILOT_OUTPUT="$(printf '%s' "$(make_stop_payload "$WORKSPACE" "")" | CMUX_AUTOPILOT_ENABLED=1 bash "$DISPATCH_SCRIPT")"
 assert_eq "$(jq -r '.decision' <<<"$AUTOPILOT_OUTPUT")" "block" "dispatcher should route autopilot-enabled sessions to the autopilot hook"
@@ -97,9 +126,9 @@ cat >"$WORKSPACE/.codex/ralph-loop-state.json" <<'EOF'
 }
 EOF
 
-MAX_FIRST_OUTPUT="$(printf '%s' "$(make_stop_payload "$WORKSPACE" "draft")" | bash "$DISPATCH_SCRIPT")"
+MAX_FIRST_OUTPUT="$(printf '%s' "$(make_stop_payload "$WORKSPACE" "draft")" | env -u CMUX_AUTOPILOT_ENABLED -u CMUX_CODEX_HOOKS_ENABLED bash "$DISPATCH_SCRIPT")"
 assert_eq "$(jq -r '.decision' <<<"$MAX_FIRST_OUTPUT")" "block" "dispatcher should allow Ralph to consume the first max-iteration turn"
-MAX_SECOND_OUTPUT="$(printf '%s' "$(make_stop_payload "$WORKSPACE" "still working")" | bash "$DISPATCH_SCRIPT")"
+MAX_SECOND_OUTPUT="$(printf '%s' "$(make_stop_payload "$WORKSPACE" "still working")" | env -u CMUX_AUTOPILOT_ENABLED -u CMUX_CODEX_HOOKS_ENABLED bash "$DISPATCH_SCRIPT")"
 assert_eq "$(jq -r '.systemMessage | contains("max iteration limit")' <<<"$MAX_SECOND_OUTPUT")" "true" "dispatcher should allow once Ralph reaches its max iteration limit"
 assert_eq "$([[ -f "$WORKSPACE/.codex/ralph-loop-state.json" ]] && echo yes || echo no)" "no" "dispatcher should let Ralph clean up state after max-iteration exit"
 

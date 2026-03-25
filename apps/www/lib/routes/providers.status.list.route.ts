@@ -1,3 +1,15 @@
+/**
+ * @deprecated Legacy provider status route.
+ *
+ * New consumers should use the Provider Control Plane API at:
+ *   GET /api/provider-control-plane
+ *
+ * The control plane provides richer connection state, auth methods,
+ * and default model information.
+ *
+ * This route is kept for backwards compatibility during the migration.
+ */
+
 import {
   getAccessTokenFromRequest,
   getUserFromRequest,

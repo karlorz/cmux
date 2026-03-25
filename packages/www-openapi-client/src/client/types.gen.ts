@@ -32,6 +32,40 @@ export type SandboxHealth = {
     timestamp: string;
 };
 
+export type PveLxcHealth = {
+    ok: boolean;
+    /**
+     * PVE API URL (masked for security)
+     */
+    apiUrl: string;
+    /**
+     * Active PVE node
+     */
+    node: string | null;
+    /**
+     * Public domain for sandbox URLs
+     */
+    publicDomain: string | null;
+    /**
+     * Number of cmux containers running
+     */
+    containerCount?: number;
+    /**
+     * Error message if not ok
+     */
+    error?: string;
+    timestamp: string;
+    /**
+     * Environment variable configuration status
+     */
+    envConfigured: {
+        PVE_API_URL: boolean;
+        PVE_API_TOKEN: boolean;
+        PVE_NODE: boolean;
+        PVE_PUBLIC_DOMAIN: boolean;
+    };
+};
+
 export type AnonymousSignUpResponse = {
     success: boolean;
     userId?: string;
@@ -2011,6 +2045,101 @@ export type ProviderStatusListResponse = {
     providers: Array<ProviderStatus>;
 };
 
+export type AuthMethod = {
+    id: string;
+    type: 'api_key' | 'oauth_token' | 'json_blob' | 'custom_endpoint';
+    displayName: string;
+    description?: string;
+    envVar: string;
+    preferred?: boolean;
+    placeholder?: string;
+    multiline?: boolean;
+};
+
+export type ConnectionState = {
+    isConnected: boolean;
+    source: 'env' | 'stored_api_key' | 'stored_oauth_token' | 'stored_json_blob' | 'override' | 'free';
+    configuredEnvVars: Array<string>;
+    hasFreeModels: boolean;
+    lastVerifiedAt?: number;
+    error?: string;
+};
+
+export type DefaultModel = {
+    name: string;
+    displayName: string;
+    reason?: string;
+};
+
+export type ControlPlaneProvider = {
+    id: string;
+    name: string;
+    defaultBaseUrl: string;
+    effectiveBaseUrl: string;
+    apiFormat: 'anthropic' | 'openai' | 'bedrock' | 'vertex' | 'passthrough';
+    authMethods: Array<AuthMethod>;
+    connectionState: ConnectionState;
+    defaultModel?: DefaultModel;
+    isOverridden: boolean;
+    customHeaders?: {
+        [key: string]: string;
+    };
+};
+
+export type ListProvidersResponse = {
+    providers: Array<ControlPlaneProvider>;
+    generatedAt: number;
+};
+
+export type ControlPlaneModel = {
+    name: string;
+    displayName: string;
+    providerId: string;
+    vendor: string;
+    isAvailable: boolean;
+    tier: 'free' | 'paid';
+    requiredApiKeys: Array<string>;
+    tags: Array<string>;
+    sortOrder: number;
+    disabled?: boolean;
+    disabledReason?: string;
+};
+
+export type ListModelsResponse = {
+    models: Array<ControlPlaneModel>;
+    defaultsByProvider: {
+        [key: string]: DefaultModel;
+    };
+    view: 'all' | 'connected' | 'vendor';
+    filter?: string;
+    refreshedAt?: number;
+    generatedAt: number;
+};
+
+export type DiscoveryFreshness = {
+    providerId: string;
+    isStale: boolean;
+    lastDiscoveredAt?: number;
+    error?: string;
+    modelCount: number;
+};
+
+export type ConnectResponse = {
+    action: 'created' | 'updated';
+    envVar: string;
+};
+
+export type DisconnectResponse = {
+    action: 'deleted' | 'not_found';
+    envVar: string;
+};
+
+export type RefreshResponse = {
+    action: 'refresh_requested';
+    providerId: string;
+    teamId: string;
+};
+
 export type ApiKey = {
     envVar: string;
     displayName: string;
@@ -2230,6 +2359,22 @@ export type GetApiHealthSandboxResponses = {
 };
 
 export type GetApiHealthSandboxResponse = GetApiHealthSandboxResponses[keyof GetApiHealthSandboxResponses];
+
+export type GetApiHealthPveLxcData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/health/pve-lxc';
+};
+
+export type GetApiHealthPveLxcResponses = {
+    /**
+     * PVE LXC health status
+     */
+    200: PveLxcHealth;
+};
+
+export type GetApiHealthPveLxcResponse = GetApiHealthPveLxcResponses[keyof GetApiHealthPveLxcResponses];
 
 export type PostApiAuthAnonymousSignUpData = {
     body?: never;
@@ -4525,6 +4670,180 @@ export type PostApiOrchestrateInputByOrchestrationIdClearResponses = {
 
 export type PostApiOrchestrateInputByOrchestrationIdClearResponse = PostApiOrchestrateInputByOrchestrationIdClearResponses[keyof PostApiOrchestrateInputByOrchestrationIdClearResponses];
 
+export type PostApiV1CmuxOrchestrationSimplifyMarkPassedData = {
+    body: {
+        /**
+         * Which /simplify mode was used
+         */
+        mode?: 'quick' | 'full' | 'staged-only';
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/cmux/orchestration/simplify/mark-passed';
+};
+
+export type PostApiV1CmuxOrchestrationSimplifyMarkPassedErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Task run not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiV1CmuxOrchestrationSimplifyMarkPassedResponses = {
+    /**
+     * /simplify marked as passed
+     */
+    200: {
+        success: boolean;
+        message: string;
+        /**
+         * Timestamp when /simplify passed
+         */
+        passedAt?: number;
+    };
+};
+
+export type PostApiV1CmuxOrchestrationSimplifyMarkPassedResponse = PostApiV1CmuxOrchestrationSimplifyMarkPassedResponses[keyof PostApiV1CmuxOrchestrationSimplifyMarkPassedResponses];
+
+export type PostApiV1CmuxOrchestrationSimplifySkipData = {
+    body: {
+        /**
+         * Reason for skipping /simplify requirement
+         */
+        reason: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/cmux/orchestration/simplify/skip';
+};
+
+export type PostApiV1CmuxOrchestrationSimplifySkipErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Task run not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiV1CmuxOrchestrationSimplifySkipResponses = {
+    /**
+     * /simplify requirement skipped
+     */
+    200: {
+        success: boolean;
+        message: string;
+    };
+};
+
+export type PostApiV1CmuxOrchestrationSimplifySkipResponse = PostApiV1CmuxOrchestrationSimplifySkipResponses[keyof PostApiV1CmuxOrchestrationSimplifySkipResponses];
+
+export type GetApiV1CmuxOrchestrationSimplifySettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/cmux/orchestration/simplify/settings';
+};
+
+export type GetApiV1CmuxOrchestrationSimplifySettingsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiV1CmuxOrchestrationSimplifySettingsResponses = {
+    /**
+     * Settings retrieved successfully
+     */
+    200: {
+        /**
+         * Whether /simplify is required before merge
+         */
+        requireSimplifyBeforeMerge: boolean;
+        /**
+         * Default /simplify mode
+         */
+        simplifyMode: 'quick' | 'full' | 'staged-only';
+        /**
+         * Timeout for /simplify in minutes
+         */
+        simplifyTimeoutMinutes: number;
+    };
+};
+
+export type GetApiV1CmuxOrchestrationSimplifySettingsResponse = GetApiV1CmuxOrchestrationSimplifySettingsResponses[keyof GetApiV1CmuxOrchestrationSimplifySettingsResponses];
+
+export type GetApiV1CmuxOrchestrationSimplifyStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/cmux/orchestration/simplify/status';
+};
+
+export type GetApiV1CmuxOrchestrationSimplifyStatusErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Task run not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiV1CmuxOrchestrationSimplifyStatusResponses = {
+    /**
+     * Status retrieved successfully
+     */
+    200: {
+        /**
+         * Whether /simplify is required for this task
+         */
+        required: boolean;
+        /**
+         * Whether /simplify has passed
+         */
+        passed: boolean;
+        /**
+         * Timestamp when /simplify passed
+         */
+        passedAt?: number;
+        /**
+         * Which /simplify mode was used
+         */
+        mode?: 'quick' | 'full' | 'staged-only';
+        /**
+         * Reason if /simplify was skipped
+         */
+        skippedReason?: string;
+    };
+};
+
+export type GetApiV1CmuxOrchestrationSimplifyStatusResponse = GetApiV1CmuxOrchestrationSimplifyStatusResponses[keyof GetApiV1CmuxOrchestrationSimplifyStatusResponses];
+
 export type GetApiProjectsData = {
     body?: never;
     path?: never;
@@ -4857,6 +5176,145 @@ export type PostApiVaultDispatchResponses = {
 };
 
 export type PostApiVaultDispatchResponse = PostApiVaultDispatchResponses[keyof PostApiVaultDispatchResponses];
+
+export type GetApiVaultNoteData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId: string;
+        /**
+         * Note path relative to vault root
+         */
+        path: string;
+        /**
+         * Agent or user accessing the note
+         */
+        accessedBy?: string;
+    };
+    url: '/api/vault/note';
+};
+
+export type GetApiVaultNoteErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Note not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiVaultNoteResponses = {
+    /**
+     * Note retrieved successfully
+     */
+    200: {
+        /**
+         * Note path
+         */
+        path: string;
+        /**
+         * Note title
+         */
+        title: string;
+        /**
+         * Note content (markdown body)
+         */
+        content: string;
+        /**
+         * Parsed frontmatter
+         */
+        frontmatter: {
+            [key: string]: unknown;
+        };
+        /**
+         * Access tracking info
+         */
+        access: {
+            /**
+             * Timestamp of last access
+             */
+            lastAccessedAt: number;
+            /**
+             * Who last accessed the note
+             */
+            lastAccessedBy: string | null;
+            /**
+             * Total number of accesses
+             */
+            accessCount: number;
+        } | null;
+    };
+};
+
+export type GetApiVaultNoteResponse = GetApiVaultNoteResponses[keyof GetApiVaultNoteResponses];
+
+export type GetApiVaultAccessRecentData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId: string;
+        /**
+         * Maximum notes to return (default 50)
+         */
+        limit?: number | null;
+    };
+    url: '/api/vault/access/recent';
+};
+
+export type GetApiVaultAccessRecentErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiVaultAccessRecentResponses = {
+    /**
+     * Access list retrieved successfully
+     */
+    200: {
+        notes: Array<{
+            /**
+             * Note path
+             */
+            notePath: string;
+            /**
+             * Note title
+             */
+            noteTitle: string | null;
+            /**
+             * Timestamp of last access
+             */
+            lastAccessedAt: number;
+            /**
+             * Who last accessed the note
+             */
+            lastAccessedBy: string | null;
+            /**
+             * Total number of accesses
+             */
+            accessCount: number;
+        }>;
+    };
+};
+
+export type GetApiVaultAccessRecentResponse = GetApiVaultAccessRecentResponses[keyof GetApiVaultAccessRecentResponses];
 
 export type GetApiVaultNotesData = {
     body?: never;
@@ -7237,6 +7695,168 @@ export type GetApiProvidersStatusResponses = {
 };
 
 export type GetApiProvidersStatusResponse = GetApiProvidersStatusResponses[keyof GetApiProvidersStatusResponses];
+
+export type GetApiProviderControlPlaneData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/provider-control-plane';
+};
+
+export type GetApiProviderControlPlaneErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiProviderControlPlaneResponses = {
+    /**
+     * Provider list
+     */
+    200: ListProvidersResponse;
+};
+
+export type GetApiProviderControlPlaneResponse = GetApiProviderControlPlaneResponses[keyof GetApiProviderControlPlaneResponses];
+
+export type GetApiProviderControlPlaneModelsData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+        view?: 'all' | 'connected' | 'vendor';
+        providerId?: string;
+        includeDisabled?: boolean | null;
+    };
+    url: '/api/provider-control-plane/models';
+};
+
+export type GetApiProviderControlPlaneModelsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiProviderControlPlaneModelsResponses = {
+    /**
+     * Model list
+     */
+    200: ListModelsResponse;
+};
+
+export type GetApiProviderControlPlaneModelsResponse = GetApiProviderControlPlaneModelsResponses[keyof GetApiProviderControlPlaneModelsResponses];
+
+export type GetApiProviderControlPlaneDiscoveryFreshnessData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+        staleDurationMs?: number | null;
+    };
+    url: '/api/provider-control-plane/discovery-freshness';
+};
+
+export type GetApiProviderControlPlaneDiscoveryFreshnessErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiProviderControlPlaneDiscoveryFreshnessResponses = {
+    /**
+     * Discovery freshness
+     */
+    200: {
+        freshness: Array<DiscoveryFreshness>;
+    };
+};
+
+export type GetApiProviderControlPlaneDiscoveryFreshnessResponse = GetApiProviderControlPlaneDiscoveryFreshnessResponses[keyof GetApiProviderControlPlaneDiscoveryFreshnessResponses];
+
+export type PostApiProviderControlPlaneConnectData = {
+    body: {
+        teamSlugOrId: string;
+        envVar: string;
+        value: string;
+        displayName: string;
+        description?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/provider-control-plane/connect';
+};
+
+export type PostApiProviderControlPlaneConnectErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiProviderControlPlaneConnectResponses = {
+    /**
+     * Connection result
+     */
+    200: ConnectResponse;
+};
+
+export type PostApiProviderControlPlaneConnectResponse = PostApiProviderControlPlaneConnectResponses[keyof PostApiProviderControlPlaneConnectResponses];
+
+export type PostApiProviderControlPlaneDisconnectData = {
+    body: {
+        teamSlugOrId: string;
+        envVar: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/provider-control-plane/disconnect';
+};
+
+export type PostApiProviderControlPlaneDisconnectErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiProviderControlPlaneDisconnectResponses = {
+    /**
+     * Disconnection result
+     */
+    200: DisconnectResponse;
+};
+
+export type PostApiProviderControlPlaneDisconnectResponse = PostApiProviderControlPlaneDisconnectResponses[keyof PostApiProviderControlPlaneDisconnectResponses];
+
+export type PostApiProviderControlPlaneRefreshData = {
+    body: {
+        teamSlugOrId: string;
+        providerId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/provider-control-plane/refresh';
+};
+
+export type PostApiProviderControlPlaneRefreshErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiProviderControlPlaneRefreshResponses = {
+    /**
+     * Refresh result
+     */
+    200: RefreshResponse;
+};
+
+export type PostApiProviderControlPlaneRefreshResponse = PostApiProviderControlPlaneRefreshResponses[keyof PostApiProviderControlPlaneRefreshResponses];
 
 export type GetApiApiKeysData = {
     body?: never;

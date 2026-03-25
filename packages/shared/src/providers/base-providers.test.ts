@@ -163,8 +163,10 @@ describe("base-providers", () => {
     });
 
     describe("opencode agents", () => {
-      it("maps opencode prefix to openrouter", () => {
-        expect(getProviderIdFromAgentName("opencode/big-pickle")).toBe("openrouter");
+      it("maps opencode prefix to opencode provider", () => {
+        // OpenCode has its own provider plugin (uses OpenRouter as backend)
+        expect(getProviderIdFromAgentName("opencode/big-pickle")).toBe("opencode");
+        expect(getProviderIdFromAgentName("opencode/zen-v1")).toBe("opencode");
       });
     });
 

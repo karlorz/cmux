@@ -416,6 +416,135 @@ export interface ContextCompactedEvent extends AgentCommEventBase {
 }
 
 // =============================================================================
+// Prompt and Turn Events (P1 Lifecycle Parity)
+// =============================================================================
+
+/**
+ * A prompt was submitted to the agent.
+ */
+export interface PromptSubmittedEvent extends AgentCommEventBase {
+  type: "prompt_submitted";
+  taskId?: string;
+  taskRunId?: string;
+  provider: string;
+  providerSessionId?: string;
+  promptLength?: number;
+  source: "user" | "operator" | "hook" | "queue" | "handoff";
+  turnNumber?: number;
+}
+
+/**
+ * A session finished (clean exit, not error).
+ */
+export interface SessionFinishedEvent extends AgentCommEventBase {
+  type: "session_finished";
+  taskId?: string;
+  taskRunId?: string;
+  provider: string;
+  providerSessionId?: string;
+  exitCode?: number;
+  turnCount?: number;
+  durationMs?: number;
+  summary?: string;
+}
+
+/**
+ * A run was resumed from a previous checkpoint or session.
+ */
+export interface RunResumedEvent extends AgentCommEventBase {
+  type: "run_resumed";
+  taskId?: string;
+  taskRunId?: string;
+  provider: string;
+  providerSessionId?: string;
+  previousTaskRunId?: string;
+  previousSessionId?: string;
+  resumeReason: "checkpoint" | "reconnect" | "handoff" | "retry" | "manual";
+  checkpointRef?: string;
+}
+
+// =============================================================================
+// Tool Lifecycle Events (P1 Lifecycle Parity)
+// =============================================================================
+
+/**
+ * A tool invocation was requested.
+ */
+export interface ToolRequestedEvent extends AgentCommEventBase {
+  type: "tool_requested";
+  taskId?: string;
+  taskRunId?: string;
+  provider: string;
+  toolName: string;
+  toolCallId?: string;
+  inputPreview?: string;
+  requiresApproval?: boolean;
+}
+
+/**
+ * A tool invocation completed.
+ */
+export interface ToolCompletedEvent extends AgentCommEventBase {
+  type: "tool_completed";
+  taskId?: string;
+  taskRunId?: string;
+  provider: string;
+  toolName: string;
+  toolCallId?: string;
+  status: "success" | "error" | "timeout" | "denied";
+  durationMs?: number;
+  outputPreview?: string;
+  error?: string;
+}
+
+// =============================================================================
+// Memory Scope Events (P4 Lifecycle Parity)
+// =============================================================================
+
+/**
+ * Memory scope changed during the session.
+ */
+export interface MemoryScopeChangedEvent extends AgentCommEventBase {
+  type: "memory_scope_changed";
+  taskId?: string;
+  taskRunId?: string;
+  provider: string;
+  previousScope?: "team" | "repo" | "user" | "run";
+  newScope: "team" | "repo" | "user" | "run";
+  reason: "spawn" | "handoff" | "promotion" | "reset";
+  affectedTypes?: string[];
+}
+
+// =============================================================================
+// MCP Runtime Events (P5 Lifecycle Parity)
+// =============================================================================
+
+/**
+ * MCP capabilities were negotiated with a server.
+ */
+export interface McpCapabilitiesNegotiatedEvent extends AgentCommEventBase {
+  type: "mcp_capabilities_negotiated";
+  taskId?: string;
+  taskRunId?: string;
+  provider: string;
+  serverName: string;
+  serverId?: string;
+  protocolVersion?: string;
+  transport: "stdio" | "http" | "sse" | "websocket";
+  capabilities: {
+    tools?: boolean;
+    resources?: boolean;
+    prompts?: boolean;
+    tasks?: boolean;
+    logging?: boolean;
+    completions?: boolean;
+  };
+  toolCount?: number;
+  resourceCount?: number;
+  sessionId?: string;
+}
+
+// =============================================================================
 // Union Type
 // =============================================================================
 
@@ -440,13 +569,24 @@ export type AgentCommEvent =
   | SessionStopRequestedEvent
   | SessionStopBlockedEvent
   | SessionStopFailedEvent
+  // Prompt and Turn Events (P1 Lifecycle Parity)
+  | PromptSubmittedEvent
+  | SessionFinishedEvent
+  | RunResumedEvent
+  // Tool Lifecycle Events (P1 Lifecycle Parity)
+  | ToolRequestedEvent
+  | ToolCompletedEvent
   // Memory and Instructions Events (Phase 4)
   | InstructionsLoadedEvent
   | MemoryLoadedEvent
   | MemoryUpdatedEvent
+  // Memory Scope Events (P4 Lifecycle Parity)
+  | MemoryScopeChangedEvent
   // Context Health Events (Phase 4)
   | ContextWarningEvent
   | ContextCompactedEvent
+  // MCP Runtime Events (P5 Lifecycle Parity)
+  | McpCapabilitiesNegotiatedEvent
   // Operator Input Queue Events
   | OperatorInputQueuedEvent
   | OperatorInputDrainedEvent
@@ -595,6 +735,134 @@ export function createOrchestrationCompletedEvent(
   };
 }
 
+/**
+ * Create a prompt submitted event.
+ */
+export function createPromptSubmittedEvent(
+  orchestrationId: string,
+  provider: string,
+  source: PromptSubmittedEvent["source"],
+  options?: {
+    taskId?: string;
+    taskRunId?: string;
+    providerSessionId?: string;
+    promptLength?: number;
+    turnNumber?: number;
+    correlationId?: string;
+  }
+): PromptSubmittedEvent {
+  return {
+    ...createEventBase(orchestrationId, options?.correlationId),
+    type: "prompt_submitted",
+    taskId: options?.taskId,
+    taskRunId: options?.taskRunId,
+    provider,
+    providerSessionId: options?.providerSessionId,
+    promptLength: options?.promptLength,
+    source,
+    turnNumber: options?.turnNumber,
+  };
+}
+
+/**
+ * Create a tool requested event.
+ */
+export function createToolRequestedEvent(
+  orchestrationId: string,
+  provider: string,
+  toolName: string,
+  options?: {
+    taskId?: string;
+    taskRunId?: string;
+    toolCallId?: string;
+    inputPreview?: string;
+    requiresApproval?: boolean;
+    correlationId?: string;
+  }
+): ToolRequestedEvent {
+  return {
+    ...createEventBase(orchestrationId, options?.correlationId),
+    type: "tool_requested",
+    taskId: options?.taskId,
+    taskRunId: options?.taskRunId,
+    provider,
+    toolName,
+    toolCallId: options?.toolCallId,
+    inputPreview: options?.inputPreview,
+    requiresApproval: options?.requiresApproval,
+  };
+}
+
+/**
+ * Create a tool completed event.
+ */
+export function createToolCompletedEvent(
+  orchestrationId: string,
+  provider: string,
+  toolName: string,
+  status: ToolCompletedEvent["status"],
+  options?: {
+    taskId?: string;
+    taskRunId?: string;
+    toolCallId?: string;
+    durationMs?: number;
+    outputPreview?: string;
+    error?: string;
+    correlationId?: string;
+  }
+): ToolCompletedEvent {
+  return {
+    ...createEventBase(orchestrationId, options?.correlationId),
+    type: "tool_completed",
+    taskId: options?.taskId,
+    taskRunId: options?.taskRunId,
+    provider,
+    toolName,
+    toolCallId: options?.toolCallId,
+    status,
+    durationMs: options?.durationMs,
+    outputPreview: options?.outputPreview,
+    error: options?.error,
+  };
+}
+
+/**
+ * Create an MCP capabilities negotiated event.
+ */
+export function createMcpCapabilitiesNegotiatedEvent(
+  orchestrationId: string,
+  provider: string,
+  serverName: string,
+  transport: McpCapabilitiesNegotiatedEvent["transport"],
+  capabilities: McpCapabilitiesNegotiatedEvent["capabilities"],
+  options?: {
+    taskId?: string;
+    taskRunId?: string;
+    serverId?: string;
+    protocolVersion?: string;
+    toolCount?: number;
+    resourceCount?: number;
+    sessionId?: string;
+    correlationId?: string;
+  }
+): McpCapabilitiesNegotiatedEvent {
+  return {
+    ...createEventBase(orchestrationId, options?.correlationId),
+    type: "mcp_capabilities_negotiated",
+    taskId: options?.taskId,
+    taskRunId: options?.taskRunId,
+    provider,
+    serverName,
+    serverId: options?.serverId,
+    protocolVersion: options?.protocolVersion,
+    transport,
+    capabilities,
+    toolCount: options?.toolCount,
+    resourceCount: options?.resourceCount,
+    sessionId: options?.sessionId,
+  };
+}
+
 // =============================================================================
 // Type Guards
 // =============================================================================
@@ -679,4 +947,44 @@ export function isContextHealthEvent(
   return (
     event.type === "context_warning" || event.type === "context_compacted"
   );
+}
+
+/**
+ * Check if an event is a tool lifecycle event.
+ */
+export function isToolLifecycleEvent(
+  event: AgentCommEvent
+): event is ToolRequestedEvent | ToolCompletedEvent {
+  return event.type === "tool_requested" || event.type === "tool_completed";
+}
+
+/**
+ * Check if an event is a prompt/turn event.
+ */
+export function isPromptTurnEvent(
+  event: AgentCommEvent
+): event is PromptSubmittedEvent | SessionFinishedEvent | RunResumedEvent {
+  return (
+    event.type === "prompt_submitted" ||
+    event.type === "session_finished" ||
+    event.type === "run_resumed"
+  );
+}
+
+/**
+ * Check if an event is a memory scope event.
+ */
+export function isMemoryScopeEvent(
+  event: AgentCommEvent
+): event is MemoryScopeChangedEvent {
+  return event.type === "memory_scope_changed";
+}
+
+/**
+ * Check if an event is an MCP runtime event.
+ */
+export function isMcpRuntimeEvent(
+  event: AgentCommEvent
+): event is McpCapabilitiesNegotiatedEvent {
+  return event.type === "mcp_capabilities_negotiated";
 }

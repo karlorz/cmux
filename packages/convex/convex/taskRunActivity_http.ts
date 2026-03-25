@@ -5,7 +5,14 @@ import { httpAction } from "./_generated/server";
 import { getWorkerAuth } from "./users/utils/getWorkerAuth";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 
+/**
+ * Activity event types for dashboard timeline.
+ * Extended to include canonical lifecycle events from agent-comm-events.ts.
+ *
+ * Phase 4 additions align with provider-lifecycle-adapter.ts for full parity.
+ */
 const ACTIVITY_TYPES = [
+  // Tool-use events (original)
   "tool_call",
   "file_edit",
   "file_read",
@@ -14,8 +21,49 @@ const ACTIVITY_TYPES = [
   "git_commit",
   "error",
   "thinking",
+  // Session lifecycle events (Phase 2)
+  "session_start",
+  "session_stop",
+  "session_resumed",
+  "session_finished", // P1: Clean session exit (distinct from error)
+  // Stop lifecycle events (Phase 4 - lifecycle parity)
+  "stop_requested",
+  "stop_blocked",
+  "stop_failed",
+  // Context health events (Phase 2)
+  "context_warning",
+  "context_compacted",
+  // Memory events (Phase 2 + Phase 4)
+  "memory_loaded",
+  "memory_scope_changed",
+  // Tool lifecycle events (Phase 4 - detailed tool tracking)
+  "tool_requested",
+  "tool_completed",
+  // Approval flow events (Phase 4 - runtime interruptions)
+  "approval_requested",
+  "approval_resolved",
+  // Interaction events (Phase 2)
+  "user_prompt",
+  "subagent_start",
+  "subagent_stop",
+  "notification",
+  // Prompt/Turn tracking events (P1 Lifecycle Parity)
+  "prompt_submitted", // P1: Track prompts/turns submitted to agent
+  "run_resumed", // P1: Resume from checkpoint/session
+  // MCP runtime events (P5 Lifecycle Parity)
+  "mcp_capabilities_negotiated", // P5: MCP server capability negotiation
 ] as const;
 
+/**
+ * Schema for activity events posted by agent hooks.
+ *
+ * Base fields (required): taskRunId, type, summary
+ * Tool fields (optional): toolName, detail, durationMs
+ * Context health fields (optional): severity, warningType, currentUsage, maxCapacity, usagePercent
+ * Stop lifecycle fields (optional): stopSource, exitCode, continuationPrompt
+ * Approval fields (optional): approvalId, resolution, resolvedBy
+ * Memory scope fields (optional): scopeType, scopeBytes, scopeAction
+ */
 const ActivityEventSchema = z.object({
   taskRunId: typedZid("taskRuns"),
   type: z.enum(ACTIVITY_TYPES),
@@ -23,6 +71,59 @@ const ActivityEventSchema = z.object({
   summary: z.string().max(500),
   detail: z.string().max(10_000).optional(),
   durationMs: z.number().nonnegative().optional(),
+  // Context health fields (for context_warning/context_compacted events)
+  severity: z.enum(["info", "warning", "critical"]).optional(),
+  warningType: z
+    .enum(["memory_bloat", "tool_output", "prompt_size", "capacity", "token_limit"])
+    .optional(),
+  currentUsage: z.number().nonnegative().optional(),
+  maxCapacity: z.number().nonnegative().optional(),
+  usagePercent: z.number().min(0).max(100).optional(),
+  // Context compacted fields
+  previousBytes: z.number().nonnegative().optional(),
+  newBytes: z.number().nonnegative().optional(),
+  reductionPercent: z.number().min(0).max(100).optional(),
+  // Stop lifecycle fields (Phase 4 - stop_requested/blocked/failed events)
+  stopSource: z.enum(["user", "hook", "autopilot", "policy", "timeout", "error"]).optional(),
+  exitCode: z.number().optional(),
+  continuationPrompt: z.string().max(2000).optional(),
+  // Approval fields (Phase 4 - approval_requested/resolved events)
+  approvalId: z.string().max(100).optional(),
+  resolution: z
+    .enum(["allow", "allow_once", "allow_session", "deny", "deny_always", "timeout"])
+    .optional(),
+  resolvedBy: z.string().max(100).optional(),
+  // Memory scope fields (Phase 4 - memory_scope_changed events)
+  scopeType: z.enum(["team", "repo", "user", "run"]).optional(),
+  scopeBytes: z.number().nonnegative().optional(),
+  scopeAction: z.enum(["injected", "updated", "cleared"]).optional(),
+  // Prompt/Turn tracking fields (P1 Lifecycle Parity - prompt_submitted/session_finished/run_resumed)
+  promptSource: z.enum(["user", "operator", "hook", "queue", "handoff"]).optional(),
+  turnNumber: z.number().nonnegative().optional(),
+  promptLength: z.number().nonnegative().optional(),
+  turnCount: z.number().nonnegative().optional(),
+  providerSessionId: z.string().max(200).optional(),
+  // Resume fields (P1 - run_resumed events)
+  resumeReason: z.enum(["checkpoint", "reconnect", "handoff", "retry", "manual"]).optional(),
+  previousTaskRunId: z.string().max(100).optional(),
+  previousSessionId: z.string().max(200).optional(),
+  checkpointRef: z.string().max(200).optional(),
+  // MCP runtime fields (P5 Lifecycle Parity - mcp_capabilities_negotiated)
+  serverName: z.string().max(100).optional(),
+  serverId: z.string().max(100).optional(),
+  protocolVersion: z.string().max(20).optional(),
+  transport: z.enum(["stdio", "http", "sse", "websocket"]).optional(),
+  mcpCapabilities: z.object({
+    tools: z.boolean().optional(),
+    resources: z.boolean().optional(),
+    prompts: z.boolean().optional(),
+    tasks: z.boolean().optional(),
+    logging: z.boolean().optional(),
+    completions: z.boolean().optional(),
+  }).optional(),
+  toolCount: z.number().nonnegative().optional(),
+  resourceCount: z.number().nonnegative().optional(),
+  mcpSessionId: z.string().max(200).optional(),
 });
 
 /**

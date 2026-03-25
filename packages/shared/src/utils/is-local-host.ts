@@ -135,6 +135,12 @@ export function isLocalHostname(hostname: string | null | undefined): boolean {
     return true;
   }
 
+  // Docker Compose internal service hostnames (no dots, typically short names)
+  // These are used for inter-container communication and should stay HTTP
+  if (lower.startsWith("cmux-") && !lower.includes(".")) {
+    return true;
+  }
+
   if (isLoopbackIpv4(lower) || isPrivateLanIpv4(lower)) {
     return true;
   }

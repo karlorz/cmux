@@ -19,9 +19,9 @@ Deploy cmux web services to Coolify using pre-built Docker images.
 3. **Validate deployment:**
    ```bash
    ./scripts/validate-coolify-deployment.sh \
-     --client-url https://app.cmux.sh \
-     --www-url https://www.cmux.sh \
-     --server-url https://server.cmux.sh
+     --client-url https://cmux.karldigi.dev \
+     --www-url https://cmux-www.karldigi.dev \
+     --server-url https://cmux-server.karldigi.dev
    ```
 
 ## Services
@@ -42,8 +42,8 @@ Deploy cmux web services to Coolify using pre-built Docker images.
 - `NEXT_PUBLIC_STACK_PROJECT_ID` - Stack Auth project ID
 - `NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY` - Stack Auth public key
 - `STACK_SECRET_SERVER_KEY` - Stack Auth server key
-- `NEXT_PUBLIC_WWW_ORIGIN` - WWW app origin (e.g., https://www.cmux.sh)
-- `NEXT_PUBLIC_CLIENT_ORIGIN` - Client app origin (e.g., https://app.cmux.sh)
+- `NEXT_PUBLIC_WWW_ORIGIN` - WWW app origin (e.g., https://cmux-www.karldigi.dev)
+- `NEXT_PUBLIC_CLIENT_ORIGIN` - Client app origin (e.g., https://cmux.karldigi.dev)
 
 ### cmux-server (WebSocket)
 - `CMUX_ALLOWED_SOCKET_ORIGINS` - Comma-separated CORS origins
@@ -81,8 +81,8 @@ SERVER_IMAGE=ghcr.io/karlorz/cmux-server:v1.0.270
 ### Health check fails
 ```bash
 # Check individual service
-curl -v https://app.cmux.sh/health
-curl -v https://www.cmux.sh/api/health
+curl -v https://cmux.karldigi.dev/health
+curl -v https://cmux-www.karldigi.dev/api/health
 ```
 
 ### WebSocket connection fails

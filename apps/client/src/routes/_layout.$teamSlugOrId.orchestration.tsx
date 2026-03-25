@@ -34,6 +34,13 @@ function OrchestrationPage() {
     })
   );
 
+  // Fetch event analytics (last 24 hours)
+  const { data: eventAnalytics, isLoading: eventAnalyticsLoading } = useQuery(
+    convexQuery(api.orchestrationEvents.getEventAnalytics, {
+      teamSlugOrId,
+    })
+  );
+
   return (
     <FloatingPane header={<TitleBar title="Orchestration" />}>
       <OrchestrationDashboard
@@ -43,6 +50,8 @@ function OrchestrationPage() {
         tasks={tasks}
         tasksLoading={tasksLoading}
         statusFilter={status ?? "all"}
+        eventAnalytics={eventAnalytics}
+        eventAnalyticsLoading={eventAnalyticsLoading}
       />
     </FloatingPane>
   );

@@ -1153,14 +1153,23 @@ function DashboardComponent() {
     return selectedProject[0];
   }, [selectedProject, isEnvSelected]);
 
-  const selectedEnvironmentRepos = useMemo(() => {
-    if (!isEnvSelected || !selectedProject[0]) return [];
+  // Resolve the selected environment from the environments query
+  const selectedEnvironment = useMemo(() => {
+    if (!isEnvSelected || !selectedProject[0]) return null;
     const envId = selectedProject[0].replace(/^env:/, "") as Id<"environments">;
-    const selectedEnvironment = environmentsQuery.data?.find(
+    return environmentsQuery.data?.find(
       (environment) => environment._id === envId
-    );
-    return Array.from(new Set(selectedEnvironment?.selectedRepos ?? []));
+    ) ?? null;
   }, [environmentsQuery.data, isEnvSelected, selectedProject]);
+
+  const selectedEnvironmentRepos = useMemo(() => {
+    if (!selectedEnvironment) return [];
+    return Array.from(new Set(selectedEnvironment.selectedRepos ?? []));
+  }, [selectedEnvironment]);
+
+  const selectedEnvironmentName = useMemo(() => {
+    return selectedEnvironment?.name ?? null;
+  }, [selectedEnvironment]);
 
   const workspaceSetupProjects = useMemo(() => {
     if (selectedRepoFullName && !isEnvSelected) {
@@ -1426,6 +1435,7 @@ function DashboardComponent() {
               teamSlugOrId={teamSlugOrId}
               selectedProject={selectedProject}
               isEnvSelected={isEnvSelected}
+              selectedEnvironmentName={selectedEnvironmentName}
             />
 
             <DashboardMainCard

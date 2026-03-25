@@ -5,21 +5,43 @@ import { AGENT_CONFIGS, type AgentConfig } from "./agentConfig";
 /**
  * Models excluded from static AGENT_CATALOG (discovered at runtime instead):
  *
- * OpenCode paid models (opencode/*): These route through opencode.ai which has
- * its own authentication flow. User API keys (ANTHROPIC_API_KEY, etc.) are for
- * direct provider access with custom base URLs, not for OpenCode's routing.
+ * 1. OpenCode paid models (opencode/*): These route through opencode.ai which has
+ *    its own authentication flow. User API keys (ANTHROPIC_API_KEY, etc.) are for
+ *    direct provider access with custom base URLs, not for OpenCode's routing.
+ *
+ * 2. Non-flagship Codex models (codex/*): Only flagship models are in static catalog
+ *    (gpt-5.4, gpt-5.4-xhigh, gpt-5.4-mini, gpt-5.1-codex-mini). Older/variant models
+ *    are auto-discovered via OpenAI API discovery cron.
+ *
  * These models are discovered at runtime via Convex modelDiscovery.
  */
-const RUNTIME_DISCOVERED_PREFIXES = ["opencode/"];
+
+// Codex flagship models that ARE in the static catalog
+const CODEX_FLAGSHIP_MODELS = new Set([
+  "codex/gpt-5.4",
+  "codex/gpt-5.4-xhigh",
+  "codex/gpt-5.4-mini",
+  "codex/gpt-5.1-codex-mini",
+]);
 
 // Helper to check if a model is expected to be runtime-discovered
 function isRuntimeDiscovered(name: string): boolean {
   // OpenCode free models ARE in the catalog (big-pickle, gpt-5-nano)
-  const isOpencodeFree =
-    name === "opencode/big-pickle" || name === "opencode/gpt-5-nano";
-  if (isOpencodeFree) return false;
+  if (name === "opencode/big-pickle" || name === "opencode/gpt-5-nano") {
+    return false;
+  }
 
-  return RUNTIME_DISCOVERED_PREFIXES.some((prefix) => name.startsWith(prefix));
+  // OpenCode paid models are runtime-discovered
+  if (name.startsWith("opencode/")) {
+    return true;
+  }
+
+  // Non-flagship Codex models are runtime-discovered
+  if (name.startsWith("codex/") && !CODEX_FLAGSHIP_MODELS.has(name)) {
+    return true;
+  }
+
+  return false;
 }
 
 describe("agent-catalog", () => {
@@ -56,15 +78,20 @@ describe("agent-catalog", () => {
     });
 
     it("runtime-discovered models are correctly identified", () => {
-      // Verify our helper correctly identifies OpenCode paid models
+      // Verify our helper correctly identifies runtime-discovered models
       const runtimeDiscoveredConfigs = AGENT_CONFIGS.filter((c) =>
         isRuntimeDiscovered(c.name)
       );
-      // All should be OpenCode paid models (not free)
+      // All should be either OpenCode paid or non-flagship Codex models
       for (const config of runtimeDiscoveredConfigs) {
-        expect(config.name.startsWith("opencode/")).toBe(true);
-        expect(config.name).not.toBe("opencode/big-pickle");
-        expect(config.name).not.toBe("opencode/gpt-5-nano");
+        const isOpencodePaid =
+          config.name.startsWith("opencode/") &&
+          config.name !== "opencode/big-pickle" &&
+          config.name !== "opencode/gpt-5-nano";
+        const isNonFlagshipCodex =
+          config.name.startsWith("codex/") &&
+          !CODEX_FLAGSHIP_MODELS.has(config.name);
+        expect(isOpencodePaid || isNonFlagshipCodex).toBe(true);
       }
     });
 

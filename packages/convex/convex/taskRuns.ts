@@ -910,6 +910,252 @@ export const updateStatus = internalMutation({
   },
 });
 
+// Interruption state validator - matches schema definition (P2: Runtime interruptions)
+const interruptionStatusValidator = v.union(
+  v.literal("none"),
+  v.literal("approval_pending"),
+  v.literal("paused_by_operator"),
+  v.literal("sandbox_paused"),
+  v.literal("context_overflow"),
+  v.literal("rate_limited"),
+  v.literal("timed_out"),
+  // P2: Extended interruption types for generalized runtime model
+  v.literal("checkpoint_pending"),
+  v.literal("handoff_pending"),
+  v.literal("user_input_required")
+);
+
+/**
+ * Set interruption state on a task run.
+ * Used when an agent is blocked (approval needed, sandbox paused, checkpoint, handoff, etc.)
+ *
+ * P2: Extended to support provider session binding and checkpoint references for
+ * replay-safe resume and explicit resume ancestry.
+ */
+export const setInterruptionState = internalMutation({
+  args: {
+    taskRunId: v.id("taskRuns"),
+    status: interruptionStatusValidator,
+    reason: v.optional(v.string()),
+    approvalRequestId: v.optional(v.string()),
+    expiresAt: v.optional(v.number()),
+    resumeToken: v.optional(v.string()),
+    // P2: Provider session binding for resume ancestry
+    providerSessionId: v.optional(v.string()),
+    resumeTargetId: v.optional(v.string()),
+    // P2: Checkpoint reference for replay-safe resume
+    checkpointRef: v.optional(v.string()),
+    checkpointGeneration: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.taskRunId);
+    if (!run) {
+      throw new Error("Task run not found");
+    }
+
+    const now = Date.now();
+
+    // Build interruption state with P2 fields
+    const interruptionState: NonNullable<typeof run.interruptionState> = {
+      status: args.status,
+      reason: args.reason,
+      approvalRequestId: args.approvalRequestId,
+      blockedAt: now,
+      expiresAt: args.expiresAt,
+      resumeToken: args.resumeToken,
+      // P2: Include provider session binding if provided
+      providerSessionId: args.providerSessionId,
+      resumeTargetId: args.resumeTargetId,
+      // P2: Include checkpoint reference if provided
+      checkpointRef: args.checkpointRef,
+      checkpointGeneration: args.checkpointGeneration,
+    };
+
+    await ctx.db.patch(args.taskRunId, {
+      interruptionState,
+      updatedAt: now,
+    });
+
+    // Create feed event for interruption
+    const task = await ctx.db.get(run.taskId);
+    const reasonText = args.reason ? `: ${args.reason}` : "";
+    // Note: eventType validated in feedEvents.ts and schema.ts, types regenerate at dev time
+    await ctx.runMutation(internal.feedEvents.create, {
+      teamId: run.teamId,
+      userId: run.userId,
+      eventType: "task_interrupted" as "approval_required",
+      title: `Agent paused (${args.status})${reasonText}`,
+      description: args.reason,
+      taskId: run.taskId,
+      taskRunId: args.taskRunId,
+      agentName: run.agentName,
+      repoFullName: task?.projectFullName,
+    });
+  },
+});
+
+/**
+ * Resolve an interruption (approval granted, resume from pause, etc.)
+ */
+export const resolveInterruption = internalMutation({
+  args: {
+    taskRunId: v.id("taskRuns"),
+    resolvedBy: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.taskRunId);
+    if (!run) {
+      throw new Error("Task run not found");
+    }
+
+    if (!run.interruptionState || run.interruptionState.status === "none") {
+      // Already resolved or never interrupted
+      return;
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(args.taskRunId, {
+      interruptionState: {
+        ...run.interruptionState,
+        status: "none",
+        resolvedAt: now,
+        resolvedBy: args.resolvedBy,
+      },
+      updatedAt: now,
+    });
+
+    // Create feed event for resolution
+    const task = await ctx.db.get(run.taskId);
+    // Note: eventType validated in feedEvents.ts and schema.ts, types regenerate at dev time
+    await ctx.runMutation(internal.feedEvents.create, {
+      teamId: run.teamId,
+      userId: run.userId,
+      eventType: "task_resumed" as "approval_resolved",
+      title: `Agent resumed${args.resolvedBy ? ` by ${args.resolvedBy}` : ""}`,
+      taskId: run.taskId,
+      taskRunId: args.taskRunId,
+      agentName: run.agentName,
+      repoFullName: task?.projectFullName,
+    });
+  },
+});
+
+/**
+ * Query to check if a task run is currently interrupted (internal).
+ */
+export const isInterrupted = internalQuery({
+  args: {
+    taskRunId: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.taskRunId);
+    if (!run) {
+      return { interrupted: false, status: "none" as const };
+    }
+
+    const state = run.interruptionState;
+    if (!state || state.status === "none") {
+      return { interrupted: false, status: "none" as const };
+    }
+
+    return {
+      interrupted: true,
+      status: state.status,
+      reason: state.reason,
+      blockedAt: state.blockedAt,
+      expiresAt: state.expiresAt,
+      approvalRequestId: state.approvalRequestId,
+      // P2: Include provider session and checkpoint info
+      providerSessionId: state.providerSessionId,
+      resumeTargetId: state.resumeTargetId,
+      checkpointRef: state.checkpointRef,
+      checkpointGeneration: state.checkpointGeneration,
+    };
+  },
+});
+
+/**
+ * P2: Public query to get full interruption state for UI visibility.
+ * Returns the complete interruption state including provider session binding
+ * and checkpoint references for operator-facing dashboards.
+ */
+export const getInterruptionState = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    taskRunId: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+
+    const run = await ctx.db.get(args.taskRunId);
+    if (!run || run.teamId !== teamId) {
+      return null;
+    }
+
+    const state = run.interruptionState;
+    if (!state || state.status === "none") {
+      return {
+        interrupted: false,
+        status: "none" as const,
+        taskRunId: args.taskRunId,
+        agentName: run.agentName,
+      };
+    }
+
+    return {
+      interrupted: true,
+      taskRunId: args.taskRunId,
+      agentName: run.agentName,
+      // Core interruption fields
+      status: state.status,
+      reason: state.reason,
+      blockedAt: state.blockedAt,
+      expiresAt: state.expiresAt,
+      resolvedAt: state.resolvedAt,
+      resolvedBy: state.resolvedBy,
+      // Approval link
+      approvalRequestId: state.approvalRequestId,
+      // P2: Provider session binding
+      providerSessionId: state.providerSessionId,
+      resumeTargetId: state.resumeTargetId,
+      resumeToken: state.resumeToken,
+      // P2: Checkpoint reference
+      checkpointRef: state.checkpointRef,
+      checkpointGeneration: state.checkpointGeneration,
+      // Computed: is resumable?
+      canResume: canResumeFromInterruption(state),
+    };
+  },
+});
+
+/**
+ * P2: Determine if an interruption can be resumed.
+ * Used by UI to show/hide resume buttons appropriately.
+ */
+function canResumeFromInterruption(state: {
+  status: string;
+  resumeToken?: string;
+  providerSessionId?: string;
+  checkpointRef?: string;
+}): boolean {
+  // Cannot resume if already resolved
+  if (state.status === "none") return false;
+
+  // Approval-based interruptions require resolution through approval flow
+  if (state.status === "approval_pending") return false;
+
+  // Checkpoint-based resume requires a checkpoint reference
+  if (state.status === "checkpoint_pending") {
+    return !!state.checkpointRef;
+  }
+
+  // Handoff requires a target
+  if (state.status === "handoff_pending") return false;
+
+  // Other interruptions can be resumed if we have session or token
+  return !!(state.resumeToken || state.providerSessionId);
+}
+
 export const getRunDiffContext = authQuery({
   args: {
     teamSlugOrId: v.string(),
@@ -2017,6 +2263,81 @@ export const workerComplete = internalMutation({
     // which is called by the stop hook. This keeps status updates decoupled from notifications.
 
     return run;
+  },
+});
+
+/**
+ * Mark /simplify as passed for a task run.
+ * Called by the simplify tracking hook when /simplify completes successfully.
+ */
+export const markSimplifyPassed = internalMutation({
+  args: {
+    taskRunId: v.id("taskRuns"),
+    mode: v.optional(v.string()), // "quick", "full", "staged-only"
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.taskRunId);
+    if (!run) {
+      throw new Error("Task run not found");
+    }
+
+    await ctx.db.patch(args.taskRunId, {
+      simplifyPassedAt: Date.now(),
+      simplifyMode: args.mode ?? "quick",
+      updatedAt: Date.now(),
+    });
+
+    // Get PR info for GitHub check publication via junction table
+    let prInfo: { repoFullName: string; headSha: string; prNumber: number } | undefined;
+    const junctions = await ctx.db
+      .query("taskRunPullRequests")
+      .withIndex("by_task_run", (q) => q.eq("taskRunId", args.taskRunId))
+      .take(1);
+
+    if (junctions.length > 0) {
+      const junction = junctions[0];
+      // Get the actual PR record for headSha
+      const prRecord = await ctx.db
+        .query("pullRequests")
+        .withIndex("by_team_repo_number", (q) =>
+          q.eq("teamId", run.teamId).eq("repoFullName", junction.repoFullName).eq("number", junction.prNumber)
+        )
+        .first();
+
+      if (prRecord?.headSha) {
+        prInfo = {
+          repoFullName: junction.repoFullName,
+          headSha: prRecord.headSha,
+          prNumber: junction.prNumber,
+        };
+      }
+    }
+
+    return { success: true, prInfo };
+  },
+});
+
+/**
+ * Skip /simplify requirement for a task run with a reason.
+ * Used when an operator explicitly skips the requirement.
+ */
+export const skipSimplifyRequirement = internalMutation({
+  args: {
+    taskRunId: v.id("taskRuns"),
+    reason: v.string(), // e.g., "no code changes", "user override", "timeout"
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.taskRunId);
+    if (!run) {
+      throw new Error("Task run not found");
+    }
+
+    await ctx.db.patch(args.taskRunId, {
+      simplifySkippedReason: args.reason,
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
   },
 });
 
@@ -3486,5 +3807,55 @@ export const getAutopilotInfo = internalQuery({
       codexThreadId: doc.codexThreadId,
       vscode: doc.vscode,
     };
+  },
+});
+
+/**
+ * Internal query to get full task run data including simplify fields.
+ * Used by /simplify status endpoint.
+ */
+export const getInternal = internalQuery({
+  args: {
+    id: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id);
+  },
+});
+
+/**
+ * Find task runs linked to a specific PR via the junction table.
+ * Used by merge routes to check simplify gate status.
+ */
+export const findByPullRequest = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    repoFullName: v.string(),
+    prNumber: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+
+    // Look up junction entries for this PR
+    const junctions = await ctx.db
+      .query("taskRunPullRequests")
+      .withIndex("by_pr", (q) =>
+        q
+          .eq("teamId", teamId)
+          .eq("repoFullName", args.repoFullName)
+          .eq("prNumber", args.prNumber)
+      )
+      .collect();
+
+    if (junctions.length === 0) {
+      return [];
+    }
+
+    // Fetch the actual task runs
+    const runs = await Promise.all(
+      junctions.map((j) => ctx.db.get(j.taskRunId))
+    );
+
+    return runs.filter((r): r is NonNullable<typeof r> => r !== null);
   },
 });

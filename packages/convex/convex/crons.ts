@@ -73,34 +73,37 @@ crons.daily(
   internal.modelDiscovery.seedCuratedModels
 );
 
-// Discover new models from OpenCode Zen API weekly (Saturday 6:00 UTC)
-crons.weekly(
+// Discover new models from OpenCode Zen API daily at 6:00 UTC
+// Changed from weekly to daily to catch new models faster
+crons.daily(
   "discover opencode models",
-  { dayOfWeek: "saturday", hourUTC: 6, minuteUTC: 0 },
+  { hourUTC: 6, minuteUTC: 0 },
   internal.modelDiscovery.discoverOpencodeModels
 );
 
-// Discover new models from OpenRouter API weekly (Saturday 7:00 UTC)
-// Runs after OpenCode discovery
-crons.weekly(
+// Discover new models from OpenRouter API daily at 6:15 UTC
+// Changed from weekly to daily to catch new models faster
+crons.daily(
   "discover openrouter models",
-  { dayOfWeek: "saturday", hourUTC: 7, minuteUTC: 0 },
+  { hourUTC: 6, minuteUTC: 15 },
   internal.modelDiscovery.discoverOpenRouterModels
 );
 
-// Discover new models from OpenAI API weekly (Saturday 8:00 UTC)
+// Discover new models from OpenAI API daily at 6:30 UTC
 // Requires OPENAI_API_KEY env var, discovers Codex-relevant models
-crons.weekly(
+// Changed from weekly to daily to catch new models faster (e.g. gpt-5.4-mini)
+crons.daily(
   "discover openai models",
-  { dayOfWeek: "saturday", hourUTC: 8, minuteUTC: 0 },
+  { hourUTC: 6, minuteUTC: 30 },
   internal.modelDiscovery.discoverOpenAIModels
 );
 
-// Discover new models from Anthropic API weekly (Saturday 9:00 UTC)
+// Discover new models from Anthropic API daily at 6:45 UTC
 // Requires ANTHROPIC_API_KEY env var, discovers Claude Code relevant models
-crons.weekly(
+// Changed from weekly to daily to catch new models faster
+crons.daily(
   "discover anthropic models",
-  { dayOfWeek: "saturday", hourUTC: 9, minuteUTC: 0 },
+  { hourUTC: 6, minuteUTC: 45 },
   internal.modelDiscovery.discoverAnthropicModels
 );
 
@@ -112,12 +115,12 @@ crons.interval(
   internal.codexTokenRefresh.refreshExpiring
 );
 
-// Poll orchestration tasks every minute for auto-spawning
+// Poll orchestration tasks every 5 minutes for auto-spawning
 // This enables autonomous multi-agent orchestration
 // The worker uses task-run JWTs for authentication (bypasses Stack Auth)
 crons.interval(
   "poll orchestration tasks",
-  { minutes: 1 },
+  { minutes: 5 },
   internal.orchestrationWorker.pollReadyTasks
 );
 
@@ -156,10 +159,10 @@ crons.daily(
 
 // Scheduled Tasks: Poll for tasks ready to run
 // Checks for active scheduled tasks whose nextRunAt has passed
-// Runs every minute to enable near-real-time task triggering
+// Runs every 5 minutes to reduce traffic while maintaining reasonable latency
 crons.interval(
   "poll scheduled tasks",
-  { minutes: 1 },
+  { minutes: 5 },
   internal.scheduledTasks.pollAndStartReadyTasks
 );
 

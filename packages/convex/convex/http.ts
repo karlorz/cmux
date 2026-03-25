@@ -98,6 +98,11 @@ import {
   getApproval,
   resolveApproval,
 } from "./approvalBroker_http";
+import {
+  reportInterruption,
+  resolveInterruption,
+  getInterruptionState,
+} from "./runtimeInterruptions_http";
 
 const http = httpRouter();
 
@@ -592,6 +597,25 @@ http.route({
   pathPrefix: "/api/approvals/",
   method: "POST",
   handler: resolveApproval,
+});
+
+// P2: Runtime interruptions API
+http.route({
+  path: "/api/runtime/interrupt",
+  method: "POST",
+  handler: reportInterruption,
+});
+
+http.route({
+  path: "/api/runtime/resume",
+  method: "POST",
+  handler: resolveInterruption,
+});
+
+http.route({
+  path: "/api/runtime/interruption-state",
+  method: "GET",
+  handler: getInterruptionState,
 });
 
 export default http;

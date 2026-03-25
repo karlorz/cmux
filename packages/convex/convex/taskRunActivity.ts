@@ -4,6 +4,9 @@ import { internalMutation, query } from "./_generated/server";
 /**
  * Internal mutation called by the HTTP endpoint after JWT validation.
  * Inserts a single agent activity event for real-time dashboard streaming.
+ *
+ * Extended to support canonical lifecycle events (context health, session lifecycle).
+ * Phase 4 adds: stop lifecycle, approval flow, memory scope events.
  */
 export const insert = internalMutation({
   args: {
@@ -14,6 +17,28 @@ export const insert = internalMutation({
     detail: v.optional(v.string()),
     durationMs: v.optional(v.number()),
     teamId: v.string(),
+    // Context health fields (for context_warning/context_compacted events)
+    severity: v.optional(v.string()),
+    warningType: v.optional(v.string()),
+    currentUsage: v.optional(v.number()),
+    maxCapacity: v.optional(v.number()),
+    usagePercent: v.optional(v.number()),
+    // Context compacted fields
+    previousBytes: v.optional(v.number()),
+    newBytes: v.optional(v.number()),
+    reductionPercent: v.optional(v.number()),
+    // Stop lifecycle fields (Phase 4 - stop_requested/blocked/failed events)
+    stopSource: v.optional(v.string()),
+    exitCode: v.optional(v.number()),
+    continuationPrompt: v.optional(v.string()),
+    // Approval fields (Phase 4 - approval_requested/resolved events)
+    approvalId: v.optional(v.string()),
+    resolution: v.optional(v.string()),
+    resolvedBy: v.optional(v.string()),
+    // Memory scope fields (Phase 4 - memory_scope_changed events)
+    scopeType: v.optional(v.string()),
+    scopeBytes: v.optional(v.number()),
+    scopeAction: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await ctx.db.insert("taskRunActivity", {

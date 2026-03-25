@@ -44,9 +44,19 @@ const eventTypeValidator = v.union(
   v.literal("memory_loaded"),
   v.literal("memory_updated"),
   v.literal("memory_pruned"), // Legacy alias for memory_updated with action=archive
+  v.literal("memory_scope_changed"), // P4: Scope transitions during session
   // Context health events (Phase 4)
   v.literal("context_warning"),
-  v.literal("context_compacted")
+  v.literal("context_compacted"),
+  // Prompt/Turn tracking events (P1 Lifecycle Parity)
+  v.literal("prompt_submitted"),
+  v.literal("session_finished"),
+  v.literal("run_resumed"),
+  // Tool lifecycle events (P1 Lifecycle Parity)
+  v.literal("tool_requested"),
+  v.literal("tool_completed"),
+  // MCP runtime events (P5 Lifecycle Parity)
+  v.literal("mcp_capabilities_negotiated")
 );
 
 // =============================================================================
@@ -298,6 +308,81 @@ export const getByOrchestrationInternal = internalQuery({
     }
 
     return events.slice(0, limit);
+  },
+});
+
+/**
+ * Get event analytics for a team (authenticated).
+ * Returns counts by event type for dashboard metrics.
+ */
+export const getEventAnalytics = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    sinceTimestamp: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+    // Default to last 24 hours if no timestamp provided
+    const since = args.sinceTimestamp ?? Date.now() - 24 * 60 * 60 * 1000;
+
+    const events = await ctx.db
+      .query("orchestrationEvents")
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
+      .order("desc")
+      .take(1000);
+
+    // Filter by timestamp and count by type
+    const filteredEvents = events.filter((e) => e.createdAt >= since);
+    const countsByType: Record<string, number> = {};
+    for (const event of filteredEvents) {
+      countsByType[event.eventType] = (countsByType[event.eventType] ?? 0) + 1;
+    }
+
+    // Group by category for dashboard display
+    const taskLifecycle =
+      (countsByType["task_spawn_requested"] ?? 0) +
+      (countsByType["task_started"] ?? 0) +
+      (countsByType["task_status_changed"] ?? 0) +
+      (countsByType["task_completed"] ?? 0);
+
+    const sessionLifecycle =
+      (countsByType["session_started"] ?? 0) +
+      (countsByType["session_resumed"] ?? 0) +
+      (countsByType["session_finished"] ?? 0) +
+      (countsByType["session_stop_requested"] ?? 0) +
+      (countsByType["session_stop_blocked"] ?? 0) +
+      (countsByType["session_stop_failed"] ?? 0);
+
+    const approvals =
+      (countsByType["approval_required"] ?? 0) +
+      (countsByType["approval_resolved"] ?? 0);
+
+    const contextHealth =
+      (countsByType["context_warning"] ?? 0) +
+      (countsByType["context_compacted"] ?? 0);
+
+    const toolLifecycle =
+      (countsByType["tool_requested"] ?? 0) +
+      (countsByType["tool_completed"] ?? 0);
+
+    const memoryEvents =
+      (countsByType["memory_loaded"] ?? 0) +
+      (countsByType["memory_updated"] ?? 0) +
+      (countsByType["memory_scope_changed"] ?? 0);
+
+    return {
+      totalEvents: filteredEvents.length,
+      countsByType,
+      categories: {
+        taskLifecycle,
+        sessionLifecycle,
+        approvals,
+        contextHealth,
+        toolLifecycle,
+        memoryEvents,
+      },
+      sinceTimestamp: since,
+    };
   },
 });
 

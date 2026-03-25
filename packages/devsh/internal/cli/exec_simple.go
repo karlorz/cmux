@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/karlorz/devsh/internal/auth"
+	"github.com/karlorz/devsh/internal/e2b"
 	"github.com/karlorz/devsh/internal/provider"
 	"github.com/karlorz/devsh/internal/pvelxc"
 	"github.com/karlorz/devsh/internal/vm"
@@ -63,6 +64,22 @@ Examples:
 			client.SetTeamSlug(teamSlug)
 
 			stdout, stderr, exitCode, err = client.ExecCommand(ctx, instanceID, command)
+			if err != nil {
+				return fmt.Errorf("failed to execute command: %w", err)
+			}
+		case provider.E2B:
+			teamSlug, err := auth.GetTeamSlug()
+			if err != nil {
+				return fmt.Errorf("failed to get team: %w", err)
+			}
+
+			client, err := e2b.NewClient()
+			if err != nil {
+				return fmt.Errorf("failed to create E2B client: %w", err)
+			}
+			client.SetTeamSlug(teamSlug)
+
+			stdout, stderr, exitCode, err = client.ExecCommand(ctx, instanceID, command, 60)
 			if err != nil {
 				return fmt.Errorf("failed to execute command: %w", err)
 			}

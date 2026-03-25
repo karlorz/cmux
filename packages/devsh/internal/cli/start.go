@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/karlorz/devsh/internal/auth"
+	"github.com/karlorz/devsh/internal/e2b"
 	"github.com/karlorz/devsh/internal/provider"
 	"github.com/karlorz/devsh/internal/pvelxc"
 	"github.com/karlorz/devsh/internal/state"
@@ -49,6 +50,8 @@ Examples:
 			return runStartPveLxc(cmd, args)
 		case provider.Morph:
 			return runStartMorph(cmd, args)
+		case provider.E2B:
+			return runStartE2B(cmd, args)
 		default:
 			return fmt.Errorf("unsupported provider: %s", selected)
 		}
@@ -258,6 +261,108 @@ func runStartPveLxc(cmd *cobra.Command, args []string) error {
 	_ = state.SetLastInstance(instance.ID, "")
 
 	fmt.Println("\nVM is ready!")
+	fmt.Printf("  ID:       %s\n", instance.ID)
+	if instance.VSCodeURL != "" {
+		fmt.Printf("  VS Code:  %s\n", instance.VSCodeURL)
+	}
+	if instance.VNCURL != "" {
+		fmt.Printf("  VNC:      %s\n", instance.VNCURL)
+	}
+	if instance.XTermURL != "" {
+		fmt.Printf("  XTerm:    %s\n", instance.XTermURL)
+	}
+
+	interactive, _ := cmd.Flags().GetBool("interactive")
+	if interactive && instance.VSCodeURL != "" {
+		fmt.Println("\nOpening VS Code in browser...")
+		if err := openBrowser(instance.VSCodeURL); err != nil {
+			fmt.Printf("Warning: could not open browser: %v\n", err)
+		}
+	}
+
+	return nil
+}
+
+func runStartE2B(cmd *cobra.Command, args []string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	// Get team slug
+	teamSlug, err := auth.GetTeamSlug()
+	if err != nil {
+		return fmt.Errorf("failed to get team: %w\nRun 'devsh auth login' to authenticate", err)
+	}
+
+	// Create E2B client
+	client, err := e2b.NewClient()
+	if err != nil {
+		return fmt.Errorf("failed to create client: %w", err)
+	}
+	client.SetTeamSlug(teamSlug)
+
+	// Get template ID (uses --snapshot flag for consistency)
+	templateID, _ := cmd.Flags().GetString("snapshot")
+
+	// Determine name from path if provided
+	name := ""
+	var syncPath string
+	if len(args) > 0 {
+		syncPath = args[0]
+		absPath, err := filepath.Abs(syncPath)
+		if err != nil {
+			return fmt.Errorf("invalid path: %w", err)
+		}
+		syncPath = absPath
+
+		// Check path exists and is a directory
+		info, err := os.Stat(syncPath)
+		if err != nil {
+			return fmt.Errorf("path not found: %w", err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("path must be a directory")
+		}
+		name = filepath.Base(syncPath)
+	}
+
+	fmt.Println("Creating E2B sandbox...")
+	instance, err := client.StartInstance(ctx, e2b.StartOptions{
+		TemplateID: templateID,
+		Name:       name,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create sandbox: %w", err)
+	}
+
+	fmt.Printf("Sandbox created: %s\n", instance.ID)
+
+	// Wait for sandbox to be ready
+	fmt.Println("Waiting for sandbox to be ready...")
+	instance, err = client.WaitForReady(ctx, instance.ID, 2*time.Minute)
+	if err != nil {
+		return fmt.Errorf("sandbox failed to start: %w", err)
+	}
+
+	if syncPath != "" {
+		fmt.Printf("Warning: sync is not yet supported for E2B (skipping sync of %s)\n", syncPath)
+	}
+
+	// Set up provider auth via www API
+	noAuth, _ := cmd.Flags().GetBool("no-auth")
+	if !noAuth {
+		wwwClient, wwwErr := vm.NewClient()
+		if wwwErr != nil {
+			fmt.Printf("Warning: provider auth setup skipped: %v\n", wwwErr)
+		} else {
+			wwwClient.SetTeamSlug(teamSlug)
+			setupProviderAuthIfNeeded(cmd, ctx, wwwClient, instance.ID)
+		}
+	}
+
+	// Save as last used instance
+	state.SetLastInstance(instance.ID, teamSlug)
+
+	fmt.Println("\nSandbox is ready!")
 	fmt.Printf("  ID:       %s\n", instance.ID)
 	if instance.VSCodeURL != "" {
 		fmt.Printf("  VS Code:  %s\n", instance.VSCodeURL)

@@ -217,6 +217,10 @@
     "./observability/tracing": {
       "import": "./src/observability/tracing.ts",
       "types": "./src/observability/tracing.ts"
+    },
+    "./providers/control-plane": {
+      "import": "./src/providers/control-plane/index.ts",
+      "types": "./src/providers/control-plane/index.ts"
     }
   },
   "peerDependencies": {

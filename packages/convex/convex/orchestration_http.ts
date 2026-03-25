@@ -49,6 +49,23 @@ export interface SpawnConfigData {
     confidence: number;
     projectFullName?: string;
   }>;
+  /** Scoped knowledge metadata (Phase 5: memory scope model) */
+  scopedKnowledge?: {
+    content: string | null;
+    sources: Array<{
+      scope: "team" | "repo" | "user" | "run";
+      hasContent: boolean;
+      byteSize: number;
+    }>;
+    totalByteSize: number;
+  };
+  /** Orchestration settings for auto-spawn sub-agents */
+  orchestrationSettings?: {
+    autoSpawnEnabled: boolean;
+    defaultCodingAgent: string;
+    maxConcurrentSubAgents: number;
+    maxTaskDurationMinutes: number;
+  };
 }
 
 const CreateTaskAndRunSchema = z.object({
@@ -475,7 +492,9 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
       previousKnowledge,
       previousMailbox,
       previousBehavior,
+      scopedKnowledge,
       orchestrationRulesRaw,
+      orchestrationSettings,
     ] = await Promise.all([
       ctx.runQuery(internal.apiKeys.getAllForAgentsInternal, { teamId, userId }),
       ctx.runQuery(internal.workspaceSettings.getByTeamAndUserInternal, { teamId, userId }),
@@ -503,11 +522,19 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
       ctx.runQuery(internal.agentMemoryQueries.getLatestTeamKnowledgeInternal, { teamId }),
       ctx.runQuery(internal.agentMemoryQueries.getLatestTeamMailboxInternal, { teamId }),
       ctx.runQuery(internal.agentMemoryQueries.getLatestTeamBehaviorHotInternal, { teamId }),
+      // Phase 5: Scoped knowledge with team/repo/user precedence
+      ctx.runQuery(internal.agentMemoryQueries.getScopedKnowledgeInternal, {
+        teamId,
+        userId,
+        ...(projectFullName ? { projectFullName } : {}),
+      }),
       ctx.runQuery(internal.agentOrchestrationLearning.getActiveRulesInternal, {
         teamId,
         ...(projectFullName ? { projectFullName } : {}),
         minConfidence: 0.3, // Only inject rules with at least 30% confidence into agent context
       }),
+      // Orchestration settings for auto-spawn sub-agents
+      ctx.runQuery(internal.orchestrationSettings.getByTeamIdInternal, { teamId }),
     ]);
 
     const config: SpawnConfigData = {
@@ -541,6 +568,21 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
         confidence: r.confidence,
         projectFullName: r.projectFullName,
       })),
+      // Phase 5: Scoped knowledge with merged team/repo/user content
+      scopedKnowledge: scopedKnowledge
+        ? {
+            content: scopedKnowledge.content,
+            sources: scopedKnowledge.sources,
+            totalByteSize: scopedKnowledge.totalByteSize,
+          }
+        : undefined,
+      // Orchestration settings for auto-spawn sub-agents
+      orchestrationSettings: {
+        autoSpawnEnabled: orchestrationSettings.autoSpawnEnabled,
+        defaultCodingAgent: orchestrationSettings.defaultCodingAgent,
+        maxConcurrentSubAgents: orchestrationSettings.maxConcurrentSubAgents,
+        maxTaskDurationMinutes: orchestrationSettings.maxTaskDurationMinutes,
+      },
     };
 
     return jsonResponse(config);

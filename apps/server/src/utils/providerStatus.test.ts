@@ -45,10 +45,10 @@ describe("aggregateByVendor", () => {
   });
 
   it("handles multiple vendors", () => {
-    // Use exact agent names from the catalog
+    // Use exact agent names from the catalog (flagship models only)
     const statuses: ProviderStatus[] = [
       { name: "claude/opus-4.5", isAvailable: true },
-      { name: "codex/gpt-5.1-codex", isAvailable: true },
+      { name: "codex/gpt-5.4", isAvailable: true }, // flagship Codex model
       { name: "gemini/2.5-flash", isAvailable: false },
     ];
 

@@ -17,14 +17,15 @@ interface OrchestrationRulesSectionProps {
   teamSlugOrId: string;
 }
 
-// Default tabs shown to all users
+// Default tab: Active rules only (simplified UX per Phase 3 rollout)
 const DEFAULT_TABS: { key: TabView; label: string }[] = [
   { key: "active", label: "Active" },
-  { key: "candidates", label: "Candidates" },
 ];
 
-// Advanced tab for skill candidates (hidden by default)
+// Advanced tabs: Candidates and Skill Candidates (hidden by default)
+// Reduces operator cognitive load for common path
 const ADVANCED_TABS: { key: TabView; label: string }[] = [
+  { key: "candidates", label: "Candidates" },
   { key: "skills", label: "Skill Candidates" },
 ];
 
@@ -100,7 +101,7 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
   return (
     <SettingSection
       title="Orchestration Rules"
-      description="Team-learned rules from previous orchestration runs. Active rules are injected into agent instructions at spawn time."
+      description="Rules injected into agent instructions at spawn time. Use Advanced to view auto-detected candidate rules."
       headerAction={
         <Button
           size="sm"
@@ -135,8 +136,8 @@ export function OrchestrationRulesSection({ teamSlugOrId }: OrchestrationRulesSe
             <button
               onClick={() => {
                 setShowAdvanced(!showAdvanced);
-                // Reset to default tab if hiding advanced and currently on skills
-                if (showAdvanced && activeTab === "skills") {
+                // Reset to default tab if hiding advanced and on an advanced-only tab
+                if (showAdvanced && (activeTab === "skills" || activeTab === "candidates")) {
                   setActiveTab("active");
                 }
               }}

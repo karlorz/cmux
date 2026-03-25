@@ -7,7 +7,7 @@ import {
 import { isElectron } from "@/lib/electron";
 import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
-import { Archive, ArrowLeft, BrainCircuit, FileCode2, FolderGit2, GitBranch, KeyRound, Layers, Plug, Search, Settings, Shield, ShieldBan, X } from "lucide-react";
+import { Archive, ArrowLeft, BrainCircuit, FileCode2, FolderGit2, GitBranch, KeyRound, Layers, Network, Plug, Search, Settings, Shield, ShieldBan, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -29,6 +29,7 @@ export type SettingsSection =
   | "permission-rules"
   | "agent-configs"
   | "orchestration-rules"
+  | "orchestration-settings"
   | "git"
   | "worktrees"
   | "archived";
@@ -94,6 +95,11 @@ const allNavItems: SettingsSidebarNavItem[] = [
     label: "Orchestration Rules",
     section: "orchestration-rules",
     icon: BrainCircuit,
+  },
+  {
+    label: "Orchestration Settings",
+    section: "orchestration-settings",
+    icon: Network,
   },
   {
     label: "Git",

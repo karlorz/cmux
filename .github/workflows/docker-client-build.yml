@@ -210,47 +210,7 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - name: Trigger Coolify deploy
-        id: trigger_coolify
-        env:
-          COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
-          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-          COOLIFY_CLIENT_APP_UUID: ${{ secrets.COOLIFY_CLIENT_APP_UUID }}
-        run: |
-          set -euo pipefail
-
-          if [[ -z "${COOLIFY_BASE_URL:-}" || -z "${COOLIFY_API_TOKEN:-}" || -z "${COOLIFY_CLIENT_APP_UUID:-}" ]]; then
-            echo "Coolify secrets not configured for client, skipping deploy trigger"
-            echo "triggered=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          base_url="${COOLIFY_BASE_URL%/}"
-
-          echo "Triggering Coolify deployment for cmux-client..."
-
-          response=$(curl -sS -w "\n%{http_code}" \
-            --connect-timeout 10 --max-time 30 \
-            -X GET \
-            -H "Accept: application/json" \
-            -H "Authorization: Bearer ${COOLIFY_API_TOKEN}" \
-            "${base_url}/api/v1/deploy?uuid=${COOLIFY_CLIENT_APP_UUID}&force=true" || true)
-
-          http_code=$(echo "$response" | tail -n1)
-          body=$(echo "$response" | sed '$d')
-
-          if [[ "$http_code" == "200" || "$http_code" == "201" ]]; then
-            echo "Successfully triggered Coolify deployment"
-            echo "Response: $body"
-            echo "triggered=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Warning: Coolify deploy trigger returned HTTP ${http_code}"
-            echo "Response: $body"
-            echo "triggered=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Start deployment status tracking
-        if: steps.trigger_coolify.outputs.triggered == 'true'
+      - name: Dispatch to unified Coolify deploy workflow
         uses: actions/github-script@v7
         with:
           script: |
@@ -258,8 +218,10 @@ jobs:
             await github.rest.repos.createDispatchEvent({
               owner,
               repo,
-              event_type: "coolify-client-deploy-started",
+              event_type: "coolify-deploy-trigger",
               client_payload: {
                 sha: context.sha,
+                source: "docker-client-build",
               },
             });
+            console.log("Dispatched coolify-deploy-trigger event");

@@ -406,6 +406,43 @@ const convexSchema = defineSchema({
         lastUpdated: v.number(), // Timestamp of last update
       })
     ),
+    // Interruption state (Phase 7: Unified pause/approval model, P2: Runtime interruptions)
+    // Tracks when an agent is blocked and why, enabling unified handling of
+    // approvals, operator pauses, sandbox pauses, and checkpoint-based resume
+    interruptionState: v.optional(
+      v.object({
+        status: v.union(
+          v.literal("none"), // Not interrupted
+          v.literal("approval_pending"), // Waiting for approval (linked to approvalRequests)
+          v.literal("paused_by_operator"), // Operator requested pause
+          v.literal("sandbox_paused"), // Underlying sandbox is paused
+          v.literal("context_overflow"), // Context window exceeded
+          v.literal("rate_limited"), // Provider rate limit hit
+          v.literal("timed_out"), // Approval or action timed out
+          // P2: Extended interruption types for generalized runtime model
+          v.literal("checkpoint_pending"), // Waiting for checkpoint save to complete
+          v.literal("handoff_pending"), // Waiting for handoff to another agent
+          v.literal("user_input_required") // Waiting for user elicitation response
+        ),
+        reason: v.optional(v.string()), // Human-readable explanation
+        approvalRequestId: v.optional(v.string()), // Link to approvalRequests.requestId
+        blockedAt: v.number(), // When interruption started
+        expiresAt: v.optional(v.number()), // Auto-resume or expire time
+        resumeToken: v.optional(v.string()), // Provider-specific resume state
+        resolvedAt: v.optional(v.number()), // When interruption was resolved
+        resolvedBy: v.optional(v.string()), // User ID who resolved
+        // P2: Provider session binding for resume ancestry
+        providerSessionId: v.optional(v.string()), // Provider's session/thread ID (e.g., Codex thread_id)
+        resumeTargetId: v.optional(v.string()), // Target for SendMessage resume (agent or session ID)
+        // P2: Checkpoint reference for replay-safe resume
+        checkpointRef: v.optional(v.string()), // Reference to checkpoint state (LangGraph-style)
+        checkpointGeneration: v.optional(v.number()), // Monotonic counter for checkpoint ordering
+      })
+    ),
+    // /simplify pre-merge gate tracking
+    simplifyPassedAt: v.optional(v.number()), // Timestamp when /simplify completed successfully
+    simplifyMode: v.optional(v.string()), // Which mode was used: "quick", "full", "staged-only"
+    simplifySkippedReason: v.optional(v.string()), // If skipped, why (e.g., "no code changes", "user override")
   })
     .index("by_task", ["taskId", "createdAt"])
     .index("by_parent", ["parentRunId"])
@@ -675,13 +712,40 @@ const convexSchema = defineSchema({
     .index("by_team_user", ["teamId", "userId"]),
   taskRunActivity: defineTable({
     taskRunId: v.id("taskRuns"),
-    type: v.string(), // tool_call, file_edit, file_read, bash_command, test_run, git_commit, error
+    // Activity type: tool_call, file_edit, file_read, bash_command, test_run, git_commit, error,
+    // session_start, session_stop, session_resumed, context_warning, context_compacted,
+    // memory_loaded, memory_scope_changed, user_prompt, subagent_start, subagent_stop,
+    // notification, stop_requested, stop_blocked, stop_failed, tool_requested, tool_completed,
+    // approval_requested, approval_resolved (Phase 4 lifecycle parity)
+    type: v.string(),
     toolName: v.optional(v.string()),
     summary: v.string(),
     detail: v.optional(v.string()),
     durationMs: v.optional(v.number()),
     teamId: v.string(),
     createdAt: v.number(),
+    // Context health fields (for context_warning/context_compacted events)
+    severity: v.optional(v.string()), // "info", "warning", "critical"
+    warningType: v.optional(v.string()), // "memory_bloat", "tool_output", "prompt_size", "capacity", "token_limit"
+    currentUsage: v.optional(v.number()),
+    maxCapacity: v.optional(v.number()),
+    usagePercent: v.optional(v.number()),
+    // Context compacted fields
+    previousBytes: v.optional(v.number()),
+    newBytes: v.optional(v.number()),
+    reductionPercent: v.optional(v.number()),
+    // Stop lifecycle fields (Phase 4 - stop_requested/blocked/failed events)
+    stopSource: v.optional(v.string()), // "user", "hook", "autopilot", "policy", "timeout", "error"
+    exitCode: v.optional(v.number()),
+    continuationPrompt: v.optional(v.string()),
+    // Approval fields (Phase 4 - approval_requested/resolved events)
+    approvalId: v.optional(v.string()),
+    resolution: v.optional(v.string()), // "allow", "allow_once", "allow_session", "deny", "deny_always", "timeout"
+    resolvedBy: v.optional(v.string()),
+    // Memory scope fields (Phase 4 - memory_scope_changed events)
+    scopeType: v.optional(v.string()), // "team", "repo", "user", "run"
+    scopeBytes: v.optional(v.number()),
+    scopeAction: v.optional(v.string()), // "injected", "updated", "cleared"
   })
     .index("by_task_run", ["taskRunId", "createdAt"])
     .index("by_team", ["teamId", "createdAt"]),
@@ -1681,11 +1745,26 @@ const convexSchema = defineSchema({
     usageCount: v.optional(v.number()), // How many times loaded
     freshnessScore: v.optional(v.number()), // 0.0-1.0, decays over time
     lastFreshnessUpdate: v.optional(v.number()), // When freshness was last calculated
+    // Phase 5: Memory scope model (IronClaw-inspired)
+    // Enables layered reads with write isolation per scope
+    scope: v.optional(
+      v.union(
+        v.literal("team"), // team/shared - org-wide policy & runbooks
+        v.literal("repo"), // repo/shared - project conventions
+        v.literal("user"), // user/private - operator preferences
+        v.literal("run") // run/local - ephemeral task notes
+      )
+    ),
+    projectFullName: v.optional(v.string()), // For repo-scoped memory (e.g., "owner/repo")
   })
     .index("by_task_run", ["taskRunId", "memoryType"])
     .index("by_team_type", ["teamId", "memoryType", "createdAt"])
     .index("by_team_created", ["teamId", "createdAt"])
-    .index("by_team_freshness", ["teamId", "memoryType", "freshnessScore"]),
+    .index("by_team_freshness", ["teamId", "memoryType", "freshnessScore"])
+    // Phase 5: Scoped memory indexes
+    .index("by_team_scope_type", ["teamId", "scope", "memoryType", "createdAt"])
+    .index("by_repo_type", ["projectFullName", "memoryType", "createdAt"])
+    .index("by_user_type", ["userId", "memoryType", "createdAt"]),
 
   // Normalized behavior rules for self-improving memory (S15 provenance)
   // Enables fast querying, cross-run seeding, and provenance tracking
@@ -2006,13 +2085,23 @@ const convexSchema = defineSchema({
       v.literal("memory_loaded"),
       v.literal("memory_updated"),
       v.literal("memory_pruned"), // Legacy alias for memory_updated with action=archive
+      v.literal("memory_scope_changed"), // P4: Scope transitions during session
       // Context health events (Phase 4)
       v.literal("context_warning"),
       v.literal("context_compacted"),
       // Operator input queue events
       v.literal("operator_input_queued"),
       v.literal("operator_input_drained"),
-      v.literal("queue_full_rejected")
+      v.literal("queue_full_rejected"),
+      // Prompt/Turn tracking events (P1 Lifecycle Parity)
+      v.literal("prompt_submitted"),
+      v.literal("session_finished"),
+      v.literal("run_resumed"),
+      // Tool lifecycle events (P1 Lifecycle Parity)
+      v.literal("tool_requested"),
+      v.literal("tool_completed"),
+      // MCP runtime events (P5 Lifecycle Parity)
+      v.literal("mcp_capabilities_negotiated")
     ),
     teamId: v.string(),
     taskId: v.optional(v.string()), // Related orchestration task ID
@@ -2268,6 +2357,8 @@ const convexSchema = defineSchema({
     eventType: v.union(
       v.literal("task_completed"),
       v.literal("task_failed"),
+      v.literal("task_interrupted"),
+      v.literal("task_resumed"),
       v.literal("pr_merged"),
       v.literal("pr_opened"),
       v.literal("pr_closed"),
@@ -2299,6 +2390,50 @@ const convexSchema = defineSchema({
     .index("by_team", ["teamId", "createdAt"])
     .index("by_team_type", ["teamId", "eventType", "createdAt"])
     .index("by_team_repo", ["teamId", "repoFullName", "createdAt"]),
+
+  // MCP runtime capabilities - negotiated capabilities from active MCP sessions
+  // Stores the actual capabilities that were negotiated at runtime, separate from
+  // static server configuration. Used for operator visibility into what tools,
+  // resources, and prompts are actually available during a task run.
+  mcpRuntimeCapabilities: defineTable({
+    // Link to task run where capability was negotiated
+    taskRunId: v.id("taskRuns"),
+    teamId: v.string(),
+    // Server identity
+    serverName: v.string(),
+    configId: v.optional(v.id("mcpServerConfigs")),
+    // Protocol info
+    protocolVersion: v.string(),
+    // Negotiated capabilities
+    capabilities: v.object({
+      tools: v.optional(v.array(v.string())),
+      resources: v.optional(v.array(v.string())),
+      prompts: v.optional(v.array(v.string())),
+      tasks: v.optional(v.boolean()),
+      roots: v.optional(v.boolean()),
+      sampling: v.optional(v.boolean()),
+      elicitation: v.optional(v.boolean()),
+    }),
+    // Transport info
+    transport: v.union(v.literal("stdio"), v.literal("http"), v.literal("sse")),
+    sessionId: v.optional(v.string()),
+    // Connection state
+    status: v.union(
+      v.literal("connecting"),
+      v.literal("connected"),
+      v.literal("disconnected"),
+      v.literal("error")
+    ),
+    errorMessage: v.optional(v.string()),
+    // Timestamps
+    connectedAt: v.optional(v.number()),
+    lastActiveAt: v.number(),
+    disconnectedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_task_run", ["taskRunId"])
+    .index("by_team", ["teamId"])
+    .index("by_server", ["serverName", "taskRunId"]),
 
   // MCP server configurations (central, cloud-based MCP management)
   // Users configure MCP servers in the web UI; these are injected into sandboxes
@@ -2397,6 +2532,38 @@ const convexSchema = defineSchema({
   })
     .index("by_team", ["teamId"])
     .index("by_team_name", ["teamId", "name"]),
+
+  // Team orchestration settings - controls auto head-agent and sub-agent behavior
+  orchestrationSettings: defineTable({
+    teamId: v.string(),
+    // Auto head-agent mode: when enabled, cloud workspaces automatically act as head agents
+    autoHeadAgent: v.optional(v.boolean()), // Default: false
+    // Default coding agent for sub-agent spawning
+    defaultCodingAgent: v.optional(v.string()), // e.g. "codex/gpt-5.4-xhigh"
+    // Default supervisor profile for head agents
+    defaultSupervisorProfileId: v.optional(v.id("supervisorProfiles")),
+    // Auto-spawn settings
+    autoSpawnEnabled: v.optional(v.boolean()), // Allow head agents to auto-spawn sub-agents
+    maxConcurrentSubAgents: v.optional(v.number()), // Limit concurrent sub-agents (default: 3)
+    // Allowed repos for auto-orchestration (empty = all repos)
+    allowedRepos: v.optional(v.array(v.string())), // ["owner/repo1", "owner/repo2"]
+    // Sub-agent provider preferences
+    preferredProviders: v.optional(v.array(v.string())), // ["codex", "claude", "gemini"]
+    // Cost controls
+    dailyBudgetCents: v.optional(v.number()), // Daily spending limit in cents
+    maxTaskDurationMinutes: v.optional(v.number()), // Max duration per sub-agent task
+    // /simplify pre-merge gate settings
+    requireSimplifyBeforeMerge: v.optional(v.boolean()), // Default: false - require /simplify before task completion
+    simplifyMode: v.optional(v.union(
+      v.literal("quick"),
+      v.literal("full"),
+      v.literal("staged-only")
+    )), // Default: "quick" - which /simplify mode to enforce
+    simplifyTimeoutMinutes: v.optional(v.number()), // Default: 10 - timeout for simplify enforcement
+    // Ownership
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_team", ["teamId"]),
 
   // Session activity tracking for visual change dashboards
   sessionActivity: defineTable({
@@ -2880,6 +3047,19 @@ const convexSchema = defineSchema({
     .index("by_team", ["teamId"])
     .index("by_team_tool", ["teamId", "toolName"])
     .index("by_selection_count", ["teamId", "selectionCount"]),
+
+  // Vault note access tracking - tracks when agents/users access Obsidian vault notes
+  vaultNoteAccess: defineTable({
+    teamId: v.string(), // canonical team UUID (string, not Id, for consistency with other tables)
+    notePath: v.string(), // e.g., "5-Projects/GitHub/cmux/_Overview.md"
+    noteTitle: v.optional(v.string()),
+    lastAccessedAt: v.number(), // timestamp
+    lastAccessedBy: v.optional(v.string()), // agent name or user email
+    accessCount: v.number(),
+  })
+    .index("by_team", ["teamId"])
+    .index("by_team_path", ["teamId", "notePath"])
+    .index("by_team_recent", ["teamId", "lastAccessedAt"]),
 });
 
 export default convexSchema;

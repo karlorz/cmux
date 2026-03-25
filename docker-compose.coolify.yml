@@ -9,29 +9,30 @@
 #   3. Set required environment variables via Coolify UI
 #   4. Deploy
 #
-# Service Ports:
-#   - cmux-client: 8080 (Vite SPA via nginx)
-#   - cmux-www: 9779 (Next.js API)
-#   - cmux-server: 9776 (WebSocket/API server)
+# Service URLs (Coolify magic words):
+#   - SERVICE_URL_CMUX_CLIENT_8080 -> cmux-client:8080
+#   - SERVICE_URL_CMUX_WWW_9779 -> cmux-www:9779
+#   - SERVICE_URL_CMUX_SERVER_9776 -> cmux-server:9776
 
 services:
   # =============================================================================
   # cmux-client: Vite SPA frontend served via nginx
   # =============================================================================
   cmux-client:
-    image: ${CLIENT_IMAGE:-ghcr.io/karlorz/cmux-client:latest}
-    container_name: cmux-client
+    image: ghcr.io/karlorz/cmux-client:latest
     restart: unless-stopped
-    ports:
-      - "${CLIENT_PORT:-8080}:8080"
     environment:
+      - SERVICE_URL_CMUX_CLIENT_8080
       - TZ=${TZ:-Asia/Hong_Kong}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test:
+        - CMD
+        - curl
+        - '-f'
+        - 'http://localhost:8080/health'
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 5s
     deploy:
       resources:
         limits:
@@ -43,12 +44,10 @@ services:
   # cmux-www: Next.js API server (standalone output)
   # =============================================================================
   cmux-www:
-    image: ${WWW_IMAGE:-ghcr.io/karlorz/cmux-www:latest}
-    container_name: cmux-www
+    image: ghcr.io/karlorz/cmux-www:latest
     restart: unless-stopped
-    ports:
-      - "${WWW_PORT:-9779}:9779"
     environment:
+      - SERVICE_URL_CMUX_WWW_9779
       - NODE_ENV=production
       - PORT=9779
       - TZ=${TZ:-Asia/Hong_Kong}
@@ -77,11 +76,14 @@ services:
       # JWT
       - CMUX_TASK_RUN_JWT_SECRET=${CMUX_TASK_RUN_JWT_SECRET}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9779/api/health"]
+      test:
+        - CMD
+        - curl
+        - '-f'
+        - 'http://localhost:9779/api/health'
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
     deploy:
       resources:
         limits:
@@ -93,12 +95,10 @@ services:
   # cmux-server: WebSocket and real-time API server
   # =============================================================================
   cmux-server:
-    image: ${SERVER_IMAGE:-ghcr.io/karlorz/cmux-server:latest}
-    container_name: cmux-server
+    image: ghcr.io/karlorz/cmux-server:latest
     restart: unless-stopped
-    ports:
-      - "${SERVER_PORT:-9776}:9776"
     environment:
+      - SERVICE_URL_CMUX_SERVER_9776
       - NODE_ENV=production
       - PORT=9776
       - TZ=${TZ:-Asia/Hong_Kong}
@@ -118,17 +118,15 @@ services:
       # JWT
       - CMUX_TASK_RUN_JWT_SECRET=${CMUX_TASK_RUN_JWT_SECRET}
     healthcheck:
-      test: ["CMD", "bun", "-e", "const net = require('net'); const s = net.createConnection(9776, 'localhost'); s.on('connect', () => process.exit(0)); s.on('error', () => process.exit(1));"]
+      test:
+        - CMD-SHELL
+        - "bun -e \"const net = require('net'); const s = net.createConnection(9776, 'localhost'); s.on('connect', () => process.exit(0)); s.on('error', () => process.exit(1));\""
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
     deploy:
       resources:
         limits:
           memory: 1G
         reservations:
           memory: 256M
-
-# Note: Traefik/Caddy reverse proxy configuration should be handled by Coolify
-# or a separate edge router. Each service exposes its own port for Coolify to route.

@@ -845,6 +845,117 @@ exit 0`;
     mode: "755",
   });
 
+  // Simplify skill tracking hook - detects when /simplify is used
+  // Marks the task run as having passed /simplify when the skill completes
+  const simplifyTrackHookScript = `#!/bin/bash
+# Claude Code /simplify tracking hook - marks task run when simplify skill completes
+# Fires on PostToolUse for Skill tool, checks if it's /simplify
+set -eu
+REQUEST=$(cat)
+
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_ID:-}" ]; then
+  exit 0
+fi
+
+# Extract skill name from tool input
+SKILL_NAME=$(echo "$REQUEST" | jq -r '.tool_input.skill // .tool_use.input.skill // empty')
+
+echo "[simplify-track] Skill used: $SKILL_NAME" >> /root/lifecycle/simplify-hook.log 2>&1
+
+# Check if this is the simplify skill (with or without arguments)
+if [[ "$SKILL_NAME" == "simplify" ]] || [[ "$SKILL_NAME" == "simplify "* ]]; then
+  echo "[simplify-track] /simplify detected, marking as passed..." >> /root/lifecycle/simplify-hook.log 2>&1
+
+  # Extract mode from arguments if present (--quick, --staged-only, or default to "full")
+  MODE="full"
+  if [[ "$SKILL_NAME" == *"--quick"* ]]; then
+    MODE="quick"
+  elif [[ "$SKILL_NAME" == *"--staged-only"* ]]; then
+    MODE="staged-only"
+  fi
+
+  # Call the mark-passed endpoint
+  (
+    RESPONSE=$(curl -s -X POST "\${CMUX_CALLBACK_URL}/api/v1/cmux/orchestration/simplify/mark-passed" \\
+      -H "Content-Type: application/json" \\
+      -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+      -d "{\\"mode\\": \\"$MODE\\"}" 2>&1)
+    echo "[simplify-track] API response: $RESPONSE" >> /root/lifecycle/simplify-hook.log 2>&1
+
+    # Also post activity event
+    curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+      -H "Content-Type: application/json" \\
+      -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+      -d "$(jq -n \\
+        --arg trid "\${CMUX_TASK_RUN_ID}" \\
+        --arg mode "$MODE" \\
+        '{taskRunId: $trid, type: "simplify_passed", summary: ("/simplify (" + $mode + ") completed")}')" \\
+      >> /root/lifecycle/simplify-hook.log 2>&1 || true
+  ) &
+fi
+
+exit 0`;
+
+  files.push({
+    destinationPath: `${claudeLifecycleDir}/simplify-track-hook.sh`,
+    contentBase64: Buffer.from(simplifyTrackHookScript).toString("base64"),
+    mode: "755",
+  });
+
+  // Simplify gate hook - blocks agent stop if /simplify required but not passed
+  // Only runs when CMUX_REQUIRE_SIMPLIFY=1 is set
+  const simplifyGateHookScript = `#!/bin/bash
+# Claude Code /simplify gate hook - enforces pre-merge requirement
+# Exit code 2 = block agent from stopping, stderr = message to user
+set -eu
+
+LOG_FILE="/root/lifecycle/simplify-gate.log"
+echo "[simplify-gate] Checking simplify requirement at $(date)" >> "$LOG_FILE"
+
+# Skip if requirement not enabled
+if [ "\${CMUX_REQUIRE_SIMPLIFY:-0}" != "1" ]; then
+  echo "[simplify-gate] Requirement not enabled, allowing stop" >> "$LOG_FILE"
+  exit 0
+fi
+
+# Skip if missing env vars
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
+  echo "[simplify-gate] Missing env vars, allowing stop" >> "$LOG_FILE"
+  exit 0
+fi
+
+# Check simplify status from API
+RESPONSE=$(curl -s "\${CMUX_CALLBACK_URL}/api/v1/cmux/orchestration/simplify/status" \\
+  -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" 2>&1)
+
+echo "[simplify-gate] API response: $RESPONSE" >> "$LOG_FILE"
+
+# Parse response
+REQUIRED=$(echo "$RESPONSE" | jq -r '.required // false')
+PASSED=$(echo "$RESPONSE" | jq -r '.passed // false')
+SKIPPED_REASON=$(echo "$RESPONSE" | jq -r '.skippedReason // empty')
+
+echo "[simplify-gate] Required: $REQUIRED, Passed: $PASSED, Skipped: $SKIPPED_REASON" >> "$LOG_FILE"
+
+# If not required or already passed/skipped, allow stop
+if [ "$REQUIRED" != "true" ] || [ "$PASSED" == "true" ] || [ -n "$SKIPPED_REASON" ]; then
+  echo "[simplify-gate] Requirement satisfied, allowing stop" >> "$LOG_FILE"
+  exit 0
+fi
+
+# Block the stop - /simplify is required but hasn't been run
+echo "[simplify-gate] BLOCKING: /simplify required but not run" >> "$LOG_FILE"
+echo "BLOCKED: Your team requires /simplify to run before task completion." >&2
+echo "Please run /simplify (or /simplify --quick) before stopping." >&2
+echo "To skip this requirement, ask your team admin to disable it in settings." >&2
+exit 2`;
+
+  files.push({
+    destinationPath: `${claudeLifecycleDir}/simplify-gate-hook.sh`,
+    contentBase64: Buffer.from(simplifyGateHookScript).toString("base64"),
+    mode: "755",
+  });
+
   // Check if user has provided an OAuth token (preferred) or API key
   const hasOAuthToken =
     ctx.apiKeys?.CLAUDE_CODE_OAUTH_TOKEN &&
@@ -897,6 +1008,16 @@ exit 0`;
       : {}),
     hooks: {
       Stop: [
+        // First check simplify gate (can block with exit 2)
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${claudeLifecycleDir}/simplify-gate-hook.sh`,
+            },
+          ],
+        },
+        // Then run completion callbacks
         {
           hooks: [
             {
@@ -1017,6 +1138,16 @@ exit 0`;
             },
           ],
         },
+        // /simplify skill tracking - marks task run when simplify completes
+        {
+          matcher: "Skill",
+          hooks: [
+            {
+              type: "command",
+              command: `${claudeLifecycleDir}/simplify-track-hook.sh`,
+            },
+          ],
+        },
       ],
     },
     env: {
@@ -1027,6 +1158,10 @@ exit 0`;
       CMUX_CALLBACK_URL: ctx.callbackUrl,
       CMUX_TASK_RUN_ID: ctx.taskRunId,
       CMUX_TASK_RUN_JWT: ctx.taskRunJwt,
+      // /simplify pre-merge gate requirement
+      ...(ctx.simplifySettings?.requireSimplifyBeforeMerge && hasTaskRunJwt
+        ? { CMUX_REQUIRE_SIMPLIFY: "1" }
+        : {}),
       ...(() => {
         // Priority order for base URL routing:
         // 1. OAuth token -> direct to Anthropic (no proxy)
