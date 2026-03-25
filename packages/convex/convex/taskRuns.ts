@@ -3796,3 +3796,40 @@ export const getInternal = internalQuery({
     return await ctx.db.get(args.id);
   },
 });
+
+/**
+ * Find task runs linked to a specific PR via the junction table.
+ * Used by merge routes to check simplify gate status.
+ */
+export const findByPullRequest = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    repoFullName: v.string(),
+    prNumber: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+
+    // Look up junction entries for this PR
+    const junctions = await ctx.db
+      .query("taskRunPullRequests")
+      .withIndex("by_pr", (q) =>
+        q
+          .eq("teamId", teamId)
+          .eq("repoFullName", args.repoFullName)
+          .eq("prNumber", args.prNumber)
+      )
+      .collect();
+
+    if (junctions.length === 0) {
+      return [];
+    }
+
+    // Fetch the actual task runs
+    const runs = await Promise.all(
+      junctions.map((j) => ctx.db.get(j.taskRunId))
+    );
+
+    return runs.filter((r): r is NonNullable<typeof r> => r !== null);
+  },
+});
