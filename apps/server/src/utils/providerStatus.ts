@@ -7,6 +7,7 @@ import {
 } from "@cmux/shared";
 import { AGENT_CATALOG } from "@cmux/shared/agent-catalog";
 import { checkDockerStatus } from "@cmux/shared/providers/common/check-docker";
+import { isAuthFreeModel } from "@cmux/shared/providers/control-plane";
 import { getConvex } from "./convexClient.js";
 
 export interface AggregatedProviderStatus {
@@ -106,6 +107,7 @@ export async function checkAllProvidersStatus(
  * Web-mode variant of checkAllProvidersStatus.
  * Only checks if required API keys are present in Convex - does not check
  * local files, keychains, or Docker status (which don't exist in web deployments).
+ * Also considers free-tier models that require no authentication.
  */
 export async function checkAllProvidersStatusWebMode(options: {
   teamSlugOrId: string;
@@ -132,6 +134,25 @@ export async function checkAllProvidersStatusWebMode(options: {
 
   // Check each agent's required API keys (skip local file checks)
   const providerChecks = AGENT_CONFIGS.map((agent) => {
+    // Find matching catalog entry to check for free tier
+    const catalogEntry = AGENT_CATALOG.find((e) => e.name === agent.name);
+
+    // Check if this is an auth-free model (free tier with no required API keys)
+    if (
+      catalogEntry &&
+      isAuthFreeModel({
+        tier: catalogEntry.tier,
+        requiredApiKeys: catalogEntry.requiredApiKeys ?? [],
+      })
+    ) {
+      // Free-tier models are always available without authentication
+      return {
+        name: agent.name,
+        isAvailable: true,
+        missingRequirements: undefined,
+      };
+    }
+
     const missingRequirements: string[] = [];
 
     // Check if required API keys are present
