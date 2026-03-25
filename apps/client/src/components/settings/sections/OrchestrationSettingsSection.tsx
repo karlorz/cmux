@@ -31,6 +31,12 @@ const MAX_CONCURRENT_OPTIONS = [
   { value: "10", label: "10 agents" },
 ];
 
+const SIMPLIFY_MODE_OPTIONS = [
+  { value: "quick", label: "Quick (single-pass)" },
+  { value: "full", label: "Full (3-pass review)" },
+  { value: "staged-only", label: "Staged Only (review staged files)" },
+];
+
 export function OrchestrationSettingsSection({ teamSlugOrId }: OrchestrationSettingsSectionProps) {
   const convex = useConvex();
   const { data: settings, isLoading, refetch } = useQuery({
@@ -40,11 +46,13 @@ export function OrchestrationSettingsSection({ teamSlugOrId }: OrchestrationSett
 
   const [localMaxConcurrent, setLocalMaxConcurrent] = useState<string>("3");
   const [localMaxDuration, setLocalMaxDuration] = useState<string>("60");
+  const [localSimplifyTimeout, setLocalSimplifyTimeout] = useState<string>("10");
 
   useEffect(() => {
     if (settings) {
       setLocalMaxConcurrent(String(settings.maxConcurrentSubAgents ?? 3));
       setLocalMaxDuration(String(settings.maxTaskDurationMinutes ?? 60));
+      setLocalSimplifyTimeout(String(settings.simplifyTimeoutMinutes ?? 10));
     }
   }, [settings]);
 
@@ -56,6 +64,9 @@ export function OrchestrationSettingsSection({ teamSlugOrId }: OrchestrationSett
       defaultCodingAgent?: string;
       maxConcurrentSubAgents?: number;
       maxTaskDurationMinutes?: number;
+      requireSimplifyBeforeMerge?: boolean;
+      simplifyMode?: "quick" | "full" | "staged-only";
+      simplifyTimeoutMinutes?: number;
     }) => {
       return convex.mutation(api.orchestrationSettings.update, updates);
     },
@@ -68,7 +79,7 @@ export function OrchestrationSettingsSection({ teamSlugOrId }: OrchestrationSett
     },
   });
 
-  const handleToggle = (field: "autoHeadAgent" | "autoSpawnEnabled", value: boolean) => {
+  const handleToggle = (field: "autoHeadAgent" | "autoSpawnEnabled" | "requireSimplifyBeforeMerge", value: boolean) => {
     updateMutation.mutate({
       teamSlugOrId,
       [field]: value,
@@ -87,6 +98,11 @@ export function OrchestrationSettingsSection({ teamSlugOrId }: OrchestrationSett
         teamSlugOrId,
         defaultCodingAgent: value,
       });
+    } else if (field === "simplifyMode") {
+      updateMutation.mutate({
+        teamSlugOrId,
+        simplifyMode: value as "quick" | "full" | "staged-only",
+      });
     }
   };
 
@@ -96,6 +112,16 @@ export function OrchestrationSettingsSection({ teamSlugOrId }: OrchestrationSett
       updateMutation.mutate({
         teamSlugOrId,
         maxTaskDurationMinutes: duration,
+      });
+    }
+  };
+
+  const handleSimplifyTimeoutBlur = () => {
+    const timeout = parseInt(localSimplifyTimeout, 10);
+    if (!isNaN(timeout) && timeout > 0 && timeout !== settings?.simplifyTimeoutMinutes) {
+      updateMutation.mutate({
+        teamSlugOrId,
+        simplifyTimeoutMinutes: timeout,
       });
     }
   };
@@ -166,6 +192,47 @@ export function OrchestrationSettingsSection({ teamSlugOrId }: OrchestrationSett
           disabled={updateMutation.isPending}
         />
       </SettingRow>
+
+      {/* /simplify Pre-Merge Gate Section */}
+      <div className="mt-6 border-t border-neutral-200 pt-6 dark:border-neutral-700">
+        <h4 className="mb-4 text-sm font-medium text-neutral-900 dark:text-neutral-100">
+          /simplify Pre-Merge Gate
+        </h4>
+
+        <SettingSwitch
+          label="Require /simplify Before Merge"
+          description="Agents must run /simplify before task completion. Blocks stopping if not run."
+          isSelected={settings?.requireSimplifyBeforeMerge ?? false}
+          onValueChange={(v) => handleToggle("requireSimplifyBeforeMerge", v)}
+          ariaLabel="Toggle require simplify before merge"
+          isDisabled={updateMutation.isPending}
+        />
+
+        <SettingSelect
+          id="simplify-mode"
+          label="Default /simplify Mode"
+          description="Which review mode agents should use by default"
+          value={settings?.simplifyMode ?? "quick"}
+          options={SIMPLIFY_MODE_OPTIONS}
+          onValueChange={(v) => handleSelectChange("simplifyMode", v)}
+        />
+
+        <SettingRow
+          label="/simplify Timeout (minutes)"
+          description="Maximum time /simplify can run before timing out"
+        >
+          <input
+            type="number"
+            min={1}
+            max={60}
+            value={localSimplifyTimeout}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => setLocalSimplifyTimeout(e.target.value)}
+            onBlur={handleSimplifyTimeoutBlur}
+            className="w-24 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+            disabled={updateMutation.isPending}
+          />
+        </SettingRow>
+      </div>
     </SettingSection>
   );
 }
