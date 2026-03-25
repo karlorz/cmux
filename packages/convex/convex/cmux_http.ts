@@ -2357,11 +2357,16 @@ async function handleGetTaskQualityGate(
       return jsonResponse({ code: 404, message: "Task not found" }, 404);
     }
 
-    const runs = await ctx.runQuery(internal.taskRuns.listByTaskAndTeamInternal, {
-      taskId: task._id,
-      teamId,
-      userId,
-    }) as Doc<"taskRuns">[];
+    const [runs, orchestrationSettings] = await Promise.all([
+      ctx.runQuery(internal.taskRuns.listByTaskAndTeamInternal, {
+        taskId: task._id,
+        teamId,
+        userId,
+      }) as Promise<Doc<"taskRuns">[]>,
+      ctx.runQuery(internal.orchestrationSettings.getByTeamIdInternal, {
+        teamId,
+      }),
+    ]);
 
     const crownedRun = runs.find((r) => r.isCrowned === true && r.isArchived !== true) ?? null;
     const selectedRun = task.selectedTaskRunId
@@ -2632,6 +2637,13 @@ async function handleGetTaskQualityGate(
         allPassed,
         total: checks.length,
         failures,
+      },
+      simplifyGate: {
+        required: orchestrationSettings?.requireSimplifyBeforeMerge ?? false,
+        passed: !!primaryRun?.simplifyPassedAt || !!primaryRun?.simplifySkippedReason,
+        passedAt: primaryRun?.simplifyPassedAt ?? null,
+        mode: primaryRun?.simplifyMode ?? null,
+        skippedReason: primaryRun?.simplifySkippedReason ?? null,
       },
       retry: {
         maxRetries,
