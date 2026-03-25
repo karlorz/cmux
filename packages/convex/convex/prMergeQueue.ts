@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { getTeamId } from "../_shared/team";
 import { authMutation, authQuery } from "./users/utils";
 
@@ -156,6 +157,46 @@ export const updateStatus = authMutation({
     const item = await ctx.db.get(args.queueId);
     if (!item || item.teamId !== teamId) {
       throw new Error("Queue item not found");
+    }
+
+    // Check /simplify gate when transitioning to "ready"
+    if (args.status === "ready") {
+      const orchestrationSettings = await ctx.runQuery(
+        internal.orchestrationSettings.getByTeamIdInternal,
+        { teamId }
+      );
+
+      if (orchestrationSettings?.requireSimplifyBeforeMerge) {
+        // Find linked task runs via junction table
+        const junctions = await ctx.db
+          .query("taskRunPullRequests")
+          .withIndex("by_pr", (q) =>
+            q
+              .eq("teamId", teamId)
+              .eq("repoFullName", item.repoFullName)
+              .eq("prNumber", item.prNumber)
+          )
+          .collect();
+
+        if (junctions.length > 0) {
+          // Check if ANY linked task run has simplify passed
+          let anySimplifyPassed = false;
+          for (const junction of junctions) {
+            const taskRun = await ctx.db.get(junction.taskRunId);
+            if (taskRun?.simplifyPassedAt || taskRun?.simplifySkippedReason) {
+              anySimplifyPassed = true;
+              break;
+            }
+          }
+
+          if (!anySimplifyPassed) {
+            throw new Error(
+              "Merge blocked: /simplify is required before merge. Please run /simplify on the linked task first."
+            );
+          }
+        }
+        // If no linked task runs, allow (PR created outside cmux)
+      }
     }
 
     const now = Date.now();
