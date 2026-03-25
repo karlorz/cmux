@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -88,7 +89,8 @@ func runTaskListWatch() error {
 	client.SetTeamSlug(teamSlug)
 
 	interval := time.Duration(taskListInterval) * time.Second
-	header := fmt.Sprintf("Task List (watching, interval: %ds, Ctrl+C to stop)", taskListInterval)
+	serverIndicator := getServerIndicator()
+	header := fmt.Sprintf("Task List [%s] (watching, interval: %ds, Ctrl+C to stop)", serverIndicator, taskListInterval)
 	config := WatchPollConfig(interval, header)
 
 	// Create a cancellable context
@@ -127,7 +129,49 @@ func runTaskListWatch() error {
 	)
 }
 
+func getServerIndicator() string {
+	cfg := auth.GetConfig()
+	if cfg.IsDev {
+		return "dev"
+	}
+	// Extract domain from ConvexSiteURL for a short indicator
+	if cfg.ConvexSiteURL != "" {
+		// Production typically uses cmux-www.karldigi.dev or similar
+		if strings.Contains(cfg.ConvexSiteURL, "localhost") {
+			return "local"
+		}
+		if strings.Contains(cfg.ConvexSiteURL, "convex.site") {
+			// Convex cloud deployment - extract subdomain
+			// e.g., "https://famous-camel-162.convex.site" -> "famous-camel-162"
+			parts := strings.Split(cfg.ConvexSiteURL, "//")
+			if len(parts) > 1 {
+				host := strings.Split(parts[1], ".")[0]
+				if len(host) > 15 {
+					return host[:12] + "..."
+				}
+				return host
+			}
+		}
+	}
+	return "prod"
+}
+
 func printTaskList(result *vm.ListTasksResult) {
+	// Print server indicator header
+	serverIndicator := getServerIndicator()
+	cfg := auth.GetConfig()
+	fmt.Printf("Server: %s", serverIndicator)
+	if cfg.ConvexSiteURL != "" {
+		// Show truncated URL for clarity
+		url := cfg.ConvexSiteURL
+		if len(url) > 50 {
+			url = url[:47] + "..."
+		}
+		fmt.Printf(" (%s)", url)
+	}
+	fmt.Println()
+	fmt.Println()
+
 	if len(result.Tasks) == 0 {
 		if taskListArchived {
 			fmt.Println("No archived tasks found.")
