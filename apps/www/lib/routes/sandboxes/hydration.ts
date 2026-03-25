@@ -68,12 +68,26 @@ rm -f ${scriptPath}
 exit $EXIT_CODE
 `;
 
+  // Pre-flight check: verify instance exec channel is ready
+  console.log("[sandboxes.start] Running pre-flight exec check");
+  try {
+    const preflightRes = await instance.exec("echo ready", { timeoutMs: 10000 });
+    if (preflightRes.exit_code !== 0 || !preflightRes.stdout?.includes("ready")) {
+      console.warn("[sandboxes.start] Pre-flight check failed, proceeding anyway:", {
+        exit_code: preflightRes.exit_code,
+        stdout: preflightRes.stdout?.slice(0, 100),
+      });
+    }
+  } catch (preflightErr) {
+    console.warn("[sandboxes.start] Pre-flight exec failed, proceeding anyway:", preflightErr);
+  }
+
   console.log("[sandboxes.start] Starting hydration with Bun script");
-  const hydrateRes = await instance.exec(`bash -c ${singleQuote(command)}`);
+  let hydrateRes = await instance.exec(`bash -c ${singleQuote(command)}`);
 
   // Log the full output for debugging
-  const maskedStdout = maskSensitive(hydrateRes.stdout || "");
-  const maskedStderr = maskSensitive(hydrateRes.stderr || "");
+  let maskedStdout = maskSensitive(hydrateRes.stdout || "");
+  let maskedStderr = maskSensitive(hydrateRes.stderr || "");
 
   if (maskedStdout) {
     console.log(
@@ -89,7 +103,32 @@ exit $EXIT_CODE
 
   console.log(`[sandboxes.start] hydration exit code: ${hydrateRes.exit_code}`);
 
+  // Single retry on failure - covers transient bun-not-ready or filesystem sync issues
   if (hydrateRes.exit_code !== 0) {
-    throw new Error(`Hydration failed with exit code ${hydrateRes.exit_code}`);
+    console.log("[sandboxes.start] Hydration failed, retrying once after 3s delay");
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+
+    hydrateRes = await instance.exec(`bash -c ${singleQuote(command)}`);
+    maskedStdout = maskSensitive(hydrateRes.stdout || "");
+    maskedStderr = maskSensitive(hydrateRes.stderr || "");
+
+    if (maskedStdout) {
+      console.log(
+        `[sandboxes.start] hydration retry stdout:\n${maskedStdout.slice(0, 2000)}`
+      );
+    }
+    if (maskedStderr) {
+      console.log(
+        `[sandboxes.start] hydration retry stderr:\n${maskedStderr.slice(0, 1000)}`
+      );
+    }
+    console.log(`[sandboxes.start] hydration retry exit code: ${hydrateRes.exit_code}`);
+  }
+
+  if (hydrateRes.exit_code !== 0) {
+    const errorDetail = maskedStderr
+      ? `: ${maskedStderr.slice(0, 200)}`
+      : "";
+    throw new Error(`Hydration failed with exit code ${hydrateRes.exit_code}${errorDetail}`);
   }
 };

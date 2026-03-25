@@ -43,6 +43,7 @@ import {
 } from "../sandboxes/git";
 import type { HydrateRepoConfig } from "../sandboxes/hydration";
 import { hydrateWorkspace } from "../sandboxes/hydration";
+import { maskSensitive } from "../sandboxes/shell";
 import { resolveTeamAndSnapshot } from "../sandboxes/snapshot";
 import {
   allocateScriptIdentifiers,
@@ -112,6 +113,7 @@ export {
   wrapMorphInstance,
   wrapPveLxcInstance,
   getPveLxcClient,
+  maskSensitive,
 };
 
 export type {

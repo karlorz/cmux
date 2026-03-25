@@ -309,8 +309,19 @@ export const createInstance = httpAction(async (ctx, req) => {
         status: morphResponse.status,
         body: errorText.slice(0, 500),
       });
+      // Sanitize error detail - strip potential secrets
+      const sanitizedDetail = errorText
+        .slice(0, 200)
+        .replace(/api[_-]?key[=:][^\s&"']*/gi, "api_key=***")
+        .replace(/token[=:][^\s&"']*/gi, "token=***")
+        .replace(/secret[=:][^\s&"']*/gi, "secret=***");
       return jsonResponse(
-        { code: 502, message: "Failed to create instance" },
+        {
+          code: 502,
+          message: "Failed to create instance",
+          detail: sanitizedDetail,
+          providerStatus: morphResponse.status,
+        },
         502
       );
     }

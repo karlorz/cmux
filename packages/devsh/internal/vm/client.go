@@ -90,6 +90,120 @@ func (c *Client) SetTeamSlug(teamSlug string) {
 	c.teamSlug = teamSlug
 }
 
+// isRetryableStatusCode returns true if the HTTP status code indicates a transient error
+func isRetryableStatusCode(statusCode int) bool {
+	return statusCode == http.StatusBadGateway || // 502
+		statusCode == http.StatusServiceUnavailable || // 503
+		statusCode == http.StatusGatewayTimeout // 504
+}
+
+// isRetryableError returns true if the error indicates a transient network issue
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := strings.ToLower(err.Error())
+	return strings.Contains(errStr, "connection reset") ||
+		strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "timeout") ||
+		strings.Contains(errStr, "eof") ||
+		strings.Contains(errStr, "broken pipe")
+}
+
+// retryConfig holds retry parameters
+type retryConfig struct {
+	maxRetries int
+	baseDelay  time.Duration
+}
+
+// defaultRetryConfig returns the default retry configuration
+func defaultRetryConfig() retryConfig {
+	return retryConfig{
+		maxRetries: 2, // 3 total attempts
+		baseDelay:  time.Second,
+	}
+}
+
+// doRequestWithRetry makes an authenticated request with retry for transient errors
+func (c *Client) doRequestWithRetry(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
+	cfg := defaultRetryConfig()
+	var lastErr error
+	var lastResp *http.Response
+
+	for attempt := 0; attempt <= cfg.maxRetries; attempt++ {
+		if attempt > 0 {
+			// Exponential backoff with jitter
+			delay := cfg.baseDelay * time.Duration(1<<(attempt-1))
+			jitter := time.Duration(float64(delay) * 0.25 * (0.5 - float64(time.Now().UnixNano()%1000)/1000))
+			time.Sleep(delay + jitter)
+		}
+
+		resp, err := c.doRequest(ctx, method, path, body)
+		if err != nil {
+			if isRetryableError(err) && attempt < cfg.maxRetries {
+				lastErr = err
+				continue
+			}
+			return nil, err
+		}
+
+		// Check for retryable status codes
+		if isRetryableStatusCode(resp.StatusCode) && attempt < cfg.maxRetries {
+			lastResp = resp
+			lastErr = fmt.Errorf("server returned %d", resp.StatusCode)
+			resp.Body.Close()
+			continue
+		}
+
+		return resp, nil
+	}
+
+	if lastResp != nil {
+		return lastResp, nil
+	}
+	return nil, lastErr
+}
+
+// doServerRequestWithRetry makes an authenticated request to apps/server with retry
+func (c *Client) doServerRequestWithRetry(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
+	cfg := defaultRetryConfig()
+	var lastErr error
+	var lastResp *http.Response
+
+	for attempt := 0; attempt <= cfg.maxRetries; attempt++ {
+		if attempt > 0 {
+			// Exponential backoff with jitter
+			delay := cfg.baseDelay * time.Duration(1<<(attempt-1))
+			jitter := time.Duration(float64(delay) * 0.25 * (0.5 - float64(time.Now().UnixNano()%1000)/1000))
+			time.Sleep(delay + jitter)
+		}
+
+		resp, err := c.doServerRequest(ctx, method, path, body)
+		if err != nil {
+			if isRetryableError(err) && attempt < cfg.maxRetries {
+				lastErr = err
+				continue
+			}
+			return nil, err
+		}
+
+		// Check for retryable status codes
+		if isRetryableStatusCode(resp.StatusCode) && attempt < cfg.maxRetries {
+			lastResp = resp
+			lastErr = fmt.Errorf("server returned %d", resp.StatusCode)
+			resp.Body.Close()
+			continue
+		}
+
+		return resp, nil
+	}
+
+	if lastResp != nil {
+		return lastResp, nil
+	}
+	return nil, lastErr
+}
+
 // doRequest makes an authenticated request to the Convex HTTP API
 func (c *Client) doRequest(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
 	accessToken, err := auth.GetAccessToken()
@@ -176,14 +290,14 @@ func (c *Client) CreateInstance(ctx context.Context, opts CreateOptions) (*Insta
 		body["ttlSeconds"] = opts.TTLSeconds
 	}
 
-	resp, err := c.doRequest(ctx, "POST", "/api/v1/cmux/instances", body)
+	resp, err := c.doRequestWithRetry(ctx, "POST", "/api/v1/cmux/instances", body)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+		return nil, formatAPIError(resp.StatusCode, readErrorBody(resp.Body), "/api/v1/cmux/instances")
 	}
 
 	var result Instance
@@ -1964,14 +2078,14 @@ func (c *Client) CreateCloudWorkspace(ctx context.Context, opts CreateCloudWorks
 		body["theme"] = opts.Theme
 	}
 
-	resp, err := c.doServerRequest(ctx, "POST", "/api/create-cloud-workspace", body)
+	resp, err := c.doServerRequestWithRetry(ctx, "POST", "/api/create-cloud-workspace", body)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("create-cloud-workspace failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+		return nil, formatAPIError(resp.StatusCode, readErrorBody(resp.Body), "/api/create-cloud-workspace")
 	}
 
 	var result CreateCloudWorkspaceResult

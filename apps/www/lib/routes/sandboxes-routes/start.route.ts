@@ -39,6 +39,7 @@ import {
   getSandboxStartErrorMessage,
   getUserFromRequest,
   hydrateWorkspace,
+  maskSensitive,
   loadEnvironmentEnvVars,
   mapProviderOverrides,
   parseGithubRepoUrl,
@@ -813,7 +814,10 @@ sandboxesStartRouter.openapi(
               stopError,
             );
           });
-          return c.text("Failed to hydrate sandbox", 500);
+          const errorDetail = error instanceof Error
+            ? maskSensitive(error.message).slice(0, 200)
+            : "Unknown error";
+          return c.text(`Failed to hydrate sandbox: ${errorDetail}`, 500);
         }
       }
 

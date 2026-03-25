@@ -313,6 +313,31 @@ devsh task autopilot <task-id> --enable
 devsh task create --repo owner/repo --agent claude-code --autopilot "Fix all lint errors"
 ```
 
+## Troubleshooting
+
+### Common Failure Patterns
+
+| Error | Cause | Recovery |
+|-------|-------|----------|
+| 502/503/504 Bad Gateway | Transient server error | Retry the command, or check `devsh auth status` |
+| "Failed to hydrate sandbox" | Repo URL, branch, or GitHub token issue | Verify repo exists, branch name is correct, and GitHub token has access |
+| "Failed to start sandbox" | Provider credentials missing or invalid | Check `MORPH_API_KEY` or `PVE_API_URL`/`PVE_API_TOKEN` in environment |
+| "not authenticated" | Session expired or missing | Run `devsh auth login` to re-authenticate |
+| "access denied (403)" | Permission or team mismatch | Verify team membership and resource ownership |
+| "rate limited (429)" | Too many requests | Wait a moment and retry |
+
+### Debugging Steps
+
+1. **Check auth status**: `devsh auth status`
+2. **Verify provider**: `devsh providers list`
+3. **Check environment**:
+   ```bash
+   echo $MORPH_API_KEY      # For Morph provider
+   echo $PVE_API_URL        # For PVE-LXC provider
+   ```
+4. **Test with explicit provider**: `devsh start -p morph .` or `devsh start -p pve-lxc .`
+5. **Check logs**: Server errors include masked details in the response
+
 ## Create Symlinks for Other Agents
 
 ```bash
