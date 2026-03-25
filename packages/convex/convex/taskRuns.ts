@@ -2266,6 +2266,55 @@ export const workerComplete = internalMutation({
   },
 });
 
+/**
+ * Mark /simplify as passed for a task run.
+ * Called by the simplify tracking hook when /simplify completes successfully.
+ */
+export const markSimplifyPassed = internalMutation({
+  args: {
+    taskRunId: v.id("taskRuns"),
+    mode: v.optional(v.string()), // "quick", "full", "staged-only"
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.taskRunId);
+    if (!run) {
+      throw new Error("Task run not found");
+    }
+
+    await ctx.db.patch(args.taskRunId, {
+      simplifyPassedAt: Date.now(),
+      simplifyMode: args.mode ?? "quick",
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
+/**
+ * Skip /simplify requirement for a task run with a reason.
+ * Used when an operator explicitly skips the requirement.
+ */
+export const skipSimplifyRequirement = internalMutation({
+  args: {
+    taskRunId: v.id("taskRuns"),
+    reason: v.string(), // e.g., "no code changes", "user override", "timeout"
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.taskRunId);
+    if (!run) {
+      throw new Error("Task run not found");
+    }
+
+    await ctx.db.patch(args.taskRunId, {
+      simplifySkippedReason: args.reason,
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
 // Get all active VSCode instances
 export const getActiveVSCodeInstances = authQuery({
   args: { teamSlugOrId: v.string() },

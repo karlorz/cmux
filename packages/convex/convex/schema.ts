@@ -439,6 +439,10 @@ const convexSchema = defineSchema({
         checkpointGeneration: v.optional(v.number()), // Monotonic counter for checkpoint ordering
       })
     ),
+    // /simplify pre-merge gate tracking
+    simplifyPassedAt: v.optional(v.number()), // Timestamp when /simplify completed successfully
+    simplifyMode: v.optional(v.string()), // Which mode was used: "quick", "full", "staged-only"
+    simplifySkippedReason: v.optional(v.string()), // If skipped, why (e.g., "no code changes", "user override")
   })
     .index("by_task", ["taskId", "createdAt"])
     .index("by_parent", ["parentRunId"])
@@ -2544,6 +2548,14 @@ const convexSchema = defineSchema({
     // Cost controls
     dailyBudgetCents: v.optional(v.number()), // Daily spending limit in cents
     maxTaskDurationMinutes: v.optional(v.number()), // Max duration per sub-agent task
+    // /simplify pre-merge gate settings
+    requireSimplifyBeforeMerge: v.optional(v.boolean()), // Default: false - require /simplify before task completion
+    simplifyMode: v.optional(v.union(
+      v.literal("quick"),
+      v.literal("full"),
+      v.literal("staged-only")
+    )), // Default: "quick" - which /simplify mode to enforce
+    simplifyTimeoutMinutes: v.optional(v.number()), // Default: 10 - timeout for simplify enforcement
     // Ownership
     createdAt: v.number(),
     updatedAt: v.number(),

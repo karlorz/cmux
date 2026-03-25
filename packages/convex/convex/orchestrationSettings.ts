@@ -31,6 +31,10 @@ export const get = authQuery({
       preferredProviders: settings?.preferredProviders ?? ["codex", "claude"],
       dailyBudgetCents: settings?.dailyBudgetCents ?? null,
       maxTaskDurationMinutes: settings?.maxTaskDurationMinutes ?? 60,
+      // /simplify pre-merge gate settings
+      requireSimplifyBeforeMerge: settings?.requireSimplifyBeforeMerge ?? false,
+      simplifyMode: settings?.simplifyMode ?? "quick",
+      simplifyTimeoutMinutes: settings?.simplifyTimeoutMinutes ?? 10,
       createdAt: settings?.createdAt ?? null,
       updatedAt: settings?.updatedAt ?? null,
     };
@@ -41,6 +45,12 @@ export const get = authQuery({
  * Update orchestration settings for a team.
  * Creates settings if they don't exist.
  */
+const simplifyModeValidator = v.optional(v.union(
+  v.literal("quick"),
+  v.literal("full"),
+  v.literal("staged-only")
+));
+
 export const update = authMutation({
   args: {
     teamSlugOrId: v.string(),
@@ -53,6 +63,10 @@ export const update = authMutation({
     preferredProviders: v.optional(v.array(v.string())),
     dailyBudgetCents: v.optional(v.number()),
     maxTaskDurationMinutes: v.optional(v.number()),
+    // /simplify pre-merge gate settings
+    requireSimplifyBeforeMerge: v.optional(v.boolean()),
+    simplifyMode: simplifyModeValidator,
+    simplifyTimeoutMinutes: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
@@ -186,6 +200,10 @@ export const getByTeamIdInternal = internalQuery({
       preferredProviders: settings?.preferredProviders ?? ["codex", "claude"],
       dailyBudgetCents: settings?.dailyBudgetCents ?? null,
       maxTaskDurationMinutes: settings?.maxTaskDurationMinutes ?? 60,
+      // /simplify pre-merge gate settings
+      requireSimplifyBeforeMerge: settings?.requireSimplifyBeforeMerge ?? false,
+      simplifyMode: settings?.simplifyMode ?? "quick",
+      simplifyTimeoutMinutes: settings?.simplifyTimeoutMinutes ?? 10,
     };
   },
 });
