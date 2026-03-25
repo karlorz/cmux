@@ -260,8 +260,10 @@ function DashboardComponent() {
   const [selectedBranch, setSelectedBranch] = useState<string[]>([]);
 
   const [selectedAgents, setSelectedAgentsState] = useState<string[]>(() => {
+    // Try team-scoped key first, then fall back to legacy global key for migration
+    const teamScopedKey = `selectedAgents-${teamSlugOrId}`;
     const storedAgents = parseStoredAgentSelection(
-      localStorage.getItem("selectedAgents")
+      localStorage.getItem(teamScopedKey) ?? localStorage.getItem("selectedAgents")
     );
 
     if (storedAgents.length > 0) {
@@ -298,13 +300,17 @@ function DashboardComponent() {
   // In web mode, always force cloud mode
   const [isCloudMode, setIsCloudMode] = useState<boolean>(() => {
     if (env.NEXT_PUBLIC_WEB_MODE) return true;
-    const stored = localStorage.getItem("isCloudMode");
+    // Try team-scoped key first, then fall back to legacy global key for migration
+    const teamScopedKey = `isCloudMode-${teamSlugOrId}`;
+    const stored = localStorage.getItem(teamScopedKey) ?? localStorage.getItem("isCloudMode");
     return stored ? JSON.parse(stored) : true;
   });
 
   // Ralph Mode: keep working until explicit completion signal
   const [isRalphMode, setIsRalphMode] = useState<boolean>(() => {
-    const stored = localStorage.getItem("isRalphMode");
+    // Try team-scoped key first, then fall back to legacy global key for migration
+    const teamScopedKey = `isRalphMode-${teamSlugOrId}`;
+    const stored = localStorage.getItem(teamScopedKey) ?? localStorage.getItem("isRalphMode");
     return stored ? JSON.parse(stored) : false;
   });
 
@@ -593,20 +599,23 @@ function DashboardComponent() {
   const persistAgentSelection = useCallback(
     (agents: string[]) => {
       try {
+        const teamScopedKey = `selectedAgents-${teamSlugOrId}`;
         const isDefaultSelection =
           defaultAgentSelection.length > 0 &&
           areAgentSelectionsEqual(agents, defaultAgentSelection);
 
         if (agents.length === 0 || isDefaultSelection) {
-          localStorage.removeItem("selectedAgents");
+          localStorage.removeItem(teamScopedKey);
         } else {
-          localStorage.setItem("selectedAgents", JSON.stringify(agents));
+          localStorage.setItem(teamScopedKey, JSON.stringify(agents));
         }
+        // Clean up legacy global key on next persist
+        localStorage.removeItem("selectedAgents");
       } catch (error) {
         console.warn("Failed to persist agent selection", error);
       }
     },
-    [defaultAgentSelection]
+    [defaultAgentSelection, teamSlugOrId]
   );
 
   // Keep selected agents aligned with Convex models and user model preferences.
@@ -1217,8 +1226,10 @@ function DashboardComponent() {
     if (isEnvSelected) return; // environment forces cloud mode
     const newMode = !isCloudMode;
     setIsCloudMode(newMode);
-    localStorage.setItem("isCloudMode", JSON.stringify(newMode));
-  }, [isCloudMode, isEnvSelected]);
+    localStorage.setItem(`isCloudMode-${teamSlugOrId}`, JSON.stringify(newMode));
+    // Clean up legacy global key
+    localStorage.removeItem("isCloudMode");
+  }, [isCloudMode, isEnvSelected, teamSlugOrId]);
 
   // Handle paste of GitHub repo URL in the project search field
   const handleProjectSearchPaste = useCallback(
@@ -1466,7 +1477,9 @@ function DashboardComponent() {
               onRalphModeToggle={() => {
                 setIsRalphMode((prev) => {
                   const next = !prev;
-                  localStorage.setItem("isRalphMode", JSON.stringify(next));
+                  localStorage.setItem(`isRalphMode-${teamSlugOrId}`, JSON.stringify(next));
+                  // Clean up legacy global key
+                  localStorage.removeItem("isRalphMode");
                   return next;
                 });
               }}
