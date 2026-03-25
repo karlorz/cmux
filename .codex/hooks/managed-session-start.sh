@@ -6,6 +6,14 @@ trimmed_non_empty() {
   [[ -n "${value//[[:space:]]/}" ]]
 }
 
+codex_home_dir() {
+  if [[ -n "${CODEX_HOME:-}" ]]; then
+    printf '%s\n' "$CODEX_HOME"
+  else
+    printf '%s/.codex\n' "$HOME"
+  fi
+}
+
 resolve_workspace_root() {
   local candidate="$1"
 
@@ -18,9 +26,32 @@ resolve_workspace_root() {
 
 session_workspace_file() {
   local session_id="$1"
-  local template="${CMUX_CODEX_SESSION_WORKSPACE_FILE_TEMPLATE:-/tmp/codex-session-workspace-root-%s}"
+  local template="${CMUX_SESSION_WORKSPACE_FILE_TEMPLATE:-${CMUX_CODEX_SESSION_WORKSPACE_FILE_TEMPLATE:-/tmp/codex-session-workspace-root-%s}}"
 
   printf "$template" "$session_id"
+}
+
+route_to_workspace_hook() {
+  local workspace_root="$1"
+  local relative_hook_path="$2"
+  local hook_path="${workspace_root}/${relative_hook_path}"
+
+  if [[ ! -f "$hook_path" ]]; then
+    return 1
+  fi
+
+  printf '%s' "$HOOK_INPUT" | bash "$hook_path"
+}
+
+route_to_home_hook() {
+  local hook_name="$1"
+  local hook_path="$(codex_home_dir)/hooks/${hook_name}"
+
+  if [[ ! -f "$hook_path" ]]; then
+    return 1
+  fi
+
+  printf '%s' "$HOOK_INPUT" | bash "$hook_path"
 }
 
 HOOK_INPUT="$(cat)"
@@ -30,14 +61,16 @@ SESSION_ID="${SESSION_ID:-default}"
 SOURCE="${SOURCE:-startup}"
 WORKSPACE_ROOT="$(resolve_workspace_root "$HOOK_CWD")"
 WORKSPACE_FILE="$(session_workspace_file "$SESSION_ID")"
-CURRENT_FILE="${CMUX_CODEX_CURRENT_WORKSPACE_FILE:-/tmp/codex-current-workspace-root}"
+CURRENT_FILE="${CMUX_CURRENT_WORKSPACE_FILE:-${CMUX_CODEX_CURRENT_WORKSPACE_FILE:-/tmp/codex-current-workspace-root}}"
 
 printf '%s\n' "$WORKSPACE_ROOT" >"$WORKSPACE_FILE"
 printf '%s\n' "$WORKSPACE_ROOT" >"$CURRENT_FILE"
 
-WORKSPACE_SESSION_START="${WORKSPACE_ROOT}/.codex/hooks/session-start.sh"
-if [[ -f "$WORKSPACE_SESSION_START" ]]; then
-  printf '%s' "$HOOK_INPUT" | bash "$WORKSPACE_SESSION_START"
+if route_to_workspace_hook "$WORKSPACE_ROOT" ".codex/hooks/session-start.sh"; then
+  exit 0
+fi
+
+if route_to_home_hook "session-start.sh"; then
   exit 0
 fi
 

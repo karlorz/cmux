@@ -245,6 +245,17 @@ assert "Stale generic AUTOPILOT_KEEP_RUNNING_DISABLED=0 does not enable Codex au
 assert "Stale generic enable does not create blocked flag" test ! -f "/tmp/codex-autopilot-blocked-${TEST_SESSION}"
 
 cleanup
+CODEX_HOOKS_ONLY_OUTPUT=$(echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
+  env -u AUTOPILOT_KEEP_RUNNING_DISABLED -u CMUX_AUTOPILOT_ENABLED \
+    CMUX_CODEX_HOOKS_ENABLED=1 \
+    AUTOPILOT_ENABLED=1 \
+    AUTOPILOT_DELAY=0 \
+    bash "$HOOK")
+
+assert "CMUX_CODEX_HOOKS_ENABLED also enables Codex autopilot" jq -e '.decision == "block"' <<<"$CODEX_HOOKS_ONLY_OUTPUT"
+assert "CMUX_CODEX_HOOKS_ENABLED creates blocked flag" test -f "/tmp/codex-autopilot-blocked-${TEST_SESSION}"
+
+cleanup
 INPUT_JSON="{\"session_id\":\"${TEST_SESSION}\",\"stop_hook_active\":false}"
 setup_fake_sleep
 
