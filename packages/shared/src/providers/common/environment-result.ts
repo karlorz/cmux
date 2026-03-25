@@ -126,4 +126,17 @@ export type EnvironmentContext = {
     CMUX_IS_ORCHESTRATION_HEAD?: string;
     CMUX_ORCHESTRATION_ID?: string;
   };
+  /**
+   * /simplify pre-merge gate settings from team orchestration settings.
+   * When requireSimplifyBeforeMerge is true, agents must run /simplify
+   * before task completion.
+   */
+  simplifySettings?: {
+    /** Whether /simplify is required before task completion */
+    requireSimplifyBeforeMerge: boolean;
+    /** Default mode: "quick", "full", or "staged-only" */
+    simplifyMode: "quick" | "full" | "staged-only";
+    /** Timeout in minutes for /simplify runs */
+    simplifyTimeoutMinutes: number;
+  };
 };
