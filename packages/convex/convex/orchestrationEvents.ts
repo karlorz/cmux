@@ -44,6 +44,7 @@ const eventTypeValidator = v.union(
   v.literal("memory_loaded"),
   v.literal("memory_updated"),
   v.literal("memory_pruned"), // Legacy alias for memory_updated with action=archive
+  v.literal("memory_scope_changed"), // P4: Scope transitions during session
   // Context health events (Phase 4)
   v.literal("context_warning"),
   v.literal("context_compacted"),
@@ -51,6 +52,9 @@ const eventTypeValidator = v.union(
   v.literal("prompt_submitted"),
   v.literal("session_finished"),
   v.literal("run_resumed"),
+  // Tool lifecycle events (P1 Lifecycle Parity)
+  v.literal("tool_requested"),
+  v.literal("tool_completed"),
   // MCP runtime events (P5 Lifecycle Parity)
   v.literal("mcp_capabilities_negotiated")
 );
@@ -357,6 +361,15 @@ export const getEventAnalytics = authQuery({
       (countsByType["context_warning"] ?? 0) +
       (countsByType["context_compacted"] ?? 0);
 
+    const toolLifecycle =
+      (countsByType["tool_requested"] ?? 0) +
+      (countsByType["tool_completed"] ?? 0);
+
+    const memoryEvents =
+      (countsByType["memory_loaded"] ?? 0) +
+      (countsByType["memory_updated"] ?? 0) +
+      (countsByType["memory_scope_changed"] ?? 0);
+
     return {
       totalEvents: filteredEvents.length,
       countsByType,
@@ -365,6 +378,8 @@ export const getEventAnalytics = authQuery({
         sessionLifecycle,
         approvals,
         contextHealth,
+        toolLifecycle,
+        memoryEvents,
       },
       sinceTimestamp: since,
     };

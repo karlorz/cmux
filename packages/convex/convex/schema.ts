@@ -2085,6 +2085,7 @@ const convexSchema = defineSchema({
       v.literal("memory_loaded"),
       v.literal("memory_updated"),
       v.literal("memory_pruned"), // Legacy alias for memory_updated with action=archive
+      v.literal("memory_scope_changed"), // P4: Scope transitions during session
       // Context health events (Phase 4)
       v.literal("context_warning"),
       v.literal("context_compacted"),
@@ -2096,6 +2097,9 @@ const convexSchema = defineSchema({
       v.literal("prompt_submitted"),
       v.literal("session_finished"),
       v.literal("run_resumed"),
+      // Tool lifecycle events (P1 Lifecycle Parity)
+      v.literal("tool_requested"),
+      v.literal("tool_completed"),
       // MCP runtime events (P5 Lifecycle Parity)
       v.literal("mcp_capabilities_negotiated")
     ),
