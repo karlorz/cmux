@@ -23,6 +23,7 @@ export const env = createEnv({
       .enum(["true", "false"])
       .optional()
       .transform((v) => v === "true"),
+    NEXT_PUBLIC_TERMINAL_RENDERER: z.enum(["xterm", "ghostty"]).optional(),
   },
 
   /**
