@@ -4,7 +4,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { Octokit } from "octokit";
-import { generateObject, type LanguageModel } from "ai";
+import { generateObject, NoObjectGeneratedError, type LanguageModel } from "ai";
 import { ConvexError, v } from "convex/values";
 import {
   CrownEvaluationResponseSchema,
@@ -322,6 +322,18 @@ IMPORTANT: Respond ONLY with the JSON object, no other text.`;
     } catch (error) {
       attemptErrors.push({ attempt, error });
 
+      // Diagnostic logging for NoObjectGeneratedError
+      if (NoObjectGeneratedError.isInstance(error)) {
+        console.error(`[convex.crown] NoObjectGeneratedError details:`, {
+          text: error.text?.substring(0, 1000),
+          cause:
+            error.cause instanceof Error
+              ? error.cause.message
+              : String(error.cause),
+          hasResponse: !!error.response,
+        });
+      }
+
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       console.error(
@@ -430,6 +442,22 @@ Return a JSON object with this exact structure:
       return CrownSummarizationResponseSchema.parse(object);
     } catch (error) {
       attemptErrors.push({ attempt, error });
+
+      // Diagnostic logging for NoObjectGeneratedError
+      if (NoObjectGeneratedError.isInstance(error)) {
+        console.error(
+          `[convex.crown] NoObjectGeneratedError (summarization) details:`,
+          {
+            text: error.text?.substring(0, 1000),
+            cause:
+              error.cause instanceof Error
+                ? error.cause.message
+                : String(error.cause),
+            hasResponse: !!error.response,
+          }
+        );
+      }
+
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       console.error(
