@@ -945,6 +945,18 @@ fi
 
 # Block the stop - /simplify is required but hasn't been run
 echo "[simplify-gate] BLOCKING: /simplify required but not run" >> "$LOG_FILE"
+
+# Emit stop_blocked event to dashboard (background, non-blocking)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n \\
+      --arg trid "\${CMUX_TASK_RUN_ID:-}" \\
+      '{taskRunId: $trid, type: "stop_blocked", toolName: "claude", summary: "Stop blocked: /simplify required but not run", blockedBy: "simplify_gate"}')" \\
+    >> "$LOG_FILE" 2>&1 || true
+) &
+
 echo "BLOCKED: Your team requires /simplify to run before task completion." >&2
 echo "Please run /simplify (or /simplify --quick) before stopping." >&2
 echo "To skip this requirement, ask your team admin to disable it in settings." >&2
