@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CURSOR_AGENT_CONFIGS } from "./configs";
-import { CURSOR_API_KEY } from "../../apiKeys";
+import { CURSOR_API_KEY, CURSOR_AUTH_JSON } from "../../apiKeys";
 
 describe("CURSOR_AGENT_CONFIGS", () => {
   it("is a non-empty array", () => {
@@ -29,8 +29,9 @@ describe("CURSOR_AGENT_CONFIGS", () => {
       }
     });
 
-    it("all configs have CURSOR_API_KEY in apiKeys", () => {
+    it("all configs have both CURSOR_AUTH_JSON and CURSOR_API_KEY in apiKeys", () => {
       for (const config of CURSOR_AGENT_CONFIGS) {
+        expect(config.apiKeys).toContain(CURSOR_AUTH_JSON);
         expect(config.apiKeys).toContain(CURSOR_API_KEY);
       }
     });

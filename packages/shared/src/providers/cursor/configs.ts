@@ -1,5 +1,5 @@
 import type { AgentConfig } from "../../agentConfig";
-import { CURSOR_API_KEY } from "../../apiKeys";
+import { CURSOR_API_KEY, CURSOR_AUTH_JSON } from "../../apiKeys";
 import { checkCursorRequirements } from "./check-requirements";
 import { getCursorEnvironment } from "./environment";
 
@@ -16,7 +16,9 @@ function createCursorConfig(spec: CursorModelSpec): AgentConfig {
     args: ["--force", "--model", spec.model, "$PROMPT"],
     environment: getCursorEnvironment,
     checkRequirements: checkCursorRequirements,
-    apiKeys: [CURSOR_API_KEY],
+    // Cursor supports browser login (auth.json) and API keys
+    // Browser login is recommended for normal use, API key for CI/automation
+    apiKeys: [CURSOR_AUTH_JSON, CURSOR_API_KEY],
     waitForString: "Ready",
   };
 }
