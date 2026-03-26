@@ -55,6 +55,42 @@ function extractJsonFromMarkdown(text: string): string | null {
 }
 
 /**
+ * Try to repair common JSON issues like unescaped newlines in strings.
+ * This handles cases where the AI returns JSON with embedded code blocks
+ * that have raw newlines instead of \n escapes.
+ */
+function tryRepairJson(text: string): unknown | null {
+  try {
+    // First try direct parse
+    return JSON.parse(text);
+  } catch {
+    // Try to fix unescaped newlines in string values
+    // This regex finds string values and escapes any literal newlines
+    try {
+      // Replace actual newlines inside strings with \n escape sequences
+      // We do this by finding all strings and processing them
+      let repaired = text;
+
+      // Find JSON string boundaries and escape newlines within them
+      // Match: "key": "value with
+      // newlines"
+      // Strategy: replace newlines between quotes
+      repaired = repaired.replace(
+        /"([^"\\]*(\\.[^"\\]*)*)"/g,
+        (match) => {
+          // Escape any raw newlines within the matched string
+          return match.replace(/\n/g, "\\n").replace(/\r/g, "\\r");
+        }
+      );
+
+      return JSON.parse(repaired);
+    } catch {
+      return null;
+    }
+  }
+}
+
+/**
  * Fetch git diff from GitHub using the GitHub API.
  * Compares baseBranch to headBranch and returns a unified diff string.
  */
@@ -359,27 +395,30 @@ IMPORTANT: Respond ONLY with the JSON object, no other text.`;
         const extractedJson = extractJsonFromMarkdown(error.text ?? "");
         if (extractedJson) {
           try {
-            const parsed = JSON.parse(extractedJson);
-            const result = CrownEvaluationResponseSchema.parse(parsed);
-            console.info(
-              `[convex.crown] Successfully extracted JSON from markdown-wrapped response`
-            );
-
-            // Handle null winner same as normal path
-            if (result.winner === null && normalizedCandidates.length > 0) {
+            // Use tryRepairJson to handle unescaped newlines in AI responses
+            const parsed = tryRepairJson(extractedJson);
+            if (parsed) {
+              const result = CrownEvaluationResponseSchema.parse(parsed);
               console.info(
-                `[convex.crown] AI returned null winner, defaulting to candidate 0`
+                `[convex.crown] Successfully extracted JSON from markdown-wrapped response`
               );
-              return {
-                ...result,
-                winner: 0,
-                reason:
-                  result.reason ||
-                  "No meaningful code changes detected; selecting first candidate as default.",
-              };
-            }
 
-            return result;
+              // Handle null winner same as normal path
+              if (result.winner === null && normalizedCandidates.length > 0) {
+                console.info(
+                  `[convex.crown] AI returned null winner, defaulting to candidate 0`
+                );
+                return {
+                  ...result,
+                  winner: 0,
+                  reason:
+                    result.reason ||
+                    "No meaningful code changes detected; selecting first candidate as default.",
+                };
+              }
+
+              return result;
+            }
           } catch (parseError) {
             console.warn(
               `[convex.crown] Failed to parse extracted JSON:`,
@@ -516,12 +555,15 @@ Return a JSON object with this exact structure:
         const extractedJson = extractJsonFromMarkdown(error.text ?? "");
         if (extractedJson) {
           try {
-            const parsed = JSON.parse(extractedJson);
-            const result = CrownSummarizationResponseSchema.parse(parsed);
-            console.info(
-              `[convex.crown] Successfully extracted summarization JSON from markdown-wrapped response`
-            );
-            return result;
+            // Use tryRepairJson to handle unescaped newlines in AI responses
+            const parsed = tryRepairJson(extractedJson);
+            if (parsed) {
+              const result = CrownSummarizationResponseSchema.parse(parsed);
+              console.info(
+                `[convex.crown] Successfully extracted summarization JSON from markdown-wrapped response`
+              );
+              return result;
+            }
           } catch (parseError) {
             console.warn(
               `[convex.crown] Failed to parse extracted summarization JSON:`,
