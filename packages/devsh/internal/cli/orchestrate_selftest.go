@@ -396,3 +396,43 @@ func printResult(result SelftestResult) {
 		fmt.Printf("  %s %s\n", icon, result.Name)
 	}
 }
+
+// runSelftestForAgent runs targeted preflight checks for a specific agent
+// This is called by run-local --selftest to validate before starting
+func runSelftestForAgent(agent string, workspace string) error {
+	// Extract base agent name (e.g., "claude" from "claude/opus-4.6")
+	baseAgent := agent
+	if idx := strings.Index(agent, "/"); idx != -1 {
+		baseAgent = agent[:idx]
+	}
+
+	var failures []string
+
+	// Check workspace
+	result := checkWorkspaceExists(workspace)
+	if result.Status == "fail" {
+		failures = append(failures, result.Message)
+	}
+
+	// Check git repo (warning only, not a failure)
+	checkIsGitRepo(workspace)
+
+	// Check agent CLI
+	result = checkAgentCLI(baseAgent)
+	if result.Status == "fail" {
+		failures = append(failures, fmt.Sprintf("%s CLI: %s", baseAgent, result.Message))
+	}
+
+	// Check credentials
+	result = checkAgentCredentials(baseAgent)
+	if result.Status == "fail" {
+		failures = append(failures, fmt.Sprintf("%s credentials: %s", baseAgent, result.Message))
+	}
+
+	if len(failures) > 0 {
+		return fmt.Errorf("%s", strings.Join(failures, "; "))
+	}
+
+	fmt.Println("  ✓ Preflight checks passed")
+	return nil
+}

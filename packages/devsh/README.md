@@ -143,6 +143,9 @@ devsh orchestrate selftest-local
 # Run a task locally (artifacts saved to ~/.devsh/orchestrations/)
 devsh orchestrate run-local --agent claude/haiku-4.5 "Fix the bug in auth.ts"
 
+# Run with preflight checks (validates CLI, credentials, workspace before starting)
+devsh orchestrate run-local --agent claude/haiku-4.5 --selftest "Fix the bug"
+
 # View results in browser
 devsh orchestrate view ~/.devsh/orchestrations/local_abc123 --live
 

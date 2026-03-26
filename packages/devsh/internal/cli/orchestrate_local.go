@@ -24,6 +24,7 @@ var (
 	localPersist     bool
 	localRunDir      string
 	localIncludeLogs bool
+	localSelftest    bool
 )
 
 // LocalState represents the state of a local orchestration run
@@ -122,6 +123,19 @@ Examples:
 		// Validate workspace exists
 		if _, err := os.Stat(absWorkspace); os.IsNotExist(err) {
 			return fmt.Errorf("workspace does not exist: %s", absWorkspace)
+		}
+
+		// Run preflight checks if requested
+		if localSelftest {
+			if !flagJSON {
+				fmt.Println("Running preflight checks...")
+			}
+			if err := runSelftestForAgent(localAgent, absWorkspace); err != nil {
+				return fmt.Errorf("preflight checks failed: %w", err)
+			}
+			if !flagJSON {
+				fmt.Println()
+			}
 		}
 
 		// Generate orchestration ID
@@ -806,5 +820,6 @@ func init() {
 	orchestrateLocalCmd.Flags().BoolVar(&localPersist, "persist", true, "Save run artifacts to ~/.devsh/orchestrations/<run-id>/ (default: true, use --persist=false to disable)")
 	orchestrateLocalCmd.Flags().StringVar(&localRunDir, "run-dir", "", "Custom base directory for run artifacts (default: ~/.devsh/orchestrations)")
 	orchestrateLocalCmd.Flags().BoolVar(&localIncludeLogs, "include-logs", false, "Include stdout/stderr logs in --export bundle (always included with --persist)")
+	orchestrateLocalCmd.Flags().BoolVar(&localSelftest, "selftest", false, "Run preflight checks before starting (validates CLI, credentials, workspace)")
 	orchestrateCmd.AddCommand(orchestrateLocalCmd)
 }
