@@ -187,6 +187,55 @@ Spawn and manage agent tasks in cloud sandboxes.
 | `devsh orchestrate export <id>` | Export orchestration as bundle |
 | `devsh orchestrate results <id>` | Get orchestration results |
 
+### Head Agent (GitHub Projects Automation)
+
+Autonomous polling loop for GitHub Projects v2 automation. Discovers project items and dispatches agents automatically.
+
+| Command | Description |
+|---------|-------------|
+| `devsh head-agent start` | Start continuous polling loop |
+| `devsh head-agent poll-once` | Single poll and dispatch cycle |
+
+**Quick start:**
+
+```bash
+# Single poll (useful for testing)
+devsh head-agent poll-once \
+  --project-id PVT_xxx \
+  --installation-id 12345 \
+  --repo owner/repo \
+  --dry-run
+
+# Continuous polling loop
+devsh head-agent start \
+  --project-id PVT_xxx \
+  --installation-id 12345 \
+  --repo owner/repo \
+  --poll-interval 300
+```
+
+**Agent selection modes:**
+
+| Mode | Description |
+|------|-------------|
+| `--agent auto` | Auto-select based on labels/fields (default) |
+| `--agent claude/opus-4.6` | Use specific agent |
+| `--agent-default` | Default agent for auto mode |
+| `--agent-frontend` | Agent for frontend-labeled items |
+| `--agent-backend` | Agent for backend-labeled items |
+
+**Auto-selection priority:**
+1. Project field "Agent" override
+2. GitHub labels: `frontend`, `backend`, `ui`, `api`
+3. Project fields: Area/Component
+4. Default agent (`--agent-default`)
+
+**Quality gate and retries:**
+
+The head agent also scans for tasks with failing PR checks and automatically dispatches retries:
+- `--max-retries 2` controls retry attempts per task
+- `--checks-limit 50` limits check context for retry prompts
+
 ### GitHub Projects
 
 | Command | Description |
