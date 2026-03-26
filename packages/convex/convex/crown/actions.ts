@@ -36,6 +36,7 @@ const MAX_CROWN_EVALUATION_ATTEMPTS = 3;
  * Extract JSON from markdown code fences if present.
  * Cloudflare AI Gateway sometimes returns JSON wrapped in ```json ... ```
  * Also handles trailing text after closing fences (e.g., "```." or "```\n")
+ * Additionally handles cases where AI returns bare JSON properties without object braces.
  */
 function extractJsonFromMarkdown(text: string): string | null {
   if (!text) return null;
@@ -45,9 +46,21 @@ function extractJsonFromMarkdown(text: string): string | null {
   const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (codeBlockMatch?.[1]) {
     const extracted = codeBlockMatch[1].trim();
-    // Verify it looks like JSON before returning
+    // Verify it looks like JSON object or array
     if (extracted.startsWith("{") || extracted.startsWith("[")) {
       return extracted;
+    }
+    // Handle bare JSON property without object braces: "key": "value"
+    // Wrap it in {} to make valid JSON object
+    if (extracted.startsWith('"') && extracted.includes(":")) {
+      const wrapped = `{${extracted}}`;
+      // Verify the wrapped version can be parsed
+      try {
+        JSON.parse(wrapped);
+        return wrapped;
+      } catch {
+        // If wrapping didn't help, continue to other extraction methods
+      }
     }
   }
 
@@ -62,6 +75,17 @@ function extractJsonFromMarkdown(text: string): string | null {
   const trimmed = text.trim();
   if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
     return trimmed;
+  }
+
+  // Handle bare JSON property without object braces outside code block
+  if (trimmed.startsWith('"') && trimmed.includes(":")) {
+    const wrapped = `{${trimmed}}`;
+    try {
+      JSON.parse(wrapped);
+      return wrapped;
+    } catch {
+      // Not valid even when wrapped
+    }
   }
 
   return null;
