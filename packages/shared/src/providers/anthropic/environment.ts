@@ -956,6 +956,46 @@ exit 2`;
     mode: "755",
   });
 
+  // TaskCreated hook script - tracks when tasks are created via TaskCreate tool
+  // Useful for dashboard activity tracking and task registry sync
+  // See: https://code.claude.com/docs/en/changelog (v2.1.84)
+  const taskCreatedHookScript = `#!/bin/bash
+# Claude Code task-created hook - tracks task creation in cmux dashboard
+# Fires on TaskCreated: when a task is created via TaskCreate tool
+set -eu
+REQUEST=$(cat)
+
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_ID:-}" ]; then
+  exit 0
+fi
+
+TASK_ID=$(echo "$REQUEST" | jq -r '.task_id // "unknown"')
+TASK_SUBJECT=$(echo "$REQUEST" | jq -r '.subject // ""' | head -c 100)
+TASK_STATUS=$(echo "$REQUEST" | jq -r '.status // "pending"')
+
+echo "[task-created] Task $TASK_ID created: $TASK_SUBJECT" >> /root/lifecycle/task-hook.log 2>&1
+
+# Post activity event to dashboard (background, don't block)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n \\
+      --arg trid "\${CMUX_TASK_RUN_ID}" \\
+      --arg taskId "$TASK_ID" \\
+      --arg subject "$TASK_SUBJECT" \\
+      --arg status "$TASK_STATUS" \\
+      '{taskRunId: $trid, type: "task_created", toolName: "TaskCreate", summary: ("Created task: " + ($subject | if length > 60 then (.[0:60] + "...") else . end))}')" \\
+    >> /root/lifecycle/task-hook.log 2>&1 || true
+) &
+exit 0`;
+
+  files.push({
+    destinationPath: `${claudeLifecycleDir}/task-created-hook.sh`,
+    contentBase64: Buffer.from(taskCreatedHookScript).toString("base64"),
+    mode: "755",
+  });
+
   // Check if user has provided an OAuth token (preferred) or API key
   const hasOAuthToken =
     ctx.apiKeys?.CLAUDE_CODE_OAUTH_TOKEN &&
@@ -1112,6 +1152,18 @@ exit 2`;
             {
               type: "command",
               command: `${claudeLifecycleDir}/notification-hook.sh`,
+            },
+          ],
+        },
+      ],
+      // TaskCreated: fires when a task is created via TaskCreate tool (v2.1.84)
+      // Tracks task creation in cmux dashboard activity timeline
+      TaskCreated: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${claudeLifecycleDir}/task-created-hook.sh`,
             },
           ],
         },
@@ -1280,6 +1332,14 @@ echo ${apiKeyToOutput}`;
   // Prevents accidental credential exposure to tools and child processes
   // See: https://code.claude.com/docs/en/changelog (v2.1.84)
   env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB = "1";
+
+  // Disable cron jobs in task sandboxes - scheduled tasks shouldn't persist
+  // across agent runs and could cause unexpected behavior
+  // Head agents may need cron for orchestration, so only disable for task sandboxes
+  // See: https://code.claude.com/docs/en/changelog (v2.1.72)
+  if (hasTaskRunJwt && !ctx.isOrchestrationHead) {
+    env.CLAUDE_CODE_DISABLE_CRON = "1";
+  }
 
   return {
     files,
