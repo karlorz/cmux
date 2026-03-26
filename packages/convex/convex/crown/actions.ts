@@ -33,6 +33,28 @@ type CrownProvider = PlatformAiProvider;
 const MAX_CROWN_EVALUATION_ATTEMPTS = 3;
 
 /**
+ * Extract JSON from markdown code fences if present.
+ * Cloudflare AI Gateway sometimes returns JSON wrapped in ```json ... ```
+ */
+function extractJsonFromMarkdown(text: string): string | null {
+  if (!text) return null;
+
+  // Try to match ```json ... ``` or ``` ... ```
+  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlockMatch?.[1]) {
+    return codeBlockMatch[1].trim();
+  }
+
+  // If no code block, check if it's already valid JSON
+  const trimmed = text.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    return trimmed;
+  }
+
+  return null;
+}
+
+/**
  * Fetch git diff from GitHub using the GitHub API.
  * Compares baseBranch to headBranch and returns a unified diff string.
  */
@@ -322,7 +344,7 @@ IMPORTANT: Respond ONLY with the JSON object, no other text.`;
     } catch (error) {
       attemptErrors.push({ attempt, error });
 
-      // Diagnostic logging for NoObjectGeneratedError
+      // Handle NoObjectGeneratedError - try to extract JSON from markdown code fences
       if (NoObjectGeneratedError.isInstance(error)) {
         console.error(`[convex.crown] NoObjectGeneratedError details:`, {
           text: error.text?.substring(0, 1000),
@@ -332,6 +354,39 @@ IMPORTANT: Respond ONLY with the JSON object, no other text.`;
               : String(error.cause),
           hasResponse: !!error.response,
         });
+
+        // Try to extract and parse JSON from markdown-wrapped response
+        const extractedJson = extractJsonFromMarkdown(error.text ?? "");
+        if (extractedJson) {
+          try {
+            const parsed = JSON.parse(extractedJson);
+            const result = CrownEvaluationResponseSchema.parse(parsed);
+            console.info(
+              `[convex.crown] Successfully extracted JSON from markdown-wrapped response`
+            );
+
+            // Handle null winner same as normal path
+            if (result.winner === null && normalizedCandidates.length > 0) {
+              console.info(
+                `[convex.crown] AI returned null winner, defaulting to candidate 0`
+              );
+              return {
+                ...result,
+                winner: 0,
+                reason:
+                  result.reason ||
+                  "No meaningful code changes detected; selecting first candidate as default.",
+              };
+            }
+
+            return result;
+          } catch (parseError) {
+            console.warn(
+              `[convex.crown] Failed to parse extracted JSON:`,
+              parseError instanceof Error ? parseError.message : parseError
+            );
+          }
+        }
       }
 
       const errorMessage =
@@ -443,7 +498,7 @@ Return a JSON object with this exact structure:
     } catch (error) {
       attemptErrors.push({ attempt, error });
 
-      // Diagnostic logging for NoObjectGeneratedError
+      // Handle NoObjectGeneratedError - try to extract JSON from markdown code fences
       if (NoObjectGeneratedError.isInstance(error)) {
         console.error(
           `[convex.crown] NoObjectGeneratedError (summarization) details:`,
@@ -456,6 +511,24 @@ Return a JSON object with this exact structure:
             hasResponse: !!error.response,
           }
         );
+
+        // Try to extract and parse JSON from markdown-wrapped response
+        const extractedJson = extractJsonFromMarkdown(error.text ?? "");
+        if (extractedJson) {
+          try {
+            const parsed = JSON.parse(extractedJson);
+            const result = CrownSummarizationResponseSchema.parse(parsed);
+            console.info(
+              `[convex.crown] Successfully extracted summarization JSON from markdown-wrapped response`
+            );
+            return result;
+          } catch (parseError) {
+            console.warn(
+              `[convex.crown] Failed to parse extracted summarization JSON:`,
+              parseError instanceof Error ? parseError.message : parseError
+            );
+          }
+        }
       }
 
       const errorMessage =
