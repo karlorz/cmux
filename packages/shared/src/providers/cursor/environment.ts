@@ -10,6 +10,8 @@ import {
 import { buildGenericInstructionsContent } from "../../agent-instruction-pack";
 import { getTaskSandboxWrapperFiles } from "../common/task-sandbox-wrappers";
 import { buildStandardLifecycleHooks } from "../../provider-lifecycle-adapter";
+import { buildClaudeMcpServers } from "../../mcp-injection";
+import type { McpServerConfig } from "../../mcp-server-config";
 
 /**
  * Fallback deny rules for Cursor CLI in task sandboxes.
@@ -82,6 +84,75 @@ function buildCursorCliJson(denyRules: string[]): string {
       deny: denyRules,
     },
   };
+  return JSON.stringify(config, null, 2);
+}
+
+/**
+ * Orchestration env vars for MCP server passthrough.
+ * Extended from EnvironmentContext["orchestrationEnv"] with CMUX_TASK_RUN_JWT.
+ */
+type McpOrchestrationEnv = {
+  CMUX_TASK_RUN_JWT?: string;
+  CMUX_SERVER_URL?: string;
+  CMUX_API_BASE_URL?: string;
+  CMUX_IS_ORCHESTRATION_HEAD?: string;
+  CMUX_ORCHESTRATION_ID?: string;
+};
+
+/**
+ * Builds .cursor/mcp.json MCP server configuration.
+ *
+ * Per Cursor CLI docs, MCP config is shared between CLI and editor,
+ * following project -> global -> nested precedence.
+ *
+ * The format matches Claude's mcpServers format (JSON with command/args/env).
+ */
+function buildCursorMcpJson(
+  mcpServerConfigs: McpServerConfig[],
+  agentName?: string,
+  orchestrationEnv?: McpOrchestrationEnv,
+): string {
+  // Build MCP servers from configs (reuse Claude's format builder)
+  const mcpServers = buildClaudeMcpServers(mcpServerConfigs);
+
+  // Add managed devsh-memory server with orchestration env
+  const managedMemoryServer: Record<string, unknown> = {
+    command: "npx",
+    args: agentName
+      ? ["-y", "devsh-memory-mcp@latest", "--agent", agentName]
+      : ["-y", "devsh-memory-mcp@latest"],
+  };
+
+  // Pass orchestration env vars to MCP server
+  if (orchestrationEnv) {
+    const env: Record<string, string> = {};
+    if (orchestrationEnv.CMUX_TASK_RUN_JWT) {
+      env.CMUX_TASK_RUN_JWT = orchestrationEnv.CMUX_TASK_RUN_JWT;
+    }
+    if (orchestrationEnv.CMUX_SERVER_URL) {
+      env.CMUX_SERVER_URL = orchestrationEnv.CMUX_SERVER_URL;
+    }
+    if (orchestrationEnv.CMUX_API_BASE_URL) {
+      env.CMUX_API_BASE_URL = orchestrationEnv.CMUX_API_BASE_URL;
+    }
+    if (orchestrationEnv.CMUX_IS_ORCHESTRATION_HEAD) {
+      env.CMUX_IS_ORCHESTRATION_HEAD = orchestrationEnv.CMUX_IS_ORCHESTRATION_HEAD;
+    }
+    if (orchestrationEnv.CMUX_ORCHESTRATION_ID) {
+      env.CMUX_ORCHESTRATION_ID = orchestrationEnv.CMUX_ORCHESTRATION_ID;
+    }
+    if (Object.keys(env).length > 0) {
+      managedMemoryServer.env = env;
+    }
+  }
+
+  const config = {
+    mcpServers: {
+      ...mcpServers,
+      "devsh-memory": managedMemoryServer,
+    },
+  };
+
   return JSON.stringify(config, null, 2);
 }
 
@@ -261,6 +332,27 @@ export async function getCursorEnvironment(
       mode: "644",
     });
   }
+
+  // Generate .cursor/mcp.json for MCP server configuration
+  // Per Cursor docs, CLI MCP uses the same config as the editor (project -> global -> nested)
+  const mcpConfigs = ctx.mcpServerConfigs ?? [];
+  const orchestrationEnv = ctx.isOrchestrationHead
+    ? {
+        CMUX_TASK_RUN_JWT: ctx.taskRunJwt,
+        CMUX_SERVER_URL: ctx.orchestrationEnv?.CMUX_SERVER_URL,
+        CMUX_API_BASE_URL: ctx.orchestrationEnv?.CMUX_API_BASE_URL,
+        CMUX_IS_ORCHESTRATION_HEAD: ctx.orchestrationEnv?.CMUX_IS_ORCHESTRATION_HEAD,
+        CMUX_ORCHESTRATION_ID: ctx.orchestrationEnv?.CMUX_ORCHESTRATION_ID,
+      }
+    : undefined;
+
+  // Always inject MCP config with at least the managed memory server
+  const cursorMcpJson = buildCursorMcpJson(mcpConfigs, ctx.agentName, orchestrationEnv);
+  files.push({
+    destinationPath: "/root/workspace/.cursor/mcp.json",
+    contentBase64: Buffer.from(cursorMcpJson).toString("base64"),
+    mode: "644",
+  });
 
   // Block dangerous commands in task sandboxes (when enabled via settings)
   // Disabled by default - use permission deny rules or policy rules instead
