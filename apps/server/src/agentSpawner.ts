@@ -1146,6 +1146,8 @@ export async function spawnAgent(
         newBranch,
         environmentId: options.environmentId,
         taskRunJwt,
+        isCloudWorkspace: options.isCloudWorkspace,
+        isOrchestrationHead: options.isOrchestrationHead,
       });
 
       worktreePath = "/root/workspace";
