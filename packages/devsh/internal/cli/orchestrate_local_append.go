@@ -13,15 +13,17 @@ import (
 
 var orchestrateAppendLocalCmd = &cobra.Command{
 	Use:   "append-local <run-id> <message>",
-	Short: "Append an instruction to a running local task",
-	Long: `Append an instruction to a running local orchestration task.
+	Short: "Append an instruction to a running local task (alias for inject-local --mode passive)",
+	Long: `Append an instruction to a running local orchestration task using passive injection.
 
 This writes to the append.txt file in the run directory, which the running
 task can poll for new instructions. The message is appended with a timestamp.
 
-Note: The running agent must support instruction appending. Currently this
-works by writing to a file that can be read by custom agent wrappers or
-future agent CLI versions that support mid-run instruction injection.
+Note: This is the passive injection mode. For active injection that uses
+session continuation (when supported by the agent CLI), use 'inject-local'
+instead, which auto-detects the best injection mode.
+
+See also: devsh orchestrate inject-local --help
 
 Examples:
   devsh orchestrate append-local local_abc123 "Also add tests for the new function"

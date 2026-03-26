@@ -170,6 +170,13 @@ Examples:
 				}
 			}
 			defer removePidFile(runDir)
+
+			// Initialize session info for active instruction injection (D5.6)
+			if err := InitSessionForRun(runDir, localAgent, absWorkspace); err != nil {
+				if !flagJSON && flagVerbose {
+					fmt.Printf("Warning: failed to init session info: %v\n", err)
+				}
+			}
 		}
 
 		// Add start event
