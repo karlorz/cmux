@@ -70,13 +70,13 @@ describe("extractSandboxStartError", () => {
       );
     });
 
-    it("ignores overly long error strings (security)", () => {
+    it("truncates overly long error strings", () => {
       const longError = "A".repeat(250);
       const result = extractSandboxStartError({
         error: longError,
         response: { status: 500, statusText: "Error" } as Response,
       });
-      expect(result).toBe("Failed to start sandbox: 500 Error");
+      expect(result).toBe(`Failed to start sandbox: ${"A".repeat(219)}…`);
     });
 
     it("ignores non-string error", () => {

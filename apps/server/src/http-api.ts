@@ -37,6 +37,7 @@ import {
   checkAllProvidersStatusWebMode,
 } from "./utils/providerStatus";
 import { runWithAuth, runWithAuthToken } from "./utils/requestContext";
+import { extractSandboxStartError } from "./utils/sandboxErrors";
 import { env } from "./utils/server-env";
 import { getResponseErrorMessage } from "./utils/httpError";
 import { buildTaskRunCreateArgs } from "./utils/taskRunCreateArgs";
@@ -624,8 +625,7 @@ async function handleCreateCloudWorkspace(
 
       const data = startRes.data;
       if (!data) {
-        const errorText = startRes.error ? JSON.stringify(startRes.error) : "Unknown sandbox start error";
-        throw new Error(`Failed to start sandbox: ${errorText}`);
+        throw new Error(extractSandboxStartError(startRes));
       }
 
       const sandboxId = data.instanceId;
