@@ -880,6 +880,7 @@ async function handleOrchestrationSpawn(
           agentName: agent,
           environmentId,
           pullRequestTitle: prTitle,
+          orchestrationId,
         }),
       });
 
@@ -1027,6 +1028,7 @@ async function handleOrchestrationSpawn(
           newBranch: "",
           environmentId: environmentId as Id<"environments"> | undefined,
           isOrchestrationHead,
+          orchestrationId,
         }),
       );
 
@@ -1856,6 +1858,7 @@ Orchestration ID: ${orchestrationId}`;
           newBranch: "",
           environmentId: environmentId as Id<"environments"> | undefined,
           isOrchestrationHead: true,
+          orchestrationId,
         }),
       );
       const taskRunId = taskRunResult.taskRunId;

@@ -542,6 +542,7 @@ export const createInternal = internalMutation({
     environmentId: v.optional(v.id("environments")),
     parentRunId: v.optional(v.id("taskRuns")), // Agent Teams (D4) - parent-child relationships
     isOrchestrationHead: v.optional(v.boolean()), // Whether this is a head agent for orchestration
+    orchestrationId: v.optional(v.string()), // Grouping ID for orchestration head agents
     // PR Comment → Agent: link back to source comment for result posting
     githubCommentId: v.optional(v.number()),
     githubCommentUrl: v.optional(v.string()),
@@ -580,6 +581,7 @@ export const createInternal = internalMutation({
       isLocalWorkspace: task.isLocalWorkspace,
       isCloudWorkspace: task.isCloudWorkspace,
       isOrchestrationHead: args.isOrchestrationHead,
+      orchestrationId: args.orchestrationId,
       githubCommentId: args.githubCommentId,
       githubCommentUrl: args.githubCommentUrl,
     });
@@ -631,6 +633,7 @@ export const create = authMutation({
     newBranch: v.optional(v.string()),
     environmentId: v.optional(v.id("environments")),
     isOrchestrationHead: v.optional(v.boolean()),
+    orchestrationId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
@@ -668,6 +671,7 @@ export const create = authMutation({
       isLocalWorkspace: task.isLocalWorkspace,
       isCloudWorkspace: task.isCloudWorkspace,
       isOrchestrationHead: args.isOrchestrationHead,
+      orchestrationId: args.orchestrationId,
     });
 
     // Update task's lastActivityAt for sorting
@@ -3543,12 +3547,17 @@ export const checkStaleHeadAgents = internalMutation({
     const now = Date.now();
     const cutoff = now - HEAD_AGENT_HEARTBEAT_TIMEOUT_MS;
 
-    // Find running head agents with stale heartbeats
-    // Uses compound index to avoid full table scan (bandwidth optimization)
+    // Head runs only transition to orchestrationStatus="running" via
+    // updateOrchestrationHeartbeat, which writes orchestrationHeartbeat in the
+    // same mutation. Query the stale slice directly instead of collecting the
+    // entire running-head population each time the cron fires.
     const staleRuns = await ctx.db
       .query("taskRuns")
-      .withIndex("by_orchestration_head_status", (q) =>
-        q.eq("isOrchestrationHead", true).eq("orchestrationStatus", "running")
+      .withIndex("by_orchestration_head_status_heartbeat", (q) =>
+        q
+          .eq("isOrchestrationHead", true)
+          .eq("orchestrationStatus", "running")
+          .lt("orchestrationHeartbeat", cutoff)
       )
       .collect();
 

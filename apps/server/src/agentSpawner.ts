@@ -283,6 +283,7 @@ export async function spawnAgent(
             newBranch,
             environmentId: options.environmentId,
             isOrchestrationHead: options.isOrchestrationHead,
+            orchestrationId: options.orchestrationOptions?.orchestrationId,
           }),
         );
       taskRunId = createdTaskRunId;

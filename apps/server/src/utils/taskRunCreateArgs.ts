@@ -9,6 +9,7 @@ type TaskRunCreateArgsInput<
   newBranch?: string;
   environmentId?: TEnvironmentId;
   isOrchestrationHead?: boolean;
+  orchestrationId?: string;
 };
 
 export function buildTaskRunCreateArgs<
@@ -34,6 +35,9 @@ export function buildTaskRunCreateArgs<
       : {}),
     ...(args.isOrchestrationHead !== undefined
       ? { isOrchestrationHead: args.isOrchestrationHead }
+      : {}),
+    ...(args.orchestrationId !== undefined
+      ? { orchestrationId: args.orchestrationId }
       : {}),
   };
 }
