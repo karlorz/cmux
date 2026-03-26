@@ -1270,6 +1270,11 @@ echo ${apiKeyToOutput}`;
   // at their native user-level paths (~/.codex/AGENTS.md, ~/.gemini/GEMINI.md)
   startupCommands.push(...getCrossToolSymlinkCommands());
 
+  // Set Claude Code stream idle timeout to 5 minutes (default is 90s)
+  // This prevents timeouts during long tool executions in sandboxes
+  // See: https://code.claude.com/docs/en/changelog (v2.1.84)
+  env.CLAUDE_STREAM_IDLE_TIMEOUT_MS = "300000";
+
   return {
     files,
     env,
