@@ -78,6 +78,7 @@ const CreateTaskAndRunSchema = z.object({
   environmentId: z.string().optional(),
   pullRequestTitle: z.string().optional(),
   isOrchestrationHead: z.boolean().optional(), // Whether this is a head agent for orchestration
+  orchestrationId: z.string().optional(), // Grouping ID for orchestration head agents
 });
 
 type CreateTaskAndRunInput = z.infer<typeof CreateTaskAndRunSchema>;
@@ -172,6 +173,7 @@ export const createTaskAndRun = httpAction(async (ctx, req) => {
         newBranch: payload.newBranch,
         environmentId: payload.environmentId as Id<"environments"> | undefined,
         isOrchestrationHead: payload.isOrchestrationHead,
+        orchestrationId: payload.orchestrationId,
       }
     );
 
