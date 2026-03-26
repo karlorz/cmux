@@ -452,7 +452,8 @@ const convexSchema = defineSchema({
     .index("by_user", ["userId", "createdAt"])
     .index("by_team_user", ["teamId", "userId"])
     .index("by_team_user_status_created", ["teamId", "userId", "status", "createdAt"])
-    .index("by_pull_request_url", ["pullRequestUrl"]),
+    .index("by_pull_request_url", ["pullRequestUrl"])
+    .index("by_orchestration_head_status", ["isOrchestrationHead", "orchestrationStatus"]),
 
   // Junction table linking taskRuns to pull requests by PR identity
   // Enables efficient lookup of taskRuns when a PR webhook fires

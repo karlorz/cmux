@@ -3546,13 +3546,11 @@ export const checkStaleHeadAgents = internalMutation({
     const cutoff = now - HEAD_AGENT_HEARTBEAT_TIMEOUT_MS;
 
     // Find running head agents with stale heartbeats
+    // Uses compound index to avoid full table scan (bandwidth optimization)
     const staleRuns = await ctx.db
       .query("taskRuns")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("isOrchestrationHead"), true),
-          q.eq(q.field("orchestrationStatus"), "running")
-        )
+      .withIndex("by_orchestration_head_status", (q) =>
+        q.eq("isOrchestrationHead", true).eq("orchestrationStatus", "running")
       )
       .collect();
 
