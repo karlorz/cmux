@@ -35,14 +35,27 @@ const MAX_CROWN_EVALUATION_ATTEMPTS = 3;
 /**
  * Extract JSON from markdown code fences if present.
  * Cloudflare AI Gateway sometimes returns JSON wrapped in ```json ... ```
+ * Also handles trailing text after closing fences (e.g., "```." or "```\n")
  */
 function extractJsonFromMarkdown(text: string): string | null {
   if (!text) return null;
 
-  // Try to match ```json ... ``` or ``` ... ```
+  // Try to match ```json ... ``` or ``` ... ``` with optional trailing content
+  // The regex captures everything between the opening and closing fences
   const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (codeBlockMatch?.[1]) {
-    return codeBlockMatch[1].trim();
+    const extracted = codeBlockMatch[1].trim();
+    // Verify it looks like JSON before returning
+    if (extracted.startsWith("{") || extracted.startsWith("[")) {
+      return extracted;
+    }
+  }
+
+  // Try alternative pattern: find JSON object/array directly
+  // This handles cases where the response has text before/after the JSON
+  const jsonMatch = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+  if (jsonMatch?.[1]) {
+    return jsonMatch[1].trim();
   }
 
   // If no code block, check if it's already valid JSON
