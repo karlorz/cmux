@@ -1275,6 +1275,12 @@ echo ${apiKeyToOutput}`;
   // See: https://code.claude.com/docs/en/changelog (v2.1.84)
   env.CLAUDE_STREAM_IDLE_TIMEOUT_MS = "300000";
 
+  // Enable subprocess credential scrubbing for security in sandboxes
+  // This strips Anthropic and cloud provider credentials from subprocess environments
+  // Prevents accidental credential exposure to tools and child processes
+  // See: https://code.claude.com/docs/en/changelog (v2.1.84)
+  env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB = "1";
+
   return {
     files,
     env,
