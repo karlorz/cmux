@@ -88,6 +88,49 @@ export const getQueueStatus = authQuery({
 });
 
 /**
+ * Get queue status for an orchestration without Stack auth.
+ * Used by server-side JWT-authenticated routes in apps/www.
+ */
+export const getQueueStatusInternal = internalQuery({
+  args: {
+    teamId: v.string(),
+    orchestrationId: v.string(),
+    queueCapacity: v.optional(v.number()),
+  },
+  returns: v.object({
+    depth: v.number(),
+    capacity: v.number(),
+    hasPendingInputs: v.boolean(),
+    oldestInputAt: v.optional(v.number()),
+  }),
+  handler: async (ctx, args) => {
+    const capacity = Math.max(
+      MIN_QUEUE_CAPACITY,
+      Math.min(args.queueCapacity ?? DEFAULT_QUEUE_CAPACITY, MAX_QUEUE_CAPACITY)
+    );
+
+    const pendingInputs = await ctx.db
+      .query("operatorInputQueue")
+      .withIndex("by_orchestration_pending", (q) =>
+        q.eq("orchestrationId", args.orchestrationId).eq("processedAt", undefined)
+      )
+      .collect();
+
+    const teamInputs = pendingInputs.filter((i) => i.teamId === args.teamId);
+
+    return {
+      depth: teamInputs.length,
+      capacity,
+      hasPendingInputs: teamInputs.length > 0,
+      oldestInputAt:
+        teamInputs.length > 0
+          ? Math.min(...teamInputs.map((i) => i.queuedAt))
+          : undefined,
+    };
+  },
+});
+
+/**
  * Get pending inputs for an orchestration (internal use).
  * Returns inputs sorted by priority then queue time.
  */

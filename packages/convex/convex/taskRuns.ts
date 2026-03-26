@@ -3504,6 +3504,55 @@ export const updateOrchestrationHeartbeat = authMutation({
 });
 
 /**
+ * Update orchestration head agent heartbeat without Stack auth.
+ * Used by server-side JWT-authenticated routes in apps/www.
+ */
+export const updateOrchestrationHeartbeatInternal = internalMutation({
+  args: {
+    teamId: v.string(),
+    id: v.id("taskRuns"),
+    orchestrationId: v.optional(v.string()),
+    status: v.optional(
+      v.union(
+        v.literal("running"),
+        v.literal("completed"),
+        v.literal("failed")
+      )
+    ),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.id);
+    if (!doc) {
+      throw new Error("Task run not found");
+    }
+    if (doc.teamId !== args.teamId) {
+      throw new Error("Task run not found or unauthorized");
+    }
+    if (
+      args.orchestrationId &&
+      doc.orchestrationId &&
+      doc.orchestrationId !== args.orchestrationId
+    ) {
+      throw new Error("Task run orchestrationId mismatch");
+    }
+
+    const now = Date.now();
+    const patch: Record<string, unknown> = {
+      orchestrationHeartbeat: now,
+      updatedAt: now,
+    };
+
+    if (args.status) {
+      patch.orchestrationStatus = args.status;
+    }
+
+    await ctx.db.patch(args.id, patch);
+
+    return { ok: true, heartbeat: now, status: args.status };
+  },
+});
+
+/**
  * Get task run by orchestration ID (for head agent lookup).
  */
 export const getByOrchestrationId = authQuery({
