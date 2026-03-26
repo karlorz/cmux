@@ -4844,6 +4844,49 @@ export type GetApiV1CmuxOrchestrationSimplifyStatusResponses = {
 
 export type GetApiV1CmuxOrchestrationSimplifyStatusResponse = GetApiV1CmuxOrchestrationSimplifyStatusResponses[keyof GetApiV1CmuxOrchestrationSimplifyStatusResponses];
 
+export type GetApiV1CmuxOrchestrationContextHealthData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/cmux/orchestration/context-health';
+};
+
+export type GetApiV1CmuxOrchestrationContextHealthErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Task run not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiV1CmuxOrchestrationContextHealthResponses = {
+    /**
+     * Context health summary
+     */
+    200: {
+        taskRunId: string;
+        provider: string;
+        totalInputTokens: number;
+        totalOutputTokens: number;
+        contextWindow?: number;
+        usagePercent?: number;
+        latestWarningSeverity: 'info' | 'warning' | 'critical';
+        topWarningReasons: Array<string>;
+        warningCount: number;
+        recentCompactionCount: number;
+        lastUpdatedAt?: number;
+    };
+};
+
+export type GetApiV1CmuxOrchestrationContextHealthResponse = GetApiV1CmuxOrchestrationContextHealthResponses[keyof GetApiV1CmuxOrchestrationContextHealthResponses];
+
 export type GetApiProjectsData = {
     body?: never;
     path?: never;
