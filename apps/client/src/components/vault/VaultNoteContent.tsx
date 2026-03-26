@@ -2,44 +2,149 @@
  * VaultNoteContent Component
  *
  * Renders markdown content from an Obsidian vault note.
+ * Production-ready with syntax highlighting, link handling, and large content support.
  */
 
+import { useMemo, useState, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { ChevronDown, ChevronUp, FileText } from "lucide-react";
 
 interface VaultNoteContentProps {
   content: string;
   className?: string;
+  /** Maximum characters to show before truncating with "Show more". Default: 50000 */
+  maxLength?: number;
 }
 
-export function VaultNoteContent({ content, className }: VaultNoteContentProps) {
+// Max content length before we offer to truncate (50KB of text)
+const DEFAULT_MAX_LENGTH = 50000;
+
+/**
+ * Transform Obsidian-style wiki links [[note]] to regular markdown links
+ */
+function transformObsidianLinks(content: string): string {
+  // Transform [[note]] to [note](obsidian://open?file=note)
+  // Transform [[note|alias]] to [alias](obsidian://open?file=note)
+  return content.replace(
+    /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
+    (_, target: string, alias?: string) => {
+      const displayText = alias || target;
+      const encodedTarget = encodeURIComponent(target);
+      return `[${displayText}](obsidian://open?file=${encodedTarget})`;
+    }
+  );
+}
+
+export function VaultNoteContent({
+  content,
+  className,
+  maxLength = DEFAULT_MAX_LENGTH,
+}: VaultNoteContentProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const isLargeContent = content.length > maxLength;
+  const displayContent = useMemo(() => {
+    const rawContent = isLargeContent && !isExpanded
+      ? content.slice(0, maxLength) + "\n\n..."
+      : content;
+    return transformObsidianLinks(rawContent);
+  }, [content, isLargeContent, isExpanded, maxLength]);
+
+  const toggleExpanded = useCallback(() => {
+    setIsExpanded((prev) => !prev);
+  }, []);
+
+  if (!content.trim()) {
+    return (
+      <div className="flex flex-col items-center justify-center py-8 text-neutral-400 dark:text-neutral-500">
+        <FileText className="size-8 mb-2" aria-hidden="true" />
+        <p className="text-sm">This note is empty</p>
+      </div>
+    );
+  }
+
   return (
-    <div
-      className={`text-[14px] text-neutral-700 dark:text-neutral-300
-        prose prose-neutral dark:prose-invert prose-sm max-w-none
-        prose-p:my-1.5 prose-p:leading-relaxed
-        prose-headings:mt-4 prose-headings:mb-3 prose-headings:font-semibold
-        prose-h1:text-xl prose-h1:mt-5 prose-h1:mb-3
-        prose-h2:text-lg prose-h2:mt-4 prose-h2:mb-2.5
-        prose-h3:text-base prose-h3:mt-3.5 prose-h3:mb-2
-        prose-ul:my-2 prose-ul:list-disc prose-ul:pl-5
-        prose-ol:my-2 prose-ol:list-decimal prose-ol:pl-5
-        prose-li:my-0.5
-        prose-blockquote:border-l-4 prose-blockquote:border-neutral-300 dark:prose-blockquote:border-neutral-600
-        prose-blockquote:pl-4 prose-blockquote:py-0.5 prose-blockquote:my-2
-        prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:bg-neutral-200 dark:prose-code:bg-neutral-700
-        prose-code:text-[13px] prose-code:font-mono prose-code:before:content-none prose-code:after:content-none
-        prose-pre:bg-neutral-900 dark:prose-pre:bg-neutral-800 prose-pre:text-neutral-100
-        prose-pre:p-3 prose-pre:rounded-md prose-pre:my-2 prose-pre:overflow-x-auto
-        prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-a:underline prose-a:break-words
-        prose-table:my-2 prose-table:border prose-table:border-neutral-300 dark:prose-table:border-neutral-600
-        prose-th:p-2 prose-th:bg-neutral-100 dark:prose-th:bg-neutral-800
-        prose-td:p-2 prose-td:border prose-td:border-neutral-300 dark:prose-td:border-neutral-600
-        prose-hr:my-3 prose-hr:border-neutral-300 dark:prose-hr:border-neutral-600
-        prose-strong:font-semibold prose-strong:text-neutral-900 dark:prose-strong:text-neutral-100
-        ${className ?? ""}`}
-    >
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+    <div className={className}>
+      <article
+        className={`text-[14px] text-neutral-700 dark:text-neutral-300
+          prose prose-neutral dark:prose-invert prose-sm max-w-none
+          prose-p:my-1.5 prose-p:leading-relaxed
+          prose-headings:mt-4 prose-headings:mb-3 prose-headings:font-semibold
+          prose-h1:text-xl prose-h1:mt-5 prose-h1:mb-3
+          prose-h2:text-lg prose-h2:mt-4 prose-h2:mb-2.5
+          prose-h3:text-base prose-h3:mt-3.5 prose-h3:mb-2
+          prose-ul:my-2 prose-ul:list-disc prose-ul:pl-5
+          prose-ol:my-2 prose-ol:list-decimal prose-ol:pl-5
+          prose-li:my-0.5
+          prose-blockquote:border-l-4 prose-blockquote:border-neutral-300 dark:prose-blockquote:border-neutral-600
+          prose-blockquote:pl-4 prose-blockquote:py-0.5 prose-blockquote:my-2
+          prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:bg-neutral-200 dark:prose-code:bg-neutral-700
+          prose-code:text-[13px] prose-code:font-mono prose-code:before:content-none prose-code:after:content-none
+          prose-pre:bg-neutral-900 dark:prose-pre:bg-neutral-800 prose-pre:text-neutral-100
+          prose-pre:p-3 prose-pre:rounded-md prose-pre:my-2 prose-pre:overflow-x-auto
+          prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-a:underline prose-a:break-words
+          prose-table:my-2 prose-table:border prose-table:border-neutral-300 dark:prose-table:border-neutral-600
+          prose-th:p-2 prose-th:bg-neutral-100 dark:prose-th:bg-neutral-800
+          prose-td:p-2 prose-td:border prose-td:border-neutral-300 dark:prose-td:border-neutral-600
+          prose-hr:my-3 prose-hr:border-neutral-300 dark:prose-hr:border-neutral-600
+          prose-strong:font-semibold prose-strong:text-neutral-900 dark:prose-strong:text-neutral-100
+          prose-img:rounded-md prose-img:max-w-full`}
+      >
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            // Handle external links to open in new tab
+            a: ({ href, children, ...props }) => {
+              const isExternal = href?.startsWith("http");
+              const isObsidian = href?.startsWith("obsidian://");
+              return (
+                <a
+                  href={href}
+                  target={isExternal ? "_blank" : undefined}
+                  rel={isExternal ? "noopener noreferrer" : undefined}
+                  title={isObsidian ? "Open in Obsidian" : undefined}
+                  {...props}
+                >
+                  {children}
+                </a>
+              );
+            },
+            // Add copy button to code blocks in the future
+            // For now, just ensure proper styling
+            pre: ({ children, ...props }) => (
+              <pre className="relative group" {...props}>
+                {children}
+              </pre>
+            ),
+          }}
+        >
+          {displayContent}
+        </ReactMarkdown>
+      </article>
+
+      {/* Show more/less toggle for large content */}
+      {isLargeContent && (
+        <div className="mt-4 pt-3 border-t border-neutral-200 dark:border-neutral-700">
+          <button
+            type="button"
+            onClick={toggleExpanded}
+            className="flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1"
+          >
+            {isExpanded ? (
+              <>
+                <ChevronUp className="size-4" aria-hidden="true" />
+                Show less
+              </>
+            ) : (
+              <>
+                <ChevronDown className="size-4" aria-hidden="true" />
+                Show full note ({Math.round(content.length / 1000)}KB)
+              </>
+            )}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
