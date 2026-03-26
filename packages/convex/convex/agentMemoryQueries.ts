@@ -3,6 +3,11 @@ import { getTeamId } from "../_shared/team";
 import { internalQuery } from "./_generated/server";
 import { authQuery } from "./users/utils";
 
+/** Calculate UTF-8 byte length without Node.js Buffer (works in Convex V8 runtime) */
+function utf8ByteLength(str: string): number {
+  return new TextEncoder().encode(str).length;
+}
+
 /**
  * Get the latest knowledge memory snapshot for a team.
  * Used for cross-run memory seeding - new sandboxes get previous run's knowledge.
@@ -590,7 +595,7 @@ export const getScopedKnowledge = authQuery({
       sources.push({
         scope: "team",
         hasContent: true,
-        byteSize: Buffer.byteLength(teamKnowledge.content, "utf-8"),
+        byteSize: utf8ByteLength(teamKnowledge.content),
       });
     } else {
       sources.push({ scope: "team", hasContent: false, byteSize: 0 });
@@ -611,7 +616,7 @@ export const getScopedKnowledge = authQuery({
         sources.push({
           scope: "repo",
           hasContent: true,
-          byteSize: Buffer.byteLength(repoKnowledge.content, "utf-8"),
+          byteSize: utf8ByteLength(repoKnowledge.content),
         });
       } else {
         sources.push({ scope: "repo", hasContent: false, byteSize: 0 });
@@ -634,7 +639,7 @@ export const getScopedKnowledge = authQuery({
         sources.push({
           scope: "user",
           hasContent: true,
-          byteSize: Buffer.byteLength(userKnowledge.content, "utf-8"),
+          byteSize: utf8ByteLength(userKnowledge.content),
         });
       } else {
         sources.push({ scope: "user", hasContent: false, byteSize: 0 });
@@ -652,7 +657,7 @@ export const getScopedKnowledge = authQuery({
     return {
       content: mergedContent,
       sources,
-      totalByteSize: mergedContent ? Buffer.byteLength(mergedContent, "utf-8") : 0,
+      totalByteSize: mergedContent ? utf8ByteLength(mergedContent) : 0,
     };
   },
 });
@@ -685,7 +690,7 @@ export const getScopedKnowledgeInternal = internalQuery({
       sources.push({
         scope: "team",
         hasContent: true,
-        byteSize: Buffer.byteLength(teamKnowledge.content, "utf-8"),
+        byteSize: utf8ByteLength(teamKnowledge.content),
       });
     } else {
       sources.push({ scope: "team", hasContent: false, byteSize: 0 });
@@ -706,7 +711,7 @@ export const getScopedKnowledgeInternal = internalQuery({
         sources.push({
           scope: "repo",
           hasContent: true,
-          byteSize: Buffer.byteLength(repoKnowledge.content, "utf-8"),
+          byteSize: utf8ByteLength(repoKnowledge.content),
         });
       } else {
         sources.push({ scope: "repo", hasContent: false, byteSize: 0 });
@@ -730,7 +735,7 @@ export const getScopedKnowledgeInternal = internalQuery({
         sources.push({
           scope: "user",
           hasContent: true,
-          byteSize: Buffer.byteLength(userKnowledge.content, "utf-8"),
+          byteSize: utf8ByteLength(userKnowledge.content),
         });
       } else {
         sources.push({ scope: "user", hasContent: false, byteSize: 0 });
@@ -742,7 +747,7 @@ export const getScopedKnowledgeInternal = internalQuery({
     return {
       content: mergedContent,
       sources,
-      totalByteSize: mergedContent ? Buffer.byteLength(mergedContent, "utf-8") : 0,
+      totalByteSize: mergedContent ? utf8ByteLength(mergedContent) : 0,
     };
   },
 });
@@ -820,7 +825,7 @@ export const getMemoryScopeSummary = authQuery({
       )
       .collect();
     const teamByteSize = teamSnapshots.reduce(
-      (sum, s) => sum + (s.content ? Buffer.byteLength(s.content, "utf-8") : 0),
+      (sum, s) => sum + (s.content ? utf8ByteLength(s.content) : 0),
       0
     );
     scopes.push({
@@ -842,7 +847,7 @@ export const getMemoryScopeSummary = authQuery({
         )
         .collect();
       const repoByteSize = repoSnapshots.reduce(
-        (sum, s) => sum + (s.content ? Buffer.byteLength(s.content, "utf-8") : 0),
+        (sum, s) => sum + (s.content ? utf8ByteLength(s.content) : 0),
         0
       );
       scopes.push({
@@ -866,7 +871,7 @@ export const getMemoryScopeSummary = authQuery({
         .filter((q) => q.eq(q.field("scope"), "user"))
         .collect();
       const userByteSize = userSnapshots.reduce(
-        (sum, s) => sum + (s.content ? Buffer.byteLength(s.content, "utf-8") : 0),
+        (sum, s) => sum + (s.content ? utf8ByteLength(s.content) : 0),
         0
       );
       scopes.push({
@@ -886,7 +891,7 @@ export const getMemoryScopeSummary = authQuery({
       .withIndex("by_task_run", (q) => q.eq("taskRunId", args.taskRunId))
       .collect();
     const runByteSize = runSnapshots.reduce(
-      (sum, s) => sum + (s.content ? Buffer.byteLength(s.content, "utf-8") : 0),
+      (sum, s) => sum + (s.content ? utf8ByteLength(s.content) : 0),
       0
     );
     scopes.push({
