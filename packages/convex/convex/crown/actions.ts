@@ -350,6 +350,8 @@ IMPORTANT: Respond ONLY with the JSON object, no other text.`;
           "You select the best implementation from structured diff inputs and explain briefly why.",
         prompt: evaluationPrompt,
         maxRetries: 2,
+        // Ensure enough tokens for evaluation response
+        maxOutputTokens: 2048,
         // Use outputFormat mode for Anthropic to avoid tool-use which CF gateway doesn't proxy correctly
         // Also enable OpenAI structured outputs in case OpenAI fallback is used
         providerOptions: {
@@ -524,6 +526,8 @@ Return a JSON object with this exact structure:
           "You are an expert reviewer summarizing pull requests. Provide a clear, concise summary following the requested format.",
         prompt: summarizationPrompt,
         maxRetries: 2,
+        // Ensure enough tokens for the summary with mermaid diagrams
+        maxOutputTokens: 4096,
         // Use outputFormat mode for Anthropic to avoid tool-use which CF gateway doesn't proxy correctly
         // Also enable OpenAI structured outputs in case OpenAI fallback is used
         providerOptions: {
