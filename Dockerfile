@@ -445,6 +445,7 @@ RUN bun --version && bunx --version
 
 # Copy VS Code extension source
 COPY packages/vscode-extension/src ./packages/vscode-extension/src
+COPY packages/vscode-extension/webview ./packages/vscode-extension/webview
 COPY packages/vscode-extension/tsconfig.json ./packages/vscode-extension/
 COPY packages/vscode-extension/.vscodeignore ./packages/vscode-extension/
 COPY packages/vscode-extension/LICENSE.md ./packages/vscode-extension/
