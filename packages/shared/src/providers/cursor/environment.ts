@@ -11,6 +11,80 @@ import { buildGenericInstructionsContent } from "../../agent-instruction-pack";
 import { getTaskSandboxWrapperFiles } from "../common/task-sandbox-wrappers";
 import { buildStandardLifecycleHooks } from "../../provider-lifecycle-adapter";
 
+/**
+ * Fallback deny rules for Cursor CLI in task sandboxes.
+ * Used when permissionDenyRules from Convex is not available.
+ *
+ * These use Cursor's native permission format:
+ * - Shell(commandBase) - deny shell commands starting with pattern
+ * - Read(pathOrGlob) - deny read access
+ * - Write(pathOrGlob) - deny write access
+ */
+const CURSOR_FALLBACK_DENY_RULES = [
+  // PR lifecycle — cmux manages PR creation/merging automatically
+  "Shell(gh pr create)",
+  "Shell(gh pr merge)",
+  "Shell(gh pr close)",
+  // Git destructive ops - prevent accidental data loss
+  "Shell(git push --force)",
+  "Shell(git push -f)",
+  "Shell(git reset --hard)",
+  "Shell(git clean -f)",
+  // Sensitive file protection
+  "Write(.env)",
+  "Write(.env.*)",
+  "Write(*.pem)",
+  "Write(*.key)",
+];
+
+/**
+ * Translates cmux permission deny rules (Claude format) to Cursor CLI format.
+ *
+ * Claude format: "Bash(gh pr create:*)", "Bash(git push:*)"
+ * Cursor format: "Shell(gh pr create)", "Shell(git push)"
+ *
+ * Currently only translates Bash rules to Shell rules.
+ * Read/Write rules are passed through if they match Cursor format.
+ */
+function translateDenyRulesToCursor(cmuxRules: string[]): string[] {
+  const cursorRules: string[] = [];
+
+  for (const rule of cmuxRules) {
+    // Translate Bash(command:*) -> Shell(command)
+    const bashMatch = rule.match(/^Bash\(([^:]+)(?::\*)?\)$/);
+    if (bashMatch) {
+      cursorRules.push(`Shell(${bashMatch[1]})`);
+      continue;
+    }
+
+    // Pass through rules already in Cursor format
+    if (rule.startsWith("Shell(") || rule.startsWith("Read(") || rule.startsWith("Write(")) {
+      cursorRules.push(rule);
+      continue;
+    }
+
+    // Log unknown formats but don't fail
+    console.warn(`[cursor] Unknown deny rule format, skipping: ${rule}`);
+  }
+
+  return cursorRules;
+}
+
+/**
+ * Builds .cursor/cli.json permission policy content.
+ *
+ * Per Cursor CLI docs, project-level config only supports permissions,
+ * not other CLI settings (those must be in ~/.cursor/cli-config.json).
+ */
+function buildCursorCliJson(denyRules: string[]): string {
+  const config = {
+    permissions: {
+      deny: denyRules,
+    },
+  };
+  return JSON.stringify(config, null, 2);
+}
+
 export async function getCursorEnvironment(
   ctx: EnvironmentContext
 ): Promise<EnvironmentResult> {
@@ -165,9 +239,31 @@ export async function getCursorEnvironment(
     mode: "644",
   });
 
+  // Generate project-level permission policy (.cursor/cli.json)
+  // Per Cursor docs, only permissions can be set at project level
+  const hasTaskRunJwt = ctx.taskRunJwt.trim().length > 0;
+  const shouldApplyDenyRules = hasTaskRunJwt && !ctx.isOrchestrationHead;
+
+  if (shouldApplyDenyRules) {
+    // Use Convex rules if available, otherwise fall back to defaults
+    const cmuxDenyRules = ctx.permissionDenyRules?.length
+      ? ctx.permissionDenyRules
+      : [];
+    // Translate cmux rules (Claude format) to Cursor format, merge with fallback
+    const cursorDenyRules = cmuxDenyRules.length > 0
+      ? translateDenyRulesToCursor(cmuxDenyRules)
+      : CURSOR_FALLBACK_DENY_RULES;
+
+    const cursorCliJson = buildCursorCliJson(cursorDenyRules);
+    files.push({
+      destinationPath: "/root/workspace/.cursor/cli.json",
+      contentBase64: Buffer.from(cursorCliJson).toString("base64"),
+      mode: "644",
+    });
+  }
+
   // Block dangerous commands in task sandboxes (when enabled via settings)
   // Disabled by default - use permission deny rules or policy rules instead
-  const hasTaskRunJwt = ctx.taskRunJwt.trim().length > 0;
   if (hasTaskRunJwt && ctx.enableShellWrappers) {
     files.push(...getTaskSandboxWrapperFiles(Buffer));
   }
