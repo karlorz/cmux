@@ -251,23 +251,6 @@ const CrownEvaluationCandidateValidator = v.object({
 });
 
 /**
- * Resolve crown model using PLATFORM credentials only.
- * Crown evaluation is a platform service and should NOT use user/team API keys.
- */
-function resolveCrownModel(): {
-  provider: CrownProvider;
-  model: LanguageModel;
-} {
-  const models = resolveAllCrownModels();
-  if (models.length === 0) {
-    throw new ConvexError(
-      "Crown evaluation is not configured (missing platform Anthropic, OpenAI, or Gemini API key)"
-    );
-  }
-  return models[0];
-}
-
-/**
  * Resolve ALL available crown models in provider order.
  * Returns an ordered list of providers/models for fallback.
  */
