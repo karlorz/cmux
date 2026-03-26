@@ -11,7 +11,8 @@ interface CursorModelSpec {
 function createCursorConfig(spec: CursorModelSpec): AgentConfig {
   return {
     name: `cursor/${spec.model}`,
-    command: "/root/.local/bin/cursor-agent",
+    // Use "agent" (official name per Cursor docs) - "cursor-agent" is legacy symlink
+    command: "/root/.local/bin/agent",
     args: ["--force", "--model", spec.model, "$PROMPT"],
     environment: getCursorEnvironment,
     checkRequirements: checkCursorRequirements,

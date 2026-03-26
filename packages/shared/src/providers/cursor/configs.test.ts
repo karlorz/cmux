@@ -15,9 +15,10 @@ describe("CURSOR_AGENT_CONFIGS", () => {
       }
     });
 
-    it("all configs use cursor-agent command path", () => {
+    it("all configs use agent command path", () => {
       for (const config of CURSOR_AGENT_CONFIGS) {
-        expect(config.command).toBe("/root/.local/bin/cursor-agent");
+        // Use "agent" (official name per Cursor docs) - "cursor-agent" is legacy symlink
+        expect(config.command).toBe("/root/.local/bin/agent");
       }
     });
 
