@@ -22,6 +22,7 @@ import { orchestrateApprovalsRouter } from "./approvals.route";
 import { orchestrateLearningRouter } from "./learning.route";
 import { orchestrateInputRouter } from "./input.route";
 import { orchestrateSimplifyRouter } from "./simplify.route";
+import { orchestrateContextHealthRouter } from "./context-health.route";
 
 export const orchestrateRouter = new OpenAPIHono();
 
@@ -34,6 +35,7 @@ orchestrateRouter.route("/", orchestrateApprovalsRouter);
 orchestrateRouter.route("/", orchestrateLearningRouter);
 orchestrateRouter.route("/", orchestrateInputRouter);
 orchestrateRouter.route("/", orchestrateSimplifyRouter);
+orchestrateRouter.route("/", orchestrateContextHealthRouter);
 
 // Re-export for backwards compatibility
 export { orchestrateTasksRouter } from "./tasks.route";
@@ -44,3 +46,4 @@ export { orchestrateApprovalsRouter } from "./approvals.route";
 export { orchestrateLearningRouter } from "./learning.route";
 export { orchestrateInputRouter } from "./input.route";
 export { orchestrateSimplifyRouter } from "./simplify.route";
+export { orchestrateContextHealthRouter } from "./context-health.route";

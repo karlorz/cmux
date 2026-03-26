@@ -2492,11 +2492,11 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         }
 
         try {
-          const url = `${callbackUrl}/api/autopilot/context-health`;
+          const url = `${callbackUrl}/api/v1/cmux/orchestration/context-health`;
           const response = await fetch(url, {
             method: "GET",
             headers: {
-              Authorization: `Bearer ${jwt}`,
+              "x-cmux-token": jwt,
             },
           });
 
