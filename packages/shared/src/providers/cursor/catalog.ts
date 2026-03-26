@@ -5,6 +5,7 @@ import type { AgentCatalogEntry } from "../../agent-catalog";
 const CURSOR_REQUIRED_API_KEYS = ["CURSOR_AUTH_JSON", "CURSOR_API_KEY"];
 
 export const CURSOR_CATALOG: AgentCatalogEntry[] = [
+  // Interactive models (TUI mode)
   {
     name: "cursor/opus-4.1",
     displayName: "Opus 4.1",
@@ -33,5 +34,38 @@ export const CURSOR_CATALOG: AgentCatalogEntry[] = [
     requiredApiKeys: CURSOR_REQUIRED_API_KEYS,
     tier: "paid",
     tags: ["reasoning"],
+  },
+  // Non-interactive CI models (--output-format json)
+  {
+    name: "cursor/opus-4.1-ci",
+    displayName: "Opus 4.1 (CI)",
+    vendor: "cursor",
+    requiredApiKeys: CURSOR_REQUIRED_API_KEYS,
+    tier: "paid",
+    tags: ["ci", "automation"],
+  },
+  {
+    name: "cursor/gpt-5-ci",
+    displayName: "GPT-5 (CI)",
+    vendor: "cursor",
+    requiredApiKeys: CURSOR_REQUIRED_API_KEYS,
+    tier: "paid",
+    tags: ["ci", "automation"],
+  },
+  {
+    name: "cursor/sonnet-4-ci",
+    displayName: "Sonnet 4 (CI)",
+    vendor: "cursor",
+    requiredApiKeys: CURSOR_REQUIRED_API_KEYS,
+    tier: "paid",
+    tags: ["ci", "automation"],
+  },
+  {
+    name: "cursor/sonnet-4-thinking-ci",
+    displayName: "Sonnet 4 Thinking (CI)",
+    vendor: "cursor",
+    requiredApiKeys: CURSOR_REQUIRED_API_KEYS,
+    tier: "paid",
+    tags: ["reasoning", "ci", "automation"],
   },
 ];
