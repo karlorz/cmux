@@ -3511,15 +3511,13 @@ export const getByOrchestrationId = authQuery({
     const teamId = await getTeamId(ctx, args.teamSlugOrId);
 
     // Look for head agent task run with this orchestration ID
-    // Note: No direct index on orchestrationId, so we filter
+    // Uses compound index to avoid full table scan (bandwidth optimization)
     const run = await ctx.db
       .query("taskRuns")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("teamId"), teamId),
-          q.eq(q.field("orchestrationId"), args.orchestrationId),
-          q.eq(q.field("isOrchestrationHead"), true)
-        )
+      .withIndex("by_team_orchestration_head", (q) =>
+        q.eq("teamId", teamId)
+          .eq("orchestrationId", args.orchestrationId)
+          .eq("isOrchestrationHead", true)
       )
       .first();
 
@@ -3546,13 +3544,11 @@ export const checkStaleHeadAgents = internalMutation({
     const cutoff = now - HEAD_AGENT_HEARTBEAT_TIMEOUT_MS;
 
     // Find running head agents with stale heartbeats
+    // Uses compound index to avoid full table scan (bandwidth optimization)
     const staleRuns = await ctx.db
       .query("taskRuns")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("isOrchestrationHead"), true),
-          q.eq(q.field("orchestrationStatus"), "running")
-        )
+      .withIndex("by_orchestration_head_status", (q) =>
+        q.eq("isOrchestrationHead", true).eq("orchestrationStatus", "running")
       )
       .collect();
 
