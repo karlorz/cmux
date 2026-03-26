@@ -127,21 +127,50 @@ Run agent tasks locally without cloud infrastructure. Useful for prototyping, de
 | `devsh orchestrate tail-local <id>` | Follow run logs |
 | `devsh orchestrate view <path>` | View bundle in browser |
 | `devsh orchestrate stop-local <id>` | Stop a running task |
-| `devsh orchestrate append-local <id>` | Append instructions to running task |
+| `devsh orchestrate append-local <id>` | Append instructions (passive mode) |
+| `devsh orchestrate inject-local <id>` | Inject instructions with active continuation |
+| `devsh orchestrate selftest-local` | Preflight check for workspace, CLI, credentials |
+| `devsh orchestrate context-pack` | Package repo context for agent consumption |
 | `devsh orchestrate replay <bundle>` | Replay tasks from bundle |
 | `devsh orchestrate upload <bundle>` | Upload bundle to cloud |
 
 **Quick start:**
 
 ```bash
+# Preflight check before running tasks
+devsh orchestrate selftest-local
+
 # Run a task locally (artifacts saved to ~/.devsh/orchestrations/)
 devsh orchestrate run-local --agent claude/haiku-4.5 "Fix the bug in auth.ts"
 
 # View results in browser
 devsh orchestrate view ~/.devsh/orchestrations/local_abc123 --live
 
+# Inject follow-up instructions (uses active continuation for Claude/Codex)
+devsh orchestrate inject-local local_abc123 "Also add tests for the fix"
+
+# Package repo context for agent consumption
+devsh orchestrate context-pack --output context.json
+
 # Run multiple tasks from a plan
 devsh orchestrate run-plan tasks.yaml --parallel
+```
+
+**Instruction injection modes:**
+
+| Mode | Description |
+|------|-------------|
+| `--mode auto` | Auto-detect provider capabilities (default) |
+| `--mode active` | Use `--continue --session-id` (Claude) or `--thread-id` (Codex) |
+| `--mode passive` | Append to instruction file (fallback for other CLIs) |
+
+**Context pack options:**
+
+```bash
+devsh orchestrate context-pack                    # Summary only
+devsh orchestrate context-pack --tree             # Include file tree
+devsh orchestrate context-pack --output ctx.json  # JSON export
+devsh orchestrate context-pack --max-tokens 8000  # Token budget
 ```
 
 ### Cloud Orchestration
