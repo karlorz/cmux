@@ -40,6 +40,7 @@ import {
   configureGitIdentity,
   fetchGitIdentityInputs,
   getFreshGitHubToken,
+  verifyGitHubRepoAccess,
 } from "../sandboxes/git";
 import type { HydrateRepoConfig } from "../sandboxes/hydration";
 import { hydrateWorkspace } from "../sandboxes/hydration";
@@ -90,6 +91,7 @@ export {
   configureGitIdentity,
   fetchGitIdentityInputs,
   getFreshGitHubToken,
+  verifyGitHubRepoAccess,
   hydrateWorkspace,
   resolveTeamAndSnapshot,
   allocateScriptIdentifiers,

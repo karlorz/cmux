@@ -61,27 +61,57 @@ function runHydrateRepoScript({
   originDir,
   workspaceDir,
   baseBranch,
+  mode = "env",
 }: {
   originDir: string;
   workspaceDir: string;
   baseBranch?: string;
+  mode?: "env" | "file";
 }) {
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    CMUX_WORKSPACE_PATH: workspaceDir,
-    CMUX_DEPTH: "1",
-    CMUX_OWNER: "karlorz",
-    CMUX_REPO: "testing-repo-1",
-    CMUX_REPO_FULL: "karlorz/testing-repo-1",
-    CMUX_CLONE_URL: originDir,
-    CMUX_MASKED_CLONE_URL: originDir,
-  };
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  const args = ["run", SCRIPT_PATH];
 
-  if (baseBranch !== undefined) {
-    env.CMUX_BASE_BRANCH = baseBranch;
+  if (mode === "file") {
+    delete env.CMUX_WORKSPACE_PATH;
+    delete env.CMUX_DEPTH;
+    delete env.CMUX_OWNER;
+    delete env.CMUX_REPO;
+    delete env.CMUX_REPO_FULL;
+    delete env.CMUX_CLONE_URL;
+    delete env.CMUX_MASKED_CLONE_URL;
+    delete env.CMUX_BASE_BRANCH;
+    delete env.CMUX_NEW_BRANCH;
+
+    const configPath = join(tmpdir(), `hydrate-config-${Date.now()}.json`);
+    tempRoots.push(configPath);
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        workspacePath: workspaceDir,
+        depth: 1,
+        owner: "karlorz",
+        repo: "testing-repo-1",
+        repoFull: "karlorz/testing-repo-1",
+        cloneUrl: originDir,
+        maskedCloneUrl: originDir,
+        ...(baseBranch !== undefined ? { baseBranch } : {}),
+      }),
+    );
+    args.push(configPath);
+  } else {
+    env.CMUX_WORKSPACE_PATH = workspaceDir;
+    env.CMUX_DEPTH = "1";
+    env.CMUX_OWNER = "karlorz";
+    env.CMUX_REPO = "testing-repo-1";
+    env.CMUX_REPO_FULL = "karlorz/testing-repo-1";
+    env.CMUX_CLONE_URL = originDir;
+    env.CMUX_MASKED_CLONE_URL = originDir;
+    if (baseBranch !== undefined) {
+      env.CMUX_BASE_BRANCH = baseBranch;
+    }
   }
 
-  const result = spawnSync("bun", ["run", SCRIPT_PATH], {
+  const result = spawnSync("bun", args, {
     env,
     encoding: "utf8",
   });
@@ -112,72 +142,87 @@ afterEach(() => {
   tempRoots.length = 0;
 });
 
-describe("hydrateRepoScript clone behavior", () => {
-  it("includes --branch when baseBranch is provided", () => {
-    const { originDir, workspaceDir } = createRepoContext();
-    const result = runHydrateRepoScript({
-      originDir,
-      workspaceDir,
-      baseBranch: FEATURE_BRANCH,
+describe.each(["env", "file"] as const)(
+  "hydrateRepoScript clone behavior (%s mode)",
+  (mode) => {
+    it("includes --branch when baseBranch is provided", () => {
+      const { originDir, workspaceDir } = createRepoContext();
+      const result = runHydrateRepoScript({
+        originDir,
+        workspaceDir,
+        baseBranch: FEATURE_BRANCH,
+        mode,
+      });
+
+      expect(result.exitCode).toBe(0);
+      const cloneCommands = extractCloneCommands(result.stdout);
+      expect(cloneCommands).toHaveLength(1);
+      expect(cloneCommands[0]).toContain(`--branch "${FEATURE_BRANCH}"`);
+
+      const currentBranch = git(
+        ["rev-parse", "--abbrev-ref", "HEAD"],
+        workspaceDir,
+      );
+      expect(currentBranch).toBe(FEATURE_BRANCH);
     });
 
-    expect(result.exitCode).toBe(0);
-    const cloneCommands = extractCloneCommands(result.stdout);
-    expect(cloneCommands).toHaveLength(1);
-    expect(cloneCommands[0]).toContain(`--branch "${FEATURE_BRANCH}"`);
+    it("omits --branch when baseBranch is not provided", () => {
+      const { originDir, workspaceDir } = createRepoContext();
+      const result = runHydrateRepoScript({ originDir, workspaceDir, mode });
 
-    const currentBranch = git(["rev-parse", "--abbrev-ref", "HEAD"], workspaceDir);
-    expect(currentBranch).toBe(FEATURE_BRANCH);
-  });
+      expect(result.exitCode).toBe(0);
+      const cloneCommands = extractCloneCommands(result.stdout);
+      expect(cloneCommands).toHaveLength(1);
+      expect(cloneCommands[0]).not.toContain("--branch");
 
-  it("omits --branch when baseBranch is not provided", () => {
-    const { originDir, workspaceDir } = createRepoContext();
-    const result = runHydrateRepoScript({ originDir, workspaceDir });
-
-    expect(result.exitCode).toBe(0);
-    const cloneCommands = extractCloneCommands(result.stdout);
-    expect(cloneCommands).toHaveLength(1);
-    expect(cloneCommands[0]).not.toContain("--branch");
-
-    const currentBranch = git(["rev-parse", "--abbrev-ref", "HEAD"], workspaceDir);
-    expect(currentBranch).toBe(DEFAULT_BRANCH);
-  });
-
-  it("falls back to default branch when target branch does not exist", () => {
-    const { originDir, workspaceDir } = createRepoContext();
-    const missingBranch = "nonexistent-xyz-branch";
-    const result = runHydrateRepoScript({
-      originDir,
-      workspaceDir,
-      baseBranch: missingBranch,
+      const currentBranch = git(
+        ["rev-parse", "--abbrev-ref", "HEAD"],
+        workspaceDir,
+      );
+      expect(currentBranch).toBe(DEFAULT_BRANCH);
     });
 
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("falling back to default branch");
+    it("falls back to default branch when target branch does not exist", () => {
+      const { originDir, workspaceDir } = createRepoContext();
+      const missingBranch = "nonexistent-xyz-branch";
+      const result = runHydrateRepoScript({
+        originDir,
+        workspaceDir,
+        baseBranch: missingBranch,
+        mode,
+      });
 
-    const cloneCommands = extractCloneCommands(result.stdout);
-    expect(cloneCommands).toHaveLength(2);
-    expect(cloneCommands[0]).toContain(`--branch "${missingBranch}"`);
-    expect(cloneCommands[1]).not.toContain("--branch");
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("falling back to default branch");
 
-    const currentBranch = git(["rev-parse", "--abbrev-ref", "HEAD"], workspaceDir);
-    expect(currentBranch).toBe(DEFAULT_BRANCH);
-  });
+      const cloneCommands = extractCloneCommands(result.stdout);
+      expect(cloneCommands).toHaveLength(2);
+      expect(cloneCommands[0]).toContain(`--branch "${missingBranch}"`);
+      expect(cloneCommands[1]).not.toContain("--branch");
 
-  it("rejects shell injection attempts in branch names", () => {
-    const { originDir, workspaceDir } = createRepoContext();
-    const maliciousBranch = "main;echo pwned";
-    const result = runHydrateRepoScript({
-      originDir,
-      workspaceDir,
-      baseBranch: maliciousBranch,
+      const currentBranch = git(
+        ["rev-parse", "--abbrev-ref", "HEAD"],
+        workspaceDir,
+      );
+      expect(currentBranch).toBe(DEFAULT_BRANCH);
     });
 
-    expect(result.exitCode).toBe(1);
-    const combinedOutput = `${result.stdout}\n${result.stderr}`;
-    expect(combinedOutput).toContain("Invalid branch name");
+    it("rejects shell injection attempts in branch names", () => {
+      const { originDir, workspaceDir } = createRepoContext();
+      const maliciousBranch = "main;echo pwned";
+      const result = runHydrateRepoScript({
+        originDir,
+        workspaceDir,
+        baseBranch: maliciousBranch,
+        mode,
+      });
 
-    const cloneCommands = extractCloneCommands(combinedOutput);
-    expect(cloneCommands).toHaveLength(0);
-  });
-});
+      expect(result.exitCode).toBe(1);
+      const combinedOutput = `${result.stdout}\n${result.stderr}`;
+      expect(combinedOutput).toContain("Invalid branch name");
+
+      const cloneCommands = extractCloneCommands(combinedOutput);
+      expect(cloneCommands).toHaveLength(0);
+    });
+  },
+);
