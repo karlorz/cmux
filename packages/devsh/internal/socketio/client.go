@@ -12,18 +12,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/karlorz/devsh/internal/auth"
 	"github.com/gorilla/websocket"
+	"github.com/karlorz/devsh/internal/auth"
 )
 
 // Client wraps a socket.io connection to apps/server
 type Client struct {
-	serverURL string
-	authToken string
-	conn      *websocket.Conn
-	mu        sync.Mutex
-	connected bool
-	msgID     int
+	serverURL      string
+	teamSlug       string
+	authToken      string
+	authHeaderJSON string
+	conn           *websocket.Conn
+	mu             sync.Mutex
+	connected      bool
+	msgID          int
 }
 
 // StartTaskData matches the StartTaskSchema from @cmux/shared/socket-schemas
@@ -42,23 +44,62 @@ type StartTaskData struct {
 
 // TaskStartedResult is the response from start-task event
 type TaskStartedResult struct {
-	TaskID      string `json:"taskId"`
+	TaskID       string `json:"taskId"`
 	WorktreePath string `json:"worktreePath,omitempty"`
-	TerminalID  string `json:"terminalId,omitempty"`
-	Error       string `json:"error,omitempty"`
+	TerminalID   string `json:"terminalId,omitempty"`
+	Error        string `json:"error,omitempty"`
 }
 
-// NewClient creates a new socket.io client
-func NewClient(serverURL string) (*Client, error) {
+// NewClient creates a new socket.io client.
+// The server expects auth + team data on the initial handshake query,
+// not just in the Authorization header.
+func NewClient(serverURL string, teamSlug string) (*Client, error) {
 	token, err := auth.GetAccessToken()
 	if err != nil {
 		return nil, fmt.Errorf("not authenticated: %w", err)
 	}
+	if teamSlug == "" {
+		return nil, fmt.Errorf("team slug is required")
+	}
+
+	authHeaderJSON, err := json.Marshal(map[string]string{
+		"accessToken": token,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode auth header json: %w", err)
+	}
 
 	return &Client{
-		serverURL: serverURL,
-		authToken: token,
+		serverURL:      serverURL,
+		teamSlug:       teamSlug,
+		authToken:      token,
+		authHeaderJSON: string(authHeaderJSON),
 	}, nil
+}
+
+func (c *Client) buildSocketIOURL() (string, error) {
+	u, err := url.Parse(c.serverURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid server URL: %w", err)
+	}
+
+	switch u.Scheme {
+	case "http":
+		u.Scheme = "ws"
+	case "https":
+		u.Scheme = "wss"
+	}
+
+	u.Path = "/socket.io/"
+	q := u.Query()
+	q.Set("EIO", "4")
+	q.Set("transport", "websocket")
+	q.Set("auth", c.authToken)
+	q.Set("auth_json", c.authHeaderJSON)
+	q.Set("team", c.teamSlug)
+	u.RawQuery = q.Encode()
+
+	return u.String(), nil
 }
 
 // Connect establishes a WebSocket connection to the server
@@ -72,26 +113,10 @@ func (c *Client) Connect(ctx context.Context) error {
 		return nil
 	}
 
-	// Parse server URL and convert to WebSocket URL
-	u, err := url.Parse(c.serverURL)
+	socketURL, err := c.buildSocketIOURL()
 	if err != nil {
-		return fmt.Errorf("invalid server URL: %w", err)
+		return err
 	}
-
-	// Convert http(s) to ws(s)
-	switch u.Scheme {
-	case "http":
-		u.Scheme = "ws"
-	case "https":
-		u.Scheme = "wss"
-	}
-
-	// Socket.io endpoint
-	u.Path = "/socket.io/"
-	q := u.Query()
-	q.Set("EIO", "4")
-	q.Set("transport", "websocket")
-	u.RawQuery = q.Encode()
 
 	// Create WebSocket dialer with custom headers
 	dialer := websocket.Dialer{
@@ -101,7 +126,7 @@ func (c *Client) Connect(ctx context.Context) error {
 	header := http.Header{}
 	header.Set("Authorization", "Bearer "+c.authToken)
 
-	conn, _, err := dialer.DialContext(ctx, u.String(), header)
+	conn, _, err := dialer.DialContext(ctx, socketURL, header)
 	if err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
 	}
@@ -152,6 +177,7 @@ func (c *Client) Authenticate(ctx context.Context) error {
 	// Socket.io message format: 42["event", data]
 	authData := map[string]string{
 		"authToken": c.authToken,
+		"authJson":  c.authHeaderJSON,
 	}
 	payload, err := json.Marshal([]interface{}{"authenticate", authData})
 	if err != nil {

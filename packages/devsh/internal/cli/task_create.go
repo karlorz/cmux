@@ -40,7 +40,7 @@ var (
 	taskCreateParentTaskRun string
 
 	// Pre-compiled regexps for sanitizeFileName
-	reNonAlphaNum    = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
+	reNonAlphaNum     = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
 	reMultiUnderscore = regexp.MustCompile(`_+`)
 	// Autopilot mode (Phase 6)
 	taskCreateAutopilot            bool
@@ -364,7 +364,7 @@ Examples:
 
 			if taskCreateRealtime {
 				// Use socket.io client for real-time feedback (identical to web app flow)
-				agents, err = startTaskViaSocketIO(ctx, cfg.ServerURL, socketio.StartTaskData{
+				agents, err = startTaskViaSocketIO(ctx, cfg.ServerURL, teamSlug, socketio.StartTaskData{
 					TaskID:          result.TaskID,
 					TaskDescription: prompt,
 					ProjectFullName: taskCreateRepo,
@@ -397,8 +397,8 @@ Examples:
 					RalphMode:            taskCreateRalphMode,
 					RalphCompletionTag:   taskCreateRalphCompletionTag,
 					RalphMaxIterations:   taskCreateRalphMaxIterations,
-					IsCloudWorkspace:    taskCreateCloudWorkspace,
-					IsOrchestrationHead: taskCreateCloudWorkspace, // Cloud workspaces are orchestration heads
+					IsCloudWorkspace:     taskCreateCloudWorkspace,
+					IsOrchestrationHead:  taskCreateCloudWorkspace, // Cloud workspaces are orchestration heads
 				})
 
 				if err != nil {
@@ -507,10 +507,10 @@ Examples:
 }
 
 // startTaskViaSocketIO uses socket.io to start task with real-time feedback
-func startTaskViaSocketIO(ctx context.Context, serverURL string, data socketio.StartTaskData, taskRuns []vm.TaskRunWithJWT) ([]agentInfo, error) {
+func startTaskViaSocketIO(ctx context.Context, serverURL string, teamSlug string, data socketio.StartTaskData, taskRuns []vm.TaskRunWithJWT) ([]agentInfo, error) {
 	var agents []agentInfo
 
-	client, err := socketio.NewClient(serverURL)
+	client, err := socketio.NewClient(serverURL, teamSlug)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create socket.io client: %w", err)
 	}
