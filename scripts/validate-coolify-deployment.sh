@@ -93,11 +93,39 @@ check_http_body() {
   FAILED=1
 }
 
+check_http_body_any() {
+  local label="$1"
+  local url="$2"
+  shift 2
+  local response
+
+  echo -n "Checking ${label}... "
+  if response=$(curl -fsS --max-time 10 "$url" 2>/dev/null); then
+    for expected_fragment in "$@"; do
+      if [[ "$response" == *"$expected_fragment"* ]]; then
+        echo -e "${GREEN}OK${NC}"
+        return
+      fi
+    done
+
+    echo -e "${RED}FAILED${NC} (unexpected response from ${url})"
+    FAILED=1
+    return
+  fi
+
+  echo -e "${RED}FAILED${NC} (${url})"
+  FAILED=1
+}
+
 # Check client health
 check_http_status "client health" "${CLIENT_BASE_URL}/health"
 
 # Check www health
-check_http_body "www health" "${WWW_BASE_URL}/api/health" "\"status\":\"ok\""
+check_http_body_any \
+  "www health" \
+  "${WWW_BASE_URL}/api/health" \
+  "\"status\":\"ok\"" \
+  "\"status\":\"healthy\""
 
 # Check server HTTP API health
 check_http_body "server API health" "${SERVER_BASE_URL}/api/health" "\"service\":\"apps-server\""

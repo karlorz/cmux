@@ -48,6 +48,7 @@ import {
   selectGitIdentity,
   setupProviderAuth,
   stackServerAppJs,
+  verifyGitHubRepoAccess,
   verifyTeamAccess,
   waitForVSCodeReady,
   waitForWorkerReady,
@@ -755,6 +756,26 @@ sandboxesStartRouter.openapi(
       }
 
       if (gitAuthToken) {
+        if (parsedRepoUrl) {
+          const repoAccess = await verifyGitHubRepoAccess({
+            token: gitAuthToken,
+            owner: parsedRepoUrl.owner,
+            repo: parsedRepoUrl.repo,
+          });
+          if (!repoAccess.ok) {
+            console.error(
+              `[sandboxes.start] GitHub repo access check failed for ${parsedRepoUrl.fullName}: ${repoAccess.message}`,
+            );
+            await instance.stop().catch((stopError) => {
+              console.error(
+                `[sandboxes.start] Failed to stop instance ${instance.id} after repo access failure:`,
+                stopError,
+              );
+            });
+            return c.text(repoAccess.message, 500);
+          }
+        }
+
         await configureGithubAccess(instance, gitAuthToken);
       } else {
         console.log(

@@ -125,3 +125,58 @@ export async function getFreshGitHubToken(
   }
   return { token: githubAccessToken };
 }
+
+/**
+ * Verify that the provided GitHub token can access the target repository.
+ * This catches owner/account mismatches before we start clone hydration.
+ */
+export async function verifyGitHubRepoAccess({
+  token,
+  owner,
+  repo,
+}: {
+  token: string;
+  owner: string;
+  repo: string;
+}): Promise<{ ok: true } | { ok: false; message: string }> {
+  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+    },
+  });
+
+  if (response.ok) {
+    return { ok: true };
+  }
+
+  if (response.status === 404) {
+    return {
+      ok: false,
+      message:
+        `GitHub token cannot access repository ${owner}/${repo}. ` +
+        `Connect a GitHub account with access or install the GitHub App for ${owner}.`,
+    };
+  }
+
+  if (response.status === 401) {
+    return {
+      ok: false,
+      message: "GitHub access token is invalid or expired. Reconnect GitHub and try again.",
+    };
+  }
+
+  if (response.status === 403) {
+    return {
+      ok: false,
+      message:
+        `GitHub access to ${owner}/${repo} was denied. ` +
+        `Connect a GitHub account with access or install the GitHub App for ${owner}.`,
+    };
+  }
+
+  return {
+    ok: false,
+    message: `Failed to verify GitHub access for ${owner}/${repo} (${response.status})`,
+  };
+}

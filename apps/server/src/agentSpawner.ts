@@ -82,6 +82,25 @@ function logProviderHealthMetrics(providerId: string): void {
   });
 }
 
+function resolveGitHubRepoUrl(
+  repoUrl: string | undefined,
+  projectFullName: string | null | undefined,
+): string | undefined {
+  const parsedExplicitRepo = repoUrl ? parseGithubRepoUrl(repoUrl) : null;
+  if (parsedExplicitRepo) {
+    return parsedExplicitRepo.url;
+  }
+
+  if (repoUrl?.trim()) {
+    return repoUrl.trim();
+  }
+
+  const parsedProjectRepo = projectFullName
+    ? parseGithubRepoUrl(projectFullName)
+    : null;
+  return parsedProjectRepo?.url;
+}
+
 const {
   getApiEnvironmentsById,
   getApiEnvironmentsByIdVars,
@@ -305,6 +324,15 @@ export async function spawnAgent(
           id: taskId,
         })
       : null;
+    const effectiveRepoUrl = resolveGitHubRepoUrl(
+      options.repoUrl,
+      task?.projectFullName,
+    );
+    if (!options.repoUrl && effectiveRepoUrl) {
+      serverLogger.info(
+        `[AgentSpawner] Derived repo URL ${effectiveRepoUrl} from task project name`,
+      );
+    }
 
     // Process prompt to handle images
     let processedTaskDescription = options.taskDescription;
@@ -474,8 +502,8 @@ export async function spawnAgent(
           );
           return [];
         }
-      } else if (options.repoUrl) {
-        const parsedRepo = parseGithubRepoUrl(options.repoUrl);
+      } else if (effectiveRepoUrl) {
+        const parsedRepo = parseGithubRepoUrl(effectiveRepoUrl);
         if (parsedRepo) {
           projectFullNames.push(parsedRepo.fullName);
         }
@@ -1142,7 +1170,7 @@ export async function spawnAgent(
         taskId,
         theme: options.theme,
         teamSlugOrId,
-        repoUrl: options.repoUrl,
+        repoUrl: effectiveRepoUrl,
         branch: options.branch,
         newBranch,
         environmentId: options.environmentId,
@@ -1156,7 +1184,7 @@ export async function spawnAgent(
       // For Docker, set up worktree as before
       const worktreeInfo = await getWorktreePath(
         {
-          repoUrl: options.repoUrl!,
+          repoUrl: effectiveRepoUrl!,
           branch: newBranch,
         },
         teamSlugOrId
@@ -1164,7 +1192,7 @@ export async function spawnAgent(
 
       // Setup workspace
       const workspaceResult = await setupProjectWorkspace({
-        repoUrl: options.repoUrl!,
+        repoUrl: effectiveRepoUrl!,
         // If not provided, setupProjectWorkspace detects default from origin
         branch: options.branch,
         worktreeInfo,
