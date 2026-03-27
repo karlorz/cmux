@@ -2,7 +2,7 @@
 // Generated: 2026-03-27T11:48:42.215Z
 // Do not edit manually - run 'bun run scripts/sync-codex-models.ts' to update
 
-import type { AgentCatalogEntry, ModelVariant } from "../../agent-catalog";
+import type { AgentCatalogEntry } from "../../agent-catalog";
 
 export interface CodexModelEntry extends AgentCatalogEntry {
   /** Whether this model is hidden from the default picker */
