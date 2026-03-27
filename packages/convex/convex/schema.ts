@@ -2211,6 +2211,53 @@ const convexSchema = defineSchema({
     .index("by_team_provider", ["teamId", "provider", "status"])
     .index("by_team_agent", ["teamId", "agentName", "status"]),
 
+  // Runtime Lineage - Append-only record of run-to-run relationships
+  // Tracks how runs relate to earlier runs for durable resume ancestry.
+  // Unlike providerSessionBindings (mutable current state), these records are never updated.
+  runtimeLineage: defineTable({
+    teamId: v.string(),
+    // Current run being created/resumed
+    taskRunId: v.id("taskRuns"),
+    // Previous run this continues from (null for initial runs)
+    previousTaskRunId: v.optional(v.id("taskRuns")),
+    // How this run continues from the previous
+    continuationMode: v.union(
+      v.literal("initial"), // First run, no previous
+      v.literal("retry"), // Automatic retry after failure
+      v.literal("manual_resume"), // User explicitly resumed
+      v.literal("checkpoint_restore"), // Restored from checkpoint
+      v.literal("session_continuation"), // Provider session continuation (Claude --resume)
+      v.literal("handoff"), // Handoff from another agent
+      v.literal("reconnect") // Network reconnect to same session
+    ),
+    // Provider session identifiers (copied at time of lineage creation)
+    providerSessionId: v.optional(v.string()), // Claude session ID
+    providerThreadId: v.optional(v.string()), // Codex thread ID
+    // Resume context
+    resumeReason: v.optional(v.string()), // Human-readable reason
+    checkpointRef: v.optional(v.string()), // Checkpoint reference if checkpoint_restore
+    checkpointGeneration: v.optional(v.number()), // Checkpoint generation number
+    // Actor/trigger that initiated this continuation
+    actor: v.optional(
+      v.union(
+        v.literal("system"), // Automatic (retry, reconnect)
+        v.literal("user"), // User action in UI
+        v.literal("operator"), // Operator/admin action
+        v.literal("agent"), // Agent initiated (handoff)
+        v.literal("hook"), // Hook triggered
+        v.literal("queue") // Queue processor
+      )
+    ),
+    // Metadata
+    agentName: v.optional(v.string()), // Agent at time of lineage
+    orchestrationId: v.optional(v.string()), // Parent orchestration if any
+    createdAt: v.number(), // Immutable - when this lineage was recorded
+  })
+    .index("by_task_run", ["taskRunId"]) // Find lineage for a specific run
+    .index("by_previous_run", ["previousTaskRunId"]) // Find runs that continued from a given run
+    .index("by_team", ["teamId", "createdAt"]) // Team lineage history
+    .index("by_orchestration", ["orchestrationId", "createdAt"]), // Orchestration lineage
+
   // Approval requests for human-in-the-loop orchestration
   // Stores pending approvals for risky actions, review requests, and policy escalations
   approvalRequests: defineTable({

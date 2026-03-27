@@ -1,7 +1,7 @@
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import { getTeamId, resolveTeamIdLoose } from "../_shared/team";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { authMutation, authQuery, taskIdWithFake } from "./users/utils";
@@ -792,7 +792,7 @@ export const create = authMutation({
     if (args.selectedAgents && args.selectedAgents.length > 0) {
       taskRunIds = await Promise.all(
         args.selectedAgents.map(async (agentName) => {
-          return ctx.db.insert("taskRuns", {
+          const taskRunId = await ctx.db.insert("taskRuns", {
             taskId,
             prompt: args.text,
             agentName,
@@ -804,6 +804,17 @@ export const create = authMutation({
             environmentId: args.environmentId,
             isCloudWorkspace: args.isCloudWorkspace,
           });
+
+          // Record lineage for each agent run (all initial)
+          await ctx.scheduler.runAfter(0, internal.runtimeLineage.recordLineage, {
+            teamId,
+            taskRunId,
+            continuationMode: "initial",
+            agentName,
+            actor: "user",
+          });
+
+          return taskRunId;
         }),
       );
     }

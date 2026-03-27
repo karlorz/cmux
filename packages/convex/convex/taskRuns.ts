@@ -3,7 +3,7 @@ import { SignJWT } from "jose";
 import { env } from "../_shared/convex-env";
 import { getTeamId, resolveTeamIdLoose } from "../_shared/team";
 import { runtimeProviderValidator } from "../_shared/provider-validators";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
   internalMutation,
@@ -607,6 +607,17 @@ export const createInternal = internalMutation({
 
     await ctx.db.patch(args.taskId, taskPatch);
 
+    // Record lineage for this run (append-only, never updated)
+    await ctx.scheduler.runAfter(0, internal.runtimeLineage.recordLineage, {
+      teamId: args.teamId,
+      taskRunId,
+      previousTaskRunId: args.parentRunId,
+      continuationMode: args.parentRunId ? "retry" : "initial",
+      agentName: args.agentName,
+      orchestrationId: args.orchestrationId,
+      actor: "system",
+    });
+
     // Generate JWT for sandbox authentication
     const jwt = await new SignJWT({
       taskRunId,
@@ -704,6 +715,18 @@ export const create = authMutation({
     }
 
     await ctx.db.patch(args.taskId, taskPatch);
+
+    // Record lineage for this run (append-only, never updated)
+    await ctx.scheduler.runAfter(0, internal.runtimeLineage.recordLineage, {
+      teamId,
+      taskRunId,
+      previousTaskRunId: args.parentRunId,
+      continuationMode: args.parentRunId ? "retry" : "initial",
+      agentName: args.agentName,
+      orchestrationId: args.orchestrationId,
+      actor: "user",
+    });
+
     const jwt = await new SignJWT({
       taskRunId,
       teamId,
@@ -3109,6 +3132,15 @@ export const createForPreview = internalMutation({
 
     // Update task's lastActivityAt for sorting
     await ctx.db.patch(args.taskId, { lastActivityAt: now });
+
+    // Record lineage for preview job (always initial)
+    await ctx.scheduler.runAfter(0, internal.runtimeLineage.recordLineage, {
+      teamId: args.teamId,
+      taskRunId,
+      continuationMode: "initial",
+      agentName: "screenshot-collector",
+      actor: "system",
+    });
 
     const jwt = await new SignJWT({
       taskRunId,
