@@ -1051,13 +1051,12 @@ exit 0`;
     alwaysThinkingEnabled: true,
     // Always use apiKeyHelper when not using OAuth (helper outputs correct key based on user config)
     ...(hasOAuthToken ? {} : { apiKeyHelper: claudeApiKeyHelperPath }),
-    ...(denyRules?.length
-      ? {
-          permissions: {
-            deny: denyRules,
-          },
-        }
-      : {}),
+    // Always set bypassPermissions mode for task sandboxes to skip interactive confirmation
+    // The --dangerously-skip-permissions flag enables bypass, but defaultMode ensures it's active
+    permissions: {
+      defaultMode: "bypassPermissions",
+      ...(denyRules?.length ? { deny: denyRules } : {}),
+    },
     hooks: {
       Stop: [
         // First check simplify gate (can block with exit 2)
