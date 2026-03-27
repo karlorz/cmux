@@ -1,4 +1,5 @@
 import { getConvex } from "@/lib/utils/get-convex";
+import { generateGitHubInstallationToken } from "@/lib/utils/github-app-token";
 import { api } from "@cmux/convex/api";
 import {
   readVaultGitHub,
@@ -16,6 +17,62 @@ export type VaultConfig = {
   githubToken?: string;
 } | null;
 
+async function resolveVaultGithubToken({
+  teamSlugOrId,
+  accessToken,
+  githubOwner,
+  githubRepo,
+}: {
+  teamSlugOrId: string;
+  accessToken: string;
+  githubOwner: string;
+  githubRepo: string;
+}): Promise<string | undefined> {
+  if (process.env.OBSIDIAN_GITHUB_TOKEN) {
+    return process.env.OBSIDIAN_GITHUB_TOKEN;
+  }
+
+  try {
+    const convex = getConvex({ accessToken });
+    const connections = await convex.query(api.github.listProviderConnections, {
+      teamSlugOrId,
+    });
+
+    const activeConnections = connections.filter((connection) => connection.isActive);
+    const normalizedOwner = githubOwner.toLowerCase();
+    const prioritizedConnections = [
+      ...activeConnections.filter(
+        (connection) => connection.accountLogin?.toLowerCase() === normalizedOwner,
+      ),
+      ...activeConnections.filter(
+        (connection) => connection.accountLogin?.toLowerCase() !== normalizedOwner,
+      ),
+    ];
+
+    for (const connection of prioritizedConnections) {
+      try {
+        const token = await generateGitHubInstallationToken({
+          installationId: connection.installationId,
+          repositories: [`${githubOwner}/${githubRepo}`],
+          permissions: {
+            contents: "read",
+            metadata: "read",
+          },
+        });
+        if (token) {
+          return token;
+        }
+      } catch (error) {
+        console.error("[vault] Failed to mint GitHub installation token:", error);
+      }
+    }
+  } catch (error) {
+    console.error("[vault] Failed to resolve GitHub provider connection:", error);
+  }
+
+  return undefined;
+}
+
 export async function getVaultConfig(
   teamSlugOrId: string,
   accessToken: string,
@@ -28,7 +85,14 @@ export async function getVaultConfig(
   const githubOwner = process.env.OBSIDIAN_GITHUB_OWNER;
   const githubRepo = process.env.OBSIDIAN_GITHUB_REPO;
   const githubPath = process.env.OBSIDIAN_GITHUB_PATH;
-  const githubToken = process.env.OBSIDIAN_GITHUB_TOKEN;
+  const githubToken = githubOwner && githubRepo
+    ? await resolveVaultGithubToken({
+        teamSlugOrId,
+        accessToken,
+        githubOwner,
+        githubRepo,
+      })
+    : undefined;
 
   if (githubOwner && githubRepo) {
     return {
@@ -51,13 +115,19 @@ export async function getVaultConfig(
         return { type: "local", localPath: vaultConfig.localPath };
       }
       if (vaultConfig.type === "github" && vaultConfig.githubOwner && vaultConfig.githubRepo) {
+        const resolvedGithubToken = await resolveVaultGithubToken({
+          teamSlugOrId,
+          accessToken,
+          githubOwner: vaultConfig.githubOwner,
+          githubRepo: vaultConfig.githubRepo,
+        });
         return {
           type: "github",
           githubOwner: vaultConfig.githubOwner,
           githubRepo: vaultConfig.githubRepo,
           githubPath: vaultConfig.githubPath || "",
           githubBranch: vaultConfig.githubBranch || "main",
-          githubToken: process.env.OBSIDIAN_GITHUB_TOKEN,
+          githubToken: resolvedGithubToken,
         };
       }
     }

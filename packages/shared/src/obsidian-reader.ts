@@ -309,7 +309,9 @@ export async function readVaultGitHub(options: GitHubVaultOptions): Promise<Obsi
 
           const { frontmatter, body } = parseFrontmatter(content);
           const todos = extractTodos(body);
-          const relativePath = file.path.slice(vaultPath.length + 1); // Remove vault path prefix
+          const relativePath = vaultPath
+            ? file.path.slice(vaultPath.length + 1)
+            : file.path;
           const fileName = path.basename(file.path);
 
           // GitHub doesn't give us modification time easily, use current time
