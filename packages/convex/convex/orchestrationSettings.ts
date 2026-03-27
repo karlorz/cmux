@@ -23,7 +23,7 @@ export const get = authQuery({
     return {
       teamId,
       autoHeadAgent: settings?.autoHeadAgent ?? false,
-      defaultCodingAgent: settings?.defaultCodingAgent ?? "codex/gpt-5.1-codex-mini",
+      defaultCodingAgent: settings?.defaultCodingAgent ?? "codex/gpt-5.3-codex",
       defaultSupervisorProfileId: settings?.defaultSupervisorProfileId ?? null,
       autoSpawnEnabled: settings?.autoSpawnEnabled ?? false,
       maxConcurrentSubAgents: settings?.maxConcurrentSubAgents ?? 3,
@@ -192,7 +192,7 @@ export const getByTeamIdInternal = internalQuery({
 
     return {
       autoHeadAgent: settings?.autoHeadAgent ?? false,
-      defaultCodingAgent: settings?.defaultCodingAgent ?? "codex/gpt-5.1-codex-mini",
+      defaultCodingAgent: settings?.defaultCodingAgent ?? "codex/gpt-5.3-codex",
       defaultSupervisorProfileId: settings?.defaultSupervisorProfileId ?? null,
       autoSpawnEnabled: settings?.autoSpawnEnabled ?? false,
       maxConcurrentSubAgents: settings?.maxConcurrentSubAgents ?? 3,
