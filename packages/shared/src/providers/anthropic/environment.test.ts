@@ -68,6 +68,7 @@ async function decodeClaudeSettings(overrides?: Partial<typeof BASE_CONTEXT>) {
     Buffer.from(settingsFile!.contentBase64, "base64").toString("utf-8")
   ) as {
     permissions?: {
+      defaultMode?: string;
       deny?: string[];
     };
   };
@@ -284,7 +285,10 @@ describe("getClaudeEnvironment", () => {
   it("does not deny commands when task JWT is absent", async () => {
     const settings = await decodeClaudeSettings({ taskRunJwt: "" });
 
-    expect(settings.permissions).toBeUndefined();
+    // Always set defaultMode for bypass permissions, but no deny rules without JWT
+    expect(settings.permissions).toBeDefined();
+    expect(settings.permissions.defaultMode).toBe("bypassPermissions");
+    expect(settings.permissions.deny).toBeUndefined();
   });
 
   it("permission hook includes risk classification function", async () => {
