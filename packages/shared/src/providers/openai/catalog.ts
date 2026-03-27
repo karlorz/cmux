@@ -9,10 +9,12 @@ import {
 /**
  * Codex Catalog - Auto-generated from codex app-server.
  *
- * Run `bun run scripts/sync-codex-models.ts` to update the generated catalog.
+ * This catalog is for the **Codex CLI** (coding agent) model picker.
+ * Run `bun run scripts/sync-codex-models.ts` to update.
  *
- * Exports visible models by default for the main UI. Use CODEX_CATALOG_ALL
- * to include hidden/deprecated models.
+ * NOTE: This is SEPARATE from `packages/shared/src/utils/platform-ai.ts`
+ * which defines models for cmux's internal AI services (crown, commit gen, etc.)
+ * Platform AI uses different models like gpt-5.4-mini that may not be in Codex.
  */
 export const CODEX_CATALOG: AgentCatalogEntry[] = CODEX_VISIBLE_MODELS;
 
