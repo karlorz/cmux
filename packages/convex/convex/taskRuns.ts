@@ -3,7 +3,7 @@ import { SignJWT } from "jose";
 import { env } from "../_shared/convex-env";
 import { getTeamId, resolveTeamIdLoose } from "../_shared/team";
 import { runtimeProviderValidator } from "../_shared/provider-validators";
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
   internalMutation,

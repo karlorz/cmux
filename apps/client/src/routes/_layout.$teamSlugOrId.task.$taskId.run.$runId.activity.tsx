@@ -13,6 +13,7 @@ import { CostEstimationCard } from "@/components/dashboard/CostEstimationCard";
 import { ResourceUsageCard } from "@/components/dashboard/ResourceUsageCard";
 import { SessionBindingCard } from "@/components/dashboard/SessionBindingCard";
 import { RuntimeLifecycleCard } from "@/components/dashboard/RuntimeLifecycleCard";
+import { LineageChainCard } from "@/components/dashboard/LineageChainCard";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 
 const paramsSchema = z.object({
@@ -115,14 +116,21 @@ function TaskRunActivity() {
         </div>
       )}
 
-      {/* Runtime Lifecycle Card - always visible for operator awareness */}
-      <div className="px-4 pb-2">
+      {/* Lifecycle Cards - always visible for operator awareness */}
+      <div className="px-4 pb-2 grid grid-cols-1 gap-2 md:grid-cols-2">
         <ErrorBoundary
           key={`${resetKey}-runtime-lifecycle`}
           name="Runtime Lifecycle"
           fallback={<CompactErrorFallback name="Runtime Lifecycle" />}
         >
           <RuntimeLifecycleCard taskRunId={taskRunId} teamSlugOrId={teamSlugOrId} />
+        </ErrorBoundary>
+        <ErrorBoundary
+          key={`${resetKey}-lineage-chain`}
+          name="Run Lineage"
+          fallback={<CompactErrorFallback name="Run Lineage" />}
+        >
+          <LineageChainCard taskRunId={taskRunId} teamSlugOrId={teamSlugOrId} />
         </ErrorBoundary>
       </div>
 
