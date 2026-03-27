@@ -12,6 +12,7 @@ import { LiveDiffStats } from "@/components/LiveDiffStats";
 import { CostEstimationCard } from "@/components/dashboard/CostEstimationCard";
 import { ResourceUsageCard } from "@/components/dashboard/ResourceUsageCard";
 import { SessionBindingCard } from "@/components/dashboard/SessionBindingCard";
+import { RuntimeLifecycleCard } from "@/components/dashboard/RuntimeLifecycleCard";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 
 const paramsSchema = z.object({
@@ -113,6 +114,17 @@ function TaskRunActivity() {
           </div>
         </div>
       )}
+
+      {/* Runtime Lifecycle Card - always visible for operator awareness */}
+      <div className="px-4 pb-2">
+        <ErrorBoundary
+          key={`${resetKey}-runtime-lifecycle`}
+          name="Runtime Lifecycle"
+          fallback={<CompactErrorFallback name="Runtime Lifecycle" />}
+        >
+          <RuntimeLifecycleCard taskRunId={taskRunId} teamSlugOrId={teamSlugOrId} />
+        </ErrorBoundary>
+      </div>
 
       <ErrorBoundary
         key={`${resetKey}-activity-stream`}
