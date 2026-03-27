@@ -16,6 +16,12 @@ import { jsonResponse } from "../_shared/http-utils";
 import type { DevboxProvider } from "@cmux/shared/provider-types";
 import type { FunctionReference } from "convex/server";
 import type { Doc, Id } from "./_generated/dataModel";
+import {
+  buildStoppedTaskRunMetadataPatch,
+  collectTaskStopTargets,
+  isIgnorableTaskStopError,
+  shouldMarkTaskRunStopped,
+} from "./taskStopHelpers";
 
 type SandboxProvider = DevboxProvider;
 
@@ -23,16 +29,34 @@ type SandboxProvider = DevboxProvider;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const e2bActionsApi = (internal as any).e2b_actions as {
   getInstance: FunctionReference<"action", "internal">;
+  stopInstance: FunctionReference<"action", "internal">;
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const modalActionsApi = (internal as any).modal_actions as {
   getInstance: FunctionReference<"action", "internal">;
+  stopInstance: FunctionReference<"action", "internal">;
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const pveLxcActionsApi = (internal as any).pve_lxc_actions as {
   getInstance: FunctionReference<"action", "internal">;
+  stopInstance: FunctionReference<"action", "internal">;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const e2bInstancesApi = (internal as any).e2bInstances as {
+  recordStopInternal: FunctionReference<"mutation", "internal">;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const modalInstancesApi = (internal as any).modalInstances as {
+  recordStopInternal: FunctionReference<"mutation", "internal">;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const pveLxcInstancesApi = (internal as any).pveLxcInstances as {
+  recordStopInternal: FunctionReference<"mutation", "internal">;
 };
 
 function getActionsApiForProvider(provider: SandboxProvider) {
@@ -203,6 +227,27 @@ async function recordMorphActivity(
   } catch (error) {
     // Log but don't fail the main operation if activity recording fails
     console.error("[cmux] Failed to record morph activity:", error);
+  }
+}
+
+async function recordProviderStopActivity(
+  ctx: ActionCtx,
+  provider: Extract<DevboxProvider, "e2b" | "modal" | "pve-lxc">,
+  providerInstanceId: string
+): Promise<void> {
+  try {
+    const activityApi =
+      provider === "modal"
+        ? modalInstancesApi
+        : provider === "pve-lxc"
+          ? pveLxcInstancesApi
+          : e2bInstancesApi;
+
+    await ctx.runMutation(activityApi.recordStopInternal, {
+      instanceId: providerInstanceId,
+    });
+  } catch (error) {
+    console.error("[cmux] Failed to record provider stop activity:", error);
   }
 }
 
@@ -2833,7 +2878,131 @@ async function handleStopTask(
       );
     }
 
-    // Archive the task
+    const task = await ctx.runQuery(internal.tasks.getByIdInternal, {
+      id: taskId as Id<"tasks">,
+    });
+    if (!task || task.teamId !== teamId || task.userId !== userId) {
+      return jsonResponse({ code: 404, message: "Task not found" }, 404);
+    }
+
+    const runs = await ctx.runQuery(internal.taskRuns.listByTaskAndTeamInternal, {
+      taskId: taskId as Id<"tasks">,
+      teamId,
+      userId,
+    });
+    const runsById = new Map(runs.map((run) => [String(run._id), run]));
+    const stopTargets = collectTaskStopTargets(
+      runs.map((run) => ({
+        _id: String(run._id),
+        status: run.status,
+        vscode: run.vscode
+          ? {
+              provider: run.vscode.provider,
+              containerName: run.vscode.containerName,
+              status: run.vscode.status,
+              stoppedAt: run.vscode.stoppedAt,
+            }
+          : undefined,
+        networking: run.networking,
+      }))
+    );
+
+    const stopFailures: string[] = [];
+
+    for (const target of stopTargets) {
+      const stoppedAt = Date.now();
+      const run = runsById.get(target.runId);
+      if (!run) {
+        continue;
+      }
+
+      try {
+        if (target.provider === "morph") {
+          const morphResponse = await morphFetch(`/instance/${target.instanceId}`, {
+            method: "DELETE",
+          });
+
+          if (!morphResponse.ok && morphResponse.status !== 404) {
+            const errorText = await morphResponse.text();
+            throw new Error(
+              `Failed to stop Morph instance ${target.instanceId}: HTTP ${morphResponse.status} ${errorText.slice(0, 200)}`
+            );
+          }
+
+          await recordMorphActivity(ctx, target.instanceId, "stop");
+        } else {
+          const actionsApi = getActionsApiForProvider(target.provider);
+          await ctx.runAction(actionsApi.stopInstance, {
+            instanceId: target.instanceId,
+          });
+          await recordProviderStopActivity(ctx, target.provider, target.instanceId);
+        }
+      } catch (error) {
+        if (!isIgnorableTaskStopError(error)) {
+          stopFailures.push(
+            `${target.provider}:${target.instanceId}: ${error instanceof Error ? error.message : String(error)}`
+          );
+          continue;
+        }
+      }
+
+      try {
+        await ctx.runMutation(api.devboxInstances.updateStatus, {
+          teamSlugOrId,
+          providerInstanceId: target.instanceId,
+          status: "stopped",
+        });
+      } catch (error) {
+        console.warn("[cmux.tasks.stop] Failed to update devbox status:", {
+          instanceId: target.instanceId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      const patch = buildStoppedTaskRunMetadataPatch(
+        {
+          _id: String(run._id),
+          status: run.status,
+          vscode: run.vscode
+            ? {
+                provider: run.vscode.provider,
+                containerName: run.vscode.containerName,
+                status: run.vscode.status,
+                stoppedAt: run.vscode.stoppedAt,
+              }
+            : undefined,
+          networking: run.networking,
+        },
+        stoppedAt
+      );
+
+      if (patch) {
+        await ctx.runMutation(internal.taskRuns.updateVSCodeMetadataInternal, {
+          taskRunId: run._id,
+          ...patch,
+        });
+      }
+    }
+
+    if (stopFailures.length > 0) {
+      const message = `Failed to stop ${stopFailures.length} sandbox(es): ${stopFailures.join("; ")}`;
+      console.error("[cmux.tasks.stop] Sandbox stop failures:", message);
+      return jsonResponse({ code: 500, message }, 500);
+    }
+
+    for (const run of runs) {
+      if (!shouldMarkTaskRunStopped({ _id: String(run._id), status: run.status })) {
+        continue;
+      }
+
+      await ctx.runMutation(api.taskRuns.failByTeamMember, {
+        teamSlugOrId,
+        id: run._id,
+        errorMessage: "Task stopped by user",
+        exitCode: 130,
+      });
+    }
+
     await ctx.runMutation(internal.tasks.archiveInternal, {
       taskId: taskId as Id<"tasks">,
       teamId,
