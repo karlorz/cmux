@@ -7,6 +7,7 @@ export function extractSandboxStartError(startRes: {
   response?: Response;
 }): string {
   const baseMessage = "Failed to start sandbox";
+  const maxErrorLength = 220;
 
   // Try to get error info from the response
   const status = startRes.response?.status;
@@ -29,8 +30,13 @@ export function extractSandboxStartError(startRes: {
   // Try to extract error message from the error field
   if (startRes.error) {
     const error = startRes.error;
-    if (typeof error === "string" && error.length > 0 && error.length < 200) {
-      return `${baseMessage}: ${error}`;
+    if (typeof error === "string" && error.trim().length > 0) {
+      const normalizedError = error.replace(/\s+/g, " ").trim();
+      const safeError =
+        normalizedError.length > maxErrorLength
+          ? `${normalizedError.slice(0, maxErrorLength - 1)}…`
+          : normalizedError;
+      return `${baseMessage}: ${safeError}`;
     }
   }
 

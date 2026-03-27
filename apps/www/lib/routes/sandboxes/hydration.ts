@@ -23,6 +23,34 @@ const getHydrateScript = (): string => {
   return readFileSync(scriptPath, "utf-8");
 };
 
+const buildHydrateConfigPayload = (
+  repo?: HydrateRepoConfig,
+): {
+  workspacePath: string;
+  depth: number;
+  owner?: string;
+  repo?: string;
+  repoFull?: string;
+  cloneUrl?: string;
+  maskedCloneUrl?: string;
+  baseBranch?: string;
+  newBranch?: string;
+} => ({
+  workspacePath: MORPH_WORKSPACE_PATH,
+  depth: repo?.depth || 1,
+  ...(repo
+    ? {
+        owner: repo.owner,
+        repo: repo.name,
+        repoFull: repo.repoFull,
+        cloneUrl: repo.cloneUrl,
+        maskedCloneUrl: repo.maskedCloneUrl,
+        baseBranch: repo.baseBranch,
+        newBranch: repo.newBranch,
+      }
+    : {}),
+});
+
 export const hydrateWorkspace = async ({
   instance,
   repo,
@@ -34,38 +62,22 @@ export const hydrateWorkspace = async ({
 
   // Create a temporary script file path
   const scriptPath = `/tmp/cmux-hydrate-${Date.now()}.ts`;
-
-  // Build environment variables
-  const envVars: Record<string, string> = {
-    CMUX_WORKSPACE_PATH: MORPH_WORKSPACE_PATH,
-    CMUX_DEPTH: String(repo?.depth || 1),
-  };
-
-  if (repo) {
-    envVars.CMUX_OWNER = repo.owner;
-    envVars.CMUX_REPO = repo.name;
-    envVars.CMUX_REPO_FULL = repo.repoFull;
-    envVars.CMUX_CLONE_URL = repo.cloneUrl;
-    envVars.CMUX_MASKED_CLONE_URL = repo.maskedCloneUrl;
-    envVars.CMUX_BASE_BRANCH = repo.baseBranch;
-    envVars.CMUX_NEW_BRANCH = repo.newBranch;
-  }
-
-  // Build the command to write and execute the script
-  const envString = Object.entries(envVars)
-    .map(([key, value]) => `export ${key}=${singleQuote(value)}`)
-    .join("\n");
+  const configPath = `/tmp/cmux-hydrate-${Date.now()}.json`;
+  const scriptBase64 = Buffer.from(hydrateScript, "utf-8").toString("base64");
+  const configBase64 = Buffer.from(
+    JSON.stringify(buildHydrateConfigPayload(repo)),
+    "utf-8",
+  ).toString("base64");
 
   const command = `
 set -e
-${envString}
-cat > ${scriptPath} << 'CMUX_HYDRATE_EOF'
-${hydrateScript}
-CMUX_HYDRATE_EOF
-bun run ${scriptPath}
-EXIT_CODE=$?
-rm -f ${scriptPath}
-exit $EXIT_CODE
+cleanup() {
+  rm -f ${scriptPath} ${configPath}
+}
+trap cleanup EXIT
+printf '%s' ${singleQuote(scriptBase64)} | base64 -d > ${scriptPath}
+printf '%s' ${singleQuote(configBase64)} | base64 -d > ${configPath}
+bun run ${scriptPath} ${configPath}
 `;
 
   // Pre-flight check: verify instance exec channel is ready
@@ -130,5 +142,33 @@ exit $EXIT_CODE
       ? `: ${maskedStderr.slice(0, 200)}`
       : "";
     throw new Error(`Hydration failed with exit code ${hydrateRes.exit_code}${errorDetail}`);
+  }
+
+  if (!repo) {
+    return;
+  }
+
+  const verifyCommand = `
+git -C ${singleQuote(MORPH_WORKSPACE_PATH)} rev-parse --is-inside-work-tree &&
+git -C ${singleQuote(MORPH_WORKSPACE_PATH)} remote get-url origin &&
+git -C ${singleQuote(MORPH_WORKSPACE_PATH)} rev-parse HEAD
+`;
+  const verifyRes = await instance.exec(`bash -c ${singleQuote(verifyCommand)}`, {
+    timeoutMs: 15000,
+  });
+  const maskedVerifyStdout = maskSensitive(verifyRes.stdout || "");
+  const maskedVerifyStderr = maskSensitive(verifyRes.stderr || "");
+
+  if (verifyRes.exit_code !== 0) {
+    const errorDetail = maskedVerifyStderr
+      ? `: ${maskedVerifyStderr.slice(0, 200)}`
+      : "";
+    throw new Error(
+      `Hydration verification failed with exit code ${verifyRes.exit_code}${errorDetail}`,
+    );
+  }
+
+  if (!maskedVerifyStdout.includes("true")) {
+    throw new Error("Hydration verification failed: workspace is not a git repository");
   }
 };

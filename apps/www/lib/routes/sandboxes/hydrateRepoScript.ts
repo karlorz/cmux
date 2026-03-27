@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 interface HydrateConfig {
@@ -117,17 +117,34 @@ function exec(command: string, options?: { cwd?: string; throwOnError?: boolean 
 }
 
 function getConfig(): HydrateConfig {
-  const workspacePath = process.env.CMUX_WORKSPACE_PATH || "/root/workspace";
-  const depth = parseInt(process.env.CMUX_DEPTH || "1", 10);
+  const configPath = process.argv[2] || process.env.CMUX_HYDRATE_CONFIG_PATH;
+  let fileConfig: Partial<HydrateConfig> = {};
+
+  if (configPath) {
+    log(`Loading hydrate config from ${configPath}`);
+    const rawConfig = readFileSync(configPath, "utf-8");
+    const parsedConfig = JSON.parse(rawConfig) as Partial<HydrateConfig>;
+    fileConfig = parsedConfig;
+  }
+
+  const workspacePath =
+    fileConfig.workspacePath ||
+    process.env.CMUX_WORKSPACE_PATH ||
+    "/root/workspace";
+  const depthValue =
+    fileConfig.depth ?? parseInt(process.env.CMUX_DEPTH || "1", 10);
+  const depth =
+    Number.isFinite(depthValue) && depthValue > 0 ? Math.floor(depthValue) : 1;
 
   // Check if we have repo config
-  const owner = process.env.CMUX_OWNER;
-  const repo = process.env.CMUX_REPO;
-  const repoFull = process.env.CMUX_REPO_FULL;
-  const cloneUrl = process.env.CMUX_CLONE_URL;
-  const maskedCloneUrl = process.env.CMUX_MASKED_CLONE_URL;
-  const baseBranch = process.env.CMUX_BASE_BRANCH;
-  const newBranch = process.env.CMUX_NEW_BRANCH;
+  const owner = fileConfig.owner ?? process.env.CMUX_OWNER;
+  const repo = fileConfig.repo ?? process.env.CMUX_REPO;
+  const repoFull = fileConfig.repoFull ?? process.env.CMUX_REPO_FULL;
+  const cloneUrl = fileConfig.cloneUrl ?? process.env.CMUX_CLONE_URL;
+  const maskedCloneUrl =
+    fileConfig.maskedCloneUrl ?? process.env.CMUX_MASKED_CLONE_URL;
+  const baseBranch = fileConfig.baseBranch ?? process.env.CMUX_BASE_BRANCH;
+  const newBranch = fileConfig.newBranch ?? process.env.CMUX_NEW_BRANCH;
 
   return {
     workspacePath,
