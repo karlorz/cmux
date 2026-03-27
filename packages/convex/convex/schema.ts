@@ -720,10 +720,11 @@ const convexSchema = defineSchema({
   taskRunActivity: defineTable({
     taskRunId: v.id("taskRuns"),
     // Activity type: tool_call, file_edit, file_read, bash_command, test_run, git_commit, error,
-    // session_start, session_stop, session_resumed, context_warning, context_compacted,
+    // session_start, session_stop, session_resumed, session_finished, context_warning, context_compacted,
     // memory_loaded, memory_scope_changed, user_prompt, subagent_start, subagent_stop,
     // notification, stop_requested, stop_blocked, stop_failed, tool_requested, tool_completed,
-    // approval_requested, approval_resolved (Phase 4 lifecycle parity)
+    // approval_requested, approval_resolved, prompt_submitted, run_resumed, mcp_capabilities_negotiated
+    // (Phase 4 lifecycle parity + P1/P5 extensions)
     type: v.string(),
     toolName: v.optional(v.string()),
     summary: v.string(),
@@ -753,6 +754,26 @@ const convexSchema = defineSchema({
     scopeType: v.optional(v.string()), // "team", "repo", "user", "run"
     scopeBytes: v.optional(v.number()),
     scopeAction: v.optional(v.string()), // "injected", "updated", "cleared"
+    // Prompt/Turn tracking fields (P1 - prompt_submitted/session_finished/run_resumed)
+    promptSource: v.optional(v.string()), // "user", "operator", "hook", "queue", "handoff"
+    turnNumber: v.optional(v.number()),
+    promptLength: v.optional(v.number()),
+    turnCount: v.optional(v.number()),
+    providerSessionId: v.optional(v.string()),
+    // Resume fields (P1 - run_resumed events)
+    resumeReason: v.optional(v.string()), // "checkpoint", "reconnect", "handoff", "retry", "manual"
+    previousTaskRunId: v.optional(v.string()),
+    previousSessionId: v.optional(v.string()),
+    checkpointRef: v.optional(v.string()),
+    // MCP runtime fields (P5 - mcp_capabilities_negotiated events)
+    serverName: v.optional(v.string()),
+    serverId: v.optional(v.string()),
+    protocolVersion: v.optional(v.string()),
+    transport: v.optional(v.string()), // "stdio", "http", "sse", "websocket"
+    mcpCapabilities: v.optional(v.string()), // JSON stringified capabilities object
+    toolCount: v.optional(v.number()),
+    resourceCount: v.optional(v.number()),
+    mcpSessionId: v.optional(v.string()),
   })
     .index("by_task_run", ["taskRunId", "createdAt"])
     .index("by_team", ["teamId", "createdAt"]),

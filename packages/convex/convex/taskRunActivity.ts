@@ -39,6 +39,26 @@ export const insert = internalMutation({
     scopeType: v.optional(v.string()),
     scopeBytes: v.optional(v.number()),
     scopeAction: v.optional(v.string()),
+    // Prompt/Turn tracking fields (P1 - prompt_submitted/session_finished/run_resumed)
+    promptSource: v.optional(v.string()),
+    turnNumber: v.optional(v.number()),
+    promptLength: v.optional(v.number()),
+    turnCount: v.optional(v.number()),
+    providerSessionId: v.optional(v.string()),
+    // Resume fields (P1 - run_resumed events)
+    resumeReason: v.optional(v.string()),
+    previousTaskRunId: v.optional(v.string()),
+    previousSessionId: v.optional(v.string()),
+    checkpointRef: v.optional(v.string()),
+    // MCP runtime fields (P5 - mcp_capabilities_negotiated events)
+    serverName: v.optional(v.string()),
+    serverId: v.optional(v.string()),
+    protocolVersion: v.optional(v.string()),
+    transport: v.optional(v.string()),
+    mcpCapabilities: v.optional(v.string()), // JSON stringified capabilities object
+    toolCount: v.optional(v.number()),
+    resourceCount: v.optional(v.number()),
+    mcpSessionId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await ctx.db.insert("taskRunActivity", {
