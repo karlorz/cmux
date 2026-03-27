@@ -251,6 +251,24 @@ async function recordProviderStopActivity(
   }
 }
 
+function toTaskRunStopState(
+  run: Pick<Doc<"taskRuns">, "_id" | "status" | "vscode" | "networking">
+) {
+  return {
+    _id: String(run._id),
+    status: run.status,
+    vscode: run.vscode
+      ? {
+          provider: run.vscode.provider,
+          containerName: run.vscode.containerName,
+          status: run.vscode.status,
+          stoppedAt: run.vscode.stoppedAt,
+        }
+      : undefined,
+    networking: run.networking,
+  };
+}
+
 /**
  * Get the provider instance ID for a devbox ID
  */
@@ -2890,29 +2908,18 @@ async function handleStopTask(
       teamId,
       userId,
     });
+    const stopRuns = runs.map(toTaskRunStopState);
     const runsById = new Map(runs.map((run) => [String(run._id), run]));
-    const stopTargets = collectTaskStopTargets(
-      runs.map((run) => ({
-        _id: String(run._id),
-        status: run.status,
-        vscode: run.vscode
-          ? {
-              provider: run.vscode.provider,
-              containerName: run.vscode.containerName,
-              status: run.vscode.status,
-              stoppedAt: run.vscode.stoppedAt,
-            }
-          : undefined,
-        networking: run.networking,
-      }))
-    );
+    const stopRunsById = new Map(stopRuns.map((run) => [run._id, run]));
+    const stopTargets = collectTaskStopTargets(stopRuns);
 
     const stopFailures: string[] = [];
 
     for (const target of stopTargets) {
       const stoppedAt = Date.now();
       const run = runsById.get(target.runId);
-      if (!run) {
+      const stopRun = stopRunsById.get(target.runId);
+      if (!run || !stopRun) {
         continue;
       }
 
@@ -2959,22 +2966,7 @@ async function handleStopTask(
         });
       }
 
-      const patch = buildStoppedTaskRunMetadataPatch(
-        {
-          _id: String(run._id),
-          status: run.status,
-          vscode: run.vscode
-            ? {
-                provider: run.vscode.provider,
-                containerName: run.vscode.containerName,
-                status: run.vscode.status,
-                stoppedAt: run.vscode.stoppedAt,
-              }
-            : undefined,
-          networking: run.networking,
-        },
-        stoppedAt
-      );
+      const patch = buildStoppedTaskRunMetadataPatch(stopRun, stoppedAt);
 
       if (patch) {
         await ctx.runMutation(internal.taskRuns.updateVSCodeMetadataInternal, {
@@ -2990,14 +2982,19 @@ async function handleStopTask(
       return jsonResponse({ code: 500, message }, 500);
     }
 
-    for (const run of runs) {
-      if (!shouldMarkTaskRunStopped({ _id: String(run._id), status: run.status })) {
+    for (const run of stopRuns) {
+      if (!shouldMarkTaskRunStopped(run)) {
+        continue;
+      }
+
+      const taskRun = runsById.get(run._id);
+      if (!taskRun) {
         continue;
       }
 
       await ctx.runMutation(api.taskRuns.failByTeamMember, {
         teamSlugOrId,
-        id: run._id,
+        id: taskRun._id,
         errorMessage: "Task stopped by user",
         exitCode: 130,
       });

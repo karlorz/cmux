@@ -63,8 +63,6 @@ describe("taskStopHelpers", () => {
   it("builds a stopped metadata patch that preserves networking ports", () => {
     const patch = buildStoppedTaskRunMetadataPatch(
       {
-        _id: "run_1",
-        status: "running",
         vscode: {
           provider: "pve-lxc",
           containerName: "cr_123",
@@ -100,25 +98,21 @@ describe("taskStopHelpers", () => {
   it("marks only pending and running task runs as user-stopped", () => {
     expect(
       shouldMarkTaskRunStopped({
-        _id: "run_pending",
         status: "pending",
       })
     ).toBe(true);
     expect(
       shouldMarkTaskRunStopped({
-        _id: "run_running",
         status: "running",
       })
     ).toBe(true);
     expect(
       shouldMarkTaskRunStopped({
-        _id: "run_completed",
         status: "completed",
       })
     ).toBe(false);
     expect(
       shouldMarkTaskRunStopped({
-        _id: "run_failed",
         status: "failed",
       })
     ).toBe(false);

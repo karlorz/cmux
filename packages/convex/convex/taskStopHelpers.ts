@@ -25,6 +25,9 @@ type TaskRunStopLike = {
   }>;
 };
 
+type TaskRunStopStatusLike = Pick<TaskRunStopLike, "status">;
+type TaskRunStopMetadataLike = Pick<TaskRunStopLike, "vscode" | "networking">;
+
 export type TaskStopTarget = {
   runId: string;
   instanceId: string;
@@ -34,12 +37,7 @@ export type TaskStopTarget = {
 export function isStoppableTaskProvider(
   provider: string | undefined
 ): provider is StoppableTaskProvider {
-  return (
-    provider === "e2b" ||
-    provider === "modal" ||
-    provider === "morph" ||
-    provider === "pve-lxc"
-  );
+  return provider === "e2b" || provider === "morph" || provider === "pve-lxc";
 }
 
 export function collectTaskStopTargets(
@@ -55,12 +53,12 @@ export function collectTaskStopTargets(
   });
 }
 
-export function shouldMarkTaskRunStopped(run: TaskRunStopLike): boolean {
+export function shouldMarkTaskRunStopped(run: TaskRunStopStatusLike): boolean {
   return run.status === "pending" || run.status === "running";
 }
 
 export function buildStoppedTaskRunMetadataPatch(
-  run: TaskRunStopLike,
+  run: TaskRunStopMetadataLike,
   stoppedAt: number
 ): {
   vscode: {
