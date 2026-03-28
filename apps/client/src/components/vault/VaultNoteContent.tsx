@@ -9,10 +9,16 @@
  * - Ctrl/Cmd+Click: Open in Obsidian
  */
 
-import { useMemo, useState, useCallback } from "react";
+import {
+  isValidElement,
+  useMemo,
+  useState,
+  useCallback,
+  type ReactNode,
+} from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ChevronDown, ChevronUp, FileText } from "lucide-react";
+import { ChevronDown, ChevronUp, FileText, Link as LinkIcon } from "lucide-react";
 import { MermaidDiagram } from "@/components/mermaid-diagram";
 import { cn } from "@/lib/utils";
 import {
@@ -35,6 +41,68 @@ interface VaultNoteContentProps {
 const DEFAULT_MAX_LENGTH = 50000;
 const DEFAULT_VAULT_NAME = "obsidian_vault";
 
+function extractPlainText(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") {
+    return String(node);
+  }
+
+  if (Array.isArray(node)) {
+    return node.map(extractPlainText).join("");
+  }
+
+  if (isValidElement<{ children?: ReactNode }>(node)) {
+    return extractPlainText(node.props.children);
+  }
+
+  return "";
+}
+
+function slugifyHeadingText(headingText: string): string {
+  const normalized = headingText
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^\p{Letter}\p{Number}_ -]/gu, "")
+    .replace(/\s/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return normalized || "section";
+}
+
+function buildHeadingIds(markdown: string): Map<number, string> {
+  const headingIds = new Map<number, string>();
+  const seen = new Map<string, number>();
+  let inFencedCodeBlock = false;
+
+  for (const [index, rawLine] of markdown.split("\n").entries()) {
+    if (/^\s*```/.test(rawLine)) {
+      inFencedCodeBlock = !inFencedCodeBlock;
+    }
+
+    if (inFencedCodeBlock) {
+      continue;
+    }
+
+    const match = /^(#{1,6})\s+(.+?)\s*$/.exec(rawLine);
+    if (!match) {
+      continue;
+    }
+
+    const headingText = match[2].replace(/\s+#+\s*$/, "");
+    const baseSlug = slugifyHeadingText(headingText);
+    const duplicateCount = seen.get(baseSlug) ?? 0;
+    seen.set(baseSlug, duplicateCount + 1);
+
+    headingIds.set(
+      index + 1,
+      duplicateCount === 0 ? baseSlug : `${baseSlug}-${duplicateCount}`
+    );
+  }
+
+  return headingIds;
+}
+
 export function VaultNoteContent({
   content,
   className,
@@ -51,6 +119,10 @@ export function VaultNoteContent({
       : content;
     return transformObsidianLinks(rawContent);
   }, [content, isLargeContent, isExpanded, maxLength]);
+  const headingIdsByLine = useMemo(
+    () => buildHeadingIds(displayContent),
+    [displayContent]
+  );
 
   const toggleExpanded = useCallback(() => {
     setIsExpanded((prev) => !prev);
@@ -76,37 +148,105 @@ export function VaultNoteContent({
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{
-            h1: ({ children, ...props }) => (
-              <h1
-                className="mb-4 border-b border-neutral-300 pb-2.5 text-[2rem] font-semibold leading-10 text-neutral-900 dark:border-neutral-700 dark:text-neutral-50"
-                {...props}
-              >
-                {children}
-              </h1>
+            h1: ({ children, node, ...props }) => (
+              (() => {
+                const headingText = extractPlainText(children);
+                const headingId =
+                  headingIdsByLine.get(node?.position?.start.line ?? -1) ??
+                  slugifyHeadingText(headingText);
+
+                return (
+                  <h1
+                    id={headingId}
+                    className="group relative mb-4 scroll-mt-24 border-b border-neutral-300 pb-2.5 text-[2rem] font-semibold leading-10 text-neutral-900 dark:border-neutral-700 dark:text-neutral-50"
+                    {...props}
+                  >
+                    <a
+                      href={`#${headingId}`}
+                      aria-label={`Permalink: ${headingText}`}
+                      className="absolute -left-6 top-1/2 hidden -translate-y-1/2 text-neutral-400 opacity-0 transition-opacity hover:text-neutral-700 focus:opacity-100 focus:outline-none group-hover:opacity-100 sm:inline-flex dark:text-neutral-500 dark:hover:text-neutral-300"
+                    >
+                      <LinkIcon className="size-4" aria-hidden="true" />
+                    </a>
+                    {children}
+                  </h1>
+                );
+              })()
             ),
-            h2: ({ children, ...props }) => (
-              <h2
-                className="mt-6 mb-4 border-b border-neutral-300 pb-1.5 text-2xl font-semibold leading-8 text-neutral-900 dark:border-neutral-700 dark:text-neutral-50"
-                {...props}
-              >
-                {children}
-              </h2>
+            h2: ({ children, node, ...props }) => (
+              (() => {
+                const headingText = extractPlainText(children);
+                const headingId =
+                  headingIdsByLine.get(node?.position?.start.line ?? -1) ??
+                  slugifyHeadingText(headingText);
+
+                return (
+                  <h2
+                    id={headingId}
+                    className="group relative mt-6 mb-4 scroll-mt-24 border-b border-neutral-300 pb-1.5 text-2xl font-semibold leading-8 text-neutral-900 dark:border-neutral-700 dark:text-neutral-50"
+                    {...props}
+                  >
+                    <a
+                      href={`#${headingId}`}
+                      aria-label={`Permalink: ${headingText}`}
+                      className="absolute -left-6 top-1/2 hidden -translate-y-1/2 text-neutral-400 opacity-0 transition-opacity hover:text-neutral-700 focus:opacity-100 focus:outline-none group-hover:opacity-100 sm:inline-flex dark:text-neutral-500 dark:hover:text-neutral-300"
+                    >
+                      <LinkIcon className="size-4" aria-hidden="true" />
+                    </a>
+                    {children}
+                  </h2>
+                );
+              })()
             ),
-            h3: ({ children, ...props }) => (
-              <h3
-                className="mt-6 mb-4 text-xl font-semibold leading-7 text-neutral-900 dark:text-neutral-50"
-                {...props}
-              >
-                {children}
-              </h3>
+            h3: ({ children, node, ...props }) => (
+              (() => {
+                const headingText = extractPlainText(children);
+                const headingId =
+                  headingIdsByLine.get(node?.position?.start.line ?? -1) ??
+                  slugifyHeadingText(headingText);
+
+                return (
+                  <h3
+                    id={headingId}
+                    className="group relative mt-6 mb-4 scroll-mt-24 text-xl font-semibold leading-7 text-neutral-900 dark:text-neutral-50"
+                    {...props}
+                  >
+                    <a
+                      href={`#${headingId}`}
+                      aria-label={`Permalink: ${headingText}`}
+                      className="absolute -left-6 top-1/2 hidden -translate-y-1/2 text-neutral-400 opacity-0 transition-opacity hover:text-neutral-700 focus:opacity-100 focus:outline-none group-hover:opacity-100 sm:inline-flex dark:text-neutral-500 dark:hover:text-neutral-300"
+                    >
+                      <LinkIcon className="size-4" aria-hidden="true" />
+                    </a>
+                    {children}
+                  </h3>
+                );
+              })()
             ),
-            h4: ({ children, ...props }) => (
-              <h4
-                className="mt-6 mb-4 text-base font-semibold leading-6 text-neutral-900 dark:text-neutral-50"
-                {...props}
-              >
-                {children}
-              </h4>
+            h4: ({ children, node, ...props }) => (
+              (() => {
+                const headingText = extractPlainText(children);
+                const headingId =
+                  headingIdsByLine.get(node?.position?.start.line ?? -1) ??
+                  slugifyHeadingText(headingText);
+
+                return (
+                  <h4
+                    id={headingId}
+                    className="group relative mt-6 mb-4 scroll-mt-24 text-base font-semibold leading-6 text-neutral-900 dark:text-neutral-50"
+                    {...props}
+                  >
+                    <a
+                      href={`#${headingId}`}
+                      aria-label={`Permalink: ${headingText}`}
+                      className="absolute -left-6 top-1/2 hidden -translate-y-1/2 text-neutral-400 opacity-0 transition-opacity hover:text-neutral-700 focus:opacity-100 focus:outline-none group-hover:opacity-100 sm:inline-flex dark:text-neutral-500 dark:hover:text-neutral-300"
+                    >
+                      <LinkIcon className="size-4" aria-hidden="true" />
+                    </a>
+                    {children}
+                  </h4>
+                );
+              })()
             ),
             p: ({ children, ...props }) => (
               <p className="mb-4 leading-6" {...props}>
@@ -119,7 +259,7 @@ export function VaultNoteContent({
               const isWikiLink = href?.startsWith(WIKI_LINK_PREFIX);
               const isObsidian = href?.startsWith("obsidian://");
               const linkClassName = cn(
-                "break-words font-medium text-blue-600 underline underline-offset-2 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300",
+                "break-words text-blue-600 hover:text-blue-700 hover:underline hover:underline-offset-2 dark:text-blue-400 dark:hover:text-blue-300",
                 props.className
               );
 

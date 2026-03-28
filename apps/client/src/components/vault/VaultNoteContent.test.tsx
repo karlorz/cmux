@@ -115,6 +115,34 @@ describe("VaultNoteContent", () => {
       expect(blockquote).not.toBeNull();
       expect(blockquote?.textContent).toContain("This is a quote");
     });
+
+    it("adds GitHub-style permalink anchors to headings", async () => {
+      const content = `
+# Main Title
+## Roadmaps & Planning
+## Roadmaps & Planning
+### TL;DR
+`;
+
+      await act(async () => {
+        root.render(<VaultNoteContent content={content} />);
+      });
+
+      const h1 = container.querySelector("h1");
+      const h2s = container.querySelectorAll("h2");
+      const h3 = container.querySelector("h3");
+
+      expect(h1?.id).toBe("main-title");
+      expect(h2s[0]?.id).toBe("roadmaps--planning");
+      expect(h2s[1]?.id).toBe("roadmaps--planning-1");
+      expect(h3?.id).toBe("tldr");
+
+      const h1Anchor = h1?.querySelector("a");
+      const h2Anchor = h2s[0]?.querySelector("a");
+      expect(h1Anchor?.getAttribute("href")).toBe("#main-title");
+      expect(h1Anchor?.getAttribute("aria-label")).toBe("Permalink: Main Title");
+      expect(h2Anchor?.getAttribute("href")).toBe("#roadmaps--planning");
+    });
   });
 
   describe("external links", () => {
