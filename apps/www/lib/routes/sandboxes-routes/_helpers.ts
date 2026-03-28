@@ -818,6 +818,11 @@ export async function setupProviderAuth(
         isOrchestrationHead: options.isOrchestrationHead,
         permissionDenyRules,
         enableShellWrappers,
+        orchestrationEnv: options.isOrchestrationHead
+          ? {
+              CMUX_CALLBACK_URL: options.callbackUrl,
+            }
+          : undefined,
       });
 
       await applyEnvironmentResult(

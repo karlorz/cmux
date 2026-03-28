@@ -836,6 +836,8 @@ const convexSchema = defineSchema({
     vaultConfig: v.optional(
       v.object({
         type: v.union(v.literal("local"), v.literal("github")),
+        // Local Obsidian vault name for obsidian:// links (default: "obsidian_vault")
+        vaultName: v.optional(v.string()),
         // Local vault settings
         localPath: v.optional(v.string()),
         // GitHub vault settings

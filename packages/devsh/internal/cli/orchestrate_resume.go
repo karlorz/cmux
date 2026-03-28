@@ -18,7 +18,7 @@ var orchestrateResumeCmd = &cobra.Command{
 	Long: `Retrieve the provider session binding for a task to enable session resume.
 
 This command fetches the stored session information including provider-specific
-session IDs (e.g., Claude session ID, Codex thread ID) that can be used to
+session IDs (e.g., Claude session ID, Codex thread identifier) that can be used to
 reconnect to an existing agent session.
 
 Examples:
@@ -94,7 +94,11 @@ func printProviderSession(session *vm.ProviderSession) {
 		}
 	case "codex":
 		if session.ProviderThreadID != nil && *session.ProviderThreadID != "" {
-			fmt.Printf("  Codex thread: codex --thread-id %s\n", *session.ProviderThreadID)
+			fmt.Printf("  Codex interactive: %s\n", formatCodexInteractiveResumeCommand(*session.ProviderThreadID))
+			fmt.Printf(
+				"  Codex non-interactive follow-up: %s\n",
+				formatCodexNonInteractiveResumeCommand(*session.ProviderThreadID, "'<prompt>'"),
+			)
 		} else {
 			fmt.Println("  No Codex thread ID stored - session may not be resumable")
 		}

@@ -11,6 +11,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { VaultNoteContent } from "./VaultNoteContent";
+import { transformObsidianLinks } from "./vault-note-markdown";
 
 const hasDomEnvironment =
   typeof document !== "undefined" && typeof window !== "undefined";
@@ -102,6 +103,7 @@ describe("VaultNoteContent", () => {
 
       const listItems = container.querySelectorAll("li");
       expect(listItems.length).toBe(3);
+      expect(listItems[0]?.className).not.toContain("my-1");
     });
 
     it("renders blockquotes", async () => {
@@ -113,6 +115,36 @@ describe("VaultNoteContent", () => {
       const blockquote = container.querySelector("blockquote");
       expect(blockquote).not.toBeNull();
       expect(blockquote?.textContent).toContain("This is a quote");
+    });
+
+    it("adds GitHub-style permalink anchors to headings", async () => {
+      const content = `
+# Main Title
+## Roadmaps & Planning
+## Roadmaps & Planning
+### TL;DR
+`;
+
+      await act(async () => {
+        root.render(<VaultNoteContent content={content} />);
+      });
+
+      const h1 = container.querySelector("h1");
+      const h2s = container.querySelectorAll("h2");
+      const h3 = container.querySelector("h3");
+
+      expect(h1?.id).toBe("main-title");
+      expect(h2s[0]?.id).toBe("roadmaps--planning");
+      expect(h2s[1]?.id).toBe("roadmaps--planning-1");
+      expect(h3?.id).toBe("tldr");
+
+      const h1Anchor = h1?.querySelector("a");
+      const h2Anchor = h2s[0]?.querySelector("a");
+      expect(h1Anchor?.getAttribute("href")).toBe("#main-title");
+      expect(h1Anchor?.getAttribute("aria-label")).toBe("Permalink: Main Title");
+      expect(h2Anchor?.getAttribute("href")).toBe("#roadmaps--planning");
+      expect(h2s[0]?.className).toContain("leading-[30px]");
+      expect(h3?.className).toContain("leading-[25px]");
     });
   });
 
@@ -138,6 +170,31 @@ describe("VaultNoteContent", () => {
       const link = container.querySelector("a");
       expect(link).not.toBeNull();
       expect(link?.getAttribute("target")).toBeNull();
+    });
+  });
+
+  describe("wiki links", () => {
+    it("rewrites Obsidian wiki links outside code spans", () => {
+      expect(transformObsidianLinks("See [[Folder/My Note|alias]].")).toBe(
+        "See [alias](/__cmux_vault_wiki__/Folder%2FMy%20Note)."
+      );
+    });
+
+    it("does not rewrite wiki links inside fenced mermaid blocks", () => {
+      const content = [
+        "```mermaid",
+        "graph TD",
+        "  DEVLOG[[cmux-dev-log-index]]",
+        "```",
+      ].join("\n");
+
+      expect(transformObsidianLinks(content)).toBe(content);
+    });
+
+    it("does not rewrite wiki links inside inline code spans", () => {
+      expect(transformObsidianLinks("Use `[[cmux-dev-log-index]]` as text.")).toBe(
+        "Use `[[cmux-dev-log-index]]` as text."
+      );
     });
   });
 
@@ -212,6 +269,7 @@ describe("VaultNoteContent", () => {
       const code = container.querySelector("code");
       expect(code).not.toBeNull();
       expect(code?.textContent).toBe("const x = 1");
+      expect(code?.className).toContain("rounded-[6px]");
     });
 
     it("renders fenced code blocks", async () => {
@@ -227,6 +285,7 @@ const x = 1;
       const pre = container.querySelector("pre");
       expect(pre).not.toBeNull();
       expect(pre?.textContent).toContain("const x = 1;");
+      expect(pre?.className).toContain("rounded-[6px]");
     });
   });
 
@@ -271,6 +330,29 @@ const x = 1;
       expect(table).not.toBeNull();
       const cells = container.querySelectorAll("td");
       expect(cells.length).toBe(2);
+
+      const thead = container.querySelector("thead");
+      const headerCell = container.querySelector("th");
+      expect(thead?.getAttribute("class")).toBeNull();
+      expect(headerCell?.className).toContain("px-[13px]");
+    });
+
+    it("renders task lists with disabled checkboxes", async () => {
+      const content = `
+- [ ] Incomplete task
+- [x] Completed task
+`;
+
+      await act(async () => {
+        root.render(<VaultNoteContent content={content} />);
+      });
+
+      const checkboxes = container.querySelectorAll('input[type="checkbox"]');
+      expect(checkboxes.length).toBe(2);
+      expect((checkboxes[0] as HTMLInputElement).checked).toBe(false);
+      expect((checkboxes[1] as HTMLInputElement).checked).toBe(true);
+      expect((checkboxes[0] as HTMLInputElement).disabled).toBe(true);
+      expect((checkboxes[1] as HTMLInputElement).disabled).toBe(true);
     });
 
     it("renders strikethrough text", async () => {
