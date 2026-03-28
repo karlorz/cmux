@@ -16,13 +16,14 @@ import (
 
 // LocalSessionInfo stores session identifiers for active instruction injection
 type LocalSessionInfo struct {
-	Agent            string `json:"agent"`
-	SessionID        string `json:"sessionId,omitempty"`        // Claude session UUID
-	ThreadID         string `json:"threadId,omitempty"`         // Codex thread ID
-	Workspace        string `json:"workspace"`
-	InjectionMode    string `json:"injectionMode"`              // "active" or "passive"
-	LastInjectionAt  string `json:"lastInjectionAt,omitempty"`
-	InjectionCount   int    `json:"injectionCount"`
+	Agent           string `json:"agent"`
+	SessionID       string `json:"sessionId,omitempty"` // Claude session UUID
+	ThreadID        string `json:"threadId,omitempty"`  // Codex thread ID
+	CodexHome       string `json:"codexHome,omitempty"`
+	Workspace       string `json:"workspace"`
+	InjectionMode   string `json:"injectionMode"` // "active" or "passive"
+	LastInjectionAt string `json:"lastInjectionAt,omitempty"`
+	InjectionCount  int    `json:"injectionCount"`
 }
 
 var (
@@ -37,7 +38,7 @@ or passive injection depending on agent support.
 
 Active injection (preferred):
   - Claude: Uses --continue --session-id to inject into the same session
-  - Codex: Uses --thread-id to continue the conversation thread
+  - Codex: Uses codex exec resume <thread-id> <message> for non-interactive follow-up on the same stored conversation binding
 
 Passive injection (fallback):
   - Writes to append.txt for agents to poll
@@ -115,24 +116,7 @@ Examples:
 		// Log event
 		logInjectionEvent(runDir, mode, message)
 
-		if flagJSON {
-			output := map[string]interface{}{
-				"runId":          runID,
-				"mode":           mode,
-				"message":        message,
-				"injectionCount": sessionInfo.InjectionCount,
-			}
-			data, _ := json.MarshalIndent(output, "", "  ")
-			fmt.Println(string(data))
-		} else {
-			fmt.Printf("Injected instruction into run %s\n", runID)
-			fmt.Printf("Mode: %s\n", mode)
-			fmt.Printf("Message: %s\n", message)
-			if mode == "active" && sessionInfo.SessionID != "" {
-				fmt.Printf("Session: %s\n", sessionInfo.SessionID)
-			}
-			fmt.Printf("Total injections: %d\n", sessionInfo.InjectionCount)
-		}
+		printInjectLocalResult(runID, mode, message, sessionInfo)
 
 		return nil
 	},
@@ -150,7 +134,7 @@ func determineInjectionMode(info *LocalSessionInfo) string {
 	}
 
 	if strings.HasPrefix(agent, "codex/") {
-		// Codex supports --thread-id for active injection
+		// Codex supports active follow-up when we have a stored thread identifier.
 		if info.ThreadID != "" {
 			return "active"
 		}
@@ -158,6 +142,47 @@ func determineInjectionMode(info *LocalSessionInfo) string {
 
 	// Fallback to passive
 	return "passive"
+}
+
+func activeInjectionTarget(info *LocalSessionInfo) (fieldName, displayLabel, value string) {
+	if info.SessionID != "" {
+		return "sessionId", "Session", info.SessionID
+	}
+
+	if info.ThreadID != "" {
+		return "threadId", "Thread ID", info.ThreadID
+	}
+
+	return "", "", ""
+}
+
+func printInjectLocalResult(runID, mode, message string, sessionInfo *LocalSessionInfo) {
+	if flagJSON {
+		output := map[string]interface{}{
+			"runId":          runID,
+			"mode":           mode,
+			"message":        message,
+			"injectionCount": sessionInfo.InjectionCount,
+		}
+		fieldName, _, value := activeInjectionTarget(sessionInfo)
+		if mode == "active" && fieldName != "" {
+			output[fieldName] = value
+		}
+		data, _ := json.MarshalIndent(output, "", "  ")
+		fmt.Println(string(data))
+		return
+	}
+
+	fmt.Printf("Injected instruction into run %s\n", runID)
+	fmt.Printf("Mode: %s\n", mode)
+	fmt.Printf("Message: %s\n", message)
+	if mode == "active" {
+		_, label, value := activeInjectionTarget(sessionInfo)
+		if label != "" {
+			fmt.Printf("%s: %s\n", label, value)
+		}
+	}
+	fmt.Printf("Total injections: %d\n", sessionInfo.InjectionCount)
 }
 
 func injectActive(runDir string, info *LocalSessionInfo, message string) error {
@@ -218,7 +243,7 @@ func injectClaude(runDir string, info *LocalSessionInfo, message string) error {
 }
 
 func injectCodex(runDir string, info *LocalSessionInfo, message string) error {
-	// Use --thread-id to continue the conversation
+	// Use non-interactive exec resume with the stored thread identifier.
 	codexPath, err := exec.LookPath("codex")
 	if err != nil {
 		return fmt.Errorf("codex CLI not found: %w", err)
@@ -233,13 +258,13 @@ func injectCodex(runDir string, info *LocalSessionInfo, message string) error {
 		return injectPassive(runDir, message)
 	}
 
-	args := []string{
-		"--thread-id", info.ThreadID,
-		message,
-	}
+	args := buildCodexResumeArgs(info.ThreadID, message)
 
 	cmd := exec.Command(codexPath, args...)
 	cmd.Dir = info.Workspace
+	if info.CodexHome != "" {
+		cmd.Env = withEnvVar(nil, "CODEX_HOME", info.CodexHome)
+	}
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -314,9 +339,9 @@ func logInjectionEvent(runDir, mode, message string) {
 // Call this from run-local after spawning the agent
 func InitSessionForRun(runDir, agent, workspace string) error {
 	info := &LocalSessionInfo{
-		Agent:         agent,
-		Workspace:     workspace,
-		InjectionMode: "passive", // Default to passive until we get a session ID
+		Agent:          agent,
+		Workspace:      workspace,
+		InjectionMode:  "passive", // Default to passive until we get a session ID
 		InjectionCount: 0,
 	}
 
@@ -352,6 +377,15 @@ func UpdateThreadID(runDir, threadID string) error {
 	if threadID != "" {
 		info.InjectionMode = "active"
 	}
+	return saveSessionInfo(runDir, info)
+}
+
+func UpdateCodexHome(runDir, codexHome string) error {
+	info, err := loadSessionInfo(runDir)
+	if err != nil {
+		info = &LocalSessionInfo{}
+	}
+	info.CodexHome = codexHome
 	return saveSessionInfo(runDir, info)
 }
 

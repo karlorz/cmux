@@ -16,6 +16,11 @@ import {
   aggregatePullRequestState,
   type StoredPullRequestInfo,
 } from "@cmux/shared/pull-request-state";
+import {
+  buildRunControlSummary,
+  type RunControlApproval,
+  type RunControlSessionBinding,
+} from "./runControlSummary";
 
 const CLOUD_WORKSPACE_JWT_TTL = "7d";
 const DEFAULT_JWT_TTL = "12h";
@@ -1152,6 +1157,116 @@ export const getInterruptionState = authQuery({
       // Computed: is resumable?
       canResume: canResumeFromInterruption(state),
     };
+  },
+});
+
+async function getRunControlSummaryForRun(
+  ctx: QueryCtx,
+  run: Doc<"taskRuns">,
+) {
+  const [approvalDocs, bindingByTaskRun, bindingByTask] = await Promise.all([
+    ctx.db
+      .query("approvalRequests")
+      .withIndex("by_task_run", (q) => q.eq("taskRunId", run._id))
+      .order("desc")
+      .collect(),
+    ctx.db
+      .query("providerSessionBindings")
+      .withIndex("by_task_run", (q) => q.eq("taskRunId", run._id))
+      .first(),
+    ctx.db
+      .query("providerSessionBindings")
+      .withIndex("by_task", (q) => q.eq("taskId", String(run.taskId)))
+      .first(),
+  ]);
+
+  const approvals: RunControlApproval[] = approvalDocs
+    .filter((approval) => approval.teamId === run.teamId)
+    .map((approval) => ({
+      requestId: approval.requestId,
+      status: approval.status,
+      approvalType: approval.approvalType,
+      action: approval.action,
+      createdAt: approval.createdAt,
+      context: {
+        riskLevel: approval.context.riskLevel,
+      },
+    }));
+
+  const bindingDoc = [bindingByTaskRun, bindingByTask].find(
+    (binding) => binding && binding.teamId === run.teamId,
+  );
+  const sessionBinding: RunControlSessionBinding | null = bindingDoc
+    ? {
+        provider: bindingDoc.provider,
+        agentName: bindingDoc.agentName,
+        mode: bindingDoc.mode,
+        providerSessionId: bindingDoc.providerSessionId,
+        providerThreadId: bindingDoc.providerThreadId,
+        replyChannel: bindingDoc.replyChannel,
+        status: bindingDoc.status,
+        lastActiveAt: bindingDoc.lastActiveAt,
+      }
+    : null;
+
+  return buildRunControlSummary({
+    run: {
+      taskRunId: String(run._id),
+      taskId: String(run.taskId),
+      runStatus: run.status,
+      agentName: run.agentName,
+      orchestrationId: run.orchestrationId,
+      codexThreadId: run.codexThreadId,
+      interruptionState: run.interruptionState
+        ? {
+            status: run.interruptionState.status,
+            reason: run.interruptionState.reason,
+            approvalRequestId: run.interruptionState.approvalRequestId,
+            blockedAt: run.interruptionState.blockedAt,
+            expiresAt: run.interruptionState.expiresAt,
+            resumeToken: run.interruptionState.resumeToken,
+            resolvedAt: run.interruptionState.resolvedAt,
+            resolvedBy: run.interruptionState.resolvedBy,
+            providerSessionId: run.interruptionState.providerSessionId,
+            resumeTargetId: run.interruptionState.resumeTargetId,
+            checkpointRef: run.interruptionState.checkpointRef,
+            checkpointGeneration: run.interruptionState.checkpointGeneration,
+          }
+        : undefined,
+    },
+    approvals,
+    sessionBinding,
+  });
+}
+
+export const getRunControlSummaryInternal = internalQuery({
+  args: {
+    taskRunId: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.taskRunId);
+    if (!run) {
+      return null;
+    }
+
+    return getRunControlSummaryForRun(ctx, run);
+  },
+});
+
+export const getRunControlSummary = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    taskRunId: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+
+    const run = await ctx.db.get(args.taskRunId);
+    if (!run || run.teamId !== teamId) {
+      return null;
+    }
+
+    return getRunControlSummaryForRun(ctx, run);
   },
 });
 

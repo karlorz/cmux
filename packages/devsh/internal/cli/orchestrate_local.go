@@ -511,6 +511,15 @@ func runCodexLocal(ctx context.Context, state *LocalState, prompt, workspace str
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 
+	cleanup, err := configureCodexLocalCommand(ctx, state, workspace, cmd)
+	if err != nil {
+		if flagVerbose && !flagJSON {
+			fmt.Printf("Warning: failed to configure Codex session tracking: %v\n", err)
+		}
+		cleanup = func() {}
+	}
+	defer cleanup()
+
 	state.addEvent("agent_running", "Codex CLI executing")
 
 	if err := cmd.Run(); err != nil {
@@ -645,6 +654,15 @@ func runCodexLocalWithAgent(ctx context.Context, state *LocalState, agent, promp
 	cmd.Dir = workspace
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+
+	cleanup, err := configureCodexLocalCommand(ctx, state, workspace, cmd)
+	if err != nil {
+		if flagVerbose && !flagJSON {
+			fmt.Printf("Warning: failed to configure Codex session tracking: %v\n", err)
+		}
+		cleanup = func() {}
+	}
+	defer cleanup()
 
 	state.addEvent("agent_running", "Codex CLI executing")
 
