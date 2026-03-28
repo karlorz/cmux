@@ -299,6 +299,24 @@ const x = 1;
       expect(cells.length).toBe(2);
     });
 
+    it("renders task lists with disabled checkboxes", async () => {
+      const content = `
+- [ ] Incomplete task
+- [x] Completed task
+`;
+
+      await act(async () => {
+        root.render(<VaultNoteContent content={content} />);
+      });
+
+      const checkboxes = container.querySelectorAll('input[type="checkbox"]');
+      expect(checkboxes.length).toBe(2);
+      expect((checkboxes[0] as HTMLInputElement).checked).toBe(false);
+      expect((checkboxes[1] as HTMLInputElement).checked).toBe(true);
+      expect((checkboxes[0] as HTMLInputElement).disabled).toBe(true);
+      expect((checkboxes[1] as HTMLInputElement).disabled).toBe(true);
+    });
+
     it("renders strikethrough text", async () => {
       await act(async () => {
         root.render(<VaultNoteContent content="~~deleted~~" />);

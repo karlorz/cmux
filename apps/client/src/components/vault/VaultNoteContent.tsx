@@ -191,7 +191,11 @@ export function VaultNoteContent({
             ),
             ul: ({ children, ...props }) => (
               <ul
-                className="mb-4 list-disc pl-8 [&_ol]:mb-0 [&_ol]:mt-2 [&_ul]:mb-0 [&_ul]:mt-2"
+                className={cn(
+                  "mb-4 list-disc pl-8 [&_ol]:mb-0 [&_ol]:mt-2 [&_ul]:mb-0 [&_ul]:mt-2",
+                  props.className?.includes("contains-task-list") &&
+                    "list-none pl-0"
+                )}
                 {...props}
               >
                 {children}
@@ -199,17 +203,44 @@ export function VaultNoteContent({
             ),
             ol: ({ children, ...props }) => (
               <ol
-                className="mb-4 list-decimal pl-8 [&_ol]:mb-0 [&_ol]:mt-2 [&_ul]:mb-0 [&_ul]:mt-2"
+                className={cn(
+                  "mb-4 list-decimal pl-8 [&_ol]:mb-0 [&_ol]:mt-2 [&_ul]:mb-0 [&_ul]:mt-2",
+                  props.className?.includes("contains-task-list") &&
+                    "list-none pl-0"
+                )}
                 {...props}
               >
                 {children}
               </ol>
             ),
             li: ({ children, ...props }) => (
-              <li className="my-1 pl-1" {...props}>
+              <li
+                className={cn(
+                  "my-1 pl-1 [&>p:last-child]:mb-0",
+                  props.className?.includes("task-list-item") &&
+                    "flex items-start gap-2 pl-0"
+                )}
+                {...props}
+              >
                 {children}
               </li>
             ),
+            input: ({ type, checked, ...props }) => {
+              if (type === "checkbox") {
+                return (
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled
+                    readOnly
+                    className="mt-1 size-4 shrink-0 rounded border-neutral-300 accent-neutral-700 dark:border-neutral-600 dark:bg-neutral-900 dark:accent-neutral-300"
+                    {...props}
+                  />
+                );
+              }
+
+              return <input type={type} checked={checked} {...props} />;
+            },
             // Lazy load images for better performance on large notes
             img: ({ src, alt, ...props }) => (
               <img
@@ -235,7 +266,7 @@ export function VaultNoteContent({
               if (!className) {
                 return (
                   <code
-                    className="rounded-md bg-neutral-200/70 px-1.5 py-0.5 font-mono text-[0.85em] text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+                    className="rounded-md bg-neutral-200/70 px-1.5 py-0.5 font-mono text-[0.85em] leading-[1.5] text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
                     {...props}
                   >
                     {children}
@@ -247,7 +278,7 @@ export function VaultNoteContent({
               return (
                 <code
                   className={cn(
-                    "font-mono text-[0.85rem] leading-6 text-neutral-800 dark:text-neutral-100",
+                    "font-mono text-[0.85rem] leading-[1.45] text-neutral-800 dark:text-neutral-100",
                     className
                   )}
                   {...props}
@@ -259,7 +290,7 @@ export function VaultNoteContent({
             // Style pre blocks
             pre: ({ children, ...props }) => (
               <pre
-                className="mb-4 overflow-x-auto rounded-md bg-neutral-100 p-4 text-[0.85rem] leading-6 text-neutral-800 dark:bg-neutral-950 dark:text-neutral-100"
+                className="mb-4 overflow-x-auto rounded-md bg-neutral-100 p-4 text-[0.85rem] leading-[1.45] text-neutral-800 dark:bg-neutral-950 dark:text-neutral-100"
                 {...props}
               >
                 {children}
@@ -268,7 +299,7 @@ export function VaultNoteContent({
             table: ({ children, ...props }) => (
               <div className="mb-4 overflow-x-auto">
                 <table
-                  className="w-full border-collapse text-left text-base"
+                  className="w-full border-collapse text-left text-base [&_p:last-child]:mb-0"
                   {...props}
                 >
                   {children}
