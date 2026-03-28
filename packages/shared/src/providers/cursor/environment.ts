@@ -97,6 +97,7 @@ type McpOrchestrationEnv = {
   CMUX_API_BASE_URL?: string;
   CMUX_IS_ORCHESTRATION_HEAD?: string;
   CMUX_ORCHESTRATION_ID?: string;
+  CMUX_CALLBACK_URL?: string;
 };
 
 /**
@@ -140,6 +141,9 @@ function buildCursorMcpJson(
     }
     if (orchestrationEnv.CMUX_ORCHESTRATION_ID) {
       env.CMUX_ORCHESTRATION_ID = orchestrationEnv.CMUX_ORCHESTRATION_ID;
+    }
+    if (orchestrationEnv.CMUX_CALLBACK_URL) {
+      env.CMUX_CALLBACK_URL = orchestrationEnv.CMUX_CALLBACK_URL;
     }
     if (Object.keys(env).length > 0) {
       managedMemoryServer.env = env;
@@ -343,6 +347,7 @@ export async function getCursorEnvironment(
         CMUX_API_BASE_URL: ctx.orchestrationEnv?.CMUX_API_BASE_URL,
         CMUX_IS_ORCHESTRATION_HEAD: ctx.orchestrationEnv?.CMUX_IS_ORCHESTRATION_HEAD,
         CMUX_ORCHESTRATION_ID: ctx.orchestrationEnv?.CMUX_ORCHESTRATION_ID,
+        CMUX_CALLBACK_URL: ctx.orchestrationEnv?.CMUX_CALLBACK_URL,
       }
     : undefined;
 
