@@ -9,10 +9,12 @@ import { FloatingPane } from "@/components/floating-pane";
 import { TitleBar } from "@/components/TitleBar";
 import { VaultNoteList } from "@/components/vault/VaultNoteList";
 import { VaultNotePreview } from "@/components/vault/VaultNotePreview";
+import { getVaultReaderSidebarAction } from "@/components/vault/vault-reader-sidebar";
+import { useSidebarOptional } from "@/contexts/sidebar/SidebarContext";
 import { api } from "@cmux/convex/api";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Settings } from "lucide-react";
 import { z } from "zod";
 
@@ -38,15 +40,52 @@ function VaultPage() {
   const { teamSlugOrId } = Route.useParams();
   const { notePath } = Route.useSearch();
   const navigate = Route.useNavigate();
+  const sidebar = useSidebarOptional();
   const workspaceSettings = useQuery(api.workspaceSettings.get, { teamSlugOrId });
   const vaultName = workspaceSettings?.vaultConfig?.vaultName ?? DEFAULT_VAULT_NAME;
   const [isNoteListVisible, setIsNoteListVisible] = useState(() => !notePath);
+  const previousNotePathRef = useRef<string | undefined>(undefined);
+  const autoHiddenSidebarRef = useRef(false);
+
+  const setShellSidebarHidden = useCallback(
+    (hidden: boolean) => {
+      if (typeof window !== "undefined") {
+        localStorage.setItem("sidebarHidden", String(hidden));
+      }
+      sidebar?.setIsHidden(hidden);
+    },
+    [sidebar]
+  );
 
   useEffect(() => {
     if (!notePath) {
       setIsNoteListVisible(true);
     }
   }, [notePath]);
+
+  useEffect(() => {
+    if (!sidebar) {
+      previousNotePathRef.current = notePath;
+      return;
+    }
+
+    const nextAction = getVaultReaderSidebarAction({
+      previousNotePath: previousNotePathRef.current,
+      nextNotePath: notePath,
+      isSidebarHidden: sidebar.isHidden,
+      autoHiddenForReader: autoHiddenSidebarRef.current,
+    });
+
+    if (nextAction === "hide") {
+      autoHiddenSidebarRef.current = true;
+      setShellSidebarHidden(true);
+    } else if (nextAction === "show") {
+      autoHiddenSidebarRef.current = false;
+      setShellSidebarHidden(false);
+    }
+
+    previousNotePathRef.current = notePath;
+  }, [notePath, setShellSidebarHidden, sidebar]);
 
   const handleSelectedNotePathChange = useCallback(
     (nextNotePath?: string) => {
