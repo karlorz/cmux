@@ -16,11 +16,14 @@ jobs:
   mirror-upstream-tags:
     name: Mirror upstream release tags
     runs-on: ubuntu-latest
+    env:
+      SYNC_TOKEN: ${{ secrets.KARL_DIGI_TOKEN }}
     steps:
       - name: Checkout karlorz/cmux
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -30,33 +33,61 @@ jobs:
       - name: Configure upstream remote
         run: git remote add upstream https://github.com/manaflow-ai/manaflow.git
 
+      - name: Configure authenticated remotes
+        env:
+          GH_TOKEN: ${{ env.SYNC_TOKEN }}
+        run: |
+          if [ -z "${SYNC_TOKEN}" ]; then
+            echo "::error::KARL_DIGI_TOKEN secret is required for upstream sync."
+            exit 1
+          fi
+
+          git remote set-url origin https://x-access-token:${SYNC_TOKEN}@github.com/karlorz/cmux.git
+          git remote add karl-digi https://x-access-token:${SYNC_TOKEN}@github.com/karl-digi/manaflow.git
+
       - name: Mirror upstream plain release tags onto karlorz/cmux
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ env.SYNC_TOKEN }}
+          GITHUB_REPO: karlorz/cmux
         run: ./scripts/sync-upstream-tags.sh
+
+      - name: Mirror upstream plain release tags onto karl-digi/manaflow
+        env:
+          GH_TOKEN: ${{ env.SYNC_TOKEN }}
+          GITHUB_REPO: karl-digi/manaflow
+        run: |
+          ./scripts/sync-upstream-tags.sh \
+            --repo karl-digi/manaflow \
+            --source-remote upstream \
+            --target-remote karl-digi
 
   sync-upstream-pr:
     name: Sync karl-digi/manaflow PR
     runs-on: ubuntu-latest
+    env:
+      SYNC_TOKEN: ${{ secrets.KARL_DIGI_TOKEN }}
     steps:
       - name: Checkout karlorz/cmux
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
+
+      - name: Configure remotes
+        run: |
+          if [ -z "${SYNC_TOKEN}" ]; then
+            echo "::error::KARL_DIGI_TOKEN secret is required for upstream sync."
+            exit 1
+          fi
+
+          git remote add upstream https://github.com/manaflow-ai/manaflow.git
+          git remote add karl-digi https://x-access-token:${SYNC_TOKEN}@github.com/karl-digi/manaflow.git
+          git fetch --no-tags upstream main
 
       - name: Sync karl-digi/manaflow main from upstream
-        env:
-          GH_TOKEN: ${{ secrets.KARL_DIGI_TOKEN }}
         run: |
-          gh repo sync karl-digi/manaflow --source manaflow-ai/manaflow --branch main --force
+          git push karl-digi refs/remotes/upstream/main:refs/heads/main --force
 
       - name: Force-push karlorz/cmux:main to karl-digi/manaflow:karlorz-cmux-main
-        env:
-          GH_TOKEN: ${{ secrets.KARL_DIGI_TOKEN }}
         run: |
-          # Remove the default credential helper set by actions/checkout
-          # so it doesn't override our token with the github-actions[bot] token
-          git config --unset-all http.https://github.com/.extraheader || true
-          git remote add karl-digi https://x-access-token:${GH_TOKEN}@github.com/karl-digi/manaflow.git
           git push karl-digi origin/main:refs/heads/karlorz-cmux-main --force

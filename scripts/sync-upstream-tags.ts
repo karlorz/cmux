@@ -30,17 +30,21 @@ type CliOptions = {
   dryRun: boolean;
   json: boolean;
   repo: string;
+  sourceRemote: string;
+  targetRemote: string;
   originTagsJson: string | null;
   upstreamTagsJson: string | null;
 };
 
 function usage(): never {
-  console.error(`Usage: ./scripts/${scriptName} [--dry-run] [--json] [--repo <owner/repo>] [--origin-tags-json <path>] [--upstream-tags-json <path>]
+  console.error(`Usage: ./scripts/${scriptName} [--dry-run] [--json] [--repo <owner/repo>] [--source-remote <name>] [--target-remote <name>] [--origin-tags-json <path>] [--upstream-tags-json <path>]
 
 Options:
   --dry-run            Print the sync plan without mutating tags or releases
   --json               Print the sync plan as JSON
   --repo               GitHub repo used for release cleanup (default: karlorz/cmux)
+  --source-remote      Git remote to mirror tags from (default: upstream)
+  --target-remote      Git remote to mirror tags onto (default: origin)
   --origin-tags-json   Load origin tag refs from a fixture JSON file
   --upstream-tags-json Load upstream tag refs from a fixture JSON file
 `);
@@ -76,6 +80,8 @@ function parseArgs(args: string[]): CliOptions {
     dryRun: false,
     json: false,
     repo: process.env.GITHUB_REPO ?? "karlorz/cmux",
+    sourceRemote: "upstream",
+    targetRemote: "origin",
     originTagsJson: null,
     upstreamTagsJson: null,
   };
@@ -99,6 +105,24 @@ function parseArgs(args: string[]): CliOptions {
         throw new Error("--repo requires a value.");
       }
       options.repo = value;
+      index += 1;
+      continue;
+    }
+    if (arg === "--source-remote") {
+      const value = args[index + 1];
+      if (!value) {
+        throw new Error("--source-remote requires a value.");
+      }
+      options.sourceRemote = value;
+      index += 1;
+      continue;
+    }
+    if (arg === "--target-remote") {
+      const value = args[index + 1];
+      if (!value) {
+        throw new Error("--target-remote requires a value.");
+      }
+      options.targetRemote = value;
       index += 1;
       continue;
     }
@@ -144,13 +168,13 @@ function readFixtureRefs(path: string): RemoteTagRef[] {
   return JSON.parse(readFileSync(path, "utf8")) as RemoteTagRef[];
 }
 
-function loadGitRemoteRefs(remote: "origin" | "upstream"): RemoteTagRef[] {
+function loadGitRemoteRefs(remote: string): RemoteTagRef[] {
   return parseRemoteTagRefs(run("git", ["ls-remote", "--tags", remote]).stdout);
 }
 
-function ensureUpstreamStageRef(tag: string): string {
+function ensureSourceStageRef(tag: string, sourceRemote: string): string {
   const stageRef = `refs/cmux/upstream-tags/${tag}`;
-  run("git", ["fetch", "--force", "upstream", `refs/tags/${tag}:${stageRef}`]);
+  run("git", ["fetch", "--force", sourceRemote, `refs/tags/${tag}:${stageRef}`]);
   return stageRef;
 }
 
@@ -163,9 +187,14 @@ function deleteReleaseIfPresent(tag: string, repo: string): void {
   }
 }
 
-function printHumanPlan(plan: ReturnType<typeof planUpstreamTagSync>): void {
+function printHumanPlan(
+  plan: ReturnType<typeof planUpstreamTagSync>,
+  targetRemote: string
+): void {
   if (plan.actions.length === 0) {
-    console.log("Upstream plain release tags are already mirrored on origin.");
+    console.log(
+      `Upstream plain release tags are already mirrored on ${targetRemote}.`
+    );
     return;
   }
 
@@ -192,18 +221,18 @@ function main(): void {
   const originRefs =
     options.originTagsJson !== null
       ? readFixtureRefs(options.originTagsJson)
-      : loadGitRemoteRefs("origin");
+      : loadGitRemoteRefs(options.targetRemote);
   const upstreamRefs =
     options.upstreamTagsJson !== null
       ? readFixtureRefs(options.upstreamTagsJson)
-      : loadGitRemoteRefs("upstream");
+      : loadGitRemoteRefs(options.sourceRemote);
 
   const plan = planUpstreamTagSync(originRefs, upstreamRefs);
 
   if (options.json) {
     process.stdout.write(`${JSON.stringify(plan, null, 2)}\n`);
   } else {
-    printHumanPlan(plan);
+    printHumanPlan(plan, options.targetRemote);
   }
 
   if (options.dryRun) {
@@ -211,16 +240,20 @@ function main(): void {
   }
 
   for (const action of plan.actions) {
-    const stageRef = ensureUpstreamStageRef(action.tag);
+    const stageRef = ensureSourceStageRef(action.tag, options.sourceRemote);
     try {
       if (action.type === "repair") {
         deleteReleaseIfPresent(action.tag, options.repo);
-        run("git", ["push", "origin", `:refs/tags/${action.tag}`], {
+        run("git", ["push", options.targetRemote, `:refs/tags/${action.tag}`], {
           allowNonZeroExit: true,
         });
       }
 
-      run("git", ["push", "origin", `${stageRef}:refs/tags/${action.tag}`]);
+      run("git", [
+        "push",
+        options.targetRemote,
+        `${stageRef}:refs/tags/${action.tag}`,
+      ]);
     } finally {
       run("git", ["update-ref", "-d", stageRef], { allowNonZeroExit: true });
     }
