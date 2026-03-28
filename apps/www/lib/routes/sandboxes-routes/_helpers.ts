@@ -818,7 +818,6 @@ export async function setupProviderAuth(
         isOrchestrationHead: options.isOrchestrationHead,
         permissionDenyRules,
         enableShellWrappers,
-        // Orchestration env for MCP server passthrough (memory sync needs CMUX_CALLBACK_URL)
         orchestrationEnv: options.isOrchestrationHead
           ? {
               CMUX_CALLBACK_URL: options.callbackUrl,

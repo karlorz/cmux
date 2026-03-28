@@ -582,9 +582,11 @@ sandboxesStartRouter.openapi(
         );
       }
 
-      // callbackUrl for MCP memory sync - use CONVEX_SITE_URL (self-hosted) or transform api URL
+      // Convex site URL for HTTP actions (memory sync). Self-hosted uses CONVEX_SITE_URL,
+      // cloud transforms api-xxx.convex.cloud -> api-xxx.convex.site
       const callbackUrl = env.CONVEX_SITE_URL
-        ?? env.NEXT_PUBLIC_CONVEX_URL?.replace('.convex.cloud', '.convex.site');
+        ?? env.NEXT_PUBLIC_CONVEX_URL?.replace('.convex.cloud', '.convex.site')
+        ?? "http://localhost:9779";
 
       const systemSandboxEnvContent = buildSystemSandboxEnvContent({
         taskRunId: body.taskRunId,
@@ -642,10 +644,6 @@ sandboxesStartRouter.openapi(
 
       const providerAuthPromise = (async () => {
         try {
-          // Use CONVEX_SITE_URL for HTTP actions (memory sync endpoint)
-          const callbackUrl = env.CONVEX_SITE_URL
-            ?? env.NEXT_PUBLIC_CONVEX_URL?.replace('.convex.cloud', '.convex.site')
-            ?? "http://localhost:9779";
           const [previousKnowledge, previousMailbox] = await Promise.all([
             convex
               .query(api.agentMemoryQueries.getLatestTeamKnowledge, {
