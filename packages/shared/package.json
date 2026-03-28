@@ -221,6 +221,10 @@
     "./providers/control-plane": {
       "import": "./src/providers/control-plane/index.ts",
       "types": "./src/providers/control-plane/index.ts"
+    },
+    "./project-recommendations": {
+      "import": "./src/project-recommendations.ts",
+      "types": "./src/project-recommendations.ts"
     }
   },
   "peerDependencies": {
