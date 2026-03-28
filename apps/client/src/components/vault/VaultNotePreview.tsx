@@ -11,9 +11,13 @@ import {
   PanelLeftClose,
   X,
 } from "lucide-react";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { VaultNoteContent } from "./VaultNoteContent";
+import {
+  resetHashScrollContainer,
+  scrollContainerToHashTarget,
+} from "./vault-hash-scroll";
 
 interface VaultNotePreviewProps {
   teamSlugOrId: string;
@@ -49,6 +53,10 @@ export function VaultNotePreview({
   onSelectedNotePathChange,
   onToggleNoteList,
 }: VaultNotePreviewProps) {
+  const previewScrollContainerRef = useRef<HTMLDivElement>(null);
+  const [currentHash, setCurrentHash] = useState(() =>
+    typeof window === "undefined" ? "" : window.location.hash
+  );
   const {
     data: noteData,
     isLoading,
@@ -76,6 +84,64 @@ export function VaultNotePreview({
       onSelectedNotePathChange(noteData.path);
     }
   }, [noteData?.path, notePath, onSelectedNotePathChange]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const syncHash = () => {
+      setCurrentHash(window.location.hash);
+    };
+
+    window.addEventListener("hashchange", syncHash);
+    return () => window.removeEventListener("hashchange", syncHash);
+  }, []);
+
+  useEffect(() => {
+    const container = previewScrollContainerRef.current;
+    if (!container || !noteData?.path) {
+      return;
+    }
+
+    if (!currentHash) {
+      resetHashScrollContainer(container);
+      return;
+    }
+
+    let animationFrameId = 0;
+    let attempts = 0;
+    let cancelled = false;
+
+    const tryScrollToHashTarget = () => {
+      if (cancelled) {
+        return;
+      }
+
+      if (
+        scrollContainerToHashTarget({
+          container,
+          hash: currentHash,
+        })
+      ) {
+        return;
+      }
+
+      if (attempts >= 10) {
+        return;
+      }
+
+      attempts += 1;
+      animationFrameId = window.requestAnimationFrame(tryScrollToHashTarget);
+    };
+
+    animationFrameId = window.requestAnimationFrame(tryScrollToHashTarget);
+
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(animationFrameId);
+    };
+  }, [currentHash, noteData?.content, noteData?.path]);
 
   const handleCopyPath = useCallback(async () => {
     if (!notePath) {
@@ -188,7 +254,10 @@ export function VaultNotePreview({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto bg-neutral-50/70 dark:bg-neutral-950/40">
+      <div
+        ref={previewScrollContainerRef}
+        className="min-h-0 flex-1 overflow-y-auto bg-neutral-50/70 dark:bg-neutral-950/40"
+      >
         {isLoading ? (
           <div
             className="flex h-full items-center justify-center"
