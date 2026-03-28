@@ -6,15 +6,7 @@ interface ScrollContainerToHashTargetArgs {
 }
 
 function setContainerScrollTop(container: HTMLElement, top: number) {
-  if (typeof container.scrollTo === "function") {
-    container.scrollTo({
-      top,
-      behavior: "auto",
-    });
-    return;
-  }
-
-  container.scrollTop = top;
+  container.scrollTo({ top, behavior: "auto" });
 }
 
 function getEscapedHashTargetId(hash: string): string | undefined {

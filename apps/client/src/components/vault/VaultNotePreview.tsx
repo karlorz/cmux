@@ -127,6 +127,7 @@ export function VaultNotePreview({
         return;
       }
 
+      // Stop after 10 frames (~166ms) - enough for markdown to render
       if (attempts >= 10) {
         return;
       }
@@ -141,7 +142,7 @@ export function VaultNotePreview({
       cancelled = true;
       window.cancelAnimationFrame(animationFrameId);
     };
-  }, [currentHash, noteData?.content, noteData?.path]);
+  }, [currentHash, noteData?.path]);
 
   const handleCopyPath = useCallback(async () => {
     if (!notePath) {

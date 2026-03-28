@@ -11,19 +11,23 @@ export function readStoredVaultNoteListVisibility(
     return undefined;
   }
 
-  const storedValue = window.localStorage.getItem(
-    getVaultNoteListVisibilityStorageKey(teamSlugOrId)
-  );
+  try {
+    const storedValue = window.localStorage.getItem(
+      getVaultNoteListVisibilityStorageKey(teamSlugOrId)
+    );
 
-  if (storedValue === "true") {
-    return true;
+    if (storedValue === "true") {
+      return true;
+    }
+
+    if (storedValue === "false") {
+      return false;
+    }
+
+    return undefined;
+  } catch {
+    return undefined;
   }
-
-  if (storedValue === "false") {
-    return false;
-  }
-
-  return undefined;
 }
 
 export function getInitialVaultNoteListVisibility(args: {
@@ -45,8 +49,12 @@ export function persistVaultNoteListVisibility(
     return;
   }
 
-  window.localStorage.setItem(
-    getVaultNoteListVisibilityStorageKey(teamSlugOrId),
-    String(isVisible)
-  );
+  try {
+    window.localStorage.setItem(
+      getVaultNoteListVisibilityStorageKey(teamSlugOrId),
+      String(isVisible)
+    );
+  } catch {
+    // Ignore storage errors (quota exceeded, privacy mode)
+  }
 }
