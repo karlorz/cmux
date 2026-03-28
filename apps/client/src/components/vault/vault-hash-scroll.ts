@@ -6,7 +6,12 @@ interface ScrollContainerToHashTargetArgs {
 }
 
 function setContainerScrollTop(container: HTMLElement, top: number) {
-  container.scrollTo({ top, behavior: "auto" });
+  // scrollTo may not exist in jsdom test environment
+  if (typeof container.scrollTo === "function") {
+    container.scrollTo({ top, behavior: "auto" });
+  } else {
+    container.scrollTop = top;
+  }
 }
 
 function getEscapedHashTargetId(hash: string): string | undefined {
