@@ -325,6 +325,11 @@ const x = 1;
       expect(table).not.toBeNull();
       const cells = container.querySelectorAll("td");
       expect(cells.length).toBe(2);
+
+      const thead = container.querySelector("thead");
+      const headerCell = container.querySelector("th");
+      expect(thead?.getAttribute("class")).toBeNull();
+      expect(headerCell?.className).toContain("px-[13px]");
     });
 
     it("renders task lists with disabled checkboxes", async () => {

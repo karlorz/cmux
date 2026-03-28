@@ -447,7 +447,7 @@ export function VaultNoteContent({
               </div>
             ),
             thead: ({ children, ...props }) => (
-              <thead className="bg-neutral-100/80 dark:bg-neutral-800/70" {...props}>
+              <thead {...props}>
                 {children}
               </thead>
             ),
@@ -458,7 +458,7 @@ export function VaultNoteContent({
             ),
             th: ({ children, ...props }) => (
               <th
-                className="border border-neutral-300 px-3 py-1.5 text-left font-semibold text-neutral-900 dark:border-neutral-700 dark:text-neutral-100"
+                className="border border-neutral-300 px-[13px] py-1.5 text-left font-semibold text-neutral-900 dark:border-neutral-700 dark:text-neutral-100"
                 {...props}
               >
                 {children}
@@ -466,7 +466,7 @@ export function VaultNoteContent({
             ),
             td: ({ children, ...props }) => (
               <td
-                className="border border-neutral-300 px-3 py-1.5 align-top dark:border-neutral-700"
+                className="border border-neutral-300 px-[13px] py-1.5 align-top dark:border-neutral-700"
                 {...props}
               >
                 {children}
