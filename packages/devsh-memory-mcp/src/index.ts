@@ -123,6 +123,381 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
     writeUsageStats(stats);
   }
 
+  // ============================================================================
+  // Real-Time Sync Infrastructure
+  // ============================================================================
+
+  interface SyncConfig {
+    syncUrl: string;
+    authToken: string;
+  }
+
+  interface RetryItem {
+    memoryType: string;
+    content: string;
+    fileName: string;
+    date?: string;
+    retryCount: number;
+  }
+
+  interface DebouncedSync {
+    timer: ReturnType<typeof setTimeout> | null;
+  }
+
+  let syncConfig: SyncConfig | null = null;
+  let syncConfigResolved = false;
+  const debounceMap = new Map<string, DebouncedSync>();
+  const retryQueue: RetryItem[] = [];
+  const DEBOUNCE_MS = 2000;
+  const MAX_RETRIES = 3;
+  const SYNC_CONFIG_CACHE_PATH = path.join(memoryDir, ".sync-config.json");
+
+  // Memory type mapping for sync
+  type SyncFileMapping = {
+    memoryType: string;
+    getFilePath: () => string;
+    getFileName: (date?: string) => string;
+    getDate?: () => string;
+  };
+
+  const SYNC_FILE_MAP: Record<string, SyncFileMapping> = {
+    append_daily_log: {
+      memoryType: "daily",
+      getFilePath: () => path.join(dailyDir, `${getTodayDateString()}.md`),
+      getFileName: (date) => `daily/${date ?? getTodayDateString()}.md`,
+      getDate: () => getTodayDateString(),
+    },
+    update_knowledge: {
+      memoryType: "knowledge",
+      getFilePath: () => path.join(knowledgeDir, "MEMORY.md"),
+      getFileName: () => "knowledge/MEMORY.md",
+    },
+    add_task: {
+      memoryType: "tasks",
+      getFilePath: () => tasksPath,
+      getFileName: () => "TASKS.json",
+    },
+    update_task: {
+      memoryType: "tasks",
+      getFilePath: () => tasksPath,
+      getFileName: () => "TASKS.json",
+    },
+    send_message: {
+      memoryType: "mailbox",
+      getFilePath: () => mailboxPath,
+      getFileName: () => "MAILBOX.json",
+    },
+    mark_read: {
+      memoryType: "mailbox",
+      getFilePath: () => mailboxPath,
+      getFileName: () => "MAILBOX.json",
+    },
+    append_event: {
+      memoryType: "events",
+      getFilePath: () => eventsPath,
+      getFileName: () => "orchestration/EVENTS.jsonl",
+    },
+    update_plan_task: {
+      memoryType: "events",
+      getFilePath: () => eventsPath,
+      getFileName: () => "orchestration/EVENTS.jsonl",
+    },
+    check_stale_entries: {
+      memoryType: "knowledge",
+      getFilePath: () => path.join(knowledgeDir, "MEMORY.md"),
+      getFileName: () => "knowledge/MEMORY.md",
+    },
+  };
+
+  // Minimal .env parser (no external dependencies)
+  function readDotEnv(envPath: string): Record<string, string> {
+    try {
+      const content = fs.readFileSync(envPath, "utf-8");
+      const vars: Record<string, string> = {};
+      for (const line of content.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        const eqIndex = trimmed.indexOf("=");
+        if (eqIndex === -1) continue;
+        const key = trimmed.slice(0, eqIndex).trim();
+        let value = trimmed.slice(eqIndex + 1).trim();
+        // Strip surrounding quotes
+        if (
+          (value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'"))
+        ) {
+          value = value.slice(1, -1);
+        }
+        vars[key] = value;
+      }
+      return vars;
+    } catch {
+      return {};
+    }
+  }
+
+  // Resolve sync config on startup
+  async function resolveSyncConfig(): Promise<SyncConfig | null> {
+    // 1. Check for CMUX_TASK_RUN_JWT env var (sandbox agents)
+    const envJwt = process.env.CMUX_TASK_RUN_JWT;
+    const envCallbackUrl = process.env.CMUX_CALLBACK_URL;
+
+    if (envJwt && envCallbackUrl) {
+      console.error(`[devsh-memory-mcp] Sync enabled via env vars: ${envCallbackUrl}`);
+      return { syncUrl: envCallbackUrl, authToken: envJwt };
+    }
+
+    // 2. Try cached config
+    try {
+      const cachedRaw = fs.readFileSync(SYNC_CONFIG_CACHE_PATH, "utf-8");
+      const cached = JSON.parse(cachedRaw) as {
+        jwt: string;
+        syncUrl: string;
+        expiresAt: number;
+      };
+      if (cached.jwt && cached.syncUrl && cached.expiresAt > Date.now()) {
+        console.error(`[devsh-memory-mcp] Sync enabled via cached config: ${cached.syncUrl}`);
+        return { syncUrl: cached.syncUrl, authToken: cached.jwt };
+      }
+    } catch {
+      // No cache or invalid
+    }
+
+    // 3. Try bootstrap flow (for head agents without JWT)
+    const envPaths = [
+      path.join(memoryDir, "..", "..", ".env"),
+      "/root/workspace/.env",
+      path.join(process.env.HOME ?? "/root", "workspace", ".env"),
+    ];
+
+    let jwtSecret: string | undefined;
+    let convexUrl: string | undefined;
+    let teamId: string | undefined;
+
+    for (const envPath of envPaths) {
+      const vars = readDotEnv(envPath);
+      jwtSecret = jwtSecret ?? vars.CMUX_TASK_RUN_JWT_SECRET;
+      convexUrl = convexUrl ?? vars.CONVEX_SITE_URL ?? vars.CONVEX_SELF_HOSTED_URL;
+      teamId = teamId ?? vars.CMUX_TEAM_ID;
+    }
+
+    // Also check process.env for teamId
+    teamId = teamId ?? process.env.CMUX_TEAM_ID;
+
+    if (!jwtSecret || !convexUrl) {
+      console.error("[devsh-memory-mcp] Sync disabled: no JWT or Convex URL found");
+      return null;
+    }
+
+    if (!teamId) {
+      console.error("[devsh-memory-mcp] Sync disabled: no teamId found for bootstrap");
+      return null;
+    }
+
+    // 4. Call bootstrap endpoint
+    try {
+      const response = await fetch(`${convexUrl}/api/memory/bootstrap`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-cmux-bootstrap-key": jwtSecret,
+        },
+        body: JSON.stringify({
+          teamId,
+          agentName,
+        }),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text().catch(() => "");
+        console.error(`[devsh-memory-mcp] Bootstrap failed: ${response.status} ${errText}`);
+        return null;
+      }
+
+      const result = (await response.json()) as {
+        ok: boolean;
+        jwt: string;
+        taskRunId: string;
+        reused: boolean;
+      };
+
+      if (!result.ok || !result.jwt) {
+        console.error("[devsh-memory-mcp] Bootstrap returned invalid response");
+        return null;
+      }
+
+      // Cache config (6 days, JWT is 7d)
+      const cacheData = {
+        jwt: result.jwt,
+        taskRunId: result.taskRunId,
+        syncUrl: convexUrl,
+        expiresAt: Date.now() + 6 * 24 * 60 * 60 * 1000,
+      };
+      try {
+        fs.writeFileSync(SYNC_CONFIG_CACHE_PATH, JSON.stringify(cacheData), "utf-8");
+      } catch {
+        // Non-fatal
+      }
+
+      console.error(
+        `[devsh-memory-mcp] Sync enabled via bootstrap: ${convexUrl} (reused=${result.reused})`
+      );
+      return { syncUrl: convexUrl, authToken: result.jwt };
+    } catch (error) {
+      console.error("[devsh-memory-mcp] Bootstrap error:", error);
+      return null;
+    }
+  }
+
+  // Fire-and-forget sync execution
+  async function doSync(
+    memoryType: string,
+    content: string,
+    fileName: string,
+    date?: string
+  ): Promise<void> {
+    if (!syncConfig) return;
+
+    const url = `${syncConfig.syncUrl}/api/memory/sync`;
+    const body = {
+      files: [
+        {
+          memoryType,
+          content,
+          fileName,
+          date,
+        },
+      ],
+    };
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-cmux-token": syncConfig.authToken,
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text().catch(() => "");
+        console.error(
+          `[devsh-memory-mcp] Sync failed for ${memoryType}: ${response.status} ${errText}`
+        );
+        enqueueRetry(memoryType, content, fileName, date);
+        return;
+      }
+
+      // On success, drain retry queue
+      drainRetryQueue();
+    } catch (error) {
+      console.error(
+        `[devsh-memory-mcp] Sync error for ${memoryType}:`,
+        error instanceof Error ? error.message : error
+      );
+      enqueueRetry(memoryType, content, fileName, date);
+    }
+  }
+
+  function enqueueRetry(
+    memoryType: string,
+    content: string,
+    fileName: string,
+    date?: string
+  ): void {
+    const key = date ? `${memoryType}:${date}` : memoryType;
+    const existingIdx = retryQueue.findIndex(
+      (r) => (r.date ? `${r.memoryType}:${r.date}` : r.memoryType) === key
+    );
+
+    if (existingIdx >= 0) {
+      const existing = retryQueue[existingIdx];
+      if (existing.retryCount >= MAX_RETRIES) {
+        console.error(
+          `[devsh-memory-mcp] Dropping retry for ${memoryType} after ${MAX_RETRIES} attempts`
+        );
+        retryQueue.splice(existingIdx, 1);
+        return;
+      }
+      retryQueue[existingIdx] = {
+        memoryType,
+        content,
+        fileName,
+        date,
+        retryCount: existing.retryCount + 1,
+      };
+    } else {
+      retryQueue.push({ memoryType, content, fileName, date, retryCount: 1 });
+    }
+  }
+
+  async function drainRetryQueue(): Promise<void> {
+    if (!syncConfig || retryQueue.length === 0) return;
+
+    const items = [...retryQueue];
+    retryQueue.length = 0;
+
+    for (const item of items) {
+      if (item.retryCount >= MAX_RETRIES) {
+        console.error(
+          `[devsh-memory-mcp] Dropping retry for ${item.memoryType} after ${MAX_RETRIES} attempts`
+        );
+        continue;
+      }
+      await doSync(item.memoryType, item.content, item.fileName, item.date);
+    }
+  }
+
+  // Schedule sync for a file with debouncing
+  function scheduleSyncForFile(toolName: string): void {
+    if (!syncConfigResolved) return; // Config not yet resolved
+    if (!syncConfig) return; // Sync disabled
+
+    const mapping = SYNC_FILE_MAP[toolName];
+    if (!mapping) return; // Read-only tool or unmapped
+
+    const { memoryType } = mapping;
+    const date = mapping.getDate?.();
+    const debounceKey = date ? `${memoryType}:${date}` : memoryType;
+
+    let entry = debounceMap.get(debounceKey);
+    if (!entry) {
+      entry = { timer: null };
+      debounceMap.set(debounceKey, entry);
+    }
+
+    // Clear existing timer
+    if (entry.timer) {
+      clearTimeout(entry.timer);
+    }
+
+    // Set new debounce timer
+    entry.timer = setTimeout(() => {
+      // Read CURRENT file content at fire time (not at schedule time)
+      const filePath = mapping.getFilePath();
+      const content = readFile(filePath);
+      if (!content) return;
+
+      const fileName = mapping.getFileName(date);
+      // Fire-and-forget - don't await
+      doSync(memoryType, content, fileName, date).catch((err) => {
+        console.error("[devsh-memory-mcp] Sync error in debounce callback:", err);
+      });
+    }, DEBOUNCE_MS);
+  }
+
+  // Resolve sync config on startup (fire-and-forget)
+  resolveSyncConfig()
+    .then((config) => {
+      syncConfig = config;
+      syncConfigResolved = true;
+    })
+    .catch((err) => {
+      console.error("[devsh-memory-mcp] Sync config resolution failed:", err);
+      syncConfigResolved = true; // Mark as resolved even on failure
+    });
+
   // Helper functions
   function readFile(filePath: string): string | null {
     try {
@@ -1286,6 +1661,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
 
         if (writeFile(knowledgePath, archiveContent)) {
           trackWrite("knowledge.archive");
+          scheduleSyncForFile("update_knowledge");
           return {
             content: [{
               type: "text",
@@ -1325,6 +1701,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         };
         mailbox.messages.push(newMessage);
         writeMailbox(mailbox);
+        scheduleSyncForFile("send_message");
 
         // Include correlationId in response for easy tracking
         const responseText = correlationId
@@ -1386,6 +1763,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         }
         message.read = true;
         writeMailbox(mailbox);
+        scheduleSyncForFile("mark_read");
         return { content: [{ type: "text", text: `Message ${messageId} marked as read.` }] };
       }
 
@@ -1399,6 +1777,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         const timestamp = new Date().toISOString().split("T")[1].split(".")[0];
         const newContent = existing + `\n- [${timestamp}] ${content}`;
         if (writeFile(logPath, newContent)) {
+          scheduleSyncForFile("append_daily_log");
           return { content: [{ type: "text", text: `Appended to daily/${today}.md` }] };
         }
         return { content: [{ type: "text", text: `Failed to append to daily log` }] };
@@ -1532,6 +1911,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         const updated = existing.slice(0, actualInsertPoint) + newEntry + "\n" + existing.slice(actualInsertPoint);
 
         if (writeFile(knowledgePath, updated)) {
+          scheduleSyncForFile("update_knowledge");
           return { content: [{ type: "text", text: `Added entry to ${section} section in MEMORY.md` }] };
         }
         return { content: [{ type: "text", text: `Failed to update MEMORY.md` }] };
@@ -1551,6 +1931,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         };
         tasks.tasks.push(newTask);
         if (writeTasks(tasks)) {
+          scheduleSyncForFile("add_task");
           return { content: [{ type: "text", text: `Task created with ID: ${newTask.id}` }] };
         }
         return { content: [{ type: "text", text: `Failed to create task` }] };
@@ -1566,6 +1947,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         task.status = status;
         task.updatedAt = new Date().toISOString();
         if (writeTasks(tasks)) {
+          scheduleSyncForFile("update_task");
           return { content: [{ type: "text", text: `Task ${taskId} updated to status: ${status}` }] };
         }
         return { content: [{ type: "text", text: `Failed to update task` }] };
@@ -1603,6 +1985,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         if (taskRunId) eventObj.taskRunId = taskRunId;
 
         if (appendEvent(eventObj)) {
+          scheduleSyncForFile("append_event");
           return { content: [{ type: "text", text: `Event appended to EVENTS.jsonl` }] };
         }
         return { content: [{ type: "text", text: `Failed to append event` }] };
@@ -1634,6 +2017,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         }
 
         if (writePlan(plan)) {
+          scheduleSyncForFile("update_plan_task");
           return { content: [{ type: "text", text: `Plan task ${taskId} updated to status: ${status}` }] };
         }
         return { content: [{ type: "text", text: `Failed to update plan task` }] };

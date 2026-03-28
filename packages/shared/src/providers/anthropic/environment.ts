@@ -108,6 +108,7 @@ export async function getClaudeEnvironment(
             CMUX_API_BASE_URL: ctx.orchestrationEnv?.CMUX_API_BASE_URL,
             CMUX_IS_ORCHESTRATION_HEAD: "1",
             CMUX_ORCHESTRATION_ID: ctx.orchestrationOptions?.orchestrationId,
+            CMUX_CALLBACK_URL: ctx.orchestrationEnv?.CMUX_CALLBACK_URL,
           }
         : undefined,
     });

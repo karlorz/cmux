@@ -95,8 +95,12 @@ function LayoutComponent() {
   const { teamSlugOrId } = Route.useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const [isDesktopSidebarHidden, setIsDesktopSidebarHidden] = useState(
-    () => localStorage.getItem("sidebarHidden") === "true"
+  const initialPersistedDesktopSidebarHidden =
+    typeof window !== "undefined"
+      ? localStorage.getItem("sidebarHidden") === "true"
+      : false;
+  const [desktopSidebarPreferenceHidden, setDesktopSidebarPreferenceHidden] = useState(
+    () => initialPersistedDesktopSidebarHidden
   );
   const [isMobileViewport, setIsMobileViewport] = useState(
     () =>
@@ -130,17 +134,22 @@ function LayoutComponent() {
     sectionFromSearch === "git" ? "git" :
     sectionFromSearch === "worktrees" ? "worktrees" :
     sectionFromSearch === "archived" ? "archived" : "general";
+  const hasSyncedSidebarFromStorageRef = useRef(false);
+  const isDesktopSidebarHidden = desktopSidebarPreferenceHidden;
   useMobileMachineHeartbeat({
     teamSlugOrId,
     tasks,
   });
 
   useEffect(() => {
-    localStorage.setItem("sidebarHidden", String(isDesktopSidebarHidden));
-  }, [isDesktopSidebarHidden]);
+    if (!hasSyncedSidebarFromStorageRef.current) {
+      hasSyncedSidebarFromStorageRef.current = true;
+      return;
+    }
 
-  useEffect(() => {
-    setIsDesktopSidebarHidden(localStorage.getItem("sidebarHidden") === "true");
+    setDesktopSidebarPreferenceHidden(
+      localStorage.getItem("sidebarHidden") === "true"
+    );
   }, [isSettingsRoute]);
 
   useEffect(() => {
@@ -161,12 +170,17 @@ function LayoutComponent() {
   useEffect(() => {
     const handleStorage = (event: StorageEvent) => {
       if (event.key === "sidebarHidden" && event.newValue !== null) {
-        setIsDesktopSidebarHidden(event.newValue === "true");
+        setDesktopSidebarPreferenceHidden(event.newValue === "true");
       }
     };
 
     window.addEventListener("storage", handleStorage);
     return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
+  const setDesktopSidebarHiddenWithPersistence = useCallback((hidden: boolean) => {
+    localStorage.setItem("sidebarHidden", String(hidden));
+    setDesktopSidebarPreferenceHidden(hidden);
   }, []);
 
   useEffect(() => {
@@ -179,7 +193,7 @@ function LayoutComponent() {
         setIsMobileSidebarOpen((prev) => !prev);
         return;
       }
-      setIsDesktopSidebarHidden((prev) => !prev);
+      setDesktopSidebarHiddenWithPersistence(!isDesktopSidebarHidden);
     };
 
     let off: (() => void) | undefined;
@@ -208,7 +222,7 @@ function LayoutComponent() {
       window.removeEventListener("cmux:sidebar-toggle", handleSidebarToggle);
       off?.();
     };
-  }, [isMobileViewport]);
+  }, [isDesktopSidebarHidden, isMobileViewport, setDesktopSidebarHiddenWithPersistence]);
 
   const handleSettingsSectionChange = useCallback(
     (section: SettingsSection) => {
@@ -233,9 +247,9 @@ function LayoutComponent() {
         setIsMobileSidebarOpen(!hidden);
         return;
       }
-      setIsDesktopSidebarHidden(hidden);
+      setDesktopSidebarHiddenWithPersistence(hidden);
     },
-    [isMobileViewport]
+    [isMobileViewport, setDesktopSidebarHiddenWithPersistence]
   );
 
   const handleToggleSidebar = useCallback(() => {
@@ -243,8 +257,8 @@ function LayoutComponent() {
       setIsMobileSidebarOpen((prev) => !prev);
       return;
     }
-    setIsDesktopSidebarHidden((prev) => !prev);
-  }, [isMobileViewport]);
+    setDesktopSidebarHiddenWithPersistence(!isDesktopSidebarHidden);
+  }, [isDesktopSidebarHidden, isMobileViewport, setDesktopSidebarHiddenWithPersistence]);
 
   const sidebarContextValue = useMemo(
     () => ({

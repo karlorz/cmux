@@ -248,17 +248,68 @@ interface GitHubBlobResponse {
   encoding: "base64" | "utf-8";
 }
 
-/**
- * Read Obsidian vault notes from a GitHub repository.
- * Useful for web users who store their vault in Git.
- */
-export async function readVaultGitHub(options: GitHubVaultOptions): Promise<ObsidianNote[]> {
+function normalizeVaultPath(vaultPath: string): string {
+  return vaultPath.replace(/^\/+|\/+$/g, "");
+}
+
+function isWithinVaultPath(filePath: string, vaultPath: string): boolean {
+  const normalizedVaultPath = normalizeVaultPath(vaultPath);
+  if (!normalizedVaultPath) {
+    return true;
+  }
+
+  return (
+    filePath === normalizedVaultPath ||
+    filePath.startsWith(`${normalizedVaultPath}/`)
+  );
+}
+
+function getRelativeGitHubPath(filePath: string, vaultPath: string): string {
+  const normalizedVaultPath = normalizeVaultPath(vaultPath);
+  if (!normalizedVaultPath) {
+    return filePath;
+  }
+
+  return filePath.slice(normalizedVaultPath.length + 1);
+}
+
+function normalizeNoteLookupPath(notePath: string): string {
+  return notePath
+    .replace(/\\/g, "/")
+    .replace(/^\/+|\/+$/g, "")
+    .replace(/\.md$/i, "");
+}
+
+function pickBestResolvedPath(
+  candidates: Array<{ path: string; normalizedPath: string }>
+): string | null {
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const [bestCandidate] = [...candidates].sort((left, right) => {
+    const leftSegments = left.normalizedPath.split("/").length;
+    const rightSegments = right.normalizedPath.split("/").length;
+    if (leftSegments !== rightSegments) {
+      return leftSegments - rightSegments;
+    }
+
+    if (left.path.length !== right.path.length) {
+      return left.path.length - right.path.length;
+    }
+
+    return left.path.localeCompare(right.path);
+  });
+
+  return bestCandidate?.path ?? null;
+}
+
+async function fetchGitHubMarkdownFiles(
+  options: GitHubVaultOptions
+): Promise<GitHubTreeItem[]> {
   const { owner, repo, path: vaultPath, token, branch = "main" } = options;
-  const notes: ObsidianNote[] = [];
 
-  // Get tree of files in the vault path
   const treeUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
-
   const treeResponse = await fetch(treeUrl, {
     headers: {
       Authorization: `Bearer ${token}`,
@@ -267,19 +318,80 @@ export async function readVaultGitHub(options: GitHubVaultOptions): Promise<Obsi
   });
 
   if (!treeResponse.ok) {
-    throw new Error(`Failed to fetch GitHub tree: ${treeResponse.status} ${treeResponse.statusText}`);
+    throw new Error(
+      `Failed to fetch GitHub tree: ${treeResponse.status} ${treeResponse.statusText}`
+    );
   }
 
   const treeData = (await treeResponse.json()) as { tree: GitHubTreeItem[] };
 
-  // Filter to markdown files in the vault path
-  const mdFiles = treeData.tree.filter(
+  return treeData.tree.filter(
     (item) =>
       item.type === "blob" &&
-      item.path.startsWith(vaultPath) &&
       item.path.endsWith(".md") &&
-      !item.path.includes("/.") // Skip hidden paths
+      !item.path.includes("/.") &&
+      isWithinVaultPath(item.path, vaultPath)
   );
+}
+
+export async function listGitHubNotePaths(
+  options: GitHubVaultOptions
+): Promise<string[]> {
+  const markdownFiles = await fetchGitHubMarkdownFiles(options);
+  return markdownFiles.map((file) => getRelativeGitHubPath(file.path, options.path));
+}
+
+export function resolveGitHubNotePath(
+  requestedPath: string,
+  notePaths: string[]
+): string | null {
+  const normalizedRequestedPath = normalizeNoteLookupPath(requestedPath).toLowerCase();
+  if (!normalizedRequestedPath) {
+    return null;
+  }
+
+  const requestedBaseName =
+    normalizedRequestedPath.split("/").pop() ?? normalizedRequestedPath;
+  const candidates = notePaths.map((notePath) => ({
+    path: notePath,
+    normalizedPath: normalizeNoteLookupPath(notePath).toLowerCase(),
+  }));
+
+  const exactMatch = pickBestResolvedPath(
+    candidates.filter(
+      (candidate) => candidate.normalizedPath === normalizedRequestedPath
+    )
+  );
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  const suffixMatch = pickBestResolvedPath(
+    candidates.filter((candidate) =>
+      candidate.normalizedPath.endsWith(`/${normalizedRequestedPath}`)
+    )
+  );
+  if (suffixMatch) {
+    return suffixMatch;
+  }
+
+  return pickBestResolvedPath(
+    candidates.filter((candidate) => {
+      const candidateBaseName =
+        candidate.normalizedPath.split("/").pop() ?? candidate.normalizedPath;
+      return candidateBaseName === requestedBaseName;
+    })
+  );
+}
+
+/**
+ * Read Obsidian vault notes from a GitHub repository.
+ * Useful for web users who store their vault in Git.
+ */
+export async function readVaultGitHub(options: GitHubVaultOptions): Promise<ObsidianNote[]> {
+  const { owner, repo, path: vaultPath, token, branch = "main" } = options;
+  const notes: ObsidianNote[] = [];
+  const mdFiles = await fetchGitHubMarkdownFiles(options);
 
   // Fetch content for each file (in parallel with rate limiting)
   const batchSize = 10;
@@ -309,7 +421,7 @@ export async function readVaultGitHub(options: GitHubVaultOptions): Promise<Obsi
 
           const { frontmatter, body } = parseFrontmatter(content);
           const todos = extractTodos(body);
-          const relativePath = file.path.slice(vaultPath.length + 1); // Remove vault path prefix
+          const relativePath = getRelativeGitHubPath(file.path, vaultPath);
           const fileName = path.basename(file.path);
 
           // GitHub doesn't give us modification time easily, use current time

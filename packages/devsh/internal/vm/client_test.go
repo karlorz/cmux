@@ -2,10 +2,15 @@
 package vm
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/karlorz/devsh/internal/auth"
 )
 
 func TestFormatAPIError401(t *testing.T) {
@@ -280,5 +285,153 @@ func TestFormatAPIErrorIncludesEndpoint(t *testing.T) {
 		if err == nil {
 			t.Errorf("expected error for endpoint '%s', got nil", endpoint)
 		}
+	}
+}
+
+func TestGetRunControlSummaryRequiresTeamSlug(t *testing.T) {
+	client := &Client{}
+
+	_, err := client.GetRunControlSummary(context.Background(), "run_123")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "team slug not set") {
+		t.Fatalf("expected team slug error, got: %v", err)
+	}
+}
+
+func TestGetRunControlSummarySuccess(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	if err := auth.CacheAccessToken("test-token", time.Now().Add(time.Hour).Unix()); err != nil {
+		t.Fatalf("CacheAccessToken failed: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("unexpected method: %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/cmux/orchestration/run-control/run_123" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("teamSlugOrId"); got != "example-team" {
+			t.Fatalf("unexpected teamSlugOrId: %s", got)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Fatalf("unexpected authorization header: %s", got)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"taskRunId": "run_123",
+			"taskId":    "task_123",
+			"provider":  "codex",
+			"runStatus": "running",
+			"lifecycle": map[string]any{
+				"status":             "interrupted",
+				"interrupted":        true,
+				"interruptionStatus": "user_input_required",
+			},
+			"approvals": map[string]any{
+				"pendingCount":      0,
+				"pendingRequestIds": []string{},
+			},
+			"actions": map[string]any{
+				"availableActions":     []string{"continue_session"},
+				"canResolveApproval":   false,
+				"canContinueSession":   true,
+				"canResumeCheckpoint":  false,
+				"canAppendInstruction": false,
+			},
+			"continuation": map[string]any{
+				"mode":             "session_continuation",
+				"providerThreadId": "thread_123",
+				"hasActiveBinding": true,
+			},
+		})
+	}))
+	defer server.Close()
+	auth.SetServerURLOverride(server.URL)
+	defer auth.SetServerURLOverride("")
+
+	client := &Client{
+		httpClient: server.Client(),
+		teamSlug:   "example-team",
+	}
+
+	summary, err := client.GetRunControlSummary(context.Background(), "run_123")
+	if err != nil {
+		t.Fatalf("GetRunControlSummary failed: %v", err)
+	}
+
+	if summary.TaskRunID != "run_123" {
+		t.Fatalf("unexpected taskRunId: %s", summary.TaskRunID)
+	}
+	if summary.Provider != "codex" {
+		t.Fatalf("unexpected provider: %s", summary.Provider)
+	}
+	if summary.Continuation.ProviderThreadID == nil || *summary.Continuation.ProviderThreadID != "thread_123" {
+		t.Fatalf("unexpected providerThreadId: %#v", summary.Continuation.ProviderThreadID)
+	}
+	if !summary.Actions.CanContinueSession {
+		t.Fatal("expected canContinueSession to be true")
+	}
+}
+
+func TestGetRunControlSummaryNotFound(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	if err := auth.CacheAccessToken("test-token", time.Now().Add(time.Hour).Unix()); err != nil {
+		t.Fatalf("CacheAccessToken failed: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("not found"))
+	}))
+	defer server.Close()
+	auth.SetServerURLOverride(server.URL)
+	defer auth.SetServerURLOverride("")
+
+	client := &Client{
+		httpClient: server.Client(),
+		teamSlug:   "example-team",
+	}
+
+	_, err := client.GetRunControlSummary(context.Background(), "run_missing")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "no run-control summary found for task run run_missing") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGetRunControlSummaryServerError(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	if err := auth.CacheAccessToken("test-token", time.Now().Add(time.Hour).Unix()); err != nil {
+		t.Fatalf("CacheAccessToken failed: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("server exploded"))
+	}))
+	defer server.Close()
+	auth.SetServerURLOverride(server.URL)
+	defer auth.SetServerURLOverride("")
+
+	client := &Client{
+		httpClient: server.Client(),
+		teamSlug:   "example-team",
+	}
+
+	_, err := client.GetRunControlSummary(context.Background(), "run_500")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "get run-control summary failed (500): server exploded") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

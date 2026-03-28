@@ -125,6 +125,7 @@ export type EnvironmentContext = {
     CMUX_API_BASE_URL?: string;
     CMUX_IS_ORCHESTRATION_HEAD?: string;
     CMUX_ORCHESTRATION_ID?: string;
+    CMUX_CALLBACK_URL?: string;
   };
   /**
    * /simplify pre-merge gate settings from team orchestration settings.

@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { z } from "zod";
 import { jsonResponse } from "../_shared/http-utils";
+import { env } from "../_shared/convex-env";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { httpAction, internalMutation } from "./_generated/server";
@@ -368,4 +369,87 @@ export const syncMemory = httpAction(async (ctx, req) => {
   });
 
   return jsonResponse({ ok: true, insertedCount: result.insertedCount });
+});
+
+/**
+ * Bootstrap endpoint for cloud workspace memory sync.
+ * Creates or finds a workspace task run and returns a JWT for head agents
+ * that don't have one (cloud workspaces started without a prompt).
+ *
+ * POST /api/memory/bootstrap
+ *
+ * Auth: x-cmux-bootstrap-key header validated against CMUX_TASK_RUN_JWT_SECRET
+ *       (shared secret available in sandbox .env files)
+ *
+ * Body: {
+ *   teamId: string,
+ *   agentName?: string
+ * }
+ *
+ * Returns: { ok: true, jwt: string, taskRunId: string, reused: boolean }
+ */
+export const bootstrapWorkspaceSync = httpAction(async (ctx, req) => {
+  // Auth: Validate bootstrap key (JWT secret as shared secret)
+  const bootstrapKey = req.headers.get("x-cmux-bootstrap-key");
+  if (!bootstrapKey) {
+    console.warn("[convex.agentMemory] Bootstrap missing x-cmux-bootstrap-key header");
+    return jsonResponse({ code: 401, message: "Missing x-cmux-bootstrap-key header" }, 401);
+  }
+
+  // Validate bootstrap key against JWT secret
+  if (bootstrapKey !== env.CMUX_TASK_RUN_JWT_SECRET) {
+    console.warn("[convex.agentMemory] Bootstrap invalid key");
+    return jsonResponse({ code: 401, message: "Invalid bootstrap key" }, 401);
+  }
+
+  // Parse body
+  const contentType = req.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    return jsonResponse(
+      { code: 415, message: "Content-Type must be application/json" },
+      415
+    );
+  }
+
+  let json: unknown;
+  try {
+    json = await req.json();
+  } catch (error) {
+    console.error("[convex.agentMemory] Bootstrap failed to parse JSON body:", error);
+    return jsonResponse({ code: 400, message: "Invalid JSON body" }, 400);
+  }
+
+  // Validate body
+  const body = json as { teamId?: string; agentName?: string };
+  if (!body.teamId || typeof body.teamId !== "string") {
+    return jsonResponse({ code: 400, message: "teamId is required" }, 400);
+  }
+
+  // Create or find workspace task run
+  try {
+    const result = await ctx.runMutation(internal.taskRuns.createWorkspaceTaskRun, {
+      teamId: body.teamId,
+      userId: "workspace-agent", // System user for workspace sync
+      agentName: body.agentName,
+    });
+
+    console.log("[convex.agentMemory] Bootstrap workspace sync", {
+      teamId: body.teamId,
+      taskRunId: result.taskRunId,
+      reused: result.reused,
+    });
+
+    return jsonResponse({
+      ok: true,
+      jwt: result.jwt,
+      taskRunId: result.taskRunId,
+      reused: result.reused,
+    });
+  } catch (error) {
+    console.error("[convex.agentMemory] Bootstrap failed:", error);
+    return jsonResponse(
+      { code: 500, message: "Failed to bootstrap workspace sync" },
+      500
+    );
+  }
 });

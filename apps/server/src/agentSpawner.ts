@@ -1005,6 +1005,7 @@ export async function spawnAgent(
           CMUX_SERVER_URL: cmuxServerUrl,
           CMUX_API_BASE_URL: getWwwBaseUrl(),
           CMUX_ORCHESTRATION_ID: options.orchestrationOptions?.orchestrationId,
+          CMUX_CALLBACK_URL: callbackUrl,
         },
         // GitHub Projects v2 context (Phase 5: Sandbox Project Integration)
         githubProjectContext:
