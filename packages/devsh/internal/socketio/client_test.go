@@ -3,6 +3,7 @@ package socketio
 
 import (
 	"encoding/json"
+	"net/url"
 	"testing"
 )
 
@@ -148,10 +149,12 @@ func TestClientStruct(t *testing.T) {
 	// Test that Client struct can be instantiated
 	// Note: NewClient requires auth which we can't easily mock
 	c := &Client{
-		serverURL: "http://localhost:9776",
-		authToken: "test-token",
-		connected: false,
-		msgID:     0,
+		serverURL:      "http://localhost:9776",
+		teamSlug:       "test-team",
+		authToken:      "test-token",
+		authHeaderJSON: `{"accessToken":"test-token"}`,
+		connected:      false,
+		msgID:          0,
 	}
 
 	if c.serverURL != "http://localhost:9776" {
@@ -159,6 +162,9 @@ func TestClientStruct(t *testing.T) {
 	}
 	if c.authToken != "test-token" {
 		t.Errorf("expected authToken 'test-token', got '%s'", c.authToken)
+	}
+	if c.teamSlug != "test-team" {
+		t.Errorf("expected teamSlug 'test-team', got '%s'", c.teamSlug)
 	}
 	if c.connected {
 		t.Error("expected connected false")
@@ -180,9 +186,11 @@ func contains(s, substr string) bool {
 
 func TestClientIsConnected(t *testing.T) {
 	c := &Client{
-		serverURL: "http://localhost:9776",
-		authToken: "test-token",
-		connected: false,
+		serverURL:      "http://localhost:9776",
+		teamSlug:       "test-team",
+		authToken:      "test-token",
+		authHeaderJSON: `{"accessToken":"test-token"}`,
+		connected:      false,
 	}
 
 	if c.IsConnected() {
@@ -198,10 +206,12 @@ func TestClientIsConnected(t *testing.T) {
 
 func TestClientCloseNilConn(t *testing.T) {
 	c := &Client{
-		serverURL: "http://localhost:9776",
-		authToken: "test-token",
-		connected: false,
-		conn:      nil,
+		serverURL:      "http://localhost:9776",
+		teamSlug:       "test-team",
+		authToken:      "test-token",
+		authHeaderJSON: `{"accessToken":"test-token"}`,
+		connected:      false,
+		conn:           nil,
 	}
 
 	// Close with nil connection should not error
@@ -321,9 +331,11 @@ func TestTaskStartedResultOmitEmpty(t *testing.T) {
 
 func TestClientMsgIDIncrement(t *testing.T) {
 	c := &Client{
-		serverURL: "http://localhost:9776",
-		authToken: "test-token",
-		msgID:     0,
+		serverURL:      "http://localhost:9776",
+		teamSlug:       "test-team",
+		authToken:      "test-token",
+		authHeaderJSON: `{"accessToken":"test-token"}`,
+		msgID:          0,
 	}
 
 	if c.msgID != 0 {
@@ -339,5 +351,56 @@ func TestClientMsgIDIncrement(t *testing.T) {
 	c.msgID++
 	if c.msgID != 2 {
 		t.Errorf("expected msgID 2 after second increment, got %d", c.msgID)
+	}
+}
+
+func TestBuildSocketIOURLIncludesHandshakeAuth(t *testing.T) {
+	c := &Client{
+		serverURL:      "https://cmux-server.example.com",
+		teamSlug:       "karlcc",
+		authToken:      "token-123",
+		authHeaderJSON: `{"accessToken":"token-123"}`,
+	}
+
+	rawURL, err := c.buildSocketIOURL()
+	if err != nil {
+		t.Fatalf("buildSocketIOURL returned error: %v", err)
+	}
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("failed to parse socket URL: %v", err)
+	}
+
+	if parsed.Scheme != "wss" {
+		t.Fatalf("expected wss scheme, got %q", parsed.Scheme)
+	}
+	if parsed.Path != "/socket.io/" {
+		t.Fatalf("expected /socket.io/ path, got %q", parsed.Path)
+	}
+
+	query := parsed.Query()
+	if got := query.Get("EIO"); got != "4" {
+		t.Fatalf("expected EIO=4, got %q", got)
+	}
+	if got := query.Get("transport"); got != "websocket" {
+		t.Fatalf("expected transport=websocket, got %q", got)
+	}
+	if got := query.Get("auth"); got != "token-123" {
+		t.Fatalf("expected auth token in query, got %q", got)
+	}
+	if got := query.Get("auth_json"); got != `{"accessToken":"token-123"}` {
+		t.Fatalf("expected auth_json in query, got %q", got)
+	}
+	if got := query.Get("team"); got != "karlcc" {
+		t.Fatalf("expected team slug in query, got %q", got)
+	}
+}
+
+func TestBuildSocketIOURLRejectsInvalidServerURL(t *testing.T) {
+	c := &Client{serverURL: "://bad-url"}
+
+	if _, err := c.buildSocketIOURL(); err == nil {
+		t.Fatal("expected invalid server URL error")
 	}
 }

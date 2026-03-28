@@ -33,6 +33,22 @@ describe("buildTaskRunCreateArgs", () => {
     expect(result.isOrchestrationHead).toBe(false);
   });
 
+  it("preserves orchestrationId when provided", () => {
+    const result = buildTaskRunCreateArgs({
+      teamSlugOrId: "team-1",
+      taskId: "task_123",
+      prompt: "orchestrated run",
+      isOrchestrationHead: true,
+      orchestrationId: "orch_123",
+    });
+
+    expect(result).toMatchObject({
+      taskId: "task_123",
+      isOrchestrationHead: true,
+      orchestrationId: "orch_123",
+    });
+  });
+
   it("omits undefined optional fields", () => {
     const result = buildTaskRunCreateArgs({
       teamSlugOrId: "team-1",

@@ -7,6 +7,7 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 export CMUX_HOOK_PROVIDER="codex"
 export CMUX_PROJECT_DIR="${CMUX_PROJECT_DIR:-$PROJECT_DIR}"
 export CMUX_AUTOPILOT_ENABLED="${CMUX_AUTOPILOT_ENABLED:-0}"
+export CMUX_CODEX_HOOKS_ENABLED="${CMUX_CODEX_HOOKS_ENABLED:-0}"
 export CMUX_AUTOPILOT_STATE_PREFIX="${CMUX_AUTOPILOT_STATE_PREFIX:-codex-autopilot}"
 export CMUX_AUTOPILOT_CURRENT_SESSION_FILE="${CMUX_AUTOPILOT_CURRENT_SESSION_FILE:-/tmp/codex-current-session-id}"
 export CMUX_AUTOPILOT_ENABLE_REVIEW_WINDOW="${CMUX_AUTOPILOT_ENABLE_REVIEW_WINDOW:-0}"
@@ -21,7 +22,7 @@ export CMUX_SESSION_ACTIVITY_SCRIPT="${CMUX_SESSION_ACTIVITY_SCRIPT:-$PROJECT_DI
 # forced into autopilot unexpectedly. Gate Codex autopilot on the cmux-scoped
 # flag and only allow the generic env var path when the wrapper is explicitly
 # enabled by the autopilot runner.
-if [ "$CMUX_AUTOPILOT_ENABLED" = "1" ]; then
+if [ "$CMUX_AUTOPILOT_ENABLED" = "1" ] || [ "$CMUX_CODEX_HOOKS_ENABLED" = "1" ]; then
   export AUTOPILOT_KEEP_RUNNING_DISABLED="${AUTOPILOT_KEEP_RUNNING_DISABLED:-0}"
 else
   export AUTOPILOT_KEEP_RUNNING_DISABLED="1"

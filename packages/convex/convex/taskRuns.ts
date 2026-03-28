@@ -16,6 +16,11 @@ import {
   aggregatePullRequestState,
   type StoredPullRequestInfo,
 } from "@cmux/shared/pull-request-state";
+import {
+  buildRunControlSummary,
+  type RunControlApproval,
+  type RunControlSessionBinding,
+} from "./runControlSummary";
 
 const CLOUD_WORKSPACE_JWT_TTL = "7d";
 const DEFAULT_JWT_TTL = "12h";
@@ -542,6 +547,7 @@ export const createInternal = internalMutation({
     environmentId: v.optional(v.id("environments")),
     parentRunId: v.optional(v.id("taskRuns")), // Agent Teams (D4) - parent-child relationships
     isOrchestrationHead: v.optional(v.boolean()), // Whether this is a head agent for orchestration
+    orchestrationId: v.optional(v.string()), // Grouping ID for orchestration head agents
     // PR Comment → Agent: link back to source comment for result posting
     githubCommentId: v.optional(v.number()),
     githubCommentUrl: v.optional(v.string()),
@@ -580,6 +586,7 @@ export const createInternal = internalMutation({
       isLocalWorkspace: task.isLocalWorkspace,
       isCloudWorkspace: task.isCloudWorkspace,
       isOrchestrationHead: args.isOrchestrationHead,
+      orchestrationId: args.orchestrationId,
       githubCommentId: args.githubCommentId,
       githubCommentUrl: args.githubCommentUrl,
     });
@@ -604,6 +611,17 @@ export const createInternal = internalMutation({
     }
 
     await ctx.db.patch(args.taskId, taskPatch);
+
+    // Record lineage for this run (append-only, never updated)
+    await ctx.scheduler.runAfter(0, internal.runtimeLineage.recordLineage, {
+      teamId: args.teamId,
+      taskRunId,
+      previousTaskRunId: args.parentRunId,
+      continuationMode: args.parentRunId ? "retry" : "initial",
+      agentName: args.agentName,
+      orchestrationId: args.orchestrationId,
+      actor: "system",
+    });
 
     // Generate JWT for sandbox authentication
     const jwt = await new SignJWT({
@@ -631,6 +649,7 @@ export const create = authMutation({
     newBranch: v.optional(v.string()),
     environmentId: v.optional(v.id("environments")),
     isOrchestrationHead: v.optional(v.boolean()),
+    orchestrationId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
@@ -668,6 +687,7 @@ export const create = authMutation({
       isLocalWorkspace: task.isLocalWorkspace,
       isCloudWorkspace: task.isCloudWorkspace,
       isOrchestrationHead: args.isOrchestrationHead,
+      orchestrationId: args.orchestrationId,
     });
 
     // Update task's lastActivityAt for sorting
@@ -700,6 +720,18 @@ export const create = authMutation({
     }
 
     await ctx.db.patch(args.taskId, taskPatch);
+
+    // Record lineage for this run (append-only, never updated)
+    await ctx.scheduler.runAfter(0, internal.runtimeLineage.recordLineage, {
+      teamId,
+      taskRunId,
+      previousTaskRunId: args.parentRunId,
+      continuationMode: args.parentRunId ? "retry" : "initial",
+      agentName: args.agentName,
+      orchestrationId: args.orchestrationId,
+      actor: "user",
+    });
+
     const jwt = await new SignJWT({
       taskRunId,
       teamId,
@@ -1125,6 +1157,116 @@ export const getInterruptionState = authQuery({
       // Computed: is resumable?
       canResume: canResumeFromInterruption(state),
     };
+  },
+});
+
+async function getRunControlSummaryForRun(
+  ctx: QueryCtx,
+  run: Doc<"taskRuns">,
+) {
+  const [approvalDocs, bindingByTaskRun, bindingByTask] = await Promise.all([
+    ctx.db
+      .query("approvalRequests")
+      .withIndex("by_task_run", (q) => q.eq("taskRunId", run._id))
+      .order("desc")
+      .collect(),
+    ctx.db
+      .query("providerSessionBindings")
+      .withIndex("by_task_run", (q) => q.eq("taskRunId", run._id))
+      .first(),
+    ctx.db
+      .query("providerSessionBindings")
+      .withIndex("by_task", (q) => q.eq("taskId", String(run.taskId)))
+      .first(),
+  ]);
+
+  const approvals: RunControlApproval[] = approvalDocs
+    .filter((approval) => approval.teamId === run.teamId)
+    .map((approval) => ({
+      requestId: approval.requestId,
+      status: approval.status,
+      approvalType: approval.approvalType,
+      action: approval.action,
+      createdAt: approval.createdAt,
+      context: {
+        riskLevel: approval.context.riskLevel,
+      },
+    }));
+
+  const bindingDoc = [bindingByTaskRun, bindingByTask].find(
+    (binding) => binding && binding.teamId === run.teamId,
+  );
+  const sessionBinding: RunControlSessionBinding | null = bindingDoc
+    ? {
+        provider: bindingDoc.provider,
+        agentName: bindingDoc.agentName,
+        mode: bindingDoc.mode,
+        providerSessionId: bindingDoc.providerSessionId,
+        providerThreadId: bindingDoc.providerThreadId,
+        replyChannel: bindingDoc.replyChannel,
+        status: bindingDoc.status,
+        lastActiveAt: bindingDoc.lastActiveAt,
+      }
+    : null;
+
+  return buildRunControlSummary({
+    run: {
+      taskRunId: String(run._id),
+      taskId: String(run.taskId),
+      runStatus: run.status,
+      agentName: run.agentName,
+      orchestrationId: run.orchestrationId,
+      codexThreadId: run.codexThreadId,
+      interruptionState: run.interruptionState
+        ? {
+            status: run.interruptionState.status,
+            reason: run.interruptionState.reason,
+            approvalRequestId: run.interruptionState.approvalRequestId,
+            blockedAt: run.interruptionState.blockedAt,
+            expiresAt: run.interruptionState.expiresAt,
+            resumeToken: run.interruptionState.resumeToken,
+            resolvedAt: run.interruptionState.resolvedAt,
+            resolvedBy: run.interruptionState.resolvedBy,
+            providerSessionId: run.interruptionState.providerSessionId,
+            resumeTargetId: run.interruptionState.resumeTargetId,
+            checkpointRef: run.interruptionState.checkpointRef,
+            checkpointGeneration: run.interruptionState.checkpointGeneration,
+          }
+        : undefined,
+    },
+    approvals,
+    sessionBinding,
+  });
+}
+
+export const getRunControlSummaryInternal = internalQuery({
+  args: {
+    taskRunId: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.taskRunId);
+    if (!run) {
+      return null;
+    }
+
+    return getRunControlSummaryForRun(ctx, run);
+  },
+});
+
+export const getRunControlSummary = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    taskRunId: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+
+    const run = await ctx.db.get(args.taskRunId);
+    if (!run || run.teamId !== teamId) {
+      return null;
+    }
+
+    return getRunControlSummaryForRun(ctx, run);
   },
 });
 
@@ -3106,6 +3248,15 @@ export const createForPreview = internalMutation({
     // Update task's lastActivityAt for sorting
     await ctx.db.patch(args.taskId, { lastActivityAt: now });
 
+    // Record lineage for preview job (always initial)
+    await ctx.scheduler.runAfter(0, internal.runtimeLineage.recordLineage, {
+      teamId: args.teamId,
+      taskRunId,
+      continuationMode: "initial",
+      agentName: "screenshot-collector",
+      actor: "system",
+    });
+
     const jwt = await new SignJWT({
       taskRunId,
       teamId: args.teamId,
@@ -3500,6 +3651,55 @@ export const updateOrchestrationHeartbeat = authMutation({
 });
 
 /**
+ * Update orchestration head agent heartbeat without Stack auth.
+ * Used by server-side JWT-authenticated routes in apps/www.
+ */
+export const updateOrchestrationHeartbeatInternal = internalMutation({
+  args: {
+    teamId: v.string(),
+    id: v.id("taskRuns"),
+    orchestrationId: v.optional(v.string()),
+    status: v.optional(
+      v.union(
+        v.literal("running"),
+        v.literal("completed"),
+        v.literal("failed")
+      )
+    ),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.id);
+    if (!doc) {
+      throw new Error("Task run not found");
+    }
+    if (doc.teamId !== args.teamId) {
+      throw new Error("Task run not found or unauthorized");
+    }
+    if (
+      args.orchestrationId &&
+      doc.orchestrationId &&
+      doc.orchestrationId !== args.orchestrationId
+    ) {
+      throw new Error("Task run orchestrationId mismatch");
+    }
+
+    const now = Date.now();
+    const patch: Record<string, unknown> = {
+      orchestrationHeartbeat: now,
+      updatedAt: now,
+    };
+
+    if (args.status) {
+      patch.orchestrationStatus = args.status;
+    }
+
+    await ctx.db.patch(args.id, patch);
+
+    return { ok: true, heartbeat: now, status: args.status };
+  },
+});
+
+/**
  * Get task run by orchestration ID (for head agent lookup).
  */
 export const getByOrchestrationId = authQuery({
@@ -3511,15 +3711,13 @@ export const getByOrchestrationId = authQuery({
     const teamId = await getTeamId(ctx, args.teamSlugOrId);
 
     // Look for head agent task run with this orchestration ID
-    // Note: No direct index on orchestrationId, so we filter
+    // Uses compound index to avoid full table scan (bandwidth optimization)
     const run = await ctx.db
       .query("taskRuns")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("teamId"), teamId),
-          q.eq(q.field("orchestrationId"), args.orchestrationId),
-          q.eq(q.field("isOrchestrationHead"), true)
-        )
+      .withIndex("by_team_orchestration_head", (q) =>
+        q.eq("teamId", teamId)
+          .eq("orchestrationId", args.orchestrationId)
+          .eq("isOrchestrationHead", true)
       )
       .first();
 
@@ -3545,14 +3743,17 @@ export const checkStaleHeadAgents = internalMutation({
     const now = Date.now();
     const cutoff = now - HEAD_AGENT_HEARTBEAT_TIMEOUT_MS;
 
-    // Find running head agents with stale heartbeats
+    // Head runs only transition to orchestrationStatus="running" via
+    // updateOrchestrationHeartbeat, which writes orchestrationHeartbeat in the
+    // same mutation. Query the stale slice directly instead of collecting the
+    // entire running-head population each time the cron fires.
     const staleRuns = await ctx.db
       .query("taskRuns")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("isOrchestrationHead"), true),
-          q.eq(q.field("orchestrationStatus"), "running")
-        )
+      .withIndex("by_orchestration_head_status_heartbeat", (q) =>
+        q
+          .eq("isOrchestrationHead", true)
+          .eq("orchestrationStatus", "running")
+          .lt("orchestrationHeartbeat", cutoff)
       )
       .collect();
 
@@ -3857,5 +4058,103 @@ export const findByPullRequest = authQuery({
     );
 
     return runs.filter((r): r is NonNullable<typeof r> => r !== null);
+  },
+});
+
+// ============================================================================
+// Workspace Memory Sync Bootstrap
+// ============================================================================
+
+/**
+ * Create or find an existing workspace task run for cloud workspace memory sync.
+ * Called by the bootstrapWorkspaceSync HTTP action to get a JWT for head agents
+ * that don't have one (cloud workspaces started without a prompt).
+ *
+ * Returns existing workspace task run if one exists for this team (reuses JWT identity),
+ * otherwise creates a new task + task run pair.
+ */
+export const createWorkspaceTaskRun = internalMutation({
+  args: {
+    teamId: v.string(),
+    userId: v.string(),
+    agentName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+
+    // Check for existing workspace task run for this team (reuse if found)
+    const existingRuns = await ctx.db
+      .query("taskRuns")
+      .withIndex("by_team_user", (q) =>
+        q.eq("teamId", args.teamId).eq("userId", args.userId)
+      )
+      .collect();
+
+    // Find a running workspace-memory-sync task run
+    const existingWorkspaceRun = existingRuns.find(
+      (run) =>
+        run.agentName === "workspace-memory-sync" &&
+        run.status === "running" &&
+        run.isCloudWorkspace === true
+    );
+
+    if (existingWorkspaceRun) {
+      // Reissue JWT for existing task run
+      const jwt = await new SignJWT({
+        taskRunId: existingWorkspaceRun._id,
+        teamId: args.teamId,
+        userId: args.userId,
+      })
+        .setProtectedHeader({ alg: "HS256" })
+        .setIssuedAt()
+        .setExpirationTime(CLOUD_WORKSPACE_JWT_TTL)
+        .sign(new TextEncoder().encode(env.CMUX_TASK_RUN_JWT_SECRET));
+
+      return {
+        taskRunId: existingWorkspaceRun._id,
+        taskId: existingWorkspaceRun.taskId,
+        jwt,
+        reused: true,
+      };
+    }
+
+    // Create task first
+    const taskId = await ctx.db.insert("tasks", {
+      text: "Cloud Workspace Memory Sync",
+      description: "Workspace memory sync task for real-time memory streaming to UI",
+      isCompleted: false,
+      isCloudWorkspace: true,
+      teamId: args.teamId,
+      userId: args.userId,
+      createdAt: now,
+      updatedAt: now,
+      lastActivityAt: now,
+    });
+
+    // Create task run
+    const taskRunId = await ctx.db.insert("taskRuns", {
+      taskId,
+      prompt: "workspace-memory-sync",
+      agentName: "workspace-memory-sync",
+      status: "running",
+      isCloudWorkspace: true,
+      createdAt: now,
+      updatedAt: now,
+      userId: args.userId,
+      teamId: args.teamId,
+    });
+
+    // Generate JWT
+    const jwt = await new SignJWT({
+      taskRunId,
+      teamId: args.teamId,
+      userId: args.userId,
+    })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt()
+      .setExpirationTime(CLOUD_WORKSPACE_JWT_TTL)
+      .sign(new TextEncoder().encode(env.CMUX_TASK_RUN_JWT_SECRET));
+
+    return { taskRunId, taskId, jwt, reused: false };
   },
 });

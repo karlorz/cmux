@@ -4,7 +4,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { Octokit } from "octokit";
-import { generateObject, type LanguageModel } from "ai";
+import { generateObject, NoObjectGeneratedError, type LanguageModel } from "ai";
 import { ConvexError, v } from "convex/values";
 import {
   CrownEvaluationResponseSchema,
@@ -31,6 +31,101 @@ type CrownProvider = PlatformAiProvider;
 
 // Configuration for retry logic
 const MAX_CROWN_EVALUATION_ATTEMPTS = 3;
+
+/**
+ * Extract JSON from markdown code fences if present.
+ * Cloudflare AI Gateway sometimes returns JSON wrapped in ```json ... ```
+ * Also handles trailing text after closing fences (e.g., "```." or "```\n")
+ * Additionally handles cases where AI returns bare JSON properties without object braces.
+ */
+function extractJsonFromMarkdown(text: string): string | null {
+  if (!text) return null;
+
+  // Try to match ```json ... ``` or ``` ... ``` with optional trailing content
+  // The regex captures everything between the opening and closing fences
+  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlockMatch?.[1]) {
+    const extracted = codeBlockMatch[1].trim();
+    // Verify it looks like JSON object or array
+    if (extracted.startsWith("{") || extracted.startsWith("[")) {
+      return extracted;
+    }
+    // Handle bare JSON property without object braces: "key": "value"
+    // Wrap it in {} to make valid JSON object
+    if (extracted.startsWith('"') && extracted.includes(":")) {
+      const wrapped = `{${extracted}}`;
+      // Verify the wrapped version can be parsed
+      try {
+        JSON.parse(wrapped);
+        return wrapped;
+      } catch {
+        // If wrapping didn't help, continue to other extraction methods
+      }
+    }
+  }
+
+  // Try alternative pattern: find JSON object/array directly
+  // This handles cases where the response has text before/after the JSON
+  const jsonMatch = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+  if (jsonMatch?.[1]) {
+    return jsonMatch[1].trim();
+  }
+
+  // If no code block, check if it's already valid JSON
+  const trimmed = text.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    return trimmed;
+  }
+
+  // Handle bare JSON property without object braces outside code block
+  if (trimmed.startsWith('"') && trimmed.includes(":")) {
+    const wrapped = `{${trimmed}}`;
+    try {
+      JSON.parse(wrapped);
+      return wrapped;
+    } catch {
+      // Not valid even when wrapped
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Try to repair common JSON issues like unescaped newlines in strings.
+ * This handles cases where the AI returns JSON with embedded code blocks
+ * that have raw newlines instead of \n escapes.
+ */
+function tryRepairJson(text: string): unknown | null {
+  try {
+    // First try direct parse
+    return JSON.parse(text);
+  } catch {
+    // Try to fix unescaped newlines in string values
+    // This regex finds string values and escapes any literal newlines
+    try {
+      // Replace actual newlines inside strings with \n escape sequences
+      // We do this by finding all strings and processing them
+      let repaired = text;
+
+      // Find JSON string boundaries and escape newlines within them
+      // Match: "key": "value with
+      // newlines"
+      // Strategy: replace newlines between quotes
+      repaired = repaired.replace(
+        /"([^"\\]*(\\.[^"\\]*)*)"/g,
+        (match) => {
+          // Escape any raw newlines within the matched string
+          return match.replace(/\n/g, "\\n").replace(/\r/g, "\\r");
+        }
+      );
+
+      return JSON.parse(repaired);
+    } catch {
+      return null;
+    }
+  }
+}
 
 /**
  * Fetch git diff from GitHub using the GitHub API.
@@ -156,14 +251,16 @@ const CrownEvaluationCandidateValidator = v.object({
 });
 
 /**
- * Resolve crown model using PLATFORM credentials only.
- * Crown evaluation is a platform service and should NOT use user/team API keys.
+ * Resolve ALL available crown models in provider order.
+ * Returns an ordered list of providers/models for fallback.
  */
-function resolveCrownModel(): {
+function resolveAllCrownModels(): Array<{
   provider: CrownProvider;
   model: LanguageModel;
-} {
+}> {
+  const results: Array<{ provider: CrownProvider; model: LanguageModel }> = [];
   const providerOrder = getPlatformAiProviderOrder();
+
   for (const provider of providerOrder) {
     const modelId = getPlatformAiModelIdForService("crown", provider);
     switch (provider) {
@@ -179,10 +276,11 @@ function resolveCrownModel(): {
           apiKey,
           baseURL: normalizePlatformAiBaseUrl(provider, rawBaseUrl),
         });
-        return {
+        results.push({
           provider,
           model: anthropic(modelId),
-        };
+        });
+        break;
       }
       case "openai": {
         const apiKey = process.env.OPENAI_API_KEY;
@@ -196,10 +294,11 @@ function resolveCrownModel(): {
           apiKey,
           baseURL: normalizePlatformAiBaseUrl(provider, rawBaseUrl),
         });
-        return {
+        results.push({
           provider,
           model: openai(modelId),
-        };
+        });
+        break;
       }
       case "gemini": {
         const apiKey = process.env.GEMINI_API_KEY;
@@ -213,24 +312,57 @@ function resolveCrownModel(): {
           apiKey,
           baseURL: normalizePlatformAiBaseUrl(provider, rawBaseUrl),
         });
-        return {
+        results.push({
           provider,
           model: google(modelId),
-        };
+        });
+        break;
       }
     }
   }
 
-  throw new ConvexError(
-    "Crown evaluation is not configured (missing platform Anthropic, OpenAI, or Gemini API key)"
-  );
+  return results;
+}
+
+/**
+ * Detect if an error is a quota or rate limit error (HTTP 429).
+ * These errors indicate we should try the next provider instead of retrying.
+ */
+function isQuotaOrRateLimitError(error: unknown): boolean {
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+    if (
+      message.includes("429") ||
+      message.includes("quota") ||
+      message.includes("rate limit") ||
+      message.includes("rate_limit") ||
+      message.includes("exceeded") ||
+      message.includes("too many requests")
+    ) {
+      return true;
+    }
+  }
+  // Check for response status on error objects
+  const anyError = error as {
+    status?: number;
+    statusCode?: number;
+    response?: { status?: number };
+  };
+  const status =
+    anyError.status ?? anyError.statusCode ?? anyError.response?.status;
+  return status === 429;
 }
 
 export async function performCrownEvaluation(
   prompt: string,
   candidates: CrownEvaluationCandidate[],
 ): Promise<CrownEvaluationResponse> {
-  const { model, provider } = resolveCrownModel();
+  const availableModels = resolveAllCrownModels();
+  if (availableModels.length === 0) {
+    throw new ConvexError(
+      "Crown evaluation is not configured (missing platform Anthropic, OpenAI, or Gemini API key)"
+    );
+  }
 
   const normalizedCandidates = candidates.map((candidate, idx) => {
     const resolvedIndex = candidate.index ?? idx;
@@ -276,77 +408,155 @@ Example response:
 IMPORTANT: Respond ONLY with the JSON object, no other text.`;
 
   // Track errors for diagnostics
-  const attemptErrors: Array<{ attempt: number; error: unknown }> = [];
+  const attemptErrors: Array<{
+    provider: string;
+    attempt: number;
+    error: unknown;
+  }> = [];
+  const triedProviders: string[] = [];
 
-  // Retry loop with exponential backoff
-  for (let attempt = 1; attempt <= MAX_CROWN_EVALUATION_ATTEMPTS; attempt++) {
-    try {
-      console.info(
-        `[convex.crown] Evaluation attempt ${attempt}/${MAX_CROWN_EVALUATION_ATTEMPTS} via ${provider}`
-      );
+  // Provider fallback loop
+  for (const { model, provider } of availableModels) {
+    triedProviders.push(provider);
 
-      const { object } = await generateObject({
-        model,
-        schema: CrownEvaluationResponseSchema,
-        system:
-          "You select the best implementation from structured diff inputs and explain briefly why.",
-        prompt: evaluationPrompt,
-        maxRetries: 2,
-        // Use outputFormat mode for Anthropic to avoid tool-use which CF gateway doesn't proxy correctly
-        // Also enable OpenAI structured outputs in case OpenAI fallback is used
-        providerOptions: {
-          anthropic: { structuredOutputMode: "outputFormat" },
-          openai: { structuredOutputs: true },
-        },
-      });
-
-      console.info(`[convex.crown] Evaluation completed via ${provider}`);
-      const result = CrownEvaluationResponseSchema.parse(object);
-
-      // If AI returned null winner (e.g., no code changes), default to candidate 0
-      // This is different from isFallback=true which indicates AI service failure
-      if (result.winner === null && normalizedCandidates.length > 0) {
+    // Retry loop with exponential backoff for each provider
+    for (let attempt = 1; attempt <= MAX_CROWN_EVALUATION_ATTEMPTS; attempt++) {
+      try {
         console.info(
-          `[convex.crown] AI returned null winner, defaulting to candidate 0`
+          `[convex.crown] Evaluation attempt ${attempt}/${MAX_CROWN_EVALUATION_ATTEMPTS} via ${provider}`
         );
-        return {
-          ...result,
-          winner: 0,
-          reason:
-            result.reason ||
-            "No meaningful code changes detected; selecting first candidate as default.",
-        };
-      }
 
-      return result;
-    } catch (error) {
-      attemptErrors.push({ attempt, error });
+        const { object } = await generateObject({
+          model,
+          schema: CrownEvaluationResponseSchema,
+          system:
+            "You select the best implementation from structured diff inputs and explain briefly why.",
+          prompt: evaluationPrompt,
+          maxRetries: 2,
+          // Ensure enough tokens for evaluation response
+          maxOutputTokens: 2048,
+          // Use outputFormat mode for Anthropic to avoid tool-use which CF gateway doesn't proxy correctly
+          // Also enable OpenAI structured outputs in case OpenAI fallback is used
+          providerOptions: {
+            anthropic: { structuredOutputMode: "outputFormat" },
+            openai: { structuredOutputs: true },
+          },
+        });
 
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      console.error(
-        `[convex.crown] ${provider} evaluation attempt ${attempt}/${MAX_CROWN_EVALUATION_ATTEMPTS} failed:`,
-        errorMessage
-      );
+        console.info(`[convex.crown] Evaluation completed via ${provider}`);
+        const result = CrownEvaluationResponseSchema.parse(object);
 
-      // If not the last attempt, wait with exponential backoff before retrying
-      if (attempt < MAX_CROWN_EVALUATION_ATTEMPTS) {
-        const backoffDelay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
-        console.info(
-          `[convex.crown] Retrying in ${backoffDelay}ms (attempt ${attempt + 1}/${MAX_CROWN_EVALUATION_ATTEMPTS})`
+        // If AI returned null winner (e.g., no code changes), default to candidate 0
+        // This is different from isFallback=true which indicates AI service failure
+        if (result.winner === null && normalizedCandidates.length > 0) {
+          console.info(
+            `[convex.crown] AI returned null winner, defaulting to candidate 0`
+          );
+          return {
+            ...result,
+            winner: 0,
+            reason:
+              result.reason ||
+              "No meaningful code changes detected; selecting first candidate as default.",
+          };
+        }
+
+        return result;
+      } catch (error) {
+        attemptErrors.push({ provider, attempt, error });
+
+        // Handle NoObjectGeneratedError - try to extract JSON from markdown code fences
+        if (NoObjectGeneratedError.isInstance(error)) {
+          console.error(`[convex.crown] NoObjectGeneratedError details:`, {
+            text: error.text?.substring(0, 1000),
+            cause:
+              error.cause instanceof Error
+                ? error.cause.message
+                : String(error.cause),
+            hasResponse: !!error.response,
+          });
+
+          // Try to extract and parse JSON from markdown-wrapped response
+          const extractedJson = extractJsonFromMarkdown(error.text ?? "");
+          if (extractedJson) {
+            try {
+              // Use tryRepairJson to handle unescaped newlines in AI responses
+              const parsed = tryRepairJson(extractedJson);
+              if (parsed) {
+                const result = CrownEvaluationResponseSchema.parse(parsed);
+                console.info(
+                  `[convex.crown] Successfully extracted JSON from markdown-wrapped response`
+                );
+
+                // Handle null winner same as normal path
+                if (result.winner === null && normalizedCandidates.length > 0) {
+                  console.info(
+                    `[convex.crown] AI returned null winner, defaulting to candidate 0`
+                  );
+                  return {
+                    ...result,
+                    winner: 0,
+                    reason:
+                      result.reason ||
+                      "No meaningful code changes detected; selecting first candidate as default.",
+                  };
+                }
+
+                return result;
+              }
+            } catch (parseError) {
+              console.warn(
+                `[convex.crown] Failed to parse extracted JSON:`,
+                parseError instanceof Error ? parseError.message : parseError
+              );
+            }
+          }
+        }
+
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        console.error(
+          `[convex.crown] ${provider} evaluation attempt ${attempt}/${MAX_CROWN_EVALUATION_ATTEMPTS} failed:`,
+          errorMessage
         );
-        await delay(backoffDelay);
+
+        // On quota/rate limit error, skip remaining retries and try next provider
+        if (isQuotaOrRateLimitError(error)) {
+          const nextProvider = availableModels.find(
+            (m) => !triedProviders.includes(m.provider)
+          );
+          if (nextProvider) {
+            console.warn(
+              `[convex.crown] ${provider} hit quota/rate limit, falling back to ${nextProvider.provider}`
+            );
+          } else {
+            console.warn(
+              `[convex.crown] ${provider} hit quota/rate limit, no more providers available`
+            );
+          }
+          break; // Exit inner retry loop, continue to next provider
+        }
+
+        // Other errors: retry same provider with exponential backoff
+        if (attempt < MAX_CROWN_EVALUATION_ATTEMPTS) {
+          const backoffDelay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+          console.info(
+            `[convex.crown] Retrying in ${backoffDelay}ms (attempt ${attempt + 1}/${MAX_CROWN_EVALUATION_ATTEMPTS})`
+          );
+          await delay(backoffDelay);
+        }
       }
     }
   }
 
-  // All retry attempts exhausted - fall back to "no winner" state
+  // All providers exhausted - fall back to "no winner" state
   console.warn(
-    `[convex.crown] All ${MAX_CROWN_EVALUATION_ATTEMPTS} evaluation attempts failed via ${provider}. Falling back to no-winner state.`,
+    `[convex.crown] All providers exhausted for evaluation. Falling back to no-winner state.`,
     {
-      provider,
-      totalAttempts: MAX_CROWN_EVALUATION_ATTEMPTS,
+      triedProviders,
+      totalAttempts: attemptErrors.length,
       errors: attemptErrors.map((e) => ({
+        provider: e.provider,
         attempt: e.attempt,
         error: e.error instanceof Error ? e.error.message : String(e.error),
       })),
@@ -360,7 +570,7 @@ IMPORTANT: Respond ONLY with the JSON object, no other text.`;
     winner: null,
     reason: fallbackReason,
     isFallback: true,
-    evaluationNote: `Crown evaluation failed after ${MAX_CROWN_EVALUATION_ATTEMPTS} attempts (provider: ${provider}). No winner was selected.`,
+    evaluationNote: `Crown evaluation failed after trying providers: ${triedProviders.join(", ")}. No winner was selected.`,
   };
 }
 
@@ -368,7 +578,12 @@ export async function performCrownSummarization(
   prompt: string,
   gitDiff: string,
 ): Promise<CrownSummarizationResponse> {
-  const { model, provider } = resolveCrownModel();
+  const availableModels = resolveAllCrownModels();
+  if (availableModels.length === 0) {
+    throw new ConvexError(
+      "Crown summarization is not configured (missing platform Anthropic, OpenAI, or Gemini API key)"
+    );
+  }
 
   const summarizationPrompt = `You are an expert reviewer summarizing a pull request.
 
@@ -403,64 +618,136 @@ Return a JSON object with this exact structure:
 }
 `;
 
-  const attemptErrors: Array<{ attempt: number; error: unknown }> = [];
+  const attemptErrors: Array<{
+    provider: string;
+    attempt: number;
+    error: unknown;
+  }> = [];
+  const triedProviders: string[] = [];
 
-  for (let attempt = 1; attempt <= MAX_CROWN_SUMMARIZATION_ATTEMPTS; attempt++) {
-    try {
-      console.info(
-        `[convex.crown] Summarization attempt ${attempt}/${MAX_CROWN_SUMMARIZATION_ATTEMPTS} via ${provider}`
-      );
+  // Provider fallback loop
+  for (const { model, provider } of availableModels) {
+    triedProviders.push(provider);
 
-      const { object } = await generateObject({
-        model,
-        schema: CrownSummarizationResponseSchema,
-        system:
-          "You are an expert reviewer summarizing pull requests. Provide a clear, concise summary following the requested format.",
-        prompt: summarizationPrompt,
-        maxRetries: 2,
-        // Use outputFormat mode for Anthropic to avoid tool-use which CF gateway doesn't proxy correctly
-        // Also enable OpenAI structured outputs in case OpenAI fallback is used
-        providerOptions: {
-          anthropic: { structuredOutputMode: "outputFormat" },
-          openai: { structuredOutputs: true },
-        },
-      });
-
-      console.info(`[convex.crown] Summarization completed via ${provider}`);
-      return CrownSummarizationResponseSchema.parse(object);
-    } catch (error) {
-      attemptErrors.push({ attempt, error });
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      console.error(
-        `[convex.crown] ${provider} summarization attempt ${attempt}/${MAX_CROWN_SUMMARIZATION_ATTEMPTS} failed:`,
-        errorMessage
-      );
-
-      if (attempt < MAX_CROWN_SUMMARIZATION_ATTEMPTS) {
-        const backoffDelay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+    for (
+      let attempt = 1;
+      attempt <= MAX_CROWN_SUMMARIZATION_ATTEMPTS;
+      attempt++
+    ) {
+      try {
         console.info(
-          `[convex.crown] Retrying summarization in ${backoffDelay}ms (attempt ${attempt + 1}/${MAX_CROWN_SUMMARIZATION_ATTEMPTS})`
+          `[convex.crown] Summarization attempt ${attempt}/${MAX_CROWN_SUMMARIZATION_ATTEMPTS} via ${provider}`
         );
-        await delay(backoffDelay);
+
+        const { object } = await generateObject({
+          model,
+          schema: CrownSummarizationResponseSchema,
+          system:
+            "You are an expert reviewer summarizing pull requests. Provide a clear, concise summary following the requested format.",
+          prompt: summarizationPrompt,
+          maxRetries: 2,
+          // Ensure enough tokens for the summary with mermaid diagrams
+          maxOutputTokens: 4096,
+          // Use outputFormat mode for Anthropic to avoid tool-use which CF gateway doesn't proxy correctly
+          // Also enable OpenAI structured outputs in case OpenAI fallback is used
+          providerOptions: {
+            anthropic: { structuredOutputMode: "outputFormat" },
+            openai: { structuredOutputs: true },
+          },
+        });
+
+        console.info(`[convex.crown] Summarization completed via ${provider}`);
+        return CrownSummarizationResponseSchema.parse(object);
+      } catch (error) {
+        attemptErrors.push({ provider, attempt, error });
+
+        // Handle NoObjectGeneratedError - try to extract JSON from markdown code fences
+        if (NoObjectGeneratedError.isInstance(error)) {
+          console.error(
+            `[convex.crown] NoObjectGeneratedError (summarization) details:`,
+            {
+              text: error.text?.substring(0, 1000),
+              cause:
+                error.cause instanceof Error
+                  ? error.cause.message
+                  : String(error.cause),
+              hasResponse: !!error.response,
+            }
+          );
+
+          // Try to extract and parse JSON from markdown-wrapped response
+          const extractedJson = extractJsonFromMarkdown(error.text ?? "");
+          if (extractedJson) {
+            try {
+              // Use tryRepairJson to handle unescaped newlines in AI responses
+              const parsed = tryRepairJson(extractedJson);
+              if (parsed) {
+                const result = CrownSummarizationResponseSchema.parse(parsed);
+                console.info(
+                  `[convex.crown] Successfully extracted summarization JSON from markdown-wrapped response`
+                );
+                return result;
+              }
+            } catch (parseError) {
+              console.warn(
+                `[convex.crown] Failed to parse extracted summarization JSON:`,
+                parseError instanceof Error ? parseError.message : parseError
+              );
+            }
+          }
+        }
+
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        console.error(
+          `[convex.crown] ${provider} summarization attempt ${attempt}/${MAX_CROWN_SUMMARIZATION_ATTEMPTS} failed:`,
+          errorMessage
+        );
+
+        // On quota/rate limit error, skip remaining retries and try next provider
+        if (isQuotaOrRateLimitError(error)) {
+          const nextProvider = availableModels.find(
+            (m) => !triedProviders.includes(m.provider)
+          );
+          if (nextProvider) {
+            console.warn(
+              `[convex.crown] ${provider} hit quota/rate limit, falling back to ${nextProvider.provider}`
+            );
+          } else {
+            console.warn(
+              `[convex.crown] ${provider} hit quota/rate limit, no more providers available`
+            );
+          }
+          break; // Exit inner retry loop, continue to next provider
+        }
+
+        // Other errors: retry same provider with exponential backoff
+        if (attempt < MAX_CROWN_SUMMARIZATION_ATTEMPTS) {
+          const backoffDelay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+          console.info(
+            `[convex.crown] Retrying summarization in ${backoffDelay}ms (attempt ${attempt + 1}/${MAX_CROWN_SUMMARIZATION_ATTEMPTS})`
+          );
+          await delay(backoffDelay);
+        }
       }
     }
   }
 
+  // All providers exhausted
   const lastError = attemptErrors[attemptErrors.length - 1]?.error;
   const lastMessage =
     lastError instanceof Error ? lastError.message : String(lastError ?? "");
   console.warn(
-    `[convex.crown] All ${MAX_CROWN_SUMMARIZATION_ATTEMPTS} summarization attempts failed via ${provider}`,
+    `[convex.crown] All providers exhausted for summarization.`,
     {
-      provider,
-      totalAttempts: MAX_CROWN_SUMMARIZATION_ATTEMPTS,
+      triedProviders,
+      totalAttempts: attemptErrors.length,
       lastMessage,
     }
   );
 
   throw new ConvexError(
-    `Summarization failed after ${MAX_CROWN_SUMMARIZATION_ATTEMPTS} attempts (provider: ${provider})`
+    `Summarization failed after trying providers: ${triedProviders.join(", ")}`
   );
 }
 

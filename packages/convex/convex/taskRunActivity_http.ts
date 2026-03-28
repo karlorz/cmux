@@ -161,7 +161,7 @@ export const postActivity = httpAction(async (ctx, req) => {
     return jsonResponse({ code: 400, message: "Invalid input" }, 400);
   }
 
-  const { taskRunId, ...eventData } = validation.data;
+  const { taskRunId, mcpCapabilities, ...eventData } = validation.data;
 
   // Verify the caller owns this task run
   if (auth.payload.taskRunId !== taskRunId) {
@@ -172,6 +172,8 @@ export const postActivity = httpAction(async (ctx, req) => {
     taskRunId,
     teamId: auth.payload.teamId,
     ...eventData,
+    // Serialize mcpCapabilities object to JSON string for storage
+    ...(mcpCapabilities ? { mcpCapabilities: JSON.stringify(mcpCapabilities) } : {}),
   });
 
   return jsonResponse({ ok: true });

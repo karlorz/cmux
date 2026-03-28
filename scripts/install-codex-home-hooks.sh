@@ -5,8 +5,9 @@ print_help() {
   cat <<'EOF'
 install-codex-home-hooks.sh
 
-Install or refresh the managed Codex home Stop hook used by cmux Ralph Loop
-and Codex autopilot.
+Install or refresh the managed Codex home Stop and SessionStart hooks used by
+Codex autopilot, with optional repo-local overrides when a workspace provides
+its own `.codex/hooks/*.sh` wrappers.
 
 Usage:
   scripts/install-codex-home-hooks.sh [--home /absolute/path]
@@ -45,14 +46,56 @@ HOOKS_FILE="${CODEX_DIR}/hooks.json"
 CONFIG_FILE="${CODEX_DIR}/config.toml"
 DISPATCH_SOURCE="${REPO_ROOT}/.codex/hooks/cmux-stop-dispatch.sh"
 DISPATCH_TARGET="${HOOKS_DIR}/cmux-stop-dispatch.sh"
+SESSION_START_SOURCE="${REPO_ROOT}/.codex/hooks/managed-session-start.sh"
+SESSION_START_TARGET="${HOOKS_DIR}/managed-session-start.sh"
+HOME_AUTOPILOT_STOP_SOURCE="${REPO_ROOT}/.codex/hooks/home-autopilot-stop.sh"
+HOME_AUTOPILOT_STOP_TARGET="${HOOKS_DIR}/autopilot-stop.sh"
+HOME_SESSION_START_SOURCE="${REPO_ROOT}/.codex/hooks/home-session-start.sh"
+HOME_SESSION_START_TARGET="${HOOKS_DIR}/session-start.sh"
 
 mkdir -p "$HOOKS_DIR"
-cp "$DISPATCH_SOURCE" "$DISPATCH_TARGET"
-chmod 755 "$DISPATCH_TARGET"
+
+install_script() {
+  local source_path="$1"
+  local target_path="$2"
+
+  cp "$source_path" "$target_path"
+  chmod 755 "$target_path"
+}
+
+install_templated_script() {
+  local source_path="$1"
+  local target_path="$2"
+  local escaped_repo_root="$REPO_ROOT"
+
+  escaped_repo_root="${escaped_repo_root//\\/\\\\}"
+  escaped_repo_root="${escaped_repo_root//&/\\&}"
+  escaped_repo_root="${escaped_repo_root//|/\\|}"
+
+  sed "s|__CMUX_SHARED_REPO_ROOT__|$escaped_repo_root|g" "$source_path" >"$target_path"
+  chmod 755 "$target_path"
+}
+
+install_script "$DISPATCH_SOURCE" "$DISPATCH_TARGET"
+install_script "$SESSION_START_SOURCE" "$SESSION_START_TARGET"
+install_templated_script "$HOME_AUTOPILOT_STOP_SOURCE" "$HOME_AUTOPILOT_STOP_TARGET"
+install_templated_script "$HOME_SESSION_START_SOURCE" "$HOME_SESSION_START_TARGET"
 
 cat >"$HOOKS_FILE" <<'EOF'
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'exec \"$HOME/.codex/hooks/managed-session-start.sh\"'",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

@@ -19,7 +19,7 @@ services:
   # cmux-client: Vite SPA frontend served via nginx
   # =============================================================================
   cmux-client:
-    image: ghcr.io/karlorz/cmux-client:latest
+    image: ${CLIENT_IMAGE:-ghcr.io/karlorz/cmux-client:latest}
     restart: unless-stopped
     environment:
       - SERVICE_URL_CMUX_CLIENT_8080
@@ -44,7 +44,7 @@ services:
   # cmux-www: Next.js API server (standalone output)
   # =============================================================================
   cmux-www:
-    image: ghcr.io/karlorz/cmux-www:latest
+    image: ${WWW_IMAGE:-ghcr.io/karlorz/cmux-www:latest}
     restart: unless-stopped
     environment:
       - SERVICE_URL_CMUX_WWW_9779
@@ -95,7 +95,7 @@ services:
   # cmux-server: WebSocket and real-time API server
   # =============================================================================
   cmux-server:
-    image: ghcr.io/karlorz/cmux-server:latest
+    image: ${SERVER_IMAGE:-ghcr.io/karlorz/cmux-server:latest}
     restart: unless-stopped
     environment:
       - SERVICE_URL_CMUX_SERVER_9776

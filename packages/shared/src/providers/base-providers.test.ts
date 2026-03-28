@@ -38,6 +38,7 @@ describe("base-providers", () => {
       expect(openai?.defaultBaseUrl).toBe("https://api.openai.com/v1");
       expect(openai?.apiFormat).toBe("openai");
       expect(openai?.authEnvVars).toContain("OPENAI_API_KEY");
+      expect(openai?.authEnvVars).toContain("CODEX_AUTH_JSON");
     });
 
     it("gemini provider has correct configuration", () => {
@@ -83,6 +84,14 @@ describe("base-providers", () => {
         expect(provider.apiFormat).toBeTruthy();
         expect(provider.authEnvVars.length).toBeGreaterThan(0);
         expect(provider.apiKeys.length).toBeGreaterThan(0);
+      }
+    });
+
+    it("tracks auth env vars for every declared auth method", () => {
+      for (const provider of BASE_PROVIDERS) {
+        expect(new Set(provider.authEnvVars)).toEqual(
+          new Set(provider.apiKeys.map((apiKey) => apiKey.envVar))
+        );
       }
     });
 

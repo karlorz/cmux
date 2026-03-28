@@ -47,6 +47,8 @@ interface AIProvidersSectionProps {
   overflowUsedList: Record<string, boolean>;
   usedListRefs: MutableRefObject<Record<string, HTMLSpanElement | null>>;
   showProviderStatus: boolean;
+  showProviderStatusSystemChecks?: boolean;
+  providerStatusTitle?: string;
   onApiKeyChange: (envVar: string, value: string) => void;
   onToggleShowKey: (envVar: string) => void;
   onToggleShowBaseUrls: () => void;
@@ -91,6 +93,8 @@ export function AIProvidersSection({
   overflowUsedList,
   usedListRefs,
   showProviderStatus,
+  showProviderStatusSystemChecks = true,
+  providerStatusTitle = "Provider Status",
   onApiKeyChange,
   onToggleShowKey,
   onToggleShowBaseUrls,
@@ -138,6 +142,10 @@ export function AIProvidersSection({
                       Or enter API keys here and cmux will use them directly.
                     </li>
                   </ul>
+                  <p>
+                    These badges reflect stored credentials for each auth
+                    method, not end-to-end provider readiness.
+                  </p>
                 </div>
               </div>
 
@@ -153,7 +161,7 @@ export function AIProvidersSection({
                   ? connectionTestResults[baseUrlKey.envVar]
                   : null;
 
-                const isConnected = !!(apiKeyValues[key.envVar]?.trim());
+                const hasStoredCredential = !!(apiKeyValues[key.envVar]?.trim());
 
                 return (
                   <div
@@ -170,15 +178,15 @@ export function AIProvidersSection({
                             {key.displayName}
                           </label>
                           {/* Connection status badge */}
-                          {isConnected ? (
+                          {hasStoredCredential ? (
                             <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
                               <CheckCircle2 className="h-3 w-3" />
-                              Connected
+                              Stored
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
                               <XCircle className="h-3 w-3" />
-                              Not configured
+                              Not stored
                             </span>
                           )}
                         </div>
@@ -238,31 +246,38 @@ export function AIProvidersSection({
                     <div className="md:w-[min(100%,480px)] md:flex-shrink-0">
                       {key.envVar === "CODEX_AUTH_JSON" ? (
                         <div className="relative">
-                          {showKeys[key.envVar] ? (
-                            <textarea
-                              id={key.envVar}
-                              value={apiKeyValues[key.envVar] || ""}
-                              onChange={(event) =>
-                                onApiKeyChange(key.envVar, event.target.value)
+                          <textarea
+                            id={key.envVar}
+                            name={`api-key-${key.envVar}`}
+                            value={
+                              showKeys[key.envVar]
+                                ? apiKeyValues[key.envVar] || ""
+                                : apiKeyValues[key.envVar]
+                                  ? "••••••••••••••••••••••••••••••••"
+                                  : ""
+                            }
+                            onChange={(event) =>
+                              onApiKeyChange(key.envVar, event.target.value)
+                            }
+                            onClick={() => {
+                              if (!showKeys[key.envVar]) {
+                                onToggleShowKey(key.envVar);
                               }
-                              rows={4}
-                              className="w-full resize-y rounded-lg border border-neutral-300 bg-white px-3 py-2 pr-10 font-mono text-xs text-neutral-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-                              placeholder='{"tokens": {"id_token": "...", "access_token": "...", "refresh_token": "...", "account_id": "..."}, "last_refresh": "..."}'
-                            />
-                          ) : (
-                            <div
-                              onClick={() => onToggleShowKey(key.envVar)}
-                              className="h-[82px] w-full cursor-pointer rounded-lg border border-neutral-300 bg-white px-3 py-2 pr-10 font-mono text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-                            >
-                              {apiKeyValues[key.envVar] ? (
-                                "••••••••••••••••••••••••••••••••"
-                              ) : (
-                                <span className="text-neutral-400">
-                                  Click to edit
-                                </span>
-                              )}
-                            </div>
-                          )}
+                            }}
+                            rows={4}
+                            readOnly={!showKeys[key.envVar]}
+                            autoComplete="off"
+                            className={`w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 pr-10 font-mono text-xs text-neutral-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 ${
+                              showKeys[key.envVar]
+                                ? "resize-y"
+                                : "h-[82px] cursor-pointer resize-none"
+                            }`}
+                            placeholder={
+                              showKeys[key.envVar]
+                                ? '{"tokens": {"id_token": "...", "access_token": "...", "refresh_token": "...", "account_id": "..."}, "last_refresh": "..."}'
+                                : "Click to edit"
+                            }
+                          />
                           <button
                             type="button"
                             onClick={() => onToggleShowKey(key.envVar)}
@@ -325,7 +340,7 @@ export function AIProvidersSection({
                             />
                           </svg>
                           <span className="text-xs text-green-600 dark:text-green-400">
-                            API key configured
+                            Credential stored
                           </span>
                         </div>
                       ) : null}
@@ -431,9 +446,11 @@ export function AIProvidersSection({
       </SettingSection>
 
       {showProviderStatus ? (
-        <SettingSection title="Provider Status">
+        <SettingSection title={providerStatusTitle}>
           <div className="p-4">
-            <ProviderStatusSettings />
+            <ProviderStatusSettings
+              showSystemChecks={showProviderStatusSystemChecks}
+            />
           </div>
         </SettingSection>
       ) : null}

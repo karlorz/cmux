@@ -119,32 +119,74 @@ interface WarningIndicatorProps {
   warning: OptionWarning;
   onActivate?: () => void;
   className?: string;
+  /**
+   * When true, renders as a span instead of a button to avoid nested button
+   * HTML violations (e.g., when used inside a trigger button).
+   */
+  asSpan?: boolean;
 }
 
 export function WarningIndicator({
   warning,
   onActivate,
   className,
+  asSpan = false,
 }: WarningIndicatorProps) {
+  const sharedClassName = clsx(
+    "inline-flex h-5 w-5 items-center justify-center rounded-sm",
+    "cursor-pointer text-red-500 hover:text-red-600",
+    "dark:text-red-400 dark:hover:text-red-300",
+    className
+  );
+
+  const handleClick = (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    warning.onClick?.();
+    onActivate?.();
+  };
+
+  // When used inside another button (e.g., the trigger), render as span
+  // to avoid invalid nested button HTML that causes hydration errors
+  if (asSpan) {
+    return (
+      <Tooltip delayDuration={0}>
+        <TooltipTrigger asChild>
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={handleClick}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                handleClick(e as unknown as React.MouseEvent);
+              }
+            }}
+            aria-label="Open settings to finish setup"
+            className={sharedClassName}
+          >
+            <OctagonAlert className="h-3.5 w-3.5" aria-hidden="true" />
+            <span className="sr-only">Setup required</span>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs text-xs leading-snug">
+          {warning.tooltip}
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
   return (
     <Tooltip delayDuration={0}>
       <TooltipTrigger asChild>
         <button
           type="button"
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            warning.onClick?.();
-            onActivate?.();
-          }}
+          onClick={handleClick}
           aria-label="Open settings to finish setup"
           className={clsx(
-            "inline-flex h-5 w-5 items-center justify-center rounded-sm",
-            "cursor-pointer text-red-500 hover:text-red-600",
-            "dark:text-red-400 dark:hover:text-red-300",
+            sharedClassName,
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/60",
-            "focus-visible:ring-offset-1 focus-visible:ring-offset-white dark:focus-visible:ring-offset-neutral-900",
-            className
+            "focus-visible:ring-offset-1 focus-visible:ring-offset-white dark:focus-visible:ring-offset-neutral-900"
           )}
         >
           <OctagonAlert className="h-3.5 w-3.5" aria-hidden="true" />
@@ -368,6 +410,7 @@ const SearchableSelect = forwardRef<
             <WarningIndicator
               warning={selectedOpt.warning}
               onActivate={() => setOpen(false)}
+              asSpan
             />
           ) : null}
         </span>
@@ -420,6 +463,7 @@ const SearchableSelect = forwardRef<
                 },
               }}
               onActivate={() => setOpen(false)}
+              asSpan
             />
           ) : null}
         </span>
@@ -438,6 +482,7 @@ const SearchableSelect = forwardRef<
               },
             }}
             onActivate={() => setOpen(false)}
+            asSpan
           />
         ) : null}
       </span>

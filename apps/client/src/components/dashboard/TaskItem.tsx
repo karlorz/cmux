@@ -348,6 +348,9 @@ export const TaskItem = memo(function TaskItem({
             <div className="flex items-center justify-center pl-1 -mr-2 relative">
               <input
                 type="checkbox"
+                id={`task-select-${task._id}`}
+                name={`task-select-${task._id}`}
+                aria-label={`Select task: ${task.text || "Untitled"}`}
                 checked={isSelected}
                 className={clsx(
                   "peer w-3 h-3 cursor-pointer border border-neutral-400 dark:border-neutral-500 rounded bg-white dark:bg-neutral-900 appearance-none checked:bg-neutral-500 checked:border-neutral-500 dark:checked:bg-neutral-400 dark:checked:border-neutral-400",

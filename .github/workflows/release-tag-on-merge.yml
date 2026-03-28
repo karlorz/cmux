@@ -77,10 +77,11 @@ jobs:
 
       # Trigger the Electron build workflow via workflow_dispatch since tags pushed
       # by GITHUB_TOKEN don't trigger other workflows (GitHub Actions limitation)
+      # Note: Requires GH_PAT secret with actions:write permission
       - name: Trigger Electron build workflow
         if: steps.resolve.outputs.should_tag == 'true' && steps.existing.outputs.exists == 'false'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -88,5 +89,9 @@ jobs:
           echo "Triggering release-on-tag.yml for $tag"
           gh workflow run "Build & Publish Electron Updates (GitHub Releases) on Tag" \
             --ref main \
-            -f release_tag="$tag"
+            -f release_tag="$tag" || {
+            echo "::warning::Failed to trigger Electron build workflow. Ensure GH_PAT secret has actions:write permission."
+            echo "Manual trigger needed: gh workflow run release-on-tag.yml -f release_tag=$tag" >> "$GITHUB_STEP_SUMMARY"
+            exit 0  # Don't fail the whole workflow
+          }
           echo "Triggered Electron build workflow for $tag" >> "$GITHUB_STEP_SUMMARY"

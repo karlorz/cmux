@@ -127,21 +127,53 @@ Run agent tasks locally without cloud infrastructure. Useful for prototyping, de
 | `devsh orchestrate tail-local <id>` | Follow run logs |
 | `devsh orchestrate view <path>` | View bundle in browser |
 | `devsh orchestrate stop-local <id>` | Stop a running task |
-| `devsh orchestrate append-local <id>` | Append instructions to running task |
+| `devsh orchestrate append-local <id>` | Append instructions (passive mode) |
+| `devsh orchestrate inject-local <id>` | Inject instructions with active continuation |
+| `devsh orchestrate selftest-local` | Preflight check for workspace, CLI, credentials |
+| `devsh orchestrate context-pack` | Package repo context for agent consumption |
 | `devsh orchestrate replay <bundle>` | Replay tasks from bundle |
 | `devsh orchestrate upload <bundle>` | Upload bundle to cloud |
 
 **Quick start:**
 
 ```bash
+# Preflight check before running tasks
+devsh orchestrate selftest-local
+
 # Run a task locally (artifacts saved to ~/.devsh/orchestrations/)
 devsh orchestrate run-local --agent claude/haiku-4.5 "Fix the bug in auth.ts"
+
+# Run with preflight checks (validates CLI, credentials, workspace before starting)
+devsh orchestrate run-local --agent claude/haiku-4.5 --selftest "Fix the bug"
 
 # View results in browser
 devsh orchestrate view ~/.devsh/orchestrations/local_abc123 --live
 
+# Inject follow-up instructions (uses active continuation for Claude/Codex)
+devsh orchestrate inject-local local_abc123 "Also add tests for the fix"
+
+# Package repo context for agent consumption
+devsh orchestrate context-pack --output context.json
+
 # Run multiple tasks from a plan
 devsh orchestrate run-plan tasks.yaml --parallel
+```
+
+**Instruction injection modes:**
+
+| Mode | Description |
+|------|-------------|
+| `--mode auto` | Auto-detect provider capabilities (default) |
+| `--mode active` | Use `--continue --session-id` (Claude) or `--thread-id` (Codex) |
+| `--mode passive` | Append to instruction file (fallback for other CLIs) |
+
+**Context pack options:**
+
+```bash
+devsh orchestrate context-pack                    # Summary only
+devsh orchestrate context-pack --tree             # Include file tree
+devsh orchestrate context-pack --output ctx.json  # JSON export
+devsh orchestrate context-pack --max-tokens 8000  # Token budget
 ```
 
 ### Cloud Orchestration
@@ -157,6 +189,55 @@ Spawn and manage agent tasks in cloud sandboxes.
 | `devsh orchestrate cancel <id>` | Cancel running task |
 | `devsh orchestrate export <id>` | Export orchestration as bundle |
 | `devsh orchestrate results <id>` | Get orchestration results |
+
+### Head Agent (GitHub Projects Automation)
+
+Autonomous polling loop for GitHub Projects v2 automation. Discovers project items and dispatches agents automatically.
+
+| Command | Description |
+|---------|-------------|
+| `devsh head-agent start` | Start continuous polling loop |
+| `devsh head-agent poll-once` | Single poll and dispatch cycle |
+
+**Quick start:**
+
+```bash
+# Single poll (useful for testing)
+devsh head-agent poll-once \
+  --project-id PVT_xxx \
+  --installation-id 12345 \
+  --repo owner/repo \
+  --dry-run
+
+# Continuous polling loop
+devsh head-agent start \
+  --project-id PVT_xxx \
+  --installation-id 12345 \
+  --repo owner/repo \
+  --poll-interval 300
+```
+
+**Agent selection modes:**
+
+| Mode | Description |
+|------|-------------|
+| `--agent auto` | Auto-select based on labels/fields (default) |
+| `--agent claude/opus-4.6` | Use specific agent |
+| `--agent-default` | Default agent for auto mode |
+| `--agent-frontend` | Agent for frontend-labeled items |
+| `--agent-backend` | Agent for backend-labeled items |
+
+**Auto-selection priority:**
+1. Project field "Agent" override
+2. GitHub labels: `frontend`, `backend`, `ui`, `api`
+3. Project fields: Area/Component
+4. Default agent (`--agent-default`)
+
+**Quality gate and retries:**
+
+The head agent also scans for tasks with failing PR checks and automatically dispatches retries:
+- `--max-retries 2` controls retry attempts per task
+- `--checks-limit 50` limits check context for retry prompts
 
 ### GitHub Projects
 

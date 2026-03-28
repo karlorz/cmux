@@ -55,6 +55,12 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({
       const user = await cachedGetUser(stackClientApp);
       const authJson = user ? await user.getAuthJson() : undefined;
 
+      // Check if already disposed (StrictMode cleanup) before creating socket
+      // This prevents "WebSocket is closed before connection is established" warnings
+      if (disposed) {
+        return;
+      }
+
       const query: Record<string, string> = { auth: authToken };
       if (teamSlugOrId) {
         query.team = teamSlugOrId;

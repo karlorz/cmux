@@ -33,7 +33,14 @@ export const AMP_API_KEY: AgentConfigApiKey = {
 export const CURSOR_API_KEY: AgentConfigApiKey = {
   envVar: "CURSOR_API_KEY",
   displayName: "Cursor API Key",
-  description: "API key for Cursor agent",
+  description: "API key for Cursor agent (for CI/automation use)",
+};
+
+export const CURSOR_AUTH_JSON: AgentConfigApiKey = {
+  envVar: "CURSOR_AUTH_JSON",
+  displayName: "Cursor Auth JSON",
+  description:
+    "Contents of ~/.config/cursor/auth.json from browser login. Preferred for normal use over API key.",
 };
 
 export const MODEL_STUDIO_API_KEY: AgentConfigApiKey = {
@@ -151,5 +158,6 @@ export const ALL_API_KEYS: AgentConfigApiKey[] = [
   MODEL_STUDIO_API_KEY,
   AMP_API_KEY,
   CURSOR_API_KEY,
+  CURSOR_AUTH_JSON,
   XAI_API_KEY,
 ];

@@ -36,7 +36,8 @@ Examples:
 Notes:
   - Logs are written under: <log-dir>/<tool>/<timestamp>/
   - For Codex CLI, this uses: -a never -s workspace-write (unattended + sandboxed).
-  - Codex autopilot relies on the managed ~/.codex home Stop hook installed by scripts/install-codex-home-hooks.sh.
+  - Codex autopilot relies on the managed ~/.codex home Stop and SessionStart hooks installed by scripts/install-codex-home-hooks.sh.
+  - If the target workspace provides `.codex/hooks/autopilot-stop.sh` or `.codex/hooks/session-start.sh`, those repo-local wrappers override the managed home fallback.
   - For Claude Code and OpenCode, this relies on their own permission/config defaults.
 EOF
 }
@@ -72,6 +73,9 @@ as_abs_path() {
   fi
   printf '%s/%s\n' "$PWD" "$path"
 }
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 TOOL=""
 CWD="$PWD"
@@ -318,7 +322,7 @@ cleanup_runtime() {
 trap cleanup_runtime EXIT
 
 ensure_codex_home_hooks_installed() {
-  local installer="$CWD/scripts/install-codex-home-hooks.sh"
+  local installer="$REPO_ROOT/scripts/install-codex-home-hooks.sh"
 
   if [[ "$CODEX_HOME_HOOKS_INSTALLED" -eq 1 ]]; then
     return 0
@@ -366,7 +370,7 @@ build_hooked_start_prompt() {
 
   cat <<EOF
 You are running in unattended autopilot mode inside a resumed Codex session.
-The repo-local Stop hook may continue the current Codex turn automatically once, and an outer supervisor may resume the same session repeatedly until wrap-up.
+The managed Codex Stop hook may continue the current turn automatically once, and an outer supervisor may resume the same session repeatedly until wrap-up. If the workspace defines repo-local `.codex/hooks/*.sh` overrides, those run before the managed home fallback.
 
 Rules:
 - Do not ask for confirmation to continue; just proceed.
@@ -395,6 +399,7 @@ Time left in the overall session: ${time_left} seconds.
 Timebox each work turn: about ${turn_minutes} minutes.
 
 Continue from where you left off. The Stop hook may continue the current turn automatically, and the outer autopilot supervisor may resume the same session again until wrap-up.
+Repo-local `.codex/hooks/*.sh` overrides run before the managed home fallback when present.
 
 Mission reminder:
 ${mission}
@@ -406,6 +411,7 @@ Time left in the overall session: ${time_left} seconds.
 Timebox each work turn: about ${turn_minutes} minutes.
 
 Continue from where you left off. The Stop hook may continue the current turn automatically, and the outer autopilot supervisor may resume the same session again until wrap-up.
+Repo-local `.codex/hooks/*.sh` overrides run before the managed home fallback when present.
 EOF
   fi
 }
@@ -586,7 +592,7 @@ run_codex_native_autopilot() {
   local prompt="$2"
   local turn_file="$3"
   local max_turns="$4"
-  local hooks_installer="$CWD/scripts/install-codex-home-hooks.sh"
+  local hooks_installer="$REPO_ROOT/scripts/install-codex-home-hooks.sh"
 
   ensure_codex_home_hooks_installed
   local -a base=(codex -a never -s workspace-write)
@@ -613,6 +619,7 @@ run_codex_native_autopilot() {
   header+="cwd: $CWD\n"
   header+="command: $(format_cmd "${cmd[@]}")\n"
   header+="home_hooks: managed\n"
+  header+="home_hook_routing: workspace_override_then_home_fallback\n"
   header+="hooks_installer: $hooks_installer\n"
   header+="max_turns: $max_turns\n"
   header+="stop_file: $STOP_FILE\n"

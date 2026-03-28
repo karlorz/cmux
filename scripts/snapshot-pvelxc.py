@@ -2110,6 +2110,7 @@ async def task_install_base_packages(ctx: PveTaskContext) -> None:
             x11-xserver-utils xterm novnc \
             dbus-x11 openbox xclip xsel parcellite \
             tmux \
+            bubblewrap \
             gh \
             zsh \
             zsh-autosuggestions \
@@ -3140,6 +3141,7 @@ async def task_install_global_cli(ctx: PveTaskContext) -> None:
         which codex && codex --version || echo "codex not found"
         which opencode && opencode --version || echo "opencode not found"
         which gemini && gemini --version || echo "gemini not found"
+        which bwrap && bwrap --version || echo "bwrap not found"
         # amp and codebuff may not have --version, just check existence
         which amp || echo "amp not found"
         which codebuff || echo "codebuff not found"

@@ -328,6 +328,9 @@ export function WorkspaceSetupPanel({
                   </div>
 
                   <TextareaAutosize
+                    id="workspace-setup-script"
+                    name="setup-script"
+                    aria-label="Setup script"
                     value={maintenanceScript}
                     onChange={(e) => setMaintenanceScript(e.target.value)}
                     placeholder={`# e.g.\npnpm install\nbun install\nuv sync`}
@@ -405,6 +408,9 @@ export function WorkspaceSetupPanel({
                           >
                             <input
                               type="text"
+                              id={`env-var-key-${idx}`}
+                              name={`env-var-key-${idx}`}
+                              aria-label={`Environment variable ${idx + 1} name`}
                               value={row.name}
                               onChange={(event) => {
                                 const value = event.target.value;
@@ -423,6 +429,9 @@ export function WorkspaceSetupPanel({
                             />
                             <input
                               type="text"
+                              id={`env-var-value-${idx}`}
+                              name={`env-var-value-${idx}`}
+                              aria-label={`Environment variable ${idx + 1} value`}
                               value={
                                 shouldMaskValue ? MASKED_ENV_VALUE : row.value
                               }

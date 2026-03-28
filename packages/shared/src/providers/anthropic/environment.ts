@@ -108,6 +108,7 @@ export async function getClaudeEnvironment(
             CMUX_API_BASE_URL: ctx.orchestrationEnv?.CMUX_API_BASE_URL,
             CMUX_IS_ORCHESTRATION_HEAD: "1",
             CMUX_ORCHESTRATION_ID: ctx.orchestrationOptions?.orchestrationId,
+            CMUX_CALLBACK_URL: ctx.orchestrationEnv?.CMUX_CALLBACK_URL,
           }
         : undefined,
     });
@@ -945,6 +946,18 @@ fi
 
 # Block the stop - /simplify is required but hasn't been run
 echo "[simplify-gate] BLOCKING: /simplify required but not run" >> "$LOG_FILE"
+
+# Emit stop_blocked event to dashboard (background, non-blocking)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n \\
+      --arg trid "\${CMUX_TASK_RUN_ID:-}" \\
+      '{taskRunId: $trid, type: "stop_blocked", toolName: "claude", summary: "Stop blocked: /simplify required but not run", blockedBy: "simplify_gate"}')" \\
+    >> "$LOG_FILE" 2>&1 || true
+) &
+
 echo "BLOCKED: Your team requires /simplify to run before task completion." >&2
 echo "Please run /simplify (or /simplify --quick) before stopping." >&2
 echo "To skip this requirement, ask your team admin to disable it in settings." >&2
@@ -953,6 +966,46 @@ exit 2`;
   files.push({
     destinationPath: `${claudeLifecycleDir}/simplify-gate-hook.sh`,
     contentBase64: Buffer.from(simplifyGateHookScript).toString("base64"),
+    mode: "755",
+  });
+
+  // TaskCreated hook script - tracks when tasks are created via TaskCreate tool
+  // Useful for dashboard activity tracking and task registry sync
+  // See: https://code.claude.com/docs/en/changelog (v2.1.84)
+  const taskCreatedHookScript = `#!/bin/bash
+# Claude Code task-created hook - tracks task creation in cmux dashboard
+# Fires on TaskCreated: when a task is created via TaskCreate tool
+set -eu
+REQUEST=$(cat)
+
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_ID:-}" ]; then
+  exit 0
+fi
+
+TASK_ID=$(echo "$REQUEST" | jq -r '.task_id // "unknown"')
+TASK_SUBJECT=$(echo "$REQUEST" | jq -r '.subject // ""' | head -c 100)
+TASK_STATUS=$(echo "$REQUEST" | jq -r '.status // "pending"')
+
+echo "[task-created] Task $TASK_ID created: $TASK_SUBJECT" >> /root/lifecycle/task-hook.log 2>&1
+
+# Post activity event to dashboard (background, don't block)
+(
+  curl -s -X POST "\${CMUX_CALLBACK_URL}/api/task-run/activity" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$(jq -n \\
+      --arg trid "\${CMUX_TASK_RUN_ID}" \\
+      --arg taskId "$TASK_ID" \\
+      --arg subject "$TASK_SUBJECT" \\
+      --arg status "$TASK_STATUS" \\
+      '{taskRunId: $trid, type: "task_created", toolName: "TaskCreate", summary: ("Created task: " + ($subject | if length > 60 then (.[0:60] + "...") else . end))}')" \\
+    >> /root/lifecycle/task-hook.log 2>&1 || true
+) &
+exit 0`;
+
+  files.push({
+    destinationPath: `${claudeLifecycleDir}/task-created-hook.sh`,
+    contentBase64: Buffer.from(taskCreatedHookScript).toString("base64"),
     mode: "755",
   });
 
@@ -999,13 +1052,12 @@ exit 2`;
     alwaysThinkingEnabled: true,
     // Always use apiKeyHelper when not using OAuth (helper outputs correct key based on user config)
     ...(hasOAuthToken ? {} : { apiKeyHelper: claudeApiKeyHelperPath }),
-    ...(denyRules?.length
-      ? {
-          permissions: {
-            deny: denyRules,
-          },
-        }
-      : {}),
+    // Always set bypassPermissions mode for task sandboxes to skip interactive confirmation
+    // The --dangerously-skip-permissions flag enables bypass, but defaultMode ensures it's active
+    permissions: {
+      defaultMode: "bypassPermissions",
+      ...(denyRules?.length ? { deny: denyRules } : {}),
+    },
     hooks: {
       Stop: [
         // First check simplify gate (can block with exit 2)
@@ -1112,6 +1164,18 @@ exit 2`;
             {
               type: "command",
               command: `${claudeLifecycleDir}/notification-hook.sh`,
+            },
+          ],
+        },
+      ],
+      // TaskCreated: fires when a task is created via TaskCreate tool (v2.1.84)
+      // Tracks task creation in cmux dashboard activity timeline
+      TaskCreated: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${claudeLifecycleDir}/task-created-hook.sh`,
             },
           ],
         },
@@ -1269,6 +1333,25 @@ echo ${apiKeyToOutput}`;
   // This allows Codex and Gemini to read the same CLAUDE.md via symlinks
   // at their native user-level paths (~/.codex/AGENTS.md, ~/.gemini/GEMINI.md)
   startupCommands.push(...getCrossToolSymlinkCommands());
+
+  // Set Claude Code stream idle timeout to 5 minutes (default is 90s)
+  // This prevents timeouts during long tool executions in sandboxes
+  // See: https://code.claude.com/docs/en/changelog (v2.1.84)
+  env.CLAUDE_STREAM_IDLE_TIMEOUT_MS = "300000";
+
+  // Enable subprocess credential scrubbing for security in sandboxes
+  // This strips Anthropic and cloud provider credentials from subprocess environments
+  // Prevents accidental credential exposure to tools and child processes
+  // See: https://code.claude.com/docs/en/changelog (v2.1.84)
+  env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB = "1";
+
+  // Disable cron jobs in task sandboxes - scheduled tasks shouldn't persist
+  // across agent runs and could cause unexpected behavior
+  // Head agents may need cron for orchestration, so only disable for task sandboxes
+  // See: https://code.claude.com/docs/en/changelog (v2.1.72)
+  if (hasTaskRunJwt && !ctx.isOrchestrationHead) {
+    env.CLAUDE_CODE_DISABLE_CRON = "1";
+  }
 
   return {
     files,

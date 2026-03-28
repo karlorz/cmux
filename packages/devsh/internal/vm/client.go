@@ -90,6 +90,120 @@ func (c *Client) SetTeamSlug(teamSlug string) {
 	c.teamSlug = teamSlug
 }
 
+// isRetryableStatusCode returns true if the HTTP status code indicates a transient error
+func isRetryableStatusCode(statusCode int) bool {
+	return statusCode == http.StatusBadGateway || // 502
+		statusCode == http.StatusServiceUnavailable || // 503
+		statusCode == http.StatusGatewayTimeout // 504
+}
+
+// isRetryableError returns true if the error indicates a transient network issue
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := strings.ToLower(err.Error())
+	return strings.Contains(errStr, "connection reset") ||
+		strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "timeout") ||
+		strings.Contains(errStr, "eof") ||
+		strings.Contains(errStr, "broken pipe")
+}
+
+// retryConfig holds retry parameters
+type retryConfig struct {
+	maxRetries int
+	baseDelay  time.Duration
+}
+
+// defaultRetryConfig returns the default retry configuration
+func defaultRetryConfig() retryConfig {
+	return retryConfig{
+		maxRetries: 2, // 3 total attempts
+		baseDelay:  time.Second,
+	}
+}
+
+// doRequestWithRetry makes an authenticated request with retry for transient errors
+func (c *Client) doRequestWithRetry(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
+	cfg := defaultRetryConfig()
+	var lastErr error
+	var lastResp *http.Response
+
+	for attempt := 0; attempt <= cfg.maxRetries; attempt++ {
+		if attempt > 0 {
+			// Exponential backoff with jitter
+			delay := cfg.baseDelay * time.Duration(1<<(attempt-1))
+			jitter := time.Duration(float64(delay) * 0.25 * (0.5 - float64(time.Now().UnixNano()%1000)/1000))
+			time.Sleep(delay + jitter)
+		}
+
+		resp, err := c.doRequest(ctx, method, path, body)
+		if err != nil {
+			if isRetryableError(err) && attempt < cfg.maxRetries {
+				lastErr = err
+				continue
+			}
+			return nil, err
+		}
+
+		// Check for retryable status codes
+		if isRetryableStatusCode(resp.StatusCode) && attempt < cfg.maxRetries {
+			lastResp = resp
+			lastErr = fmt.Errorf("server returned %d", resp.StatusCode)
+			resp.Body.Close()
+			continue
+		}
+
+		return resp, nil
+	}
+
+	if lastResp != nil {
+		return lastResp, nil
+	}
+	return nil, lastErr
+}
+
+// doServerRequestWithRetry makes an authenticated request to apps/server with retry
+func (c *Client) doServerRequestWithRetry(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
+	cfg := defaultRetryConfig()
+	var lastErr error
+	var lastResp *http.Response
+
+	for attempt := 0; attempt <= cfg.maxRetries; attempt++ {
+		if attempt > 0 {
+			// Exponential backoff with jitter
+			delay := cfg.baseDelay * time.Duration(1<<(attempt-1))
+			jitter := time.Duration(float64(delay) * 0.25 * (0.5 - float64(time.Now().UnixNano()%1000)/1000))
+			time.Sleep(delay + jitter)
+		}
+
+		resp, err := c.doServerRequest(ctx, method, path, body)
+		if err != nil {
+			if isRetryableError(err) && attempt < cfg.maxRetries {
+				lastErr = err
+				continue
+			}
+			return nil, err
+		}
+
+		// Check for retryable status codes
+		if isRetryableStatusCode(resp.StatusCode) && attempt < cfg.maxRetries {
+			lastResp = resp
+			lastErr = fmt.Errorf("server returned %d", resp.StatusCode)
+			resp.Body.Close()
+			continue
+		}
+
+		return resp, nil
+	}
+
+	if lastResp != nil {
+		return lastResp, nil
+	}
+	return nil, lastErr
+}
+
 // doRequest makes an authenticated request to the Convex HTTP API
 func (c *Client) doRequest(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
 	accessToken, err := auth.GetAccessToken()
@@ -176,14 +290,14 @@ func (c *Client) CreateInstance(ctx context.Context, opts CreateOptions) (*Insta
 		body["ttlSeconds"] = opts.TTLSeconds
 	}
 
-	resp, err := c.doRequest(ctx, "POST", "/api/v1/cmux/instances", body)
+	resp, err := c.doRequestWithRetry(ctx, "POST", "/api/v1/cmux/instances", body)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+		return nil, formatAPIError(resp.StatusCode, readErrorBody(resp.Body), "/api/v1/cmux/instances")
 	}
 
 	var result Instance
@@ -1964,14 +2078,14 @@ func (c *Client) CreateCloudWorkspace(ctx context.Context, opts CreateCloudWorks
 		body["theme"] = opts.Theme
 	}
 
-	resp, err := c.doServerRequest(ctx, "POST", "/api/create-cloud-workspace", body)
+	resp, err := c.doServerRequestWithRetry(ctx, "POST", "/api/create-cloud-workspace", body)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("create-cloud-workspace failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+		return nil, formatAPIError(resp.StatusCode, readErrorBody(resp.Body), "/api/create-cloud-workspace")
 	}
 
 	var result CreateCloudWorkspaceResult
@@ -2059,19 +2173,19 @@ func (c *Client) GetTaskRunMemory(ctx context.Context, taskRunID string, memoryT
 
 // OrchestrationSpawnOptions represents options for spawning with orchestration tracking
 type OrchestrationSpawnOptions struct {
-	Prompt               string
-	Agent                string
-	Repo                 string
-	Branch               string
-	PRTitle              string
-	EnvironmentID        string
-	IsCloudMode          bool
-	DependsOn            []string // Orchestration task IDs this task depends on
-	Priority             int      // Task priority (1=highest, 10=lowest, default 5)
-	TaskRunJwt           string   // If set, use X-Task-Run-JWT header instead of Bearer token
-	IsCloudWorkspace     bool     // If true, spawn as a cloud workspace (interactive TUI session)
-	IsOrchestrationHead  bool     // If true, mark as orchestration head (coordinates sub-agents)
-	SupervisorProfileID  string   // If set, use this supervisor profile for head agent behavior
+	Prompt              string
+	Agent               string
+	Repo                string
+	Branch              string
+	PRTitle             string
+	EnvironmentID       string
+	IsCloudMode         bool
+	DependsOn           []string // Orchestration task IDs this task depends on
+	Priority            int      // Task priority (1=highest, 10=lowest, default 5)
+	TaskRunJwt          string   // If set, use X-Task-Run-JWT header instead of Bearer token
+	IsCloudWorkspace    bool     // If true, spawn as a cloud workspace (interactive TUI session)
+	IsOrchestrationHead bool     // If true, mark as orchestration head (coordinates sub-agents)
+	SupervisorProfileID string   // If set, use this supervisor profile for head agent behavior
 }
 
 // OrchestrationSpawnResult represents the result of spawning an agent with orchestration
@@ -2607,6 +2721,65 @@ type ProviderSession struct {
 	LastActiveAt      *int64  `json:"lastActiveAt,omitempty"`
 }
 
+type RunControlLifecycle struct {
+	Status             string  `json:"status"`
+	Interrupted        bool    `json:"interrupted"`
+	InterruptionStatus string  `json:"interruptionStatus"`
+	Reason             *string `json:"reason,omitempty"`
+	BlockedAt          *int64  `json:"blockedAt,omitempty"`
+	ExpiresAt          *int64  `json:"expiresAt,omitempty"`
+	ResolvedAt         *int64  `json:"resolvedAt,omitempty"`
+	ResolvedBy         *string `json:"resolvedBy,omitempty"`
+}
+
+type RunControlApprovals struct {
+	PendingCount       int      `json:"pendingCount"`
+	PendingRequestIDs  []string `json:"pendingRequestIds"`
+	CurrentRequestID   *string  `json:"currentRequestId,omitempty"`
+	LatestRequestID    *string  `json:"latestRequestId,omitempty"`
+	LatestStatus       *string  `json:"latestStatus,omitempty"`
+	LatestApprovalType *string  `json:"latestApprovalType,omitempty"`
+	LatestAction       *string  `json:"latestAction,omitempty"`
+	LatestRiskLevel    *string  `json:"latestRiskLevel,omitempty"`
+	LatestCreatedAt    *int64   `json:"latestCreatedAt,omitempty"`
+}
+
+type RunControlActions struct {
+	AvailableActions     []string `json:"availableActions"`
+	CanResolveApproval   bool     `json:"canResolveApproval"`
+	CanContinueSession   bool     `json:"canContinueSession"`
+	CanResumeCheckpoint  bool     `json:"canResumeCheckpoint"`
+	CanAppendInstruction bool     `json:"canAppendInstruction"`
+}
+
+type RunControlContinuation struct {
+	Mode                 string  `json:"mode"`
+	ProviderSessionID    *string `json:"providerSessionId,omitempty"`
+	ProviderThreadID     *string `json:"providerThreadId,omitempty"`
+	ResumeToken          *string `json:"resumeToken,omitempty"`
+	ResumeTargetID       *string `json:"resumeTargetId,omitempty"`
+	CheckpointRef        *string `json:"checkpointRef,omitempty"`
+	CheckpointGeneration *int64  `json:"checkpointGeneration,omitempty"`
+	ReplyChannel         *string `json:"replyChannel,omitempty"`
+	SessionStatus        *string `json:"sessionStatus,omitempty"`
+	SessionMode          *string `json:"sessionMode,omitempty"`
+	LastActiveAt         *int64  `json:"lastActiveAt,omitempty"`
+	HasActiveBinding     bool    `json:"hasActiveBinding"`
+}
+
+type RunControlSummary struct {
+	TaskRunID       string                 `json:"taskRunId"`
+	TaskID          string                 `json:"taskId"`
+	OrchestrationID *string                `json:"orchestrationId,omitempty"`
+	AgentName       *string                `json:"agentName,omitempty"`
+	Provider        string                 `json:"provider"`
+	RunStatus       string                 `json:"runStatus"`
+	Lifecycle       RunControlLifecycle    `json:"lifecycle"`
+	Approvals       RunControlApprovals    `json:"approvals"`
+	Actions         RunControlActions      `json:"actions"`
+	Continuation    RunControlContinuation `json:"continuation"`
+}
+
 // GetProviderSession retrieves the provider session binding for a task
 func (c *Client) GetProviderSession(ctx context.Context, taskID string) (*ProviderSession, error) {
 	if c.teamSlug == "" {
@@ -2629,6 +2802,42 @@ func (c *Client) GetProviderSession(ctx context.Context, taskID string) (*Provid
 	}
 
 	var result ProviderSession
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+func (c *Client) GetRunControlSummary(ctx context.Context, taskRunID string) (*RunControlSummary, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	path := fmt.Sprintf(
+		"/api/v1/cmux/orchestration/run-control/%s?teamSlugOrId=%s",
+		taskRunID,
+		url.QueryEscape(c.teamSlug),
+	)
+
+	resp, err := c.doServerRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("no run-control summary found for task run %s", taskRunID)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf(
+			"get run-control summary failed (%d): %s",
+			resp.StatusCode,
+			readErrorBody(resp.Body),
+		)
+	}
+
+	var result RunControlSummary
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}

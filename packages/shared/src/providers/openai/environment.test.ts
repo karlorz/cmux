@@ -5,7 +5,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   applyCodexApiKeys,
+  CODEX_HOME_AUTOPILOT_STOP_PATH,
   CODEX_HOME_HOOK_DISPATCH_PATH,
+  CODEX_HOME_SESSION_FALLBACK_PATH,
+  CODEX_HOME_SESSION_START_PATH,
   getOpenAIEnvironment,
   stripFilteredConfigKeys,
 } from "./environment";
@@ -652,13 +655,38 @@ foo = "bar"
     const result = await getOpenAIEnvironment({} as never);
 
     const hooksFile = decodeEnvironmentFile(result, "$HOME/.codex/hooks.json");
+    expect(hooksFile).toContain('"SessionStart"');
     expect(hooksFile).toContain('"Stop"');
+    expect(hooksFile).toContain('managed-session-start.sh');
     expect(hooksFile).toContain('cmux-stop-dispatch.sh');
 
     const dispatcher = decodeEnvironmentFile(result, CODEX_HOME_HOOK_DISPATCH_PATH);
     expect(dispatcher).toContain('RALPH_STATE_FILE="${WORKSPACE_ROOT}/.codex/ralph-loop-state.json"');
+    expect(dispatcher).toContain('read_session_workspace_root');
     expect(dispatcher).toContain('.codex/hooks/ralph-loop-stop.sh');
     expect(dispatcher).toContain('.codex/hooks/autopilot-stop.sh');
+    expect(dispatcher).toContain('route_to_home_hook "autopilot-stop.sh"');
+
+    const sessionStart = decodeEnvironmentFile(result, CODEX_HOME_SESSION_START_PATH);
+    expect(sessionStart).toContain('codex-session-workspace-root-%s');
+    expect(sessionStart).toContain('.codex/hooks/session-start.sh');
+    expect(sessionStart).toContain('route_to_home_hook "session-start.sh"');
+
+    const homeAutopilotStop = decodeEnvironmentFile(
+      result,
+      CODEX_HOME_AUTOPILOT_STOP_PATH
+    );
+    expect(homeAutopilotStop).toContain('SHARED_REPO_ROOT="${CMUX_SHARED_REPO_ROOT:-/root/workspace}"');
+    expect(homeAutopilotStop).toContain('bash "$SHARED_REPO_ROOT/scripts/hooks/cmux-autopilot-stop-core.sh"');
+    expect(homeAutopilotStop).toContain('CMUX_CODEX_HOOKS_ENABLED');
+
+    const homeSessionStart = decodeEnvironmentFile(
+      result,
+      CODEX_HOME_SESSION_FALLBACK_PATH
+    );
+    expect(homeSessionStart).toContain('SHARED_REPO_ROOT="${CMUX_SHARED_REPO_ROOT:-/root/workspace}"');
+    expect(homeSessionStart).toContain('bash "$SHARED_REPO_ROOT/scripts/hooks/cmux-session-start-core.sh"');
+    expect(homeSessionStart).toContain('CMUX_SESSION_FILE="${CMUX_SESSION_FILE:-/tmp/codex-current-session-id}"');
 
     const legacyHooksTemplate = result.files?.find(
       (file) => file.destinationPath === "/root/lifecycle/codex-hooks.json"
@@ -688,8 +716,10 @@ foo = "bar"
       const workspaceRoot = join(tempDir, "workspace");
       const hooksDir = join(workspaceRoot, ".codex", "hooks");
       const stateFile = join(workspaceRoot, ".codex", "ralph-loop-state.json");
+      const homeHooksDir = join(tempDir, "home", ".codex", "hooks");
 
       await mkdir(hooksDir, { recursive: true });
+      await mkdir(homeHooksDir, { recursive: true });
       await writeFile(dispatcherPath, dispatcher, "utf-8");
       await writeFile(
         join(hooksDir, "ralph-loop-stop.sh"),
@@ -755,6 +785,158 @@ printf '{"decision":"block","reason":"autopilot"}\\n'
         decision: "block",
         reason: "autopilot",
       });
+
+      await rm(join(hooksDir, "autopilot-stop.sh"), { force: true });
+      await writeFile(
+        join(homeHooksDir, "autopilot-stop.sh"),
+        `#!/usr/bin/env sh
+set -eu
+printf '{"decision":"block","reason":"home-autopilot"}\\n'
+`,
+        "utf-8"
+      );
+      await chmod(join(homeHooksDir, "autopilot-stop.sh"), 0o755);
+
+      const homeFallbackRun = spawnSync(
+        "bash",
+        [dispatcherPath],
+        {
+          env: {
+            ...process.env,
+            HOME: join(tempDir, "home"),
+            CMUX_AUTOPILOT_ENABLED: "1",
+          },
+          input: JSON.stringify({ cwd: workspaceRoot }),
+          encoding: "utf-8",
+        }
+      );
+
+      expect(homeFallbackRun.status).toBe(0);
+      expect(JSON.parse(homeFallbackRun.stdout)).toEqual({
+        decision: "block",
+        reason: "home-autopilot",
+      });
+
+      const sessionWorkspaceFile = join(tempDir, "codex-session-workspace-root-session-1");
+
+      await writeFile(sessionWorkspaceFile, `${workspaceRoot}\n`, "utf-8");
+
+      const fallbackRun = spawnSync(
+        "bash",
+        [dispatcherPath],
+        {
+          env: {
+            ...process.env,
+            HOME: join(tempDir, "home"),
+            CMUX_AUTOPILOT_ENABLED: "1",
+            CMUX_CODEX_SESSION_WORKSPACE_FILE_TEMPLATE: join(
+              tempDir,
+              "codex-session-workspace-root-%s"
+            ),
+          },
+          input: JSON.stringify({ cwd: tempDir, session_id: "session-1" }),
+          encoding: "utf-8",
+        }
+      );
+
+      expect(fallbackRun.status).toBe(0);
+      expect(JSON.parse(fallbackRun.stdout)).toEqual({
+        decision: "block",
+        reason: "home-autopilot",
+      });
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("routes managed home session-start through the home fallback in a plain workspace", async () => {
+    const result = await getOpenAIEnvironment({} as never);
+    const managedSessionStart = decodeEnvironmentFile(
+      result,
+      CODEX_HOME_SESSION_START_PATH
+    );
+    const homeSessionStart = decodeEnvironmentFile(
+      result,
+      CODEX_HOME_SESSION_FALLBACK_PATH
+    );
+    const tempDir = await mkdtemp(join(tmpdir(), "cmux-openai-codex-session-start-"));
+
+    try {
+      const homeHooksDir = join(tempDir, "home", ".codex", "hooks");
+      const plainWorkspace = join(tempDir, "plain-workspace");
+      const sharedHooksDir = join(tempDir, "shared", "scripts", "hooks");
+      const managedPath = join(homeHooksDir, "managed-session-start.sh");
+      const fallbackPath = join(homeHooksDir, "session-start.sh");
+      const sessionFile = join(tempDir, "codex-current-session-id");
+      const currentWorkspaceFile = join(tempDir, "codex-current-workspace-root");
+      const sessionWorkspaceTemplate = join(
+        tempDir,
+        "codex-session-workspace-root-%s"
+      );
+
+      await mkdir(homeHooksDir, { recursive: true });
+      await mkdir(plainWorkspace, { recursive: true });
+      await mkdir(sharedHooksDir, { recursive: true });
+      const resolvedWorkspaceRoot = spawnSync(
+        "bash",
+        ["-lc", `cd ${JSON.stringify(plainWorkspace)} && pwd`],
+        { encoding: "utf-8" }
+      ).stdout;
+      await writeFile(managedPath, managedSessionStart, "utf-8");
+      await writeFile(fallbackPath, homeSessionStart, "utf-8");
+      await writeFile(
+        join(sharedHooksDir, "cmux-session-start-core.sh"),
+        `#!/usr/bin/env bash
+set -euo pipefail
+read -r SESSION_ID SOURCE < <(jq -r '[.session_id // "default", .source // "startup"] | @tsv')
+printf '%s\\n' "$SESSION_ID" > "$CMUX_SESSION_FILE"
+printf '%s\\n' "$CMUX_PROJECT_DIR" > "$(printf "$CMUX_SESSION_WORKSPACE_FILE_TEMPLATE" "$SESSION_ID")"
+printf '%s\\n' "$CMUX_PROJECT_DIR" > "$CMUX_CURRENT_WORKSPACE_FILE"
+cat <<EOF
+Session source: \${SOURCE}.
+Review AGENTS.md and follow repository instructions before making changes.
+EOF
+`,
+        "utf-8"
+      );
+      await chmod(managedPath, 0o755);
+      await chmod(fallbackPath, 0o755);
+      await chmod(join(sharedHooksDir, "cmux-session-start-core.sh"), 0o755);
+
+      const run = spawnSync("bash", [managedPath], {
+        env: {
+          ...process.env,
+          HOME: join(tempDir, "home"),
+          CMUX_SHARED_REPO_ROOT: join(tempDir, "shared"),
+          CMUX_SESSION_FILE: sessionFile,
+          CMUX_CODEX_CURRENT_WORKSPACE_FILE: currentWorkspaceFile,
+          CMUX_CODEX_SESSION_WORKSPACE_FILE_TEMPLATE: sessionWorkspaceTemplate,
+        },
+        input: JSON.stringify({
+          cwd: plainWorkspace,
+          session_id: "session-plain",
+          source: "startup",
+        }),
+        encoding: "utf-8",
+      });
+
+      expect(run.status).toBe(0);
+      expect(run.stdout).toContain("Session source: startup.");
+      expect(run.stdout).toContain(
+        "Review AGENTS.md and follow repository instructions before making changes."
+      );
+      expect(run.stderr).toBe("");
+      expect(spawnSync("cat", [sessionFile], { encoding: "utf-8" }).stdout).toBe(
+        "session-plain\n"
+      );
+      expect(
+        spawnSync("cat", [currentWorkspaceFile], { encoding: "utf-8" }).stdout
+      ).toBe(resolvedWorkspaceRoot);
+      expect(
+        spawnSync("cat", [join(tempDir, "codex-session-workspace-root-session-plain")], {
+          encoding: "utf-8",
+        }).stdout
+      ).toBe(resolvedWorkspaceRoot);
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }

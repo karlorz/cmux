@@ -1,6 +1,13 @@
-import { describe, expect, it } from "vitest";
-import { aggregateByVendor } from "./providerStatus";
+import { describe, expect, it, vi } from "vitest";
+import { aggregateByVendor, checkAllProvidersStatusWebMode } from "./providerStatus";
 import type { ProviderStatus } from "@cmux/shared";
+
+// Mock the Convex client
+vi.mock("./convexClient.js", () => ({
+  getConvex: () => ({
+    query: vi.fn().mockResolvedValue({}),
+  }),
+}));
 
 describe("aggregateByVendor", () => {
   it("returns empty array for empty input", () => {
@@ -84,5 +91,42 @@ describe("aggregateByVendor", () => {
     const result = aggregateByVendor(statuses);
 
     expect(result[0]?.name).toBe("unknown");
+  });
+});
+
+describe("checkAllProvidersStatusWebMode", () => {
+  it("marks free-tier models as available without API keys", async () => {
+    const result = await checkAllProvidersStatusWebMode({
+      teamSlugOrId: "test-team",
+    });
+
+    // OpenCode models are free-tier and should be available
+    const opencodeBigPickle = result.providers.find(
+      (p) => p.name === "opencode/big-pickle"
+    );
+    expect(opencodeBigPickle?.isAvailable).toBe(true);
+    expect(opencodeBigPickle?.missingRequirements).toBeUndefined();
+  });
+
+  it("marks paid models as unavailable without API keys", async () => {
+    const result = await checkAllProvidersStatusWebMode({
+      teamSlugOrId: "test-team",
+    });
+
+    // Claude models require API keys
+    const claudeOpus = result.providers.find(
+      (p) => p.name === "claude/opus-4.5"
+    );
+    expect(claudeOpus?.isAvailable).toBe(false);
+    expect(claudeOpus?.missingRequirements).toBeDefined();
+  });
+
+  it("returns Docker as ready in web mode", async () => {
+    const result = await checkAllProvidersStatusWebMode({
+      teamSlugOrId: "test-team",
+    });
+
+    expect(result.dockerStatus.isRunning).toBe(true);
+    expect(result.dockerStatus.version).toBe("web-mode");
   });
 });

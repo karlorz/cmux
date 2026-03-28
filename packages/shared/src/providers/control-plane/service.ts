@@ -6,7 +6,10 @@
  */
 
 import type { AgentConfigApiKey } from "../../agentConfig";
-import type { ProviderSpec } from "../base-providers";
+import {
+  getProviderIdFromAgentName,
+  type ProviderSpec,
+} from "../base-providers";
 import type { ProviderOverride } from "../../provider-registry";
 import {
   type AuthMethodType,
@@ -70,11 +73,28 @@ const JSON_BLOB_ENV_VARS = new Set([
   "OPENCODE_AUTH_JSON",
 ]);
 
-// Providers with free tier models
-const FREE_TIER_PROVIDERS = new Set([
-  "opencode", // OpenCode has free models via OpenRouter
-  "gemini", // Gemini has free tier
-]);
+export function isAuthFreeModel(
+  model: Pick<StoredModel, "tier" | "requiredApiKeys">
+): boolean {
+  return (
+    model.tier === "free" &&
+    (!model.requiredApiKeys || model.requiredApiKeys.length === 0)
+  );
+}
+
+function getModelProviderId(model: Pick<StoredModel, "name" | "vendor">): string {
+  return getProviderIdFromAgentName(model.name) ?? model.vendor;
+}
+
+function hasAuthFreeModels(
+  providerId: string,
+  models: StoredModel[]
+): boolean {
+  return models.some(
+    (model) =>
+      getModelProviderId(model) === providerId && isAuthFreeModel(model)
+  );
+}
 
 /**
  * Determines the auth method type from an API key definition.
@@ -204,13 +224,14 @@ function getAuthMethodPlaceholder(type: AuthMethodType): string | undefined {
 function resolveConnectionState(
   providerSpec: ProviderSpec,
   storedApiKeys: StoredApiKeys,
-  hasOverride: boolean
+  hasOverride: boolean,
+  models: StoredModel[]
 ): ProviderConnectionState {
   const configuredEnvVars = providerSpec.authEnvVars.filter(
     (envVar) => storedApiKeys[envVar] !== undefined
   );
 
-  const hasFreeModels = FREE_TIER_PROVIDERS.has(providerSpec.id);
+  const hasFreeModels = hasAuthFreeModels(providerSpec.id, models);
   const source = getConnectionSource(configuredEnvVars, hasOverride, hasFreeModels);
   const isConnected = source !== null;
 
@@ -229,6 +250,7 @@ export function resolveControlPlaneProvider(
   providerSpec: ProviderSpec,
   storedApiKeys: StoredApiKeys,
   providerOverrides: ProviderOverride[],
+  models: StoredModel[],
   defaultModel?: ProviderDefaultModel
 ): ProviderControlPlaneProvider {
   // Find any enabled override for this provider
@@ -237,7 +259,12 @@ export function resolveControlPlaneProvider(
   );
 
   const hasOverride = override !== undefined;
-  const connectionState = resolveConnectionState(providerSpec, storedApiKeys, hasOverride);
+  const connectionState = resolveConnectionState(
+    providerSpec,
+    storedApiKeys,
+    hasOverride,
+    models
+  );
 
   return {
     id: providerSpec.id,
@@ -260,14 +287,13 @@ export function resolveControlPlaneModel(
   model: StoredModel,
   connectedProviders: Set<string>
 ): ProviderControlPlaneModel {
-  // Determine provider ID from vendor (may need mapping)
-  const providerId = model.vendor;
+  const providerId = getModelProviderId(model);
 
   // Model is available if:
   // 1. Provider is connected, OR
-  // 2. Model is free tier
+  // 2. Model is free tier and requires no auth
   const isAvailable =
-    connectedProviders.has(providerId) || model.tier === "free";
+    connectedProviders.has(providerId) || isAuthFreeModel(model);
 
   return {
     name: model.name,
@@ -329,6 +355,7 @@ export function listProviders(
       providerSpec,
       ctx.storedApiKeys,
       ctx.providerOverrides,
+      ctx.models,
       defaultModel
     );
     providers.push(provider);
@@ -359,7 +386,8 @@ export function listModels(
     const connectionState = resolveConnectionState(
       providerSpec,
       ctx.storedApiKeys,
-      override !== undefined
+      override !== undefined,
+      ctx.models
     );
     if (connectionState.isConnected) {
       connectedProviders.add(providerSpec.id);

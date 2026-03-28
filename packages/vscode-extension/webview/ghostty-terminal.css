@@ -1,0 +1,117 @@
+/**
+ * Ghostty Terminal Webview Styles
+ */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--vscode-terminal-background, #1e1e1e);
+  font-family: var(--vscode-editor-font-family, 'Consolas', 'Courier New', monospace);
+}
+
+#terminal-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#terminal {
+  width: 100%;
+  height: 100%;
+}
+
+/* Status indicator */
+.status {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  font-size: 12px;
+  background: var(--vscode-badge-background, #4d4d4d);
+  color: var(--vscode-badge-foreground, #fff);
+  z-index: 100;
+  transition: opacity 0.2s ease;
+}
+
+.status.connecting {
+  background: var(--vscode-statusBarItem-warningBackground, #c9a400);
+  color: var(--vscode-statusBarItem-warningForeground, #000);
+}
+
+.status.connected {
+  background: var(--vscode-statusBarItem-prominentBackground, #388a34);
+  color: var(--vscode-statusBarItem-prominentForeground, #fff);
+}
+
+.status.error {
+  background: var(--vscode-statusBarItem-errorBackground, #c72e2e);
+  color: var(--vscode-statusBarItem-errorForeground, #fff);
+}
+
+/* Placeholder shown before ghostty-web loads */
+.placeholder {
+  color: var(--vscode-descriptionForeground, #888);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  text-align: center;
+  padding: 20px;
+}
+
+.placeholder h2 {
+  margin-bottom: 8px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.placeholder p {
+  font-size: 12px;
+  line-height: 1.5;
+  max-width: 300px;
+  margin: 0 auto;
+}
+
+.placeholder .note {
+  margin-top: 16px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+/* Focus ring for accessibility */
+#terminal:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007acc);
+  outline-offset: -1px;
+}
+
+/* Scrollbar styling to match VS Code */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbarSlider-background, rgba(121, 121, 121, 0.4));
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-scrollbarSlider-hoverBackground, rgba(100, 100, 100, 0.7));
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: var(--vscode-scrollbarSlider-activeBackground, rgba(191, 191, 191, 0.4));
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}

@@ -321,6 +321,69 @@ describe("HTTP API - apps/server", () => {
     });
   });
 
+  describe("Models API - Auth Headers", () => {
+    itWhenServer("accepts x-stack-auth header for browser clients", async () => {
+      // Without valid Convex auth this will still fall back to static,
+      // but we verify the header is parsed without errors
+      const response = await safeFetch(`${SERVER_URL}/api/models?teamSlugOrId=test-team`, {
+        headers: {
+          "x-stack-auth": JSON.stringify({ accessToken: "invalid-token" }),
+        },
+      });
+      expect(response).not.toBeNull();
+      // Should get 200 (falls back to static on auth failure, not 401)
+      expect(response!.status).toBe(200);
+      const data = await response!.json();
+      expect(data).toHaveProperty("models");
+    });
+
+    itWhenServer("handles malformed x-stack-auth gracefully", async () => {
+      const response = await safeFetch(`${SERVER_URL}/api/models?teamSlugOrId=test-team`, {
+        headers: {
+          "x-stack-auth": "not-valid-json",
+        },
+      });
+      expect(response).not.toBeNull();
+      // Should still return 200 with static fallback
+      expect(response!.status).toBe(200);
+      const data = await response!.json();
+      expect(data).toHaveProperty("models");
+    });
+
+    itWhenServer("includes source metadata in response for diagnostics", async () => {
+      // Without valid auth, should show static source
+      const response = await safeFetch(`${SERVER_URL}/api/models`);
+      expect(response).not.toBeNull();
+      expect(response!.status).toBe(200);
+      const data = await response!.json();
+
+      // Response should always include source metadata for debugging
+      expect(data).toHaveProperty("source");
+      expect(["static", "convex"]).toContain(data.source);
+
+      // When unauthenticated, should be static and unfiltered
+      if (data.source === "static") {
+        expect(data.filtered).toBe(false);
+      }
+    });
+
+    itWhenServer("response never returns null body (regression check)", async () => {
+      // Dashboard audit found some routes returning literal null
+      // This ensures /api/models always returns a valid object
+      const response = await safeFetch(`${SERVER_URL}/api/models?teamSlugOrId=test-team`);
+      expect(response).not.toBeNull();
+      expect(response!.status).toBe(200);
+
+      const rawText = await response!.text();
+      expect(rawText).not.toBe("null");
+      expect(rawText.trim()).not.toBe("");
+
+      const data = JSON.parse(rawText);
+      expect(data).not.toBeNull();
+      expect(data).toHaveProperty("models");
+    });
+  });
+
   describe("Models API - Data Integrity", () => {
     itWhenServer("returns same count as AGENT_CATALOG", async () => {
       const response = await safeFetch(`${SERVER_URL}/api/models`);

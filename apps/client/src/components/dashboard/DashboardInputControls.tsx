@@ -1,6 +1,10 @@
 import { env } from "@/client-env";
 import { AgentLogo } from "@/components/icons/agent-logos";
 import { GitHubIcon } from "@/components/icons/github";
+import {
+  buildAggregatedVendorStatuses,
+  getProviderStatusMeta,
+} from "@/components/dashboard/provider-status-meta";
 import { ModeToggleTooltip } from "@/components/ui/mode-toggle-tooltip";
 import SearchableSelect, {
   type SearchableSelectHandle,
@@ -21,7 +25,7 @@ import { getVendorDisplayName, sortModelsByVendor } from "@/lib/model-vendor-uti
 import { WWW_ORIGIN } from "@/lib/wwwOrigin";
 import { api } from "@cmux/convex/api";
 import type { ProviderStatusResponse } from "@cmux/shared";
-import { AGENT_CATALOG, type AgentVendor } from "@cmux/shared/agent-catalog";
+import { type AgentVendor } from "@cmux/shared/agent-catalog";
 import { parseGithubRepoUrl } from "@cmux/shared";
 import { useUser } from "@stackframe/react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -124,142 +128,6 @@ function formatTokenCount(tokens: number | undefined): string | undefined {
   if (tokens >= 1000000) return `${(tokens / 1000000).toFixed(tokens % 1000000 === 0 ? 0 : 1)}M`;
   if (tokens >= 1000) return `${(tokens / 1000).toFixed(0)}K`;
   return `${tokens}`;
-}
-
-const AGENT_PREFIX_TO_VENDOR = {
-  claude: "anthropic",
-  codex: "openai",
-  gemini: "google",
-  opencode: "opencode",
-  qwen: "qwen",
-  cursor: "cursor",
-  amp: "amp",
-  grok: "xai",
-  openrouter: "openrouter",
-} as const;
-
-type AggregatedVendorStatus = {
-  vendor: string;
-  label: string;
-  isAvailable: boolean;
-  detail: string;
-};
-
-function formatProviderLabel(vendor: string): string {
-  return getVendorDisplayName(vendor);
-}
-
-function getVendorForAgentName(agentName: string): string | null {
-  const catalogVendor = AGENT_CATALOG.find((entry) => entry.name === agentName)?.vendor;
-  if (catalogVendor) {
-    return catalogVendor;
-  }
-
-  const prefix = agentName.split("/")[0] as keyof typeof AGENT_PREFIX_TO_VENDOR;
-  return AGENT_PREFIX_TO_VENDOR[prefix] ?? null;
-}
-
-function createProviderSettingsTooltip(providerLabel: string, detail: string) {
-  return (
-    <div className="space-y-1">
-      <p className="font-medium">{providerLabel} setup needed</p>
-      <p>{detail}</p>
-      <p className="text-neutral-500 dark:text-neutral-400">
-        Open AI Providers settings to finish setup.
-      </p>
-    </div>
-  );
-}
-
-function buildAggregatedVendorStatuses(
-  providerStatus: ProviderStatusResponse | null | undefined,
-): Map<string, AggregatedVendorStatus> {
-  const statuses = new Map<string, AggregatedVendorStatus>();
-
-  for (const provider of providerStatus?.providers ?? []) {
-    const vendor = getVendorForAgentName(provider.name);
-    if (!vendor) {
-      continue;
-    }
-
-    const label = formatProviderLabel(vendor);
-    const detail = provider.isAvailable
-      ? `${label} is ready.`
-      : provider.missingRequirements?.[0] ?? `${label} setup is incomplete.`;
-    const existing = statuses.get(vendor);
-
-    if (!existing) {
-      statuses.set(vendor, {
-        vendor,
-        label,
-        isAvailable: provider.isAvailable,
-        detail,
-      });
-      continue;
-    }
-
-    if (existing.isAvailable) {
-      continue;
-    }
-
-    if (provider.isAvailable) {
-      statuses.set(vendor, {
-        vendor,
-        label,
-        isAvailable: true,
-        detail: `${label} is ready.`,
-      });
-    }
-  }
-
-  return statuses;
-}
-
-function getProviderStatusMeta(
-  vendorStatuses: Map<string, AggregatedVendorStatus>,
-  vendor: string,
-  onClick: () => void,
-  hasProviderStatus: boolean,
-): Partial<Pick<AgentOption, "statusTone" | "statusLabel" | "statusDetail" | "warning">> {
-  if (!hasProviderStatus) {
-    return {};
-  }
-
-  const providerLabel = formatProviderLabel(vendor);
-  const status = vendorStatuses.get(vendor);
-
-  if (!status) {
-    return {
-      statusTone: "warning",
-      statusLabel: "Status unavailable",
-      statusDetail: `${providerLabel} status is unavailable right now.`,
-      warning: {
-        tooltip: createProviderSettingsTooltip(
-          providerLabel,
-          `${providerLabel} status is unavailable right now.`
-        ),
-        onClick,
-      },
-    };
-  }
-
-  if (status.isAvailable) {
-    return {
-      statusTone: "healthy",
-      statusLabel: "Ready",
-      statusDetail: status.detail,
-    };
-  }
-
-  return {
-    statusTone: "warning",
-    statusLabel: "Setup needed",
-    statusDetail: status.detail,
-    warning: {
-      tooltip: createProviderSettingsTooltip(providerLabel, status.detail),
-      onClick,
-    },
-  };
 }
 
 function watchPopupClosed(win: Window | null, onClose: () => void): void {

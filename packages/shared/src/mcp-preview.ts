@@ -84,6 +84,7 @@ export type BuildMergedPreviewOptions = {
     CMUX_API_BASE_URL?: string;
     CMUX_IS_ORCHESTRATION_HEAD?: string;
     CMUX_ORCHESTRATION_ID?: string;
+    CMUX_CALLBACK_URL?: string;
   };
 };
 
@@ -371,6 +372,9 @@ function getManagedClaudeMemoryServer(
     if (orchestrationEnv.CMUX_ORCHESTRATION_ID) {
       env.CMUX_ORCHESTRATION_ID = orchestrationEnv.CMUX_ORCHESTRATION_ID;
     }
+    if (orchestrationEnv.CMUX_CALLBACK_URL) {
+      env.CMUX_CALLBACK_URL = orchestrationEnv.CMUX_CALLBACK_URL;
+    }
     if (Object.keys(env).length > 0) {
       server.env = env;
     }
@@ -407,6 +411,9 @@ function getManagedCodexMemoryBlock(
     }
     if (orchestrationEnv.CMUX_ORCHESTRATION_ID) {
       envEntries.push(`CMUX_ORCHESTRATION_ID = ${JSON.stringify(orchestrationEnv.CMUX_ORCHESTRATION_ID)}`);
+    }
+    if (orchestrationEnv.CMUX_CALLBACK_URL) {
+      envEntries.push(`CMUX_CALLBACK_URL = ${JSON.stringify(orchestrationEnv.CMUX_CALLBACK_URL)}`);
     }
     if (envEntries.length > 0) {
       lines.push("");

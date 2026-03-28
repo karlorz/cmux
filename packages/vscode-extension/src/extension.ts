@@ -3,6 +3,7 @@ import { execSync } from "node:child_process";
 import { io, Socket } from "socket.io-client";
 import * as vscode from "vscode";
 import { activateTerminal, deactivateTerminal, waitForCmuxPtyTerminal, waitForAnyCmuxPtyTerminals, createQueuedTerminals } from "./terminal";
+import { activateGhosttyPanel, deactivateGhosttyPanel } from "./ghostty-panel";
 
 // Create output channel for cmux logs
 const outputChannel = vscode.window.createOutputChannel("cmux");
@@ -537,6 +538,9 @@ export function activate(context: vscode.ExtensionContext) {
   // Activate terminal module (PTY backend)
   activateTerminal(context);
 
+  // Activate Ghostty panel feature (POC)
+  activateGhosttyPanel(context);
+
   // Register command to show output
   const showOutputCommand = vscode.commands.registerCommand(
     "cmux.showOutput",
@@ -635,6 +639,9 @@ export function deactivate() {
 
   // Deactivate terminal module
   deactivateTerminal();
+
+  // Deactivate Ghostty panel feature
+  deactivateGhosttyPanel();
 
   // Clean up file watcher and timer
   if (fileWatcher) {

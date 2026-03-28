@@ -452,7 +452,14 @@ const convexSchema = defineSchema({
     .index("by_user", ["userId", "createdAt"])
     .index("by_team_user", ["teamId", "userId"])
     .index("by_team_user_status_created", ["teamId", "userId", "status", "createdAt"])
-    .index("by_pull_request_url", ["pullRequestUrl"]),
+    .index("by_pull_request_url", ["pullRequestUrl"])
+    .index("by_orchestration_head_status", ["isOrchestrationHead", "orchestrationStatus"])
+    .index("by_orchestration_head_status_heartbeat", [
+      "isOrchestrationHead",
+      "orchestrationStatus",
+      "orchestrationHeartbeat",
+    ])
+    .index("by_team_orchestration_head", ["teamId", "orchestrationId", "isOrchestrationHead"]),
 
   // Junction table linking taskRuns to pull requests by PR identity
   // Enables efficient lookup of taskRuns when a PR webhook fires
@@ -713,10 +720,11 @@ const convexSchema = defineSchema({
   taskRunActivity: defineTable({
     taskRunId: v.id("taskRuns"),
     // Activity type: tool_call, file_edit, file_read, bash_command, test_run, git_commit, error,
-    // session_start, session_stop, session_resumed, context_warning, context_compacted,
+    // session_start, session_stop, session_resumed, session_finished, context_warning, context_compacted,
     // memory_loaded, memory_scope_changed, user_prompt, subagent_start, subagent_stop,
     // notification, stop_requested, stop_blocked, stop_failed, tool_requested, tool_completed,
-    // approval_requested, approval_resolved (Phase 4 lifecycle parity)
+    // approval_requested, approval_resolved, prompt_submitted, run_resumed, mcp_capabilities_negotiated
+    // (Phase 4 lifecycle parity + P1/P5 extensions)
     type: v.string(),
     toolName: v.optional(v.string()),
     summary: v.string(),
@@ -746,6 +754,26 @@ const convexSchema = defineSchema({
     scopeType: v.optional(v.string()), // "team", "repo", "user", "run"
     scopeBytes: v.optional(v.number()),
     scopeAction: v.optional(v.string()), // "injected", "updated", "cleared"
+    // Prompt/Turn tracking fields (P1 - prompt_submitted/session_finished/run_resumed)
+    promptSource: v.optional(v.string()), // "user", "operator", "hook", "queue", "handoff"
+    turnNumber: v.optional(v.number()),
+    promptLength: v.optional(v.number()),
+    turnCount: v.optional(v.number()),
+    providerSessionId: v.optional(v.string()),
+    // Resume fields (P1 - run_resumed events)
+    resumeReason: v.optional(v.string()), // "checkpoint", "reconnect", "handoff", "retry", "manual"
+    previousTaskRunId: v.optional(v.string()),
+    previousSessionId: v.optional(v.string()),
+    checkpointRef: v.optional(v.string()),
+    // MCP runtime fields (P5 - mcp_capabilities_negotiated events)
+    serverName: v.optional(v.string()),
+    serverId: v.optional(v.string()),
+    protocolVersion: v.optional(v.string()),
+    transport: v.optional(v.string()), // "stdio", "http", "sse", "websocket"
+    mcpCapabilities: v.optional(v.string()), // JSON stringified capabilities object
+    toolCount: v.optional(v.number()),
+    resourceCount: v.optional(v.number()),
+    mcpSessionId: v.optional(v.string()),
   })
     .index("by_task_run", ["taskRunId", "createdAt"])
     .index("by_team", ["teamId", "createdAt"]),
@@ -808,6 +836,8 @@ const convexSchema = defineSchema({
     vaultConfig: v.optional(
       v.object({
         type: v.union(v.literal("local"), v.literal("github")),
+        // Local Obsidian vault name for obsidian:// links (default: "obsidian_vault")
+        vaultName: v.optional(v.string()),
         // Local vault settings
         localPath: v.optional(v.string()),
         // GitHub vault settings
@@ -2182,6 +2212,53 @@ const convexSchema = defineSchema({
     .index("by_task_run", ["taskRunId"])
     .index("by_team_provider", ["teamId", "provider", "status"])
     .index("by_team_agent", ["teamId", "agentName", "status"]),
+
+  // Runtime Lineage - Append-only record of run-to-run relationships
+  // Tracks how runs relate to earlier runs for durable resume ancestry.
+  // Unlike providerSessionBindings (mutable current state), these records are never updated.
+  runtimeLineage: defineTable({
+    teamId: v.string(),
+    // Current run being created/resumed
+    taskRunId: v.id("taskRuns"),
+    // Previous run this continues from (null for initial runs)
+    previousTaskRunId: v.optional(v.id("taskRuns")),
+    // How this run continues from the previous
+    continuationMode: v.union(
+      v.literal("initial"), // First run, no previous
+      v.literal("retry"), // Automatic retry after failure
+      v.literal("manual_resume"), // User explicitly resumed
+      v.literal("checkpoint_restore"), // Restored from checkpoint
+      v.literal("session_continuation"), // Provider session continuation (Claude --resume)
+      v.literal("handoff"), // Handoff from another agent
+      v.literal("reconnect") // Network reconnect to same session
+    ),
+    // Provider session identifiers (copied at time of lineage creation)
+    providerSessionId: v.optional(v.string()), // Claude session ID
+    providerThreadId: v.optional(v.string()), // Codex thread ID
+    // Resume context
+    resumeReason: v.optional(v.string()), // Human-readable reason
+    checkpointRef: v.optional(v.string()), // Checkpoint reference if checkpoint_restore
+    checkpointGeneration: v.optional(v.number()), // Checkpoint generation number
+    // Actor/trigger that initiated this continuation
+    actor: v.optional(
+      v.union(
+        v.literal("system"), // Automatic (retry, reconnect)
+        v.literal("user"), // User action in UI
+        v.literal("operator"), // Operator/admin action
+        v.literal("agent"), // Agent initiated (handoff)
+        v.literal("hook"), // Hook triggered
+        v.literal("queue") // Queue processor
+      )
+    ),
+    // Metadata
+    agentName: v.optional(v.string()), // Agent at time of lineage
+    orchestrationId: v.optional(v.string()), // Parent orchestration if any
+    createdAt: v.number(), // Immutable - when this lineage was recorded
+  })
+    .index("by_task_run", ["taskRunId"]) // Find lineage for a specific run
+    .index("by_previous_run", ["previousTaskRunId"]) // Find runs that continued from a given run
+    .index("by_team", ["teamId", "createdAt"]) // Team lineage history
+    .index("by_orchestration", ["orchestrationId", "createdAt"]), // Orchestration lineage
 
   // Approval requests for human-in-the-loop orchestration
   // Stores pending approvals for risky actions, review requests, and policy escalations

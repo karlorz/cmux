@@ -73,6 +73,9 @@ cleanup() {
   if [[ -n "${TEST_LOG_DIR:-}" && -d "${TEST_LOG_DIR:-}" ]]; then
     rm -rf "$TEST_LOG_DIR"
   fi
+  if [[ -n "${TARGET_WORKSPACE:-}" && -d "${TARGET_WORKSPACE:-}" ]]; then
+    rm -rf "$TARGET_WORKSPACE"
+  fi
 }
 trap cleanup EXIT
 
@@ -105,10 +108,12 @@ assert_file_not_exists \
   "$LIVE_HOOKS_FILE"
 
 TEST_LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cmux-agent-autopilot-test-XXXXXX")"
+TARGET_WORKSPACE="$(mktemp -d "${TMPDIR:-/tmp}/cmux-agent-autopilot-target-XXXXXX")"
+TARGET_WORKSPACE_ROOT="$(cd "$TARGET_WORKSPACE" && pwd)"
 
 bash "$PROJECT_DIR/scripts/agent-autopilot.sh" \
   --tool codex \
-  --cwd "$PROJECT_DIR" \
+  --cwd "$TARGET_WORKSPACE" \
   --minutes 1 \
   --turn-minutes 1 \
   --wrap-up-minutes 1 \
@@ -119,7 +124,9 @@ bash "$PROJECT_DIR/scripts/agent-autopilot.sh" \
 TURN_LOG="$(find "$TEST_LOG_DIR" -path '*/turn-001.log' | head -n 1)"
 assert "dry-run creates the first turn log" test -n "$TURN_LOG"
 assert "Codex autopilot records managed home hooks in the turn log" grep -F -- "home_hooks: managed" "$TURN_LOG"
+assert "Codex autopilot records repo override routing in the turn log" grep -F -- "home_hook_routing: workspace_override_then_home_fallback" "$TURN_LOG"
 assert "Codex autopilot records the installer path" grep -F -- "hooks_installer: $CODEX_HOME_INSTALLER" "$TURN_LOG"
+assert "Codex autopilot can target an arbitrary workspace" grep -F -- "cwd: $TARGET_WORKSPACE_ROOT" "$TURN_LOG"
 assert_not_contains \
   "Codex autopilot no longer relies on repo-local hook templates" \
   "$TURN_LOG" \

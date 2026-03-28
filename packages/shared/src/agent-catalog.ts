@@ -76,6 +76,8 @@ export interface AgentCatalogEntry {
   name: string;
   /** Human-readable label, e.g. "Opus 4.6" */
   displayName: string;
+  /** Model description from provider */
+  description?: string;
   /** Vendor for grouping & logo selection */
   vendor: AgentVendor;
   /** Environment variable names required for this agent */

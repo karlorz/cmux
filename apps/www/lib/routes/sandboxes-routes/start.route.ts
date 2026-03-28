@@ -39,6 +39,7 @@ import {
   getSandboxStartErrorMessage,
   getUserFromRequest,
   hydrateWorkspace,
+  maskSensitive,
   loadEnvironmentEnvVars,
   mapProviderOverrides,
   parseGithubRepoUrl,
@@ -47,6 +48,7 @@ import {
   selectGitIdentity,
   setupProviderAuth,
   stackServerAppJs,
+  verifyGitHubRepoAccess,
   verifyTeamAccess,
   waitForVSCodeReady,
   waitForWorkerReady,
@@ -580,12 +582,17 @@ sandboxesStartRouter.openapi(
         );
       }
 
+      // callbackUrl for MCP memory sync - use CONVEX_SITE_URL (self-hosted) or transform api URL
+      const callbackUrl = env.CONVEX_SITE_URL
+        ?? env.NEXT_PUBLIC_CONVEX_URL?.replace('.convex.cloud', '.convex.site');
+
       const systemSandboxEnvContent = buildSystemSandboxEnvContent({
         taskRunId: body.taskRunId,
         taskRunJwt: body.taskRunJwt,
         taskRunJwtSecret: env.CMUX_TASK_RUN_JWT_SECRET,
         isCloudWorkspace,
         isOrchestrationHead,
+        callbackUrl,
       });
       const envVarsToApply =
         concatConfigBlocks(
@@ -754,6 +761,26 @@ sandboxesStartRouter.openapi(
       }
 
       if (gitAuthToken) {
+        if (parsedRepoUrl) {
+          const repoAccess = await verifyGitHubRepoAccess({
+            token: gitAuthToken,
+            owner: parsedRepoUrl.owner,
+            repo: parsedRepoUrl.repo,
+          });
+          if (!repoAccess.ok) {
+            console.error(
+              `[sandboxes.start] GitHub repo access check failed for ${parsedRepoUrl.fullName}: ${repoAccess.message}`,
+            );
+            await instance.stop().catch((stopError) => {
+              console.error(
+                `[sandboxes.start] Failed to stop instance ${instance.id} after repo access failure:`,
+                stopError,
+              );
+            });
+            return c.text(repoAccess.message, 500);
+          }
+        }
+
         await configureGithubAccess(instance, gitAuthToken);
       } else {
         console.log(
@@ -813,7 +840,10 @@ sandboxesStartRouter.openapi(
               stopError,
             );
           });
-          return c.text("Failed to hydrate sandbox", 500);
+          const errorDetail = error instanceof Error
+            ? maskSensitive(error.message).slice(0, 200)
+            : "Unknown error";
+          return c.text(`Failed to hydrate sandbox: ${errorDetail}`, 500);
         }
       }
 

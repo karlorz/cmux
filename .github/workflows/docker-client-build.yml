@@ -4,24 +4,28 @@ on:
   push:
     branches: [main]
     paths:
-      # Client application
+      # Web services
       - 'apps/client/**'
-      # Shared packages used by client
+      - 'apps/www/**'
+      - 'apps/server/**'
+      # Shared packages used by the unified cmux-web stack
       - 'packages/shared/**'
       - 'packages/convex/**'
       - 'packages/www-openapi-client/**'
+      - 'packages/e2b-client/**'
+      - 'packages/pve-lxc-client/**'
+      # Coolify deployment config
+      - 'docker-compose.coolify.yml'
+      - '.github/workflows/coolify-deploy.yml'
       # Root dependencies
       - 'package.json'
       - 'bun.lock'
       - '.npmrc'
-      # This workflow
+      # Web image workflows
       - '.github/workflows/docker-client-build.yml'
+      - '.github/workflows/docker-www-build.yml'
+      - '.github/workflows/docker-server-build.yml'
   workflow_dispatch:
-    inputs:
-      force_deploy:
-        description: "Trigger Coolify deploy after build"
-        type: boolean
-        default: true
 
 permissions:
   contents: write
@@ -63,13 +67,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          registry: docker.io
-          username: ${{ secrets.DOCKER_USER }}
-          password: ${{ secrets.DOCKER_PAT }}
 
       - name: Extract metadata
         id: meta
@@ -145,6 +142,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log in to Docker Hub
+        id: docker_hub_login
+        continue-on-error: true
         uses: docker/login-action@v3
         with:
           registry: docker.io
@@ -170,7 +169,18 @@ jobs:
           docker buildx imagetools create $(jq -cr '.tags | map(select(startswith("ghcr.io"))) | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf 'ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
 
+      - name: Inspect GHCR manifest
+        id: inspect
+        run: |
+          digest="$(docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:sha-${GITHUB_SHA::7} | sed -n 's/^Digest:[[:space:]]*//p' | head -n1)"
+          if [[ -z "${digest:-}" ]]; then
+            echo "::error::Failed to resolve GHCR manifest digest"
+            exit 1
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
       - name: Create Docker Hub manifest and push
+        if: steps.docker_hub_login.outcome == 'success'
         working-directory: /tmp/digests
         env:
           DOCKER_USER: ${{ secrets.DOCKER_USER }}
@@ -186,6 +196,10 @@ jobs:
           docker buildx imagetools create $(jq -cr '.tags | map(select(startswith("docker.io"))) | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf 'ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
 
+      - name: Warn when Docker Hub publish is skipped
+        if: steps.docker_hub_login.outcome != 'success'
+        run: echo "::warning::Skipping Docker Hub publish because Docker Hub login failed"
+
       - name: Output image info
         run: |
           echo "## Docker Image Built (Multi-Arch)" >> $GITHUB_STEP_SUMMARY
@@ -197,31 +211,9 @@ jobs:
           echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Immutable Ref:** ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}@${{ steps.inspect.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Manifest:**" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest >> $GITHUB_STEP_SUMMARY 2>&1 || echo "Failed to inspect" >> $GITHUB_STEP_SUMMARY
+          docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:sha-${GITHUB_SHA::7} >> $GITHUB_STEP_SUMMARY 2>&1 || echo "Failed to inspect" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-
-  trigger-coolify:
-    name: Trigger Coolify deployment
-    runs-on: ubuntu-24.04
-    needs: merge
-    if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.force_deploy)
-    timeout-minutes: 5
-
-    steps:
-      - name: Dispatch to unified Coolify deploy workflow
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { owner, repo } = context.repo;
-            await github.rest.repos.createDispatchEvent({
-              owner,
-              repo,
-              event_type: "coolify-deploy-trigger",
-              client_payload: {
-                sha: context.sha,
-                source: "docker-client-build",
-              },
-            });
-            console.log("Dispatched coolify-deploy-trigger event");

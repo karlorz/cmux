@@ -1,6 +1,6 @@
 ---
 name: autopilot_reset
-description: Use when the user asks for `$autopilot_reset` to inspect, stop, reset, or debug the current Codex autopilot session from Codex. Uses the shared repo script behind the scenes.
+description: Use when the user asks for `$autopilot_reset` to inspect, stop, reset, or debug the latest recorded global Codex autopilot session from Codex. Uses the shared repo script behind the scenes.
 args: "[status|status-all|stop|reset|all|debug-on|debug-off]"
 ---
 
@@ -10,7 +10,7 @@ Use this skill when the user asks for `$autopilot_reset` or wants autopilot stat
 
 ## Defaults
 
-- Target: the current Codex autopilot session
+- Target: the latest recorded global Codex autopilot session
 - Default mode: `reset`
 
 ## Supported modes
@@ -49,5 +49,6 @@ $autopilot_reset status-all
 ## Notes
 
 - Do not expose or ask for a `--provider` argument when using this skill. It is Codex-only.
+- When multiple Codex autopilot sessions may exist, start with `status-all` before using `stop` or `reset`.
 - Claude slash commands and Codex skills are different surfaces. If you need Claude autopilot control, use the shared script directly or Claude's `/autopilot_reset` command.
 - The implementation lives in `scripts/autopilot-reset.sh`. Do not duplicate the control logic inside the skill.

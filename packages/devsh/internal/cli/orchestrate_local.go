@@ -24,6 +24,7 @@ var (
 	localPersist     bool
 	localRunDir      string
 	localIncludeLogs bool
+	localSelftest    bool
 )
 
 // LocalState represents the state of a local orchestration run
@@ -124,6 +125,19 @@ Examples:
 			return fmt.Errorf("workspace does not exist: %s", absWorkspace)
 		}
 
+		// Run preflight checks if requested
+		if localSelftest {
+			if !flagJSON {
+				fmt.Println("Running preflight checks...")
+			}
+			if err := runSelftestForAgent(localAgent, absWorkspace); err != nil {
+				return fmt.Errorf("preflight checks failed: %w", err)
+			}
+			if !flagJSON {
+				fmt.Println()
+			}
+		}
+
 		// Generate orchestration ID
 		orchID := fmt.Sprintf("local_%d", time.Now().UnixNano())
 		startTime := time.Now()
@@ -170,6 +184,13 @@ Examples:
 				}
 			}
 			defer removePidFile(runDir)
+
+			// Initialize session info for active instruction injection (D5.6)
+			if err := InitSessionForRun(runDir, localAgent, absWorkspace); err != nil {
+				if !flagJSON && flagVerbose {
+					fmt.Printf("Warning: failed to init session info: %v\n", err)
+				}
+			}
 		}
 
 		// Add start event
@@ -490,6 +511,15 @@ func runCodexLocal(ctx context.Context, state *LocalState, prompt, workspace str
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 
+	cleanup, err := configureCodexLocalCommand(ctx, state, workspace, cmd)
+	if err != nil {
+		if flagVerbose && !flagJSON {
+			fmt.Printf("Warning: failed to configure Codex session tracking: %v\n", err)
+		}
+		cleanup = func() {}
+	}
+	defer cleanup()
+
 	state.addEvent("agent_running", "Codex CLI executing")
 
 	if err := cmd.Run(); err != nil {
@@ -624,6 +654,15 @@ func runCodexLocalWithAgent(ctx context.Context, state *LocalState, agent, promp
 	cmd.Dir = workspace
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+
+	cleanup, err := configureCodexLocalCommand(ctx, state, workspace, cmd)
+	if err != nil {
+		if flagVerbose && !flagJSON {
+			fmt.Printf("Warning: failed to configure Codex session tracking: %v\n", err)
+		}
+		cleanup = func() {}
+	}
+	defer cleanup()
 
 	state.addEvent("agent_running", "Codex CLI executing")
 
@@ -799,5 +838,6 @@ func init() {
 	orchestrateLocalCmd.Flags().BoolVar(&localPersist, "persist", true, "Save run artifacts to ~/.devsh/orchestrations/<run-id>/ (default: true, use --persist=false to disable)")
 	orchestrateLocalCmd.Flags().StringVar(&localRunDir, "run-dir", "", "Custom base directory for run artifacts (default: ~/.devsh/orchestrations)")
 	orchestrateLocalCmd.Flags().BoolVar(&localIncludeLogs, "include-logs", false, "Include stdout/stderr logs in --export bundle (always included with --persist)")
+	orchestrateLocalCmd.Flags().BoolVar(&localSelftest, "selftest", false, "Run preflight checks before starting (validates CLI, credentials, workspace)")
 	orchestrateCmd.AddCommand(orchestrateLocalCmd)
 }

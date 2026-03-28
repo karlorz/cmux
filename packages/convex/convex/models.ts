@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { query, internalMutation, internalQuery } from "./_generated/server";
 import { authMutation, authQuery } from "./users/utils";
 import { resolveTeamIdLoose } from "../_shared/team";
+import { isAuthFreeModel } from "@cmux/shared/providers/control-plane";
 
 /**
  * Public query: list enabled models for CLI/UI consumption.
@@ -49,7 +50,8 @@ export const listAll = authQuery({
 
 /**
  * List available models filtered by team's configured API keys.
- * Returns only models the team can actually use (has required keys or free tier).
+ * Returns only models the team can actually use
+ * (has required keys or is an auth-free free tier model).
  * Requires authentication.
  */
 export const listAvailable = authQuery({
@@ -94,8 +96,8 @@ export const listAvailable = authQuery({
 
     // Filter models by availability
     const availableModels = visibleModels.filter((model) => {
-      // Free tier models are always available
-      if (model.tier === "free") return true;
+      // Auth-free free tier models are always available
+      if (isAuthFreeModel(model)) return true;
       // Models with no required keys are available
       if (!model.requiredApiKeys || model.requiredApiKeys.length === 0)
         return true;

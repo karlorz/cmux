@@ -1,57 +1,70 @@
 import type { AgentCatalogEntry } from "../../agent-catalog";
+import {
+  CODEX_CATALOG_GENERATED,
+  CODEX_VISIBLE_MODELS,
+  getDefaultCodexModel as getDefaultGenerated,
+  getCodexModel as getGeneratedModel,
+  type CodexModelEntry,
+} from "./catalog.generated";
+import {
+  CODEX_CUSTOM_MODELS,
+  getCustomCodexModel,
+  isCustomCodexModel,
+} from "./catalog.custom";
 
 /**
- * Codex Catalog - Flagship models only.
+ * Merge custom models with generated catalog.
+ * Custom models override generated ones with the same name.
  *
- * This catalog contains only the recommended flagship models with full metadata.
- * Additional models (older versions, variants) are auto-discovered via the
- * OpenAI API discovery cron and stored in the database.
- *
- * Flagship selection criteria:
- * - Latest generation (GPT-5.4)
- * - Fast/low-cost option (GPT-5.4-mini)
- * - Legacy fast option for compatibility (GPT-5.1-codex-mini)
+ * Note: Codex CLI accepts ANY model name - it routes to the provider.
+ * Custom models work if the backend (OpenAI API / proxy) supports them.
  */
-export const CODEX_CATALOG: AgentCatalogEntry[] = [
-  // GPT-5.4 - Latest flagship frontier model
-  {
-    name: "codex/gpt-5.4-xhigh",
-    displayName: "GPT-5.4 (XHigh)",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["latest", "recommended", "reasoning"],
-    contextWindow: 256000,
-    maxOutputTokens: 32000,
-  },
-  {
-    name: "codex/gpt-5.4",
-    displayName: "GPT-5.4",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["latest"],
-    contextWindow: 256000,
-    maxOutputTokens: 32000,
-  },
-  // GPT-5.4-mini - Fast & low-cost option
-  {
-    name: "codex/gpt-5.4-mini",
-    displayName: "GPT-5.4 Mini (Fast & Low-Cost)",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["fast", "low-cost"],
-    contextWindow: 128000,
-    maxOutputTokens: 16000,
-  },
-  // GPT-5.1-codex-mini - Legacy fast option for compatibility
-  {
-    name: "codex/gpt-5.1-codex-mini",
-    displayName: "GPT-5.1 Codex Mini",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["fast", "legacy"],
-  },
-];
+function mergeModels(
+  generated: CodexModelEntry[],
+  custom: CodexModelEntry[]
+): CodexModelEntry[] {
+  const merged = new Map<string, CodexModelEntry>();
+  for (const model of generated) merged.set(model.name, model);
+  for (const model of custom) merged.set(model.name, model);
+  return Array.from(merged.values());
+}
+
+/**
+ * Codex Catalog - Auto-generated from app-server + custom models.
+ *
+ * Sources:
+ * 1. `catalog.generated.ts` - From `codex app-server model/list` (sync daily)
+ * 2. `catalog.custom.ts` - Custom models not in app-server but available via API
+ *
+ * NOTE: This is SEPARATE from `packages/shared/src/utils/platform-ai.ts`
+ * which defines models for cmux's internal AI services (crown, commit gen, etc.)
+ */
+export const CODEX_CATALOG: AgentCatalogEntry[] = mergeModels(
+  CODEX_VISIBLE_MODELS,
+  CODEX_CUSTOM_MODELS.filter((m) => !m.hidden)
+);
+
+/**
+ * All Codex models including hidden and custom ones
+ */
+export const CODEX_CATALOG_ALL = mergeModels(
+  CODEX_CATALOG_GENERATED,
+  CODEX_CUSTOM_MODELS
+);
+
+/**
+ * Get the default Codex model
+ */
+export function getDefaultCodexModel(): CodexModelEntry | undefined {
+  return getDefaultGenerated();
+}
+
+/**
+ * Get model by name (checks custom first, then generated)
+ */
+export function getCodexModel(name: string): CodexModelEntry | undefined {
+  return getCustomCodexModel(name) ?? getGeneratedModel(name);
+}
+
+// Re-export for consumers
+export { isCustomCodexModel, CODEX_CUSTOM_MODELS };

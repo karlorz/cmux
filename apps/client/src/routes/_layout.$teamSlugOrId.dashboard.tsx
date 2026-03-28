@@ -1,6 +1,7 @@
 import { env } from "@/client-env";
 import type { EditorApi } from "@/components/dashboard/DashboardInput";
 import { DashboardInputControls } from "@/components/dashboard/DashboardInputControls";
+import { isAgentBlockedByProviderStatus } from "@/components/dashboard/provider-status-meta";
 import { DashboardInputFooter } from "@/components/dashboard/DashboardInputFooter";
 import { DashboardStartTaskButton } from "@/components/dashboard/DashboardStartTaskButton";
 import { ToolSuggestions } from "@/components/dashboard/ToolSuggestions";
@@ -134,6 +135,42 @@ const parseStoredAgentSelection = (stored: string | null): string[] => {
   }
 };
 
+// One-time migration from legacy global localStorage keys to team-scoped keys.
+// This runs once per team when the user first visits the dashboard after the migration.
+// After migration, the legacy global keys are removed to prevent cross-team state leakage.
+const LEGACY_MIGRATION_VERSION = 1;
+function migrateLegacyLocalStorageKeys(teamSlugOrId: string) {
+  const migrationKey = `dashboard-migration-v${LEGACY_MIGRATION_VERSION}-${teamSlugOrId}`;
+  if (localStorage.getItem(migrationKey)) return; // Already migrated
+
+  // Migrate selectedAgents
+  const legacyAgents = localStorage.getItem("selectedAgents");
+  const teamAgentsKey = `selectedAgents-${teamSlugOrId}`;
+  if (legacyAgents && !localStorage.getItem(teamAgentsKey)) {
+    localStorage.setItem(teamAgentsKey, legacyAgents);
+  }
+  localStorage.removeItem("selectedAgents");
+
+  // Migrate isCloudMode
+  const legacyCloudMode = localStorage.getItem("isCloudMode");
+  const teamCloudModeKey = `isCloudMode-${teamSlugOrId}`;
+  if (legacyCloudMode && !localStorage.getItem(teamCloudModeKey)) {
+    localStorage.setItem(teamCloudModeKey, legacyCloudMode);
+  }
+  localStorage.removeItem("isCloudMode");
+
+  // Migrate isRalphMode
+  const legacyRalphMode = localStorage.getItem("isRalphMode");
+  const teamRalphModeKey = `isRalphMode-${teamSlugOrId}`;
+  if (legacyRalphMode && !localStorage.getItem(teamRalphModeKey)) {
+    localStorage.setItem(teamRalphModeKey, legacyRalphMode);
+  }
+  localStorage.removeItem("isRalphMode");
+
+  // Mark migration complete for this team
+  localStorage.setItem(migrationKey, "1");
+}
+
 function DashboardComponent() {
   const { teamSlugOrId } = Route.useParams();
   const searchParams = Route.useSearch() as { environmentId?: string };
@@ -144,6 +181,9 @@ function DashboardComponent() {
   const dockerPullToastIdRef = useRef<
     ReturnType<typeof toast.custom> | undefined
   >(undefined);
+
+  // Run one-time migration before reading localStorage state
+  migrateLegacyLocalStorageKeys(teamSlugOrId);
 
   const renderDockerPullToast = useCallback(
     (progress: DockerPullProgress) => () => {
@@ -260,8 +300,10 @@ function DashboardComponent() {
   const [selectedBranch, setSelectedBranch] = useState<string[]>([]);
 
   const [selectedAgents, setSelectedAgentsState] = useState<string[]>(() => {
+    // Read from team-scoped key only (legacy keys migrated on component mount)
+    const teamScopedKey = `selectedAgents-${teamSlugOrId}`;
     const storedAgents = parseStoredAgentSelection(
-      localStorage.getItem("selectedAgents")
+      localStorage.getItem(teamScopedKey)
     );
 
     if (storedAgents.length > 0) {
@@ -298,13 +340,17 @@ function DashboardComponent() {
   // In web mode, always force cloud mode
   const [isCloudMode, setIsCloudMode] = useState<boolean>(() => {
     if (env.NEXT_PUBLIC_WEB_MODE) return true;
-    const stored = localStorage.getItem("isCloudMode");
+    // Read from team-scoped key only (legacy keys migrated on component mount)
+    const teamScopedKey = `isCloudMode-${teamSlugOrId}`;
+    const stored = localStorage.getItem(teamScopedKey);
     return stored ? JSON.parse(stored) : true;
   });
 
   // Ralph Mode: keep working until explicit completion signal
   const [isRalphMode, setIsRalphMode] = useState<boolean>(() => {
-    const stored = localStorage.getItem("isRalphMode");
+    // Read from team-scoped key only (legacy keys migrated on component mount)
+    const teamScopedKey = `isRalphMode-${teamSlugOrId}`;
+    const stored = localStorage.getItem(teamScopedKey);
     return stored ? JSON.parse(stored) : false;
   });
 
@@ -585,28 +631,35 @@ function DashboardComponent() {
         return agents;
       }
 
-      return agents.filter((agent) => availableAgentNames.has(agent));
+      return agents.filter(
+        (agent) =>
+          availableAgentNames.has(agent) &&
+          !isAgentBlockedByProviderStatus(agent, providerStatus)
+      );
     },
-    [availableAgentNames]
+    [availableAgentNames, providerStatus]
   );
 
   const persistAgentSelection = useCallback(
     (agents: string[]) => {
       try {
+        const teamScopedKey = `selectedAgents-${teamSlugOrId}`;
         const isDefaultSelection =
           defaultAgentSelection.length > 0 &&
           areAgentSelectionsEqual(agents, defaultAgentSelection);
 
         if (agents.length === 0 || isDefaultSelection) {
-          localStorage.removeItem("selectedAgents");
+          localStorage.removeItem(teamScopedKey);
         } else {
-          localStorage.setItem("selectedAgents", JSON.stringify(agents));
+          localStorage.setItem(teamScopedKey, JSON.stringify(agents));
         }
+        // Clean up legacy global key on next persist
+        localStorage.removeItem("selectedAgents");
       } catch (error) {
         console.warn("Failed to persist agent selection", error);
       }
     },
-    [defaultAgentSelection]
+    [defaultAgentSelection, teamSlugOrId]
   );
 
   // Keep selected agents aligned with Convex models and user model preferences.
@@ -1217,8 +1270,10 @@ function DashboardComponent() {
     if (isEnvSelected) return; // environment forces cloud mode
     const newMode = !isCloudMode;
     setIsCloudMode(newMode);
-    localStorage.setItem("isCloudMode", JSON.stringify(newMode));
-  }, [isCloudMode, isEnvSelected]);
+    localStorage.setItem(`isCloudMode-${teamSlugOrId}`, JSON.stringify(newMode));
+    // Clean up legacy global key
+    localStorage.removeItem("isCloudMode");
+  }, [isCloudMode, isEnvSelected, teamSlugOrId]);
 
   // Handle paste of GitHub repo URL in the project search field
   const handleProjectSearchPaste = useCallback(
@@ -1466,7 +1521,9 @@ function DashboardComponent() {
               onRalphModeToggle={() => {
                 setIsRalphMode((prev) => {
                   const next = !prev;
-                  localStorage.setItem("isRalphMode", JSON.stringify(next));
+                  localStorage.setItem(`isRalphMode-${teamSlugOrId}`, JSON.stringify(next));
+                  // Clean up legacy global key
+                  localStorage.removeItem("isRalphMode");
                   return next;
                 });
               }}

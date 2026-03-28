@@ -7,13 +7,88 @@
  */
 
 import { getAccessTokenFromRequest } from "@/lib/utils/auth";
-import { getConvex } from "@/lib/utils/get-convex";
-import { api } from "@cmux/convex/api";
+import { getConvex, getConvexAdmin } from "@/lib/utils/get-convex";
+import {
+  extractTaskRunJwtFromRequest,
+  verifyTaskRunJwt,
+  type TaskRunJwtPayload,
+} from "@/lib/utils/jwt-task-run";
+import { api, internal } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-import { extractTeamFromJwt, extractTaskRunIdFromJwt } from "./_helpers";
 
 export const orchestrateSyncRouter = new OpenAPIHono();
+
+type SyncAuthContext = {
+  accessToken?: string;
+  teamSlugOrId: string;
+  jwtPayload?: TaskRunJwtPayload;
+};
+
+type SyncTaskRecord = {
+  _id: string;
+  prompt: string;
+  assignedAgentName?: string | null;
+  status: string;
+  taskRunId?: string | null;
+  dependencies?: string[];
+  priority?: number;
+  result?: string | null;
+  errorMessage?: string | null;
+  _creationTime: number;
+  startedAt?: number;
+  completedAt?: number;
+  metadata?: unknown;
+};
+
+type InternalSyncMessageRecord = {
+  messageId: string;
+  senderName: string;
+  recipientName?: string | null;
+  messageType?: string | null;
+  content: string;
+  timestamp: string;
+  read?: boolean;
+};
+
+async function resolveSyncAuthContext(
+  request: Request
+): Promise<
+  | SyncAuthContext
+  | {
+      error: string;
+      status: 401;
+    }
+> {
+  const accessToken = await getAccessTokenFromRequest(request);
+  if (accessToken) {
+    const teamSlugOrId = new URL(request.url).searchParams.get("teamSlugOrId");
+    if (!teamSlugOrId) {
+      return { error: "Unauthorized - no team context", status: 401 };
+    }
+    return { accessToken, teamSlugOrId };
+  }
+
+  const authHeader = request.headers.get("Authorization");
+  const bearerToken = authHeader?.startsWith("Bearer ")
+    ? authHeader.slice(7)
+    : null;
+  const jwtToken = extractTaskRunJwtFromRequest(request) ?? bearerToken;
+
+  if (!jwtToken) {
+    return { error: "Unauthorized - no team context", status: 401 };
+  }
+
+  const jwtPayload = await verifyTaskRunJwt(jwtToken);
+  if (!jwtPayload) {
+    return { error: "Unauthorized - invalid JWT signature", status: 401 };
+  }
+
+  return {
+    teamSlugOrId: jwtPayload.teamId,
+    jwtPayload,
+  };
+}
 
 // ============================================================================
 // Schemas
@@ -137,44 +212,45 @@ orchestrateSyncRouter.openapi(
     },
   }),
   async (c) => {
-    const authHeader = c.req.header("Authorization");
-    const accessToken = await getAccessTokenFromRequest(c.req.raw);
-
-    let teamSlugOrId: string | undefined;
-    let taskRunId: string | undefined;
-
-    if (!accessToken && authHeader?.startsWith("Bearer ")) {
-      teamSlugOrId = extractTeamFromJwt(authHeader);
-      taskRunId = extractTaskRunIdFromJwt(authHeader);
-      if (!teamSlugOrId) {
-        return c.text("Invalid JWT", 401);
-      }
-    } else if (accessToken) {
-      const queryParams = c.req.query();
-      teamSlugOrId = queryParams.teamSlugOrId;
+    const auth = await resolveSyncAuthContext(c.req.raw);
+    if ("error" in auth) {
+      return c.text(auth.error, auth.status);
     }
 
-    if (!teamSlugOrId) {
-      return c.text("Unauthorized - no team context", 401);
-    }
+    const convex = auth.accessToken
+      ? getConvex({ accessToken: auth.accessToken })
+      : null;
+    const adminClient = !auth.accessToken ? getConvexAdmin() : null;
 
-    const { orchestrationId } = c.req.valid("param");
+    if (!auth.accessToken && !adminClient) {
+      return c.text("Server configuration error", 500);
+    }
 
     try {
-      if (!accessToken) {
-        return c.text("Unauthorized - OAuth token required", 401);
-      }
-      const convex = getConvex({ accessToken });
+      const { orchestrationId } = c.req.valid("param");
 
-      const allTasks = await convex.query(api.orchestrationQueries.listTasksByTeam, {
-        teamSlugOrId,
-        limit: 100,
-      });
-
-      const tasks = allTasks.filter((t) => {
-        const meta = t.metadata as { orchestrationId?: string } | undefined;
-        return meta?.orchestrationId === orchestrationId;
-      });
+      const tasks = (
+        adminClient && auth.jwtPayload
+          ? await adminClient.query(
+              internal.orchestrationQueries.getOrchestrationStateInternal,
+              {
+                teamId: auth.jwtPayload.teamId,
+                orchestrationId,
+                taskRunId: undefined,
+              }
+            )
+          : await convex!
+              .query(api.orchestrationQueries.listTasksByTeam, {
+                teamSlugOrId: auth.teamSlugOrId,
+                limit: 100,
+              })
+              .then((allTasks) =>
+                allTasks.filter((t) => {
+                  const meta = t.metadata as { orchestrationId?: string } | undefined;
+                  return meta?.orchestrationId === orchestrationId;
+                })
+              )
+      ) as SyncTaskRecord[];
 
       if (tasks.length === 0) {
         return c.text("Orchestration not found", 404);
@@ -190,9 +266,26 @@ orchestrateSyncRouter.openapi(
         read?: boolean;
       }> = [];
 
-      if (taskRunId) {
-        const rawMessages = await convex.query(api.orchestrate.getMessages, {
-          taskRunId: taskRunId as Id<"taskRuns">,
+      if (auth.jwtPayload?.taskRunId && adminClient) {
+        const rawMessages = (await adminClient.query(
+          internal.orchestrationQueries.getMessagesForTaskRunInternal,
+          {
+            taskRunId: auth.jwtPayload.taskRunId as Id<"taskRuns">,
+            includeRead: false,
+          }
+        )) as InternalSyncMessageRecord[];
+        messages = rawMessages.map((m) => ({
+          id: m.messageId,
+          from: m.senderName,
+          to: m.recipientName || "*",
+          type: m.messageType as "handoff" | "request" | "status" | undefined,
+          message: m.content,
+          timestamp: m.timestamp,
+          read: m.read,
+        }));
+      } else if (auth.jwtPayload?.taskRunId) {
+        const rawMessages = await convex!.query(api.orchestrate.getMessages, {
+          taskRunId: auth.jwtPayload.taskRunId as Id<"taskRuns">,
           includeRead: false,
         });
         messages = rawMessages.map((m) => ({
@@ -238,10 +331,19 @@ orchestrateSyncRouter.openapi(
       } | undefined;
 
       try {
-        const queueStatus = await convex.query(api.operatorInputQueue.getQueueStatus, {
-          teamSlugOrId,
-          orchestrationId,
-        });
+        const queueStatus =
+          adminClient && auth.jwtPayload
+            ? await adminClient.query(
+                internal.operatorInputQueue.getQueueStatusInternal,
+                {
+                  teamId: auth.jwtPayload.teamId,
+                  orchestrationId,
+                }
+              )
+            : await convex!.query(api.operatorInputQueue.getQueueStatus, {
+                teamSlugOrId: auth.teamSlugOrId,
+                orchestrationId,
+              });
         // Turn number could be tracked in orchestration metadata; for now use 0
         // and let agents track their own turn count locally
         turnState = {
@@ -308,27 +410,18 @@ orchestrateSyncRouter.openapi(
     },
   }),
   async (c) => {
-    const authHeader = c.req.header("Authorization");
-    const accessToken = await getAccessTokenFromRequest(c.req.raw);
-
-    let teamSlugOrId: string | undefined;
-
-    if (!accessToken && authHeader?.startsWith("Bearer ")) {
-      teamSlugOrId = extractTeamFromJwt(authHeader);
-      if (!teamSlugOrId) {
-        return c.text("Invalid JWT", 401);
-      }
-    } else if (accessToken) {
-      const queryParams = c.req.query();
-      teamSlugOrId = queryParams.teamSlugOrId;
+    const auth = await resolveSyncAuthContext(c.req.raw);
+    if ("error" in auth) {
+      return c.text(auth.error, auth.status);
     }
 
-    if (!teamSlugOrId) {
-      return c.text("Unauthorized - no team context", 401);
-    }
+    const convex = auth.accessToken
+      ? getConvex({ accessToken: auth.accessToken })
+      : null;
+    const adminClient = !auth.accessToken ? getConvexAdmin() : null;
 
-    if (!accessToken) {
-      return c.text("Unauthorized - OAuth token required", 401);
+    if (!auth.accessToken && !adminClient) {
+      return c.text("Server configuration error", 500);
     }
 
     const { orchestrationId } = c.req.valid("param");
@@ -339,19 +432,29 @@ orchestrateSyncRouter.openapi(
     }
 
     try {
-      const convex = getConvex({ accessToken });
       let tasksUpdated = 0;
 
       if (body.tasks && body.tasks.length > 0) {
-        const allTasks = await convex.query(api.orchestrationQueries.listTasksByTeam, {
-          teamSlugOrId,
-          limit: 100,
-        });
-
-        const orchTasks = allTasks.filter((t) => {
-          const meta = t.metadata as { orchestrationId?: string; localTaskId?: string } | undefined;
-          return meta?.orchestrationId === orchestrationId;
-        });
+        const orchTasks = (
+          adminClient && auth.jwtPayload
+            ? await adminClient.query(
+                internal.orchestrationQueries.getOrchestrationStateInternal,
+                {
+                  teamId: auth.jwtPayload.teamId,
+                  orchestrationId,
+                  taskRunId: undefined,
+                }
+              )
+            : await convex!.query(api.orchestrationQueries.listTasksByTeam, {
+                teamSlugOrId: auth.teamSlugOrId,
+                limit: 100,
+              }).then((allTasks) =>
+                allTasks.filter((t) => {
+                  const meta = t.metadata as { orchestrationId?: string; localTaskId?: string } | undefined;
+                  return meta?.orchestrationId === orchestrationId;
+                })
+              )
+        ) as SyncTaskRecord[];
 
         for (const pushTask of body.tasks) {
           const serverTask = orchTasks.find((t) => {
@@ -361,16 +464,36 @@ orchestrateSyncRouter.openapi(
 
           if (serverTask) {
             if (pushTask.status === "completed") {
-              await convex.mutation(api.orchestrationQueries.completeTask, {
-                taskId: serverTask._id as Id<"orchestrationTasks">,
-                result: pushTask.result,
-              });
+              if (adminClient) {
+                await adminClient.mutation(
+                  internal.orchestrationQueries.completeTaskInternal,
+                  {
+                    taskId: serverTask._id as Id<"orchestrationTasks">,
+                    result: pushTask.result,
+                  }
+                );
+              } else {
+                await convex!.mutation(api.orchestrationQueries.completeTask, {
+                  taskId: serverTask._id as Id<"orchestrationTasks">,
+                  result: pushTask.result,
+                });
+              }
               tasksUpdated++;
             } else if (pushTask.status === "failed") {
-              await convex.mutation(api.orchestrationQueries.failTask, {
-                taskId: serverTask._id as Id<"orchestrationTasks">,
-                errorMessage: pushTask.errorMessage ?? "Task failed",
-              });
+              if (adminClient) {
+                await adminClient.mutation(
+                  internal.orchestrationQueries.failTaskInternal,
+                  {
+                    taskId: serverTask._id as Id<"orchestrationTasks">,
+                    errorMessage: pushTask.errorMessage ?? "Task failed",
+                  }
+                );
+              } else {
+                await convex!.mutation(api.orchestrationQueries.failTask, {
+                  taskId: serverTask._id as Id<"orchestrationTasks">,
+                  errorMessage: pushTask.errorMessage ?? "Task failed",
+                });
+              }
               tasksUpdated++;
             }
           }
@@ -380,28 +503,47 @@ orchestrateSyncRouter.openapi(
       let heartbeatUpdated = false;
       if (body.headAgentStatus) {
         try {
-          const headAgentRun = await convex.query(api.taskRuns.getByOrchestrationId, {
-            orchestrationId,
-            teamSlugOrId,
-          });
-
-          if (headAgentRun) {
-            await convex.mutation(api.taskRuns.updateOrchestrationHeartbeat, {
-              teamSlugOrId,
-              id: headAgentRun._id as Id<"taskRuns">,
-              status: body.headAgentStatus,
-            });
+          if (adminClient && auth.jwtPayload) {
+            await adminClient.mutation(
+              internal.taskRuns.updateOrchestrationHeartbeatInternal,
+              {
+                teamId: auth.jwtPayload.teamId,
+                id: auth.jwtPayload.taskRunId as Id<"taskRuns">,
+                orchestrationId,
+                status: body.headAgentStatus,
+              }
+            );
             console.log(`[orchestrate] Head agent heartbeat updated: ${body.headAgentStatus}`, {
               orchestrationId,
-              taskRunId: headAgentRun._id,
+              taskRunId: auth.jwtPayload.taskRunId,
+              userId: auth.jwtPayload.userId,
               message: body.message,
             });
             heartbeatUpdated = true;
           } else {
-            console.log(`[orchestrate] Head agent status update (no matching task run): ${body.headAgentStatus}`, {
+            const headAgentRun = await convex!.query(api.taskRuns.getByOrchestrationId, {
               orchestrationId,
-              message: body.message,
+              teamSlugOrId: auth.teamSlugOrId,
             });
+
+            if (headAgentRun) {
+              await convex!.mutation(api.taskRuns.updateOrchestrationHeartbeat, {
+                teamSlugOrId: auth.teamSlugOrId,
+                id: headAgentRun._id as Id<"taskRuns">,
+                status: body.headAgentStatus,
+              });
+              console.log(`[orchestrate] Head agent heartbeat updated: ${body.headAgentStatus}`, {
+                orchestrationId,
+                taskRunId: headAgentRun._id,
+                message: body.message,
+              });
+              heartbeatUpdated = true;
+            } else {
+              console.log(`[orchestrate] Head agent status update (no matching task run): ${body.headAgentStatus}`, {
+                orchestrationId,
+                message: body.message,
+              });
+            }
           }
         } catch (err) {
           console.error("[orchestrate] Failed to update head agent heartbeat:", err);

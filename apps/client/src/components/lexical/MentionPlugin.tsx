@@ -181,12 +181,32 @@ export function MentionPlugin({
   const [isLoading, setIsLoading] = useState(false);
   const triggerNodeRef = useRef<TextNode | null>(null);
   const { socket } = useSocket();
+  // Track if we've already fetched files to avoid re-fetching on every menu open
+  const hasFetchedRef = useRef(false);
+  // Track the repo/env combo we fetched for to invalidate cache when they change
+  const lastFetchKeyRef = useRef<string | null>(null);
 
-  // Fetch all files once when repository URL is available
+  // Lazy fetch files only when menu is shown (user typed @)
+  // This avoids triggering "local-repo-not-found" warnings on passive dashboard load
   useEffect(() => {
+    const fetchKey = `${repoUrl ?? ""}|${environmentId ?? ""}|${branch ?? ""}`;
+
+    // Reset fetch state when repo/env/branch changes
+    if (lastFetchKeyRef.current !== fetchKey) {
+      hasFetchedRef.current = false;
+      lastFetchKeyRef.current = fetchKey;
+      setFiles([]);
+    }
+
+    // Only fetch when menu is showing and we haven't fetched yet
+    if (!isShowingMenu || hasFetchedRef.current) {
+      return;
+    }
+
     if ((repoUrl || environmentId) && socket) {
       let cancelled = false;
       setIsLoading(true);
+      hasFetchedRef.current = true;
       socket.emit(
         "list-files",
         {
@@ -209,9 +229,8 @@ export function MentionPlugin({
       };
     }
 
-    setFiles([]);
     setIsLoading(false);
-  }, [repoUrl, branch, environmentId, socket]);
+  }, [repoUrl, branch, environmentId, socket, isShowingMenu]);
 
   // Filter files based on search text using fuzzysort
   useEffect(() => {

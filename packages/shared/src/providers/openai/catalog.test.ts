@@ -36,18 +36,19 @@ describe("CODEX_CATALOG", () => {
     }
   });
 
-  it("includes GPT-5.4 xhigh as latest", () => {
-    const gpt54xhigh = CODEX_CATALOG.find(
-      (e) => e.name === "codex/gpt-5.4-xhigh"
-    );
-    expect(gpt54xhigh).toBeDefined();
-    expect(gpt54xhigh?.tags).toContain("latest");
+  it("includes GPT-5.4 as a model", () => {
+    // Note: app-server catalog uses base name with variants, not suffixes
+    const gpt54 = CODEX_CATALOG.find((e) => e.name === "codex/gpt-5.4");
+    expect(gpt54).toBeDefined();
+    // Verify it has xhigh variant
+    expect(gpt54?.variants?.some((v) => v.id === "xhigh")).toBe(true);
   });
 
   it("includes GPT-5.1 codex mini", () => {
     const mini = CODEX_CATALOG.find((e) => e.name === "codex/gpt-5.1-codex-mini");
     expect(mini).toBeDefined();
-    expect(mini?.displayName).toBe("GPT-5.1 Codex Mini");
+    // Generated catalog uses lowercase displayName from app-server
+    expect(mini?.displayName).toBe("gpt-5.1-codex-mini");
   });
 
   it("all tiers are paid", () => {
@@ -56,15 +57,19 @@ describe("CODEX_CATALOG", () => {
     }
   });
 
-  it("models with reasoning tag have xhigh, high, medium, or low suffix", () => {
+  it("models with reasoning tag have reasoning variants", () => {
+    // Note: app-server catalog uses variants, not suffixes
     for (const entry of CODEX_CATALOG) {
       if (entry.tags?.includes("reasoning")) {
-        const hasReasoningSuffix =
-          entry.name.endsWith("-xhigh") ||
-          entry.name.endsWith("-high") ||
-          entry.name.endsWith("-medium") ||
-          entry.name.endsWith("-low");
-        expect(hasReasoningSuffix).toBe(true);
+        // Models with reasoning tag should have xhigh/high/medium/low variants
+        const hasReasoningVariants = entry.variants?.some(
+          (v) =>
+            v.id === "xhigh" ||
+            v.id === "high" ||
+            v.id === "medium" ||
+            v.id === "low"
+        );
+        expect(hasReasoningVariants).toBe(true);
       }
     }
   });

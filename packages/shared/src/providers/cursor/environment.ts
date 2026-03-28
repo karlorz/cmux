@@ -10,6 +10,155 @@ import {
 import { buildGenericInstructionsContent } from "../../agent-instruction-pack";
 import { getTaskSandboxWrapperFiles } from "../common/task-sandbox-wrappers";
 import { buildStandardLifecycleHooks } from "../../provider-lifecycle-adapter";
+import { buildClaudeMcpServers } from "../../mcp-injection";
+import type { McpServerConfig } from "../../mcp-server-config";
+
+/**
+ * Fallback deny rules for Cursor CLI in task sandboxes.
+ * Used when permissionDenyRules from Convex is not available.
+ *
+ * These use Cursor's native permission format:
+ * - Shell(commandBase) - deny shell commands starting with pattern
+ * - Read(pathOrGlob) - deny read access
+ * - Write(pathOrGlob) - deny write access
+ */
+const CURSOR_FALLBACK_DENY_RULES = [
+  // PR lifecycle — cmux manages PR creation/merging automatically
+  "Shell(gh pr create)",
+  "Shell(gh pr merge)",
+  "Shell(gh pr close)",
+  // Git destructive ops - prevent accidental data loss
+  "Shell(git push --force)",
+  "Shell(git push -f)",
+  "Shell(git reset --hard)",
+  "Shell(git clean -f)",
+  // Sensitive file protection
+  "Write(.env)",
+  "Write(.env.*)",
+  "Write(*.pem)",
+  "Write(*.key)",
+];
+
+/**
+ * Translates cmux permission deny rules (Claude format) to Cursor CLI format.
+ *
+ * Claude format: "Bash(gh pr create:*)", "Bash(git push:*)"
+ * Cursor format: "Shell(gh pr create)", "Shell(git push)"
+ *
+ * Currently only translates Bash rules to Shell rules.
+ * Read/Write rules are passed through if they match Cursor format.
+ */
+function translateDenyRulesToCursor(cmuxRules: string[]): string[] {
+  const cursorRules: string[] = [];
+
+  for (const rule of cmuxRules) {
+    // Translate Bash(command:*) -> Shell(command)
+    const bashMatch = rule.match(/^Bash\(([^:]+)(?::\*)?\)$/);
+    if (bashMatch) {
+      cursorRules.push(`Shell(${bashMatch[1]})`);
+      continue;
+    }
+
+    // Pass through rules already in Cursor format
+    if (rule.startsWith("Shell(") || rule.startsWith("Read(") || rule.startsWith("Write(")) {
+      cursorRules.push(rule);
+      continue;
+    }
+
+    // Log unknown formats but don't fail
+    console.warn(`[cursor] Unknown deny rule format, skipping: ${rule}`);
+  }
+
+  return cursorRules;
+}
+
+/**
+ * Builds .cursor/cli.json permission policy content.
+ *
+ * Per Cursor CLI docs, project-level config only supports permissions,
+ * not other CLI settings (those must be in ~/.cursor/cli-config.json).
+ */
+function buildCursorCliJson(denyRules: string[]): string {
+  const config = {
+    permissions: {
+      deny: denyRules,
+    },
+  };
+  return JSON.stringify(config, null, 2);
+}
+
+/**
+ * Orchestration env vars for MCP server passthrough.
+ * Extended from EnvironmentContext["orchestrationEnv"] with CMUX_TASK_RUN_JWT.
+ */
+type McpOrchestrationEnv = {
+  CMUX_TASK_RUN_JWT?: string;
+  CMUX_SERVER_URL?: string;
+  CMUX_API_BASE_URL?: string;
+  CMUX_IS_ORCHESTRATION_HEAD?: string;
+  CMUX_ORCHESTRATION_ID?: string;
+  CMUX_CALLBACK_URL?: string;
+};
+
+/**
+ * Builds .cursor/mcp.json MCP server configuration.
+ *
+ * Per Cursor CLI docs, MCP config is shared between CLI and editor,
+ * following project -> global -> nested precedence.
+ *
+ * The format matches Claude's mcpServers format (JSON with command/args/env).
+ */
+function buildCursorMcpJson(
+  mcpServerConfigs: McpServerConfig[],
+  agentName?: string,
+  orchestrationEnv?: McpOrchestrationEnv,
+): string {
+  // Build MCP servers from configs (reuse Claude's format builder)
+  const mcpServers = buildClaudeMcpServers(mcpServerConfigs);
+
+  // Add managed devsh-memory server with orchestration env
+  const managedMemoryServer: Record<string, unknown> = {
+    command: "npx",
+    args: agentName
+      ? ["-y", "devsh-memory-mcp@latest", "--agent", agentName]
+      : ["-y", "devsh-memory-mcp@latest"],
+  };
+
+  // Pass orchestration env vars to MCP server
+  if (orchestrationEnv) {
+    const env: Record<string, string> = {};
+    if (orchestrationEnv.CMUX_TASK_RUN_JWT) {
+      env.CMUX_TASK_RUN_JWT = orchestrationEnv.CMUX_TASK_RUN_JWT;
+    }
+    if (orchestrationEnv.CMUX_SERVER_URL) {
+      env.CMUX_SERVER_URL = orchestrationEnv.CMUX_SERVER_URL;
+    }
+    if (orchestrationEnv.CMUX_API_BASE_URL) {
+      env.CMUX_API_BASE_URL = orchestrationEnv.CMUX_API_BASE_URL;
+    }
+    if (orchestrationEnv.CMUX_IS_ORCHESTRATION_HEAD) {
+      env.CMUX_IS_ORCHESTRATION_HEAD = orchestrationEnv.CMUX_IS_ORCHESTRATION_HEAD;
+    }
+    if (orchestrationEnv.CMUX_ORCHESTRATION_ID) {
+      env.CMUX_ORCHESTRATION_ID = orchestrationEnv.CMUX_ORCHESTRATION_ID;
+    }
+    if (orchestrationEnv.CMUX_CALLBACK_URL) {
+      env.CMUX_CALLBACK_URL = orchestrationEnv.CMUX_CALLBACK_URL;
+    }
+    if (Object.keys(env).length > 0) {
+      managedMemoryServer.env = env;
+    }
+  }
+
+  const config = {
+    mcpServers: {
+      ...mcpServers,
+      "devsh-memory": managedMemoryServer,
+    },
+  };
+
+  return JSON.stringify(config, null, 2);
+}
 
 export async function getCursorEnvironment(
   ctx: EnvironmentContext
@@ -165,9 +314,53 @@ export async function getCursorEnvironment(
     mode: "644",
   });
 
+  // Generate project-level permission policy (.cursor/cli.json)
+  // Per Cursor docs, only permissions can be set at project level
+  const hasTaskRunJwt = ctx.taskRunJwt.trim().length > 0;
+  const shouldApplyDenyRules = hasTaskRunJwt && !ctx.isOrchestrationHead;
+
+  if (shouldApplyDenyRules) {
+    // Use Convex rules if available, otherwise fall back to defaults
+    const cmuxDenyRules = ctx.permissionDenyRules?.length
+      ? ctx.permissionDenyRules
+      : [];
+    // Translate cmux rules (Claude format) to Cursor format, merge with fallback
+    const cursorDenyRules = cmuxDenyRules.length > 0
+      ? translateDenyRulesToCursor(cmuxDenyRules)
+      : CURSOR_FALLBACK_DENY_RULES;
+
+    const cursorCliJson = buildCursorCliJson(cursorDenyRules);
+    files.push({
+      destinationPath: "/root/workspace/.cursor/cli.json",
+      contentBase64: Buffer.from(cursorCliJson).toString("base64"),
+      mode: "644",
+    });
+  }
+
+  // Generate .cursor/mcp.json for MCP server configuration
+  // Per Cursor docs, CLI MCP uses the same config as the editor (project -> global -> nested)
+  const mcpConfigs = ctx.mcpServerConfigs ?? [];
+  const orchestrationEnv = ctx.isOrchestrationHead
+    ? {
+        CMUX_TASK_RUN_JWT: ctx.taskRunJwt,
+        CMUX_SERVER_URL: ctx.orchestrationEnv?.CMUX_SERVER_URL,
+        CMUX_API_BASE_URL: ctx.orchestrationEnv?.CMUX_API_BASE_URL,
+        CMUX_IS_ORCHESTRATION_HEAD: ctx.orchestrationEnv?.CMUX_IS_ORCHESTRATION_HEAD,
+        CMUX_ORCHESTRATION_ID: ctx.orchestrationEnv?.CMUX_ORCHESTRATION_ID,
+        CMUX_CALLBACK_URL: ctx.orchestrationEnv?.CMUX_CALLBACK_URL,
+      }
+    : undefined;
+
+  // Always inject MCP config with at least the managed memory server
+  const cursorMcpJson = buildCursorMcpJson(mcpConfigs, ctx.agentName, orchestrationEnv);
+  files.push({
+    destinationPath: "/root/workspace/.cursor/mcp.json",
+    contentBase64: Buffer.from(cursorMcpJson).toString("base64"),
+    mode: "644",
+  });
+
   // Block dangerous commands in task sandboxes (when enabled via settings)
   // Disabled by default - use permission deny rules or policy rules instead
-  const hasTaskRunJwt = ctx.taskRunJwt.trim().length > 0;
   if (hasTaskRunJwt && ctx.enableShellWrappers) {
     files.push(...getTaskSandboxWrapperFiles(Buffer));
   }

@@ -179,6 +179,8 @@ function SettingsComponent() {
   const [originalVaultGitHubPath, setOriginalVaultGitHubPath] = useState("");
   const [vaultGitHubBranch, setVaultGitHubBranch] = useState("main");
   const [originalVaultGitHubBranch, setOriginalVaultGitHubBranch] = useState("main");
+  const [vaultName, setVaultName] = useState("obsidian_vault");
+  const [originalVaultName, setOriginalVaultName] = useState("obsidian_vault");
   const [autoPrEnabled, setAutoPrEnabled] = useState<boolean>(false);
   const [originalAutoPrEnabled, setOriginalAutoPrEnabled] =
     useState<boolean>(false);
@@ -358,6 +360,14 @@ function SettingsComponent() {
     );
     setOriginalVaultGitHubBranch((prev) =>
       prev === nextVaultGitHubBranch ? prev : nextVaultGitHubBranch
+    );
+
+    const nextVaultName = workspaceSettings?.vaultConfig?.vaultName ?? "obsidian_vault";
+    setVaultName((prev) =>
+      prev === nextVaultName ? prev : nextVaultName
+    );
+    setOriginalVaultName((prev) =>
+      prev === nextVaultName ? prev : nextVaultName
     );
 
     const nextAutoPrEnabled = workspaceSettings?.autoPrEnabled ?? false;
@@ -726,7 +736,8 @@ function SettingsComponent() {
         vaultGitHubOwner !== originalVaultGitHubOwner ||
         vaultGitHubRepo !== originalVaultGitHubRepo ||
         vaultGitHubPath !== originalVaultGitHubPath ||
-        vaultGitHubBranch !== originalVaultGitHubBranch;
+        vaultGitHubBranch !== originalVaultGitHubBranch ||
+        vaultName !== originalVaultName;
 
       const workspaceSettingsChanged =
         worktreePath !== originalWorktreePath ||
@@ -755,12 +766,14 @@ function SettingsComponent() {
               trimmedVaultGitHubRepo.length === 0 &&
               trimmedVaultGitHubPath.length === 0 &&
               trimmedVaultGitHubBranch === "main";
+        const trimmedVaultName = vaultName.trim() || "obsidian_vault";
         const nextVaultConfig = shouldClearVaultConfig
           ? undefined
           : vaultType === "local"
             ? {
                 type: "local" as const,
                 localPath: trimmedVaultLocalPath,
+                vaultName: trimmedVaultName,
               }
             : {
                 type: "github" as const,
@@ -768,6 +781,7 @@ function SettingsComponent() {
                 githubRepo: trimmedVaultGitHubRepo,
                 githubPath: trimmedVaultGitHubPath || undefined,
                 githubBranch: trimmedVaultGitHubBranch,
+                vaultName: trimmedVaultName,
               };
 
         await convex.mutation(api.workspaceSettings.update, {
@@ -793,11 +807,13 @@ function SettingsComponent() {
         setOriginalVaultGitHubRepo(trimmedVaultGitHubRepo);
         setOriginalVaultGitHubPath(trimmedVaultGitHubPath);
         setOriginalVaultGitHubBranch(trimmedVaultGitHubBranch);
+        setOriginalVaultName(trimmedVaultName);
         setVaultLocalPath(trimmedVaultLocalPath);
         setVaultGitHubOwner(trimmedVaultGitHubOwner);
         setVaultGitHubRepo(trimmedVaultGitHubRepo);
         setVaultGitHubPath(trimmedVaultGitHubPath);
         setVaultGitHubBranch(trimmedVaultGitHubBranch);
+        setVaultName(trimmedVaultName);
         setOriginalAutoPrEnabled(autoPrEnabled);
         setOriginalBypassAnthropicProxy(bypassAnthropicProxy);
         setOriginalEnableShellWrappers(enableShellWrappers);
@@ -1018,6 +1034,8 @@ function SettingsComponent() {
               onVaultGitHubPathChange={setVaultGitHubPath}
               vaultGitHubBranch={vaultGitHubBranch}
               onVaultGitHubBranchChange={setVaultGitHubBranch}
+              vaultName={vaultName}
+              onVaultNameChange={setVaultName}
               autoPrEnabled={autoPrEnabled}
               onAutoPrEnabledChange={setAutoPrEnabled}
               heatmapModel={heatmapModel}
@@ -1079,7 +1097,13 @@ function SettingsComponent() {
               expandedUsedList={expandedUsedList}
               overflowUsedList={overflowUsedList}
               usedListRefs={usedListRefs}
-              showProviderStatus={!env.NEXT_PUBLIC_WEB_MODE}
+              showProviderStatus={true}
+              showProviderStatusSystemChecks={!env.NEXT_PUBLIC_WEB_MODE}
+              providerStatusTitle={
+                env.NEXT_PUBLIC_WEB_MODE
+                  ? "Provider Readiness"
+                  : "Provider Status"
+              }
               onApiKeyChange={handleApiKeyChange}
               onToggleShowKey={toggleShowKey}
               onToggleShowBaseUrls={() => setShowBaseUrls((prev) => !prev)}

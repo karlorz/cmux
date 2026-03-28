@@ -5,6 +5,7 @@ import {
 } from "@cmux/shared/utils/generate-workspace-name";
 import { v } from "convex/values";
 import { resolveTeamIdLoose } from "../_shared/team";
+import { internal } from "./_generated/api";
 import { authMutation, authQuery } from "./users/utils";
 
 const DEFAULT_AGENT_NAME = "local-workspace";
@@ -139,6 +140,15 @@ export const reserve = authMutation({
         status: "starting",
         startedAt: now,
       },
+    });
+
+    // Record lineage for local workspace run
+    await ctx.scheduler.runAfter(0, internal.runtimeLineage.recordLineage, {
+      teamId,
+      taskRunId,
+      continuationMode: "initial",
+      agentName: DEFAULT_AGENT_NAME,
+      actor: "user",
     });
 
     return {

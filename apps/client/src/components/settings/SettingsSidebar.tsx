@@ -300,7 +300,10 @@ export function SettingsSidebar({
           />
           <input
             ref={searchInputRef}
+            id="settings-sidebar-search"
+            name="settings-sidebar-search"
             type="text"
+            aria-label="Search settings"
             placeholder="Search settings..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}

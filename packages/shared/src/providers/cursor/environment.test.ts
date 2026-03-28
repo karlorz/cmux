@@ -60,4 +60,200 @@ describe("getCursorEnvironment", () => {
 
     expect(result.startupCommands).toContain("/root/lifecycle/cursor/session-start-hook.sh &");
   });
+
+  describe("permission policy (.cursor/cli.json)", () => {
+    it("generates .cursor/cli.json with fallback deny rules for task sandboxes", async () => {
+      const result = await getCursorEnvironment(BASE_CONTEXT);
+
+      const cliJsonFile = result.files.find(
+        (f) => f.destinationPath === "/root/workspace/.cursor/cli.json"
+      );
+
+      expect(cliJsonFile).toBeDefined();
+      expect(cliJsonFile?.mode).toBe("644");
+
+      const content = Buffer.from(cliJsonFile!.contentBase64, "base64").toString("utf-8");
+      const config = JSON.parse(content);
+
+      expect(config.permissions).toBeDefined();
+      expect(config.permissions.deny).toBeInstanceOf(Array);
+      expect(config.permissions.deny.length).toBeGreaterThan(0);
+
+      // Check for expected fallback rules in Cursor format
+      expect(config.permissions.deny).toContain("Shell(gh pr create)");
+      expect(config.permissions.deny).toContain("Shell(gh pr merge)");
+      expect(config.permissions.deny).toContain("Shell(git push --force)");
+    });
+
+    it("skips .cursor/cli.json for head agents (orchestration heads)", async () => {
+      const result = await getCursorEnvironment({
+        ...BASE_CONTEXT,
+        isOrchestrationHead: true,
+      });
+
+      const cliJsonFile = result.files.find(
+        (f) => f.destinationPath === "/root/workspace/.cursor/cli.json"
+      );
+
+      expect(cliJsonFile).toBeUndefined();
+    });
+
+    it("skips .cursor/cli.json when no JWT present", async () => {
+      const result = await getCursorEnvironment({
+        ...BASE_CONTEXT,
+        taskRunJwt: "", // Empty JWT
+      });
+
+      const cliJsonFile = result.files.find(
+        (f) => f.destinationPath === "/root/workspace/.cursor/cli.json"
+      );
+
+      expect(cliJsonFile).toBeUndefined();
+    });
+
+    it("translates cmux deny rules (Claude format) to Cursor format", async () => {
+      const result = await getCursorEnvironment({
+        ...BASE_CONTEXT,
+        permissionDenyRules: [
+          "Bash(gh pr create:*)",
+          "Bash(npm publish:*)",
+          "Bash(rm -rf:*)",
+        ],
+      });
+
+      const cliJsonFile = result.files.find(
+        (f) => f.destinationPath === "/root/workspace/.cursor/cli.json"
+      );
+
+      expect(cliJsonFile).toBeDefined();
+
+      const content = Buffer.from(cliJsonFile!.contentBase64, "base64").toString("utf-8");
+      const config = JSON.parse(content);
+
+      // Should be translated to Cursor Shell() format
+      expect(config.permissions.deny).toContain("Shell(gh pr create)");
+      expect(config.permissions.deny).toContain("Shell(npm publish)");
+      expect(config.permissions.deny).toContain("Shell(rm -rf)");
+
+      // Should NOT contain Claude format
+      expect(config.permissions.deny).not.toContain("Bash(gh pr create:*)");
+    });
+
+    it("passes through rules already in Cursor format", async () => {
+      const result = await getCursorEnvironment({
+        ...BASE_CONTEXT,
+        permissionDenyRules: [
+          "Shell(custom-command)",
+          "Read(/etc/passwd)",
+          "Write(.env*)",
+        ],
+      });
+
+      const cliJsonFile = result.files.find(
+        (f) => f.destinationPath === "/root/workspace/.cursor/cli.json"
+      );
+
+      expect(cliJsonFile).toBeDefined();
+
+      const content = Buffer.from(cliJsonFile!.contentBase64, "base64").toString("utf-8");
+      const config = JSON.parse(content);
+
+      expect(config.permissions.deny).toContain("Shell(custom-command)");
+      expect(config.permissions.deny).toContain("Read(/etc/passwd)");
+      expect(config.permissions.deny).toContain("Write(.env*)");
+    });
+  });
+
+  describe("MCP config (.cursor/mcp.json)", () => {
+    it("generates .cursor/mcp.json with managed devsh-memory server", async () => {
+      const result = await getCursorEnvironment(BASE_CONTEXT);
+
+      const mcpJsonFile = result.files.find(
+        (f) => f.destinationPath === "/root/workspace/.cursor/mcp.json"
+      );
+
+      expect(mcpJsonFile).toBeDefined();
+      expect(mcpJsonFile?.mode).toBe("644");
+
+      const content = Buffer.from(mcpJsonFile!.contentBase64, "base64").toString("utf-8");
+      const config = JSON.parse(content);
+
+      expect(config.mcpServers).toBeDefined();
+      expect(config.mcpServers["devsh-memory"]).toBeDefined();
+      expect(config.mcpServers["devsh-memory"].command).toBe("npx");
+      expect(config.mcpServers["devsh-memory"].args).toContain("-y");
+      expect(config.mcpServers["devsh-memory"].args).toContain("devsh-memory-mcp@latest");
+    });
+
+    it("includes agentName in devsh-memory args when provided", async () => {
+      const result = await getCursorEnvironment({
+        ...BASE_CONTEXT,
+        agentName: "cursor/test-agent",
+      });
+
+      const mcpJsonFile = result.files.find(
+        (f) => f.destinationPath === "/root/workspace/.cursor/mcp.json"
+      );
+
+      const content = Buffer.from(mcpJsonFile!.contentBase64, "base64").toString("utf-8");
+      const config = JSON.parse(content);
+
+      expect(config.mcpServers["devsh-memory"].args).toContain("--agent");
+      expect(config.mcpServers["devsh-memory"].args).toContain("cursor/test-agent");
+    });
+
+    it("includes orchestration env for head agents", async () => {
+      const result = await getCursorEnvironment({
+        ...BASE_CONTEXT,
+        isOrchestrationHead: true,
+        taskRunJwt: "test-jwt-token",
+        orchestrationEnv: {
+          CMUX_SERVER_URL: "https://server.example.com",
+          CMUX_API_BASE_URL: "https://api.example.com",
+          CMUX_IS_ORCHESTRATION_HEAD: "1",
+          CMUX_ORCHESTRATION_ID: "orch-123",
+        },
+      });
+
+      const mcpJsonFile = result.files.find(
+        (f) => f.destinationPath === "/root/workspace/.cursor/mcp.json"
+      );
+
+      const content = Buffer.from(mcpJsonFile!.contentBase64, "base64").toString("utf-8");
+      const config = JSON.parse(content);
+
+      expect(config.mcpServers["devsh-memory"].env).toBeDefined();
+      expect(config.mcpServers["devsh-memory"].env.CMUX_TASK_RUN_JWT).toBe("test-jwt-token");
+      expect(config.mcpServers["devsh-memory"].env.CMUX_SERVER_URL).toBe("https://server.example.com");
+      expect(config.mcpServers["devsh-memory"].env.CMUX_IS_ORCHESTRATION_HEAD).toBe("1");
+    });
+
+    it("includes user MCP server configs", async () => {
+      const result = await getCursorEnvironment({
+        ...BASE_CONTEXT,
+        mcpServerConfigs: [
+          {
+            name: "context7",
+            type: "stdio",
+            command: "npx",
+            args: ["-y", "@upstash/context7-mcp"],
+          },
+        ],
+      });
+
+      const mcpJsonFile = result.files.find(
+        (f) => f.destinationPath === "/root/workspace/.cursor/mcp.json"
+      );
+
+      const content = Buffer.from(mcpJsonFile!.contentBase64, "base64").toString("utf-8");
+      const config = JSON.parse(content);
+
+      expect(config.mcpServers["context7"]).toBeDefined();
+      expect(config.mcpServers["context7"].command).toBe("npx");
+      expect(config.mcpServers["context7"].args).toContain("-y");
+      expect(config.mcpServers["context7"].args).toContain("@upstash/context7-mcp");
+      // Also has the managed devsh-memory
+      expect(config.mcpServers["devsh-memory"]).toBeDefined();
+    });
+  });
 });

@@ -78,10 +78,26 @@ const mockOpencodeSpec: ProviderSpec = {
   ],
 };
 
+const mockModelStudioSpec: ProviderSpec = {
+  id: "modelstudio",
+  name: "Alibaba ModelStudio",
+  defaultBaseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+  apiFormat: "openai",
+  authEnvVars: ["MODEL_STUDIO_API_KEY"],
+  apiKeys: [
+    {
+      envVar: "MODEL_STUDIO_API_KEY",
+      displayName: "ModelStudio API Key",
+      description: "Alibaba ModelStudio API key",
+    },
+  ],
+};
+
 const mockBaseProviders: ProviderSpec[] = [
   mockAnthropicSpec,
   mockOpenAISpec,
   mockOpencodeSpec,
+  mockModelStudioSpec,
 ];
 
 const mockModels: StoredModel[] = [
@@ -131,6 +147,17 @@ const mockModels: StoredModel[] = [
     enabled: true,
     sortOrder: 0,
   },
+  {
+    name: "qwen/qwen3-coder:free",
+    displayName: "Qwen3 Coder (Free)",
+    vendor: "qwen",
+    source: "curated",
+    requiredApiKeys: ["OPENROUTER_API_KEY"],
+    tier: "free",
+    tags: ["free"],
+    enabled: true,
+    sortOrder: 2,
+  },
 ];
 
 describe("control-plane/service", () => {
@@ -140,6 +167,7 @@ describe("control-plane/service", () => {
         mockAnthropicSpec,
         {},
         [],
+        mockModels,
         undefined
       );
 
@@ -160,6 +188,7 @@ describe("control-plane/service", () => {
         mockAnthropicSpec,
         storedKeys,
         [],
+        mockModels,
         undefined
       );
 
@@ -177,6 +206,7 @@ describe("control-plane/service", () => {
         mockAnthropicSpec,
         storedKeys,
         [],
+        mockModels,
         undefined
       );
 
@@ -193,6 +223,7 @@ describe("control-plane/service", () => {
         mockOpenAISpec,
         storedKeys,
         [],
+        mockModels,
         undefined
       );
 
@@ -212,6 +243,7 @@ describe("control-plane/service", () => {
         mockAnthropicSpec,
         {},
         [override],
+        mockModels,
         undefined
       );
 
@@ -226,6 +258,7 @@ describe("control-plane/service", () => {
         mockOpencodeSpec,
         {},
         [],
+        mockModels,
         undefined
       );
 
@@ -234,11 +267,26 @@ describe("control-plane/service", () => {
       expect(result.connectionState.hasFreeModels).toBe(true);
     });
 
+    it("does not treat credentialed free models as auth-free providers", () => {
+      const result = resolveControlPlaneProvider(
+        mockModelStudioSpec,
+        {},
+        [],
+        mockModels,
+        undefined
+      );
+
+      expect(result.connectionState.isConnected).toBe(false);
+      expect(result.connectionState.source).toBe(null);
+      expect(result.connectionState.hasFreeModels).toBe(false);
+    });
+
     it("generates auth methods from API keys", () => {
       const result = resolveControlPlaneProvider(
         mockAnthropicSpec,
         {},
         [],
+        mockModels,
         undefined
       );
 
@@ -268,6 +316,7 @@ describe("control-plane/service", () => {
         mockAnthropicSpec,
         storedKeys,
         [],
+        mockModels,
         defaultModel
       );
 
@@ -284,6 +333,7 @@ describe("control-plane/service", () => {
         mockAnthropicSpec,
         {},
         [],
+        mockModels,
         defaultModel
       );
 
@@ -321,6 +371,17 @@ describe("control-plane/service", () => {
       expect(result.isAvailable).toBe(true);
       expect(result.tier).toBe("free");
     });
+
+    it("keeps credentialed free models unavailable when disconnected", () => {
+      const connectedProviders = new Set<string>();
+      const model = mockModels[4]; // qwen/qwen3-coder:free
+
+      const result = resolveControlPlaneModel(model, connectedProviders);
+
+      expect(result.isAvailable).toBe(false);
+      expect(result.providerId).toBe("modelstudio");
+      expect(result.tier).toBe("free");
+    });
   });
 
   describe("listProviders", () => {
@@ -333,7 +394,7 @@ describe("control-plane/service", () => {
 
       const result = listProviders(mockBaseProviders, ctx);
 
-      expect(result.providers).toHaveLength(3);
+      expect(result.providers).toHaveLength(4);
       expect(result.generatedAt).toBeDefined();
 
       const anthropic = result.providers.find(p => p.id === "anthropic");
@@ -342,6 +403,9 @@ describe("control-plane/service", () => {
 
       const openai = result.providers.find(p => p.id === "openai");
       expect(openai?.connectionState.isConnected).toBe(false);
+
+      const modelstudio = result.providers.find((p) => p.id === "modelstudio");
+      expect(modelstudio?.connectionState.isConnected).toBe(false);
     });
   });
 
@@ -361,6 +425,7 @@ describe("control-plane/service", () => {
       expect(names).toContain("claude/opus-4.6");
       expect(names).toContain("opencode/big-pickle");
       expect(names).not.toContain("codex/gpt-5.4"); // openai not connected
+      expect(names).not.toContain("qwen/qwen3-coder:free");
     });
 
     it("lists all models when view is all", () => {
@@ -373,7 +438,7 @@ describe("control-plane/service", () => {
       const result = listModels(mockBaseProviders, ctx, { view: "all" });
 
       expect(result.view).toBe("all");
-      expect(result.models).toHaveLength(4);
+      expect(result.models).toHaveLength(5);
     });
 
     it("filters by vendor when view is vendor", () => {

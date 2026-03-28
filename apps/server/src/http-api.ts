@@ -37,6 +37,7 @@ import {
   checkAllProvidersStatusWebMode,
 } from "./utils/providerStatus";
 import { runWithAuth, runWithAuthToken } from "./utils/requestContext";
+import { extractSandboxStartError } from "./utils/sandboxErrors";
 import { env } from "./utils/server-env";
 import { getResponseErrorMessage } from "./utils/httpError";
 import { buildTaskRunCreateArgs } from "./utils/taskRunCreateArgs";
@@ -103,6 +104,23 @@ function parseAuthHeader(req: IncomingMessage): string | null {
     return null;
   }
   return authHeader.slice(7);
+}
+
+/**
+ * Parse Stack Auth header (x-stack-auth) used by browser clients.
+ * Returns the access token if valid, null otherwise.
+ */
+function parseStackAuthHeader(req: IncomingMessage): string | null {
+  const stackAuth = req.headers["x-stack-auth"];
+  if (!stackAuth || typeof stackAuth !== "string") {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(stackAuth) as { accessToken?: string };
+    return parsed.accessToken ?? null;
+  } catch {
+    return null;
+  }
 }
 
 async function readJsonBody<T>(req: IncomingMessage): Promise<T | null> {
@@ -607,8 +625,7 @@ async function handleCreateCloudWorkspace(
 
       const data = startRes.data;
       if (!data) {
-        const errorText = startRes.error ? JSON.stringify(startRes.error) : "Unknown sandbox start error";
-        throw new Error(`Failed to start sandbox: ${errorText}`);
+        throw new Error(extractSandboxStartError(startRes));
       }
 
       const sandboxId = data.instanceId;
@@ -863,6 +880,7 @@ async function handleOrchestrationSpawn(
           agentName: agent,
           environmentId,
           pullRequestTitle: prTitle,
+          orchestrationId,
         }),
       });
 
@@ -1010,6 +1028,7 @@ async function handleOrchestrationSpawn(
           newBranch: "",
           environmentId: environmentId as Id<"environments"> | undefined,
           isOrchestrationHead,
+          orchestrationId,
         }),
       );
 
@@ -1839,6 +1858,7 @@ Orchestration ID: ${orchestrationId}`;
           newBranch: "",
           environmentId: environmentId as Id<"environments"> | undefined,
           isOrchestrationHead: true,
+          orchestrationId,
         }),
       );
       const taskRunId = taskRunResult.taskRunId;
@@ -2385,7 +2405,8 @@ export function handleHttpRequest(
       const teamSlugOrId = url.searchParams.get("teamSlugOrId");
       const showAll = url.searchParams.get("all") === "true";
       const vendorFilter = url.searchParams.get("vendor");
-      const authToken = parseAuthHeader(req);
+      // Support both Bearer token (CLI) and x-stack-auth (browser)
+      const authToken = parseAuthHeader(req) ?? parseStackAuthHeader(req);
 
       try {
         let convexModels: Array<{
