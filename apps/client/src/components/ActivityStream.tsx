@@ -2,6 +2,7 @@ import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
 import { useQuery } from "convex/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { LucideIcon } from "lucide-react";
 import {
   FileEdit,
   FileSearch,
@@ -14,53 +15,297 @@ import {
   X,
   Download,
   Filter,
+  Play,
+  Square,
+  RotateCcw,
+  Shield,
+  ShieldCheck,
+  HardDrive,
+  Database,
+  Bot,
+  Bell,
+  MessagesSquare,
+  ServerCog,
 } from "lucide-react";
 import { ActivityStreamSkeleton } from "@/components/dashboard/DashboardSkeletons";
+import { formatDuration } from "@/lib/time";
 
 const ACTIVITY_TYPES = [
+  "tool_call",
   "file_edit",
   "file_read",
   "bash_command",
+  "test_run",
   "git_commit",
   "error",
   "thinking",
-  "test_run",
-  "tool_call",
+  "session_start",
+  "session_stop",
+  "session_resumed",
+  "session_finished",
+  "stop_requested",
+  "stop_blocked",
+  "stop_failed",
+  "context_warning",
+  "context_compacted",
+  "memory_loaded",
+  "memory_scope_changed",
+  "tool_requested",
+  "tool_completed",
+  "approval_requested",
+  "approval_resolved",
+  "user_prompt",
+  "subagent_start",
+  "subagent_stop",
+  "notification",
+  "prompt_submitted",
+  "run_resumed",
+  "mcp_capabilities_negotiated",
 ] as const;
 
 type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
-const ACTIVITY_ICONS: Record<string, typeof FileEdit> = {
-  file_edit: FileEdit,
-  file_read: FileSearch,
-  bash_command: Terminal,
-  git_commit: GitCommit,
-  error: AlertTriangle,
-  thinking: Brain,
-  test_run: Terminal,
-  tool_call: Wrench,
-};
+interface ActivityLike {
+  type: string;
+  summary: string;
+  detail?: string;
+  toolName?: string;
+  durationMs?: number;
+  severity?: string;
+  warningType?: string;
+  usagePercent?: number;
+  previousBytes?: number;
+  newBytes?: number;
+  reductionPercent?: number;
+  stopSource?: string;
+  exitCode?: number;
+  continuationPrompt?: string;
+  approvalId?: string;
+  resolution?: string;
+  resolvedBy?: string;
+  scopeType?: string;
+  scopeBytes?: number;
+  scopeAction?: string;
+  promptSource?: string;
+  turnNumber?: number;
+  promptLength?: number;
+  turnCount?: number;
+  providerSessionId?: string;
+  resumeReason?: string;
+  previousSessionId?: string;
+  checkpointRef?: string;
+  serverName?: string;
+  protocolVersion?: string;
+  transport?: string;
+  mcpCapabilities?: string;
+  toolCount?: number;
+  resourceCount?: number;
+}
 
-const ACTIVITY_COLORS: Record<string, string> = {
-  file_edit: "text-blue-500 dark:text-blue-400",
-  file_read: "text-neutral-500 dark:text-neutral-400",
-  bash_command: "text-green-600 dark:text-green-400",
-  git_commit: "text-purple-500 dark:text-purple-400",
-  error: "text-red-500 dark:text-red-400",
-  thinking: "text-neutral-400 dark:text-neutral-500",
-  test_run: "text-amber-500 dark:text-amber-400",
-  tool_call: "text-neutral-500 dark:text-neutral-400",
-};
+interface ActivityConfig {
+  icon: LucideIcon;
+  colorClass: string;
+  badgeClass: string;
+  label: string;
+}
 
-const ACTIVITY_LABELS: Record<string, string> = {
-  file_edit: "File Edit",
-  file_read: "File Read",
-  bash_command: "Command",
-  git_commit: "Git Commit",
-  error: "Error",
-  thinking: "Thinking",
-  test_run: "Test",
-  tool_call: "Tool",
+const ACTIVITY_CONFIG: Record<ActivityType, ActivityConfig> = {
+  tool_call: {
+    icon: Wrench,
+    colorClass: "text-neutral-500 dark:text-neutral-400",
+    badgeClass:
+      "bg-neutral-100 text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300",
+    label: "Tool Call",
+  },
+  file_edit: {
+    icon: FileEdit,
+    colorClass: "text-blue-500 dark:text-blue-400",
+    badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200",
+    label: "File Edit",
+  },
+  file_read: {
+    icon: FileSearch,
+    colorClass: "text-neutral-500 dark:text-neutral-400",
+    badgeClass:
+      "bg-neutral-100 text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300",
+    label: "File Read",
+  },
+  bash_command: {
+    icon: Terminal,
+    colorClass: "text-green-600 dark:text-green-400",
+    badgeClass:
+      "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-200",
+    label: "Command",
+  },
+  test_run: {
+    icon: Terminal,
+    colorClass: "text-amber-500 dark:text-amber-400",
+    badgeClass:
+      "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-200",
+    label: "Test Run",
+  },
+  git_commit: {
+    icon: GitCommit,
+    colorClass: "text-purple-500 dark:text-purple-400",
+    badgeClass:
+      "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/50 dark:text-fuchsia-200",
+    label: "Git Commit",
+  },
+  error: {
+    icon: AlertTriangle,
+    colorClass: "text-red-500 dark:text-red-400",
+    badgeClass: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-200",
+    label: "Error",
+  },
+  thinking: {
+    icon: Brain,
+    colorClass: "text-neutral-400 dark:text-neutral-500",
+    badgeClass:
+      "bg-neutral-100 text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300",
+    label: "Thinking",
+  },
+  session_start: {
+    icon: Play,
+    colorClass: "text-blue-500 dark:text-blue-400",
+    badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200",
+    label: "Session Start",
+  },
+  session_stop: {
+    icon: Square,
+    colorClass: "text-neutral-500 dark:text-neutral-400",
+    badgeClass:
+      "bg-neutral-100 text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300",
+    label: "Session Stop",
+  },
+  session_resumed: {
+    icon: RotateCcw,
+    colorClass: "text-blue-500 dark:text-blue-400",
+    badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200",
+    label: "Session Resumed",
+  },
+  session_finished: {
+    icon: Square,
+    colorClass: "text-green-600 dark:text-green-400",
+    badgeClass:
+      "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-200",
+    label: "Session Finished",
+  },
+  stop_requested: {
+    icon: Square,
+    colorClass: "text-amber-500 dark:text-amber-400",
+    badgeClass:
+      "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-200",
+    label: "Stop Requested",
+  },
+  stop_blocked: {
+    icon: AlertTriangle,
+    colorClass: "text-amber-500 dark:text-amber-400",
+    badgeClass:
+      "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-200",
+    label: "Stop Blocked",
+  },
+  stop_failed: {
+    icon: AlertTriangle,
+    colorClass: "text-red-500 dark:text-red-400",
+    badgeClass: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-200",
+    label: "Stop Failed",
+  },
+  context_warning: {
+    icon: AlertTriangle,
+    colorClass: "text-amber-500 dark:text-amber-400",
+    badgeClass:
+      "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-200",
+    label: "Context Warning",
+  },
+  context_compacted: {
+    icon: RotateCcw,
+    colorClass: "text-blue-500 dark:text-blue-400",
+    badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200",
+    label: "Context Compacted",
+  },
+  memory_loaded: {
+    icon: HardDrive,
+    colorClass: "text-blue-500 dark:text-blue-400",
+    badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200",
+    label: "Memory Loaded",
+  },
+  memory_scope_changed: {
+    icon: Database,
+    colorClass: "text-blue-500 dark:text-blue-400",
+    badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200",
+    label: "Memory Scope",
+  },
+  tool_requested: {
+    icon: Wrench,
+    colorClass: "text-neutral-500 dark:text-neutral-400",
+    badgeClass:
+      "bg-neutral-100 text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300",
+    label: "Tool Requested",
+  },
+  tool_completed: {
+    icon: Wrench,
+    colorClass: "text-green-600 dark:text-green-400",
+    badgeClass:
+      "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-200",
+    label: "Tool Completed",
+  },
+  approval_requested: {
+    icon: Shield,
+    colorClass: "text-amber-500 dark:text-amber-400",
+    badgeClass:
+      "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-200",
+    label: "Approval Requested",
+  },
+  approval_resolved: {
+    icon: ShieldCheck,
+    colorClass: "text-green-600 dark:text-green-400",
+    badgeClass:
+      "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-200",
+    label: "Approval Resolved",
+  },
+  user_prompt: {
+    icon: MessagesSquare,
+    colorClass: "text-blue-500 dark:text-blue-400",
+    badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200",
+    label: "User Prompt",
+  },
+  subagent_start: {
+    icon: Bot,
+    colorClass: "text-blue-500 dark:text-blue-400",
+    badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200",
+    label: "Subagent Start",
+  },
+  subagent_stop: {
+    icon: Bot,
+    colorClass: "text-neutral-500 dark:text-neutral-400",
+    badgeClass:
+      "bg-neutral-100 text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300",
+    label: "Subagent Stop",
+  },
+  notification: {
+    icon: Bell,
+    colorClass: "text-blue-500 dark:text-blue-400",
+    badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200",
+    label: "Notification",
+  },
+  prompt_submitted: {
+    icon: MessagesSquare,
+    colorClass: "text-blue-500 dark:text-blue-400",
+    badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200",
+    label: "Prompt Submitted",
+  },
+  run_resumed: {
+    icon: RotateCcw,
+    colorClass: "text-blue-500 dark:text-blue-400",
+    badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200",
+    label: "Run Resumed",
+  },
+  mcp_capabilities_negotiated: {
+    icon: ServerCog,
+    colorClass: "text-blue-500 dark:text-blue-400",
+    badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200",
+    label: "MCP Capabilities",
+  },
 };
 
 function formatRelativeTime(timestamp: number): string {
@@ -74,6 +319,237 @@ function formatRelativeTime(timestamp: number): string {
 
 function formatTimestamp(timestamp: number): string {
   return new Date(timestamp).toISOString();
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatActivityDuration(durationMs: number): string {
+  if (durationMs < 1000) return `${durationMs}ms`;
+  if (durationMs < 60_000) return `${Math.round(durationMs / 1000)}s`;
+  return formatDuration(durationMs);
+}
+
+function formatActivityValue(value: string): string {
+  return value.replaceAll("_", " ");
+}
+
+function formatActivityTypeLabel(type: string): string {
+  return type
+    .split("_")
+    .map((segment) => {
+      if (!segment) return segment;
+      return segment[0].toUpperCase() + segment.slice(1);
+    })
+    .join(" ");
+}
+
+function isKnownActivityType(type: string): type is ActivityType {
+  return ACTIVITY_TYPES.some((activityType) => activityType === type);
+}
+
+function getActivityConfig(type: string): ActivityConfig {
+  if (isKnownActivityType(type)) {
+    return ACTIVITY_CONFIG[type];
+  }
+
+  return {
+    icon: Wrench,
+    colorClass: "text-neutral-500 dark:text-neutral-400",
+    badgeClass:
+      "bg-neutral-100 text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300",
+    label: formatActivityTypeLabel(type),
+  };
+}
+
+function getEnabledMcpCapabilities(serialized?: string): string[] {
+  if (!serialized) return [];
+
+  try {
+    const parsed: unknown = JSON.parse(serialized);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return [];
+    }
+
+    return Object.entries(parsed)
+      .filter(([, enabled]) => enabled === true)
+      .map(([capability]) => capability);
+  } catch {
+    return [];
+  }
+}
+
+function getActivityMetadata(activity: ActivityLike): string[] {
+  const metadata: string[] = [];
+
+  if (activity.toolName) {
+    metadata.push(activity.toolName);
+  }
+
+  switch (activity.type) {
+    case "session_start":
+    case "session_stop":
+    case "session_resumed":
+      if (activity.providerSessionId) {
+        metadata.push(`Session: ${activity.providerSessionId}`);
+      }
+      if (activity.previousSessionId) {
+        metadata.push(`Previous: ${activity.previousSessionId}`);
+      }
+      break;
+    case "session_finished":
+      if (activity.turnCount !== undefined) {
+        metadata.push(`Turns: ${activity.turnCount}`);
+      }
+      if (activity.providerSessionId) {
+        metadata.push(`Session: ${activity.providerSessionId}`);
+      }
+      if (activity.exitCode !== undefined) {
+        metadata.push(`Exit: ${activity.exitCode}`);
+      }
+      break;
+    case "stop_requested":
+    case "stop_blocked":
+    case "stop_failed":
+      if (activity.stopSource) {
+        metadata.push(`Source: ${formatActivityValue(activity.stopSource)}`);
+      }
+      if (activity.exitCode !== undefined) {
+        metadata.push(`Exit: ${activity.exitCode}`);
+      }
+      break;
+    case "context_warning":
+      if (activity.severity) {
+        metadata.push(`Severity: ${formatActivityValue(activity.severity)}`);
+      }
+      if (activity.warningType) {
+        metadata.push(`Type: ${formatActivityValue(activity.warningType)}`);
+      }
+      if (activity.usagePercent !== undefined) {
+        metadata.push(`Usage: ${Math.round(activity.usagePercent)}%`);
+      }
+      break;
+    case "context_compacted":
+      if (activity.reductionPercent !== undefined) {
+        metadata.push(`Reduced: ${Math.round(activity.reductionPercent)}%`);
+      }
+      if (activity.previousBytes !== undefined && activity.newBytes !== undefined) {
+        metadata.push(`${formatBytes(activity.previousBytes)} -> ${formatBytes(activity.newBytes)}`);
+      }
+      break;
+    case "memory_scope_changed":
+      if (activity.scopeType) {
+        metadata.push(`Scope: ${formatActivityValue(activity.scopeType)}`);
+      }
+      if (activity.scopeAction) {
+        metadata.push(`Action: ${formatActivityValue(activity.scopeAction)}`);
+      }
+      if (activity.scopeBytes !== undefined) {
+        metadata.push(`Size: ${formatBytes(activity.scopeBytes)}`);
+      }
+      break;
+    case "approval_requested":
+      if (activity.approvalId) {
+        metadata.push(`Approval: ${activity.approvalId}`);
+      }
+      break;
+    case "approval_resolved":
+      if (activity.resolution) {
+        metadata.push(`Resolution: ${formatActivityValue(activity.resolution)}`);
+      }
+      if (activity.resolvedBy) {
+        metadata.push(`By: ${activity.resolvedBy}`);
+      }
+      if (activity.approvalId) {
+        metadata.push(`Approval: ${activity.approvalId}`);
+      }
+      break;
+    case "user_prompt":
+    case "prompt_submitted":
+      if (activity.turnNumber !== undefined) {
+        metadata.push(`Turn: ${activity.turnNumber}`);
+      }
+      if (activity.promptSource) {
+        metadata.push(`Source: ${formatActivityValue(activity.promptSource)}`);
+      }
+      if (activity.promptLength !== undefined) {
+        metadata.push(`Prompt: ${activity.promptLength} chars`);
+      }
+      break;
+    case "run_resumed":
+      if (activity.resumeReason) {
+        metadata.push(`Reason: ${formatActivityValue(activity.resumeReason)}`);
+      }
+      if (activity.checkpointRef) {
+        metadata.push(`Checkpoint: ${activity.checkpointRef}`);
+      }
+      if (activity.previousSessionId) {
+        metadata.push(`Previous: ${activity.previousSessionId}`);
+      }
+      break;
+    case "mcp_capabilities_negotiated":
+      if (activity.serverName) {
+        metadata.push(`Server: ${activity.serverName}`);
+      }
+      if (activity.transport) {
+        metadata.push(`Transport: ${activity.transport}`);
+      }
+      if (activity.protocolVersion) {
+        metadata.push(`Protocol: ${activity.protocolVersion}`);
+      }
+      if (activity.toolCount !== undefined) {
+        metadata.push(`Tools: ${activity.toolCount}`);
+      }
+      if (activity.resourceCount !== undefined) {
+        metadata.push(`Resources: ${activity.resourceCount}`);
+      }
+      break;
+  }
+
+  if (activity.durationMs !== undefined && activity.durationMs > 0) {
+    metadata.push(`Duration: ${formatActivityDuration(activity.durationMs)}`);
+  }
+
+  return metadata;
+}
+
+function getActivitySecondaryText(activity: ActivityLike): string | null {
+  const trimmedDetail = activity.detail?.trim();
+  if (trimmedDetail && trimmedDetail !== activity.summary.trim()) {
+    return trimmedDetail;
+  }
+
+  if (activity.type === "stop_blocked" && activity.continuationPrompt) {
+    return `Continuation prompt: ${activity.continuationPrompt}`;
+  }
+
+  if (activity.type === "mcp_capabilities_negotiated") {
+    const capabilities = getEnabledMcpCapabilities(activity.mcpCapabilities);
+    if (capabilities.length > 0) {
+      return `Capabilities: ${capabilities.map(formatActivityValue).join(", ")}`;
+    }
+  }
+
+  return null;
+}
+
+function getActivitySearchText(activity: ActivityLike): string {
+  return [
+    activity.type,
+    getActivityConfig(activity.type).label,
+    activity.summary,
+    activity.toolName,
+    activity.detail,
+    getActivitySecondaryText(activity),
+    ...getActivityMetadata(activity),
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" ")
+    .toLowerCase();
 }
 
 interface ActivityStreamProps {
@@ -99,17 +575,15 @@ export function ActivityStream({ taskRunId }: ActivityStreamProps) {
 
     // Apply type filters
     if (activeFilters.size > 0) {
-      result = result.filter((a) => activeFilters.has(a.type as ActivityType));
+      result = result.filter(
+        (activity) => isKnownActivityType(activity.type) && activeFilters.has(activity.type)
+      );
     }
 
     // Apply search
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      result = result.filter(
-        (a) =>
-          a.summary.toLowerCase().includes(query) ||
-          a.toolName?.toLowerCase().includes(query)
-      );
+      result = result.filter((activity) => getActivitySearchText(activity).includes(query));
     }
 
     return result;
@@ -322,7 +796,7 @@ export function ActivityStream({ taskRunId }: ActivityStreamProps) {
             {/* Type filter chips */}
             <div className="flex flex-wrap gap-1">
               {ACTIVITY_TYPES.map((type) => {
-                const Icon = ACTIVITY_ICONS[type];
+                const { icon: Icon, label } = getActivityConfig(type);
                 const isActive = activeFilters.has(type);
                 const count = activities.filter((a) => a.type === type).length;
                 if (count === 0) return null;
@@ -338,7 +812,7 @@ export function ActivityStream({ taskRunId }: ActivityStreamProps) {
                     }`}
                   >
                     <Icon className="h-3 w-3" />
-                    {ACTIVITY_LABELS[type]} ({count})
+                    {label} ({count})
                   </button>
                 );
               })}
@@ -381,9 +855,16 @@ export function ActivityStream({ taskRunId }: ActivityStreamProps) {
         ) : (
           <div className="divide-y divide-neutral-100 dark:divide-neutral-900">
             {filteredActivities.map((activity) => {
-              const Icon = ACTIVITY_ICONS[activity.type] ?? Wrench;
-              const colorClass = ACTIVITY_COLORS[activity.type] ?? "text-neutral-500";
-              const isError = activity.type === "error";
+              const { icon: Icon, colorClass, badgeClass, label } = getActivityConfig(
+                activity.type
+              );
+              const metadata = getActivityMetadata(activity);
+              const secondaryText = getActivitySecondaryText(activity);
+              const isError = activity.type === "error" || activity.type === "stop_failed";
+              const isWarning =
+                activity.type === "approval_requested" ||
+                activity.type === "stop_blocked" ||
+                activity.type === "context_warning";
 
               return (
                 <div
@@ -391,17 +872,34 @@ export function ActivityStream({ taskRunId }: ActivityStreamProps) {
                   className={`flex items-start gap-2 px-3 py-2 ${
                     isError
                       ? "bg-red-50 dark:bg-red-950/30 border-l-2 border-red-500"
+                      : isWarning
+                        ? "bg-amber-50/60 dark:bg-amber-950/20 border-l-2 border-amber-400"
                       : "hover:bg-neutral-50 dark:hover:bg-neutral-900/50"
                   }`}
                 >
                   <Icon className={`h-4 w-4 mt-0.5 flex-shrink-0 ${colorClass}`} />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-neutral-800 dark:text-neutral-200 truncate">
+                    <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${badgeClass}`}
+                      >
+                        {label}
+                      </span>
+                      {metadata.map((item) => (
+                        <span
+                          key={`${activity._id}-${item}`}
+                          className="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600 dark:bg-neutral-900 dark:text-neutral-400"
+                        >
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                    <p className="text-sm text-neutral-800 dark:text-neutral-200 break-words">
                       {activity.summary}
                     </p>
-                    {activity.toolName && activity.toolName !== activity.summary && (
-                      <p className="text-xs text-neutral-400 dark:text-neutral-600">
-                        {activity.toolName}
+                    {secondaryText && (
+                      <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 break-words">
+                        {secondaryText}
                       </p>
                     )}
                   </div>
