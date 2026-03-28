@@ -12,6 +12,8 @@ import { Link } from "@tanstack/react-router";
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { VaultNoteRow } from "./VaultNoteRow";
 
+const DEFAULT_VAULT_NAME = "obsidian_vault";
+
 interface VaultNoteListProps {
   teamSlugOrId: string;
 }
@@ -27,6 +29,9 @@ export function VaultNoteList({ teamSlugOrId }: VaultNoteListProps) {
     teamSlugOrId,
     limit: 100,
   });
+
+  const workspaceSettings = useQuery(api.workspaceSettings.get, { teamSlugOrId });
+  const vaultName = workspaceSettings?.vaultConfig?.vaultName ?? DEFAULT_VAULT_NAME;
 
   const isLoading = notes === undefined;
 
@@ -237,6 +242,7 @@ export function VaultNoteList({ teamSlugOrId }: VaultNoteListProps) {
               lastAccessedAt={note.lastAccessedAt}
               lastAccessedBy={note.lastAccessedBy}
               accessCount={note.accessCount}
+              vaultName={vaultName}
               isKeyboardFocused={expandedIndex === index}
               onFocus={() => setExpandedIndex(index)}
             />

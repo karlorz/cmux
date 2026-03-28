@@ -29,6 +29,7 @@ interface VaultNoteRowProps {
   lastAccessedAt: number;
   lastAccessedBy: string | null | undefined;
   accessCount: number;
+  vaultName: string;
   isKeyboardFocused?: boolean;
   onFocus?: () => void;
 }
@@ -70,6 +71,7 @@ export function VaultNoteRow({
   lastAccessedAt,
   lastAccessedBy,
   accessCount,
+  vaultName,
   isKeyboardFocused,
   onFocus,
 }: VaultNoteRowProps) {
@@ -293,7 +295,7 @@ export function VaultNoteRow({
                 </button>
                 {noteData.path && (
                   <a
-                    href={`obsidian://open?vault=default&file=${encodeURIComponent(noteData.path)}`}
+                    href={`obsidian://open?vault=${encodeURIComponent(vaultName)}&file=${encodeURIComponent(noteData.path.replace(/\.md$/, ""))}`}
                     className="flex items-center gap-1 px-2 py-1 text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
                     title="Open in Obsidian"
                     onClick={(e) => e.stopPropagation()}
@@ -305,7 +307,10 @@ export function VaultNoteRow({
               </div>
               {/* Content */}
               <div className="max-h-[400px] overflow-y-auto rounded-md bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 p-4">
-                <VaultNoteContent content={noteData.content} />
+                <VaultNoteContent
+                  content={noteData.content}
+                  vaultName={vaultName}
+                />
               </div>
             </div>
           ) : null}

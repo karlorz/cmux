@@ -3,6 +3,10 @@
  *
  * Renders markdown content from an Obsidian vault note.
  * Production-ready with syntax highlighting, link handling, and large content support.
+ *
+ * Wiki link behavior:
+ * - Click: Navigate to note in vault UI (if onNavigateToNote provided)
+ * - Ctrl/Cmd+Click: Open in Obsidian
  */
 
 import { useMemo, useState, useCallback } from "react";
@@ -15,23 +19,34 @@ interface VaultNoteContentProps {
   className?: string;
   /** Maximum characters to show before truncating with "Show more". Default: 50000 */
   maxLength?: number;
+  /** Vault name for Obsidian links. Default: "obsidian_vault" */
+  vaultName?: string;
+  /** Callback to navigate to another note in the vault UI */
+  onNavigateToNote?: (notePath: string) => void;
 }
 
 // Max content length before we offer to truncate (50KB of text)
 const DEFAULT_MAX_LENGTH = 50000;
+const DEFAULT_VAULT_NAME = "obsidian_vault";
+
+// Data attribute used to identify wiki links for navigation
+const WIKI_LINK_DATA_ATTR = "data-wiki-target";
 
 /**
- * Transform Obsidian-style wiki links [[note]] to regular markdown links
+ * Transform Obsidian-style wiki links [[note]] to regular markdown links.
+ * Uses a special URL scheme to identify wiki links for in-app navigation.
+ * The vaultName parameter is kept for future use but the actual Obsidian URL
+ * is constructed in the link click handler.
  */
-function transformObsidianLinks(content: string): string {
-  // Transform [[note]] to [note](obsidian://open?file=note)
-  // Transform [[note|alias]] to [alias](obsidian://open?file=note)
+function transformObsidianLinks(content: string, _vaultName: string): string {
+  // Transform [[note]] to a special wiki:// URL for in-app handling
+  // Transform [[note|alias]] uses alias as display text
   return content.replace(
     /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
     (_, target: string, alias?: string) => {
       const displayText = alias || target;
-      const encodedTarget = encodeURIComponent(target);
-      return `[${displayText}](obsidian://open?file=${encodedTarget})`;
+      // Use a special URL scheme to identify wiki links for in-app navigation
+      return `[${displayText}](wiki://${WIKI_LINK_DATA_ATTR}/${encodeURIComponent(target)})`;
     }
   );
 }
@@ -40,6 +55,8 @@ export function VaultNoteContent({
   content,
   className,
   maxLength = DEFAULT_MAX_LENGTH,
+  vaultName = DEFAULT_VAULT_NAME,
+  onNavigateToNote,
 }: VaultNoteContentProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -48,8 +65,8 @@ export function VaultNoteContent({
     const rawContent = isLargeContent && !isExpanded
       ? content.slice(0, maxLength) + "\n\n..."
       : content;
-    return transformObsidianLinks(rawContent);
-  }, [content, isLargeContent, isExpanded, maxLength]);
+    return transformObsidianLinks(rawContent, vaultName);
+  }, [content, isLargeContent, isExpanded, maxLength, vaultName]);
 
   const toggleExpanded = useCallback(() => {
     setIsExpanded((prev) => !prev);
@@ -94,10 +111,53 @@ export function VaultNoteContent({
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{
-            // Handle external links to open in new tab
+            // Handle links with wiki link navigation support
             a: ({ href, children, ...props }) => {
               const isExternal = href?.startsWith("http");
+              const isWikiLink = href?.startsWith("wiki://");
               const isObsidian = href?.startsWith("obsidian://");
+
+              // Handle wiki links for in-app navigation
+              if (isWikiLink && href) {
+                const targetPath = decodeURIComponent(
+                  href.replace(`wiki://${WIKI_LINK_DATA_ATTR}/`, "")
+                );
+                // Strip .md extension for Obsidian links
+                const targetWithoutExt = targetPath.replace(/\.md$/, "");
+                const obsidianUrl = `obsidian://open?vault=${encodeURIComponent(vaultName)}&file=${encodeURIComponent(targetWithoutExt)}`;
+
+                const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+                  // Ctrl/Cmd+click opens in Obsidian
+                  if (e.metaKey || e.ctrlKey) {
+                    e.preventDefault();
+                    window.open(obsidianUrl, "_self");
+                    return;
+                  }
+
+                  // Regular click navigates in-app if handler is provided
+                  if (onNavigateToNote) {
+                    e.preventDefault();
+                    onNavigateToNote(targetPath);
+                  } else {
+                    // Fallback to Obsidian if no navigation handler
+                    e.preventDefault();
+                    window.open(obsidianUrl, "_self");
+                  }
+                };
+
+                return (
+                  <a
+                    href={obsidianUrl}
+                    onClick={handleClick}
+                    title={onNavigateToNote ? "Click to view, Ctrl+click for Obsidian" : "Open in Obsidian"}
+                    className="cursor-pointer"
+                    {...props}
+                  >
+                    {children}
+                  </a>
+                );
+              }
+
               return (
                 <a
                   href={href}
@@ -110,6 +170,15 @@ export function VaultNoteContent({
                 </a>
               );
             },
+            // Lazy load images for better performance on large notes
+            img: ({ src, alt, ...props }) => (
+              <img
+                src={src}
+                alt={alt || ""}
+                loading="lazy"
+                {...props}
+              />
+            ),
             // Add copy button to code blocks in the future
             // For now, just ensure proper styling
             pre: ({ children, ...props }) => (

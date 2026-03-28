@@ -5534,6 +5534,56 @@ export type GetApiVaultAccessRecentResponses = {
 
 export type GetApiVaultAccessRecentResponse = GetApiVaultAccessRecentResponses[keyof GetApiVaultAccessRecentResponses];
 
+export type GetApiVaultImageData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId: string;
+        /**
+         * Image path relative to note location
+         */
+        path: string;
+        /**
+         * Note path to resolve relative images from
+         */
+        notePath: string;
+    };
+    url: '/api/vault/image';
+};
+
+export type GetApiVaultImageErrors = {
+    /**
+     * Invalid request or vault not configured
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * GitHub App not installed on vault repository
+     */
+    403: unknown;
+    /**
+     * Image not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiVaultImageResponses = {
+    /**
+     * Image retrieved successfully
+     */
+    200: unknown;
+};
+
 export type GetApiVaultNotesData = {
     body?: never;
     path?: never;
