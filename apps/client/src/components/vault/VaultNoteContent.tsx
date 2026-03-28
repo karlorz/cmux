@@ -13,6 +13,7 @@ import { useMemo, useState, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ChevronDown, ChevronUp, FileText } from "lucide-react";
+import { MermaidDiagram } from "@/components/mermaid-diagram";
 
 interface VaultNoteContentProps {
   content: string;
@@ -179,8 +180,30 @@ export function VaultNoteContent({
                 {...props}
               />
             ),
-            // Add copy button to code blocks in the future
-            // For now, just ensure proper styling
+            // Handle code blocks - render Mermaid diagrams, style others
+            code: ({ className, children, ...props }) => {
+              const match = /language-(\w+)/.exec(className || "");
+              const language = match?.[1];
+              const codeContent = String(children).replace(/\n$/, "");
+
+              // Render Mermaid diagrams
+              if (language === "mermaid") {
+                return <MermaidDiagram chart={codeContent} className="my-4" />;
+              }
+
+              // Inline code (no language specified, not in a pre block)
+              if (!className) {
+                return <code {...props}>{children}</code>;
+              }
+
+              // Code block with language
+              return (
+                <code className={className} {...props}>
+                  {children}
+                </code>
+              );
+            },
+            // Style pre blocks
             pre: ({ children, ...props }) => (
               <pre className="relative group" {...props}>
                 {children}
