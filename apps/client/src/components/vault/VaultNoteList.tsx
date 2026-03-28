@@ -12,13 +12,30 @@ import { Link } from "@tanstack/react-router";
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { VaultNoteRow } from "./VaultNoteRow";
 
-const DEFAULT_VAULT_NAME = "obsidian_vault";
+type VaultListNote = {
+  notePath: string;
+  noteTitle?: string | null;
+  lastAccessedAt?: number | null;
+  lastAccessedBy?: string | null;
+  accessCount?: number | null;
+  isDirectLink?: boolean;
+};
 
 interface VaultNoteListProps {
   teamSlugOrId: string;
+  vaultName: string;
+  selectedNotePath?: string;
+  onSelectedNotePathChange?: (notePath?: string) => void;
+  showInlinePreview?: boolean;
 }
 
-export function VaultNoteList({ teamSlugOrId }: VaultNoteListProps) {
+export function VaultNoteList({
+  teamSlugOrId,
+  vaultName,
+  selectedNotePath,
+  onSelectedNotePathChange,
+  showInlinePreview = true,
+}: VaultNoteListProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -29,9 +46,6 @@ export function VaultNoteList({ teamSlugOrId }: VaultNoteListProps) {
     teamSlugOrId,
     limit: 100,
   });
-
-  const workspaceSettings = useQuery(api.workspaceSettings.get, { teamSlugOrId });
-  const vaultName = workspaceSettings?.vaultConfig?.vaultName ?? DEFAULT_VAULT_NAME;
 
   const isLoading = notes === undefined;
 
@@ -47,6 +61,41 @@ export function VaultNoteList({ teamSlugOrId }: VaultNoteListProps) {
         (note.noteTitle?.toLowerCase().includes(query) ?? false)
     );
   }, [notes, searchQuery]);
+
+  const selectedNote = useMemo<VaultListNote | null>(() => {
+    if (!selectedNotePath) return null;
+
+    const existingNote = notes?.find((note) => note.notePath === selectedNotePath);
+    if (existingNote) {
+      return existingNote;
+    }
+
+    const titleFromPath =
+      selectedNotePath.split("/").pop()?.replace(/\.md$/, "") ?? selectedNotePath;
+
+    return {
+      notePath: selectedNotePath,
+      noteTitle: titleFromPath,
+      lastAccessedAt: null,
+      lastAccessedBy: null,
+      accessCount: null,
+      isDirectLink: true,
+    };
+  }, [notes, selectedNotePath]);
+
+  const displayedNotes = useMemo<VaultListNote[]>(() => {
+    const rows: VaultListNote[] = filteredNotes;
+
+    if (!selectedNote) {
+      return rows;
+    }
+
+    if (rows.some((note) => note.notePath === selectedNote.notePath)) {
+      return rows;
+    }
+
+    return [selectedNote, ...rows];
+  }, [filteredNotes, selectedNote]);
 
   // Handle refresh (Convex auto-refreshes, but this provides visual feedback)
   const handleRefresh = useCallback(() => {
@@ -64,19 +113,19 @@ export function VaultNoteList({ teamSlugOrId }: VaultNoteListProps) {
   // Keyboard navigation
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (!filteredNotes.length) return;
+      if (!displayedNotes.length) return;
 
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
           setExpandedIndex((prev) =>
-            prev === null ? 0 : Math.min(prev + 1, filteredNotes.length - 1)
+            prev === null ? 0 : Math.min(prev + 1, displayedNotes.length - 1)
           );
           break;
         case "ArrowUp":
           e.preventDefault();
           setExpandedIndex((prev) =>
-            prev === null ? filteredNotes.length - 1 : Math.max(prev - 1, 0)
+            prev === null ? displayedNotes.length - 1 : Math.max(prev - 1, 0)
           );
           break;
         case "Enter":
@@ -98,7 +147,7 @@ export function VaultNoteList({ teamSlugOrId }: VaultNoteListProps) {
           break;
       }
     },
-    [filteredNotes.length, expandedIndex]
+    [displayedNotes.length, expandedIndex]
   );
 
   // Focus management for keyboard navigation
@@ -218,7 +267,7 @@ export function VaultNoteList({ teamSlugOrId }: VaultNoteListProps) {
         aria-label="Vault notes"
         tabIndex={0}
       >
-        {filteredNotes.length === 0 ? (
+        {displayedNotes.length === 0 ? (
           <div
             className="flex flex-col items-center justify-center py-8 text-neutral-500 dark:text-neutral-400"
             role="status"
@@ -233,7 +282,7 @@ export function VaultNoteList({ teamSlugOrId }: VaultNoteListProps) {
             </button>
           </div>
         ) : (
-          filteredNotes.map((note, index) => (
+          displayedNotes.map((note, index) => (
             <VaultNoteRow
               key={note.notePath}
               teamSlugOrId={teamSlugOrId}
@@ -243,6 +292,15 @@ export function VaultNoteList({ teamSlugOrId }: VaultNoteListProps) {
               lastAccessedBy={note.lastAccessedBy}
               accessCount={note.accessCount}
               vaultName={vaultName}
+              isExpanded={selectedNotePath === note.notePath}
+              showInlinePreview={showInlinePreview}
+              onToggle={() =>
+                onSelectedNotePathChange?.(
+                  selectedNotePath === note.notePath ? undefined : note.notePath
+                )
+              }
+              onNavigateToNote={onSelectedNotePathChange}
+              isDirectLink={note.isDirectLink}
               isKeyboardFocused={expandedIndex === index}
               onFocus={() => setExpandedIndex(index)}
             />
@@ -253,7 +311,8 @@ export function VaultNoteList({ teamSlugOrId }: VaultNoteListProps) {
       {/* Footer with count and keyboard hints */}
       <div className="px-4 py-2 border-t border-neutral-200 dark:border-neutral-800 text-xs text-neutral-500 dark:text-neutral-400 flex items-center justify-between">
         <span>
-          {filteredNotes.length} of {notes.length} notes
+          {displayedNotes.length} shown
+          {displayedNotes.length !== notes.length ? ` · ${notes.length} recent` : ""}
         </span>
         <span className="hidden sm:inline text-neutral-400 dark:text-neutral-500">
           Press / to search, arrow keys to navigate

@@ -1,8 +1,8 @@
-export const WIKI_LINK_DATA_ATTR = "data-wiki-target";
+export const WIKI_LINK_PREFIX = "/__cmux_vault_wiki__/";
 
 function buildWikiLinkMarkdown(target: string, alias?: string): string {
   const displayText = alias && alias.length > 0 ? alias : target;
-  return `[${displayText}](wiki://${WIKI_LINK_DATA_ATTR}/${encodeURIComponent(target)})`;
+  return `[${displayText}](${WIKI_LINK_PREFIX}${encodeURIComponent(target)})`;
 }
 
 function transformWikiLinksOutsideInlineCode(content: string): string {

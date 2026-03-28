@@ -17,7 +17,7 @@ import {
   FileText,
   Loader2,
 } from "lucide-react";
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useCallback, useRef, useEffect } from "react";
 import clsx from "clsx";
 import { toast } from "sonner";
 import { VaultNoteContent } from "./VaultNoteContent";
@@ -26,10 +26,15 @@ interface VaultNoteRowProps {
   teamSlugOrId: string;
   notePath: string;
   noteTitle: string | null | undefined;
-  lastAccessedAt: number;
+  lastAccessedAt?: number | null;
   lastAccessedBy: string | null | undefined;
-  accessCount: number;
+  accessCount?: number | null;
   vaultName: string;
+  isExpanded: boolean;
+  showInlinePreview?: boolean;
+  onToggle: () => void;
+  onNavigateToNote?: (notePath: string) => void;
+  isDirectLink?: boolean;
   isKeyboardFocused?: boolean;
   onFocus?: () => void;
 }
@@ -72,10 +77,14 @@ export function VaultNoteRow({
   lastAccessedBy,
   accessCount,
   vaultName,
+  isExpanded,
+  showInlinePreview = true,
+  onToggle,
+  onNavigateToNote,
+  isDirectLink,
   isKeyboardFocused,
   onFocus,
 }: VaultNoteRowProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
 
   // Only fetch note content when expanded
@@ -88,23 +97,19 @@ export function VaultNoteRow({
     ...getApiVaultNoteOptions({
       query: { teamSlugOrId, path: notePath },
     }),
-    enabled: isExpanded,
+    enabled: isExpanded && showInlinePreview,
     staleTime: 60000, // Cache for 1 minute
     retry: 1, // Only retry once on failure
   });
-
-  const toggleExpand = useCallback(() => {
-    setIsExpanded((prev) => !prev);
-  }, []);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        toggleExpand();
+        onToggle();
       }
     },
-    [toggleExpand]
+    [onToggle]
   );
 
   const handleCopyPath = useCallback(
@@ -153,9 +158,14 @@ export function VaultNoteRow({
       {/* Row header (always visible) */}
       <button
         type="button"
-        onClick={toggleExpand}
-        aria-expanded={isExpanded}
-        aria-controls={`vault-note-content-${notePath.replace(/[^a-zA-Z0-9]/g, "-")}`}
+        onClick={onToggle}
+        aria-expanded={showInlinePreview ? isExpanded : undefined}
+        aria-controls={
+          showInlinePreview
+            ? `vault-note-content-${notePath.replace(/[^a-zA-Z0-9]/g, "-")}`
+            : undefined
+        }
+        aria-pressed={!showInlinePreview ? isExpanded : undefined}
         className={clsx(
           "w-full flex items-center gap-3 px-4 py-3 text-left transition-colors",
           "hover:bg-neutral-50 dark:hover:bg-neutral-800/50",
@@ -193,6 +203,12 @@ export function VaultNoteRow({
 
         {/* Access metadata */}
         <div className="flex items-center gap-4 flex-shrink-0 text-xs text-neutral-500 dark:text-neutral-400">
+          {isDirectLink && (
+            <span className="hidden sm:inline rounded-full bg-blue-100 px-2 py-0.5 font-medium text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">
+              Shared note
+            </span>
+          )}
+
           {/* Last accessed by */}
           {lastAccessedBy && (
             <span
@@ -204,26 +220,32 @@ export function VaultNoteRow({
           )}
 
           {/* Access count */}
-          <span
-            className="flex items-center gap-1"
-            title={`Accessed ${accessCount} time${accessCount !== 1 ? "s" : ""}`}
-          >
-            <Eye className="size-3" aria-hidden="true" />
-            <span aria-label={`${accessCount} views`}>{accessCount}</span>
-          </span>
+          {typeof accessCount === "number" ? (
+            <span
+              className="flex items-center gap-1"
+              title={`Accessed ${accessCount} time${accessCount !== 1 ? "s" : ""}`}
+            >
+              <Eye className="size-3" aria-hidden="true" />
+              <span aria-label={`${accessCount} views`}>{accessCount}</span>
+            </span>
+          ) : null}
 
           {/* Last accessed time */}
-          <span
-            className="w-[60px] text-right"
-            title={formatFullDate(lastAccessedAt)}
-          >
-            {formatTimeAgo(lastAccessedAt)}
-          </span>
+          {typeof lastAccessedAt === "number" ? (
+            <span
+              className="w-[60px] text-right"
+              title={formatFullDate(lastAccessedAt)}
+            >
+              {formatTimeAgo(lastAccessedAt)}
+            </span>
+          ) : (
+            <span className="w-[60px] text-right">Shared</span>
+          )}
         </div>
       </button>
 
       {/* Expanded content */}
-      {isExpanded && (
+      {isExpanded && showInlinePreview && (
         <div
           id={`vault-note-content-${notePath.replace(/[^a-zA-Z0-9]/g, "-")}`}
           className="px-4 pb-4 pt-2 border-t border-neutral-100 dark:border-neutral-800/50 bg-neutral-50/50 dark:bg-neutral-800/20"
@@ -310,6 +332,7 @@ export function VaultNoteRow({
                 <VaultNoteContent
                   content={noteData.content}
                   vaultName={vaultName}
+                  onNavigateToNote={onNavigateToNote}
                 />
               </div>
             </div>

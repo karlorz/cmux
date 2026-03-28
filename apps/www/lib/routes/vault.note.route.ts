@@ -11,7 +11,11 @@ import { getAccessTokenFromRequest } from "@/lib/utils/auth";
 import { getConvex } from "@/lib/utils/get-convex";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { api } from "@cmux/convex/api";
-import { readNoteGitHub } from "@cmux/shared/node/obsidian-reader";
+import {
+  listGitHubNotePaths,
+  readNoteGitHub,
+  resolveGitHubNotePath,
+} from "@cmux/shared/node/obsidian-reader";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { getVaultConfig } from "./vault.helpers";
 
@@ -44,6 +48,70 @@ function rewriteImageUrls(
       return `![${alt}](${proxyUrl})`;
     }
   );
+}
+
+async function readGitHubNoteWithResolution(options: {
+  owner: string;
+  repo: string;
+  path: string;
+  token: string;
+  branch?: string;
+  requestedNotePath: string;
+}) {
+  const {
+    owner,
+    repo,
+    path,
+    token,
+    branch,
+    requestedNotePath,
+  } = options;
+
+  const baseOptions = {
+    owner,
+    repo,
+    path,
+    token,
+    branch,
+  };
+
+  const attemptedPaths = new Set<string>([requestedNotePath]);
+  let resolvedNotePath = requestedNotePath;
+  let note = await readNoteGitHub({
+    ...baseOptions,
+    notePath: requestedNotePath,
+  });
+
+  if (!note && !requestedNotePath.endsWith(".md")) {
+    const requestedMarkdownPath = `${requestedNotePath}.md`;
+    attemptedPaths.add(requestedMarkdownPath);
+    note = await readNoteGitHub({
+      ...baseOptions,
+      notePath: requestedMarkdownPath,
+    });
+    if (note) {
+      resolvedNotePath = requestedMarkdownPath;
+    }
+  }
+
+  if (!note) {
+    const notePaths = await listGitHubNotePaths(baseOptions);
+    const matchedPath = resolveGitHubNotePath(requestedNotePath, notePaths);
+    if (matchedPath && !attemptedPaths.has(matchedPath)) {
+      note = await readNoteGitHub({
+        ...baseOptions,
+        notePath: matchedPath,
+      });
+      if (note) {
+        resolvedNotePath = matchedPath;
+      }
+    }
+  }
+
+  return {
+    note,
+    resolvedNotePath,
+  };
 }
 
 // ============================================================================
@@ -139,13 +207,13 @@ vaultNoteRouter.openapi(
         return c.text("Only GitHub vaults are supported for single note access", 400);
       }
 
-      const note = await readNoteGitHub({
+      const { note, resolvedNotePath } = await readGitHubNoteWithResolution({
         owner: config.githubOwner,
         repo: config.githubRepo,
         path: config.githubPath || "",
         token: config.githubToken,
         branch: config.githubBranch,
-        notePath,
+        requestedNotePath: notePath,
       });
 
       if (!note) {
@@ -156,7 +224,7 @@ vaultNoteRouter.openapi(
       const convex = getConvex({ accessToken });
       void convex.mutation(api.vaultNoteAccess.recordAccess, {
         teamSlugOrId,
-        notePath,
+        notePath: resolvedNotePath,
         noteTitle: note.title,
         accessedBy,
       }).catch((err) => {
@@ -168,7 +236,7 @@ vaultNoteRouter.openapi(
       try {
         const accessRecord = await convex.query(api.vaultNoteAccess.getByPath, {
           teamSlugOrId,
-          notePath,
+          notePath: resolvedNotePath,
         });
         if (accessRecord) {
           access = {
@@ -184,7 +252,7 @@ vaultNoteRouter.openapi(
       // Rewrite relative image URLs to use the proxy (only for GitHub vaults)
       const processedContent =
         config.type === "github"
-          ? rewriteImageUrls(note.content, notePath, teamSlugOrId)
+          ? rewriteImageUrls(note.content, resolvedNotePath, teamSlugOrId)
           : note.content;
 
       return c.json({

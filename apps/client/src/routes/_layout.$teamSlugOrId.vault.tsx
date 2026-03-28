@@ -8,11 +8,21 @@
 import { FloatingPane } from "@/components/floating-pane";
 import { TitleBar } from "@/components/TitleBar";
 import { VaultNoteList } from "@/components/vault/VaultNoteList";
+import { VaultNotePreview } from "@/components/vault/VaultNotePreview";
+import { api } from "@cmux/convex/api";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery } from "convex/react";
+import { useCallback } from "react";
 import { Settings } from "lucide-react";
+import { z } from "zod";
+
+const DEFAULT_VAULT_NAME = "obsidian_vault";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/vault")({
   component: VaultPage,
+  validateSearch: z.object({
+    notePath: z.string().optional(),
+  }),
   head: () => ({
     meta: [
       { title: "Vault | cmux" },
@@ -26,6 +36,21 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/vault")({
 
 function VaultPage() {
   const { teamSlugOrId } = Route.useParams();
+  const { notePath } = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const workspaceSettings = useQuery(api.workspaceSettings.get, { teamSlugOrId });
+  const vaultName = workspaceSettings?.vaultConfig?.vaultName ?? DEFAULT_VAULT_NAME;
+
+  const handleSelectedNotePathChange = useCallback(
+    (nextNotePath?: string) => {
+      void navigate({
+        to: "/$teamSlugOrId/vault",
+        params: { teamSlugOrId },
+        search: { notePath: nextNotePath || undefined },
+      });
+    },
+    [navigate, teamSlugOrId]
+  );
 
   return (
     <FloatingPane
@@ -47,7 +72,25 @@ function VaultPage() {
         />
       }
     >
-      <VaultNoteList teamSlugOrId={teamSlugOrId} />
+      <div className="flex h-full min-h-0 flex-col lg:flex-row">
+        <div className="flex min-h-0 min-w-0 flex-col border-b border-neutral-200 dark:border-neutral-800 lg:w-[24rem] lg:flex-none lg:border-b-0 lg:border-r xl:w-[28rem]">
+          <VaultNoteList
+            teamSlugOrId={teamSlugOrId}
+            vaultName={vaultName}
+            selectedNotePath={notePath}
+            onSelectedNotePathChange={handleSelectedNotePathChange}
+            showInlinePreview={false}
+          />
+        </div>
+        <div className="min-h-0 min-w-0 flex-1">
+          <VaultNotePreview
+            teamSlugOrId={teamSlugOrId}
+            vaultName={vaultName}
+            notePath={notePath}
+            onSelectedNotePathChange={handleSelectedNotePathChange}
+          />
+        </div>
+      </div>
     </FloatingPane>
   );
 }

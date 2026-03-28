@@ -145,7 +145,7 @@ describe("VaultNoteContent", () => {
   describe("wiki links", () => {
     it("rewrites Obsidian wiki links outside code spans", () => {
       expect(transformObsidianLinks("See [[Folder/My Note|alias]].")).toBe(
-        "See [alias](wiki://data-wiki-target/Folder%2FMy%20Note)."
+        "See [alias](/__cmux_vault_wiki__/Folder%2FMy%20Note)."
       );
     });
 
