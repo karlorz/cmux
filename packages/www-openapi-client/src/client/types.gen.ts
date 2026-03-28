@@ -934,6 +934,136 @@ export type BindSessionRequest = {
     provider?: string;
 };
 
+export type RunControlAction = 'resolve_approval' | 'continue_session' | 'resume_checkpoint' | 'append_instruction';
+
+/**
+ * Primary continuation mode exposed by the shared contract
+ */
+export type RunControlContinuationMode = 'session_continuation' | 'checkpoint_restore' | 'append_instruction' | 'none';
+
+export type RunControlSummary = {
+    /**
+     * Task run ID
+     */
+    taskRunId: string;
+    /**
+     * Task ID
+     */
+    taskId: string;
+    /**
+     * Parent orchestration ID if present
+     */
+    orchestrationId?: string;
+    /**
+     * Agent name
+     */
+    agentName?: string;
+    /**
+     * Provider inferred from agent or binding
+     */
+    provider: string;
+    /**
+     * Raw task-run status
+     */
+    runStatus: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+    lifecycle: {
+        /**
+         * Operator-facing lifecycle status
+         */
+        status: 'active' | 'interrupted' | 'completed' | 'failed' | 'skipped';
+        /**
+         * Whether the run is currently interrupted
+         */
+        interrupted: boolean;
+        /**
+         * Detailed interruption reason category
+         */
+        interruptionStatus: 'none' | 'approval_pending' | 'paused_by_operator' | 'sandbox_paused' | 'context_overflow' | 'rate_limited' | 'timed_out' | 'checkpoint_pending' | 'handoff_pending' | 'user_input_required';
+        /**
+         * Human-readable interruption reason
+         */
+        reason?: string;
+        /**
+         * When the interruption started
+         */
+        blockedAt?: number;
+        /**
+         * When the interruption expires
+         */
+        expiresAt?: number;
+        /**
+         * When the interruption was resolved
+         */
+        resolvedAt?: number;
+        /**
+         * Who resolved the interruption
+         */
+        resolvedBy?: string;
+    };
+    approvals: {
+        /**
+         * Count of pending approvals for this run
+         */
+        pendingCount: number;
+        /**
+         * Pending approval request IDs
+         */
+        pendingRequestIds: Array<string>;
+        /**
+         * Approval request currently blocking the run
+         */
+        currentRequestId?: string;
+        /**
+         * Latest approval request ID
+         */
+        latestRequestId?: string;
+        /**
+         * Latest approval request status
+         */
+        latestStatus?: 'pending' | 'approved' | 'denied' | 'expired' | 'cancelled';
+        /**
+         * Latest approval type
+         */
+        latestApprovalType?: 'tool_permission' | 'review_request' | 'deployment' | 'cost_override' | 'escalation' | 'risky_action';
+        /**
+         * Latest requested action
+         */
+        latestAction?: string;
+        /**
+         * Latest approval risk level
+         */
+        latestRiskLevel?: 'low' | 'medium' | 'high';
+        /**
+         * Latest approval creation time
+         */
+        latestCreatedAt?: number;
+    };
+    actions: {
+        /**
+         * Explicit actions currently available to the operator
+         */
+        availableActions: Array<RunControlAction>;
+        canResolveApproval: boolean;
+        canContinueSession: boolean;
+        canResumeCheckpoint: boolean;
+        canAppendInstruction: boolean;
+    };
+    continuation: {
+        mode: RunControlContinuationMode;
+        providerSessionId?: string;
+        providerThreadId?: string;
+        resumeToken?: string;
+        resumeTargetId?: string;
+        checkpointRef?: string;
+        checkpointGeneration?: number;
+        replyChannel?: 'mailbox' | 'sse' | 'pty' | 'ui';
+        sessionStatus?: 'active' | 'suspended' | 'expired' | 'terminated';
+        sessionMode?: 'head' | 'worker' | 'reviewer';
+        lastActiveAt?: number;
+        hasActiveBinding: boolean;
+    };
+};
+
 export type ApprovalRequest = {
     /**
      * Approval request ID (apr_xxx format)
@@ -4283,6 +4413,51 @@ export type GetApiV1CmuxOrchestrationSessionsByTaskIdResponses = {
 };
 
 export type GetApiV1CmuxOrchestrationSessionsByTaskIdResponse = GetApiV1CmuxOrchestrationSessionsByTaskIdResponses[keyof GetApiV1CmuxOrchestrationSessionsByTaskIdResponses];
+
+export type GetApiV1CmuxOrchestrationRunControlByTaskRunIdData = {
+    body?: never;
+    path: {
+        /**
+         * Task run ID
+         */
+        taskRunId: string;
+    };
+    query: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId: string;
+    };
+    url: '/api/v1/cmux/orchestration/run-control/{taskRunId}';
+};
+
+export type GetApiV1CmuxOrchestrationRunControlByTaskRunIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Task run not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiV1CmuxOrchestrationRunControlByTaskRunIdResponses = {
+    /**
+     * Run-control summary retrieved successfully
+     */
+    200: RunControlSummary;
+};
+
+export type GetApiV1CmuxOrchestrationRunControlByTaskRunIdResponse = GetApiV1CmuxOrchestrationRunControlByTaskRunIdResponses[keyof GetApiV1CmuxOrchestrationRunControlByTaskRunIdResponses];
 
 export type GetApiOrchestrateApprovalsByOrchestrationIdPendingData = {
     body?: never;

@@ -338,6 +338,7 @@ func TestSaveAndLoadSessionInfo(t *testing.T) {
 		Agent:           "claude/opus-4.6",
 		SessionID:       "test-session-uuid",
 		ThreadID:        "",
+		CodexHome:       "/tmp/codex-home",
 		Workspace:       "/test/workspace",
 		InjectionMode:   "active",
 		LastInjectionAt: "2026-03-26T12:00:00Z",
@@ -363,11 +364,35 @@ func TestSaveAndLoadSessionInfo(t *testing.T) {
 	if loaded.SessionID != original.SessionID {
 		t.Errorf("SessionID mismatch: got %s, want %s", loaded.SessionID, original.SessionID)
 	}
+	if loaded.CodexHome != original.CodexHome {
+		t.Errorf("CodexHome mismatch: got %s, want %s", loaded.CodexHome, original.CodexHome)
+	}
 	if loaded.InjectionMode != original.InjectionMode {
 		t.Errorf("InjectionMode mismatch: got %s, want %s", loaded.InjectionMode, original.InjectionMode)
 	}
 	if loaded.InjectionCount != original.InjectionCount {
 		t.Errorf("InjectionCount mismatch: got %d, want %d", loaded.InjectionCount, original.InjectionCount)
+	}
+}
+
+func TestUpdateCodexHome(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if err := InitSessionForRun(tmpDir, "codex/gpt-5.4-xhigh", "/workspace"); err != nil {
+		t.Fatalf("InitSessionForRun failed: %v", err)
+	}
+
+	if err := UpdateCodexHome(tmpDir, "/tmp/codex-run-home"); err != nil {
+		t.Fatalf("UpdateCodexHome failed: %v", err)
+	}
+
+	info, err := loadSessionInfo(tmpDir)
+	if err != nil {
+		t.Fatalf("loadSessionInfo failed: %v", err)
+	}
+
+	if info.CodexHome != "/tmp/codex-run-home" {
+		t.Fatalf("expected codex home to persist, got %q", info.CodexHome)
 	}
 }
 

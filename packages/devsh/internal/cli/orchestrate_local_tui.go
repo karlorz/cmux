@@ -318,6 +318,19 @@ func runAgentWithTUI(ctx context.Context, state *LocalState, prompt, workspace s
 
 	cmd.Dir = workspace
 
+	cleanup := func() {}
+	if cliName == "Codex" {
+		var err error
+		cleanup, err = configureCodexLocalCommand(ctx, state, workspace, cmd)
+		if err != nil {
+			if flagVerbose && !flagJSON {
+				fmt.Printf("Warning: failed to configure Codex session tracking: %v\n", err)
+			}
+			cleanup = func() {}
+		}
+	}
+	defer cleanup()
+
 	// Create pipes for stdout and stderr
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

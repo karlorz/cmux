@@ -19,6 +19,7 @@ type LocalSessionInfo struct {
 	Agent           string `json:"agent"`
 	SessionID       string `json:"sessionId,omitempty"` // Claude session UUID
 	ThreadID        string `json:"threadId,omitempty"`  // Codex thread ID
+	CodexHome       string `json:"codexHome,omitempty"`
 	Workspace       string `json:"workspace"`
 	InjectionMode   string `json:"injectionMode"` // "active" or "passive"
 	LastInjectionAt string `json:"lastInjectionAt,omitempty"`
@@ -261,6 +262,9 @@ func injectCodex(runDir string, info *LocalSessionInfo, message string) error {
 
 	cmd := exec.Command(codexPath, args...)
 	cmd.Dir = info.Workspace
+	if info.CodexHome != "" {
+		cmd.Env = withEnvVar(nil, "CODEX_HOME", info.CodexHome)
+	}
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -373,6 +377,15 @@ func UpdateThreadID(runDir, threadID string) error {
 	if threadID != "" {
 		info.InjectionMode = "active"
 	}
+	return saveSessionInfo(runDir, info)
+}
+
+func UpdateCodexHome(runDir, codexHome string) error {
+	info, err := loadSessionInfo(runDir)
+	if err != nil {
+		info = &LocalSessionInfo{}
+	}
+	info.CodexHome = codexHome
 	return saveSessionInfo(runDir, info)
 }
 
