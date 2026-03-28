@@ -59,6 +59,8 @@ interface GeneralSectionProps {
   onVaultGitHubPathChange: (value: string) => void;
   vaultGitHubBranch: string;
   onVaultGitHubBranchChange: (value: string) => void;
+  vaultName: string;
+  onVaultNameChange: (value: string) => void;
   autoPrEnabled: boolean;
   onAutoPrEnabledChange: (value: boolean) => void;
   heatmapModel: string;
@@ -288,6 +290,7 @@ export function GeneralSection({
   vaultGitHubRepo,
   vaultGitHubPath,
   vaultGitHubBranch,
+  vaultName,
   autoPrEnabled,
   originalTeamSlug,
   originalTeamName,
@@ -309,6 +312,7 @@ export function GeneralSection({
   onVaultGitHubRepoChange,
   onVaultGitHubPathChange,
   onVaultGitHubBranchChange,
+  onVaultNameChange,
   onAutoPrEnabledChange,
   onContainerSettingsChange,
   onHeatmapModelChange,
@@ -454,6 +458,22 @@ export function GeneralSection({
           ]}
           onValueChange={(value) => onVaultTypeChange(value as "local" | "github")}
         />
+
+        <SettingRow
+          label="Local Vault Name"
+          description="Name of your Obsidian vault as it appears in the Obsidian app. Used for 'Open in Obsidian' links."
+        >
+          <div className="w-full sm:w-[18rem]">
+            <input
+              type="text"
+              value={vaultName}
+              onChange={(event) => onVaultNameChange(event.target.value)}
+              className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+              placeholder="obsidian_vault"
+              autoComplete="off"
+            />
+          </div>
+        </SettingRow>
 
         {vaultType === "local" ? (
           <SettingRow

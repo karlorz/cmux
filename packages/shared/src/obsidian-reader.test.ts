@@ -6,6 +6,7 @@ import {
   filterNotesByPath,
   extractAllTags,
   readVaultGitHub,
+  resolveGitHubNotePath,
   searchNotes,
   type ObsidianNote,
   type ObsidianTodo,
@@ -723,6 +724,46 @@ Line 3`;
       expect(notes).toHaveLength(1);
       expect(notes[0]?.path).toBe("0️⃣-Inbox/Test Note.md");
       expect(notes[0]?.title).toBe("Test Note");
+    });
+  });
+
+  describe("resolveGitHubNotePath", () => {
+    const notePaths = [
+      "5️⃣-Projects/GitHub/cmux/_Overview.md",
+      "5️⃣-Projects/GitHub/cmux/cmux-deep-research.md",
+      "5️⃣-Projects/GitHub/cmux/archive/dev-log/_Archive-Index.md",
+      "Research/weekly-index.md",
+    ];
+
+    it("returns an exact repo-relative match", () => {
+      expect(
+        resolveGitHubNotePath(
+          "5️⃣-Projects/GitHub/cmux/_Overview.md",
+          notePaths
+        )
+      ).toBe("5️⃣-Projects/GitHub/cmux/_Overview.md");
+    });
+
+    it("resolves a wiki link basename to the matching note path", () => {
+      expect(resolveGitHubNotePath("cmux-deep-research", notePaths)).toBe(
+        "5️⃣-Projects/GitHub/cmux/cmux-deep-research.md"
+      );
+    });
+
+    it("resolves nested wiki links by suffix", () => {
+      expect(resolveGitHubNotePath("archive/dev-log/_Archive-Index", notePaths)).toBe(
+        "5️⃣-Projects/GitHub/cmux/archive/dev-log/_Archive-Index.md"
+      );
+    });
+
+    it("treats markdown extensions as optional", () => {
+      expect(resolveGitHubNotePath("cmux-deep-research.md", notePaths)).toBe(
+        "5️⃣-Projects/GitHub/cmux/cmux-deep-research.md"
+      );
+    });
+
+    it("returns null when no candidate matches", () => {
+      expect(resolveGitHubNotePath("missing-note", notePaths)).toBeNull();
     });
   });
 });
