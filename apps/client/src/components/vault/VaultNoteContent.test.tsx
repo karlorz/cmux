@@ -11,6 +11,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { VaultNoteContent } from "./VaultNoteContent";
+import { transformObsidianLinks } from "./vault-note-markdown";
 
 const hasDomEnvironment =
   typeof document !== "undefined" && typeof window !== "undefined";
@@ -138,6 +139,31 @@ describe("VaultNoteContent", () => {
       const link = container.querySelector("a");
       expect(link).not.toBeNull();
       expect(link?.getAttribute("target")).toBeNull();
+    });
+  });
+
+  describe("wiki links", () => {
+    it("rewrites Obsidian wiki links outside code spans", () => {
+      expect(transformObsidianLinks("See [[Folder/My Note|alias]].")).toBe(
+        "See [alias](wiki://data-wiki-target/Folder%2FMy%20Note)."
+      );
+    });
+
+    it("does not rewrite wiki links inside fenced mermaid blocks", () => {
+      const content = [
+        "```mermaid",
+        "graph TD",
+        "  DEVLOG[[cmux-dev-log-index]]",
+        "```",
+      ].join("\n");
+
+      expect(transformObsidianLinks(content)).toBe(content);
+    });
+
+    it("does not rewrite wiki links inside inline code spans", () => {
+      expect(transformObsidianLinks("Use `[[cmux-dev-log-index]]` as text.")).toBe(
+        "Use `[[cmux-dev-log-index]]` as text."
+      );
     });
   });
 

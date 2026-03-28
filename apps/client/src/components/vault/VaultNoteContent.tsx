@@ -14,6 +14,10 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ChevronDown, ChevronUp, FileText } from "lucide-react";
 import { MermaidDiagram } from "@/components/mermaid-diagram";
+import {
+  transformObsidianLinks,
+  WIKI_LINK_DATA_ATTR,
+} from "./vault-note-markdown";
 
 interface VaultNoteContentProps {
   content: string;
@@ -30,28 +34,6 @@ interface VaultNoteContentProps {
 const DEFAULT_MAX_LENGTH = 50000;
 const DEFAULT_VAULT_NAME = "obsidian_vault";
 
-// Data attribute used to identify wiki links for navigation
-const WIKI_LINK_DATA_ATTR = "data-wiki-target";
-
-/**
- * Transform Obsidian-style wiki links [[note]] to regular markdown links.
- * Uses a special URL scheme to identify wiki links for in-app navigation.
- * The vaultName parameter is kept for future use but the actual Obsidian URL
- * is constructed in the link click handler.
- */
-function transformObsidianLinks(content: string, _vaultName: string): string {
-  // Transform [[note]] to a special wiki:// URL for in-app handling
-  // Transform [[note|alias]] uses alias as display text
-  return content.replace(
-    /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
-    (_, target: string, alias?: string) => {
-      const displayText = alias || target;
-      // Use a special URL scheme to identify wiki links for in-app navigation
-      return `[${displayText}](wiki://${WIKI_LINK_DATA_ATTR}/${encodeURIComponent(target)})`;
-    }
-  );
-}
-
 export function VaultNoteContent({
   content,
   className,
@@ -66,8 +48,8 @@ export function VaultNoteContent({
     const rawContent = isLargeContent && !isExpanded
       ? content.slice(0, maxLength) + "\n\n..."
       : content;
-    return transformObsidianLinks(rawContent, vaultName);
-  }, [content, isLargeContent, isExpanded, maxLength, vaultName]);
+    return transformObsidianLinks(rawContent);
+  }, [content, isLargeContent, isExpanded, maxLength]);
 
   const toggleExpanded = useCallback(() => {
     setIsExpanded((prev) => !prev);
