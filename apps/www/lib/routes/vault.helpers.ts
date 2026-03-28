@@ -7,6 +7,28 @@ import {
   type ObsidianNote,
 } from "@cmux/shared/node/obsidian-reader";
 
+const VAULT_GITHUB_PERMISSIONS = {
+  contents: "read",
+  metadata: "read",
+} as const;
+
+function buildGitHubVaultConfig(opts: {
+  owner: string;
+  repo: string;
+  path?: string;
+  branch?: string;
+  token?: string;
+}): VaultConfig {
+  return {
+    type: "github",
+    githubOwner: opts.owner,
+    githubRepo: opts.repo,
+    githubPath: opts.path || "",
+    githubBranch: opts.branch || "main",
+    githubToken: opts.token,
+  };
+}
+
 export type VaultConfig = {
   type: "local" | "github";
   localPath?: string;
@@ -38,26 +60,25 @@ async function resolveVaultGithubToken({
       teamSlugOrId,
     });
 
-    const activeConnections = connections.filter((connection) => connection.isActive);
     const normalizedOwner = githubOwner.toLowerCase();
-    const prioritizedConnections = [
-      ...activeConnections.filter(
-        (connection) => connection.accountLogin?.toLowerCase() === normalizedOwner,
-      ),
-      ...activeConnections.filter(
-        (connection) => connection.accountLogin?.toLowerCase() !== normalizedOwner,
-      ),
-    ];
+    const ownerMatches: typeof connections = [];
+    const others: typeof connections = [];
+    for (const connection of connections) {
+      if (!connection.isActive) continue;
+      if (connection.accountLogin?.toLowerCase() === normalizedOwner) {
+        ownerMatches.push(connection);
+      } else {
+        others.push(connection);
+      }
+    }
+    const prioritizedConnections = [...ownerMatches, ...others];
 
     for (const connection of prioritizedConnections) {
       try {
         const token = await generateGitHubInstallationToken({
           installationId: connection.installationId,
           repositories: [`${githubOwner}/${githubRepo}`],
-          permissions: {
-            contents: "read",
-            metadata: "read",
-          },
+          permissions: VAULT_GITHUB_PERMISSIONS,
         });
         if (token) {
           return token;
@@ -95,14 +116,13 @@ export async function getVaultConfig(
     : undefined;
 
   if (githubOwner && githubRepo) {
-    return {
-      type: "github",
-      githubOwner,
-      githubRepo,
-      githubPath: githubPath || "",
-      githubBranch: process.env.OBSIDIAN_GITHUB_BRANCH || "main",
-      githubToken,
-    };
+    return buildGitHubVaultConfig({
+      owner: githubOwner,
+      repo: githubRepo,
+      path: githubPath,
+      branch: process.env.OBSIDIAN_GITHUB_BRANCH,
+      token: githubToken,
+    });
   }
 
   try {
@@ -121,14 +141,13 @@ export async function getVaultConfig(
           githubOwner: vaultConfig.githubOwner,
           githubRepo: vaultConfig.githubRepo,
         });
-        return {
-          type: "github",
-          githubOwner: vaultConfig.githubOwner,
-          githubRepo: vaultConfig.githubRepo,
-          githubPath: vaultConfig.githubPath || "",
-          githubBranch: vaultConfig.githubBranch || "main",
-          githubToken: resolvedGithubToken,
-        };
+        return buildGitHubVaultConfig({
+          owner: vaultConfig.githubOwner,
+          repo: vaultConfig.githubRepo,
+          path: vaultConfig.githubPath,
+          branch: vaultConfig.githubBranch,
+          token: resolvedGithubToken,
+        });
       }
     }
   } catch (error) {
