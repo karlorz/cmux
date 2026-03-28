@@ -9,6 +9,11 @@ import { FloatingPane } from "@/components/floating-pane";
 import { TitleBar } from "@/components/TitleBar";
 import { VaultNoteList } from "@/components/vault/VaultNoteList";
 import { VaultNotePreview } from "@/components/vault/VaultNotePreview";
+import {
+  getInitialVaultNoteListVisibility,
+  persistVaultNoteListVisibility,
+  readStoredVaultNoteListVisibility,
+} from "@/components/vault/vault-note-list-visibility";
 import { api } from "@cmux/convex/api";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
@@ -40,7 +45,12 @@ function VaultPage() {
   const navigate = Route.useNavigate();
   const workspaceSettings = useQuery(api.workspaceSettings.get, { teamSlugOrId });
   const vaultName = workspaceSettings?.vaultConfig?.vaultName ?? DEFAULT_VAULT_NAME;
-  const [isNoteListVisible, setIsNoteListVisible] = useState(() => !notePath);
+  const [isNoteListVisible, setIsNoteListVisible] = useState(() =>
+    getInitialVaultNoteListVisibility({
+      teamSlugOrId,
+      notePath,
+    })
+  );
 
   useEffect(() => {
     if (!notePath) {
@@ -50,7 +60,11 @@ function VaultPage() {
 
   const handleSelectedNotePathChange = useCallback(
     (nextNotePath?: string) => {
-      setIsNoteListVisible(!nextNotePath);
+      setIsNoteListVisible(
+        nextNotePath
+          ? readStoredVaultNoteListVisibility(teamSlugOrId) ?? false
+          : true
+      );
       void navigate({
         to: "/$teamSlugOrId/vault",
         params: { teamSlugOrId },
@@ -61,8 +75,12 @@ function VaultPage() {
   );
 
   const handleToggleNoteList = useCallback(() => {
-    setIsNoteListVisible((previous) => !previous);
-  }, []);
+    setIsNoteListVisible((previous) => {
+      const nextVisibility = !previous;
+      persistVaultNoteListVisibility(teamSlugOrId, nextVisibility);
+      return nextVisibility;
+    });
+  }, [teamSlugOrId]);
 
   return (
     <FloatingPane
