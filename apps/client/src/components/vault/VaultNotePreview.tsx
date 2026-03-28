@@ -115,7 +115,7 @@ export function VaultNotePreview({
 
   return (
     <section className="flex h-full min-h-0 flex-col bg-white dark:bg-neutral-900">
-      <div className="border-b border-neutral-200 dark:border-neutral-800 px-5 py-4">
+      <div className="border-b border-neutral-200 dark:border-neutral-800 px-5 py-3">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400">
@@ -124,12 +124,20 @@ export function VaultNotePreview({
                 Note Preview
               </p>
             </div>
-            <h2 className="mt-2 truncate text-xl font-semibold text-neutral-900 dark:text-neutral-100">
-              {displayTitle}
-            </h2>
-            <p className="mt-1 truncate text-sm text-neutral-500 dark:text-neutral-400">
-              {resolvedPath}
-            </p>
+            <div className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 sm:flex-nowrap">
+              <h2 className="max-w-full truncate text-lg font-semibold text-neutral-900 dark:text-neutral-100 sm:max-w-[40%]">
+                {displayTitle}
+              </h2>
+              <span
+                className="hidden shrink-0 text-neutral-300 dark:text-neutral-600 sm:inline"
+                aria-hidden="true"
+              >
+                /
+              </span>
+              <p className="min-w-0 flex-1 truncate text-sm text-neutral-500 dark:text-neutral-400">
+                {resolvedPath}
+              </p>
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
