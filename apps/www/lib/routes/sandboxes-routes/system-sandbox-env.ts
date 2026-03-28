@@ -6,6 +6,7 @@ type BuildSystemSandboxEnvContentArgs = {
   taskRunJwtSecret?: string;
   isCloudWorkspace?: boolean;
   isOrchestrationHead?: boolean;
+  callbackUrl?: string;
 };
 
 export function buildSystemSandboxEnvContent({
@@ -14,6 +15,7 @@ export function buildSystemSandboxEnvContent({
   taskRunJwtSecret,
   isCloudWorkspace,
   isOrchestrationHead,
+  callbackUrl,
 }: BuildSystemSandboxEnvContentArgs): string {
   const entries: Array<{ name: string; value: string }> = [];
 
@@ -37,6 +39,10 @@ export function buildSystemSandboxEnvContent({
 
   if (isCloudWorkspace) {
     entries.push({ name: "CMUX_IS_CLOUD_WORKSPACE", value: "1" });
+  }
+
+  if (callbackUrl) {
+    entries.push({ name: "CMUX_CALLBACK_URL", value: callbackUrl });
   }
 
   return formatEnvVarsContent(entries);

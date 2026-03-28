@@ -582,12 +582,17 @@ sandboxesStartRouter.openapi(
         );
       }
 
+      // callbackUrl for MCP memory sync - use CONVEX_SITE_URL (self-hosted) or transform api URL
+      const callbackUrl = env.CONVEX_SITE_URL
+        ?? env.NEXT_PUBLIC_CONVEX_URL?.replace('.convex.cloud', '.convex.site');
+
       const systemSandboxEnvContent = buildSystemSandboxEnvContent({
         taskRunId: body.taskRunId,
         taskRunJwt: body.taskRunJwt,
         taskRunJwtSecret: env.CMUX_TASK_RUN_JWT_SECRET,
         isCloudWorkspace,
         isOrchestrationHead,
+        callbackUrl,
       });
       const envVarsToApply =
         concatConfigBlocks(
