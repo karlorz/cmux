@@ -642,7 +642,10 @@ sandboxesStartRouter.openapi(
 
       const providerAuthPromise = (async () => {
         try {
-          const callbackUrl = env.NEXT_PUBLIC_CONVEX_URL || "http://localhost:9779";
+          // Use CONVEX_SITE_URL for HTTP actions (memory sync endpoint)
+          const callbackUrl = env.CONVEX_SITE_URL
+            ?? env.NEXT_PUBLIC_CONVEX_URL?.replace('.convex.cloud', '.convex.site')
+            ?? "http://localhost:9779";
           const [previousKnowledge, previousMailbox] = await Promise.all([
             convex
               .query(api.agentMemoryQueries.getLatestTeamKnowledge, {
