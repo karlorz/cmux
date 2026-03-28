@@ -1,6 +1,7 @@
 import { CmuxComments } from "@/components/cmux-comments";
 import { CommandBar } from "@/components/CommandBar";
 import { Sidebar } from "@/components/Sidebar";
+import { getVaultReaderSidebarAction } from "@/components/vault/vault-reader-sidebar";
 import { SidebarContext } from "@/contexts/sidebar/SidebarContext";
 import {
   SettingsSidebar,
@@ -95,8 +96,21 @@ function LayoutComponent() {
   const { teamSlugOrId } = Route.useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const notePathFromSearch =
+    typeof (location.search as { notePath?: unknown })?.notePath === "string"
+      ? (location.search as { notePath?: string }).notePath
+      : undefined;
+  const isVaultRoute =
+    location.pathname === `/${teamSlugOrId}/vault` ||
+    location.pathname === `/${teamSlugOrId}/vault/`;
+  const vaultReaderNotePath = isVaultRoute ? notePathFromSearch : undefined;
+  const persistedDesktopSidebarHidden =
+    typeof window !== "undefined"
+      ? localStorage.getItem("sidebarHidden") === "true"
+      : false;
+  const shouldStartInVaultReaderMode = Boolean(vaultReaderNotePath);
   const [isDesktopSidebarHidden, setIsDesktopSidebarHidden] = useState(
-    () => localStorage.getItem("sidebarHidden") === "true"
+    () => persistedDesktopSidebarHidden || shouldStartInVaultReaderMode
   );
   const [isMobileViewport, setIsMobileViewport] = useState(
     () =>
@@ -130,6 +144,11 @@ function LayoutComponent() {
     sectionFromSearch === "git" ? "git" :
     sectionFromSearch === "worktrees" ? "worktrees" :
     sectionFromSearch === "archived" ? "archived" : "general";
+  const previousVaultReaderNotePathRef = useRef<string | undefined>(undefined);
+  const autoHiddenForVaultReaderRef = useRef(
+    shouldStartInVaultReaderMode && !persistedDesktopSidebarHidden
+  );
+  const hasSyncedSidebarFromStorageRef = useRef(false);
   useMobileMachineHeartbeat({
     teamSlugOrId,
     tasks,
@@ -140,6 +159,11 @@ function LayoutComponent() {
   }, [isDesktopSidebarHidden]);
 
   useEffect(() => {
+    if (!hasSyncedSidebarFromStorageRef.current) {
+      hasSyncedSidebarFromStorageRef.current = true;
+      return;
+    }
+
     setIsDesktopSidebarHidden(localStorage.getItem("sidebarHidden") === "true");
   }, [isSettingsRoute]);
 
@@ -168,6 +192,40 @@ function LayoutComponent() {
     window.addEventListener("storage", handleStorage);
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
+
+  const setDesktopSidebarHiddenWithPersistence = useCallback((hidden: boolean) => {
+    localStorage.setItem("sidebarHidden", String(hidden));
+    setIsDesktopSidebarHidden(hidden);
+  }, []);
+
+  useEffect(() => {
+    if (isMobileViewport) {
+      previousVaultReaderNotePathRef.current = vaultReaderNotePath;
+      return;
+    }
+
+    const nextAction = getVaultReaderSidebarAction({
+      previousNotePath: previousVaultReaderNotePathRef.current,
+      nextNotePath: vaultReaderNotePath,
+      isSidebarHidden: isDesktopSidebarHidden,
+      autoHiddenForReader: autoHiddenForVaultReaderRef.current,
+    });
+
+    if (nextAction === "hide") {
+      autoHiddenForVaultReaderRef.current = true;
+      setDesktopSidebarHiddenWithPersistence(true);
+    } else if (nextAction === "show") {
+      autoHiddenForVaultReaderRef.current = false;
+      setDesktopSidebarHiddenWithPersistence(false);
+    }
+
+    previousVaultReaderNotePathRef.current = vaultReaderNotePath;
+  }, [
+    isDesktopSidebarHidden,
+    isMobileViewport,
+    setDesktopSidebarHiddenWithPersistence,
+    vaultReaderNotePath,
+  ]);
 
   useEffect(() => {
     setIsMobileSidebarOpen(false);
@@ -233,9 +291,9 @@ function LayoutComponent() {
         setIsMobileSidebarOpen(!hidden);
         return;
       }
-      setIsDesktopSidebarHidden(hidden);
+      setDesktopSidebarHiddenWithPersistence(hidden);
     },
-    [isMobileViewport]
+    [isMobileViewport, setDesktopSidebarHiddenWithPersistence]
   );
 
   const handleToggleSidebar = useCallback(() => {
@@ -243,8 +301,8 @@ function LayoutComponent() {
       setIsMobileSidebarOpen((prev) => !prev);
       return;
     }
-    setIsDesktopSidebarHidden((prev) => !prev);
-  }, [isMobileViewport]);
+    setDesktopSidebarHiddenWithPersistence(!isDesktopSidebarHidden);
+  }, [isDesktopSidebarHidden, isMobileViewport, setDesktopSidebarHiddenWithPersistence]);
 
   const sidebarContextValue = useMemo(
     () => ({
