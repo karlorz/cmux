@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -271,6 +272,62 @@ func TestBuildCodexResumeArgs(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("arg %d mismatch: got %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+func TestPrintInjectLocalResultCodexText(t *testing.T) {
+	output := captureStdout(t, func() {
+		printInjectLocalResult(
+			"local_123",
+			"active",
+			"Follow up",
+			&LocalSessionInfo{
+				ThreadID:       "thread-456",
+				InjectionCount: 3,
+			},
+		)
+	})
+
+	if !strings.Contains(output, "Injected instruction into run local_123") {
+		t.Fatalf("expected run summary, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Thread ID: thread-456") {
+		t.Fatalf("expected thread id label, got:\n%s", output)
+	}
+	if strings.Contains(output, "Session:") {
+		t.Fatalf("expected codex text output not to use Session label, got:\n%s", output)
+	}
+}
+
+func TestPrintInjectLocalResultCodexJSON(t *testing.T) {
+	oldFlagJSON := flagJSON
+	flagJSON = true
+	defer func() {
+		flagJSON = oldFlagJSON
+	}()
+
+	output := captureStdout(t, func() {
+		printInjectLocalResult(
+			"local_123",
+			"active",
+			"Follow up",
+			&LocalSessionInfo{
+				ThreadID:       "thread-456",
+				InjectionCount: 3,
+			},
+		)
+	})
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v\noutput:\n%s", err, output)
+	}
+
+	if payload["threadId"] != "thread-456" {
+		t.Fatalf("expected threadId field, got %#v", payload["threadId"])
+	}
+	if _, ok := payload["sessionId"]; ok {
+		t.Fatalf("expected sessionId field to be absent, got %#v", payload["sessionId"])
 	}
 }
 

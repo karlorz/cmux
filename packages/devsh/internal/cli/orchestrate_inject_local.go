@@ -115,31 +115,7 @@ Examples:
 		// Log event
 		logInjectionEvent(runDir, mode, message)
 
-		if flagJSON {
-			output := map[string]interface{}{
-				"runId":          runID,
-				"mode":           mode,
-				"message":        message,
-				"injectionCount": sessionInfo.InjectionCount,
-			}
-			fieldName, _, value := activeInjectionTarget(sessionInfo)
-			if mode == "active" && fieldName != "" {
-				output[fieldName] = value
-			}
-			data, _ := json.MarshalIndent(output, "", "  ")
-			fmt.Println(string(data))
-		} else {
-			fmt.Printf("Injected instruction into run %s\n", runID)
-			fmt.Printf("Mode: %s\n", mode)
-			fmt.Printf("Message: %s\n", message)
-			if mode == "active" {
-				_, label, value := activeInjectionTarget(sessionInfo)
-				if label != "" {
-					fmt.Printf("%s: %s\n", label, value)
-				}
-			}
-			fmt.Printf("Total injections: %d\n", sessionInfo.InjectionCount)
-		}
+		printInjectLocalResult(runID, mode, message, sessionInfo)
 
 		return nil
 	},
@@ -177,6 +153,35 @@ func activeInjectionTarget(info *LocalSessionInfo) (fieldName, displayLabel, val
 	}
 
 	return "", "", ""
+}
+
+func printInjectLocalResult(runID, mode, message string, sessionInfo *LocalSessionInfo) {
+	if flagJSON {
+		output := map[string]interface{}{
+			"runId":          runID,
+			"mode":           mode,
+			"message":        message,
+			"injectionCount": sessionInfo.InjectionCount,
+		}
+		fieldName, _, value := activeInjectionTarget(sessionInfo)
+		if mode == "active" && fieldName != "" {
+			output[fieldName] = value
+		}
+		data, _ := json.MarshalIndent(output, "", "  ")
+		fmt.Println(string(data))
+		return
+	}
+
+	fmt.Printf("Injected instruction into run %s\n", runID)
+	fmt.Printf("Mode: %s\n", mode)
+	fmt.Printf("Message: %s\n", message)
+	if mode == "active" {
+		_, label, value := activeInjectionTarget(sessionInfo)
+		if label != "" {
+			fmt.Printf("%s: %s\n", label, value)
+		}
+	}
+	fmt.Printf("Total injections: %d\n", sessionInfo.InjectionCount)
 }
 
 func injectActive(runDir string, info *LocalSessionInfo, message string) error {
