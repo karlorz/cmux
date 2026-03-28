@@ -183,7 +183,7 @@ export function VaultNoteContent({
                 return (
                   <h2
                     id={headingId}
-                    className="group relative mt-6 mb-4 scroll-mt-24 border-b border-neutral-300 pb-1.5 text-2xl font-semibold leading-8 text-neutral-900 dark:border-neutral-700 dark:text-neutral-50"
+                    className="group relative mt-6 mb-4 scroll-mt-24 border-b border-neutral-300 pb-[7px] text-2xl font-semibold leading-[30px] text-neutral-900 dark:border-neutral-700 dark:text-neutral-50"
                     {...props}
                   >
                     <a
@@ -208,7 +208,7 @@ export function VaultNoteContent({
                 return (
                   <h3
                     id={headingId}
-                    className="group relative mt-6 mb-4 scroll-mt-24 text-xl font-semibold leading-7 text-neutral-900 dark:text-neutral-50"
+                    className="group relative mt-6 mb-4 scroll-mt-24 text-xl font-semibold leading-[25px] text-neutral-900 dark:text-neutral-50"
                     {...props}
                   >
                     <a
@@ -356,7 +356,7 @@ export function VaultNoteContent({
             li: ({ children, ...props }) => (
               <li
                 className={cn(
-                  "my-1 pl-1 [&>p:last-child]:mb-0",
+                  "[&>p:last-child]:mb-0",
                   props.className?.includes("task-list-item") &&
                     "flex items-start gap-2 pl-0"
                 )}
@@ -406,7 +406,7 @@ export function VaultNoteContent({
               if (!className) {
                 return (
                   <code
-                    className="rounded-md bg-neutral-200/70 px-1.5 py-0.5 font-mono text-[0.85em] leading-[1.5] text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+                    className="rounded-[6px] bg-neutral-200/70 px-[0.4em] py-[0.16em] font-mono text-[0.85em] leading-[1.5] text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
                     {...props}
                   >
                     {children}
@@ -430,7 +430,7 @@ export function VaultNoteContent({
             // Style pre blocks
             pre: ({ children, ...props }) => (
               <pre
-                className="mb-4 overflow-x-auto rounded-md bg-neutral-100 p-4 text-[0.85rem] leading-[1.45] text-neutral-800 dark:bg-neutral-950 dark:text-neutral-100"
+                className="mb-4 overflow-x-auto rounded-[6px] bg-neutral-100 p-4 text-[0.85rem] leading-[1.45] text-neutral-800 dark:bg-neutral-950 dark:text-neutral-100"
                 {...props}
               >
                 {children}

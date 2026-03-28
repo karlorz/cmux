@@ -103,6 +103,7 @@ describe("VaultNoteContent", () => {
 
       const listItems = container.querySelectorAll("li");
       expect(listItems.length).toBe(3);
+      expect(listItems[0]?.className).not.toContain("my-1");
     });
 
     it("renders blockquotes", async () => {
@@ -142,6 +143,8 @@ describe("VaultNoteContent", () => {
       expect(h1Anchor?.getAttribute("href")).toBe("#main-title");
       expect(h1Anchor?.getAttribute("aria-label")).toBe("Permalink: Main Title");
       expect(h2Anchor?.getAttribute("href")).toBe("#roadmaps--planning");
+      expect(h2s[0]?.className).toContain("leading-[30px]");
+      expect(h3?.className).toContain("leading-[25px]");
     });
   });
 
@@ -266,6 +269,7 @@ describe("VaultNoteContent", () => {
       const code = container.querySelector("code");
       expect(code).not.toBeNull();
       expect(code?.textContent).toBe("const x = 1");
+      expect(code?.className).toContain("rounded-[6px]");
     });
 
     it("renders fenced code blocks", async () => {
@@ -281,6 +285,7 @@ const x = 1;
       const pre = container.querySelector("pre");
       expect(pre).not.toBeNull();
       expect(pre?.textContent).toContain("const x = 1;");
+      expect(pre?.className).toContain("rounded-[6px]");
     });
   });
 
