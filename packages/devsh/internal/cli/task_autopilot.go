@@ -117,8 +117,16 @@ func handleAutopilotResume(ctx context.Context, client *vm.Client, taskRun *vm.T
 
 	if taskRun.CodexThreadID != "" {
 		fmt.Printf("\nCodex Thread ID: %s\n", taskRun.CodexThreadID)
-		fmt.Println("\nTo resume the Codex session in the sandbox:")
-		fmt.Printf("  codex resume %s\n", taskRun.CodexThreadID)
+		fmt.Println("\nTo resume the Codex session inside the sandbox:")
+		fmt.Printf("  %s\n", formatCodexInteractiveResumeCommand(taskRun.CodexThreadID))
+		if taskRun.SandboxID != "" {
+			fmt.Println("\nFor a non-interactive follow-up inside the sandbox:")
+			fmt.Printf(
+				"  devsh exec %s '%s'\n",
+				taskRun.SandboxID,
+				formatCodexNonInteractiveResumeCommand(taskRun.CodexThreadID, "\"<prompt>\""),
+			)
+		}
 	}
 
 	// Get sandbox info

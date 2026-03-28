@@ -103,8 +103,8 @@ func TestDetermineInjectionMode(t *testing.T) {
 			expected: "passive",
 		},
 		{
-			name: "Empty info",
-			info: &LocalSessionInfo{},
+			name:     "Empty info",
+			info:     &LocalSessionInfo{},
 			expected: "passive",
 		},
 	}
@@ -114,6 +114,57 @@ func TestDetermineInjectionMode(t *testing.T) {
 			got := determineInjectionMode(tt.info)
 			if got != tt.expected {
 				t.Errorf("determineInjectionMode() = %s, want %s", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestActiveInjectionTarget(t *testing.T) {
+	tests := []struct {
+		name             string
+		info             *LocalSessionInfo
+		wantFieldName    string
+		wantDisplayLabel string
+		wantValue        string
+	}{
+		{
+			name: "Claude session target",
+			info: &LocalSessionInfo{
+				SessionID: "session-123",
+			},
+			wantFieldName:    "sessionId",
+			wantDisplayLabel: "Session",
+			wantValue:        "session-123",
+		},
+		{
+			name: "Codex thread target",
+			info: &LocalSessionInfo{
+				ThreadID: "thread-456",
+			},
+			wantFieldName:    "threadId",
+			wantDisplayLabel: "Thread ID",
+			wantValue:        "thread-456",
+		},
+		{
+			name:             "No active target",
+			info:             &LocalSessionInfo{},
+			wantFieldName:    "",
+			wantDisplayLabel: "",
+			wantValue:        "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotFieldName, gotDisplayLabel, gotValue := activeInjectionTarget(tt.info)
+			if gotFieldName != tt.wantFieldName {
+				t.Fatalf("fieldName = %q, want %q", gotFieldName, tt.wantFieldName)
+			}
+			if gotDisplayLabel != tt.wantDisplayLabel {
+				t.Fatalf("displayLabel = %q, want %q", gotDisplayLabel, tt.wantDisplayLabel)
+			}
+			if gotValue != tt.wantValue {
+				t.Fatalf("value = %q, want %q", gotValue, tt.wantValue)
 			}
 		})
 	}
@@ -205,6 +256,21 @@ func TestUpdateThreadID(t *testing.T) {
 
 	if info.InjectionMode != "active" {
 		t.Errorf("Expected injection mode 'active' after updating thread ID, got '%s'", info.InjectionMode)
+	}
+}
+
+func TestBuildCodexResumeArgs(t *testing.T) {
+	got := buildCodexResumeArgs("thread-abc456", "Follow up")
+	want := []string{"exec", "resume", "thread-abc456", "Follow up"}
+
+	if len(got) != len(want) {
+		t.Fatalf("arg length mismatch: got %d, want %d", len(got), len(want))
+	}
+
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("arg %d mismatch: got %q, want %q", i, got[i], want[i])
+		}
 	}
 }
 
