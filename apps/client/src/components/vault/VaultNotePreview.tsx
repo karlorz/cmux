@@ -7,6 +7,9 @@ import {
   ExternalLink,
   FileText,
   Loader2,
+  PanelLeft,
+  PanelLeftClose,
+  X,
 } from "lucide-react";
 import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
@@ -16,7 +19,9 @@ interface VaultNotePreviewProps {
   teamSlugOrId: string;
   vaultName: string;
   notePath?: string;
+  isNoteListVisible?: boolean;
   onSelectedNotePathChange?: (notePath?: string) => void;
+  onToggleNoteList?: () => void;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -40,7 +45,9 @@ export function VaultNotePreview({
   teamSlugOrId,
   vaultName,
   notePath,
+  isNoteListVisible = false,
   onSelectedNotePathChange,
+  onToggleNoteList,
 }: VaultNotePreviewProps) {
   const {
     data: noteData,
@@ -126,6 +133,23 @@ export function VaultNotePreview({
           </div>
 
           <div className="flex items-center gap-2">
+            {notePath ? (
+              <button
+                type="button"
+                onClick={onToggleNoteList}
+                className="flex items-center gap-1 rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+                title={isNoteListVisible ? "Hide notes" : "Show notes"}
+              >
+                {isNoteListVisible ? (
+                  <PanelLeftClose className="size-3.5" aria-hidden="true" />
+                ) : (
+                  <PanelLeft className="size-3.5" aria-hidden="true" />
+                )}
+                <span className="hidden sm:inline">
+                  {isNoteListVisible ? "Hide notes" : "Show notes"}
+                </span>
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={handleCopyPath}
@@ -143,6 +167,15 @@ export function VaultNotePreview({
               <ExternalLink className="size-3.5" aria-hidden="true" />
               <span className="hidden sm:inline">Open in Obsidian</span>
             </a>
+            <button
+              type="button"
+              onClick={() => onSelectedNotePathChange?.(undefined)}
+              className="flex items-center gap-1 rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+              title="Close note"
+            >
+              <X className="size-3.5" aria-hidden="true" />
+              <span className="hidden sm:inline">Close</span>
+            </button>
           </div>
         </div>
       </div>
