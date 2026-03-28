@@ -1,16 +1,21 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import {
   parseFrontmatter,
   extractTodos,
   generateRecommendations,
   filterNotesByPath,
   extractAllTags,
+  readVaultGitHub,
   searchNotes,
   type ObsidianNote,
   type ObsidianTodo,
 } from "./obsidian-reader";
 
 describe("obsidian-reader", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   describe("parseFrontmatter", () => {
     it("returns empty frontmatter for content without frontmatter", () => {
       const content = "# Hello\n\nThis is a note.";
@@ -674,6 +679,50 @@ Line 3`;
 
       expect(results).toHaveLength(1);
       expect(results[0].title).toBe("TypeScript Guide");
+    });
+  });
+
+  describe("readVaultGitHub", () => {
+    it("preserves full repo-relative paths when the vault root is the repository root", async () => {
+      vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              tree: [
+                {
+                  path: "0️⃣-Inbox/Test Note.md",
+                  type: "blob",
+                  sha: "sha-test-note",
+                  mode: "100644",
+                  url: "https://api.github.com/blob/sha-test-note",
+                },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              content: Buffer.from("# Test Note\n\nBody content").toString("base64"),
+              encoding: "base64",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+
+      const notes = await readVaultGitHub({
+        owner: "karlorz",
+        repo: "obsidian_vault",
+        path: "",
+        token: "ghs_test",
+        branch: "main",
+      });
+
+      expect(notes).toHaveLength(1);
+      expect(notes[0]?.path).toBe("0️⃣-Inbox/Test Note.md");
+      expect(notes[0]?.title).toBe("Test Note");
     });
   });
 });
