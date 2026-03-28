@@ -16,13 +16,33 @@ import { AGENT_CONFIGS, type AgentConfig } from "./agentConfig";
  * These models are discovered at runtime via Convex modelDiscovery.
  */
 
-// Codex flagship models that ARE in the static catalog
-const CODEX_FLAGSHIP_MODELS = new Set([
+// Codex base models in the static catalog (from app-server)
+// Note: These use variants internally (xhigh/high/medium/low), not suffixes
+const CODEX_CATALOG_BASE_MODELS = new Set([
   "codex/gpt-5.4",
-  "codex/gpt-5.4-xhigh",
-  "codex/gpt-5.4-mini",
+  "codex/gpt-5.3-codex",
+  "codex/gpt-5.2-codex",
+  "codex/gpt-5.2",
+  "codex/gpt-5.1-codex-max",
   "codex/gpt-5.1-codex-mini",
 ]);
+
+// Custom API-only Codex models (in catalog.custom.ts, not in app-server)
+// These work via OpenAI API but don't have dedicated AGENT_CONFIGS entries
+// because they route through the generic Codex CLI infra
+const CODEX_CUSTOM_API_ONLY = new Set([
+  "codex/gpt-5.4-mini", // Custom fast model
+  "codex/gpt-5-nano", // Custom ultra-fast model
+]);
+
+// Codex configs use suffix naming (e.g., gpt-5.4-xhigh) but catalog uses
+// base models with variants (e.g., gpt-5.4 with xhigh variant).
+// These suffixed configs exist for CLI execution but don't need separate catalog entries.
+const CODEX_REASONING_SUFFIXES = ["-xhigh", "-high", "-medium", "-low"];
+function isCodexSuffixedConfig(name: string): boolean {
+  if (!name.startsWith("codex/")) return false;
+  return CODEX_REASONING_SUFFIXES.some((suffix) => name.endsWith(suffix));
+}
 
 // Helper to check if a model is expected to be runtime-discovered
 function isRuntimeDiscovered(name: string): boolean {
@@ -36,8 +56,14 @@ function isRuntimeDiscovered(name: string): boolean {
     return true;
   }
 
-  // Non-flagship Codex models are runtime-discovered
-  if (name.startsWith("codex/") && !CODEX_FLAGSHIP_MODELS.has(name)) {
+  // Codex suffixed configs (e.g., gpt-5.4-xhigh) are configs-only;
+  // the catalog uses base models with variants instead
+  if (isCodexSuffixedConfig(name)) {
+    return true;
+  }
+
+  // Non-catalog Codex models are runtime-discovered
+  if (name.startsWith("codex/") && !CODEX_CATALOG_BASE_MODELS.has(name)) {
     return true;
   }
 
@@ -57,6 +83,8 @@ describe("agent-catalog", () => {
     it("every AGENT_CATALOG entry has a matching AGENT_CONFIGS entry", () => {
       const missingInConfigs: string[] = [];
       for (const entry of AGENT_CATALOG) {
+        // Skip custom API-only models - they use generic Codex CLI infra
+        if (CODEX_CUSTOM_API_ONLY.has(entry.name)) continue;
         if (!configByName.has(entry.name)) {
           missingInConfigs.push(entry.name);
         }
@@ -82,16 +110,20 @@ describe("agent-catalog", () => {
       const runtimeDiscoveredConfigs = AGENT_CONFIGS.filter((c) =>
         isRuntimeDiscovered(c.name)
       );
-      // All should be either OpenCode paid or non-flagship Codex models
+      // All should be either OpenCode paid, non-catalog Codex, or suffixed Codex
       for (const config of runtimeDiscoveredConfigs) {
         const isOpencodePaid =
           config.name.startsWith("opencode/") &&
           config.name !== "opencode/big-pickle" &&
           config.name !== "opencode/gpt-5-nano";
-        const isNonFlagshipCodex =
+        const isCodexSuffixed = isCodexSuffixedConfig(config.name);
+        const isNonCatalogCodex =
           config.name.startsWith("codex/") &&
-          !CODEX_FLAGSHIP_MODELS.has(config.name);
-        expect(isOpencodePaid || isNonFlagshipCodex).toBe(true);
+          !CODEX_CATALOG_BASE_MODELS.has(config.name) &&
+          !isCodexSuffixed;
+        expect(isOpencodePaid || isCodexSuffixed || isNonCatalogCodex).toBe(
+          true
+        );
       }
     });
 

@@ -1,0 +1,102 @@
+name: Daily Codex Model Sync
+
+on:
+  schedule:
+    - cron: "37 6 * * *" # Daily at 6:37 AM UTC (avoid :00/:30)
+  workflow_dispatch:
+
+concurrency:
+  group: sync-codex-models
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  NODE_VERSION: "24"
+  BUN_VERSION: "1.2.21"
+
+jobs:
+  sync-models:
+    name: Sync Codex Model Catalog
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Cache Bun install cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-install-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-install-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex
+
+      - name: Run sync script
+        run: bun run scripts/sync-codex-models.ts
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet; then
+            echo "No changes detected"
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Changes detected"
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            git diff --stat
+          fi
+
+      - name: Configure git user
+        if: steps.changes.outputs.has_changes == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create branch and commit
+        if: steps.changes.outputs.has_changes == 'true'
+        id: commit
+        run: |
+          BRANCH_NAME="codex-models-$(date +%Y%m%d)"
+          git checkout -b "$BRANCH_NAME"
+          git add packages/shared/src/providers/openai/catalog.generated.ts
+          git commit -m "chore: sync codex model catalog
+
+          Auto-generated from codex app-server model/list endpoint."
+          git push -u origin "$BRANCH_NAME"
+          echo "branch=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Create Pull Request
+        if: steps.changes.outputs.has_changes == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create \
+            --title "chore: sync codex model catalog" \
+            --body "Automated daily Codex model catalog sync.
+
+          ## Changes
+          - Updated catalog.generated.ts from codex app-server
+
+          ## Test plan
+          - [ ] Verify model list in UI matches Codex CLI" \
+            --head "${{ steps.commit.outputs.branch }}" \
+            --base main
