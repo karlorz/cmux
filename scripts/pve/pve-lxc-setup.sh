@@ -228,7 +228,7 @@ else
     apt-get install -y -qq \
         curl wget git unzip ca-certificates gnupg lsb-release \
         sudo vim htop net-tools iproute2 openssh-server locales systemd \
-        zsh software-properties-common jq
+        zsh software-properties-common jq bubblewrap
     locale-gen en_US.UTF-8 || true
     update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 || true
     mark_done "01-base"
