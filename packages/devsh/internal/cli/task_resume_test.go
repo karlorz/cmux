@@ -45,6 +45,14 @@ func TestPrintTaskResumeSummaryCodexContinuationCommands(t *testing.T) {
 		t.Fatalf("expected continuation mode, got:\n%s", output)
 	}
 
+	if !strings.Contains(output, "Available actions: Continue session") {
+		t.Fatalf("expected formatted action label, got:\n%s", output)
+	}
+
+	if !strings.Contains(output, "Primary lane: Continue session") {
+		t.Fatalf("expected primary lane guidance, got:\n%s", output)
+	}
+
 	if !strings.Contains(output, "Then run: codex resume thread_123") {
 		t.Fatalf("expected interactive codex resume command, got:\n%s", output)
 	}
