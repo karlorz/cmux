@@ -4060,3 +4060,101 @@ export const findByPullRequest = authQuery({
     return runs.filter((r): r is NonNullable<typeof r> => r !== null);
   },
 });
+
+// ============================================================================
+// Workspace Memory Sync Bootstrap
+// ============================================================================
+
+/**
+ * Create or find an existing workspace task run for cloud workspace memory sync.
+ * Called by the bootstrapWorkspaceSync HTTP action to get a JWT for head agents
+ * that don't have one (cloud workspaces started without a prompt).
+ *
+ * Returns existing workspace task run if one exists for this team (reuses JWT identity),
+ * otherwise creates a new task + task run pair.
+ */
+export const createWorkspaceTaskRun = internalMutation({
+  args: {
+    teamId: v.string(),
+    userId: v.string(),
+    agentName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+
+    // Check for existing workspace task run for this team (reuse if found)
+    const existingRuns = await ctx.db
+      .query("taskRuns")
+      .withIndex("by_team_user", (q) =>
+        q.eq("teamId", args.teamId).eq("userId", args.userId)
+      )
+      .collect();
+
+    // Find a running workspace-memory-sync task run
+    const existingWorkspaceRun = existingRuns.find(
+      (run) =>
+        run.agentName === "workspace-memory-sync" &&
+        run.status === "running" &&
+        run.isCloudWorkspace === true
+    );
+
+    if (existingWorkspaceRun) {
+      // Reissue JWT for existing task run
+      const jwt = await new SignJWT({
+        taskRunId: existingWorkspaceRun._id,
+        teamId: args.teamId,
+        userId: args.userId,
+      })
+        .setProtectedHeader({ alg: "HS256" })
+        .setIssuedAt()
+        .setExpirationTime(CLOUD_WORKSPACE_JWT_TTL)
+        .sign(new TextEncoder().encode(env.CMUX_TASK_RUN_JWT_SECRET));
+
+      return {
+        taskRunId: existingWorkspaceRun._id,
+        taskId: existingWorkspaceRun.taskId,
+        jwt,
+        reused: true,
+      };
+    }
+
+    // Create task first
+    const taskId = await ctx.db.insert("tasks", {
+      text: "Cloud Workspace Memory Sync",
+      description: "Workspace memory sync task for real-time memory streaming to UI",
+      isCompleted: false,
+      isCloudWorkspace: true,
+      teamId: args.teamId,
+      userId: args.userId,
+      createdAt: now,
+      updatedAt: now,
+      lastActivityAt: now,
+    });
+
+    // Create task run
+    const taskRunId = await ctx.db.insert("taskRuns", {
+      taskId,
+      prompt: "workspace-memory-sync",
+      agentName: "workspace-memory-sync",
+      status: "running",
+      isCloudWorkspace: true,
+      createdAt: now,
+      updatedAt: now,
+      userId: args.userId,
+      teamId: args.teamId,
+    });
+
+    // Generate JWT
+    const jwt = await new SignJWT({
+      taskRunId,
+      teamId: args.teamId,
+      userId: args.userId,
+    })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt()
+      .setExpirationTime(CLOUD_WORKSPACE_JWT_TTL)
+      .sign(new TextEncoder().encode(env.CMUX_TASK_RUN_JWT_SECRET));
+
+    return { taskRunId, taskId, jwt, reused: false };
+  },
+});

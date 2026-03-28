@@ -8,7 +8,7 @@ import {
 } from "./crown_http";
 import { agentStopped } from "./notifications_http";
 import { postActivity } from "./taskRunActivity_http";
-import { syncMemory } from "./agentMemory_http";
+import { syncMemory, bootstrapWorkspaceSync } from "./agentMemory_http";
 import { getPolicyRules } from "./agentPolicyRules_http";
 import { getPermissionDenyRules } from "./permissionDenyRules_http";
 import { createScreenshotUploadUrl, uploadScreenshot } from "./screenshots_http";
@@ -164,6 +164,12 @@ http.route({
   path: "/api/memory/sync",
   method: "POST",
   handler: syncMemory,
+});
+
+http.route({
+  path: "/api/memory/bootstrap",
+  method: "POST",
+  handler: bootstrapWorkspaceSync,
 });
 
 http.route({
