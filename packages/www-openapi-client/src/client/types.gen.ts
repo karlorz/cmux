@@ -2346,6 +2346,12 @@ export type ControlPlaneModel = {
     requiredApiKeys: Array<string>;
     tags: Array<string>;
     sortOrder: number;
+    variants?: Array<{
+        id: string;
+        displayName: string;
+        description?: string;
+    }>;
+    defaultVariant?: string;
     disabled?: boolean;
     disabledReason?: string;
 };
