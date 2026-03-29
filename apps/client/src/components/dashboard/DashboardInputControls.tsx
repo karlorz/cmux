@@ -39,6 +39,7 @@ import {
   CheckCircle2,
   GitBranch,
   Image,
+  Info,
   Link2,
   Mic,
   RefreshCw,
@@ -869,16 +870,27 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       return (
         <div
           key={getSelectionKey(selection)}
-          className="flex items-center gap-2 rounded-2xl border border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-800 dark:bg-neutral-900/70"
+          className="inline-flex items-center gap-1 rounded-xl border border-neutral-200 bg-white/90 px-1 py-1 dark:border-neutral-800 dark:bg-neutral-950/80"
         >
-          <div className="min-w-0">
-            <p className="truncate text-[11px] font-medium text-neutral-900 dark:text-neutral-100">
+          <div className="flex min-w-0 items-center gap-1 pl-2">
+            <p className="truncate text-[12px] font-medium text-neutral-700 dark:text-neutral-200">
               {option.displayLabel}
               {instances.length > 1 ? ` x${instances.length}` : ""}
             </p>
-            <p className="text-[10px] text-neutral-500 dark:text-neutral-400">
-              Effort
-            </p>
+            <Tooltip delayDuration={150}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex h-4 w-4 items-center justify-center rounded-full text-neutral-400 transition-colors hover:text-neutral-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400/60 dark:text-neutral-500 dark:hover:text-neutral-300"
+                  aria-label={`What effort means for ${option.displayLabel}`}
+                >
+                  <Info className="h-3 w-3" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-56 text-[11px]">
+                Effort controls reasoning depth for {option.displayLabel}.
+              </TooltipContent>
+            </Tooltip>
           </div>
           <SearchableSelect
             options={variantOptions}
@@ -894,8 +906,10 @@ export const DashboardInputControls = memo(function DashboardInputControls({
             placeholder="Select effort"
             singleSelect={true}
             showSearch={false}
-            className="min-w-[165px] rounded-xl"
+            className="min-w-[170px] rounded-lg"
             classNames={{
+              trigger:
+                "h-8 border-neutral-200 bg-neutral-50/80 dark:border-neutral-800 dark:bg-neutral-900/70",
               popover: "w-[190px]",
             }}
           />

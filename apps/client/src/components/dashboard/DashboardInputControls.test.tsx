@@ -86,9 +86,7 @@ vi.mock("@/components/ui/searchable-select", async () => {
 
 vi.mock("@/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  TooltipContent: ({ children }: { children: React.ReactNode }) => (
-    <>{children}</>
-  ),
+  TooltipContent: () => null,
   TooltipTrigger: ({ children }: { children: React.ReactNode }) => (
     <>{children}</>
   ),
@@ -264,12 +262,16 @@ describe("DashboardInputControls", () => {
       );
     });
 
-    expect(container.textContent).toContain("Effort");
+    expect(container.textContent).not.toContain("Effort");
 
     const effortSelect = container.querySelector<HTMLSelectElement>(
       'select[aria-label="Select effort for GPT-5.2"]',
     );
     expect(effortSelect).not.toBeNull();
+    const effortInfoButton = container.querySelector(
+      'button[aria-label="What effort means for GPT-5.2"]',
+    );
+    expect(effortInfoButton).not.toBeNull();
     expect(
       Array.from(effortSelect?.querySelectorAll("option") ?? []).map(
         (option) => option.textContent,
