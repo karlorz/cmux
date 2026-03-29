@@ -30,7 +30,13 @@ export const CloseTerminalSchema = z.object({
   terminalId: z.string(),
 });
 
+export const SelectedAgentSelectionSchema = z.object({
+  agentName: z.string(),
+  selectedVariant: z.string().optional(),
+});
+
 export const StartTaskSchema = z.object({
+  selectedAgentSelections: z.array(SelectedAgentSelectionSchema).optional(),
   repoUrl: z.string().optional(),
   branch: z.string().optional(),
   taskDescription: z.string(),
@@ -474,6 +480,9 @@ export type CreateTerminal = z.infer<typeof CreateTerminalSchema>;
 export type TerminalInput = z.infer<typeof TerminalInputSchema>;
 export type Resize = z.infer<typeof ResizeSchema>;
 export type CloseTerminal = z.infer<typeof CloseTerminalSchema>;
+export type SelectedAgentSelection = z.infer<
+  typeof SelectedAgentSelectionSchema
+>;
 export type StartTask = z.infer<typeof StartTaskSchema>;
 export type CreateLocalWorkspace = z.infer<typeof CreateLocalWorkspaceSchema>;
 export type CreateLocalWorkspaceResponse = z.infer<

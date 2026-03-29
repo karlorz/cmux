@@ -49,6 +49,21 @@ describe("buildTaskRunCreateArgs", () => {
     });
   });
 
+  it("preserves selectedVariant when provided", () => {
+    const result = buildTaskRunCreateArgs({
+      teamSlugOrId: "team-1",
+      taskId: "task_123",
+      prompt: "variant run",
+      agentName: "codex/gpt-5.4",
+      selectedVariant: "xhigh",
+    });
+
+    expect(result).toMatchObject({
+      agentName: "codex/gpt-5.4",
+      selectedVariant: "xhigh",
+    });
+  });
+
   it("omits undefined optional fields", () => {
     const result = buildTaskRunCreateArgs({
       teamSlugOrId: "team-1",

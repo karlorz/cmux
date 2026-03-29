@@ -3,11 +3,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { action, internalAction } from "./_generated/server";
-import {
-  AGENT_CATALOG,
-  getVariantsForVendor,
-  type AgentVendor,
-} from "@cmux/shared/agent-catalog";
+import { AGENT_CATALOG } from "@cmux/shared/agent-catalog";
 import { isOpencodeFreeModel } from "@cmux/shared/providers/opencode/free-models";
 
 const OPENCODE_ZEN_MODELS_URL = "https://opencode.ai/zen/v1/models";
@@ -444,10 +440,6 @@ export const seedCuratedModels = internalAction({
     console.log("[modelDiscovery] Seeding curated models from AGENT_CATALOG...");
 
     const modelsToUpsert = AGENT_CATALOG.map((entry, index) => {
-      // Get vendor-specific variants or use entry's custom variants
-      const variants =
-        entry.variants ?? getVariantsForVendor(entry.vendor as AgentVendor);
-
       return {
         name: entry.name,
         displayName: entry.displayName,
@@ -459,8 +451,8 @@ export const seedCuratedModels = internalAction({
         sortOrder: index, // Preserve catalog order
         disabled: entry.disabled,
         disabledReason: entry.disabledReason,
-        variants,
-        defaultVariant: entry.defaultVariant ?? "default",
+        variants: entry.variants,
+        defaultVariant: entry.defaultVariant,
         contextWindow: entry.contextWindow,
         maxOutputTokens: entry.maxOutputTokens,
       };

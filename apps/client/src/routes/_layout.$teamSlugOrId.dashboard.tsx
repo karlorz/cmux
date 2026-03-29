@@ -41,6 +41,10 @@ import type {
   TaskError,
   TaskStarted,
 } from "@cmux/shared";
+import {
+  normalizeAgentSelection as normalizeSharedAgentSelection,
+  type SelectedAgentSelection,
+} from "@cmux/shared/agent-selection-core";
 import type { GithubBranchesResponse } from "@cmux/www-openapi-client";
 import { convexQuery } from "@convex-dev/react-query";
 import {
@@ -109,26 +113,71 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/dashboard")({
 });
 
 // Default agents (not persisted to localStorage)
-const DEFAULT_AGENTS = ["claude/opus-4.6", "codex/gpt-5.4-xhigh"];
-const AGENT_SELECTION_SCHEMA = z.array(z.string());
+const DEFAULT_AGENT_SELECTIONS = [
+  "claude/opus-4.6",
+  "codex/gpt-5.4-xhigh",
+]
+  .map((agentName) => normalizeStoredAgentSelectionEntry(agentName))
+  .filter((selection): selection is SelectedAgentSelection => selection !== null);
 
-const areAgentSelectionsEqual = (a: string[], b: string[]): boolean =>
-  a.length === b.length && a.every((agent, index) => agent === b[index]);
+const STORED_AGENT_SELECTION_SCHEMA = z.array(
+  z.union([
+    z.string(),
+    z.object({
+      agentName: z.string(),
+      selectedVariant: z.string().optional(),
+    }),
+  ]),
+);
 
-const parseStoredAgentSelection = (stored: string | null): string[] => {
+const areAgentSelectionsEqual = (
+  a: SelectedAgentSelection[],
+  b: SelectedAgentSelection[],
+): boolean =>
+  a.length === b.length &&
+  a.every(
+    (selection, index) =>
+      selection.agentName === b[index]?.agentName &&
+      selection.selectedVariant === b[index]?.selectedVariant,
+  );
+
+function normalizeStoredAgentSelectionEntry(
+  value: string | SelectedAgentSelection,
+): SelectedAgentSelection | null {
+  try {
+    const normalized = normalizeSharedAgentSelection(
+      typeof value === "string" ? { agentName: value } : value,
+    );
+    return {
+      agentName: normalized.assignedAgentName,
+      ...(normalized.selectedVariant
+        ? { selectedVariant: normalized.selectedVariant }
+        : {}),
+    };
+  } catch (error) {
+    console.warn("Invalid stored agent selection entry", value, error);
+    return null;
+  }
+}
+
+const parseStoredAgentSelection = (
+  stored: string | null,
+): SelectedAgentSelection[] => {
   if (!stored) {
     return [];
   }
 
   try {
     const parsed = JSON.parse(stored);
-    const result = AGENT_SELECTION_SCHEMA.safeParse(parsed);
+    const result = STORED_AGENT_SELECTION_SCHEMA.safeParse(parsed);
     if (!result.success) {
       console.warn("Invalid stored agent selection", result.error);
       return [];
     }
 
-    return result.data;
+    return result.data
+      .map((value) => normalizeStoredAgentSelectionEntry(value))
+      .filter((selection): selection is SelectedAgentSelection => selection !== null);
   } catch (error) {
     console.warn("Failed to parse stored agent selection", error);
     return [];
@@ -299,7 +348,9 @@ function DashboardComponent() {
   });
   const [selectedBranch, setSelectedBranch] = useState<string[]>([]);
 
-  const [selectedAgents, setSelectedAgentsState] = useState<string[]>(() => {
+  const [selectedAgentSelections, setSelectedAgentSelectionsState] = useState<
+    SelectedAgentSelection[]
+  >(() => {
     // Read from team-scoped key only (legacy keys migrated on component mount)
     const teamScopedKey = `selectedAgents-${teamSlugOrId}`;
     const storedAgents = parseStoredAgentSelection(
@@ -310,16 +361,18 @@ function DashboardComponent() {
       return storedAgents;
     }
 
-    return [...DEFAULT_AGENTS];
+    return [...DEFAULT_AGENT_SELECTIONS];
   });
-  const selectedAgentsRef = useRef<string[]>(selectedAgents);
+  const selectedAgentSelectionsRef = useRef<SelectedAgentSelection[]>(
+    selectedAgentSelections,
+  );
 
-  const setSelectedAgents = useCallback(
-    (agents: string[]) => {
-      selectedAgentsRef.current = agents;
-      setSelectedAgentsState(agents);
+  const setSelectedAgentSelections = useCallback(
+    (selections: SelectedAgentSelection[]) => {
+      selectedAgentSelectionsRef.current = selections;
+      setSelectedAgentSelectionsState(selections);
     },
-    [setSelectedAgentsState]
+    [setSelectedAgentSelectionsState]
   );
 
   const [taskDescription, setTaskDescription] = useState<string>("");
@@ -619,39 +672,41 @@ function DashboardComponent() {
 
   const defaultAgentSelection = useMemo(() => {
     if (!availableAgentNames) {
-      return [...DEFAULT_AGENTS];
+      return [...DEFAULT_AGENT_SELECTIONS];
     }
 
-    return DEFAULT_AGENTS.filter((agent) => availableAgentNames.has(agent));
+    return DEFAULT_AGENT_SELECTIONS.filter((selection) =>
+      availableAgentNames.has(selection.agentName),
+    );
   }, [availableAgentNames]);
 
   const normalizeAgentSelection = useCallback(
-    (agents: string[]): string[] => {
+    (selections: SelectedAgentSelection[]): SelectedAgentSelection[] => {
       if (!availableAgentNames) {
-        return agents;
+        return selections;
       }
 
-      return agents.filter(
-        (agent) =>
-          availableAgentNames.has(agent) &&
-          !isAgentBlockedByProviderStatus(agent, providerStatus)
+      return selections.filter(
+        (selection) =>
+          availableAgentNames.has(selection.agentName) &&
+          !isAgentBlockedByProviderStatus(selection.agentName, providerStatus)
       );
     },
     [availableAgentNames, providerStatus]
   );
 
   const persistAgentSelection = useCallback(
-    (agents: string[]) => {
+    (selections: SelectedAgentSelection[]) => {
       try {
         const teamScopedKey = `selectedAgents-${teamSlugOrId}`;
         const isDefaultSelection =
           defaultAgentSelection.length > 0 &&
-          areAgentSelectionsEqual(agents, defaultAgentSelection);
+          areAgentSelectionsEqual(selections, defaultAgentSelection);
 
-        if (agents.length === 0 || isDefaultSelection) {
+        if (selections.length === 0 || isDefaultSelection) {
           localStorage.removeItem(teamScopedKey);
         } else {
-          localStorage.setItem(teamScopedKey, JSON.stringify(agents));
+          localStorage.setItem(teamScopedKey, JSON.stringify(selections));
         }
         // Clean up legacy global key on next persist
         localStorage.removeItem("selectedAgents");
@@ -664,22 +719,26 @@ function DashboardComponent() {
 
   // Keep selected agents aligned with Convex models and user model preferences.
   useEffect(() => {
-    const currentAgents = selectedAgentsRef.current;
-    const normalizedAgents = normalizeAgentSelection(currentAgents);
-    if (!areAgentSelectionsEqual(normalizedAgents, currentAgents)) {
-      setSelectedAgents(normalizedAgents);
-      persistAgentSelection(normalizedAgents);
+    const currentSelections = selectedAgentSelectionsRef.current;
+    const normalizedSelections = normalizeAgentSelection(currentSelections);
+    if (!areAgentSelectionsEqual(normalizedSelections, currentSelections)) {
+      setSelectedAgentSelections(normalizedSelections);
+      persistAgentSelection(normalizedSelections);
     }
-  }, [normalizeAgentSelection, persistAgentSelection, setSelectedAgents]);
+  }, [
+    normalizeAgentSelection,
+    persistAgentSelection,
+    setSelectedAgentSelections,
+  ]);
 
   // Callback for agent selection changes
-  const handleAgentChange = useCallback(
-    (newAgents: string[]) => {
-      const normalizedAgents = normalizeAgentSelection(newAgents);
-      setSelectedAgents(normalizedAgents);
-      persistAgentSelection(normalizedAgents);
+  const handleAgentSelectionsChange = useCallback(
+    (newSelections: SelectedAgentSelection[]) => {
+      const normalizedSelections = normalizeAgentSelection(newSelections);
+      setSelectedAgentSelections(normalizedSelections);
+      persistAgentSelection(normalizedSelections);
     },
-    [normalizeAgentSelection, persistAgentSelection, setSelectedAgents]
+    [normalizeAgentSelection, persistAgentSelection, setSelectedAgentSelections]
   );
 
   // Socket-based functions to fetch data from GitHub
@@ -699,24 +758,24 @@ function DashboardComponent() {
         }
       }
 
-      const currentAgents = selectedAgentsRef.current;
-      if (currentAgents.length === 0) {
+      const currentSelections = selectedAgentSelectionsRef.current;
+      if (currentSelections.length === 0) {
         return;
       }
 
-      const normalizedAgents = normalizeAgentSelection(currentAgents);
-      if (areAgentSelectionsEqual(normalizedAgents, currentAgents)) {
+      const normalizedSelections = normalizeAgentSelection(currentSelections);
+      if (areAgentSelectionsEqual(normalizedSelections, currentSelections)) {
         return;
       }
 
-      setSelectedAgents(normalizedAgents);
-      persistAgentSelection(normalizedAgents);
+      setSelectedAgentSelections(normalizedSelections);
+      persistAgentSelection(normalizedSelections);
     });
   }, [
     normalizeAgentSelection,
     persistAgentSelection,
     setDockerReady,
-    setSelectedAgents,
+    setSelectedAgentSelections,
     socket,
   ]);
 
@@ -773,14 +832,20 @@ function DashboardComponent() {
           ...currentTasks,
         ]);
 
-        // Create optimistic task runs if selectedAgents provided
-        if (args.selectedAgents && args.selectedAgents.length > 0) {
-          const optimisticRuns = args.selectedAgents.map((agentName) => ({
+        const optimisticAgentSelections: SelectedAgentSelection[] =
+          args.selectedAgentSelections && args.selectedAgentSelections.length > 0
+            ? args.selectedAgentSelections
+            : (args.selectedAgents ?? []).map((agentName) => ({ agentName }));
+
+        // Create optimistic task runs if selected agents provided
+        if (optimisticAgentSelections.length > 0) {
+          const optimisticRuns = optimisticAgentSelections.map((selection) => ({
             _id: createFakeConvexId() as Doc<"taskRuns">["_id"],
             _creationTime: now,
             taskId: fakeTaskId,
             prompt: args.text,
-            agentName,
+            agentName: selection.agentName,
+            selectedVariant: selection.selectedVariant,
             status: "pending" as const,
             createdAt: now,
             updatedAt: now,
@@ -994,8 +1059,13 @@ function DashboardComponent() {
       }
 
       // Determine which agents to spawn
-      const agentsToSpawn =
-        selectedAgents.length > 0 ? selectedAgents : defaultAgentSelection;
+      const agentSelectionsToSpawn =
+        selectedAgentSelections.length > 0
+          ? selectedAgentSelections
+          : defaultAgentSelection;
+      const agentsToSpawn = agentSelectionsToSpawn.map(
+        (selection) => selection.agentName,
+      );
 
       // Guard against creating tasks with no agents
       if (agentsToSpawn.length === 0) {
@@ -1014,6 +1084,7 @@ function DashboardComponent() {
         images: uploadedImages.length > 0 ? uploadedImages : undefined,
         environmentId,
         selectedAgents: agentsToSpawn,
+        selectedAgentSelections: agentSelectionsToSpawn,
       });
 
       // Hint the sidebar to auto-expand this task once it appears
@@ -1059,6 +1130,7 @@ function DashboardComponent() {
           // Pass pre-created task run IDs so server doesn't need to create them
           taskRunIds,
           selectedAgents: agentsToSpawn,
+          selectedAgentSelections: agentSelectionsToSpawn,
           isCloudMode: envSelected ? true : isCloudMode,
           ...(environmentId ? { environmentId } : {}),
           images: images.length > 0 ? images : undefined,
@@ -1085,7 +1157,7 @@ function DashboardComponent() {
     teamSlugOrId,
     addTaskToExpand,
     defaultAgentSelection,
-    selectedAgents,
+    selectedAgentSelections,
     isCloudMode,
     isRalphMode,
     isEnvSelected,
@@ -1466,14 +1538,14 @@ function DashboardComponent() {
   const canSubmit = useMemo(() => {
     if (!selectedProject[0]) return false;
     if (!taskDescription.trim()) return false;
-    if (selectedAgents.length === 0) return false;
+    if (selectedAgentSelections.length === 0) return false;
     if (!convexModels || convexModels.length === 0) return false;
     if (isEnvSelected) return true; // no branch required when environment selected
     return !!effectiveSelectedBranch[0];
   }, [
     selectedProject,
     taskDescription,
-    selectedAgents,
+    selectedAgentSelections,
     convexModels,
     isEnvSelected,
     effectiveSelectedBranch,
@@ -1513,8 +1585,8 @@ function DashboardComponent() {
               onBranchLoadMore={handleBranchLoadMore}
               canLoadMoreBranches={canLoadMoreBranches}
               isLoadingMoreBranches={isLoadingMoreBranches}
-              selectedAgents={selectedAgents}
-              onAgentChange={handleAgentChange}
+              selectedAgentSelections={selectedAgentSelections}
+              onAgentSelectionsChange={handleAgentSelectionsChange}
               isCloudMode={isCloudMode}
               onCloudModeToggle={handleCloudModeToggle}
               isRalphMode={isRalphMode}
@@ -1642,8 +1714,8 @@ type DashboardMainCardProps = {
   onBranchLoadMore: () => void;
   canLoadMoreBranches: boolean;
   isLoadingMoreBranches: boolean;
-  selectedAgents: string[];
-  onAgentChange: (newAgents: string[]) => void;
+  selectedAgentSelections: SelectedAgentSelection[];
+  onAgentSelectionsChange: (newSelections: SelectedAgentSelection[]) => void;
   isCloudMode: boolean;
   onCloudModeToggle: () => void;
   isRalphMode: boolean;
@@ -1675,6 +1747,12 @@ type ConvexModelEntry = {
   requiredApiKeys: string[];
   disabled?: boolean;
   sortOrder: number;
+  variants?: Array<{
+    id: string;
+    displayName: string;
+    description?: string;
+  }>;
+  defaultVariant?: string;
 };
 
 function DashboardMainCard({
@@ -1697,8 +1775,8 @@ function DashboardMainCard({
   onBranchLoadMore,
   canLoadMoreBranches,
   isLoadingMoreBranches,
-  selectedAgents,
-  onAgentChange,
+  selectedAgentSelections,
+  onAgentSelectionsChange,
   isCloudMode,
   onCloudModeToggle,
   isRalphMode,
@@ -1755,8 +1833,8 @@ function DashboardMainCard({
           onBranchLoadMore={onBranchLoadMore}
           canLoadMoreBranches={canLoadMoreBranches}
           isLoadingMoreBranches={isLoadingMoreBranches}
-          selectedAgents={selectedAgents}
-          onAgentChange={onAgentChange}
+          selectedAgentSelections={selectedAgentSelections}
+          onAgentSelectionsChange={onAgentSelectionsChange}
           isCloudMode={isCloudMode}
           onCloudModeToggle={onCloudModeToggle}
           isLoadingProjects={isLoadingProjects}

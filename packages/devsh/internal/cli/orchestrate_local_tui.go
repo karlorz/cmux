@@ -265,30 +265,30 @@ func runAgentWithTUI(ctx context.Context, state *LocalState, prompt, workspace s
 
 	var cmd *exec.Cmd
 	var cliName string
+	selection, err := resolveLocalAgentSelection(state.Agent, state.SelectedVariant)
+	if err != nil {
+		return err
+	}
 
-	switch state.Agent {
-	case "claude/haiku-4.5", "claude/haiku-4.6", "claude/sonnet-4.5", "claude/sonnet-4.6", "claude/opus-4.5", "claude/opus-4.6":
+	switch selection.Provider {
+	case "claude":
 		claudePath, err := exec.LookPath("claude")
 		if err != nil {
 			return fmt.Errorf("claude CLI not found: %w", err)
 		}
-		args := []string{"-p", "--dangerously-skip-permissions"}
-		if localModel != "" {
-			args = append(args, "--model", localModel)
-		}
-		args = append(args, prompt)
+		args := buildLocalClaudeArgs(selection, prompt, localModel)
 		cmd = exec.CommandContext(ctx, claudePath, args...)
 		cliName = "Claude"
 
-	case "codex/gpt-5.1-codex-mini", "codex/gpt-5.4-xhigh":
+	case "codex":
 		codexPath, err := exec.LookPath("codex")
 		if err != nil {
 			return fmt.Errorf("codex CLI not found: %w", err)
 		}
-		cmd = exec.CommandContext(ctx, codexPath, prompt)
+		cmd = exec.CommandContext(ctx, codexPath, buildLocalCodexArgs(selection, prompt)...)
 		cliName = "Codex"
 
-	case "gemini/gemini-2.5-pro", "gemini/gemini-2.5-flash":
+	case "gemini":
 		geminiPath, err := exec.LookPath("gemini")
 		if err != nil {
 			return fmt.Errorf("gemini CLI not found: %w", err)
@@ -296,7 +296,7 @@ func runAgentWithTUI(ctx context.Context, state *LocalState, prompt, workspace s
 		cmd = exec.CommandContext(ctx, geminiPath, "-p", prompt)
 		cliName = "Gemini"
 
-	case "opencode/big-pickle", "opencode/small-pickle":
+	case "opencode":
 		opencodePath, err := exec.LookPath("opencode")
 		if err != nil {
 			return fmt.Errorf("opencode CLI not found: %w", err)
@@ -304,7 +304,7 @@ func runAgentWithTUI(ctx context.Context, state *LocalState, prompt, workspace s
 		cmd = exec.CommandContext(ctx, opencodePath, prompt)
 		cliName = "Opencode"
 
-	case "amp/amp-1":
+	case "amp":
 		ampPath, err := exec.LookPath("amp")
 		if err != nil {
 			return fmt.Errorf("amp CLI not found: %w", err)
@@ -387,16 +387,21 @@ func runLocalWithTUI(ctx context.Context, state *LocalState, prompt, workspace s
 
 // runAgentNonTUI runs the agent without TUI (fallback for non-terminal)
 func runAgentNonTUI(ctx context.Context, state *LocalState, prompt, workspace string) error {
-	switch state.Agent {
-	case "claude/haiku-4.5", "claude/haiku-4.6", "claude/sonnet-4.5", "claude/sonnet-4.6", "claude/opus-4.5", "claude/opus-4.6":
+	selection, err := resolveLocalAgentSelection(state.Agent, state.SelectedVariant)
+	if err != nil {
+		return err
+	}
+
+	switch selection.Provider {
+	case "claude":
 		return runClaudeLocal(ctx, state, prompt, workspace)
-	case "codex/gpt-5.1-codex-mini", "codex/gpt-5.4-xhigh":
+	case "codex":
 		return runCodexLocal(ctx, state, prompt, workspace)
-	case "gemini/gemini-2.5-pro", "gemini/gemini-2.5-flash":
+	case "gemini":
 		return runGeminiLocal(ctx, state, prompt, workspace)
-	case "opencode/big-pickle", "opencode/small-pickle":
+	case "opencode":
 		return runOpencodeLocal(ctx, state, prompt, workspace)
-	case "amp/amp-1":
+	case "amp":
 		return runAmpLocal(ctx, state, prompt, workspace)
 	default:
 		return fmt.Errorf("unsupported agent: %s", state.Agent)

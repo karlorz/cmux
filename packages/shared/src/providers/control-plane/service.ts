@@ -6,6 +6,7 @@
  */
 
 import type { AgentConfigApiKey } from "../../agentConfig";
+import { AGENT_CATALOG } from "../../agent-catalog";
 import {
   getProviderIdFromAgentName,
   type ProviderSpec,
@@ -44,6 +45,12 @@ export interface StoredModel {
   tags: string[];
   enabled: boolean;
   sortOrder: number;
+  variants?: Array<{
+    id: string;
+    displayName: string;
+    description?: string;
+  }>;
+  defaultVariant?: string;
   disabled?: boolean;
   disabledReason?: string;
   discoveredAt?: number;
@@ -63,18 +70,31 @@ export interface ControlPlaneContext {
 }
 
 // Well-known OAuth token environment variables
-const OAUTH_TOKEN_ENV_VARS = new Set([
-  "CLAUDE_CODE_OAUTH_TOKEN",
-]);
+const OAUTH_TOKEN_ENV_VARS = new Set(["CLAUDE_CODE_OAUTH_TOKEN"]);
 
 // Well-known JSON blob environment variables
-const JSON_BLOB_ENV_VARS = new Set([
-  "CODEX_AUTH_JSON",
-  "OPENCODE_AUTH_JSON",
-]);
+const JSON_BLOB_ENV_VARS = new Set(["CODEX_AUTH_JSON", "OPENCODE_AUTH_JSON"]);
+
+function catalogDefinesVariants(
+  catalogEntry: (typeof AGENT_CATALOG)[number] | undefined,
+): boolean {
+  return (
+    catalogEntry !== undefined &&
+    Object.prototype.hasOwnProperty.call(catalogEntry, "variants")
+  );
+}
+
+function catalogDefinesDefaultVariant(
+  catalogEntry: (typeof AGENT_CATALOG)[number] | undefined,
+): boolean {
+  return (
+    catalogEntry !== undefined &&
+    Object.prototype.hasOwnProperty.call(catalogEntry, "defaultVariant")
+  );
+}
 
 export function isAuthFreeModel(
-  model: Pick<StoredModel, "tier" | "requiredApiKeys">
+  model: Pick<StoredModel, "tier" | "requiredApiKeys">,
 ): boolean {
   return (
     model.tier === "free" &&
@@ -82,17 +102,16 @@ export function isAuthFreeModel(
   );
 }
 
-function getModelProviderId(model: Pick<StoredModel, "name" | "vendor">): string {
+function getModelProviderId(
+  model: Pick<StoredModel, "name" | "vendor">,
+): string {
   return getProviderIdFromAgentName(model.name) ?? model.vendor;
 }
 
-function hasAuthFreeModels(
-  providerId: string,
-  models: StoredModel[]
-): boolean {
+function hasAuthFreeModels(providerId: string, models: StoredModel[]): boolean {
   return models.some(
     (model) =>
-      getModelProviderId(model) === providerId && isAuthFreeModel(model)
+      getModelProviderId(model) === providerId && isAuthFreeModel(model),
   );
 }
 
@@ -115,7 +134,7 @@ function getAuthMethodType(apiKey: AgentConfigApiKey): AuthMethodType {
 function getConnectionSource(
   configuredEnvVars: string[],
   hasOverride: boolean,
-  hasFreeModels: boolean
+  hasFreeModels: boolean,
 ): ProviderConnectionSource | null {
   // Check override first
   if (hasOverride) {
@@ -179,7 +198,8 @@ function generateAuthMethods(providerSpec: ProviderSpec): ProviderAuthMethod[] {
       displayName: "Custom Endpoint",
       description: providerSpec.baseUrlKey.description,
       apiKey: providerSpec.baseUrlKey,
-      placeholder: (providerSpec.baseUrlKey as { placeholder?: string }).placeholder,
+      placeholder: (providerSpec.baseUrlKey as { placeholder?: string })
+        .placeholder,
     });
   }
 
@@ -189,7 +209,10 @@ function generateAuthMethods(providerSpec: ProviderSpec): ProviderAuthMethod[] {
 /**
  * Gets display name for an auth method.
  */
-function getAuthMethodDisplayName(type: AuthMethodType, apiKey: AgentConfigApiKey): string {
+function getAuthMethodDisplayName(
+  type: AuthMethodType,
+  apiKey: AgentConfigApiKey,
+): string {
   switch (type) {
     case "oauth_token":
       return "OAuth Token";
@@ -225,14 +248,18 @@ function resolveConnectionState(
   providerSpec: ProviderSpec,
   storedApiKeys: StoredApiKeys,
   hasOverride: boolean,
-  models: StoredModel[]
+  models: StoredModel[],
 ): ProviderConnectionState {
   const configuredEnvVars = providerSpec.authEnvVars.filter(
-    (envVar) => storedApiKeys[envVar] !== undefined
+    (envVar) => storedApiKeys[envVar] !== undefined,
   );
 
   const hasFreeModels = hasAuthFreeModels(providerSpec.id, models);
-  const source = getConnectionSource(configuredEnvVars, hasOverride, hasFreeModels);
+  const source = getConnectionSource(
+    configuredEnvVars,
+    hasOverride,
+    hasFreeModels,
+  );
   const isConnected = source !== null;
 
   return {
@@ -251,11 +278,11 @@ export function resolveControlPlaneProvider(
   storedApiKeys: StoredApiKeys,
   providerOverrides: ProviderOverride[],
   models: StoredModel[],
-  defaultModel?: ProviderDefaultModel
+  defaultModel?: ProviderDefaultModel,
 ): ProviderControlPlaneProvider {
   // Find any enabled override for this provider
   const override = providerOverrides.find(
-    (o) => o.providerId === providerSpec.id && o.enabled
+    (o) => o.providerId === providerSpec.id && o.enabled,
   );
 
   const hasOverride = override !== undefined;
@@ -263,7 +290,7 @@ export function resolveControlPlaneProvider(
     providerSpec,
     storedApiKeys,
     hasOverride,
-    models
+    models,
   );
 
   return {
@@ -285,9 +312,12 @@ export function resolveControlPlaneProvider(
  */
 export function resolveControlPlaneModel(
   model: StoredModel,
-  connectedProviders: Set<string>
+  connectedProviders: Set<string>,
 ): ProviderControlPlaneModel {
   const providerId = getModelProviderId(model);
+  const catalogEntry = AGENT_CATALOG.find((entry) => entry.name === model.name);
+  const hasCatalogVariants = catalogDefinesVariants(catalogEntry);
+  const hasCatalogDefaultVariant = catalogDefinesDefaultVariant(catalogEntry);
 
   // Model is available if:
   // 1. Provider is connected, OR
@@ -305,6 +335,16 @@ export function resolveControlPlaneModel(
     requiredApiKeys: model.requiredApiKeys,
     tags: model.tags,
     sortOrder: model.sortOrder,
+    ...(hasCatalogVariants
+      ? { variants: catalogEntry?.variants }
+      : model.variants
+        ? { variants: model.variants }
+        : {}),
+    ...(hasCatalogDefaultVariant
+      ? { defaultVariant: catalogEntry?.defaultVariant }
+      : !catalogEntry && model.defaultVariant
+        ? { defaultVariant: model.defaultVariant }
+        : {}),
     disabled: model.disabled,
     disabledReason: model.disabledReason,
   };
@@ -315,16 +355,11 @@ export function resolveControlPlaneModel(
  */
 function getProviderDefaultModel(
   providerId: string,
-  models: StoredModel[]
+  models: StoredModel[],
 ): ProviderDefaultModel | undefined {
   // Filter to this provider's models that are enabled and not disabled
   const providerModels = models
-    .filter(
-      (m) =>
-        m.vendor === providerId &&
-        m.enabled &&
-        !m.disabled
-    )
+    .filter((m) => m.vendor === providerId && m.enabled && !m.disabled)
     .sort((a, b) => a.sortOrder - b.sortOrder);
 
   if (providerModels.length === 0) {
@@ -345,7 +380,7 @@ function getProviderDefaultModel(
  */
 export function listProviders(
   baseProviders: ProviderSpec[],
-  ctx: ControlPlaneContext
+  ctx: ControlPlaneContext,
 ): ProviderControlPlaneListResponse {
   const providers: ProviderControlPlaneProvider[] = [];
 
@@ -356,7 +391,7 @@ export function listProviders(
       ctx.storedApiKeys,
       ctx.providerOverrides,
       ctx.models,
-      defaultModel
+      defaultModel,
     );
     providers.push(provider);
   }
@@ -373,7 +408,7 @@ export function listProviders(
 export function listModels(
   baseProviders: ProviderSpec[],
   ctx: ControlPlaneContext,
-  options: ModelListOptions = {}
+  options: ModelListOptions = {},
 ): ModelControlPlaneListResponse {
   const { view = "connected", providerId, includeDisabled = false } = options;
 
@@ -381,13 +416,13 @@ export function listModels(
   const connectedProviders = new Set<string>();
   for (const providerSpec of baseProviders) {
     const override = ctx.providerOverrides.find(
-      (o) => o.providerId === providerSpec.id && o.enabled
+      (o) => o.providerId === providerSpec.id && o.enabled,
     );
     const connectionState = resolveConnectionState(
       providerSpec,
       ctx.storedApiKeys,
       override !== undefined,
-      ctx.models
+      ctx.models,
     );
     if (connectionState.isConnected) {
       connectedProviders.add(providerSpec.id);
@@ -439,7 +474,7 @@ export function listModels(
 export function computeDiscoveryFreshness(
   baseProviders: ProviderSpec[],
   ctx: ControlPlaneContext,
-  staleDurationMs: number = 24 * 60 * 60 * 1000 // 24 hours
+  staleDurationMs: number = 24 * 60 * 60 * 1000, // 24 hours
 ): DiscoveryFreshness[] {
   const now = Date.now();
   const result: DiscoveryFreshness[] = [];
@@ -454,14 +489,12 @@ export function computeDiscoveryFreshness(
 
     // Find discovered models for this provider
     const discoveredModels = ctx.models.filter(
-      (m) =>
-        m.vendor === providerSpec.id &&
-        m.source === "discovered"
+      (m) => m.vendor === providerSpec.id && m.source === "discovered",
     );
 
     const lastDiscoveredAt = discoveredModels.reduce(
       (max, m) => Math.max(max, m.discoveredAt ?? 0),
-      0
+      0,
     );
 
     const isStale =

@@ -1,19 +1,23 @@
 // @vitest-environment jsdom
 
 import type { Id } from "@cmux/convex/dataModel";
-import type { RunControlSummary } from "@cmux/www-openapi-client";
+import type { RunControlSummary } from "@cmux/shared";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RuntimeLifecycleCard } from "./RuntimeLifecycleCard";
 
 type SummaryOverrides = Partial<
-  Omit<RunControlSummary, "actions" | "approvals" | "continuation" | "lifecycle">
+  Omit<
+    RunControlSummary,
+    "actions" | "approvals" | "continuation" | "lifecycle" | "timeout"
+  >
 > & {
   actions?: Partial<RunControlSummary["actions"]>;
   approvals?: Partial<RunControlSummary["approvals"]>;
   continuation?: Partial<RunControlSummary["continuation"]>;
   lifecycle?: Partial<RunControlSummary["lifecycle"]>;
+  timeout?: Partial<RunControlSummary["timeout"]>;
 };
 
 type MockQueryResult = {
@@ -73,6 +77,13 @@ function createSummary(overrides: SummaryOverrides = {}): RunControlSummary {
       lastActiveAt: 1710000000000,
       hasActiveBinding: true,
     },
+    timeout: {
+      inactivityTimeoutMinutes: 45,
+      status: "active",
+      lastActivityAt: 1710000000000,
+      lastActivitySource: "spawn",
+      nextTimeoutAt: 1710002700000,
+    },
   };
 
   return {
@@ -93,6 +104,10 @@ function createSummary(overrides: SummaryOverrides = {}): RunControlSummary {
     continuation: {
       ...base.continuation,
       ...overrides.continuation,
+    },
+    timeout: {
+      ...base.timeout,
+      ...overrides.timeout,
     },
   };
 }

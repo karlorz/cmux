@@ -1,7 +1,4 @@
-import {
-  convexClientCache,
-  ConvexHttpClient,
-} from "@cmux/shared/node/convex-cache";
+import { ConvexHttpClient } from "@cmux/shared/node/convex-cache";
 import { env } from "./server-env";
 
 export interface ConvexAdminClient {

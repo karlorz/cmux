@@ -55,8 +55,16 @@ const TASK_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes - fail tasks running longe
  * E.g., "claude/opus-4.5" -> "claude", "codex/gpt-5.1-codex" -> "codex"
  */
 function getProviderFromAgentName(
-  agentName: string
-): "claude" | "codex" | "gemini" | "opencode" | "amp" | "grok" | "cursor" | "qwen" {
+  agentName: string,
+):
+  | "claude"
+  | "codex"
+  | "gemini"
+  | "opencode"
+  | "amp"
+  | "grok"
+  | "cursor"
+  | "qwen" {
   const prefix = agentName.split("/")[0]?.toLowerCase();
   switch (prefix) {
     case "claude":
@@ -95,18 +103,21 @@ export const pollReadyTasks = internalAction({
   args: {},
   handler: async (ctx) => {
     // First, check for timed-out tasks
-    await ctx.runMutation(internal.orchestrationWorker.checkForTimedOutTasks, {});
+    await ctx.runMutation(
+      internal.orchestrationWorker.checkForTimedOutTasks,
+      {},
+    );
 
     // Get all unique team IDs with pending tasks
     const teams = await ctx.runQuery(
-      internal.orchestrationWorker.getTeamsWithPendingTasks
+      internal.orchestrationWorker.getTeamsWithPendingTasks,
     );
 
     for (const teamId of teams) {
       // Check concurrent limit
       const runningCount = await ctx.runQuery(
         internal.orchestrationQueries.countRunningTasks,
-        { teamId }
+        { teamId },
       );
 
       if (runningCount >= MAX_CONCURRENT_SPAWNS) {
@@ -116,13 +127,13 @@ export const pollReadyTasks = internalAction({
       // Get ready tasks (respecting dependency resolution)
       const readyTasks = await ctx.runQuery(
         internal.orchestrationQueries.getReadyTasksInternal,
-        { teamId, limit: MAX_CONCURRENT_SPAWNS - runningCount }
+        { teamId, limit: MAX_CONCURRENT_SPAWNS - runningCount },
       );
 
       // Filter out tasks in backoff period
       const now = Date.now();
       const eligibleTasks = readyTasks.filter(
-        (t) => !t.nextRetryAfter || t.nextRetryAfter <= now
+        (t) => !t.nextRetryAfter || t.nextRetryAfter <= now,
       );
 
       // Dispatch spawns (each runs independently)
@@ -133,7 +144,7 @@ export const pollReadyTasks = internalAction({
           {
             taskId: task._id,
             teamId,
-          }
+          },
         );
       }
     }
@@ -167,7 +178,7 @@ export const dispatchSpawn = internalAction({
     // Get task details
     const task = await ctx.runQuery(
       internal.orchestrationWorker.getTaskForSpawn,
-      { taskId: args.taskId }
+      { taskId: args.taskId },
     );
     if (!task) return;
 
@@ -177,7 +188,7 @@ export const dispatchSpawn = internalAction({
       {
         taskId: args.taskId,
         agentName: task.assignedAgentName ?? "claude/haiku-4.5",
-      }
+      },
     );
     if (!claimed) return; // Another worker claimed it
 
@@ -187,28 +198,28 @@ export const dispatchSpawn = internalAction({
       if (agentName.toLowerCase().includes("codex")) {
         const tokenStatus = await ctx.runQuery(
           internal.codexTokenRefreshQueries.getTokenStatus,
-          { teamId: args.teamId, userId: task.userId }
+          { teamId: args.teamId, userId: task.userId },
         );
-	        if (tokenStatus === "expired") {
-	          throw new Error(
-	            "Codex OAuth token has expired. Please run `codex login` locally " +
-	              "and update CODEX_AUTH_JSON in settings."
-	          );
-	        }
-	        if (tokenStatus === "missing") {
-	          // Check if OPENAI_API_KEY is set as fallback (Codex supports both auth methods)
+        if (tokenStatus === "expired") {
+          throw new Error(
+            "Codex OAuth token has expired. Please run `codex login` locally " +
+              "and update CODEX_AUTH_JSON in settings.",
+          );
+        }
+        if (tokenStatus === "missing") {
+          // Check if OPENAI_API_KEY is set as fallback (Codex supports both auth methods)
           const hasOpenAIKey = await ctx.runQuery(
             internal.codexTokenRefreshQueries.hasOpenAIApiKey,
-            { teamId: args.teamId, userId: task.userId }
+            { teamId: args.teamId, userId: task.userId },
           );
-	          if (!hasOpenAIKey) {
-	            throw new Error(
-	              "No CODEX_AUTH_JSON or OPENAI_API_KEY found. Please run `codex login` locally " +
-	                "and set CODEX_AUTH_JSON in settings, or set OPENAI_API_KEY."
-	            );
-	          }
-	          // Has OPENAI_API_KEY fallback, allow orchestration to proceed
-	        }
+          if (!hasOpenAIKey) {
+            throw new Error(
+              "No CODEX_AUTH_JSON or OPENAI_API_KEY found. Please run `codex login` locally " +
+                "and set CODEX_AUTH_JSON in settings, or set OPENAI_API_KEY.",
+            );
+          }
+          // Has OPENAI_API_KEY fallback, allow orchestration to proceed
+        }
       }
 
       // Get JWT for the task run (needed for spawn to authenticate)
@@ -217,7 +228,7 @@ export const dispatchSpawn = internalAction({
       }
       const jwtResult = await ctx.runMutation(
         internal.taskRuns.getJwtInternal,
-        { taskRunId: task.taskRunId }
+        { taskRunId: task.taskRunId },
       );
 
       // Call server to spawn
@@ -225,18 +236,22 @@ export const dispatchSpawn = internalAction({
       const internalSecret = process.env.CMUX_INTERNAL_SECRET ?? "";
 
       // Read supervisor profile if specified in task metadata
-      let supervisorProfile: {
-        reasoningLevel: string;
-        reviewPosture: string;
-        delegationStyle: string;
-        name: string;
-        model?: string;
-      } | undefined;
-      const profileId = task.metadata?.supervisorProfileId as string | undefined;
+      let supervisorProfile:
+        | {
+            reasoningLevel: string;
+            reviewPosture: string;
+            delegationStyle: string;
+            name: string;
+            model?: string;
+          }
+        | undefined;
+      const profileId = task.metadata?.supervisorProfileId as
+        | string
+        | undefined;
       if (profileId) {
         const profile = await ctx.runQuery(
           internal.supervisorProfiles.getByIdInternal,
-          { profileId: profileId as Id<"supervisorProfiles"> }
+          { profileId: profileId as Id<"supervisorProfiles"> },
         );
         if (profile && profile.teamId === args.teamId) {
           supervisorProfile = {
@@ -261,6 +276,7 @@ export const dispatchSpawn = internalAction({
             orchestrationTaskId: args.taskId,
             teamId: args.teamId,
             agentName: task.assignedAgentName ?? "claude/haiku-4.5",
+            selectedVariant: task.metadata?.selectedVariant,
             prompt: task.prompt,
             taskId: task.taskId,
             taskRunId: task.taskRunId,
@@ -270,7 +286,7 @@ export const dispatchSpawn = internalAction({
             // Pass supervisor profile settings if configured
             supervisorProfile,
           }),
-        }
+        },
       );
 
       if (!response.ok) {
@@ -349,14 +365,15 @@ export const handleTaskCompletion = internalMutation({
       });
 
       // Log task_completed event
-      const completedEvent: Omit<TaskCompletedEvent, "eventId" | "timestamp"> = {
-        type: "task_completed",
-        orchestrationId: String(orchestrationId),
-        taskId: orchTask._id,
-        taskRunId: args.taskRunId,
-        status: "completed",
-        exitCode: args.exitCode ?? 0,
-      };
+      const completedEvent: Omit<TaskCompletedEvent, "eventId" | "timestamp"> =
+        {
+          type: "task_completed",
+          orchestrationId: String(orchestrationId),
+          taskId: orchTask._id,
+          taskRunId: args.taskRunId,
+          status: "completed",
+          exitCode: args.exitCode ?? 0,
+        };
       await ctx.db.insert("orchestrationEvents", {
         eventId: generateEventId(),
         orchestrationId: String(orchestrationId),
@@ -399,9 +416,13 @@ export const handleTaskCompletion = internalMutation({
       });
 
       // Cascade failure to dependent tasks
-      await ctx.scheduler.runAfter(0, internal.orchestrationQueries.cascadeFailureToDependent, {
-        failedTaskId: orchTask._id,
-      });
+      await ctx.scheduler.runAfter(
+        0,
+        internal.orchestrationQueries.cascadeFailureToDependent,
+        {
+          failedTaskId: orchTask._id,
+        },
+      );
     }
 
     // Log status change event
@@ -411,7 +432,10 @@ export const handleTaskCompletion = internalMutation({
       taskId: orchTask._id,
       taskRunId: args.taskRunId,
       previousStatus,
-      newStatus: args.exitCode === 0 || args.exitCode === undefined ? "completed" : "failed",
+      newStatus:
+        args.exitCode === 0 || args.exitCode === undefined
+          ? "completed"
+          : "failed",
     };
     await ctx.db.insert("orchestrationEvents", {
       eventId: generateEventId(),
@@ -430,15 +454,23 @@ export const handleTaskCompletion = internalMutation({
     });
 
     // Trigger dependent tasks immediately (don't wait for poll cycle)
-    await ctx.scheduler.runAfter(0, internal.orchestrationQueries.triggerDependentTasks, {
-      completedTaskId: orchTask._id,
-    });
+    await ctx.scheduler.runAfter(
+      0,
+      internal.orchestrationQueries.triggerDependentTasks,
+      {
+        completedTaskId: orchTask._id,
+      },
+    );
 
     // Sync project status if linked
     if (isLinkedToProject(orchTask)) {
-      await ctx.scheduler.runAfter(0, internal.projectQueries.syncPlanStatusFromOrchestration, {
-        orchestrationTaskId: orchTask._id,
-      });
+      await ctx.scheduler.runAfter(
+        0,
+        internal.projectQueries.syncPlanStatusFromOrchestration,
+        {
+          orchestrationTaskId: orchTask._id,
+        },
+      );
     }
 
     // Create feed event for team activity stream
@@ -457,7 +489,9 @@ export const handleTaskCompletion = internalMutation({
       taskRunId: args.taskRunId,
       orchestrationTaskId: orchTask._id,
       agentName: orchTask.assignedAgentName,
-      errorMessage: isSuccess ? undefined : `Agent exited with code ${args.exitCode}`,
+      errorMessage: isSuccess
+        ? undefined
+        : `Agent exited with code ${args.exitCode}`,
     });
   },
 });
@@ -476,7 +510,7 @@ export const checkForTimedOutTasks = internalMutation({
     const runningTasks = await ctx.db
       .query("orchestrationTasks")
       .withIndex("by_status_started", (q) =>
-        q.eq("status", "running").lt("startedAt", timeoutThreshold)
+        q.eq("status", "running").lt("startedAt", timeoutThreshold),
       )
       .collect();
 
@@ -490,9 +524,13 @@ export const checkForTimedOutTasks = internalMutation({
         });
 
         // Cascade failure to dependent tasks
-        await ctx.scheduler.runAfter(0, internal.orchestrationQueries.cascadeFailureToDependent, {
-          failedTaskId: task._id,
-        });
+        await ctx.scheduler.runAfter(
+          0,
+          internal.orchestrationQueries.cascadeFailureToDependent,
+          {
+            failedTaskId: task._id,
+          },
+        );
       }
     }
   },
@@ -528,9 +566,13 @@ export const cleanupOrphanTasks = internalMutation({
         });
 
         // Cascade failure to dependent tasks
-        await ctx.scheduler.runAfter(0, internal.orchestrationQueries.cascadeFailureToDependent, {
-          failedTaskId: task._id,
-        });
+        await ctx.scheduler.runAfter(
+          0,
+          internal.orchestrationQueries.cascadeFailureToDependent,
+          {
+            failedTaskId: task._id,
+          },
+        );
 
         cancelled++;
       }

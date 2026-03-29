@@ -9,14 +9,22 @@ import {
   TASK_RUN_IFRAME_ALLOW,
   TASK_RUN_IFRAME_SANDBOX,
 } from "@/lib/preloadTaskRunIframes";
-import { resolveBrowserPreviewUrl } from "@/lib/toProxyWorkspaceUrl";
+import {
+  resolveBrowserPreviewUrl,
+  resolveBrowserPreviewWebsocketUrl,
+} from "@/lib/toProxyWorkspaceUrl";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { api } from "@cmux/convex/api";
+import {
+  VncViewer,
+  type VncConnectionStatus,
+  type VncViewerHandle,
+} from "@cmux/shared/components/vnc-viewer";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { createFileRoute } from "@tanstack/react-router";
 import clsx from "clsx";
 import { useQuery } from "convex/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import z from "zod";
 
 const paramsSchema = z.object({
@@ -61,13 +69,24 @@ function BrowserComponent() {
     [vscodeInfo?.vncUrl, rawBrowserUrl]
   );
 
+  const vncWebsocketUrl = useMemo(
+    () =>
+      resolveBrowserPreviewWebsocketUrl({
+        vncUrl: vscodeInfo?.vncUrl,
+        workspaceUrl: rawBrowserUrl,
+      }),
+    [vscodeInfo?.vncUrl, rawBrowserUrl]
+  );
+
+  const useDirectVncViewer = Boolean(vncWebsocketUrl);
+
   const persistKey = useMemo(
     () => getTaskRunBrowserPersistKey(taskRunId),
     [taskRunId]
   );
 
-  // Enable clipboard bridge for VNC iframes
-  const isVncIframe = Boolean(browserUrl?.includes("/vnc.html"));
+  // Direct VNC panels use the React viewer and don't need the iframe clipboard bridge.
+  const isVncIframe = !useDirectVncViewer && Boolean(browserUrl?.includes("/vnc.html"));
   useVncClipboardBridge({
     persistKey,
     enabled: isVncIframe,
@@ -80,6 +99,8 @@ function BrowserComponent() {
 
   const [browserStatus, setBrowserStatus] =
     useState<PersistentIframeStatus>("loading");
+  const [vncStatus, setVncStatus] = useState<VncConnectionStatus>("disconnected");
+  const vncViewerRef = useRef<VncViewerHandle | null>(null);
 
   const overlayMessage = useMemo(() => {
     if (!isSupportedProvider) {
@@ -109,6 +130,21 @@ function BrowserComponent() {
     return addBrowserReloadListener((runId) => {
       if (runId !== taskRunId) return;
       const previousFocus = document.activeElement;
+      if (useDirectVncViewer) {
+        const viewer = vncViewerRef.current;
+        if (!viewer) return;
+        viewer.disconnect();
+        viewer.connect();
+        requestAnimationFrame(() => {
+          if (
+            previousFocus instanceof HTMLElement &&
+            document.activeElement !== previousFocus
+          ) {
+            previousFocus.focus({ preventScroll: true });
+          }
+        });
+        return;
+      }
       const reloaded = persistentIframeManager.reloadIframe(persistKey);
       if (!reloaded) return;
       requestAnimationFrame(() => {
@@ -120,7 +156,7 @@ function BrowserComponent() {
         }
       });
     });
-  }, [persistKey, taskRunId]);
+  }, [persistKey, taskRunId, useDirectVncViewer]);
 
   const loadingFallback = useMemo(
     () => <WorkspaceLoadingIndicator variant="browser" status="loading" />,
@@ -131,8 +167,10 @@ function BrowserComponent() {
     []
   );
 
-  const hasBrowserConnection = Boolean(browserUrl);
-  const isBrowserBusy = !hasBrowserConnection || browserStatus !== "loaded";
+  const hasBrowserConnection = Boolean(vncWebsocketUrl || browserUrl);
+  const isBrowserBusy = useDirectVncViewer
+    ? !hasBrowserConnection || vncStatus !== "connected"
+    : !hasBrowserConnection || browserStatus !== "loaded";
 
   return (
     <div className="flex flex-col grow bg-neutral-50 dark:bg-black">
@@ -141,7 +179,18 @@ function BrowserComponent() {
           className="flex flex-row grow min-h-0 relative"
           aria-busy={isBrowserBusy}
         >
-          {browserUrl ? (
+          {useDirectVncViewer && vncWebsocketUrl ? (
+            <VncViewer
+              ref={vncViewerRef}
+              url={vncWebsocketUrl}
+              autoConnect
+              scaleViewport
+              className="grow flex"
+              loadingFallback={loadingFallback}
+              errorFallback={errorFallback}
+              onStatusChange={setVncStatus}
+            />
+          ) : browserUrl ? (
             <PersistentWebView
               key={persistKey}
               persistKey={persistKey}

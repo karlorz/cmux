@@ -993,7 +993,10 @@ export function setupSocketHandlers(
         (async () => {
           try {
             // Determine number of agents to spawn
-            const agentCount = taskData.selectedAgents?.length || 1;
+            const agentCount =
+              taskData.selectedAgentSelections?.length ??
+              taskData.selectedAgents?.length ??
+              1;
 
             // Fetch workspace settings for branchPrefix
             const workspaceSettings = await getConvex().query(
@@ -1053,6 +1056,7 @@ export function setupSocketHandlers(
                 taskDescription: taskData.taskDescription,
                 branchNames,
                 selectedAgents: taskData.selectedAgents,
+                selectedAgentSelections: taskData.selectedAgentSelections,
                 taskRunIds: taskData.taskRunIds,
                 isCloudMode: taskData.isCloudMode,
                 images: taskData.images,

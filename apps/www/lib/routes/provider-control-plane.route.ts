@@ -64,7 +64,13 @@ const ControlPlaneProviderSchema = z
     name: z.string(),
     defaultBaseUrl: z.string(),
     effectiveBaseUrl: z.string(),
-    apiFormat: z.enum(["anthropic", "openai", "bedrock", "vertex", "passthrough"]),
+    apiFormat: z.enum([
+      "anthropic",
+      "openai",
+      "bedrock",
+      "vertex",
+      "passthrough",
+    ]),
     authMethods: z.array(AuthMethodSchema),
     connectionState: ConnectionStateSchema,
     defaultModel: DefaultModelSchema.optional(),
@@ -84,6 +90,16 @@ const ControlPlaneModelSchema = z
     requiredApiKeys: z.array(z.string()),
     tags: z.array(z.string()),
     sortOrder: z.number(),
+    variants: z
+      .array(
+        z.object({
+          id: z.string(),
+          displayName: z.string(),
+          description: z.string().optional(),
+        }),
+      )
+      .optional(),
+    defaultVariant: z.string().optional(),
     disabled: z.boolean().optional(),
     disabledReason: z.string().optional(),
   })
@@ -188,7 +204,7 @@ providerControlPlaneRouter.openapi(
 
     const result = await convex.query(
       api.providerControlPlane.listProvidersQuery,
-      { teamSlugOrId }
+      { teamSlugOrId },
     );
 
     // Transform to match the response schema
@@ -216,7 +232,7 @@ providerControlPlaneRouter.openapi(
       })),
       generatedAt: result.generatedAt,
     });
-  }
+  },
 );
 
 // GET /api/provider-control-plane/models - List models
@@ -270,11 +286,11 @@ providerControlPlaneRouter.openapi(
         view,
         providerId,
         includeDisabled,
-      }
+      },
     );
 
     return c.json(result);
-  }
+  },
 );
 
 // GET /api/provider-control-plane/discovery-freshness - Get discovery freshness
@@ -322,11 +338,11 @@ providerControlPlaneRouter.openapi(
 
     const result = await convex.query(
       api.providerControlPlane.getDiscoveryFreshnessQuery,
-      { teamSlugOrId, staleDurationMs }
+      { teamSlugOrId, staleDurationMs },
     );
 
     return c.json({ freshness: result });
-  }
+  },
 );
 
 // POST /api/provider-control-plane/connect - Connect a provider
@@ -379,9 +395,12 @@ providerControlPlaneRouter.openapi(
     const body = c.req.valid("json");
     const convex = getConvex({ accessToken });
 
-    const result = await convex.mutation(api.providerControlPlane.connect, body);
+    const result = await convex.mutation(
+      api.providerControlPlane.connect,
+      body,
+    );
     return c.json(result);
-  }
+  },
 );
 
 // POST /api/provider-control-plane/disconnect - Disconnect a provider
@@ -433,10 +452,10 @@ providerControlPlaneRouter.openapi(
 
     const result = await convex.mutation(
       api.providerControlPlane.disconnect,
-      body
+      body,
     );
     return c.json(result);
-  }
+  },
 );
 
 // POST /api/provider-control-plane/refresh - Refresh model discovery
@@ -486,7 +505,10 @@ providerControlPlaneRouter.openapi(
     const body = c.req.valid("json");
     const convex = getConvex({ accessToken });
 
-    const result = await convex.mutation(api.providerControlPlane.refresh, body);
+    const result = await convex.mutation(
+      api.providerControlPlane.refresh,
+      body,
+    );
     return c.json(result);
-  }
+  },
 );
