@@ -23,7 +23,7 @@ export CMUX_SESSION_ACTIVITY_SCRIPT="${CMUX_SESSION_ACTIVITY_SCRIPT:-$PROJECT_DI
 # flag and only allow the generic env var path when the wrapper is explicitly
 # enabled by the autopilot runner.
 if [ "$CMUX_AUTOPILOT_ENABLED" = "1" ] || [ "$CMUX_CODEX_HOOKS_ENABLED" = "1" ]; then
-  export AUTOPILOT_KEEP_RUNNING_DISABLED="${AUTOPILOT_KEEP_RUNNING_DISABLED:-0}"
+  export AUTOPILOT_KEEP_RUNNING_DISABLED="0"
 else
   export AUTOPILOT_KEEP_RUNNING_DISABLED="1"
 fi
