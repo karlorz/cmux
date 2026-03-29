@@ -14,9 +14,14 @@ import { Link } from "@tanstack/react-router";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import {
+  getApiIntegrationsGithubProjectsItems,
+} from "@cmux/www-openapi-client";
+import type { ProjectItem } from "@cmux/www-openapi-client";
+import {
   ArrowLeft,
   Play,
   ListTodo,
+  Loader2,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -30,10 +35,45 @@ import { PlanEditor } from "./PlanEditor";
 import { DispatchPlanDialog } from "./DispatchPlanDialog";
 import { MilestoneEditor, type Milestone } from "./MilestoneEditor";
 import { GitHubProjectLink } from "./GitHubProjectLink";
-import type { Plan } from "./PlanEditor";
+import type { Plan, PlanTask } from "./PlanEditor";
 import type { Doc } from "@cmux/convex/dataModel";
 
 type OrchestrationTask = Doc<"orchestrationTasks">;
+const DEFAULT_IMPORTED_PLAN_AGENT = "claude/opus-4.5";
+
+function mapGitHubStatusToPlanStatus(
+  statusValue: unknown,
+): string {
+  if (typeof statusValue !== "string") {
+    return "pending";
+  }
+
+  const normalizedStatus = statusValue.trim().toLowerCase();
+  if (
+    normalizedStatus === "in progress" ||
+    normalizedStatus === "review" ||
+    normalizedStatus === "in review"
+  ) {
+    return "running";
+  }
+  if (
+    normalizedStatus === "done" ||
+    normalizedStatus === "merged" ||
+    normalizedStatus === "closed"
+  ) {
+    return "completed";
+  }
+
+  return "pending";
+}
+
+function buildPlanPromptFromGitHubItem(item: ProjectItem): string {
+  const title = item.content?.title?.trim() || "(untitled GitHub item)";
+  const body =
+    typeof item.content?.body === "string" ? item.content.body.trim() : "";
+
+  return body ? `${title}\n\n${body}` : title;
+}
 
 interface ProjectDetailViewProps {
   project: Doc<"projects">;
@@ -176,8 +216,114 @@ export function ProjectDetailView({
     project.githubProjectOwnerType,
     project.githubProjectUrl,
   ]);
-  const shouldHighlightLinkedItemsInPlanEditor =
-    (plan?.tasks.length ?? 0) === 0 && hasLinkedGitHubItems;
+  const shouldSeedPlanFromLinkedGitHubItems =
+    !isDispatched &&
+    (plan?.tasks.length ?? 0) === 0 &&
+    hasLinkedGitHubItems &&
+    Boolean(project.githubProjectId) &&
+    Boolean(matchingGitHubConnection);
+  const {
+    data: linkedGitHubItems = [],
+    isLoading: linkedGitHubItemsLoading,
+  } = useQuery({
+    queryKey: [
+      "project-detail-linked-github-items",
+      teamSlugOrId,
+      matchingGitHubConnection?.installationId,
+      project.githubProjectId,
+    ],
+    queryFn: async () => {
+      const installationId = matchingGitHubConnection?.installationId;
+      const githubProjectId = project.githubProjectId;
+      if (!installationId || !githubProjectId) {
+        return [];
+      }
+
+      const collectedItems: ProjectItem[] = [];
+      let cursor: string | undefined;
+
+      while (true) {
+        const res = await getApiIntegrationsGithubProjectsItems({
+          query: {
+            team: teamSlugOrId,
+            installationId,
+            projectId: githubProjectId,
+            first: 50,
+            ...(cursor ? { after: cursor } : {}),
+          },
+        });
+        const data = res.data;
+        if (!data) {
+          break;
+        }
+
+        collectedItems.push(...data.items);
+        if (!data.pageInfo.hasNextPage || !data.pageInfo.endCursor) {
+          break;
+        }
+
+        cursor = data.pageInfo.endCursor;
+      }
+
+      return collectedItems;
+    },
+    enabled: shouldSeedPlanFromLinkedGitHubItems,
+  });
+  const seededPlanTasks = useMemo<PlanTask[]>(() => {
+    const defaultAgent = plan?.headAgent ?? DEFAULT_IMPORTED_PLAN_AGENT;
+
+    return linkedGitHubItems.map((item) => ({
+      id: `github_item_${item.id}`,
+      prompt: buildPlanPromptFromGitHubItem(item),
+      agentName: defaultAgent,
+      status: mapGitHubStatusToPlanStatus(item.fieldValues.Status),
+      priority: 5,
+    }));
+  }, [linkedGitHubItems, plan?.headAgent]);
+  const seededPlan = useMemo<Plan | undefined>(() => {
+    if (seededPlanTasks.length === 0) {
+      return undefined;
+    }
+
+    return {
+      orchestrationId:
+        plan?.orchestrationId ??
+        `github_project_${project.githubProjectId ?? project._id}`,
+      headAgent: plan?.headAgent ?? DEFAULT_IMPORTED_PLAN_AGENT,
+      description: plan?.description ?? project.description ?? "",
+      tasks: seededPlanTasks,
+    };
+  }, [
+    plan?.description,
+    plan?.headAgent,
+    plan?.orchestrationId,
+    project._id,
+    project.description,
+    project.githubProjectId,
+    seededPlanTasks,
+  ]);
+  const effectivePlan = plan?.tasks.length ? plan : seededPlan;
+  const planEditorKey = useMemo(() => {
+    const savedPlanUpdatedAt =
+      typeof project.plan?.updatedAt === "string"
+        ? project.plan.updatedAt
+        : null;
+    if (savedPlanUpdatedAt) {
+      return `saved:${project._id}:${savedPlanUpdatedAt}`;
+    }
+    if (seededPlanTasks.length > 0) {
+      return `seeded:${project._id}:${seededPlanTasks.map((task) => task.id).join(",")}`;
+    }
+    return `empty:${project._id}`;
+  }, [project._id, project.plan?.updatedAt, seededPlanTasks]);
+  const showLinkedItemsLoadingState =
+    shouldSeedPlanFromLinkedGitHubItems &&
+    linkedGitHubItemsLoading &&
+    seededPlanTasks.length === 0;
+  const showLinkedItemsFallbackEmptyState =
+    shouldSeedPlanFromLinkedGitHubItems &&
+    !linkedGitHubItemsLoading &&
+    seededPlanTasks.length === 0;
 
   // Merged totals for progress display
   const totalTasks = cmuxTotalTasks + ghTotal;
@@ -277,16 +423,33 @@ export function ProjectDetailView({
       )}
 
       {/* Plan Editor */}
+      {seededPlanTasks.length > 0 && (plan?.tasks.length ?? 0) === 0 && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50/70 px-4 py-3 text-sm text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
+          Linked GitHub items were loaded into the plan editor as draft tasks.
+          Review or edit them, then click <span className="font-medium">Save</span>{" "}
+          when you want to adopt them as the cmux plan.
+        </div>
+      )}
       <PlanEditor
-        plan={plan}
+        key={planEditorKey}
+        plan={effectivePlan}
         onSave={isDispatched ? undefined : onSavePlan}
         readOnly={isDispatched}
         taskStatuses={taskStatuses}
         taskCountOverride={
-          shouldHighlightLinkedItemsInPlanEditor ? ghTotal : undefined
+          showLinkedItemsLoadingState || showLinkedItemsFallbackEmptyState
+            ? ghTotal
+            : undefined
         }
         emptyStateSupplement={
-          shouldHighlightLinkedItemsInPlanEditor ? (
+          showLinkedItemsLoadingState ? (
+            <div className="mt-6 w-full max-w-md rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-center dark:border-neutral-800 dark:bg-neutral-950">
+              <p className="flex items-center justify-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+                <Loader2 className="size-4 animate-spin" />
+                Loading {ghTotal} linked GitHub item{ghTotal === 1 ? "" : "s"} into the draft plan...
+              </p>
+            </div>
+          ) : showLinkedItemsFallbackEmptyState ? (
             <div className="mt-6 w-full max-w-md rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-center dark:border-neutral-800 dark:bg-neutral-950">
               <p className="text-sm text-neutral-700 dark:text-neutral-300">
                 This project already tracks {ghTotal} linked GitHub item
