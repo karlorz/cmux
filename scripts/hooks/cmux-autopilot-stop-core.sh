@@ -161,6 +161,7 @@ report_session_stop_blocked() {
   # Fire and forget - don't block the hook on API latency
   (
     curl -sf -X POST \
+      -o /dev/null \
       "${CMUX_CALLBACK_URL}/api/autopilot/session-event" \
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer ${CMUX_TASK_RUN_JWT}" \
@@ -184,7 +185,7 @@ report_session_stop_blocked() {
             ralphMode: (env.RALPH_MODE == "1")
           }
         }')" \
-      2>/dev/null || true
+      >/dev/null 2>&1 || true
   ) &
 
   log_debug "session_stop_blocked event dispatched (background)"
