@@ -21,9 +21,16 @@ import {
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { authMutation, authQuery } from "./users/utils";
-import { getTeamId } from "../_shared/team";
+import { getTeamId, resolveTeamIdLoose } from "../_shared/team";
 
-export const ORCHESTRATION_STATUSES = ["pending", "assigned", "running", "completed", "failed", "cancelled"] as const;
+export const ORCHESTRATION_STATUSES = [
+  "pending",
+  "assigned",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+] as const;
 export const DEFAULT_TASK_LIST_LIMIT = 50;
 const MAX_TASK_LIST_LIMIT = 100;
 const DEFAULT_RECENT_LIMIT = 10;
@@ -33,13 +40,81 @@ const MAX_COUNT_LIMIT = 1000;
 
 type OrchestrationStatus = (typeof ORCHESTRATION_STATUSES)[number];
 type OrchestrationTask = Doc<"orchestrationTasks">;
+type LinkedCreateTaskRecord = {
+  _id: Id<"tasks"> | Id<"taskRuns"> | Id<"orchestrationTasks">;
+  teamId: string;
+  userId: string;
+  taskId?: Id<"tasks">;
+};
+type CreateTaskLinkedRefs = {
+  taskId?: Id<"tasks">;
+  taskRunId?: Id<"taskRuns">;
+  parentTaskId?: Id<"orchestrationTasks">;
+};
+type LinkedCreateTaskReader = {
+  db: {
+    get(
+      id: Id<"tasks"> | Id<"taskRuns"> | Id<"orchestrationTasks">,
+    ): Promise<LinkedCreateTaskRecord | null>;
+  };
+};
 
 function clampTaskListLimit(limit: number | undefined): number {
-  return Math.max(1, Math.min(limit ?? DEFAULT_TASK_LIST_LIMIT, MAX_TASK_LIST_LIMIT));
+  return Math.max(
+    1,
+    Math.min(limit ?? DEFAULT_TASK_LIST_LIMIT, MAX_TASK_LIST_LIMIT),
+  );
 }
 
 function clampRecentLimit(limit: number | undefined): number {
   return Math.max(1, Math.min(limit ?? DEFAULT_RECENT_LIMIT, MAX_RECENT_LIMIT));
+}
+
+export function hasLinkedCreateTaskRefs(refs: CreateTaskLinkedRefs): boolean {
+  return !!(refs.taskId || refs.taskRunId || refs.parentTaskId);
+}
+
+export async function validateCreateTaskLinkedRefs(
+  ctx: LinkedCreateTaskReader,
+  args: CreateTaskLinkedRefs & {
+    teamId: string;
+    userId: string;
+  },
+): Promise<void> {
+  const [task, taskRun, parentTask] = await Promise.all([
+    args.taskId ? ctx.db.get(args.taskId) : Promise.resolve(null),
+    args.taskRunId ? ctx.db.get(args.taskRunId) : Promise.resolve(null),
+    args.parentTaskId ? ctx.db.get(args.parentTaskId) : Promise.resolve(null),
+  ]);
+
+  if (
+    args.taskId &&
+    (!task || task.teamId !== args.teamId || task.userId !== args.userId)
+  ) {
+    throw new Error("Task not found or unauthorized");
+  }
+
+  if (
+    args.taskRunId &&
+    (!taskRun ||
+      taskRun.teamId !== args.teamId ||
+      taskRun.userId !== args.userId)
+  ) {
+    throw new Error("Task run not found or unauthorized");
+  }
+
+  if (
+    args.parentTaskId &&
+    (!parentTask ||
+      parentTask.teamId !== args.teamId ||
+      parentTask.userId !== args.userId)
+  ) {
+    throw new Error("Parent orchestration task not found or unauthorized");
+  }
+
+  if (args.taskId && taskRun && taskRun.taskId !== args.taskId) {
+    throw new Error("Task run does not belong to task");
+  }
 }
 
 async function getOrchestrationTaskMap(
@@ -47,7 +122,9 @@ async function getOrchestrationTaskMap(
   taskIds: readonly Id<"orchestrationTasks">[],
 ): Promise<Map<Id<"orchestrationTasks">, OrchestrationTask | null>> {
   const uniqueTaskIds = Array.from(new Set(taskIds));
-  const tasks = await Promise.all(uniqueTaskIds.map((taskId) => ctx.db.get(taskId)));
+  const tasks = await Promise.all(
+    uniqueTaskIds.map((taskId) => ctx.db.get(taskId)),
+  );
   const taskMap = new Map<Id<"orchestrationTasks">, OrchestrationTask | null>();
 
   for (let index = 0; index < uniqueTaskIds.length; index += 1) {
@@ -78,7 +155,7 @@ async function countOrchestrationTasksByStatus(
         .withIndex("by_team_status", (q) =>
           q.eq("teamId", teamId).eq("status", status),
         )
-        .take(MAX_COUNT_LIMIT)
+        .take(MAX_COUNT_LIMIT),
     ),
   );
 
@@ -99,10 +176,10 @@ async function filterReadyTasks(
   limit: number,
 ): Promise<Doc<"orchestrationTasks">[]> {
   const noDeps = pendingTasks.filter(
-    (t) => !t.dependencies || t.dependencies.length === 0
+    (t) => !t.dependencies || t.dependencies.length === 0,
   );
   const withDeps = pendingTasks.filter(
-    (t) => t.dependencies && t.dependencies.length > 0
+    (t) => t.dependencies && t.dependencies.length > 0,
   );
 
   // If no-dep tasks already fill the limit, skip dependency fetching entirely
@@ -127,7 +204,7 @@ async function filterReadyTasks(
       readyTasks.push(task);
     } else {
       const allCompleted = task.dependencies.every(
-        (depId) => depTaskMap.get(depId)?.status === "completed"
+        (depId) => depTaskMap.get(depId)?.status === "completed",
       );
       if (allCompleted) {
         readyTasks.push(task);
@@ -161,7 +238,7 @@ export const listPendingTasks = authQuery({
     return ctx.db
       .query("orchestrationTasks")
       .withIndex("by_team_status_priority", (q) =>
-        q.eq("teamId", teamId).eq("status", "pending")
+        q.eq("teamId", teamId).eq("status", "pending"),
       )
       .order("asc")
       .take(take);
@@ -183,8 +260,8 @@ export const listTasksByTeam = authQuery({
         v.literal("running"),
         v.literal("completed"),
         v.literal("failed"),
-        v.literal("cancelled")
-      )
+        v.literal("cancelled"),
+      ),
     ),
     limit: v.optional(v.number()),
   },
@@ -199,7 +276,7 @@ export const listTasksByTeam = authQuery({
       return ctx.db
         .query("orchestrationTasks")
         .withIndex("by_team_status", (q) =>
-          q.eq("teamId", teamId).eq("status", status)
+          q.eq("teamId", teamId).eq("status", status),
         )
         .order("desc")
         .take(take);
@@ -213,11 +290,11 @@ export const listTasksByTeam = authQuery({
         ctx.db
           .query("orchestrationTasks")
           .withIndex("by_team_status", (q) =>
-            q.eq("teamId", teamId).eq("status", s)
+            q.eq("teamId", teamId).eq("status", s),
           )
           .order("desc")
-          .take(take)
-      )
+          .take(take),
+      ),
     );
 
     return perStatusResults
@@ -236,7 +313,7 @@ export const listTasksByTeamPaginated = authQuery({
       v.literal("running"),
       v.literal("completed"),
       v.literal("failed"),
-      v.literal("cancelled")
+      v.literal("cancelled"),
     ),
     paginationOpts: paginationOptsValidator,
   },
@@ -246,7 +323,7 @@ export const listTasksByTeamPaginated = authQuery({
     return ctx.db
       .query("orchestrationTasks")
       .withIndex("by_team_status", (q) =>
-        q.eq("teamId", teamId).eq("status", status)
+        q.eq("teamId", teamId).eq("status", status),
       )
       .order("desc")
       .paginate(paginationOpts);
@@ -268,8 +345,8 @@ export const listAgentTasks = authQuery({
         v.literal("running"),
         v.literal("completed"),
         v.literal("failed"),
-        v.literal("cancelled")
-      )
+        v.literal("cancelled"),
+      ),
     ),
   },
   handler: async (ctx, { teamSlugOrId, agentName, status }) => {
@@ -279,7 +356,9 @@ export const listAgentTasks = authQuery({
     // Query by agent, then filter by team (no composite index available)
     let q = ctx.db
       .query("orchestrationTasks")
-      .withIndex("by_assigned_agent", (q) => q.eq("assignedAgentName", agentName))
+      .withIndex("by_assigned_agent", (q) =>
+        q.eq("assignedAgentName", agentName),
+      )
       .filter((q) => q.eq(q.field("teamId"), teamId));
 
     if (status) {
@@ -334,7 +413,10 @@ export const getDependentTasks = authQuery({
     await getTeamId(ctx, task.teamId);
 
     if (!task.dependents) return [];
-    const dependentTaskMap = await getOrchestrationTaskMap(ctx, task.dependents);
+    const dependentTaskMap = await getOrchestrationTaskMap(
+      ctx,
+      task.dependents,
+    );
 
     return task.dependents.flatMap((dependentId) => {
       const dependent = dependentTaskMap.get(dependentId);
@@ -358,7 +440,7 @@ export const getReadyTasks = authQuery({
     const pendingTasks = await ctx.db
       .query("orchestrationTasks")
       .withIndex("by_team_status_priority", (q) =>
-        q.eq("teamId", teamId).eq("status", "pending")
+        q.eq("teamId", teamId).eq("status", "pending"),
       )
       .order("asc")
       .take(100);
@@ -381,10 +463,14 @@ async function updateDependencyDependents(
   newTaskId: Id<"orchestrationTasks">,
   teamId: string,
   now: number,
-  validateTeam: boolean
+  validateTeam: boolean,
 ): Promise<void> {
   // Check for circular dependencies before wiring
-  const wouldCycle = await wouldCreateCircularDependency(ctx, newTaskId, dependencies);
+  const wouldCycle = await wouldCreateCircularDependency(
+    ctx,
+    newTaskId,
+    dependencies,
+  );
   if (wouldCycle) {
     throw new Error("Dependencies would create a circular dependency");
   }
@@ -404,7 +490,7 @@ async function updateDependencyDependents(
           updatedAt: now,
         });
       }
-    })
+    }),
   );
 }
 
@@ -416,6 +502,7 @@ export const createTask = authMutation({
   args: {
     teamSlugOrId: v.string(),
     prompt: v.string(),
+    agentName: v.optional(v.string()),
     priority: v.optional(v.number()),
     dependencies: v.optional(v.array(v.id("orchestrationTasks"))),
     taskId: v.optional(v.id("tasks")),
@@ -425,8 +512,19 @@ export const createTask = authMutation({
   },
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
-    // Verify team membership and get canonical teamId
-    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+    const teamId = hasLinkedCreateTaskRefs(args)
+      ? await resolveTeamIdLoose(ctx, args.teamSlugOrId)
+      : await getTeamId(ctx, args.teamSlugOrId);
+
+    if (hasLinkedCreateTaskRefs(args)) {
+      await validateCreateTaskLinkedRefs(ctx, {
+        teamId,
+        userId,
+        taskId: args.taskId,
+        taskRunId: args.taskRunId,
+        parentTaskId: args.parentTaskId,
+      });
+    }
 
     const now = Date.now();
 
@@ -436,6 +534,7 @@ export const createTask = authMutation({
       prompt: args.prompt,
       priority: args.priority ?? 5,
       status: "pending",
+      assignedAgentName: args.agentName,
       dependencies: args.dependencies,
       taskId: args.taskId,
       taskRunId: args.taskRunId,
@@ -447,7 +546,14 @@ export const createTask = authMutation({
 
     // Update dependent tasks to track this dependency
     if (args.dependencies && args.dependencies.length > 0) {
-      await updateDependencyDependents(ctx, args.dependencies, taskId, teamId, now, true);
+      await updateDependencyDependents(
+        ctx,
+        args.dependencies,
+        taskId,
+        teamId,
+        now,
+        true,
+      );
     }
 
     return taskId;
@@ -462,6 +568,7 @@ export const createTaskInternal = internalMutation({
     teamId: v.string(),
     userId: v.string(),
     prompt: v.string(),
+    agentName: v.optional(v.string()),
     priority: v.optional(v.number()),
     dependencies: v.optional(v.array(v.id("orchestrationTasks"))),
     taskId: v.optional(v.id("tasks")),
@@ -478,6 +585,7 @@ export const createTaskInternal = internalMutation({
       prompt: args.prompt,
       priority: args.priority ?? 5,
       status: "pending",
+      assignedAgentName: args.agentName,
       dependencies: args.dependencies,
       taskId: args.taskId,
       taskRunId: args.taskRunId,
@@ -489,7 +597,14 @@ export const createTaskInternal = internalMutation({
 
     // Update dependent tasks to track this dependency
     if (args.dependencies && args.dependencies.length > 0) {
-      await updateDependencyDependents(ctx, args.dependencies, taskId, args.teamId, now, false);
+      await updateDependencyDependents(
+        ctx,
+        args.dependencies,
+        taskId,
+        args.teamId,
+        now,
+        false,
+      );
     }
 
     return taskId;
@@ -625,9 +740,13 @@ export const completeTask = authMutation({
     });
 
     // Schedule immediate triggering of dependent tasks (0ms delay = immediate)
-    await ctx.scheduler.runAfter(0, internal.orchestrationQueries.triggerDependentTasks, {
-      completedTaskId: taskId,
-    });
+    await ctx.scheduler.runAfter(
+      0,
+      internal.orchestrationQueries.triggerDependentTasks,
+      {
+        completedTaskId: taskId,
+      },
+    );
   },
 });
 
@@ -648,7 +767,10 @@ export const triggerDependentTasks = internalMutation({
     const now = Date.now();
 
     // Batch fetch all dependent tasks in parallel
-    const dependentTaskMap = await getOrchestrationTaskMap(ctx, completedTask.dependents);
+    const dependentTaskMap = await getOrchestrationTaskMap(
+      ctx,
+      completedTask.dependents,
+    );
     const dependents = completedTask.dependents.flatMap((dependentId) => {
       const dependent = dependentTaskMap.get(dependentId);
       return dependent ? [dependent] : [];
@@ -656,7 +778,7 @@ export const triggerDependentTasks = internalMutation({
 
     // Filter to pending tasks that might be ready
     const pendingDependents = dependents.filter(
-      (dep) => dep.status === "pending"
+      (dep) => dep.status === "pending",
     );
 
     if (pendingDependents.length === 0) {
@@ -674,7 +796,10 @@ export const triggerDependentTasks = internalMutation({
     }
 
     // Batch fetch all dependencies at once
-    const dependencyTaskMap = await getOrchestrationTaskMap(ctx, Array.from(allDepIds));
+    const dependencyTaskMap = await getOrchestrationTaskMap(
+      ctx,
+      Array.from(allDepIds),
+    );
 
     // Determine which dependents are ready (all dependencies completed)
     const readyToTrigger: Id<"orchestrationTasks">[] = [];
@@ -685,7 +810,7 @@ export const triggerDependentTasks = internalMutation({
       }
 
       const allCompleted = dependent.dependencies.every(
-        (depId) => dependencyTaskMap.get(depId)?.status === "completed"
+        (depId) => dependencyTaskMap.get(depId)?.status === "completed",
       );
 
       if (allCompleted) {
@@ -700,8 +825,8 @@ export const triggerDependentTasks = internalMutation({
           ctx.db.patch(dependentId, {
             nextRetryAfter: now,
             updatedAt: now,
-          })
-        )
+          }),
+        ),
       );
     }
   },
@@ -736,7 +861,9 @@ export const failTask = authMutation({
 /**
  * Check if an orchestration task is linked to a project via metadata.
  */
-export function isLinkedToProject(task: Doc<"orchestrationTasks"> | null): boolean {
+export function isLinkedToProject(
+  task: Doc<"orchestrationTasks"> | null,
+): boolean {
   const metadata = task?.metadata as Record<string, unknown> | undefined;
   return !!metadata?.projectId;
 }
@@ -763,15 +890,23 @@ export const failTaskInternal = internalMutation({
     });
 
     if (linked) {
-      await ctx.scheduler.runAfter(0, internal.projectQueries.syncPlanStatusFromOrchestration, {
-        orchestrationTaskId: taskId,
-      });
+      await ctx.scheduler.runAfter(
+        0,
+        internal.projectQueries.syncPlanStatusFromOrchestration,
+        {
+          orchestrationTaskId: taskId,
+        },
+      );
     }
 
     // Cascade failure to dependent tasks
-    await ctx.scheduler.runAfter(0, internal.orchestrationQueries.cascadeFailureToDependent, {
-      failedTaskId: taskId,
-    });
+    await ctx.scheduler.runAfter(
+      0,
+      internal.orchestrationQueries.cascadeFailureToDependent,
+      {
+        failedTaskId: taskId,
+      },
+    );
   },
 });
 
@@ -802,16 +937,24 @@ export const cascadeFailureToDependent = internalMutation({
       });
 
       // Recursively cascade to this dependent's dependents
-      await ctx.scheduler.runAfter(0, internal.orchestrationQueries.cascadeFailureToDependent, {
-        failedTaskId: dependentId,
-      });
+      await ctx.scheduler.runAfter(
+        0,
+        internal.orchestrationQueries.cascadeFailureToDependent,
+        {
+          failedTaskId: dependentId,
+        },
+      );
 
       // Sync project status if linked
       const linked = isLinkedToProject(dependent);
       if (linked) {
-        await ctx.scheduler.runAfter(0, internal.projectQueries.syncPlanStatusFromOrchestration, {
-          orchestrationTaskId: dependentId,
-        });
+        await ctx.scheduler.runAfter(
+          0,
+          internal.projectQueries.syncPlanStatusFromOrchestration,
+          {
+            orchestrationTaskId: dependentId,
+          },
+        );
       }
     }
   },
@@ -839,14 +982,22 @@ export const completeTaskInternal = internalMutation({
     });
 
     // Schedule immediate triggering of dependent tasks
-    await ctx.scheduler.runAfter(0, internal.orchestrationQueries.triggerDependentTasks, {
-      completedTaskId: taskId,
-    });
+    await ctx.scheduler.runAfter(
+      0,
+      internal.orchestrationQueries.triggerDependentTasks,
+      {
+        completedTaskId: taskId,
+      },
+    );
 
     if (linked) {
-      await ctx.scheduler.runAfter(0, internal.projectQueries.syncPlanStatusFromOrchestration, {
-        orchestrationTaskId: taskId,
-      });
+      await ctx.scheduler.runAfter(
+        0,
+        internal.projectQueries.syncPlanStatusFromOrchestration,
+        {
+          orchestrationTaskId: taskId,
+        },
+      );
     }
   },
 });
@@ -882,7 +1033,7 @@ export const cancelTask = authMutation({
 async function wouldCreateCircularDependency(
   ctx: { db: DatabaseReader },
   taskId: Id<"orchestrationTasks">,
-  newDepIds: Id<"orchestrationTasks">[]
+  newDepIds: Id<"orchestrationTasks">[],
 ): Promise<boolean> {
   // BFS/DFS to check if any new dependency eventually leads back to taskId
   const visited = new Set<string>();
@@ -893,7 +1044,9 @@ async function wouldCreateCircularDependency(
       return true;
     }
 
-    const currentBatch = frontier.filter((currentId) => !visited.has(currentId));
+    const currentBatch = frontier.filter(
+      (currentId) => !visited.has(currentId),
+    );
     if (currentBatch.length === 0) {
       return false;
     }
@@ -927,12 +1080,18 @@ async function addDependenciesCore(
   ctx: Pick<MutationCtx, "db">,
   task: Doc<"orchestrationTasks">,
   taskId: Id<"orchestrationTasks">,
-  dependencyIds: Id<"orchestrationTasks">[]
+  dependencyIds: Id<"orchestrationTasks">[],
 ): Promise<void> {
   // Check for circular dependencies before adding
-  const wouldCycle = await wouldCreateCircularDependency(ctx, taskId, dependencyIds);
+  const wouldCycle = await wouldCreateCircularDependency(
+    ctx,
+    taskId,
+    dependencyIds,
+  );
   if (wouldCycle) {
-    throw new Error("Cannot add dependencies: would create a circular dependency");
+    throw new Error(
+      "Cannot add dependencies: would create a circular dependency",
+    );
   }
 
   const existing = task.dependencies ?? [];
@@ -957,7 +1116,7 @@ async function addDependenciesCore(
           updatedAt: now,
         });
       }
-    })
+    }),
   );
 
   const merged = [...new Set([...existing, ...dependencyIds])];
@@ -1034,7 +1193,7 @@ export const getProviderHealth = authQuery({
       const teamHealth = await ctx.db
         .query("providerHealth")
         .withIndex("by_team_provider", (q) =>
-          q.eq("teamId", teamId).eq("providerId", providerId)
+          q.eq("teamId", teamId).eq("providerId", providerId),
         )
         .first();
       if (teamHealth) return teamHealth;
@@ -1062,8 +1221,8 @@ export const listProviderHealth = authQuery({
       v.union(
         v.literal("healthy"),
         v.literal("degraded"),
-        v.literal("unhealthy")
-      )
+        v.literal("unhealthy"),
+      ),
     ),
   },
   handler: async (ctx, { teamSlugOrId, statusFilter }) => {
@@ -1083,7 +1242,7 @@ export const listProviderHealth = authQuery({
     if (teamSlugOrId) {
       const teamId = await getTeamId(ctx, teamSlugOrId);
       return results.filter(
-        (h) => h.teamId === teamId || h.teamId === undefined
+        (h) => h.teamId === teamId || h.teamId === undefined,
       );
     }
 
@@ -1105,12 +1264,12 @@ export const upsertProviderHealth = internalMutation({
     status: v.union(
       v.literal("healthy"),
       v.literal("degraded"),
-      v.literal("unhealthy")
+      v.literal("unhealthy"),
     ),
     circuitState: v.union(
       v.literal("closed"),
       v.literal("open"),
-      v.literal("half-open")
+      v.literal("half-open"),
     ),
     failureCount: v.number(),
     successRate: v.number(),
@@ -1128,14 +1287,16 @@ export const upsertProviderHealth = internalMutation({
       ? await ctx.db
           .query("providerHealth")
           .withIndex("by_team_provider", (q) =>
-            q.eq("teamId", args.teamId).eq("providerId", args.providerId)
+            q.eq("teamId", args.teamId).eq("providerId", args.providerId),
           )
           .first()
       : await (async () => {
           // Find global record (where teamId is not set)
           const globalRecords = await ctx.db
             .query("providerHealth")
-            .withIndex("by_provider", (q) => q.eq("providerId", args.providerId))
+            .withIndex("by_provider", (q) =>
+              q.eq("providerId", args.providerId),
+            )
             .collect();
           return globalRecords.find((r) => !r.teamId) ?? null;
         })();
@@ -1211,7 +1372,6 @@ export const releaseTask = internalMutation({
   handler: async (ctx, args) => {
     await ctx.db.patch(args.taskId, {
       status: "pending",
-      assignedAgentName: undefined,
       assignedAt: undefined,
       updatedAt: Date.now(),
     });
@@ -1252,7 +1412,6 @@ export const scheduleRetry = internalMutation({
 
     await ctx.db.patch(args.taskId, {
       status: "pending",
-      assignedAgentName: undefined,
       assignedAt: undefined,
       retryCount: currentRetry,
       lastRetryAt: Date.now(),
@@ -1306,7 +1465,7 @@ export const getReadyTasksInternal = internalQuery({
     const pendingTasks = await ctx.db
       .query("orchestrationTasks")
       .withIndex("by_team_status_priority", (q) =>
-        q.eq("teamId", teamId).eq("status", "pending")
+        q.eq("teamId", teamId).eq("status", "pending"),
       )
       .order("asc")
       .take(100);
@@ -1335,9 +1494,13 @@ export const startTaskInternal = internalMutation({
     });
 
     if (linked) {
-      await ctx.scheduler.runAfter(0, internal.projectQueries.syncPlanStatusFromOrchestration, {
-        orchestrationTaskId: taskId,
-      });
+      await ctx.scheduler.runAfter(
+        0,
+        internal.projectQueries.syncPlanStatusFromOrchestration,
+        {
+          orchestrationTaskId: taskId,
+        },
+      );
     }
   },
 });
@@ -1360,12 +1523,14 @@ export const countTasksByStatus = authQuery({
       v.literal("running"),
       v.literal("completed"),
       v.literal("failed"),
-      v.literal("cancelled")
+      v.literal("cancelled"),
     ),
   },
   handler: async (ctx, args) => {
     const teamId = await getTeamId(ctx, args.teamSlugOrId);
-    const statusCounts = await countOrchestrationTasksByStatus(ctx, teamId, [args.status]);
+    const statusCounts = await countOrchestrationTasksByStatus(ctx, teamId, [
+      args.status,
+    ]);
     return statusCounts[args.status];
   },
 });
@@ -1425,28 +1590,28 @@ export const getOrchestrationSummary = authQuery({
       ctx.db
         .query("orchestrationTasks")
         .withIndex("by_team_status", (q) =>
-          q.eq("teamId", teamId).eq("status", "assigned")
+          q.eq("teamId", teamId).eq("status", "assigned"),
         )
         .order("desc")
         .take(MAX_COUNT_LIMIT),
       ctx.db
         .query("orchestrationTasks")
         .withIndex("by_team_status", (q) =>
-          q.eq("teamId", teamId).eq("status", "running")
+          q.eq("teamId", teamId).eq("status", "running"),
         )
         .order("desc")
         .take(MAX_COUNT_LIMIT),
       ctx.db
         .query("orchestrationTasks")
         .withIndex("by_team_status", (q) =>
-          q.eq("teamId", teamId).eq("status", "completed")
+          q.eq("teamId", teamId).eq("status", "completed"),
         )
         .order("desc")
         .take(recentLimit),
       ctx.db
         .query("orchestrationTasks")
         .withIndex("by_team_status", (q) =>
-          q.eq("teamId", teamId).eq("status", "failed")
+          q.eq("teamId", teamId).eq("status", "failed"),
         )
         .order("desc")
         .take(recentLimit),
@@ -1508,8 +1673,8 @@ export const listTasksWithDependencyInfo = authQuery({
         v.literal("running"),
         v.literal("completed"),
         v.literal("failed"),
-        v.literal("cancelled")
-      )
+        v.literal("cancelled"),
+      ),
     ),
     limit: v.optional(v.number()),
   },
@@ -1525,7 +1690,7 @@ export const listTasksWithDependencyInfo = authQuery({
       tasks = await ctx.db
         .query("orchestrationTasks")
         .withIndex("by_team_status", (q) =>
-          q.eq("teamId", teamId).eq("status", status)
+          q.eq("teamId", teamId).eq("status", status),
         )
         .order("desc")
         .take(take);
@@ -1537,11 +1702,11 @@ export const listTasksWithDependencyInfo = authQuery({
           ctx.db
             .query("orchestrationTasks")
             .withIndex("by_team_status", (q) =>
-              q.eq("teamId", teamId).eq("status", s)
+              q.eq("teamId", teamId).eq("status", s),
             )
             .order("desc")
-            .take(take)
-        )
+            .take(take),
+        ),
       );
       tasks = perStatusResults
         .flat()
@@ -1564,8 +1729,14 @@ export const listTasksWithDependencyInfo = authQuery({
       }
     }
 
-    const dependencyTaskMap = await getOrchestrationTaskMap(ctx, Array.from(allDepIds));
-    const depMap = new Map<Id<"orchestrationTasks">, Doc<"orchestrationTasks"> | null>([
+    const dependencyTaskMap = await getOrchestrationTaskMap(
+      ctx,
+      Array.from(allDepIds),
+    );
+    const depMap = new Map<
+      Id<"orchestrationTasks">,
+      Doc<"orchestrationTasks"> | null
+    >([
       ...tasks.map((t) => [t._id, t] as const),
       ...dependencyTaskMap.entries(),
     ]);
@@ -1591,10 +1762,10 @@ export const listTasksWithDependencyInfo = authQuery({
           .filter(Boolean) as Doc<"orchestrationTasks">[];
 
         const completedDeps = validDeps.filter(
-          (d) => d.status === "completed"
+          (d) => d.status === "completed",
         ).length;
         const pendingDeps = validDeps.filter(
-          (d) => d.status !== "completed" && d.status !== "failed"
+          (d) => d.status !== "completed" && d.status !== "failed",
         ).length;
 
         dependencyInfo = {
@@ -1606,7 +1777,8 @@ export const listTasksWithDependencyInfo = authQuery({
             .map((d) => ({
               _id: d._id,
               status: d.status,
-              prompt: d.prompt.slice(0, 50) + (d.prompt.length > 50 ? "..." : ""),
+              prompt:
+                d.prompt.slice(0, 50) + (d.prompt.length > 50 ? "..." : ""),
             })),
         };
       }
@@ -1693,7 +1865,7 @@ export const getMessagesForTaskRunInternal = internalQuery({
     return ctx.db
       .query("agentOrchestrateMessages")
       .withIndex("by_task_run_unread", (q) =>
-        q.eq("taskRunId", taskRunId).eq("read", false)
+        q.eq("taskRunId", taskRunId).eq("read", false),
       )
       .collect();
   },
@@ -1786,7 +1958,9 @@ export const getBundleByOrchestrationIdInternal = internalQuery({
   handler: async (ctx, { orchestrationId }) => {
     return ctx.db
       .query("orchestrationBundles")
-      .withIndex("by_orchestration", (q) => q.eq("orchestrationId", orchestrationId))
+      .withIndex("by_orchestration", (q) =>
+        q.eq("orchestrationId", orchestrationId),
+      )
       .first();
   },
 });

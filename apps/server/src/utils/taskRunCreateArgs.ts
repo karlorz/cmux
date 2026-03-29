@@ -6,6 +6,7 @@ type TaskRunCreateArgsInput<
   taskId: TTaskId;
   prompt: string;
   agentName?: string;
+  selectedVariant?: string;
   newBranch?: string;
   environmentId?: TEnvironmentId;
   isOrchestrationHead?: boolean;
@@ -29,6 +30,9 @@ export function buildTaskRunCreateArgs<
     taskId: args.taskId,
     prompt: args.prompt,
     ...(args.agentName !== undefined ? { agentName: args.agentName } : {}),
+    ...(args.selectedVariant !== undefined
+      ? { selectedVariant: args.selectedVariant }
+      : {}),
     ...(args.newBranch !== undefined ? { newBranch: args.newBranch } : {}),
     ...(args.environmentId !== undefined
       ? { environmentId: args.environmentId }

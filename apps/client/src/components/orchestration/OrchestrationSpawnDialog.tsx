@@ -58,6 +58,7 @@ export function OrchestrationSpawnDialog({
   // Advanced options (hidden by default)
   const [priority, setPriority] = useState(5);
   const [selectedModel, setSelectedModel] = useState("");
+  const [selectedVariant, setSelectedVariant] = useState("");
   const [selectedProfile, setSelectedProfile] = useState("");
 
   // Apply preset settings when preset changes
@@ -67,31 +68,57 @@ export function OrchestrationSpawnDialog({
     if (preset) {
       setPriority(preset.priority);
       setSelectedModel(preset.model);
+      setSelectedVariant("");
       setSelectedProfile(preset.profile);
     }
   };
 
   // Fetch available models
   const { data: models } = useQuery(
-    convexQuery(api.models.listAvailable, { teamSlugOrId })
+    convexQuery(api.models.listAvailable, { teamSlugOrId }),
   );
 
   // Fetch supervisor profiles
   const { data: profiles } = useQuery(
-    convexQuery(api.supervisorProfiles.list, { teamSlugOrId })
+    convexQuery(api.supervisorProfiles.list, { teamSlugOrId }),
   );
+
+  const selectedModelEntry = models?.find(
+    (model) => model.name === selectedModel,
+  );
+  const selectedModelVariants = selectedModelEntry?.variants ?? [];
+  const selectedModelDefaultVariant = selectedModelEntry?.defaultVariant ?? "";
+  const showEffortSelector = selectedModelVariants.length > 1;
+
+  const handleModelChange = (modelName: string) => {
+    setSelectedModel(modelName);
+    if (!modelName) {
+      setSelectedVariant("");
+      return;
+    }
+
+    const nextModel = models?.find((model) => model.name === modelName);
+    const nextVariants = nextModel?.variants ?? [];
+    const nextDefaultVariant = nextModel?.defaultVariant ?? "";
+    setSelectedVariant(nextVariants.length > 1 ? nextDefaultVariant : "");
+  };
 
   const createTaskMutation = useMutation({
     mutationFn: async () => {
       const metadata: Record<string, string> = {};
-      if (selectedModel) metadata.agentName = selectedModel;
+      if (selectedModel && selectedVariant)
+        metadata.selectedVariant = selectedVariant;
       if (selectedProfile) metadata.supervisorProfileId = selectedProfile;
-      const taskId = await convex.mutation(api.orchestrationQueries.createTask, {
-        teamSlugOrId,
-        prompt,
-        priority,
-        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-      });
+      const taskId = await convex.mutation(
+        api.orchestrationQueries.createTask,
+        {
+          teamSlugOrId,
+          prompt,
+          agentName: selectedModel || undefined,
+          priority,
+          metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+        },
+      );
       return taskId;
     },
     onSuccess: () => {
@@ -99,6 +126,7 @@ export function OrchestrationSpawnDialog({
       setPrompt("");
       setPriority(5);
       setSelectedModel("");
+      setSelectedVariant("");
       setSelectedProfile("");
       onOpenChange(false);
       void queryClient.invalidateQueries();
@@ -202,13 +230,13 @@ export function OrchestrationSpawnDialog({
             <select
               id="model"
               value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
+              onChange={(e) => handleModelChange(e.target.value)}
               className="mt-1 block w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
             >
               <option value="">Auto-select</option>
               {models?.map((model) => (
-                <option key={model._id} value={model._id}>
-                  {model.displayName ?? model._id}
+                <option key={model._id} value={model.name}>
+                  {model.displayName ?? model.name}
                 </option>
               ))}
             </select>
@@ -216,6 +244,35 @@ export function OrchestrationSpawnDialog({
               Override automatic model selection
             </p>
           </div>
+
+          {showEffortSelector && (
+            <div>
+              <label
+                htmlFor="effort"
+                className="block text-sm font-medium text-neutral-700 dark:text-neutral-300"
+              >
+                Effort
+              </label>
+              <select
+                id="effort"
+                value={selectedVariant}
+                onChange={(e) => setSelectedVariant(e.target.value)}
+                className="mt-1 block w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
+              >
+                {selectedModelVariants.map((variant) => (
+                  <option key={variant.id} value={variant.id}>
+                    {variant.displayName}
+                    {variant.id === selectedModelDefaultVariant
+                      ? " (Default)"
+                      : ""}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-neutral-500">
+                Provider-aware reasoning effort for the selected model
+              </p>
+            </div>
+          )}
 
           {/* Supervisor Profile */}
           {profiles && profiles.length > 0 && (
@@ -235,7 +292,8 @@ export function OrchestrationSpawnDialog({
                 <option value="">None (default behavior)</option>
                 {profiles.map((profile) => (
                   <option key={profile._id} value={profile._id}>
-                    {profile.name} ({profile.reasoningLevel}/{profile.reviewPosture}/{profile.delegationStyle})
+                    {profile.name} ({profile.reasoningLevel}/
+                    {profile.reviewPosture}/{profile.delegationStyle})
                   </option>
                 ))}
               </select>

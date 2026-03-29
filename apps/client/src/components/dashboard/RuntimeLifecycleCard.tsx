@@ -1,5 +1,5 @@
 import type { Id } from "@cmux/convex/dataModel";
-import type { RunControlSummary } from "@cmux/www-openapi-client";
+import type { RunControlSummary } from "@cmux/shared";
 import { getApiV1CmuxOrchestrationRunControlByTaskRunIdOptions } from "@cmux/www-openapi-client/react-query";
 import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";

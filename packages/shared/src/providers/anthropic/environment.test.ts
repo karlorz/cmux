@@ -37,10 +37,12 @@ async function decodeClaudeConfig(args?: {
     ...args,
   });
   const configFile = result.files.find(
-    (file) => file.destinationPath === "$HOME/.claude.json"
+    (file) => file.destinationPath === "$HOME/.claude.json",
   );
   expect(configFile).toBeDefined();
-  return JSON.parse(Buffer.from(configFile!.contentBase64, "base64").toString("utf-8")) as {
+  return JSON.parse(
+    Buffer.from(configFile!.contentBase64, "base64").toString("utf-8"),
+  ) as {
     mcpServers: Record<
       string,
       {
@@ -55,18 +57,21 @@ async function decodeClaudeConfig(args?: {
   };
 }
 
-async function decodeClaudeSettings(overrides?: Partial<typeof BASE_CONTEXT>) {
+async function decodeClaudeSettings(
+  overrides?: Partial<Parameters<typeof getClaudeEnvironment>[0]>,
+) {
   const result = await getClaudeEnvironment({
     ...BASE_CONTEXT,
     ...overrides,
   });
   const settingsFile = result.files.find(
-    (file) => file.destinationPath === "$HOME/.claude/settings.json"
+    (file) => file.destinationPath === "$HOME/.claude/settings.json",
   );
   expect(settingsFile).toBeDefined();
   return JSON.parse(
-    Buffer.from(settingsFile!.contentBase64, "base64").toString("utf-8")
+    Buffer.from(settingsFile!.contentBase64, "base64").toString("utf-8"),
   ) as {
+    env?: Record<string, string>;
     permissions?: {
       defaultMode?: string;
       deny?: string[];
@@ -119,7 +124,7 @@ describe("getClaudeEnvironment", () => {
             },
           },
         }),
-        "utf-8"
+        "utf-8",
       );
 
       const config = await decodeClaudeConfig();
@@ -152,7 +157,7 @@ describe("getClaudeEnvironment", () => {
             },
           },
         }),
-        "utf-8"
+        "utf-8",
       );
 
       const config = await decodeClaudeConfig({ useHostConfig: true });
@@ -200,12 +205,15 @@ describe("getClaudeEnvironment", () => {
 
       // Should include CLAUDE.md file at ~/.claude/CLAUDE.md
       const claudeMdFile = result.files.find(
-        (file) => file.destinationPath === "$HOME/.claude/CLAUDE.md"
+        (file) => file.destinationPath === "$HOME/.claude/CLAUDE.md",
       );
       expect(claudeMdFile).toBeDefined();
 
       // Decode and verify content includes memory protocol
-      const content = Buffer.from(claudeMdFile!.contentBase64, "base64").toString("utf-8");
+      const content = Buffer.from(
+        claudeMdFile!.contentBase64,
+        "base64",
+      ).toString("utf-8");
       expect(content).toContain("Agent Memory Protocol");
       expect(content).toContain("/root/lifecycle/memory");
     } finally {
@@ -295,11 +303,14 @@ describe("getClaudeEnvironment", () => {
     const result = await getClaudeEnvironment(BASE_CONTEXT);
 
     const permissionHook = result.files.find(
-      (f) => f.destinationPath === "/root/lifecycle/claude/permission-hook.sh"
+      (f) => f.destinationPath === "/root/lifecycle/claude/permission-hook.sh",
     );
     expect(permissionHook).toBeDefined();
 
-    const script = Buffer.from(permissionHook!.contentBase64, "base64").toString("utf-8");
+    const script = Buffer.from(
+      permissionHook!.contentBase64,
+      "base64",
+    ).toString("utf-8");
 
     // Verify classify_risk function exists
     expect(script).toContain("classify_risk()");
@@ -316,6 +327,25 @@ describe("getClaudeEnvironment", () => {
 
     // Verify $RISK_LEVEL is used in the approval request
     expect(script).toContain('--arg risk "$RISK_LEVEL"');
-    expect(script).toContain('riskLevel: $risk');
+    expect(script).toContain("riskLevel: $risk");
+  });
+
+  it("injects CLAUDE_CODE_EFFORT_LEVEL for claude/opus-4.6 when a supported variant is selected", async () => {
+    const settings = await decodeClaudeSettings({
+      agentName: "claude/opus-4.6",
+      selectedVariant: "max",
+    });
+
+    expect(settings.env?.CLAUDE_CODE_EFFORT_LEVEL).toBe("max");
+  });
+
+  it("rejects unsupported Claude effort variants for other models", async () => {
+    await expect(
+      getClaudeEnvironment({
+        ...BASE_CONTEXT,
+        agentName: "claude/opus-4.5",
+        selectedVariant: "max",
+      }),
+    ).rejects.toThrow(/does not support effort selection/);
   });
 });

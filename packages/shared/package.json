@@ -46,6 +46,14 @@
       "import": "./src/agent-catalog.ts",
       "types": "./src/agent-catalog.ts"
     },
+    "./agent-selection": {
+      "import": "./src/agent-selection.ts",
+      "types": "./src/agent-selection.ts"
+    },
+    "./agent-selection-core": {
+      "import": "./src/agent-selection-core.ts",
+      "types": "./src/agent-selection-core.ts"
+    },
     "./terminal-config": {
       "import": "./src/terminal-config.ts",
       "types": "./src/terminal-config.ts"

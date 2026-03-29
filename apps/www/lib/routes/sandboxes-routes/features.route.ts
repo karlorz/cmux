@@ -4,6 +4,7 @@
  * Additional sandbox feature endpoints:
  * - POST /sandboxes/{id}/discover-repos - Discover git repositories
  * - POST /sandboxes/{id}/live-diff - Get live git diff
+ * - GET /sandboxes/{id}/live-diff/{path} - Get live diff for a single file
  * - POST /sandboxes/{id}/publish-devcontainer - Expose devcontainer ports
  * - GET /sandboxes/{id}/ssh - Get SSH connection details
  */
@@ -25,10 +26,68 @@ import {
   verifyInstanceOwnership,
   type Id,
   type Doc,
+  type SandboxInstance,
 } from "./_helpers";
 import { HTTPException } from "hono/http-exception";
+import type { ReplaceDiffEntry } from "@cmux/shared/diff-types";
+import { singleQuote } from "../sandboxes/shell";
 
 export const sandboxesFeaturesRouter = new OpenAPIHono();
+
+const LIVE_DIFF_DEFAULT_MAX_BYTES = 100_000;
+
+type LiveDiffFileStatus =
+  | "added"
+  | "modified"
+  | "deleted"
+  | "renamed"
+  | "untracked";
+
+type LiveDiffFile = {
+  path: string;
+  oldPath?: string;
+  status: LiveDiffFileStatus;
+  insertions: number;
+  deletions: number;
+  isBinary: boolean;
+};
+
+const LiveDiffFileSchema = z.object({
+  path: z.string(),
+  oldPath: z.string().optional(),
+  status: z.enum(["added", "modified", "deleted", "renamed", "untracked"]),
+  insertions: z.number(),
+  deletions: z.number(),
+  isBinary: z.boolean(),
+});
+
+const ReplaceDiffEntrySchema = z.object({
+  filePath: z.string(),
+  oldPath: z.string().optional(),
+  status: z.enum(["added", "modified", "deleted", "renamed"]),
+  additions: z.number(),
+  deletions: z.number(),
+  patch: z.string().optional(),
+  oldContent: z.string().optional(),
+  newContent: z.string().optional(),
+  isBinary: z.boolean(),
+  contentOmitted: z.boolean().optional(),
+  oldSize: z.number().optional(),
+  newSize: z.number().optional(),
+  patchSize: z.number().optional(),
+});
+
+const LiveDiffResponseSchema = z.object({
+  files: z.array(LiveDiffFileSchema).describe("Changed files with stats"),
+  summary: z.object({
+    totalFiles: z.number(),
+    insertions: z.number(),
+    deletions: z.number(),
+  }),
+  mode: z.enum(["full", "file_list_only"]),
+  totalDiffBytes: z.number(),
+  entries: z.array(ReplaceDiffEntrySchema).optional(),
+});
 
 // ============================================================================
 // Helpers
@@ -56,6 +115,288 @@ function parseGitRemoteUrl(url: string): string | null {
   }
 
   return null;
+}
+
+
+function decodeLiveDiffPath(rawPath: string): string {
+  try {
+    return decodeURIComponent(rawPath);
+  } catch {
+    return rawPath;
+  }
+}
+
+function parseTrackedStatusMap(output: string): Map<string, LiveDiffFile> {
+  const byPath = new Map<string, LiveDiffFile>();
+
+  for (const line of output.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    const parts = trimmed.split("\t");
+    const statusCode = parts[0] ?? "";
+    const normalizedCode = statusCode.charAt(0);
+
+    if (normalizedCode === "R" && parts.length >= 3) {
+      const oldPath = parts[1];
+      const path = parts[2];
+      byPath.set(path, {
+        path,
+        oldPath,
+        status: "renamed",
+        insertions: 0,
+        deletions: 0,
+        isBinary: false,
+      });
+      continue;
+    }
+
+    const path = parts[1];
+    if (!path) {
+      continue;
+    }
+
+    const status: LiveDiffFileStatus =
+      normalizedCode === "A"
+        ? "added"
+        : normalizedCode === "D"
+          ? "deleted"
+          : "modified";
+
+    byPath.set(path, {
+      path,
+      status,
+      insertions: 0,
+      deletions: 0,
+      isBinary: false,
+    });
+  }
+
+  return byPath;
+}
+
+function parseTrackedDiffFiles(
+  statusOutput: string,
+  numstatOutput: string,
+): LiveDiffFile[] {
+  const filesByPath = parseTrackedStatusMap(statusOutput);
+
+  for (const line of numstatOutput.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    const parts = trimmed.split("\t");
+    if (parts.length < 3) {
+      continue;
+    }
+
+    const rawInsertions = parts[0] ?? "0";
+    const rawDeletions = parts[1] ?? "0";
+    const isBinary = rawInsertions === "-" || rawDeletions === "-";
+    const insertions = isBinary ? 0 : Number.parseInt(rawInsertions, 10) || 0;
+    const deletions = isBinary ? 0 : Number.parseInt(rawDeletions, 10) || 0;
+    const oldPath = parts.length >= 4 ? parts[2] : undefined;
+    const path = parts.length >= 4 ? parts[3] : parts[2];
+
+    if (!path) {
+      continue;
+    }
+
+    const existing = filesByPath.get(path);
+    const status =
+      existing?.status ??
+      (deletions > 0 && insertions === 0
+        ? "deleted"
+        : insertions > 0 && deletions === 0
+          ? "added"
+          : "modified");
+
+    filesByPath.set(path, {
+      path,
+      oldPath: existing?.oldPath ?? oldPath,
+      status,
+      insertions,
+      deletions,
+      isBinary,
+    });
+  }
+
+  return Array.from(filesByPath.values());
+}
+
+async function getUntrackedFileStats(
+  sandbox: SandboxInstance,
+  workspacePath: string,
+  filePath: string,
+): Promise<{ insertions: number; bytes: number }> {
+  const quotedPath = singleQuote(filePath);
+  const [numstatResult, bytesResult] = await Promise.all([
+    sandbox.exec(
+      `cd "${workspacePath}" && (git diff --no-index --numstat -- /dev/null ${quotedPath} 2>/dev/null || true)`,
+      { timeoutMs: 10_000 },
+    ),
+    sandbox.exec(
+      `cd "${workspacePath}" && (wc -c < ${quotedPath} 2>/dev/null || echo 0)`,
+      { timeoutMs: 10_000 },
+    ),
+  ]);
+
+  const numstatLine = numstatResult.stdout.trim().split("\n")[0]?.trim();
+  if (numstatLine) {
+    const parts = numstatLine.split("\t");
+    if (parts.length >= 2) {
+      const insertions = Number.parseInt(parts[0] ?? "0", 10) || 0;
+      const bytes = Number.parseInt(bytesResult.stdout.trim(), 10) || 0;
+      return { insertions, bytes };
+    }
+  }
+
+  return {
+    insertions: 0,
+    bytes: Number.parseInt(bytesResult.stdout.trim(), 10) || 0,
+  };
+}
+
+async function collectLiveDiffSnapshot(
+  sandbox: SandboxInstance,
+  workspacePath: string,
+): Promise<{
+  files: LiveDiffFile[];
+  summary: { totalFiles: number; insertions: number; deletions: number };
+  totalDiffBytes: number;
+}> {
+  const [statusResult, statsResult, untrackedResult, diffResult] = await Promise.all([
+    sandbox.exec(
+      `cd "${workspacePath}" && git diff --name-status -M HEAD 2>/dev/null || git diff --name-status -M 2>/dev/null || echo ""`,
+      { timeoutMs: 15_000 },
+    ),
+    sandbox.exec(
+      `cd "${workspacePath}" && git diff --numstat -M HEAD 2>/dev/null || git diff --numstat -M 2>/dev/null || echo ""`,
+      { timeoutMs: 15_000 },
+    ),
+    sandbox.exec(
+      `cd "${workspacePath}" && git ls-files --others --exclude-standard 2>/dev/null || echo ""`,
+      { timeoutMs: 10_000 },
+    ),
+    sandbox.exec(
+      `cd "${workspacePath}" && git diff -M HEAD 2>/dev/null || git diff -M 2>/dev/null || echo ""`,
+      { timeoutMs: 30_000 },
+    ),
+  ]);
+
+  const files = parseTrackedDiffFiles(statusResult.stdout, statsResult.stdout);
+  let totalInsertions = files.reduce((sum, file) => sum + file.insertions, 0);
+  const totalDeletions = files.reduce((sum, file) => sum + file.deletions, 0);
+  let totalDiffBytes = diffResult.stdout.length;
+
+  const untrackedFiles = untrackedResult.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  const trackedPaths = new Set(files.map((f) => f.path));
+  const newUntrackedPaths = untrackedFiles.filter((p) => !trackedPaths.has(p));
+
+  const untrackedStatsList = await Promise.all(
+    newUntrackedPaths.map((p) => getUntrackedFileStats(sandbox, workspacePath, p)),
+  );
+
+  for (let i = 0; i < newUntrackedPaths.length; i++) {
+    const untrackedPath = newUntrackedPaths[i];
+    const untrackedStats = untrackedStatsList[i];
+    files.push({
+      path: untrackedPath,
+      status: "untracked",
+      insertions: untrackedStats.insertions,
+      deletions: 0,
+      isBinary: false,
+    });
+    totalInsertions += untrackedStats.insertions;
+    totalDiffBytes += untrackedStats.bytes;
+  }
+
+  return {
+    files,
+    summary: {
+      totalFiles: files.length,
+      insertions: totalInsertions,
+      deletions: totalDeletions,
+    },
+    totalDiffBytes,
+  };
+}
+
+async function readSandboxTextFile(
+  sandbox: SandboxInstance,
+  workspacePath: string,
+  filePath: string,
+): Promise<string> {
+  const quotedPath = singleQuote(filePath);
+  const result = await sandbox.exec(
+    `cd "${workspacePath}" && (cat -- ${quotedPath} 2>/dev/null || true)`,
+    { timeoutMs: 15_000 },
+  );
+  return result.stdout;
+}
+
+async function readSandboxGitHeadFile(
+  sandbox: SandboxInstance,
+  workspacePath: string,
+  filePath: string,
+): Promise<string> {
+  const quotedHeadPath = singleQuote(`HEAD:${filePath}`);
+  const result = await sandbox.exec(
+    `cd "${workspacePath}" && (git show ${quotedHeadPath} 2>/dev/null || true)`,
+    { timeoutMs: 15_000 },
+  );
+  return result.stdout;
+}
+
+function toReplaceDiffStatus(status: LiveDiffFileStatus): ReplaceDiffEntry["status"] {
+  return status === "untracked" ? "added" : status;
+}
+
+async function buildLiveDiffEntry(
+  sandbox: SandboxInstance,
+  workspacePath: string,
+  file: LiveDiffFile,
+): Promise<ReplaceDiffEntry> {
+  if (file.isBinary) {
+    return {
+      filePath: file.path,
+      oldPath: file.oldPath,
+      status: toReplaceDiffStatus(file.status),
+      additions: file.insertions,
+      deletions: file.deletions,
+      isBinary: true,
+    };
+  }
+
+  const oldPath = file.oldPath ?? file.path;
+  const [oldContent, newContent] = await Promise.all([
+    file.status === "added" || file.status === "untracked"
+      ? Promise.resolve("")
+      : readSandboxGitHeadFile(sandbox, workspacePath, oldPath),
+    file.status === "deleted"
+      ? Promise.resolve("")
+      : readSandboxTextFile(sandbox, workspacePath, file.path),
+  ]);
+
+  return {
+    filePath: file.path,
+    oldPath: file.oldPath,
+    status: toReplaceDiffStatus(file.status),
+    additions: file.insertions,
+    deletions: file.deletions,
+    isBinary: false,
+    oldContent,
+    newContent,
+    contentOmitted: false,
+  };
 }
 
 // ============================================================================
@@ -204,7 +545,7 @@ sandboxesFeaturesRouter.openapi(
             schema: z.object({
               workspacePath: z.string().optional().describe("Path to scan for repos (default: /root/workspace)"),
               includeContent: z.boolean().optional().describe("Include full diff content (default: false, stats only)"),
-              maxContentLength: z.number().optional().describe("Max diff content length in bytes (default: 100000)"),
+              maxContentLength: z.number().optional().describe("Switch to file-list-only mode above this byte threshold (default: 100000)"),
             }),
           },
         },
@@ -215,21 +556,7 @@ sandboxesFeaturesRouter.openapi(
       200: {
         content: {
           "application/json": {
-            schema: z.object({
-              files: z.array(z.object({
-                path: z.string(),
-                status: z.enum(["added", "modified", "deleted", "renamed", "untracked"]),
-                insertions: z.number(),
-                deletions: z.number(),
-              })).describe("Changed files with stats"),
-              summary: z.object({
-                totalFiles: z.number(),
-                insertions: z.number(),
-                deletions: z.number(),
-              }),
-              diff: z.string().optional().describe("Full diff content (if includeContent=true)"),
-              truncated: z.boolean().optional().describe("True if diff was truncated"),
-            }),
+            schema: LiveDiffResponseSchema,
           },
         },
         description: "Live diff from sandbox",
@@ -245,7 +572,7 @@ sandboxesFeaturesRouter.openapi(
     const body = c.req.valid("json");
     const rawWorkspacePath = body.workspacePath ?? "/root/workspace";
     const includeContent = body.includeContent ?? false;
-    const maxContentLength = body.maxContentLength ?? 100_000;
+    const maxContentLength = body.maxContentLength ?? LIVE_DIFF_DEFAULT_MAX_BYTES;
 
     // Sanitize workspacePath
     if (!/^[a-zA-Z0-9/_.-]+$/.test(rawWorkspacePath)) {
@@ -258,99 +585,21 @@ sandboxesFeaturesRouter.openapi(
 
     try {
       const sandbox = await getInstanceById(id, getMorphClientOrNull());
+      const snapshot = await collectLiveDiffSnapshot(sandbox, workspacePath);
+      const mode =
+        snapshot.totalDiffBytes > maxContentLength ? "file_list_only" : "full";
 
-      // Get diff stats (--numstat gives insertions/deletions per file)
-      // Include both staged and unstaged changes
-      const statsResult = await sandbox.exec(
-        `cd "${workspacePath}" && git diff --numstat HEAD 2>/dev/null || git diff --numstat 2>/dev/null || echo ""`,
-        { timeoutMs: 15_000 }
-      );
-
-      // Get untracked files
-      const untrackedResult = await sandbox.exec(
-        `cd "${workspacePath}" && git ls-files --others --exclude-standard 2>/dev/null || echo ""`,
-        { timeoutMs: 10_000 }
-      );
-
-      // Parse diff stats
-      const files: Array<{
-        path: string;
-        status: "added" | "modified" | "deleted" | "renamed" | "untracked";
-        insertions: number;
-        deletions: number;
-      }> = [];
-
-      let totalInsertions = 0;
-      let totalDeletions = 0;
-
-      // Parse numstat output: insertions\tdeletions\tfilename
-      for (const line of statsResult.stdout.split("\n")) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-
-        const parts = trimmed.split("\t");
-        if (parts.length >= 3) {
-          const ins = parts[0] === "-" ? 0 : parseInt(parts[0], 10) || 0;
-          const del = parts[1] === "-" ? 0 : parseInt(parts[1], 10) || 0;
-          const filePath = parts.slice(2).join("\t"); // Handle filenames with tabs
-
-          files.push({
-            path: filePath,
-            status: del > 0 && ins === 0 ? "deleted" : ins > 0 && del === 0 ? "added" : "modified",
-            insertions: ins,
-            deletions: del,
-          });
-
-          totalInsertions += ins;
-          totalDeletions += del;
-        }
-      }
-
-      // Add untracked files
-      for (const line of untrackedResult.stdout.split("\n")) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-
-        // Check if not already in files list
-        if (!files.some((f) => f.path === trimmed)) {
-          files.push({
-            path: trimmed,
-            status: "untracked",
-            insertions: 0,
-            deletions: 0,
-          });
-        }
-      }
-
-      const response: {
-        files: typeof files;
-        summary: { totalFiles: number; insertions: number; deletions: number };
-        diff?: string;
-        truncated?: boolean;
-      } = {
-        files,
-        summary: {
-          totalFiles: files.length,
-          insertions: totalInsertions,
-          deletions: totalDeletions,
-        },
+      const response: z.infer<typeof LiveDiffResponseSchema> = {
+        files: snapshot.files,
+        summary: snapshot.summary,
+        mode,
+        totalDiffBytes: snapshot.totalDiffBytes,
       };
 
-      // Optionally include full diff content
-      if (includeContent && files.length > 0) {
-        const diffResult = await sandbox.exec(
-          `cd "${workspacePath}" && git diff HEAD 2>/dev/null || git diff 2>/dev/null || echo ""`,
-          { timeoutMs: 30_000 }
+      if (includeContent && mode === "full" && snapshot.files.length > 0) {
+        response.entries = await Promise.all(
+          snapshot.files.map((file) => buildLiveDiffEntry(sandbox, workspacePath, file)),
         );
-
-        const diffContent = diffResult.stdout;
-        if (diffContent.length > maxContentLength) {
-          response.diff = diffContent.substring(0, maxContentLength);
-          response.truncated = true;
-        } else {
-          response.diff = diffContent;
-          response.truncated = false;
-        }
       }
 
       return c.json(response);
@@ -365,6 +614,80 @@ sandboxesFeaturesRouter.openapi(
       }
       console.error("[sandboxes.live-diff] Failed to get diff:", error);
       return c.text("Failed to get diff", 500);
+    }
+  },
+);
+
+/**
+ * GET /sandboxes/{id}/live-diff/{path}
+ * Fetch a single live-diff file entry on demand.
+ */
+sandboxesFeaturesRouter.openapi(
+  createRoute({
+    method: "get" as const,
+    path: "/sandboxes/{id}/live-diff/{path}",
+    tags: ["Sandboxes"],
+    summary: "Get live diff for a single file",
+    request: {
+      params: z.object({
+        id: z.string(),
+        path: z.string().describe("URL-encoded repository-relative file path"),
+      }),
+      query: z.object({
+        workspacePath: z.string().optional().describe("Path to scan for repos (default: /root/workspace)"),
+      }),
+    },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: ReplaceDiffEntrySchema,
+          },
+        },
+        description: "Single-file live diff entry",
+      },
+      400: { description: "Invalid workspace path" },
+      401: { description: "Unauthorized" },
+      404: { description: "Sandbox or diff entry not found" },
+      500: { description: "Failed to get diff entry" },
+    },
+  }),
+  async (c) => {
+    const { id, path } = c.req.valid("param");
+    const { workspacePath: rawWorkspacePath = "/root/workspace" } = c.req.valid("query");
+
+    if (!/^[a-zA-Z0-9/_.-]+$/.test(rawWorkspacePath)) {
+      return c.text("Invalid workspace path: contains disallowed characters", 400);
+    }
+
+    const token = await getAccessTokenFromRequest(c.req.raw);
+    if (!token) {
+      return c.text("Unauthorized", 401);
+    }
+
+    const decodedPath = decodeLiveDiffPath(path);
+
+    try {
+      const sandbox = await getInstanceById(id, getMorphClientOrNull());
+      const snapshot = await collectLiveDiffSnapshot(sandbox, rawWorkspacePath);
+      const file = snapshot.files.find((entry) => entry.path === decodedPath);
+
+      if (!file) {
+        return c.text("Live diff entry not found", 404);
+      }
+
+      return c.json(await buildLiveDiffEntry(sandbox, rawWorkspacePath, file));
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (
+        errorMessage.includes("not found") ||
+        errorMessage.includes("does not exist") ||
+        errorMessage.includes("404")
+      ) {
+        return c.text("Sandbox not found", 404);
+      }
+      console.error("[sandboxes.live-diff.single-file] Failed to get diff entry:", error);
+      return c.text("Failed to get diff entry", 500);
     }
   },
 );

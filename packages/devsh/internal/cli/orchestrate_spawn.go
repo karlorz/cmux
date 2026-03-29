@@ -22,6 +22,8 @@ var orchestrateSpawnPriority int
 var orchestrateSpawnUseEnvJwt bool
 var orchestrateSpawnCloudWorkspace bool
 var orchestrateSpawnSupervisorProfile string
+var orchestrateSpawnVariant string
+var orchestrateSpawnEffort string
 
 var orchestrateSpawnCmd = &cobra.Command{
 	Use:   "spawn <prompt>",
@@ -43,12 +45,12 @@ and the CMUX_IS_ORCHESTRATION_HEAD=1 environment variable.
 
 Examples:
   devsh orchestrate spawn --agent claude/haiku-4.5 --repo owner/repo "Add tests"
-  devsh orchestrate spawn --agent codex/gpt-5.1-codex-mini "Fix the bug"
+  devsh orchestrate spawn --agent codex/gpt-5.4 --variant xhigh "Fix the bug"
   devsh orchestrate spawn --agent claude/opus-4.5 --repo owner/repo --pr-title "Fix: auth bug" "Fix auth"
   devsh orchestrate spawn --agent claude/haiku-4.5 --depends-on <orch-task-id> "Task B depends on A"
   devsh orchestrate spawn --agent claude/haiku-4.5 --priority 1 "High priority task"
   devsh orchestrate spawn --agent claude/haiku-4.5 --use-env-jwt "Sub-task from head agent"
-  devsh orchestrate spawn --cloud-workspace --agent claude/opus-4.6 "Coordinate feature implementation"
+  devsh orchestrate spawn --cloud-workspace --agent claude/opus-4.6 --effort max "Coordinate feature implementation"
   devsh orchestrate spawn --supervisor-profile <profile-id> --agent claude/opus-4.6 "Supervised task"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -56,6 +58,14 @@ Examples:
 
 		if orchestrateSpawnAgent == "" {
 			return fmt.Errorf("--agent flag is required")
+		}
+
+		selectedVariant, err := resolveVariantFlagValue(
+			orchestrateSpawnVariant,
+			orchestrateSpawnEffort,
+		)
+		if err != nil {
+			return err
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -84,6 +94,7 @@ Examples:
 		result, err := client.OrchestrationSpawn(ctx, vm.OrchestrationSpawnOptions{
 			Prompt:              prompt,
 			Agent:               orchestrateSpawnAgent,
+			SelectedVariant:     selectedVariant,
 			Repo:                orchestrateSpawnRepo,
 			Branch:              orchestrateSpawnBranch,
 			PRTitle:             orchestrateSpawnPRTitle,
@@ -134,5 +145,7 @@ func init() {
 	orchestrateSpawnCmd.Flags().BoolVar(&orchestrateSpawnUseEnvJwt, "use-env-jwt", false, "Use CMUX_TASK_RUN_JWT from environment for authentication (allows agents to spawn sub-agents)")
 	orchestrateSpawnCmd.Flags().BoolVar(&orchestrateSpawnCloudWorkspace, "cloud-workspace", false, "Spawn as an orchestration head agent (cloud workspace for coordinating sub-agents)")
 	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnSupervisorProfile, "supervisor-profile", "", "Supervisor profile ID to use for head agent behavior (Convex doc ID)")
+	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnVariant, "variant", "", "Effort variant to use for the selected model")
+	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnEffort, "effort", "", "Alias for --variant")
 	orchestrateCmd.AddCommand(orchestrateSpawnCmd)
 }

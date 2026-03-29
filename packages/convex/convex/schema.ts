@@ -206,6 +206,7 @@ const convexSchema = defineSchema({
     startingCommitSha: v.optional(v.string()), // Commit SHA when run started (for diff baseline)
     prompt: v.string(), // The prompt that will be passed to claude
     agentName: v.optional(v.string()), // Name of the agent that ran this task (e.g., "claude/sonnet-4")
+    selectedVariant: v.optional(v.string()), // Optional effort/reasoning selection for this run
     summary: v.optional(v.string()), // Markdown summary of the run
     status: v.union(
       v.literal("pending"),
@@ -437,6 +438,28 @@ const convexSchema = defineSchema({
         // P2: Checkpoint reference for replay-safe resume
         checkpointRef: v.optional(v.string()), // Reference to checkpoint state (LangGraph-style)
         checkpointGeneration: v.optional(v.number()), // Monotonic counter for checkpoint ordering
+      })
+    ),
+    runControlState: v.optional(
+      v.object({
+        inactivityTimeoutMinutes: v.number(),
+        lastActivityAt: v.number(),
+        lastActivitySource: v.union(
+          v.literal("spawn"),
+          v.literal("file_write"),
+          v.literal("git_commit"),
+          v.literal("live_diff"),
+          v.literal("approval_resolved"),
+          v.literal("session_continue"),
+          v.literal("checkpoint_restore"),
+          v.literal("manual")
+        ),
+        lastFileWriteAt: v.optional(v.number()),
+        lastGitCommitAt: v.optional(v.number()),
+        lastLiveDiffAt: v.optional(v.number()),
+        lastCheckpointAt: v.optional(v.number()),
+        timeoutTriggeredAt: v.optional(v.number()),
+        timeoutReason: v.optional(v.string()),
       })
     ),
     // /simplify pre-merge gate tracking

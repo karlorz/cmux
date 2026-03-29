@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -21,6 +23,8 @@ var (
 	localTUI         bool
 	localDryRun      bool
 	localModel       string
+	localVariant     string
+	localEffort      string
 	localPersist     bool
 	localRunDir      string
 	localIncludeLogs bool
@@ -35,6 +39,7 @@ type LocalState struct {
 	DurationMs      int64        `json:"durationMs,omitempty"`
 	Status          string       `json:"status"`
 	Agent           string       `json:"agent"`
+	SelectedVariant string       `json:"selectedVariant,omitempty"`
 	Prompt          string       `json:"prompt"`
 	Workspace       string       `json:"workspace"`
 	Events          []LocalEvent `json:"events"`
@@ -47,6 +52,7 @@ type LocalState struct {
 type LocalRunConfig struct {
 	OrchestrationID string `json:"orchestrationId"`
 	Agent           string `json:"agent"`
+	SelectedVariant string `json:"selectedVariant,omitempty"`
 	Prompt          string `json:"prompt"`
 	Workspace       string `json:"workspace"`
 	Timeout         string `json:"timeout"`
@@ -62,6 +68,14 @@ type LocalEvent struct {
 	Timestamp string `json:"timestamp"`
 	Type      string `json:"type"`
 	Message   string `json:"message"`
+}
+
+func formatCommandArgs(args []string) string {
+	quoted := make([]string, 0, len(args))
+	for _, arg := range args {
+		quoted = append(quoted, strconv.Quote(arg))
+	}
+	return strings.Join(quoted, " ")
 }
 
 var orchestrateLocalCmd = &cobra.Command{
@@ -88,15 +102,16 @@ Persistent Run Directory (default):
   partial state and events up to that point. Use --persist=false to disable.
 
 Supported agents:
-  claude/*    - Claude Code CLI (haiku-4.5, haiku-4.6, sonnet-4.5, sonnet-4.6, opus-4.5, opus-4.6)
-  codex/*     - Codex CLI (gpt-5.1-codex-mini, gpt-5.4-xhigh)
+  claude/*    - Claude Code CLI (haiku-4.5, sonnet-4.5, opus-4.5, opus-4.6)
+  codex/*     - Codex CLI (gpt-5.4, gpt-5.3-codex, gpt-5.2-codex, gpt-5.1-codex-mini, etc.)
   gemini/*    - Gemini CLI (gemini-2.5-pro, gemini-2.5-flash)
   opencode/*  - Opencode CLI (big-pickle, small-pickle)
   amp/*       - Amp CLI (amp-1)
 
 Examples:
   devsh orchestrate run-local --agent claude/opus-4.6 "Fix the bug in auth.ts"
-  devsh orchestrate run-local --agent codex/gpt-5.1-codex-mini --workspace ./my-repo "Add tests"
+  devsh orchestrate run-local --agent claude/opus-4.6 --effort max "Handle the hairy refactor"
+  devsh orchestrate run-local --agent codex/gpt-5.4 --variant xhigh --workspace ./my-repo "Add tests"
   devsh orchestrate run-local --agent gemini/gemini-2.5-pro --export ./debug.json "Refactor"
   devsh orchestrate run-local --agent claude/haiku-4.5 --timeout 1h "Long running task"
   devsh orchestrate run-local --persist=false "Skip artifact persistence"
@@ -104,6 +119,18 @@ Examples:
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		prompt := args[0]
+		selectedVariant, err := resolveVariantFlagValue(localVariant, localEffort)
+		if err != nil {
+			return err
+		}
+		resolvedSelection, err := resolveLocalAgentSelection(localAgent, selectedVariant)
+		if err != nil {
+			return err
+		}
+		if localModel != "" && resolvedSelection.SelectedVariant != "" {
+			return fmt.Errorf("--model cannot be combined with --variant or --effort")
+		}
+		localAgent = resolvedSelection.AgentName
 
 		// Resolve workspace
 		workspace := localWorkspace
@@ -131,7 +158,7 @@ Examples:
 			if !flagJSON {
 				fmt.Println("Running preflight checks...")
 			}
-			if err := runSelftestForAgent(localAgent, absWorkspace); err != nil {
+			if err := runSelftestForAgent(resolvedSelection.AgentName, absWorkspace); err != nil {
 				return fmt.Errorf("preflight checks failed: %w", err)
 			}
 			if !flagJSON {
@@ -142,16 +169,71 @@ Examples:
 		// Generate orchestration ID
 		orchID := fmt.Sprintf("local_%d", time.Now().UnixNano())
 		startTime := time.Now()
+		resolvedModelForConfig := localModel
+		if resolvedModelForConfig == "" {
+			switch resolvedSelection.Provider {
+			case "claude":
+				resolvedModelForConfig = resolvedSelection.ClaudeModel
+			case "codex":
+				resolvedModelForConfig = resolvedSelection.CodexModel
+			}
+		}
 
 		// Initialize state
 		state := &LocalState{
 			OrchestrationID: orchID,
 			StartedAt:       startTime.UTC().Format(time.RFC3339),
 			Status:          "running",
-			Agent:           localAgent,
+			Agent:           resolvedSelection.AgentName,
+			SelectedVariant: resolvedSelection.SelectedVariant,
 			Prompt:          prompt,
 			Workspace:       absWorkspace,
 			Events:          []LocalEvent{},
+		}
+
+		// Add start event
+		state.addEvent("task_started", fmt.Sprintf("Starting %s in %s", resolvedSelection.AgentName, absWorkspace))
+
+		// Dry-run mode: just show what would happen
+		if localDryRun {
+			if !flagJSON {
+				fmt.Printf("Local Orchestration: %s\n", orchID)
+				fmt.Printf("Agent: %s\n", resolvedSelection.AgentName)
+				if resolvedSelection.SelectedVariant != "" {
+					fmt.Printf("Effort: %s\n", resolvedSelection.SelectedVariant)
+				}
+				fmt.Printf("Workspace: %s\n", absWorkspace)
+				fmt.Printf("Prompt: %s\n", prompt)
+				if flagVerbose {
+					fmt.Printf("Timeout: %s\n", localTimeout)
+					if localModel != "" {
+						fmt.Printf("Model Override: %s\n", localModel)
+					}
+				}
+				fmt.Printf("\n[DRY RUN] Would execute:\n")
+			}
+			switch resolvedSelection.Provider {
+			case "claude":
+				args := buildLocalClaudeArgs(resolvedSelection, prompt, localModel)
+				fmt.Printf("  claude %s\n", formatCommandArgs(args))
+			case "codex":
+				args := buildLocalCodexArgs(resolvedSelection, prompt)
+				fmt.Printf("  codex %s\n", formatCommandArgs(args))
+			case "gemini":
+				fmt.Printf("  gemini -p \"%s\"\n", prompt)
+			case "opencode":
+				fmt.Printf("  opencode \"%s\"\n", prompt)
+			case "amp":
+				fmt.Printf("  amp \"%s\"\n", prompt)
+			default:
+				fmt.Printf("  (unsupported agent: %s)\n", resolvedSelection.AgentName)
+			}
+			fmt.Printf("  Working directory: %s\n", absWorkspace)
+			fmt.Printf("  Timeout: %s\n", localTimeout)
+			if localExport != "" {
+				fmt.Printf("  Export to: %s\n", localExport)
+			}
+			return nil
 		}
 
 		// Create persistent run directory if enabled
@@ -159,11 +241,12 @@ Examples:
 		if localPersist {
 			config := &LocalRunConfig{
 				OrchestrationID: orchID,
-				Agent:           localAgent,
+				Agent:           resolvedSelection.AgentName,
+				SelectedVariant: resolvedSelection.SelectedVariant,
 				Prompt:          prompt,
 				Workspace:       absWorkspace,
 				Timeout:         localTimeout,
-				Model:           localModel,
+				Model:           resolvedModelForConfig,
 				CreatedAt:       startTime.UTC().Format(time.RFC3339),
 				DevshVersion:    GetVersion(),
 				GitBranch:       getGitBranch(absWorkspace),
@@ -187,19 +270,19 @@ Examples:
 			defer removePidFile(runDir)
 
 			// Initialize session info for active instruction injection (D5.6)
-			if err := InitSessionForRun(runDir, localAgent, absWorkspace); err != nil {
+			if err := InitSessionForRun(runDir, resolvedSelection.AgentName, absWorkspace); err != nil {
 				if !flagJSON && flagVerbose {
 					fmt.Printf("Warning: failed to init session info: %v\n", err)
 				}
 			}
 		}
 
-		// Add start event
-		state.addEvent("task_started", fmt.Sprintf("Starting %s in %s", localAgent, absWorkspace))
-
 		if !flagJSON {
 			fmt.Printf("Local Orchestration: %s\n", orchID)
-			fmt.Printf("Agent: %s\n", localAgent)
+			fmt.Printf("Agent: %s\n", resolvedSelection.AgentName)
+			if resolvedSelection.SelectedVariant != "" {
+				fmt.Printf("Effort: %s\n", resolvedSelection.SelectedVariant)
+			}
 			fmt.Printf("Workspace: %s\n", absWorkspace)
 			fmt.Printf("Prompt: %s\n", prompt)
 			if runDir != "" {
@@ -211,35 +294,6 @@ Examples:
 					fmt.Printf("Model Override: %s\n", localModel)
 				}
 			}
-		}
-
-		// Dry-run mode: just show what would happen
-		if localDryRun {
-			fmt.Printf("\n[DRY RUN] Would execute:\n")
-			switch localAgent {
-			case "claude/haiku-4.5", "claude/haiku-4.6", "claude/sonnet-4.5", "claude/sonnet-4.6", "claude/opus-4.5", "claude/opus-4.6":
-				if localModel != "" {
-					fmt.Printf("  claude -p --dangerously-skip-permissions --model %s \"%s\"\n", localModel, prompt)
-				} else {
-					fmt.Printf("  claude -p --dangerously-skip-permissions \"%s\"\n", prompt)
-				}
-			case "codex/gpt-5.1-codex-mini", "codex/gpt-5.4-xhigh":
-				fmt.Printf("  codex \"%s\"\n", prompt)
-			case "gemini/gemini-2.5-pro", "gemini/gemini-2.5-flash":
-				fmt.Printf("  gemini -p \"%s\"\n", prompt)
-			case "opencode/big-pickle", "opencode/small-pickle":
-				fmt.Printf("  opencode \"%s\"\n", prompt)
-			case "amp/amp-1":
-				fmt.Printf("  amp \"%s\"\n", prompt)
-			default:
-				fmt.Printf("  (unsupported agent: %s)\n", localAgent)
-			}
-			fmt.Printf("  Working directory: %s\n", absWorkspace)
-			fmt.Printf("  Timeout: %s\n", localTimeout)
-			if localExport != "" {
-				fmt.Printf("  Export to: %s\n", localExport)
-			}
-			return nil
 		}
 
 		if !flagJSON {
@@ -261,19 +315,19 @@ Examples:
 		if localTUI {
 			runErr = runLocalWithTUI(ctx, state, prompt, absWorkspace)
 		} else {
-			switch localAgent {
-			case "claude/haiku-4.5", "claude/haiku-4.6", "claude/sonnet-4.5", "claude/sonnet-4.6", "claude/opus-4.5", "claude/opus-4.6":
+			switch resolvedSelection.Provider {
+			case "claude":
 				runErr = runClaudeLocal(ctx, state, prompt, absWorkspace)
-			case "codex/gpt-5.1-codex-mini", "codex/gpt-5.4-xhigh":
+			case "codex":
 				runErr = runCodexLocal(ctx, state, prompt, absWorkspace)
-			case "gemini/gemini-2.5-pro", "gemini/gemini-2.5-flash":
+			case "gemini":
 				runErr = runGeminiLocal(ctx, state, prompt, absWorkspace)
-			case "opencode/big-pickle", "opencode/small-pickle":
+			case "opencode":
 				runErr = runOpencodeLocal(ctx, state, prompt, absWorkspace)
-			case "amp/amp-1":
+			case "amp":
 				runErr = runAmpLocal(ctx, state, prompt, absWorkspace)
 			default:
-				return fmt.Errorf("unsupported local agent: %s (supported: claude/*, codex/*, gemini/*, opencode/*, amp/*)", localAgent)
+				return fmt.Errorf("unsupported local agent: %s (supported: claude/*, codex/*, gemini/*, opencode/*, amp/*)", resolvedSelection.AgentName)
 			}
 		}
 
@@ -467,17 +521,17 @@ func runClaudeLocal(ctx context.Context, state *LocalState, prompt, workspace st
 	}
 
 	// Build command args
-	// Use -p (print mode) for non-interactive execution
-	// --dangerously-skip-permissions for automated runs (use with caution)
-	args := []string{"-p", "--dangerously-skip-permissions"}
-
-	// Add model override if specified
+	selection, err := resolveLocalAgentSelection(state.Agent, state.SelectedVariant)
+	if err != nil {
+		return err
+	}
+	args := buildLocalClaudeArgs(selection, prompt, localModel)
 	if localModel != "" {
-		args = append(args, "--model", localModel)
 		state.addEvent("model_override", fmt.Sprintf("Using model: %s", localModel))
 	}
-
-	args = append(args, prompt)
+	if selection.SelectedVariant != "" {
+		state.addEvent("effort_override", fmt.Sprintf("Using effort: %s", selection.SelectedVariant))
+	}
 
 	cmd := exec.CommandContext(ctx, claudePath, args...)
 	cmd.Dir = workspace
@@ -506,7 +560,11 @@ func runCodexLocal(ctx context.Context, state *LocalState, prompt, workspace str
 		return fmt.Errorf("codex CLI not found in PATH: %w", err)
 	}
 
-	cmd := exec.CommandContext(ctx, codexPath, prompt)
+	selection, err := resolveLocalAgentSelection(state.Agent, state.SelectedVariant)
+	if err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, codexPath, buildLocalCodexArgs(selection, prompt)...)
 	cmd.Dir = workspace
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -624,8 +682,11 @@ func runClaudeLocalWithAgent(ctx context.Context, state *LocalState, agent, prom
 		return fmt.Errorf("claude CLI not found in PATH: %w", err)
 	}
 
-	args := []string{"-p", "--dangerously-skip-permissions"}
-	args = append(args, prompt)
+	selection, err := resolveLocalAgentSelection(agent, state.SelectedVariant)
+	if err != nil {
+		return err
+	}
+	args := buildLocalClaudeArgs(selection, prompt, localModel)
 
 	cmd := exec.CommandContext(ctx, claudePath, args...)
 	cmd.Dir = workspace
@@ -651,7 +712,11 @@ func runCodexLocalWithAgent(ctx context.Context, state *LocalState, agent, promp
 		return fmt.Errorf("codex CLI not found in PATH: %w", err)
 	}
 
-	cmd := exec.CommandContext(ctx, codexPath, prompt)
+	selection, err := resolveLocalAgentSelection(agent, state.SelectedVariant)
+	if err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, codexPath, buildLocalCodexArgs(selection, prompt)...)
 	cmd.Dir = workspace
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -835,7 +900,9 @@ func init() {
 	orchestrateLocalCmd.Flags().StringVar(&localExport, "export", "", "Export state to JSON file when done")
 	orchestrateLocalCmd.Flags().BoolVar(&localTUI, "tui", false, "Show live terminal UI with spinner, events, and scrollable output")
 	orchestrateLocalCmd.Flags().BoolVar(&localDryRun, "dry-run", false, "Show what would be executed without running")
-	orchestrateLocalCmd.Flags().StringVar(&localModel, "model", "", "Override model for Claude (e.g., claude-sonnet-4-5-20250514)")
+	orchestrateLocalCmd.Flags().StringVar(&localModel, "model", "", "Override the raw Claude model id directly (expert mode; mutually exclusive with --variant/--effort)")
+	orchestrateLocalCmd.Flags().StringVar(&localVariant, "variant", "", "Effort variant to use for the selected model")
+	orchestrateLocalCmd.Flags().StringVar(&localEffort, "effort", "", "Alias for --variant")
 	orchestrateLocalCmd.Flags().BoolVar(&localPersist, "persist", true, "Save run artifacts to ~/.devsh/orchestrations/<run-id>/ (default: true, use --persist=false to disable)")
 	orchestrateLocalCmd.Flags().StringVar(&localRunDir, "run-dir", "", "Custom base directory for run artifacts (default: ~/.devsh/orchestrations)")
 	orchestrateLocalCmd.Flags().BoolVar(&localIncludeLogs, "include-logs", false, "Include stdout/stderr logs in --export bundle (always included with --persist)")

@@ -7,6 +7,10 @@ import (
 	"github.com/karlorz/devsh/internal/credentials"
 )
 
+func strPtr(s string) *string {
+	return &s
+}
+
 func TestFilterModels(t *testing.T) {
 	models := []ModelInfo{
 		{Name: "claude/opus-4.6", DisplayName: "Opus 4.6", Vendor: "anthropic", Tier: "paid", Disabled: false},
@@ -72,6 +76,37 @@ func TestFilterModelsTextFilterMatchesMultipleFields(t *testing.T) {
 	result = filterModels(models, "", false, "anthropic")
 	if len(result) != 1 {
 		t.Errorf("text filter should match vendor, got %d, want 1", len(result))
+	}
+}
+
+func TestPrintModelsTableVerboseIncludesEffortVariants(t *testing.T) {
+	models := []ModelInfo{
+		{
+			Name:        "claude/opus-4.6",
+			DisplayName: "Opus 4.6",
+			Vendor:      "anthropic",
+			Tier:        "paid",
+			Variants: []ModelVariant{
+				{ID: "low", DisplayName: "Low"},
+				{ID: "medium", DisplayName: "Medium"},
+				{ID: "max", DisplayName: "Max"},
+			},
+			DefaultVariant: "medium",
+			DisabledReason: strPtr(""),
+		},
+	}
+
+	output := captureStdout(t, func() {
+		if err := printModelsTable(models, true); err != nil {
+			t.Fatalf("printModelsTable failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "EFFORT") {
+		t.Fatalf("expected EFFORT header, got %q", output)
+	}
+	if !strings.Contains(output, "low,medium*,max") {
+		t.Fatalf("expected formatted effort variants, got %q", output)
 	}
 }
 
@@ -160,7 +195,7 @@ func TestFilterByAvailabilityEmpty(t *testing.T) {
 
 func TestFilterByAvailabilityWithVendorMapping(t *testing.T) {
 	models := []ModelInfo{
-		{Name: "claude/opus", DisplayName: "Opus", Vendor: "claude", Tier: "paid"},   // "claude" maps to "anthropic"
+		{Name: "claude/opus", DisplayName: "Opus", Vendor: "claude", Tier: "paid"},      // "claude" maps to "anthropic"
 		{Name: "gemini-pro", DisplayName: "Gemini Pro", Vendor: "gemini", Tier: "paid"}, // "gemini" maps to "google"
 	}
 

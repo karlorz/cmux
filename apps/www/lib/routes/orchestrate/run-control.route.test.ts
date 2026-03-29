@@ -79,6 +79,13 @@ describe("orchestrateRunControlRouter GET /v1/cmux/orchestration/run-control/:ta
         providerThreadId: "thread_123",
         hasActiveBinding: true,
       },
+      timeout: {
+        inactivityTimeoutMinutes: 45,
+        status: "active",
+        lastActivityAt: 100,
+        lastActivitySource: "spawn",
+        nextTimeoutAt: 200,
+      },
     }));
     getConvex.mockReturnValue({ query });
 

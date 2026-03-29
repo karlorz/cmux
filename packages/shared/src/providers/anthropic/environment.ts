@@ -22,6 +22,32 @@ export const CLAUDE_KEY_ENV_VARS_TO_UNSET = [
   "CLAUDE_API_KEY",
 ];
 
+const CLAUDE_OPUS_46_EFFORT_LEVELS = new Set(["low", "medium", "high", "max"]);
+
+function resolveClaudeEffortLevel(
+  agentName: string | undefined,
+  selectedVariant: string | undefined,
+): string | undefined {
+  const effort = selectedVariant?.trim();
+  if (!effort) {
+    return undefined;
+  }
+
+  if (agentName !== "claude/opus-4.6") {
+    throw new Error(
+      `Model ${agentName ?? "claude"} does not support effort selection`,
+    );
+  }
+
+  if (!CLAUDE_OPUS_46_EFFORT_LEVELS.has(effort)) {
+    throw new Error(
+      `Unsupported Claude effort "${effort}". Allowed values: low, medium, high, max`,
+    );
+  }
+
+  return effort;
+}
+
 /**
  * @deprecated Use permissionDenyRules from Convex instead.
  * Kept as fallback if Convex fetch fails during migration period.
@@ -79,6 +105,10 @@ export async function getClaudeEnvironment(
   const files: EnvironmentResult["files"] = [];
   const env: Record<string, string> = {};
   const startupCommands: string[] = [];
+  const effortLevel = resolveClaudeEffortLevel(
+    ctx.agentName,
+    ctx.selectedVariant,
+  );
   const claudeLifecycleDir = "/root/lifecycle/claude";
   const claudeSecretsDir = `${claudeLifecycleDir}/secrets`;
   const claudeApiKeyHelperPath = `${claudeSecretsDir}/anthropic_key_helper.sh`;
@@ -89,7 +119,10 @@ export async function getClaudeEnvironment(
     let userConfig: Record<string, unknown> = {};
     if (ctx.agentConfigs?.claude) {
       try {
-        userConfig = JSON.parse(ctx.agentConfigs.claude) as Record<string, unknown>;
+        userConfig = JSON.parse(ctx.agentConfigs.claude) as Record<
+          string,
+          unknown
+        >;
       } catch {
         console.warn("Failed to parse user Claude config, ignoring");
       }
@@ -119,8 +152,8 @@ export async function getClaudeEnvironment(
       ...userConfig,
       // Preserve mcpServers from base config and merge with user config
       mcpServers: {
-        ...(baseConfig.mcpServers as Record<string, unknown> ?? {}),
-        ...(userConfig.mcpServers as Record<string, unknown> ?? {}),
+        ...((baseConfig.mcpServers as Record<string, unknown>) ?? {}),
+        ...((userConfig.mcpServers as Record<string, unknown>) ?? {}),
       },
       // cmux-managed workspace trust (always override)
       projects: {
@@ -1043,9 +1076,9 @@ exit 0`;
   // 3. Fall back to FALLBACK_DENY_RULES if no Convex rules provided (migration period)
   const shouldApplyDenyRules = hasTaskRunJwt && !ctx.isOrchestrationHead;
   const denyRules = shouldApplyDenyRules
-    ? (ctx.permissionDenyRules?.length
-        ? ctx.permissionDenyRules
-        : FALLBACK_DENY_RULES)
+    ? ctx.permissionDenyRules?.length
+      ? ctx.permissionDenyRules
+      : FALLBACK_DENY_RULES
     : undefined;
 
   const settingsConfig: Record<string, unknown> = {
@@ -1218,6 +1251,7 @@ exit 0`;
       CLAUDE_CODE_ENABLE_TELEMETRY: 0,
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: 1,
       CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: 1,
+      ...(effortLevel ? { CLAUDE_CODE_EFFORT_LEVEL: effortLevel } : {}),
       // CMUX system vars for stop hooks (memory sync, crown/complete)
       CMUX_CALLBACK_URL: ctx.callbackUrl,
       CMUX_TASK_RUN_ID: ctx.taskRunId,
@@ -1241,11 +1275,14 @@ exit 0`;
         // Provider override takes precedence over legacy bypass
         if (ctx.providerConfig?.isOverridden && ctx.providerConfig.baseUrl) {
           const result: Record<string, string | number> = {
-            ANTHROPIC_BASE_URL: normalizeAnthropicBaseUrl(ctx.providerConfig.baseUrl)
-              .forRawFetch,
+            ANTHROPIC_BASE_URL: normalizeAnthropicBaseUrl(
+              ctx.providerConfig.baseUrl,
+            ).forRawFetch,
           };
           if (ctx.providerConfig.customHeaders) {
-            result.ANTHROPIC_CUSTOM_HEADERS = Object.entries(ctx.providerConfig.customHeaders)
+            result.ANTHROPIC_CUSTOM_HEADERS = Object.entries(
+              ctx.providerConfig.customHeaders,
+            )
               .map(([k, v]) => `${k}:${v}`)
               .join("\n");
           }
@@ -1254,8 +1291,8 @@ exit 0`;
 
         if (bypassProxy && userCustomBaseUrl) {
           return {
-            ANTHROPIC_BASE_URL: normalizeAnthropicBaseUrl(userCustomBaseUrl)
-              .forRawFetch,
+            ANTHROPIC_BASE_URL:
+              normalizeAnthropicBaseUrl(userCustomBaseUrl).forRawFetch,
           };
         }
 
@@ -1298,7 +1335,15 @@ echo ${apiKeyToOutput}`;
 
   // Add agent memory protocol support
   startupCommands.push(getMemoryStartupCommand());
-  files.push(...getMemorySeedFiles(ctx.taskRunId, ctx.previousKnowledge, ctx.previousMailbox, ctx.orchestrationOptions, ctx.previousBehavior));
+  files.push(
+    ...getMemorySeedFiles(
+      ctx.taskRunId,
+      ctx.previousKnowledge,
+      ctx.previousMailbox,
+      ctx.orchestrationOptions,
+      ctx.previousBehavior,
+    ),
+  );
 
   // Inject GitHub Projects context if task is linked to a project item (Phase 5)
   if (ctx.githubProjectContext) {

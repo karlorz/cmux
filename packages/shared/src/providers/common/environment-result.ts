@@ -1,6 +1,9 @@
 import type { AuthFile } from "../../worker-schemas";
 import type { McpServerConfig } from "../../mcp-server-config";
-import type { PolicyRuleForInstructions, OrchestrationRuleForInstructions } from "../../agent-memory-protocol";
+import type {
+  PolicyRuleForInstructions,
+  OrchestrationRuleForInstructions,
+} from "../../agent-memory-protocol";
 
 export interface EnvironmentResult {
   files: AuthFile[];
@@ -30,6 +33,8 @@ export type EnvironmentContext = {
   taskRunId: string;
   /** Agent identity used by tooling (e.g. memory MCP sender identity). */
   agentName?: string;
+  /** Optional provider-specific effort/thinking variant for this run. */
+  selectedVariant?: string;
   prompt: string;
   taskRunJwt: string;
   apiKeys?: Record<string, string>;
@@ -68,8 +73,8 @@ export type EnvironmentContext = {
     headAgent: string;
     orchestrationId?: string;
     description?: string;
-    previousPlan?: string;    // Raw JSON of PLAN.json
-    previousAgents?: string;  // Raw JSON of AGENTS.json
+    previousPlan?: string; // Raw JSON of PLAN.json
+    previousAgents?: string; // Raw JSON of AGENTS.json
   };
   /**
    * When true, read config files from the host filesystem (e.g., ~/.codex/config.toml).
@@ -89,8 +94,8 @@ export type EnvironmentContext = {
    * These are user-provided configs that get merged with cmux defaults.
    */
   agentConfigs?: {
-    claude?: string;  // Raw JSON config
-    codex?: string;   // Raw TOML config
+    claude?: string; // Raw JSON config
+    codex?: string; // Raw TOML config
   };
   /**
    * When true, this is a head agent (cloud workspace) - skip sandbox deny rules.

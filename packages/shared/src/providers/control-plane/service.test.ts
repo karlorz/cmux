@@ -168,7 +168,7 @@ describe("control-plane/service", () => {
         {},
         [],
         mockModels,
-        undefined
+        undefined,
       );
 
       expect(result.id).toBe("anthropic");
@@ -189,12 +189,14 @@ describe("control-plane/service", () => {
         storedKeys,
         [],
         mockModels,
-        undefined
+        undefined,
       );
 
       expect(result.connectionState.isConnected).toBe(true);
       expect(result.connectionState.source).toBe("stored_api_key");
-      expect(result.connectionState.configuredEnvVars).toEqual(["ANTHROPIC_API_KEY"]);
+      expect(result.connectionState.configuredEnvVars).toEqual([
+        "ANTHROPIC_API_KEY",
+      ]);
     });
 
     it("resolves connected provider with OAuth token", () => {
@@ -207,7 +209,7 @@ describe("control-plane/service", () => {
         storedKeys,
         [],
         mockModels,
-        undefined
+        undefined,
       );
 
       expect(result.connectionState.isConnected).toBe(true);
@@ -224,7 +226,7 @@ describe("control-plane/service", () => {
         storedKeys,
         [],
         mockModels,
-        undefined
+        undefined,
       );
 
       expect(result.connectionState.isConnected).toBe(true);
@@ -244,7 +246,7 @@ describe("control-plane/service", () => {
         {},
         [override],
         mockModels,
-        undefined
+        undefined,
       );
 
       expect(result.connectionState.isConnected).toBe(true);
@@ -259,7 +261,7 @@ describe("control-plane/service", () => {
         {},
         [],
         mockModels,
-        undefined
+        undefined,
       );
 
       expect(result.connectionState.isConnected).toBe(true);
@@ -273,7 +275,7 @@ describe("control-plane/service", () => {
         {},
         [],
         mockModels,
-        undefined
+        undefined,
       );
 
       expect(result.connectionState.isConnected).toBe(false);
@@ -287,19 +289,23 @@ describe("control-plane/service", () => {
         {},
         [],
         mockModels,
-        undefined
+        undefined,
       );
 
       expect(result.authMethods).toHaveLength(3); // 2 API keys + 1 custom endpoint
 
-      const oauthMethod = result.authMethods.find(m => m.type === "oauth_token");
+      const oauthMethod = result.authMethods.find(
+        (m) => m.type === "oauth_token",
+      );
       expect(oauthMethod).toBeDefined();
       expect(oauthMethod?.preferred).toBe(true);
 
-      const apiKeyMethod = result.authMethods.find(m => m.type === "api_key");
+      const apiKeyMethod = result.authMethods.find((m) => m.type === "api_key");
       expect(apiKeyMethod).toBeDefined();
 
-      const endpointMethod = result.authMethods.find(m => m.type === "custom_endpoint");
+      const endpointMethod = result.authMethods.find(
+        (m) => m.type === "custom_endpoint",
+      );
       expect(endpointMethod).toBeDefined();
     });
 
@@ -317,7 +323,7 @@ describe("control-plane/service", () => {
         storedKeys,
         [],
         mockModels,
-        defaultModel
+        defaultModel,
       );
 
       expect(result.defaultModel).toEqual(defaultModel);
@@ -334,7 +340,7 @@ describe("control-plane/service", () => {
         {},
         [],
         mockModels,
-        defaultModel
+        defaultModel,
       );
 
       expect(result.defaultModel).toBeUndefined();
@@ -351,6 +357,44 @@ describe("control-plane/service", () => {
       expect(result.isAvailable).toBe(true);
       expect(result.name).toBe("claude/opus-4.6");
       expect(result.providerId).toBe("anthropic");
+    });
+
+    it("surfaces catalog-defined variants and defaultVariant", () => {
+      const connectedProviders = new Set(["anthropic"]);
+      const model = mockModels[0]; // claude/opus-4.6
+
+      const result = resolveControlPlaneModel(model, connectedProviders);
+
+      expect(result.defaultVariant).toBe("medium");
+      expect(result.variants?.map((variant) => variant.id)).toEqual([
+        "low",
+        "medium",
+        "high",
+        "max",
+      ]);
+    });
+
+    it("does not inherit stored variants when the catalog leaves effort undefined", () => {
+      const connectedProviders = new Set(["anthropic"]);
+      const result = resolveControlPlaneModel(
+        {
+          name: "claude/opus-4.5",
+          displayName: "Opus 4.5",
+          vendor: "anthropic",
+          source: "curated",
+          requiredApiKeys: ["ANTHROPIC_API_KEY"],
+          tier: "paid",
+          tags: ["reasoning"],
+          enabled: true,
+          sortOrder: 10,
+          variants: [{ id: "default", displayName: "Default" }],
+          defaultVariant: "default",
+        },
+        connectedProviders,
+      );
+
+      expect(result.variants).toEqual([]);
+      expect(result.defaultVariant).toBeUndefined();
     });
 
     it("marks model as unavailable when provider is disconnected", () => {
@@ -397,11 +441,11 @@ describe("control-plane/service", () => {
       expect(result.providers).toHaveLength(4);
       expect(result.generatedAt).toBeDefined();
 
-      const anthropic = result.providers.find(p => p.id === "anthropic");
+      const anthropic = result.providers.find((p) => p.id === "anthropic");
       expect(anthropic?.connectionState.isConnected).toBe(true);
       expect(anthropic?.defaultModel?.name).toBe("claude/opus-4.6");
 
-      const openai = result.providers.find(p => p.id === "openai");
+      const openai = result.providers.find((p) => p.id === "openai");
       expect(openai?.connectionState.isConnected).toBe(false);
 
       const modelstudio = result.providers.find((p) => p.id === "modelstudio");
@@ -421,7 +465,7 @@ describe("control-plane/service", () => {
 
       expect(result.view).toBe("connected");
       // Should include anthropic models (connected) and opencode free model
-      const names = result.models.map(m => m.name);
+      const names = result.models.map((m) => m.name);
       expect(names).toContain("claude/opus-4.6");
       expect(names).toContain("opencode/big-pickle");
       expect(names).not.toContain("codex/gpt-5.4"); // openai not connected
@@ -455,7 +499,7 @@ describe("control-plane/service", () => {
 
       expect(result.view).toBe("vendor");
       expect(result.filter).toBe("anthropic");
-      expect(result.models.every(m => m.vendor === "anthropic")).toBe(true);
+      expect(result.models.every((m) => m.vendor === "anthropic")).toBe(true);
     });
 
     it("includes defaults by provider", () => {
@@ -468,9 +512,29 @@ describe("control-plane/service", () => {
       const result = listModels(mockBaseProviders, ctx, { view: "all" });
 
       expect(result.defaultsByProvider["anthropic"]).toBeDefined();
-      expect(result.defaultsByProvider["anthropic"].name).toBe("claude/opus-4.6");
+      expect(result.defaultsByProvider["anthropic"].name).toBe(
+        "claude/opus-4.6",
+      );
       expect(result.defaultsByProvider["openai"]).toBeDefined();
       expect(result.defaultsByProvider["opencode"]).toBeDefined();
+    });
+
+    it("includes variant metadata in model list responses", () => {
+      const ctx: ControlPlaneContext = {
+        storedApiKeys: { ANTHROPIC_API_KEY: "sk-test" },
+        providerOverrides: [],
+        models: mockModels,
+      };
+
+      const result = listModels(mockBaseProviders, ctx);
+      const opus = result.models.find(
+        (model) => model.name === "claude/opus-4.6",
+      );
+
+      expect(opus?.defaultVariant).toBe("medium");
+      expect(opus?.variants?.some((variant) => variant.id === "max")).toBe(
+        true,
+      );
     });
   });
 
@@ -479,11 +543,11 @@ describe("control-plane/service", () => {
       const ctx: ControlPlaneContext = {
         storedApiKeys: {},
         providerOverrides: [],
-        models: mockModels.filter(m => m.vendor !== "opencode"),
+        models: mockModels.filter((m) => m.vendor !== "opencode"),
       };
 
       const result = computeDiscoveryFreshness(mockBaseProviders, ctx);
-      const opencode = result.find(r => r.providerId === "opencode");
+      const opencode = result.find((r) => r.providerId === "opencode");
 
       expect(opencode?.isStale).toBe(true);
       expect(opencode?.modelCount).toBe(0);
@@ -497,14 +561,14 @@ describe("control-plane/service", () => {
       };
 
       const result = computeDiscoveryFreshness(mockBaseProviders, ctx);
-      const opencode = result.find(r => r.providerId === "opencode");
+      const opencode = result.find((r) => r.providerId === "opencode");
 
       expect(opencode?.isStale).toBe(false);
       expect(opencode?.modelCount).toBe(1);
     });
 
     it("marks provider as stale with old discovered models", () => {
-      const oldModels = mockModels.map(m => {
+      const oldModels = mockModels.map((m) => {
         if (m.name === "opencode/big-pickle") {
           return {
             ...m,
@@ -521,7 +585,7 @@ describe("control-plane/service", () => {
       };
 
       const result = computeDiscoveryFreshness(mockBaseProviders, ctx);
-      const opencode = result.find(r => r.providerId === "opencode");
+      const opencode = result.find((r) => r.providerId === "opencode");
 
       expect(opencode?.isStale).toBe(true);
     });

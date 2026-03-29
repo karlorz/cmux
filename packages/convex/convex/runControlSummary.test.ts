@@ -69,6 +69,7 @@ describe("runControlSummary", () => {
     expect(summary.actions.availableActions).toEqual(["resolve_approval"]);
     expect(summary.continuation.mode).toBe("none");
     expect(summary.approvals.currentRequestId).toBe("apr_456");
+    expect(summary.timeout.status).toBe("paused_for_approval");
   });
 
   it("surfaces checkpoint restore as the primary continuation mode", () => {
@@ -164,6 +165,7 @@ describe("runControlSummary", () => {
     expect(summary.lifecycle.status).toBe("completed");
     expect(summary.actions.availableActions).toEqual([]);
     expect(summary.continuation.mode).toBe("none");
+    expect(summary.timeout.nextTimeoutAt).toBeUndefined();
   });
 
   it("derives latest approval fields from newest createdAt even when input is unsorted", () => {
@@ -208,5 +210,38 @@ describe("runControlSummary", () => {
     expect(summary.actions.canResolveApproval).toBe(true);
     expect(summary.actions.canContinueSession).toBe(false);
     expect(summary.actions.availableActions).toEqual(["resolve_approval"]);
+    expect(summary.timeout.status).toBe("paused_for_approval");
+  });
+
+  it("surfaces timeout metadata and keeps terminal failures as failed", () => {
+    const summary = buildRunControlSummary({
+      run: createRun({
+        runStatus: "failed",
+        interruptionState: {
+          status: "timed_out",
+          reason: "Timed out waiting for activity",
+          blockedAt: 2_000,
+        },
+        runControlState: {
+          inactivityTimeoutMinutes: 45,
+          lastActivityAt: 1_000,
+          lastActivitySource: "live_diff",
+          lastLiveDiffAt: 1_000,
+          timeoutTriggeredAt: 3_000,
+          timeoutReason: "No activity detected for 45 minutes",
+        },
+      }),
+      approvals: [],
+      sessionBinding: createBinding(),
+    });
+
+    expect(summary.lifecycle.status).toBe("failed");
+    expect(summary.lifecycle.interruptionStatus).toBe("timed_out");
+    expect(summary.timeout.status).toBe("timed_out");
+    expect(summary.timeout.lastActivitySource).toBe("live_diff");
+    expect(summary.timeout.timedOutAt).toBe(3_000);
+    expect(summary.timeout.timeoutReason).toBe(
+      "No activity detected for 45 minutes",
+    );
   });
 });
