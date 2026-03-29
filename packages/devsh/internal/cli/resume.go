@@ -57,7 +57,7 @@ Examples:
 
 			instance, err := client.GetInstance(ctx, instanceID)
 			if err != nil {
-				return fmt.Errorf("failed to get instance: %w", err)
+				return fmt.Errorf("VM failed to resume: %w", err)
 			}
 
 			_ = state.SetLastInstance(instance.ID, "")
