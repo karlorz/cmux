@@ -16,7 +16,7 @@ import {
   aggregatePullRequestState,
   type StoredPullRequestInfo,
 } from "@cmux/shared/pull-request-state";
-import { RUN_CONTROL_DEFAULT_TIMEOUT_MINUTES } from "@cmux/shared";
+import { RUN_CONTROL_DEFAULT_TIMEOUT_MINUTES } from "@cmux/shared/convex-safe";
 import {
   buildRunControlSummary,
   type RunControlApproval,

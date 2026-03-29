@@ -1,4 +1,4 @@
-import { RUN_CONTROL_DEFAULT_TIMEOUT_MINUTES } from "@cmux/shared";
+import { RUN_CONTROL_DEFAULT_TIMEOUT_MINUTES } from "@cmux/shared/convex-safe";
 import type { Doc } from "./_generated/dataModel";
 
 export type RunControlAction =
