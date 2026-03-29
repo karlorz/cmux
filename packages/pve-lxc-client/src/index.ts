@@ -152,36 +152,6 @@ export class PveLxcInstance {
   }
 
   /**
-   * Wait for the container's exec lane to become ready.
-   * Polls `echo ready` via exec until success or timeout.
-   * Use this after start/resume to ensure the exec daemon is available.
-   */
-  async waitForReady(options?: {
-    timeoutMs?: number;
-    pollIntervalMs?: number;
-  }): Promise<void> {
-    const timeoutMs = options?.timeoutMs ?? 60_000;
-    const pollIntervalMs = options?.pollIntervalMs ?? 2_000;
-    const startTime = Date.now();
-
-    while (Date.now() - startTime < timeoutMs) {
-      try {
-        const result = await this.exec("echo ready", { timeoutMs: 10_000 });
-        if (result.exit_code === 0 && result.stdout.trim() === "ready") {
-          return;
-        }
-      } catch {
-        // Exec not ready yet, continue polling
-      }
-      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-    }
-
-    throw new Error(
-      `Container ${this.id} (vmid=${this.vmid}) exec lane did not become ready within ${timeoutMs}ms`
-    );
-  }
-
-  /**
    * Expose an HTTP service (uses public domain when available, falls back to FQDN)
    */
   async exposeHttpService(name: string, port: number): Promise<void> {

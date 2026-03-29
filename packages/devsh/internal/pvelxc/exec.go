@@ -312,36 +312,6 @@ func (c *Client) ExecCommand(ctx context.Context, instanceID string, command str
 	return "", "", -1, fmt.Errorf("HTTP exec failed for container %d via candidates: %s", vmid, strings.Join(candidates, ", "))
 }
 
-// WaitForReady polls the exec lane until it becomes ready.
-// Returns the Instance when ready, or an error if timeout is exceeded.
-func (c *Client) WaitForReady(ctx context.Context, instanceID string, timeout time.Duration) (*Instance, error) {
-	pollInterval := 2 * time.Second
-	deadline := time.Now().Add(timeout)
-
-	for time.Now().Before(deadline) {
-		// Check context cancellation
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-
-		// Try a simple echo command to test exec readiness
-		stdout, _, exitCode, err := c.ExecCommand(ctx, instanceID, "echo ready")
-		if err == nil && exitCode == 0 && strings.TrimSpace(stdout) == "ready" {
-			// Exec is ready, return the instance
-			return c.GetInstance(ctx, instanceID)
-		}
-
-		// Wait before next poll
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(pollInterval):
-		}
-	}
-
-	return nil, fmt.Errorf("container %s exec lane did not become ready within %v", instanceID, timeout)
-}
-
 func ExecHostFromPublicDomain(publicDomain string, port int, instanceID string) (string, error) {
 	if strings.TrimSpace(publicDomain) == "" {
 		return "", errors.New("publicDomain is required")
