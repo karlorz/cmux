@@ -23,6 +23,7 @@ import {
   type Id,
 } from "./_helpers";
 import { getMorphClient, getMorphClientOrNull, verifyInstanceOwnership } from "./_helpers";
+import { waitForPveExecReady } from "../pve-lxc.resume.helpers";
 
 export const sandboxesLifecycleRouter = new OpenAPIHono();
 
@@ -217,13 +218,11 @@ sandboxesLifecycleRouter.openapi(
         const pveClient = getPveLxcClient();
         const pveLxcInstance = await pveClient.instances.get({ instanceId: id });
 
-        if (pveLxcInstance.status === "running") {
-          // Already running, just return success
-          return c.json({ resumed: true });
+        if (pveLxcInstance.status !== "running") {
+          await pveLxcInstance.resume();
+          console.log(`[sandboxes.resume] PVE LXC container ${id} started`);
         }
-
-        await pveLxcInstance.resume();
-        console.log(`[sandboxes.resume] PVE LXC container ${id} started`);
+        await waitForPveExecReady(pveLxcInstance);
 
         // Record resume activity for PVE LXC instance
         if (teamSlugOrId) {
@@ -315,12 +314,11 @@ sandboxesLifecycleRouter.openapi(
           const pveClient = getPveLxcClient();
           const pveLxcInstance = await pveClient.instances.get({ instanceId: taskRun.vscode.containerName });
 
-          if (pveLxcInstance.status === "running") {
-            return c.json({ resumed: true });
+          if (pveLxcInstance.status !== "running") {
+            await pveLxcInstance.resume();
+            console.log(`[sandboxes.resume] PVE LXC container ${taskRun.vscode.containerName} started`);
           }
-
-          await pveLxcInstance.resume();
-          console.log(`[sandboxes.resume] PVE LXC container ${taskRun.vscode.containerName} started`);
+          await waitForPveExecReady(pveLxcInstance);
 
           // Record resume activity for PVE LXC instance
           try {

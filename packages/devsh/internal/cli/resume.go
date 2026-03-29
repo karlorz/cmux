@@ -50,6 +50,11 @@ Examples:
 				return fmt.Errorf("failed to resume VM: %w", err)
 			}
 
+			fmt.Println("Waiting for exec endpoint to be ready...")
+			if err := client.WaitForExecReady(ctx, instanceID, 2*time.Minute); err != nil {
+				return fmt.Errorf("VM failed to resume: %w", err)
+			}
+
 			instance, err := client.GetInstance(ctx, instanceID)
 			if err != nil {
 				return fmt.Errorf("failed to get instance: %w", err)

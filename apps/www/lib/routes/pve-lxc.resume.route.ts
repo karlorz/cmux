@@ -6,6 +6,7 @@ import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { waitForPveExecReady } from "./pve-lxc.resume.helpers";
 import { getConvex } from "../utils/get-convex";
 
 const ResumeTaskRunBody = z
@@ -104,7 +105,10 @@ pveLxcResumeRouter.openapi(
       const client = getPveLxcClient();
       const instance = await client.instances.get({ instanceId });
 
-      await instance.start();
+      if (instance.status !== "running") {
+        await instance.resume();
+      }
+      await waitForPveExecReady(instance);
 
       await convex.mutation(api.sandboxInstances.recordResume, {
         instanceId,
