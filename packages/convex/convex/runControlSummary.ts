@@ -1,3 +1,4 @@
+import { RUN_CONTROL_DEFAULT_TIMEOUT_MINUTES } from "@cmux/shared";
 import type { Doc } from "./_generated/dataModel";
 
 export type RunControlAction =
@@ -23,6 +24,21 @@ export type RunControlInterruptionStatus =
   | NonNullable<Doc<"taskRuns">["interruptionState"]>["status"]
   | "none";
 
+export type RunControlActivitySource =
+  | "spawn"
+  | "file_write"
+  | "git_commit"
+  | "live_diff"
+  | "approval_resolved"
+  | "session_continue"
+  | "checkpoint_restore"
+  | "manual";
+
+export type RunControlTimeoutStatus =
+  | "active"
+  | "paused_for_approval"
+  | "timed_out";
+
 export type RunControlRun = {
   taskRunId: string;
   taskId: string;
@@ -43,6 +59,17 @@ export type RunControlRun = {
     resumeTargetId?: string;
     checkpointRef?: string;
     checkpointGeneration?: number;
+  };
+  runControlState?: {
+    inactivityTimeoutMinutes?: number;
+    lastActivityAt?: number;
+    lastActivitySource?: RunControlActivitySource;
+    lastFileWriteAt?: number;
+    lastGitCommitAt?: number;
+    lastLiveDiffAt?: number;
+    lastCheckpointAt?: number;
+    timeoutTriggeredAt?: number;
+    timeoutReason?: string;
   };
 };
 
@@ -117,6 +144,19 @@ export type RunControlSummary = {
     lastActiveAt?: number;
     hasActiveBinding: boolean;
   };
+  timeout: {
+    inactivityTimeoutMinutes: number;
+    status: RunControlTimeoutStatus;
+    lastActivityAt?: number;
+    lastActivitySource?: RunControlActivitySource;
+    lastFileWriteAt?: number;
+    lastGitCommitAt?: number;
+    lastLiveDiffAt?: number;
+    lastCheckpointAt?: number;
+    nextTimeoutAt?: number;
+    timedOutAt?: number;
+    timeoutReason?: string;
+  };
 };
 
 function isTerminalRunStatus(status: Doc<"taskRuns">["status"]): boolean {
@@ -127,10 +167,6 @@ function deriveLifecycleStatus(
   runStatus: Doc<"taskRuns">["status"],
   interruptionStatus: RunControlInterruptionStatus,
 ): RunControlLifecycleStatus {
-  if (interruptionStatus !== "none") {
-    return "interrupted";
-  }
-
   if (runStatus === "completed") {
     return "completed";
   }
@@ -139,6 +175,10 @@ function deriveLifecycleStatus(
   }
   if (runStatus === "skipped") {
     return "skipped";
+  }
+
+  if (interruptionStatus !== "none") {
+    return "interrupted";
   }
 
   return "active";
@@ -173,6 +213,49 @@ function deriveProvider(
 
   const provider = agentName.split("/")[0]?.trim().toLowerCase();
   return provider || "unknown";
+}
+
+function deriveTimeoutSummary(input: {
+  run: RunControlRun;
+  interruptionStatus: RunControlInterruptionStatus;
+  hasPendingApproval: boolean;
+  terminalRun: boolean;
+}): RunControlSummary["timeout"] {
+  const inactivityTimeoutMinutes =
+    input.run.runControlState?.inactivityTimeoutMinutes ??
+    RUN_CONTROL_DEFAULT_TIMEOUT_MINUTES;
+  const approvalPaused =
+    input.interruptionStatus === "approval_pending" || input.hasPendingApproval;
+  const timedOutAt = input.run.runControlState?.timeoutTriggeredAt;
+
+  let status: RunControlTimeoutStatus = "active";
+  if (timedOutAt) {
+    status = "timed_out";
+  } else if (approvalPaused) {
+    status = "paused_for_approval";
+  }
+
+  const nextTimeoutAt =
+    status === "active" &&
+    !input.terminalRun &&
+    input.run.runControlState?.lastActivityAt
+      ? input.run.runControlState.lastActivityAt +
+        inactivityTimeoutMinutes * 60 * 1000
+      : undefined;
+
+  return {
+    inactivityTimeoutMinutes,
+    status,
+    lastActivityAt: input.run.runControlState?.lastActivityAt,
+    lastActivitySource: input.run.runControlState?.lastActivitySource,
+    lastFileWriteAt: input.run.runControlState?.lastFileWriteAt,
+    lastGitCommitAt: input.run.runControlState?.lastGitCommitAt,
+    lastLiveDiffAt: input.run.runControlState?.lastLiveDiffAt,
+    lastCheckpointAt: input.run.runControlState?.lastCheckpointAt,
+    nextTimeoutAt,
+    timedOutAt,
+    timeoutReason: input.run.runControlState?.timeoutReason,
+  };
 }
 
 export function buildRunControlSummary(input: {
@@ -242,6 +325,12 @@ export function buildRunControlSummary(input: {
   } else if (canAppendInstruction) {
     continuationMode = "append_instruction";
   }
+  const timeout = deriveTimeoutSummary({
+    run,
+    interruptionStatus,
+    hasPendingApproval: pendingApprovals.length > 0,
+    terminalRun,
+  });
 
   return {
     taskRunId: run.taskRunId,
@@ -292,5 +381,6 @@ export function buildRunControlSummary(input: {
       lastActiveAt: sessionBinding?.lastActiveAt,
       hasActiveBinding,
     },
+    timeout,
   };
 }

@@ -934,136 +934,6 @@ export type BindSessionRequest = {
     provider?: string;
 };
 
-export type RunControlAction = 'resolve_approval' | 'continue_session' | 'resume_checkpoint' | 'append_instruction';
-
-/**
- * Primary continuation mode exposed by the shared contract
- */
-export type RunControlContinuationMode = 'session_continuation' | 'checkpoint_restore' | 'append_instruction' | 'none';
-
-export type RunControlSummary = {
-    /**
-     * Task run ID
-     */
-    taskRunId: string;
-    /**
-     * Task ID
-     */
-    taskId: string;
-    /**
-     * Parent orchestration ID if present
-     */
-    orchestrationId?: string;
-    /**
-     * Agent name
-     */
-    agentName?: string;
-    /**
-     * Provider inferred from agent or binding
-     */
-    provider: string;
-    /**
-     * Raw task-run status
-     */
-    runStatus: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
-    lifecycle: {
-        /**
-         * Operator-facing lifecycle status
-         */
-        status: 'active' | 'interrupted' | 'completed' | 'failed' | 'skipped';
-        /**
-         * Whether the run is currently interrupted
-         */
-        interrupted: boolean;
-        /**
-         * Detailed interruption reason category
-         */
-        interruptionStatus: 'none' | 'approval_pending' | 'paused_by_operator' | 'sandbox_paused' | 'context_overflow' | 'rate_limited' | 'timed_out' | 'checkpoint_pending' | 'handoff_pending' | 'user_input_required';
-        /**
-         * Human-readable interruption reason
-         */
-        reason?: string;
-        /**
-         * When the interruption started
-         */
-        blockedAt?: number;
-        /**
-         * When the interruption expires
-         */
-        expiresAt?: number;
-        /**
-         * When the interruption was resolved
-         */
-        resolvedAt?: number;
-        /**
-         * Who resolved the interruption
-         */
-        resolvedBy?: string;
-    };
-    approvals: {
-        /**
-         * Count of pending approvals for this run
-         */
-        pendingCount: number;
-        /**
-         * Pending approval request IDs
-         */
-        pendingRequestIds: Array<string>;
-        /**
-         * Approval request currently blocking the run
-         */
-        currentRequestId?: string;
-        /**
-         * Latest approval request ID
-         */
-        latestRequestId?: string;
-        /**
-         * Latest approval request status
-         */
-        latestStatus?: 'pending' | 'approved' | 'denied' | 'expired' | 'cancelled';
-        /**
-         * Latest approval type
-         */
-        latestApprovalType?: 'tool_permission' | 'review_request' | 'deployment' | 'cost_override' | 'escalation' | 'risky_action';
-        /**
-         * Latest requested action
-         */
-        latestAction?: string;
-        /**
-         * Latest approval risk level
-         */
-        latestRiskLevel?: 'low' | 'medium' | 'high';
-        /**
-         * Latest approval creation time
-         */
-        latestCreatedAt?: number;
-    };
-    actions: {
-        /**
-         * Explicit actions currently available to the operator
-         */
-        availableActions: Array<RunControlAction>;
-        canResolveApproval: boolean;
-        canContinueSession: boolean;
-        canResumeCheckpoint: boolean;
-        canAppendInstruction: boolean;
-    };
-    continuation: {
-        mode: RunControlContinuationMode;
-        providerSessionId?: string;
-        providerThreadId?: string;
-        resumeToken?: string;
-        resumeTargetId?: string;
-        checkpointRef?: string;
-        checkpointGeneration?: number;
-        replyChannel?: 'mailbox' | 'sse' | 'pty' | 'ui';
-        sessionStatus?: 'active' | 'suspended' | 'expired' | 'terminated';
-        sessionMode?: 'head' | 'worker' | 'reviewer';
-        lastActiveAt?: number;
-        hasActiveBinding: boolean;
-    };
-};
-
 export type ApprovalRequest = {
     /**
      * Approval request ID (apr_xxx format)
@@ -4575,7 +4445,69 @@ export type GetApiV1CmuxOrchestrationRunControlByTaskRunIdResponses = {
     /**
      * Run-control summary retrieved successfully
      */
-    200: RunControlSummary;
+    200: {
+        taskRunId: string;
+        taskId: string;
+        orchestrationId?: string;
+        agentName?: string;
+        provider: string;
+        runStatus: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+        lifecycle: {
+            status: 'active' | 'interrupted' | 'completed' | 'failed' | 'skipped';
+            interrupted: boolean;
+            interruptionStatus: 'none' | 'approval_pending' | 'paused_by_operator' | 'sandbox_paused' | 'context_overflow' | 'rate_limited' | 'timed_out' | 'checkpoint_pending' | 'handoff_pending' | 'user_input_required';
+            reason?: string;
+            blockedAt?: number;
+            expiresAt?: number;
+            resolvedAt?: number;
+            resolvedBy?: string;
+        };
+        approvals: {
+            pendingCount: number;
+            pendingRequestIds: Array<string>;
+            currentRequestId?: string;
+            latestRequestId?: string;
+            latestStatus?: 'pending' | 'approved' | 'denied' | 'expired' | 'cancelled';
+            latestApprovalType?: 'tool_permission' | 'review_request' | 'deployment' | 'cost_override' | 'escalation' | 'risky_action';
+            latestAction?: string;
+            latestRiskLevel?: 'low' | 'medium' | 'high';
+            latestCreatedAt?: number;
+        };
+        actions: {
+            availableActions: Array<'resolve_approval' | 'continue_session' | 'resume_checkpoint' | 'append_instruction'>;
+            canResolveApproval: boolean;
+            canContinueSession: boolean;
+            canResumeCheckpoint: boolean;
+            canAppendInstruction: boolean;
+        };
+        continuation: {
+            mode: 'session_continuation' | 'checkpoint_restore' | 'append_instruction' | 'none';
+            providerSessionId?: string;
+            providerThreadId?: string;
+            resumeToken?: string;
+            resumeTargetId?: string;
+            checkpointRef?: string;
+            checkpointGeneration?: number;
+            replyChannel?: 'mailbox' | 'sse' | 'pty' | 'ui';
+            sessionStatus?: 'active' | 'suspended' | 'expired' | 'terminated';
+            sessionMode?: 'head' | 'worker' | 'reviewer';
+            lastActiveAt?: number;
+            hasActiveBinding: boolean;
+        };
+        timeout: {
+            inactivityTimeoutMinutes: number;
+            status: 'active' | 'paused_for_approval' | 'timed_out';
+            lastActivityAt?: number;
+            lastActivitySource?: 'spawn' | 'file_write' | 'git_commit' | 'live_diff' | 'approval_resolved' | 'session_continue' | 'checkpoint_restore' | 'manual';
+            lastFileWriteAt?: number;
+            lastGitCommitAt?: number;
+            lastLiveDiffAt?: number;
+            lastCheckpointAt?: number;
+            nextTimeoutAt?: number;
+            timedOutAt?: number;
+            timeoutReason?: string;
+        };
+    };
 };
 
 export type GetApiV1CmuxOrchestrationRunControlByTaskRunIdResponse = GetApiV1CmuxOrchestrationRunControlByTaskRunIdResponses[keyof GetApiV1CmuxOrchestrationRunControlByTaskRunIdResponses];
@@ -6767,7 +6699,7 @@ export type PostApiSandboxesByIdLiveDiffData = {
          */
         includeContent?: boolean;
         /**
-         * Max diff content length in bytes (default: 100000)
+         * Switch to file-list-only mode above this byte threshold (default: 100000)
          */
         maxContentLength?: number;
     };
@@ -6807,27 +6739,98 @@ export type PostApiSandboxesByIdLiveDiffResponses = {
          */
         files: Array<{
             path: string;
+            oldPath?: string;
             status: 'added' | 'modified' | 'deleted' | 'renamed' | 'untracked';
             insertions: number;
             deletions: number;
+            isBinary: boolean;
         }>;
         summary: {
             totalFiles: number;
             insertions: number;
             deletions: number;
         };
-        /**
-         * Full diff content (if includeContent=true)
-         */
-        diff?: string;
-        /**
-         * True if diff was truncated
-         */
-        truncated?: boolean;
+        mode: 'full' | 'file_list_only';
+        totalDiffBytes: number;
+        entries?: Array<{
+            filePath: string;
+            oldPath?: string;
+            status: 'added' | 'modified' | 'deleted' | 'renamed';
+            additions: number;
+            deletions: number;
+            patch?: string;
+            oldContent?: string;
+            newContent?: string;
+            isBinary: boolean;
+            contentOmitted?: boolean;
+            oldSize?: number;
+            newSize?: number;
+            patchSize?: number;
+        }>;
     };
 };
 
 export type PostApiSandboxesByIdLiveDiffResponse = PostApiSandboxesByIdLiveDiffResponses[keyof PostApiSandboxesByIdLiveDiffResponses];
+
+export type GetApiSandboxesByIdLiveDiffByPathData = {
+    body?: never;
+    path: {
+        id: string;
+        /**
+         * URL-encoded repository-relative file path
+         */
+        path: string;
+    };
+    query?: {
+        /**
+         * Path to scan for repos (default: /root/workspace)
+         */
+        workspacePath?: string;
+    };
+    url: '/api/sandboxes/{id}/live-diff/{path}';
+};
+
+export type GetApiSandboxesByIdLiveDiffByPathErrors = {
+    /**
+     * Invalid workspace path
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Sandbox or diff entry not found
+     */
+    404: unknown;
+    /**
+     * Failed to get diff entry
+     */
+    500: unknown;
+};
+
+export type GetApiSandboxesByIdLiveDiffByPathResponses = {
+    /**
+     * Single-file live diff entry
+     */
+    200: {
+        filePath: string;
+        oldPath?: string;
+        status: 'added' | 'modified' | 'deleted' | 'renamed';
+        additions: number;
+        deletions: number;
+        patch?: string;
+        oldContent?: string;
+        newContent?: string;
+        isBinary: boolean;
+        contentOmitted?: boolean;
+        oldSize?: number;
+        newSize?: number;
+        patchSize?: number;
+    };
+};
+
+export type GetApiSandboxesByIdLiveDiffByPathResponse = GetApiSandboxesByIdLiveDiffByPathResponses[keyof GetApiSandboxesByIdLiveDiffByPathResponses];
 
 export type PostApiSandboxesByIdPublishDevcontainerData = {
     body: {
@@ -8330,6 +8333,575 @@ export type PostApiProviderControlPlaneRefreshResponses = {
 };
 
 export type PostApiProviderControlPlaneRefreshResponse = PostApiProviderControlPlaneRefreshResponses[keyof PostApiProviderControlPlaneRefreshResponses];
+
+export type PostApiRunControlInspectByRunIdData = {
+    body: {
+        teamSlugOrId: string;
+    };
+    path: {
+        /**
+         * Task run ID
+         */
+        runId: string;
+    };
+    query?: never;
+    url: '/api/run-control/inspect/{runId}';
+};
+
+export type PostApiRunControlInspectByRunIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Task run not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiRunControlInspectByRunIdResponses = {
+    /**
+     * Run-control summary retrieved successfully
+     */
+    200: {
+        success: boolean;
+        action: 'inspect' | 'approve' | 'continue' | 'resume' | 'append_instruction';
+        summary: {
+            taskRunId: string;
+            taskId: string;
+            orchestrationId?: string;
+            agentName?: string;
+            provider: string;
+            runStatus: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+            lifecycle: {
+                status: 'active' | 'interrupted' | 'completed' | 'failed' | 'skipped';
+                interrupted: boolean;
+                interruptionStatus: 'none' | 'approval_pending' | 'paused_by_operator' | 'sandbox_paused' | 'context_overflow' | 'rate_limited' | 'timed_out' | 'checkpoint_pending' | 'handoff_pending' | 'user_input_required';
+                reason?: string;
+                blockedAt?: number;
+                expiresAt?: number;
+                resolvedAt?: number;
+                resolvedBy?: string;
+            };
+            approvals: {
+                pendingCount: number;
+                pendingRequestIds: Array<string>;
+                currentRequestId?: string;
+                latestRequestId?: string;
+                latestStatus?: 'pending' | 'approved' | 'denied' | 'expired' | 'cancelled';
+                latestApprovalType?: 'tool_permission' | 'review_request' | 'deployment' | 'cost_override' | 'escalation' | 'risky_action';
+                latestAction?: string;
+                latestRiskLevel?: 'low' | 'medium' | 'high';
+                latestCreatedAt?: number;
+            };
+            actions: {
+                availableActions: Array<'resolve_approval' | 'continue_session' | 'resume_checkpoint' | 'append_instruction'>;
+                canResolveApproval: boolean;
+                canContinueSession: boolean;
+                canResumeCheckpoint: boolean;
+                canAppendInstruction: boolean;
+            };
+            continuation: {
+                mode: 'session_continuation' | 'checkpoint_restore' | 'append_instruction' | 'none';
+                providerSessionId?: string;
+                providerThreadId?: string;
+                resumeToken?: string;
+                resumeTargetId?: string;
+                checkpointRef?: string;
+                checkpointGeneration?: number;
+                replyChannel?: 'mailbox' | 'sse' | 'pty' | 'ui';
+                sessionStatus?: 'active' | 'suspended' | 'expired' | 'terminated';
+                sessionMode?: 'head' | 'worker' | 'reviewer';
+                lastActiveAt?: number;
+                hasActiveBinding: boolean;
+            };
+            timeout: {
+                inactivityTimeoutMinutes: number;
+                status: 'active' | 'paused_for_approval' | 'timed_out';
+                lastActivityAt?: number;
+                lastActivitySource?: 'spawn' | 'file_write' | 'git_commit' | 'live_diff' | 'approval_resolved' | 'session_continue' | 'checkpoint_restore' | 'manual';
+                lastFileWriteAt?: number;
+                lastGitCommitAt?: number;
+                lastLiveDiffAt?: number;
+                lastCheckpointAt?: number;
+                nextTimeoutAt?: number;
+                timedOutAt?: number;
+                timeoutReason?: string;
+            };
+        };
+        requestId?: string;
+        queuedInputId?: string;
+        queueDepth?: number;
+        message?: string;
+    };
+};
+
+export type PostApiRunControlInspectByRunIdResponse = PostApiRunControlInspectByRunIdResponses[keyof PostApiRunControlInspectByRunIdResponses];
+
+export type PostApiRunControlApproveByRunIdData = {
+    body: {
+        teamSlugOrId: string;
+        requestId?: string;
+        resolution?: 'allow' | 'allow_once' | 'allow_session' | 'deny' | 'deny_always';
+        note?: string;
+    };
+    path: {
+        /**
+         * Task run ID
+         */
+        runId: string;
+    };
+    query?: never;
+    url: '/api/run-control/approve/{runId}';
+};
+
+export type PostApiRunControlApproveByRunIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Task run not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiRunControlApproveByRunIdResponses = {
+    /**
+     * Approval resolved successfully
+     */
+    200: {
+        success: boolean;
+        action: 'inspect' | 'approve' | 'continue' | 'resume' | 'append_instruction';
+        summary: {
+            taskRunId: string;
+            taskId: string;
+            orchestrationId?: string;
+            agentName?: string;
+            provider: string;
+            runStatus: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+            lifecycle: {
+                status: 'active' | 'interrupted' | 'completed' | 'failed' | 'skipped';
+                interrupted: boolean;
+                interruptionStatus: 'none' | 'approval_pending' | 'paused_by_operator' | 'sandbox_paused' | 'context_overflow' | 'rate_limited' | 'timed_out' | 'checkpoint_pending' | 'handoff_pending' | 'user_input_required';
+                reason?: string;
+                blockedAt?: number;
+                expiresAt?: number;
+                resolvedAt?: number;
+                resolvedBy?: string;
+            };
+            approvals: {
+                pendingCount: number;
+                pendingRequestIds: Array<string>;
+                currentRequestId?: string;
+                latestRequestId?: string;
+                latestStatus?: 'pending' | 'approved' | 'denied' | 'expired' | 'cancelled';
+                latestApprovalType?: 'tool_permission' | 'review_request' | 'deployment' | 'cost_override' | 'escalation' | 'risky_action';
+                latestAction?: string;
+                latestRiskLevel?: 'low' | 'medium' | 'high';
+                latestCreatedAt?: number;
+            };
+            actions: {
+                availableActions: Array<'resolve_approval' | 'continue_session' | 'resume_checkpoint' | 'append_instruction'>;
+                canResolveApproval: boolean;
+                canContinueSession: boolean;
+                canResumeCheckpoint: boolean;
+                canAppendInstruction: boolean;
+            };
+            continuation: {
+                mode: 'session_continuation' | 'checkpoint_restore' | 'append_instruction' | 'none';
+                providerSessionId?: string;
+                providerThreadId?: string;
+                resumeToken?: string;
+                resumeTargetId?: string;
+                checkpointRef?: string;
+                checkpointGeneration?: number;
+                replyChannel?: 'mailbox' | 'sse' | 'pty' | 'ui';
+                sessionStatus?: 'active' | 'suspended' | 'expired' | 'terminated';
+                sessionMode?: 'head' | 'worker' | 'reviewer';
+                lastActiveAt?: number;
+                hasActiveBinding: boolean;
+            };
+            timeout: {
+                inactivityTimeoutMinutes: number;
+                status: 'active' | 'paused_for_approval' | 'timed_out';
+                lastActivityAt?: number;
+                lastActivitySource?: 'spawn' | 'file_write' | 'git_commit' | 'live_diff' | 'approval_resolved' | 'session_continue' | 'checkpoint_restore' | 'manual';
+                lastFileWriteAt?: number;
+                lastGitCommitAt?: number;
+                lastLiveDiffAt?: number;
+                lastCheckpointAt?: number;
+                nextTimeoutAt?: number;
+                timedOutAt?: number;
+                timeoutReason?: string;
+            };
+        };
+        requestId?: string;
+        queuedInputId?: string;
+        queueDepth?: number;
+        message?: string;
+    };
+};
+
+export type PostApiRunControlApproveByRunIdResponse = PostApiRunControlApproveByRunIdResponses[keyof PostApiRunControlApproveByRunIdResponses];
+
+export type PostApiRunControlContinueByRunIdData = {
+    body: {
+        teamSlugOrId: string;
+        instruction?: string;
+        priority?: 'high' | 'normal' | 'low';
+    };
+    path: {
+        /**
+         * Task run ID
+         */
+        runId: string;
+    };
+    query?: never;
+    url: '/api/run-control/continue/{runId}';
+};
+
+export type PostApiRunControlContinueByRunIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Task run not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiRunControlContinueByRunIdResponses = {
+    /**
+     * Run continuation queued successfully
+     */
+    200: {
+        success: boolean;
+        action: 'inspect' | 'approve' | 'continue' | 'resume' | 'append_instruction';
+        summary: {
+            taskRunId: string;
+            taskId: string;
+            orchestrationId?: string;
+            agentName?: string;
+            provider: string;
+            runStatus: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+            lifecycle: {
+                status: 'active' | 'interrupted' | 'completed' | 'failed' | 'skipped';
+                interrupted: boolean;
+                interruptionStatus: 'none' | 'approval_pending' | 'paused_by_operator' | 'sandbox_paused' | 'context_overflow' | 'rate_limited' | 'timed_out' | 'checkpoint_pending' | 'handoff_pending' | 'user_input_required';
+                reason?: string;
+                blockedAt?: number;
+                expiresAt?: number;
+                resolvedAt?: number;
+                resolvedBy?: string;
+            };
+            approvals: {
+                pendingCount: number;
+                pendingRequestIds: Array<string>;
+                currentRequestId?: string;
+                latestRequestId?: string;
+                latestStatus?: 'pending' | 'approved' | 'denied' | 'expired' | 'cancelled';
+                latestApprovalType?: 'tool_permission' | 'review_request' | 'deployment' | 'cost_override' | 'escalation' | 'risky_action';
+                latestAction?: string;
+                latestRiskLevel?: 'low' | 'medium' | 'high';
+                latestCreatedAt?: number;
+            };
+            actions: {
+                availableActions: Array<'resolve_approval' | 'continue_session' | 'resume_checkpoint' | 'append_instruction'>;
+                canResolveApproval: boolean;
+                canContinueSession: boolean;
+                canResumeCheckpoint: boolean;
+                canAppendInstruction: boolean;
+            };
+            continuation: {
+                mode: 'session_continuation' | 'checkpoint_restore' | 'append_instruction' | 'none';
+                providerSessionId?: string;
+                providerThreadId?: string;
+                resumeToken?: string;
+                resumeTargetId?: string;
+                checkpointRef?: string;
+                checkpointGeneration?: number;
+                replyChannel?: 'mailbox' | 'sse' | 'pty' | 'ui';
+                sessionStatus?: 'active' | 'suspended' | 'expired' | 'terminated';
+                sessionMode?: 'head' | 'worker' | 'reviewer';
+                lastActiveAt?: number;
+                hasActiveBinding: boolean;
+            };
+            timeout: {
+                inactivityTimeoutMinutes: number;
+                status: 'active' | 'paused_for_approval' | 'timed_out';
+                lastActivityAt?: number;
+                lastActivitySource?: 'spawn' | 'file_write' | 'git_commit' | 'live_diff' | 'approval_resolved' | 'session_continue' | 'checkpoint_restore' | 'manual';
+                lastFileWriteAt?: number;
+                lastGitCommitAt?: number;
+                lastLiveDiffAt?: number;
+                lastCheckpointAt?: number;
+                nextTimeoutAt?: number;
+                timedOutAt?: number;
+                timeoutReason?: string;
+            };
+        };
+        requestId?: string;
+        queuedInputId?: string;
+        queueDepth?: number;
+        message?: string;
+    };
+};
+
+export type PostApiRunControlContinueByRunIdResponse = PostApiRunControlContinueByRunIdResponses[keyof PostApiRunControlContinueByRunIdResponses];
+
+export type PostApiRunControlResumeByRunIdData = {
+    body: {
+        teamSlugOrId: string;
+        instruction?: string;
+        priority?: 'high' | 'normal' | 'low';
+    };
+    path: {
+        /**
+         * Task run ID
+         */
+        runId: string;
+    };
+    query?: never;
+    url: '/api/run-control/resume/{runId}';
+};
+
+export type PostApiRunControlResumeByRunIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Task run not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiRunControlResumeByRunIdResponses = {
+    /**
+     * Run resume queued successfully
+     */
+    200: {
+        success: boolean;
+        action: 'inspect' | 'approve' | 'continue' | 'resume' | 'append_instruction';
+        summary: {
+            taskRunId: string;
+            taskId: string;
+            orchestrationId?: string;
+            agentName?: string;
+            provider: string;
+            runStatus: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+            lifecycle: {
+                status: 'active' | 'interrupted' | 'completed' | 'failed' | 'skipped';
+                interrupted: boolean;
+                interruptionStatus: 'none' | 'approval_pending' | 'paused_by_operator' | 'sandbox_paused' | 'context_overflow' | 'rate_limited' | 'timed_out' | 'checkpoint_pending' | 'handoff_pending' | 'user_input_required';
+                reason?: string;
+                blockedAt?: number;
+                expiresAt?: number;
+                resolvedAt?: number;
+                resolvedBy?: string;
+            };
+            approvals: {
+                pendingCount: number;
+                pendingRequestIds: Array<string>;
+                currentRequestId?: string;
+                latestRequestId?: string;
+                latestStatus?: 'pending' | 'approved' | 'denied' | 'expired' | 'cancelled';
+                latestApprovalType?: 'tool_permission' | 'review_request' | 'deployment' | 'cost_override' | 'escalation' | 'risky_action';
+                latestAction?: string;
+                latestRiskLevel?: 'low' | 'medium' | 'high';
+                latestCreatedAt?: number;
+            };
+            actions: {
+                availableActions: Array<'resolve_approval' | 'continue_session' | 'resume_checkpoint' | 'append_instruction'>;
+                canResolveApproval: boolean;
+                canContinueSession: boolean;
+                canResumeCheckpoint: boolean;
+                canAppendInstruction: boolean;
+            };
+            continuation: {
+                mode: 'session_continuation' | 'checkpoint_restore' | 'append_instruction' | 'none';
+                providerSessionId?: string;
+                providerThreadId?: string;
+                resumeToken?: string;
+                resumeTargetId?: string;
+                checkpointRef?: string;
+                checkpointGeneration?: number;
+                replyChannel?: 'mailbox' | 'sse' | 'pty' | 'ui';
+                sessionStatus?: 'active' | 'suspended' | 'expired' | 'terminated';
+                sessionMode?: 'head' | 'worker' | 'reviewer';
+                lastActiveAt?: number;
+                hasActiveBinding: boolean;
+            };
+            timeout: {
+                inactivityTimeoutMinutes: number;
+                status: 'active' | 'paused_for_approval' | 'timed_out';
+                lastActivityAt?: number;
+                lastActivitySource?: 'spawn' | 'file_write' | 'git_commit' | 'live_diff' | 'approval_resolved' | 'session_continue' | 'checkpoint_restore' | 'manual';
+                lastFileWriteAt?: number;
+                lastGitCommitAt?: number;
+                lastLiveDiffAt?: number;
+                lastCheckpointAt?: number;
+                nextTimeoutAt?: number;
+                timedOutAt?: number;
+                timeoutReason?: string;
+            };
+        };
+        requestId?: string;
+        queuedInputId?: string;
+        queueDepth?: number;
+        message?: string;
+    };
+};
+
+export type PostApiRunControlResumeByRunIdResponse = PostApiRunControlResumeByRunIdResponses[keyof PostApiRunControlResumeByRunIdResponses];
+
+export type PostApiRunControlAppendInstructionByRunIdData = {
+    body: {
+        teamSlugOrId: string;
+        instruction: string;
+        priority?: 'high' | 'normal' | 'low';
+    };
+    path: {
+        /**
+         * Task run ID
+         */
+        runId: string;
+    };
+    query?: never;
+    url: '/api/run-control/append-instruction/{runId}';
+};
+
+export type PostApiRunControlAppendInstructionByRunIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Task run not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiRunControlAppendInstructionByRunIdResponses = {
+    /**
+     * Instruction queued successfully
+     */
+    200: {
+        success: boolean;
+        action: 'inspect' | 'approve' | 'continue' | 'resume' | 'append_instruction';
+        summary: {
+            taskRunId: string;
+            taskId: string;
+            orchestrationId?: string;
+            agentName?: string;
+            provider: string;
+            runStatus: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+            lifecycle: {
+                status: 'active' | 'interrupted' | 'completed' | 'failed' | 'skipped';
+                interrupted: boolean;
+                interruptionStatus: 'none' | 'approval_pending' | 'paused_by_operator' | 'sandbox_paused' | 'context_overflow' | 'rate_limited' | 'timed_out' | 'checkpoint_pending' | 'handoff_pending' | 'user_input_required';
+                reason?: string;
+                blockedAt?: number;
+                expiresAt?: number;
+                resolvedAt?: number;
+                resolvedBy?: string;
+            };
+            approvals: {
+                pendingCount: number;
+                pendingRequestIds: Array<string>;
+                currentRequestId?: string;
+                latestRequestId?: string;
+                latestStatus?: 'pending' | 'approved' | 'denied' | 'expired' | 'cancelled';
+                latestApprovalType?: 'tool_permission' | 'review_request' | 'deployment' | 'cost_override' | 'escalation' | 'risky_action';
+                latestAction?: string;
+                latestRiskLevel?: 'low' | 'medium' | 'high';
+                latestCreatedAt?: number;
+            };
+            actions: {
+                availableActions: Array<'resolve_approval' | 'continue_session' | 'resume_checkpoint' | 'append_instruction'>;
+                canResolveApproval: boolean;
+                canContinueSession: boolean;
+                canResumeCheckpoint: boolean;
+                canAppendInstruction: boolean;
+            };
+            continuation: {
+                mode: 'session_continuation' | 'checkpoint_restore' | 'append_instruction' | 'none';
+                providerSessionId?: string;
+                providerThreadId?: string;
+                resumeToken?: string;
+                resumeTargetId?: string;
+                checkpointRef?: string;
+                checkpointGeneration?: number;
+                replyChannel?: 'mailbox' | 'sse' | 'pty' | 'ui';
+                sessionStatus?: 'active' | 'suspended' | 'expired' | 'terminated';
+                sessionMode?: 'head' | 'worker' | 'reviewer';
+                lastActiveAt?: number;
+                hasActiveBinding: boolean;
+            };
+            timeout: {
+                inactivityTimeoutMinutes: number;
+                status: 'active' | 'paused_for_approval' | 'timed_out';
+                lastActivityAt?: number;
+                lastActivitySource?: 'spawn' | 'file_write' | 'git_commit' | 'live_diff' | 'approval_resolved' | 'session_continue' | 'checkpoint_restore' | 'manual';
+                lastFileWriteAt?: number;
+                lastGitCommitAt?: number;
+                lastLiveDiffAt?: number;
+                lastCheckpointAt?: number;
+                nextTimeoutAt?: number;
+                timedOutAt?: number;
+                timeoutReason?: string;
+            };
+        };
+        requestId?: string;
+        queuedInputId?: string;
+        queueDepth?: number;
+        message?: string;
+    };
+};
+
+export type PostApiRunControlAppendInstructionByRunIdResponse = PostApiRunControlAppendInstructionByRunIdResponses[keyof PostApiRunControlAppendInstructionByRunIdResponses];
 
 export type GetApiApiKeysData = {
     body?: never;
