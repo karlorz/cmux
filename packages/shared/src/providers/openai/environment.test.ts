@@ -1263,8 +1263,8 @@ EOF
     expect(toml).toContain('model_provider = "cmux-proxy"');
     expect(toml).toContain('[model_providers.cmux-proxy]');
     expect(toml).toContain('base_url = "https://cliapi.karldigi.dev/v1"');
-    // Should set OPENAI_BASE_URL
-    expect(result.env?.OPENAI_BASE_URL).toBe("https://cliapi.karldigi.dev/v1");
+    // OPENAI_BASE_URL should NOT be set - Codex uses config.toml only
+    expect(result.env?.OPENAI_BASE_URL).toBeUndefined();
   });
 
   it("does not inject custom provider config when baseUrl is default OpenAI URL", async () => {

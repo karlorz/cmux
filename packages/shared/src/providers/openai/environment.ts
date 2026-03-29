@@ -823,9 +823,8 @@ log "Autopilot completed after \$ITER turns"
   }
 
   // Apply provider override if present (custom proxy like AnyRouter)
-  // For Codex CLI, we need BOTH:
-  // 1. OPENAI_BASE_URL env var (for compatibility and other tools)
-  // 2. model_provider config in config.toml (required by Codex CLI for custom providers)
+  // Codex CLI uses config.toml for custom base URLs via [model_providers.cmux-proxy] section.
+  // We do NOT set OPENAI_BASE_URL env var - Codex uses config.toml as the authoritative source.
   //
   // IMPORTANT: Only use custom provider for API key auth, NOT OAuth.
   // OAuth tokens work directly with official OpenAI API and don't need proxy routing.
@@ -836,15 +835,14 @@ log "Autopilot completed after \$ITER turns"
   const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
   const isOAuthMode = !!ctx.apiKeys?.CODEX_AUTH_JSON;
   const isDefaultOpenAIUrl = ctx.providerConfig?.baseUrl === DEFAULT_OPENAI_BASE_URL;
+  // Codex CLI uses config.toml for custom base URLs, NOT OPENAI_BASE_URL env var.
+  // The [model_providers.cmux-proxy] section is injected into config.toml below.
   const customProviderConfig = !isOAuthMode &&
     !isDefaultOpenAIUrl &&
     ctx.providerConfig?.isOverridden &&
     ctx.providerConfig.baseUrl
     ? ctx.providerConfig.baseUrl
     : null;
-  if (customProviderConfig) {
-    env.OPENAI_BASE_URL = customProviderConfig;
-  }
 
   // Add orchestration head env vars for durable shell-level access
   // This ensures fresh zsh sessions and child processes inherit head-agent context
