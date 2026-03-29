@@ -156,12 +156,14 @@ export function GitHubProjectLink({
       installationId: matchingConnection.installationId,
       owner,
       ownerType,
+      ...(project.githubProjectUrl ? { projectUrl: project.githubProjectUrl } : {}),
     } as const;
   }, [
     matchingConnection,
     project.githubProjectId,
     project.githubProjectOwner,
     project.githubProjectOwnerType,
+    project.githubProjectUrl,
   ]);
 
   // Format cached time

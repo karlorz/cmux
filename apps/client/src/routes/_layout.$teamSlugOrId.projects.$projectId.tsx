@@ -6,6 +6,7 @@ import { FloatingPane } from "@/components/floating-pane";
 import { TitleBar } from "@/components/TitleBar";
 import { Button } from "@/components/ui/button";
 import {
+  getApiIntegrationsGithubProjects,
   getApiIntegrationsGithubProjectsItems,
   getApiIntegrationsGithubProjectsFields,
 } from "@cmux/www-openapi-client";
@@ -22,6 +23,7 @@ const projectDetailSearch = z.object({
   installationId: z.coerce.number(),
   owner: z.string(),
   ownerType: z.enum(["user", "organization"]),
+  projectUrl: z.string().url().optional(),
 });
 
 export const Route = createFileRoute(
@@ -33,7 +35,7 @@ export const Route = createFileRoute(
 
 function ProjectDetailPage() {
   const { teamSlugOrId, projectId } = Route.useParams();
-  const { installationId, owner, ownerType } = Route.useSearch();
+  const { installationId, owner, ownerType, projectUrl: searchProjectUrl } = Route.useSearch();
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [dispatchDialogOpen, setDispatchDialogOpen] = useState(false);
   const [dispatchItem, setDispatchItem] = useState<ProjectItem | null>(null);
@@ -60,6 +62,28 @@ function ProjectDetailPage() {
       });
       return res.data ?? { fields: [] };
     },
+  });
+
+  const { data: projectMetadataData } = useQuery({
+    queryKey: [
+      "github-project-metadata",
+      teamSlugOrId,
+      installationId,
+      owner,
+      ownerType,
+    ],
+    queryFn: async () => {
+      const res = await getApiIntegrationsGithubProjects({
+        query: {
+          team: teamSlugOrId,
+          installationId,
+          owner,
+          ownerType,
+        },
+      });
+      return res.data ?? { projects: [] };
+    },
+    enabled: !searchProjectUrl,
   });
 
   // Fetch initial project items
@@ -121,9 +145,11 @@ function ProjectDetailPage() {
 
   // Build project URL from owner info
   const projectUrl =
-    ownerType === "organization"
+    searchProjectUrl ??
+    projectMetadataData?.projects.find((project) => project.id === projectId)?.url ??
+    (ownerType === "organization"
       ? `https://github.com/orgs/${owner}/projects`
-      : `https://github.com/users/${owner}/projects`;
+      : `https://github.com/users/${owner}/projects`);
 
   return (
     <FloatingPane header={<TitleBar title="Project Items" />}>

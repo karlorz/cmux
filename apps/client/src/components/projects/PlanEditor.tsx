@@ -10,7 +10,7 @@
  * - Save/import/export functionality
  */
 
-import { useState, useCallback, useMemo, useId, useRef } from "react";
+import { useState, useCallback, useMemo, useId, useRef, type ReactNode } from "react";
 import {
   Plus,
   Trash2,
@@ -67,6 +67,8 @@ interface PlanEditorProps {
   className?: string;
   readOnly?: boolean;
   taskStatuses?: Map<string, TaskStatusInfo>;
+  taskCountOverride?: number;
+  emptyStateSupplement?: ReactNode;
 }
 
 // ============================================================================
@@ -396,6 +398,8 @@ export function PlanEditor({
   className,
   readOnly,
   taskStatuses,
+  taskCountOverride,
+  emptyStateSupplement,
 }: PlanEditorProps) {
   const markerId = useId().replace(/:/g, "-");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -408,6 +412,7 @@ export function PlanEditor({
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [connectingFromId, setConnectingFromId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const displayedTaskCount = taskCountOverride ?? tasks.length;
 
   // Computed layout
   const { positions, edges, canvasWidth, canvasHeight } = useMemo(() => {
@@ -567,7 +572,7 @@ export function PlanEditor({
           <h3 className="font-medium text-neutral-900 dark:text-neutral-100">
             Plan Editor
           </h3>
-          <span className="rounded border border-neutral-200 px-2 py-0.5 text-xs text-neutral-600 dark:border-neutral-700 dark:text-neutral-400">{tasks.length} tasks</span>
+          <span className="rounded border border-neutral-200 px-2 py-0.5 text-xs text-neutral-600 dark:border-neutral-700 dark:text-neutral-400">{displayedTaskCount} tasks</span>
         </div>
         <div className="flex items-center gap-2">
           {!readOnly && (
@@ -676,6 +681,7 @@ export function PlanEditor({
                 Add First Task
               </Button>
             )}
+            {emptyStateSupplement}
           </div>
         ) : (
           <div

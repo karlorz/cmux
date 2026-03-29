@@ -11,15 +11,19 @@
 
 import { useState, useMemo } from "react";
 import { Link } from "@tanstack/react-router";
+import { convexQuery } from "@convex-dev/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Play,
+  ListTodo,
 } from "lucide-react";
 import clsx from "clsx";
 
 import { Button } from "@/components/ui/button";
 import { STATUS_CONFIG as TASK_STATUS_CONFIG } from "@/components/orchestration/status-config";
 import type { TaskStatus } from "@/components/orchestration/status-config";
+import { api } from "@cmux/convex/api";
 import { PROJECT_STATUS_CONFIG } from "./project-status-config";
 import { ProjectProgress, ProjectProgressBar } from "./ProjectProgress";
 import { PlanEditor } from "./PlanEditor";
@@ -76,6 +80,9 @@ export function ProjectDetailView({
   onDeleteMilestone,
 }: ProjectDetailViewProps) {
   const [showDispatchDialog, setShowDispatchDialog] = useState(false);
+  const { data: connections } = useQuery(
+    convexQuery(api.github.listProviderConnections, { teamSlugOrId }),
+  );
 
   const plan = project.plan as Plan | undefined;
   const isDispatched = orchTasks.length > 0;
@@ -120,6 +127,57 @@ export function ProjectDetailView({
   const ghTotal = project.githubItemsTotal ?? 0;
   const ghDone = project.githubItemsDone ?? 0;
   const ghInProgress = project.githubItemsInProgress ?? 0;
+  const hasLinkedGitHubItems = ghTotal > 0;
+  const matchingGitHubConnection = useMemo(() => {
+    const activeConnections =
+      connections?.filter((connection) => connection.isActive) ?? [];
+    const normalizedOwner = project.githubProjectOwner?.toLowerCase();
+
+    if (!normalizedOwner) {
+      return activeConnections[0];
+    }
+
+    return (
+      activeConnections.find(
+        (connection) =>
+          connection.accountLogin?.toLowerCase() === normalizedOwner,
+      ) ?? activeConnections[0]
+    );
+  }, [connections, project.githubProjectOwner]);
+  const linkedGitHubItemsSearch = useMemo(() => {
+    if (!project.githubProjectId || !matchingGitHubConnection) {
+      return null;
+    }
+
+    const owner =
+      project.githubProjectOwner ?? matchingGitHubConnection.accountLogin;
+    const ownerType =
+      project.githubProjectOwnerType ??
+      (matchingGitHubConnection.accountType === "Organization"
+        ? "organization"
+        : "user");
+
+    if (!owner) {
+      return null;
+    }
+
+    return {
+      installationId: matchingGitHubConnection.installationId,
+      owner,
+      ownerType,
+      ...(project.githubProjectUrl
+        ? { projectUrl: project.githubProjectUrl }
+        : {}),
+    } as const;
+  }, [
+    matchingGitHubConnection,
+    project.githubProjectId,
+    project.githubProjectOwner,
+    project.githubProjectOwnerType,
+    project.githubProjectUrl,
+  ]);
+  const shouldHighlightLinkedItemsInPlanEditor =
+    (plan?.tasks.length ?? 0) === 0 && hasLinkedGitHubItems;
 
   // Merged totals for progress display
   const totalTasks = cmuxTotalTasks + ghTotal;
@@ -224,6 +282,38 @@ export function ProjectDetailView({
         onSave={isDispatched ? undefined : onSavePlan}
         readOnly={isDispatched}
         taskStatuses={taskStatuses}
+        taskCountOverride={
+          shouldHighlightLinkedItemsInPlanEditor ? ghTotal : undefined
+        }
+        emptyStateSupplement={
+          shouldHighlightLinkedItemsInPlanEditor ? (
+            <div className="mt-6 w-full max-w-md rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-center dark:border-neutral-800 dark:bg-neutral-950">
+              <p className="text-sm text-neutral-700 dark:text-neutral-300">
+                This project already tracks {ghTotal} linked GitHub item
+                {ghTotal === 1 ? "" : "s"}.
+              </p>
+              <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                Use the linked board items here, or add local plan tasks if you
+                want a separate cmux orchestration plan.
+              </p>
+              {project.githubProjectId && linkedGitHubItemsSearch && (
+                <Button asChild variant="outline" size="sm" className="mt-3">
+                  <Link
+                    to="/$teamSlugOrId/projects/$projectId"
+                    params={{
+                      teamSlugOrId,
+                      projectId: project.githubProjectId,
+                    }}
+                    search={linkedGitHubItemsSearch}
+                  >
+                    <ListTodo className="size-4 mr-2" />
+                    View Linked GitHub Items
+                  </Link>
+                </Button>
+              )}
+            </div>
+          ) : undefined
+        }
         className="min-h-[300px]"
       />
 
