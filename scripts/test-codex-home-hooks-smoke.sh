@@ -85,7 +85,7 @@ STOP_OUTPUT="$(printf '%s' "$STOP_PAYLOAD" | HOME="$HOME_DIR" \
   CMUX_AUTOPILOT_DELAY=0 \
   AUTOPILOT_MONITORING_THRESHOLD=999999 \
   CMUX_AUTOPILOT_MONITORING_THRESHOLD=999999 \
-  bash "$HOME_DIR/.codex/hooks/cmux-stop-dispatch.sh")"
+  bash "$HOME_DIR/.codex/hooks/cmux-stop-dispatch.sh" | awk '/"decision"/ { print; exit }')"
 
 assert "stop falls back to the managed home autopilot hook in a plain workspace" jq -e '.decision == "block"' <<<"$STOP_OUTPUT"
 assert "stop hook records the first turn for the latest global session" grep -Fxq '1' "/tmp/codex-autopilot-turns-${SESSION_ID}"

@@ -3,6 +3,7 @@ set -euo pipefail
 
 unset AUTOPILOT_DELAY AUTOPILOT_IDLE_THRESHOLD AUTOPILOT_MAX_TURNS AUTOPILOT_MONITORING_THRESHOLD
 unset CMUX_AUTOPILOT_DELAY CMUX_AUTOPILOT_IDLE_THRESHOLD CMUX_AUTOPILOT_MAX_TURNS CMUX_AUTOPILOT_MONITORING_THRESHOLD
+unset AUTOPILOT_ENABLED AUTOPILOT_KEEP_RUNNING_DISABLED CMUX_AUTOPILOT_ENABLED CMUX_CODEX_HOOKS_ENABLED
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -115,7 +116,7 @@ run_enabled_hook() {
     AUTOPILOT_DELAY=0 \
     AUTOPILOT_MONITORING_THRESHOLD=999999 \
     "$@" \
-    bash "$HOOK"
+    bash "$HOOK" | awk '/"decision"/ { print; exit }'
 }
 
 run_hidden_sleep_monitoring_hook() {
@@ -229,7 +230,7 @@ DISABLED_BY_DEFAULT_OUTPUT=$(echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
   env -u AUTOPILOT_KEEP_RUNNING_DISABLED -u CMUX_AUTOPILOT_ENABLED \
     AUTOPILOT_ENABLED=1 \
     AUTOPILOT_DELAY=0 \
-    bash "$HOOK" || true)
+    bash "$HOOK" | awk '/"decision"/ { print; exit }' || true)
 
 assert "Unset AUTOPILOT_KEEP_RUNNING_DISABLED disables Codex autopilot" test -z "$DISABLED_BY_DEFAULT_OUTPUT"
 assert "Disabled-by-default run does not create blocked flag" test ! -f "/tmp/codex-autopilot-blocked-${TEST_SESSION}"
@@ -239,7 +240,7 @@ STALE_LOGIN_ENV_OUTPUT=$(echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
     AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
     AUTOPILOT_ENABLED=1 \
     AUTOPILOT_DELAY=0 \
-    bash "$HOOK" || true)
+    bash "$HOOK" | awk '/"decision"/ { print; exit }' || true)
 
 assert "Stale generic AUTOPILOT_KEEP_RUNNING_DISABLED=0 does not enable Codex autopilot without CMUX_AUTOPILOT_ENABLED=1" test -z "$STALE_LOGIN_ENV_OUTPUT"
 assert "Stale generic enable does not create blocked flag" test ! -f "/tmp/codex-autopilot-blocked-${TEST_SESSION}"
@@ -250,10 +251,22 @@ CODEX_HOOKS_ONLY_OUTPUT=$(echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
     CMUX_CODEX_HOOKS_ENABLED=1 \
     AUTOPILOT_ENABLED=1 \
     AUTOPILOT_DELAY=0 \
-    bash "$HOOK")
+    bash "$HOOK" | awk '/"decision"/ { print; exit }')
 
 assert "CMUX_CODEX_HOOKS_ENABLED also enables Codex autopilot" jq -e '.decision == "block"' <<<"$CODEX_HOOKS_ONLY_OUTPUT"
 assert "CMUX_CODEX_HOOKS_ENABLED creates blocked flag" test -f "/tmp/codex-autopilot-blocked-${TEST_SESSION}"
+
+cleanup
+CODEX_HOOKS_OVERRIDE_OUTPUT=$(echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
+  env -u CMUX_AUTOPILOT_ENABLED \
+    AUTOPILOT_KEEP_RUNNING_DISABLED=1 \
+    CMUX_CODEX_HOOKS_ENABLED=1 \
+    AUTOPILOT_ENABLED=1 \
+    AUTOPILOT_DELAY=0 \
+    bash "$HOOK" | awk '/"decision"/ { print; exit }')
+
+assert "CMUX_CODEX_HOOKS_ENABLED overrides inherited disable flag" jq -e '.decision == "block"' <<<"$CODEX_HOOKS_OVERRIDE_OUTPUT"
+assert "Codex-scoped enable still creates blocked flag when generic disable is inherited" test -f "/tmp/codex-autopilot-blocked-${TEST_SESSION}"
 
 cleanup
 INPUT_JSON="{\"session_id\":\"${TEST_SESSION}\",\"stop_hook_active\":false}"
