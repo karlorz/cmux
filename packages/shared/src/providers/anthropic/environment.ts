@@ -1073,12 +1073,10 @@ exit 0`;
   // Determine deny rules to apply:
   // 1. Head agents (isOrchestrationHead) get NO deny rules - they need full capabilities
   // 2. Task sandboxes use permissionDenyRules from Convex if available
-  // 3. Fall back to FALLBACK_DENY_RULES if no Convex rules provided (migration period)
+  // 3. Fall back to FALLBACK_DENY_RULES only when the Convex fetch is unavailable
   const shouldApplyDenyRules = hasTaskRunJwt && !ctx.isOrchestrationHead;
   const denyRules = shouldApplyDenyRules
-    ? ctx.permissionDenyRules?.length
-      ? ctx.permissionDenyRules
-      : FALLBACK_DENY_RULES
+    ? ctx.permissionDenyRules ?? FALLBACK_DENY_RULES
     : undefined;
 
   const settingsConfig: Record<string, unknown> = {

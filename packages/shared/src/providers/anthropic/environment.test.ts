@@ -299,6 +299,16 @@ describe("getClaudeEnvironment", () => {
     expect(settings.permissions.deny).toBeUndefined();
   });
 
+  it("does not fall back to legacy deny rules when Convex returns an empty list", async () => {
+    const settings = await decodeClaudeSettings({
+      permissionDenyRules: [],
+    });
+
+    expect(settings.permissions).toBeDefined();
+    expect(settings.permissions.defaultMode).toBe("bypassPermissions");
+    expect(settings.permissions.deny).toBeUndefined();
+  });
+
   it("permission hook includes risk classification function", async () => {
     const result = await getClaudeEnvironment(BASE_CONTEXT);
 

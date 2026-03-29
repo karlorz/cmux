@@ -33,6 +33,7 @@ import {
   type TouchEvent as ReactTouchEvent,
 } from "react";
 import { env } from "@/client-env";
+import { resolveActiveSettingsSection } from "./settings-section";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId")({
   component: LayoutComponentWrapper,
@@ -124,16 +125,7 @@ function LayoutComponent() {
     location.pathname === `${settingsPath}/` ||
     location.pathname.startsWith(`${settingsPath}/`);
   const sectionFromSearch = (location.search as { section?: unknown })?.section;
-  const activeSettingsSection: SettingsSection =
-    sectionFromSearch === "ai-providers" ? "ai-providers" :
-    sectionFromSearch === "models" ? "models" :
-    sectionFromSearch === "model-catalog" ? "model-catalog" :
-    sectionFromSearch === "mcp-servers" ? "mcp-servers" :
-    sectionFromSearch === "policy-rules" ? "policy-rules" :
-    sectionFromSearch === "agent-configs" ? "agent-configs" :
-    sectionFromSearch === "git" ? "git" :
-    sectionFromSearch === "worktrees" ? "worktrees" :
-    sectionFromSearch === "archived" ? "archived" : "general";
+  const activeSettingsSection = resolveActiveSettingsSection(sectionFromSearch);
   const hasSyncedSidebarFromStorageRef = useRef(false);
   const isDesktopSidebarHidden = desktopSidebarPreferenceHidden;
   useMobileMachineHeartbeat({

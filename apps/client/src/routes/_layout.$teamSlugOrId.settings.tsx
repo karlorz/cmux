@@ -34,6 +34,7 @@ import { createFileRoute, Outlet, useLocation } from "@tanstack/react-router";
 import { useConvex } from "convex/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cachedGetUser } from "@/lib/cachedGetUser";
+import { settingsSectionSchema } from "./settings-section";
 import {
   DEFAULT_HEATMAP_MODEL,
   HEATMAP_MODEL_OPTIONS,
@@ -43,24 +44,8 @@ import {
 import { stackClientApp } from "@/lib/stack";
 import { WWW_ORIGIN } from "@/lib/wwwOrigin";
 import { toast } from "sonner";
-import { z } from "zod";
 import { DEFAULT_BRANCH_PREFIX } from "@cmux/shared";
-
-export const settingsSectionSchema = z.enum([
-  "general",
-  "ai-providers",
-  "models",
-  "model-catalog",
-  "mcp-servers",
-  "policy-rules",
-  "permission-rules",
-  "agent-configs",
-  "orchestration-rules",
-  "orchestration-settings",
-  "git",
-  "worktrees",
-  "archived",
-]);
+import { z } from "zod";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/settings")({
   component: SettingsComponent,
