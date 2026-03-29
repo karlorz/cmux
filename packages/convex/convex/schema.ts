@@ -206,6 +206,7 @@ const convexSchema = defineSchema({
     startingCommitSha: v.optional(v.string()), // Commit SHA when run started (for diff baseline)
     prompt: v.string(), // The prompt that will be passed to claude
     agentName: v.optional(v.string()), // Name of the agent that ran this task (e.g., "claude/sonnet-4")
+    selectedVariant: v.optional(v.string()), // Optional effort/reasoning selection for this run
     summary: v.optional(v.string()), // Markdown summary of the run
     status: v.union(
       v.literal("pending"),

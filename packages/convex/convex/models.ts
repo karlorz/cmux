@@ -3,6 +3,49 @@ import { query, internalMutation, internalQuery } from "./_generated/server";
 import { authMutation, authQuery } from "./users/utils";
 import { resolveTeamIdLoose } from "../_shared/team";
 import { isAuthFreeModel } from "@cmux/shared/providers/control-plane";
+import { AGENT_CATALOG } from "@cmux/shared/agent-catalog";
+
+function catalogDefinesVariants(
+  catalogEntry: (typeof AGENT_CATALOG)[number] | undefined,
+): boolean {
+  return (
+    catalogEntry !== undefined &&
+    Object.prototype.hasOwnProperty.call(catalogEntry, "variants")
+  );
+}
+
+function catalogDefinesDefaultVariant(
+  catalogEntry: (typeof AGENT_CATALOG)[number] | undefined,
+): boolean {
+  return (
+    catalogEntry !== undefined &&
+    Object.prototype.hasOwnProperty.call(catalogEntry, "defaultVariant")
+  );
+}
+
+function applyCatalogVariantOverrides<
+  T extends {
+    name: string;
+    variants?: Array<{ id: string; displayName: string; description?: string }>;
+    defaultVariant?: string;
+  },
+>(model: T): T {
+  const catalogEntry = AGENT_CATALOG.find((entry) => entry.name === model.name);
+  if (!catalogEntry) {
+    return model;
+  }
+
+  const hasCatalogVariants = catalogDefinesVariants(catalogEntry);
+  const hasCatalogDefaultVariant = catalogDefinesDefaultVariant(catalogEntry);
+
+  return {
+    ...model,
+    variants: hasCatalogVariants ? catalogEntry?.variants : undefined,
+    defaultVariant: hasCatalogDefaultVariant
+      ? catalogEntry?.defaultVariant
+      : undefined,
+  };
+}
 
 /**
  * Public query: list enabled models for CLI/UI consumption.
@@ -42,7 +85,7 @@ export const listAll = authQuery({
     return models
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map((model) => ({
-        ...model,
+        ...applyCatalogVariantOverrides(model),
         hiddenForTeam: hiddenModels.has(model.name),
       }));
   },
@@ -62,7 +105,9 @@ export const listAvailable = authQuery({
   handler: async (ctx, args) => {
     // Verify user has access to the team and get teamId
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
-    console.log(`[listAvailable] teamSlugOrId=${args.teamSlugOrId}, resolved teamId=${teamId}`);
+    console.log(
+      `[listAvailable] teamSlugOrId=${args.teamSlugOrId}, resolved teamId=${teamId}`,
+    );
 
     const [models, teamVisibility] = await Promise.all([
       ctx.db
@@ -77,13 +122,19 @@ export const listAvailable = authQuery({
     const hiddenModels = new Set(teamVisibility?.hiddenModels ?? []);
 
     console.log(`[listAvailable] Found ${models.length} enabled models`);
-    console.log(`[listAvailable] Found ${hiddenModels.size} team-hidden models`);
+    console.log(
+      `[listAvailable] Found ${hiddenModels.size} team-hidden models`,
+    );
 
-    const visibleModels = models.filter((model) => !hiddenModels.has(model.name));
+    const visibleModels = models.filter(
+      (model) => !hiddenModels.has(model.name),
+    );
 
     // If showAll is true, return all team-visible enabled models without credential filtering
     if (args.showAll) {
-      return visibleModels.sort((a, b) => a.sortOrder - b.sortOrder);
+      return visibleModels
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((model) => applyCatalogVariantOverrides(model));
     }
 
     // Get team's configured API keys
@@ -106,13 +157,25 @@ export const listAvailable = authQuery({
     });
 
     // Log Claude models filtering for debugging
-    const claudeModels = visibleModels.filter((m) => m.name.startsWith("claude/"));
-    console.log(`[listAvailable] Claude models in DB: ${claudeModels.map(m => `${m.name}(keys: ${m.requiredApiKeys?.join(",") || "none"})`).join(", ")}`);
-    const claudeAvailable = availableModels.filter((m) => m.name.startsWith("claude/"));
-    console.log(`[listAvailable] Claude models available after filtering: ${claudeAvailable.length}`);
+    const claudeModels = visibleModels.filter((m) =>
+      m.name.startsWith("claude/"),
+    );
+    console.log(
+      `[listAvailable] Claude models in DB: ${claudeModels.map((m) => `${m.name}(keys: ${m.requiredApiKeys?.join(",") || "none"})`).join(", ")}`,
+    );
+    const claudeAvailable = availableModels.filter((m) =>
+      m.name.startsWith("claude/"),
+    );
+    console.log(
+      `[listAvailable] Claude models available after filtering: ${claudeAvailable.length}`,
+    );
 
-    console.log(`[listAvailable] Returning ${availableModels.length} available models`);
-    return availableModels.sort((a, b) => a.sortOrder - b.sortOrder);
+    console.log(
+      `[listAvailable] Returning ${availableModels.length} available models`,
+    );
+    return availableModels
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((model) => applyCatalogVariantOverrides(model));
   },
 });
 
@@ -168,13 +231,13 @@ export const reorder = authMutation({
         ctx.db
           .query("models")
           .withIndex("by_name", (q) => q.eq("name", name))
-          .first()
-      )
+          .first(),
+      ),
     );
 
     // Build name-to-model map for efficient lookup
     const modelByName = new Map(
-      args.modelNames.map((name, i) => [name, models[i]])
+      args.modelNames.map((name, i) => [name, models[i]]),
     );
 
     // Batch update all models with new sort orders
@@ -188,7 +251,7 @@ export const reorder = authMutation({
           });
         }
         return Promise.resolve();
-      })
+      }),
     );
 
     return { success: true };
@@ -220,8 +283,8 @@ export const upsert = internalMutation({
           id: v.string(),
           displayName: v.string(),
           description: v.optional(v.string()),
-        })
-      )
+        }),
+      ),
     ),
     defaultVariant: v.optional(v.string()),
   },
@@ -258,12 +321,12 @@ export const upsert = internalMutation({
     const allModels = await ctx.db.query("models").collect();
     const maxSortOrder = allModels.reduce(
       (max, m) => Math.max(max, m.sortOrder),
-      -1
+      -1,
     );
     const sortOrder = args.sortOrder ?? maxSortOrder + 1;
 
     // Default enabled state: curated=true, discovered=false
-    const enabled = args.enabled ?? (args.source === "curated");
+    const enabled = args.enabled ?? args.source === "curated";
 
     const id = await ctx.db.insert("models", {
       name: args.name,
@@ -315,13 +378,13 @@ export const bulkUpsert = internalMutation({
               id: v.string(),
               displayName: v.string(),
               description: v.optional(v.string()),
-            })
-          )
+            }),
+          ),
         ),
         defaultVariant: v.optional(v.string()),
         contextWindow: v.optional(v.number()),
         maxOutputTokens: v.optional(v.number()),
-      })
+      }),
     ),
   },
   handler: async (ctx, args) => {
@@ -329,11 +392,13 @@ export const bulkUpsert = internalMutation({
     const existingModels = await ctx.db.query("models").collect();
     const existingByName = new Map(existingModels.map((m) => [m.name, m]));
 
-    console.log(`[bulkUpsert] Processing ${args.models.length} models, ${existingModels.length} existing in DB`);
+    console.log(
+      `[bulkUpsert] Processing ${args.models.length} models, ${existingModels.length} existing in DB`,
+    );
 
     let maxSortOrder = existingModels.reduce(
       (max, m) => Math.max(max, m.sortOrder),
-      -1
+      -1,
     );
 
     const results: string[] = [];
@@ -344,7 +409,9 @@ export const bulkUpsert = internalMutation({
       const existing = existingByName.get(model.name);
 
       if (existing) {
-        console.log(`[bulkUpsert] UPDATING existing: ${model.name} (existing _id: ${existing._id})`);
+        console.log(
+          `[bulkUpsert] UPDATING existing: ${model.name} (existing _id: ${existing._id})`,
+        );
         // Update existing
         // Auto-enable free discovered models that are currently disabled
         const shouldEnableFree =
@@ -354,8 +421,7 @@ export const bulkUpsert = internalMutation({
           model.source === "curated" && existing.source === "discovered";
         // Only enable curated models during takeover from discovered (not unconditionally)
         // This preserves user's decision to disable a curated model
-        const shouldEnableCurated =
-          isCuratedTakeover && !model.disabled;
+        const shouldEnableCurated = isCuratedTakeover && !model.disabled;
         await ctx.db.patch(existing._id, {
           displayName: model.displayName,
           vendor: model.vendor,
@@ -380,10 +446,12 @@ export const bulkUpsert = internalMutation({
         updateCount++;
       } else {
         // Insert new
-        console.log(`[bulkUpsert] INSERTING new model: ${model.name} (source: ${model.source})`);
+        console.log(
+          `[bulkUpsert] INSERTING new model: ${model.name} (source: ${model.source})`,
+        );
         maxSortOrder++;
         const sortOrder = model.sortOrder ?? maxSortOrder;
-        const enabled = model.enabled ?? (model.source === "curated");
+        const enabled = model.enabled ?? model.source === "curated";
 
         const id = await ctx.db.insert("models", {
           name: model.name,
@@ -411,7 +479,9 @@ export const bulkUpsert = internalMutation({
       }
     }
 
-    console.log(`[bulkUpsert] Done: ${insertCount} inserted, ${updateCount} updated`);
+    console.log(
+      `[bulkUpsert] Done: ${insertCount} inserted, ${updateCount} updated`,
+    );
     return { upsertedCount: results.length };
   },
 });
@@ -453,13 +523,17 @@ export const deleteStale = internalMutation({
     // Get all models of the specified source
     const allModels = await ctx.db.query("models").collect();
     const modelsToDelete = allModels.filter(
-      (m) => m.source === args.source && !validNameSet.has(m.name)
+      (m) => m.source === args.source && !validNameSet.has(m.name),
     );
 
     // Delete stale models in parallel
     if (modelsToDelete.length > 0) {
-      console.log(`[models.deleteStale] Deleting ${modelsToDelete.length} stale ${args.source} models: ${modelsToDelete.map(m => m.name).join(", ")}`);
-      await Promise.all(modelsToDelete.map((model) => ctx.db.delete(model._id)));
+      console.log(
+        `[models.deleteStale] Deleting ${modelsToDelete.length} stale ${args.source} models: ${modelsToDelete.map((m) => m.name).join(", ")}`,
+      );
+      await Promise.all(
+        modelsToDelete.map((model) => ctx.db.delete(model._id)),
+      );
     }
 
     return {
@@ -504,9 +578,11 @@ export const deleteStaleDiscovered = internalMutation({
 
     if (modelsToDelete.length > 0) {
       console.log(
-        `[models.deleteStaleDiscovered] Deleting ${modelsToDelete.length} stale models from ${args.discoveredFrom}: ${modelsToDelete.map((m) => m.name).join(", ")}`
+        `[models.deleteStaleDiscovered] Deleting ${modelsToDelete.length} stale models from ${args.discoveredFrom}: ${modelsToDelete.map((m) => m.name).join(", ")}`,
       );
-      await Promise.all(modelsToDelete.map((model) => ctx.db.delete(model._id)));
+      await Promise.all(
+        modelsToDelete.map((model) => ctx.db.delete(model._id)),
+      );
     }
 
     return {

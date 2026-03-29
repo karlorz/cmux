@@ -3,6 +3,8 @@ import {
   isLinkedToProject,
   ORCHESTRATION_STATUSES,
   DEFAULT_TASK_LIST_LIMIT,
+  hasLinkedCreateTaskRefs,
+  validateCreateTaskLinkedRefs,
 } from "./orchestrationQueries";
 import type { Doc, Id } from "./_generated/dataModel";
 
@@ -92,6 +94,144 @@ describe("orchestrationQueries", () => {
         owner: "org",
       });
       expect(isLinkedToProject(task)).toBe(true);
+    });
+  });
+
+  describe("createTask linked record authorization", () => {
+    const teamId = "team-1";
+    const userId = "user-1";
+    const otherUserId = "user-2";
+    const taskId = "task-1" as Id<"tasks">;
+    const otherTaskId = "task-2" as Id<"tasks">;
+    const taskRunId = "taskRun-1" as Id<"taskRuns">;
+    const parentTaskId = "orch-1" as Id<"orchestrationTasks">;
+
+    function createReader(
+      docs: Map<
+        string,
+        {
+          _id:
+            | Id<"tasks">
+            | Id<"taskRuns">
+            | Id<"orchestrationTasks">;
+          teamId: string;
+          userId: string;
+          taskId?: Id<"tasks">;
+        }
+      >,
+    ) {
+      return {
+        db: {
+          get: async (
+            id: Id<"tasks"> | Id<"taskRuns"> | Id<"orchestrationTasks">,
+          ) => docs.get(String(id)) ?? null,
+        },
+      };
+    }
+
+    it("detects when linked records are present", () => {
+      expect(hasLinkedCreateTaskRefs({})).toBe(false);
+      expect(hasLinkedCreateTaskRefs({ taskId })).toBe(true);
+      expect(hasLinkedCreateTaskRefs({ taskRunId })).toBe(true);
+      expect(hasLinkedCreateTaskRefs({ parentTaskId })).toBe(true);
+    });
+
+    it("accepts linked records owned by the same user and team", async () => {
+      const reader = createReader(
+        new Map([
+          [
+            String(taskId),
+            {
+              _id: taskId,
+              teamId,
+              userId,
+            },
+          ],
+          [
+            String(taskRunId),
+            {
+              _id: taskRunId,
+              teamId,
+              userId,
+              taskId,
+            },
+          ],
+          [
+            String(parentTaskId),
+            {
+              _id: parentTaskId,
+              teamId,
+              userId,
+            },
+          ],
+        ]),
+      );
+
+      await expect(
+        validateCreateTaskLinkedRefs(reader, {
+          teamId,
+          userId,
+          taskId,
+          taskRunId,
+          parentTaskId,
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it("rejects a linked task owned by another user", async () => {
+      const reader = createReader(
+        new Map([
+          [
+            String(taskId),
+            {
+              _id: taskId,
+              teamId,
+              userId: otherUserId,
+            },
+          ],
+        ]),
+      );
+
+      await expect(
+        validateCreateTaskLinkedRefs(reader, {
+          teamId,
+          userId,
+          taskId,
+        }),
+      ).rejects.toThrow("Task not found or unauthorized");
+    });
+
+    it("rejects a task run linked to a different task", async () => {
+      const reader = createReader(
+        new Map([
+          [
+            String(taskId),
+            {
+              _id: taskId,
+              teamId,
+              userId,
+            },
+          ],
+          [
+            String(taskRunId),
+            {
+              _id: taskRunId,
+              teamId,
+              userId,
+              taskId: otherTaskId,
+            },
+          ],
+        ]),
+      );
+
+      await expect(
+        validateCreateTaskLinkedRefs(reader, {
+          teamId,
+          userId,
+          taskId,
+          taskRunId,
+        }),
+      ).rejects.toThrow("Task run does not belong to task");
     });
   });
 });

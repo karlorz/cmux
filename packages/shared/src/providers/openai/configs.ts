@@ -6,17 +6,25 @@ import { startCodexCompletionDetector } from "./completion-detector";
 import { applyCodexApiKeys, getOpenAIEnvironment } from "./environment";
 
 // Factory types and helpers
-type CodexReasoningEffort = "xhigh" | "high" | "medium" | "low" | "minimal";
+export type CodexReasoningEffort =
+  | "xhigh"
+  | "high"
+  | "medium"
+  | "low"
+  | "minimal";
 
 interface CodexModelSpec {
   model: string;
   reasoningEffort?: CodexReasoningEffort;
+  configName?: string;
 }
 
 function createCodexConfig(spec: CodexModelSpec): AgentConfig {
-  const nameSuffix = spec.reasoningEffort
-    ? `${spec.model}-${spec.reasoningEffort}`
-    : spec.model;
+  const nameSuffix =
+    spec.configName ??
+    (spec.reasoningEffort
+      ? `${spec.model}-${spec.reasoningEffort}`
+      : spec.model);
   const reasoningArgs: string[] = spec.reasoningEffort
     ? ["-c", `model_reasoning_effort="${spec.reasoningEffort}"`]
     : [];
@@ -39,12 +47,34 @@ function createCodexConfig(spec: CodexModelSpec): AgentConfig {
   };
 }
 
+export function createCodexVariantConfig(options: {
+  model: string;
+  publicAgentName?: string;
+  reasoningEffort?: CodexReasoningEffort;
+}): AgentConfig {
+  const publicAgentName = options.publicAgentName?.trim();
+  const configName = publicAgentName?.startsWith("codex/")
+    ? publicAgentName.slice("codex/".length)
+    : publicAgentName;
+
+  return createCodexConfig({
+    model: options.model,
+    reasoningEffort: options.reasoningEffort,
+    configName,
+  });
+}
+
 // Helper to generate a model with standard reasoning efforts (xhigh, high, medium, low) plus base
-const STANDARD_EFFORTS: CodexReasoningEffort[] = ["xhigh", "high", "medium", "low"];
+const STANDARD_EFFORTS: CodexReasoningEffort[] = [
+  "xhigh",
+  "high",
+  "medium",
+  "low",
+];
 
 function codexWithEfforts(
   model: string,
-  efforts: CodexReasoningEffort[] = STANDARD_EFFORTS
+  efforts: CodexReasoningEffort[] = STANDARD_EFFORTS,
 ): CodexModelSpec[] {
   return [...efforts.map((e) => ({ model, reasoningEffort: e })), { model }];
 }

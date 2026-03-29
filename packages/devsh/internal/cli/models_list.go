@@ -62,17 +62,19 @@ type ControlPlaneModelsResponse struct {
 
 // ControlPlaneModel represents a model from the control plane
 type ControlPlaneModel struct {
-	Name            string   `json:"name"`
-	DisplayName     string   `json:"displayName"`
-	ProviderID      string   `json:"providerId"`
-	Vendor          string   `json:"vendor"`
-	IsAvailable     bool     `json:"isAvailable"`
-	Tier            string   `json:"tier"`
-	RequiredApiKeys []string `json:"requiredApiKeys"`
-	Tags            []string `json:"tags"`
-	SortOrder       int      `json:"sortOrder"`
-	Disabled        bool     `json:"disabled,omitempty"`
-	DisabledReason  string   `json:"disabledReason,omitempty"`
+	Name            string         `json:"name"`
+	DisplayName     string         `json:"displayName"`
+	ProviderID      string         `json:"providerId"`
+	Vendor          string         `json:"vendor"`
+	IsAvailable     bool           `json:"isAvailable"`
+	Tier            string         `json:"tier"`
+	RequiredApiKeys []string       `json:"requiredApiKeys"`
+	Tags            []string       `json:"tags"`
+	SortOrder       int            `json:"sortOrder"`
+	Variants        []ModelVariant `json:"variants"`
+	DefaultVariant  string         `json:"defaultVariant"`
+	Disabled        bool           `json:"disabled,omitempty"`
+	DisabledReason  string         `json:"disabledReason,omitempty"`
 }
 
 // ControlPlaneDefault represents a default model for a provider
@@ -354,6 +356,8 @@ func FetchModelsFromControlPlane(ctx context.Context, view string, vendorFilter 
 			Disabled:        m.Disabled,
 			DisabledReason:  disabledReason,
 			Tags:            m.Tags,
+			Variants:        m.Variants,
+			DefaultVariant:  m.DefaultVariant,
 		})
 	}
 
@@ -478,19 +482,31 @@ func printModelsTable(models []ModelInfo, verbose bool) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
 	if verbose {
-		fmt.Fprintf(w, "NAME\tDISPLAY\tVENDOR\tTIER\tTAGS\n")
-		fmt.Fprintf(w, "----\t-------\t------\t----\t----\n")
+		fmt.Fprintf(w, "NAME\tDISPLAY\tVENDOR\tTIER\tEFFORT\tTAGS\n")
+		fmt.Fprintf(w, "----\t-------\t------\t----\t------\t----\n")
 		for _, m := range models {
 			tags := ""
 			if len(m.Tags) > 0 {
 				tags = strings.Join(m.Tags, ", ")
 			}
+			effort := "-"
+			if len(m.Variants) > 0 {
+				labels := make([]string, 0, len(m.Variants))
+				for _, variant := range m.Variants {
+					label := variant.ID
+					if variant.ID == m.DefaultVariant && m.DefaultVariant != "" {
+						label += "*"
+					}
+					labels = append(labels, label)
+				}
+				effort = strings.Join(labels, ",")
+			}
 			disabled := ""
 			if m.Disabled {
 				disabled = " (disabled)"
 			}
-			fmt.Fprintf(w, "%s%s\t%s\t%s\t%s\t%s\n",
-				m.Name, disabled, m.DisplayName, m.Vendor, m.Tier, tags)
+			fmt.Fprintf(w, "%s%s\t%s\t%s\t%s\t%s\t%s\n",
+				m.Name, disabled, m.DisplayName, m.Vendor, m.Tier, effort, tags)
 		}
 	} else {
 		// Simple list (one per line)

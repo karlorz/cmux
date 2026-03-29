@@ -105,7 +105,7 @@ export const createTaskAndRun = httpAction(async (ctx, req) => {
         code: 401,
         message: "Unauthorized: Missing X-Task-Run-JWT header or Bearer token",
       },
-      401
+      401,
     );
   }
 
@@ -113,7 +113,7 @@ export const createTaskAndRun = httpAction(async (ctx, req) => {
   if (!contentType.toLowerCase().includes("application/json")) {
     return jsonResponse(
       { code: 415, message: "Content-Type must be application/json" },
-      415
+      415,
     );
   }
 
@@ -124,7 +124,7 @@ export const createTaskAndRun = httpAction(async (ctx, req) => {
     if (!validation.success) {
       console.warn(
         "[orchestration_http] Invalid payload",
-        validation.error.flatten()
+        validation.error.flatten(),
       );
       return jsonResponse({ code: 400, message: "Invalid payload" }, 400);
     }
@@ -141,7 +141,7 @@ export const createTaskAndRun = httpAction(async (ctx, req) => {
   try {
     const tokenPayload = await verifyTaskRunToken(
       token,
-      env.CMUX_TASK_RUN_JWT_SECRET
+      env.CMUX_TASK_RUN_JWT_SECRET,
     );
     teamId = tokenPayload.teamId;
     userId = tokenPayload.userId;
@@ -174,7 +174,7 @@ export const createTaskAndRun = httpAction(async (ctx, req) => {
         environmentId: payload.environmentId as Id<"environments"> | undefined,
         isOrchestrationHead: payload.isOrchestrationHead,
         orchestrationId: payload.orchestrationId,
-      }
+      },
     );
 
     return jsonResponse({
@@ -186,7 +186,7 @@ export const createTaskAndRun = httpAction(async (ctx, req) => {
     console.error("[orchestration_http] Failed to create task/run", error);
     return jsonResponse(
       { code: 500, message: "Failed to create task and run" },
-      500
+      500,
     );
   }
 });
@@ -195,6 +195,8 @@ const CreateOrchestrationTaskSchema = z.object({
   prompt: z.string().min(1),
   taskId: z.string().min(1),
   taskRunId: z.string().min(1),
+  agentName: z.string().optional(),
+  selectedVariant: z.string().optional(),
   priority: z.number().optional(),
   dependencies: z.array(z.string()).optional(),
   orchestrationId: z.string().optional(),
@@ -222,7 +224,7 @@ export const createOrchestrationTask = httpAction(async (ctx, req) => {
         code: 401,
         message: "Unauthorized: Missing X-Task-Run-JWT header or Bearer token",
       },
-      401
+      401,
     );
   }
 
@@ -230,7 +232,7 @@ export const createOrchestrationTask = httpAction(async (ctx, req) => {
   if (!contentType.toLowerCase().includes("application/json")) {
     return jsonResponse(
       { code: 415, message: "Content-Type must be application/json" },
-      415
+      415,
     );
   }
 
@@ -243,7 +245,10 @@ export const createOrchestrationTask = httpAction(async (ctx, req) => {
     }
     payload = validation.data;
   } catch (error) {
-    console.error("[orchestration_http.createOrchestrationTask] Failed to parse JSON", error);
+    console.error(
+      "[orchestration_http.createOrchestrationTask] Failed to parse JSON",
+      error,
+    );
     return jsonResponse({ code: 400, message: "Invalid JSON" }, 400);
   }
 
@@ -253,12 +258,15 @@ export const createOrchestrationTask = httpAction(async (ctx, req) => {
   try {
     const tokenPayload = await verifyTaskRunToken(
       token,
-      env.CMUX_TASK_RUN_JWT_SECRET
+      env.CMUX_TASK_RUN_JWT_SECRET,
     );
     teamId = tokenPayload.teamId;
     userId = tokenPayload.userId;
   } catch (error) {
-    console.error("[orchestration_http.createOrchestrationTask] Failed to verify JWT", error);
+    console.error(
+      "[orchestration_http.createOrchestrationTask] Failed to verify JWT",
+      error,
+    );
     return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
   }
 
@@ -270,18 +278,18 @@ export const createOrchestrationTask = httpAction(async (ctx, req) => {
       for (const depId of payload.dependencies) {
         const dep = await ctx.runQuery(
           internal.orchestrationQueries.getTaskInternal,
-          { taskId: depId as Id<"orchestrationTasks"> }
+          { taskId: depId as Id<"orchestrationTasks"> },
         );
         if (!dep) {
           return jsonResponse(
             { code: 400, message: `Dependency task not found: ${depId}` },
-            400
+            400,
           );
         }
         if (dep.teamId !== teamId) {
           return jsonResponse(
             { code: 403, message: "Dependency task belongs to another team" },
-            403
+            403,
           );
         }
         validatedDependencies.push(depId as Id<"orchestrationTasks">);
@@ -294,21 +302,30 @@ export const createOrchestrationTask = httpAction(async (ctx, req) => {
         teamId,
         userId,
         prompt: payload.prompt,
+        agentName: payload.agentName,
         taskId: payload.taskId as Id<"tasks">,
         taskRunId: payload.taskRunId as Id<"taskRuns">,
         priority: payload.priority ?? 5,
         dependencies: validatedDependencies,
-        metadata: payload.orchestrationId
-          ? { orchestrationId: payload.orchestrationId }
-          : undefined,
-      }
+        metadata:
+          payload.orchestrationId || payload.selectedVariant
+            ? {
+                ...(payload.orchestrationId
+                  ? { orchestrationId: payload.orchestrationId }
+                  : {}),
+                ...(payload.selectedVariant
+                  ? { selectedVariant: payload.selectedVariant }
+                  : {}),
+              }
+            : undefined,
+      },
     );
 
     return jsonResponse({ orchestrationTaskId });
   } catch (error) {
     console.error(
       "[orchestration_http] Failed to create orchestration task",
-      error
+      error,
     );
     return jsonResponse({ code: 500, message: "Failed to create task" }, 500);
   }
@@ -348,7 +365,7 @@ export const updateOrchestrationTask = httpAction(async (ctx, req) => {
   if (!contentType.toLowerCase().includes("application/json")) {
     return jsonResponse(
       { code: 415, message: "Content-Type must be application/json" },
-      415
+      415,
     );
   }
 
@@ -367,21 +384,23 @@ export const updateOrchestrationTask = httpAction(async (ctx, req) => {
   // Verify JWT and extract teamId for authorization check
   let tokenTeamId: string;
   try {
-    const tokenPayload = await verifyTaskRunToken(token, env.CMUX_TASK_RUN_JWT_SECRET);
+    const tokenPayload = await verifyTaskRunToken(
+      token,
+      env.CMUX_TASK_RUN_JWT_SECRET,
+    );
     tokenTeamId = tokenPayload.teamId;
   } catch {
     return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
   }
 
-  const orchestrationTaskId = payload.orchestrationTaskId as Id<
-    "orchestrationTasks"
-  >;
+  const orchestrationTaskId =
+    payload.orchestrationTaskId as Id<"orchestrationTasks">;
 
   try {
     // Verify the orchestration task belongs to the same team as the JWT
     const task = await ctx.runQuery(
       internal.orchestrationQueries.getTaskInternal,
-      { taskId: orchestrationTaskId }
+      { taskId: orchestrationTaskId },
     );
     if (!task) {
       return jsonResponse({ code: 404, message: "Task not found" }, 404);
@@ -389,9 +408,12 @@ export const updateOrchestrationTask = httpAction(async (ctx, req) => {
     if (task.teamId !== tokenTeamId) {
       console.warn(
         "[orchestration_http] TeamId mismatch in updateOrchestrationTask",
-        { taskTeamId: task.teamId, tokenTeamId }
+        { taskTeamId: task.teamId, tokenTeamId },
       );
-      return jsonResponse({ code: 403, message: "Forbidden: Team mismatch" }, 403);
+      return jsonResponse(
+        { code: 403, message: "Forbidden: Team mismatch" },
+        403,
+      );
     }
 
     // Handle different status updates
@@ -412,17 +434,20 @@ export const updateOrchestrationTask = httpAction(async (ctx, req) => {
       });
     } else if (payload.status === "completed") {
       // Note: completeTask is an authMutation, need to add internal version
-      await ctx.runMutation(internal.orchestrationQueries.completeTaskInternal, {
-        taskId: orchestrationTaskId,
-        result: payload.result,
-      });
+      await ctx.runMutation(
+        internal.orchestrationQueries.completeTaskInternal,
+        {
+          taskId: orchestrationTaskId,
+          result: payload.result,
+        },
+      );
     }
 
     return jsonResponse({ ok: true });
   } catch (error) {
     console.error(
       "[orchestration_http] Failed to update orchestration task",
-      error
+      error,
     );
     return jsonResponse({ code: 500, message: "Failed to update task" }, 500);
   }
@@ -449,7 +474,7 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
         code: 401,
         message: "Unauthorized: Missing X-Task-Run-JWT header or Bearer token",
       },
-      401
+      401,
     );
   }
 
@@ -461,7 +486,7 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
   try {
     const tokenPayload = await verifyTaskRunToken(
       token,
-      env.CMUX_TASK_RUN_JWT_SECRET
+      env.CMUX_TASK_RUN_JWT_SECRET,
     );
     teamId = tokenPayload.teamId;
     userId = tokenPayload.userId;
@@ -477,8 +502,8 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
     });
     const task = taskRun
       ? await ctx.runQuery(internal.tasks.getByIdInternal, {
-        id: taskRun.taskId,
-      })
+          id: taskRun.taskId,
+        })
       : null;
     const projectFullName = task?.projectFullName || undefined;
 
@@ -498,8 +523,14 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
       orchestrationRulesRaw,
       orchestrationSettings,
     ] = await Promise.all([
-      ctx.runQuery(internal.apiKeys.getAllForAgentsInternal, { teamId, userId }),
-      ctx.runQuery(internal.workspaceSettings.getByTeamAndUserInternal, { teamId, userId }),
+      ctx.runQuery(internal.apiKeys.getAllForAgentsInternal, {
+        teamId,
+        userId,
+      }),
+      ctx.runQuery(internal.workspaceSettings.getByTeamAndUserInternal, {
+        teamId,
+        userId,
+      }),
       ctx.runQuery(internal.providerOverrides.getAllEnabledForTeam, { teamId }),
       ctx.runQuery(internal.mcpServerConfigs.getForSandboxInternal, {
         teamId,
@@ -521,9 +552,16 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
         agentType: "opencode",
         ...(projectFullName ? { projectFullName } : {}),
       }),
-      ctx.runQuery(internal.agentMemoryQueries.getLatestTeamKnowledgeInternal, { teamId }),
-      ctx.runQuery(internal.agentMemoryQueries.getLatestTeamMailboxInternal, { teamId }),
-      ctx.runQuery(internal.agentMemoryQueries.getLatestTeamBehaviorHotInternal, { teamId }),
+      ctx.runQuery(internal.agentMemoryQueries.getLatestTeamKnowledgeInternal, {
+        teamId,
+      }),
+      ctx.runQuery(internal.agentMemoryQueries.getLatestTeamMailboxInternal, {
+        teamId,
+      }),
+      ctx.runQuery(
+        internal.agentMemoryQueries.getLatestTeamBehaviorHotInternal,
+        { teamId },
+      ),
       // Phase 5: Scoped knowledge with team/repo/user precedence
       ctx.runQuery(internal.agentMemoryQueries.getScopedKnowledgeInternal, {
         teamId,
@@ -536,13 +574,18 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
         minConfidence: 0.3, // Only inject rules with at least 30% confidence into agent context
       }),
       // Orchestration settings for auto-spawn sub-agents
-      ctx.runQuery(internal.orchestrationSettings.getByTeamIdInternal, { teamId }),
+      ctx.runQuery(internal.orchestrationSettings.getByTeamIdInternal, {
+        teamId,
+      }),
     ]);
 
     const config: SpawnConfigData = {
       apiKeys,
       workspaceSettings: workspaceSettings
-        ? { bypassAnthropicProxy: workspaceSettings.bypassAnthropicProxy ?? false }
+        ? {
+            bypassAnthropicProxy:
+              workspaceSettings.bypassAnthropicProxy ?? false,
+          }
         : null,
       providerOverrides: providerOverrides.map((o) => ({
         providerId: o.providerId,
@@ -592,7 +635,7 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
     console.error("[orchestration_http] Failed to get spawn config", error);
     return jsonResponse(
       { code: 500, message: "Failed to get spawn configuration" },
-      500
+      500,
     );
   }
 });
@@ -651,7 +694,7 @@ export const pullOrchestrationState = httpAction(async (ctx, req) => {
         code: 401,
         message: "Unauthorized: Missing X-Task-Run-JWT header",
       },
-      401
+      401,
     );
   }
 
@@ -667,13 +710,19 @@ export const pullOrchestrationState = httpAction(async (ctx, req) => {
   try {
     const tokenPayload = await verifyTaskRunToken(
       taskRunJwt,
-      env.CMUX_TASK_RUN_JWT_SECRET
+      env.CMUX_TASK_RUN_JWT_SECRET,
     );
     teamId = tokenPayload.teamId;
     taskRunIdFromToken = tokenPayload.taskRunId;
   } catch (error) {
-    console.error("[orchestration_http.pullOrchestrationState] Failed to verify JWT", error);
-    return jsonResponse({ code: 401, message: "Unauthorized: Invalid task-run JWT" }, 401);
+    console.error(
+      "[orchestration_http.pullOrchestrationState] Failed to verify JWT",
+      error,
+    );
+    return jsonResponse(
+      { code: 401, message: "Unauthorized: Invalid task-run JWT" },
+      401,
+    );
   }
 
   // Use taskRunId from params or from JWT
@@ -687,7 +736,7 @@ export const pullOrchestrationState = httpAction(async (ctx, req) => {
         teamId,
         orchestrationId,
         taskRunId: effectiveTaskRunId as Id<"taskRuns"> | undefined,
-      }
+      },
     );
 
     // Fetch messages for this task run (if available)
@@ -695,7 +744,7 @@ export const pullOrchestrationState = httpAction(async (ctx, req) => {
     if (effectiveTaskRunId) {
       const rawMessages = await ctx.runQuery(
         internal.orchestrationQueries.getMessagesForTaskRunInternal,
-        { taskRunId: effectiveTaskRunId as Id<"taskRuns"> }
+        { taskRunId: effectiveTaskRunId as Id<"taskRuns"> },
       );
       messages = rawMessages.map((m) => ({
         id: m.messageId,
@@ -712,7 +761,9 @@ export const pullOrchestrationState = httpAction(async (ctx, req) => {
     const completedCount = tasks.filter((t) => t.status === "completed").length;
     const pendingCount = tasks.filter((t) => t.status === "pending").length;
     const failedCount = tasks.filter((t) => t.status === "failed").length;
-    const runningCount = tasks.filter((t) => t.status === "running" || t.status === "assigned").length;
+    const runningCount = tasks.filter(
+      (t) => t.status === "running" || t.status === "assigned",
+    ).length;
 
     const response: OrchestrationStateUpdate = {
       orchestrationId: orchestrationId || "default",
@@ -734,10 +785,13 @@ export const pullOrchestrationState = httpAction(async (ctx, req) => {
 
     return jsonResponse(response);
   } catch (error) {
-    console.error("[orchestration_http.pullOrchestrationState] Failed to pull state", error);
+    console.error(
+      "[orchestration_http.pullOrchestrationState] Failed to pull state",
+      error,
+    );
     return jsonResponse(
       { code: 500, message: "Failed to pull orchestration state" },
-      500
+      500,
     );
   }
 });
@@ -781,7 +835,7 @@ export const getOrchestrationResults = httpAction(async (ctx, req) => {
         code: 401,
         message: "Unauthorized: Missing X-Task-Run-JWT header",
       },
-      401
+      401,
     );
   }
 
@@ -792,7 +846,7 @@ export const getOrchestrationResults = httpAction(async (ctx, req) => {
   if (!orchestrationId) {
     return jsonResponse(
       { code: 400, message: "Missing required query param: orchestrationId" },
-      400
+      400,
     );
   }
 
@@ -802,19 +856,25 @@ export const getOrchestrationResults = httpAction(async (ctx, req) => {
   try {
     const tokenPayload = await verifyTaskRunToken(
       taskRunJwt,
-      env.CMUX_TASK_RUN_JWT_SECRET
+      env.CMUX_TASK_RUN_JWT_SECRET,
     );
     teamId = tokenPayload.teamId;
   } catch (error) {
-    console.error("[orchestration_http.getOrchestrationResults] Failed to verify JWT", error);
-    return jsonResponse({ code: 401, message: "Unauthorized: Invalid task-run JWT" }, 401);
+    console.error(
+      "[orchestration_http.getOrchestrationResults] Failed to verify JWT",
+      error,
+    );
+    return jsonResponse(
+      { code: 401, message: "Unauthorized: Invalid task-run JWT" },
+      401,
+    );
   }
 
   try {
     // Fetch orchestration tasks
     const tasks = await ctx.runQuery(
       internal.orchestrationQueries.getOrchestrationStateInternal,
-      { teamId, orchestrationId }
+      { teamId, orchestrationId },
     );
 
     const totalTasks = tasks.length;
@@ -855,10 +915,13 @@ export const getOrchestrationResults = httpAction(async (ctx, req) => {
 
     return jsonResponse(response);
   } catch (error) {
-    console.error("[orchestration_http.getOrchestrationResults] Failed to get results", error);
+    console.error(
+      "[orchestration_http.getOrchestrationResults] Failed to get results",
+      error,
+    );
     return jsonResponse(
       { code: 500, message: "Failed to get orchestration results" },
-      500
+      500,
     );
   }
 });
@@ -930,7 +993,7 @@ export const uploadBundle = httpAction(async (ctx, req) => {
         code: 401,
         message: "Unauthorized: Missing X-Task-Run-JWT header or Bearer token",
       },
-      401
+      401,
     );
   }
 
@@ -938,7 +1001,7 @@ export const uploadBundle = httpAction(async (ctx, req) => {
   if (!contentType.toLowerCase().includes("application/json")) {
     return jsonResponse(
       { code: 415, message: "Content-Type must be application/json" },
-      415
+      415,
     );
   }
 
@@ -949,16 +1012,23 @@ export const uploadBundle = httpAction(async (ctx, req) => {
     if (!validation.success) {
       console.warn(
         "[orchestration_http.uploadBundle] Invalid bundle schema",
-        validation.error.flatten()
+        validation.error.flatten(),
       );
       return jsonResponse(
-        { code: 400, message: "Invalid bundle format", errors: validation.error.flatten() },
-        400
+        {
+          code: 400,
+          message: "Invalid bundle format",
+          errors: validation.error.flatten(),
+        },
+        400,
       );
     }
     bundle = validation.data;
   } catch (error) {
-    console.error("[orchestration_http.uploadBundle] Failed to parse JSON", error);
+    console.error(
+      "[orchestration_http.uploadBundle] Failed to parse JSON",
+      error,
+    );
     return jsonResponse({ code: 400, message: "Invalid JSON" }, 400);
   }
 
@@ -969,12 +1039,15 @@ export const uploadBundle = httpAction(async (ctx, req) => {
   try {
     const tokenPayload = await verifyTaskRunToken(
       token,
-      env.CMUX_TASK_RUN_JWT_SECRET
+      env.CMUX_TASK_RUN_JWT_SECRET,
     );
     teamId = tokenPayload.teamId;
     userId = tokenPayload.userId;
   } catch (error) {
-    console.error("[orchestration_http.uploadBundle] Failed to verify JWT", error);
+    console.error(
+      "[orchestration_http.uploadBundle] Failed to verify JWT",
+      error,
+    );
     return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
   }
 
@@ -994,7 +1067,7 @@ export const uploadBundle = httpAction(async (ctx, req) => {
         tasksJson: JSON.stringify(bundle.tasks),
         eventsJson: bundle.events ? JSON.stringify(bundle.events) : undefined,
         source: "local", // Bundles uploaded via this endpoint are from local runs
-      }
+      },
     );
 
     return jsonResponse({
@@ -1002,10 +1075,10 @@ export const uploadBundle = httpAction(async (ctx, req) => {
       orchestrationId: bundle.orchestration.id,
     });
   } catch (error) {
-    console.error("[orchestration_http.uploadBundle] Failed to create bundle", error);
-    return jsonResponse(
-      { code: 500, message: "Failed to upload bundle" },
-      500
+    console.error(
+      "[orchestration_http.uploadBundle] Failed to create bundle",
+      error,
     );
+    return jsonResponse({ code: 500, message: "Failed to upload bundle" }, 500);
   }
 });

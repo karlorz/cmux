@@ -1,5 +1,6 @@
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
+import { normalizeAgentSelection } from "@cmux/shared/agent-selection-core";
 import { getTeamId, resolveTeamIdLoose } from "../_shared/team";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -62,6 +63,7 @@ function projectTaskRunForList(run: Doc<"taskRuns"> | null | undefined) {
     taskId: run.taskId,
     parentRunId: run.parentRunId,
     agentName: run.agentName,
+    selectedVariant: run.selectedVariant,
     summary: run.summary, // Keep for display in UI
     status: run.status,
     isArchived: run.isArchived,
@@ -740,6 +742,14 @@ export const create = authMutation({
     githubProjectOwnerType: v.optional(v.string()),
     // Optional: create task runs atomically with the task
     selectedAgents: v.optional(v.array(v.string())),
+    selectedAgentSelections: v.optional(
+      v.array(
+        v.object({
+          agentName: v.string(),
+          selectedVariant: v.optional(v.string()),
+        }),
+      ),
+    ),
   },
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
@@ -787,15 +797,35 @@ export const create = authMutation({
       githubProjectOwnerType: args.githubProjectOwnerType,
     });
 
-    // If selectedAgents provided, create task runs atomically
+    const selectedAgentRuns:
+      | Array<{
+          agentName: string;
+          selectedVariant?: string;
+        }>
+      | undefined = args.selectedAgentSelections?.length
+      ? args.selectedAgentSelections.map((selection) => {
+          const normalized = normalizeAgentSelection(selection);
+          return {
+            agentName: normalized.assignedAgentName,
+            ...(normalized.selectedVariant
+              ? { selectedVariant: normalized.selectedVariant }
+              : {}),
+          };
+        })
+      : args.selectedAgents?.length
+        ? args.selectedAgents.map((agentName) => ({ agentName }))
+        : undefined;
+
+    // If selected agents provided, create task runs atomically
     let taskRunIds: Id<"taskRuns">[] | undefined;
-    if (args.selectedAgents && args.selectedAgents.length > 0) {
+    if (selectedAgentRuns && selectedAgentRuns.length > 0) {
       taskRunIds = await Promise.all(
-        args.selectedAgents.map(async (agentName) => {
+        selectedAgentRuns.map(async (selection) => {
           const taskRunId = await ctx.db.insert("taskRuns", {
             taskId,
             prompt: args.text,
-            agentName,
+            agentName: selection.agentName,
+            selectedVariant: selection.selectedVariant,
             status: "pending",
             createdAt: now,
             updatedAt: now,
@@ -810,7 +840,7 @@ export const create = authMutation({
             teamId,
             taskRunId,
             continuationMode: "initial",
-            agentName,
+            agentName: selection.agentName,
             actor: "user",
           });
 

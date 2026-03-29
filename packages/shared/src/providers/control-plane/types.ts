@@ -108,6 +108,14 @@ export interface ProviderControlPlaneModel {
   tags: string[];
   /** Sort order for display */
   sortOrder: number;
+  /** Optional model-specific effort/reasoning variants */
+  variants?: Array<{
+    id: string;
+    displayName: string;
+    description?: string;
+  }>;
+  /** Default effort/reasoning variant */
+  defaultVariant?: string;
   /** Whether the model is disabled */
   disabled?: boolean;
   /** Reason the model is disabled */

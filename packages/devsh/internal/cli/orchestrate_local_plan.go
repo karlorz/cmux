@@ -40,16 +40,16 @@ type PlanTask struct {
 
 // PlanState represents the execution state of a plan
 type PlanState struct {
-	PlanName      string            `json:"planName"`
-	StartedAt     string            `json:"startedAt"`
-	CompletedAt   string            `json:"completedAt,omitempty"`
-	DurationMs    int64             `json:"durationMs,omitempty"`
-	Status        string            `json:"status"`
-	TasksTotal    int               `json:"tasksTotal"`
-	TasksComplete int               `json:"tasksComplete"`
-	TasksFailed   int               `json:"tasksFailed"`
-	TaskStates    []LocalState      `json:"taskStates"`
-	Events        []LocalEvent      `json:"events"`
+	PlanName      string       `json:"planName"`
+	StartedAt     string       `json:"startedAt"`
+	CompletedAt   string       `json:"completedAt,omitempty"`
+	DurationMs    int64        `json:"durationMs,omitempty"`
+	Status        string       `json:"status"`
+	TasksTotal    int          `json:"tasksTotal"`
+	TasksComplete int          `json:"tasksComplete"`
+	TasksFailed   int          `json:"tasksFailed"`
+	TaskStates    []LocalState `json:"taskStates"`
+	Events        []LocalEvent `json:"events"`
 }
 
 func (p *PlanState) addEvent(eventType, message string) {
@@ -133,12 +133,12 @@ Examples:
 		// Initialize plan state
 		startTime := time.Now()
 		planState := &PlanState{
-			PlanName:    plan.Name,
-			StartedAt:   startTime.UTC().Format(time.RFC3339),
-			Status:      "running",
-			TasksTotal:  len(plan.Tasks),
-			TaskStates:  []LocalState{},
-			Events:      []LocalEvent{},
+			PlanName:   plan.Name,
+			StartedAt:  startTime.UTC().Format(time.RFC3339),
+			Status:     "running",
+			TasksTotal: len(plan.Tasks),
+			TaskStates: []LocalState{},
+			Events:     []LocalEvent{},
 		}
 
 		planState.addEvent("plan_started", fmt.Sprintf("Starting plan '%s' with %d tasks", plan.Name, len(plan.Tasks)))
@@ -534,16 +534,21 @@ func runPlanParallel(plan *PlanFile, planState *PlanState, defaultWorkspace, def
 
 // runAgentForTask runs a specific agent for a task (thread-safe version)
 func runAgentForTask(ctx context.Context, state *LocalState, agent, prompt, workspace string) error {
-	switch agent {
-	case "claude/haiku-4.5", "claude/haiku-4.6", "claude/sonnet-4.5", "claude/sonnet-4.6", "claude/opus-4.5", "claude/opus-4.6":
+	selection, err := resolveLocalAgentSelection(agent, state.SelectedVariant)
+	if err != nil {
+		return err
+	}
+
+	switch selection.Provider {
+	case "claude":
 		return runClaudeLocalWithAgent(ctx, state, agent, prompt, workspace)
-	case "codex/gpt-5.1-codex-mini", "codex/gpt-5.4-xhigh":
+	case "codex":
 		return runCodexLocalWithAgent(ctx, state, agent, prompt, workspace)
-	case "gemini/gemini-2.5-pro", "gemini/gemini-2.5-flash":
+	case "gemini":
 		return runGeminiLocalWithAgent(ctx, state, agent, prompt, workspace)
-	case "opencode/big-pickle", "opencode/small-pickle":
+	case "opencode":
 		return runOpencodeLocalWithAgent(ctx, state, agent, prompt, workspace)
-	case "amp/amp-1":
+	case "amp":
 		return runAmpLocalWithAgent(ctx, state, agent, prompt, workspace)
 	default:
 		return fmt.Errorf("unsupported agent: %s", agent)

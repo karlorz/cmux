@@ -5,9 +5,13 @@ import {
   type AgentConfig,
   type EnvironmentResult,
 } from "@cmux/shared/agentConfig";
+import { resolveAgentSelection } from "@cmux/shared/agent-selection";
 import { createOpencodeFreeDynamicConfig } from "@cmux/shared/providers/opencode/configs";
 import type { McpServerConfig } from "@cmux/shared";
-import type { PolicyRuleForInstructions, OrchestrationRuleForInstructions } from "@cmux/shared/agent-memory-protocol";
+import type {
+  PolicyRuleForInstructions,
+  OrchestrationRuleForInstructions,
+} from "@cmux/shared/agent-memory-protocol";
 import {
   getProviderIdFromAgentName,
   getProviderRegistry,
@@ -238,10 +242,12 @@ export async function spawnAgent(
       name: string;
       model?: string;
     };
+    /** Optional provider-specific effort/thinking variant */
+    selectedVariant?: string;
   },
   teamSlugOrId: string,
   /** Optional pre-provided JWT (for JWT-based auth when Stack Auth is not available) */
-  preProvidedJwt?: string
+  preProvidedJwt?: string,
 ): Promise<AgentSpawnResult> {
   // Declare taskRunId outside try block so it's accessible in catch for error reporting
   let taskRunId: Id<"taskRuns"> | null = options.taskRunId ?? null;
@@ -256,8 +262,9 @@ export async function spawnAgent(
       options.newBranch ||
       (await generateNewBranchName(options.taskDescription, teamSlugOrId));
     serverLogger.info(
-      `[AgentSpawner] New Branch: ${newBranch}, Base Branch: ${options.branch ?? "(auto)"
-      }`
+      `[AgentSpawner] New Branch: ${newBranch}, Base Branch: ${
+        options.branch ?? "(auto)"
+      }`,
     );
 
     let taskRunJwt: string;
@@ -269,7 +276,7 @@ export async function spawnAgent(
       taskRunJwt = preProvidedJwt;
       taskRunId = options.taskRunId;
       serverLogger.info(
-        `[AgentSpawner] Using pre-provided JWT for task run ${taskRunId}`
+        `[AgentSpawner] Using pre-provided JWT for task run ${taskRunId}`,
       );
     } else if (options.taskRunId) {
       // Task run was pre-created - get JWT and update branch
@@ -287,24 +294,23 @@ export async function spawnAgent(
       taskRunJwt = jwtResult.jwt;
       taskRunId = options.taskRunId;
       serverLogger.info(
-        `[AgentSpawner] Using pre-created task run ${taskRunId}, updated branch to ${newBranch}`
+        `[AgentSpawner] Using pre-created task run ${taskRunId}, updated branch to ${newBranch}`,
       );
     } else {
       // Create a task run for this specific agent (legacy path)
-      const { taskRunId: createdTaskRunId, jwt } =
-        await getConvex().mutation(
-          api.taskRuns.create,
-          buildTaskRunCreateArgs({
-            teamSlugOrId,
-            taskId: taskId,
-            prompt: options.taskDescription,
-            agentName: agent.name,
-            newBranch,
-            environmentId: options.environmentId,
-            isOrchestrationHead: options.isOrchestrationHead,
-            orchestrationId: options.orchestrationOptions?.orchestrationId,
-          }),
-        );
+      const { taskRunId: createdTaskRunId, jwt } = await getConvex().mutation(
+        api.taskRuns.create,
+        buildTaskRunCreateArgs({
+          teamSlugOrId,
+          taskId: taskId,
+          prompt: options.taskDescription,
+          agentName: agent.name,
+          newBranch,
+          environmentId: options.environmentId,
+          isOrchestrationHead: options.isOrchestrationHead,
+          orchestrationId: options.orchestrationOptions?.orchestrationId,
+        }),
+      );
       taskRunId = createdTaskRunId;
       taskRunJwt = jwt;
     }
@@ -316,7 +322,7 @@ export async function spawnAgent(
     // Skip for JWT-auth path (sub-agent spawning) since there's no Stack Auth context
     const hasAuthContext = !!capturedAuthToken;
     serverLogger.info(
-      `[AgentSpawner] Auth context: hasAuthContext=${hasAuthContext}, hasPreProvidedJwt=${!!preProvidedJwt}`
+      `[AgentSpawner] Auth context: hasAuthContext=${hasAuthContext}, hasPreProvidedJwt=${!!preProvidedJwt}`,
     );
     const task = hasAuthContext
       ? await getConvex().query(api.tasks.getById, {
@@ -350,7 +356,7 @@ export async function spawnAgent(
       const downloadedImages = await Promise.all(
         task.images.map(async (taskImage) => {
           const imageUrl = imageUrlsResult.find(
-            (url) => url.storageId === taskImage.storageId
+            (url) => url.storageId === taskImage.storageId,
           );
           if (imageUrl) {
             // Download image from Convex storage
@@ -364,7 +370,7 @@ export async function spawnAgent(
             };
           }
           return null;
-        })
+        }),
       );
       const filteredImages = downloadedImages.filter((img) => img !== null);
       imagesToProcess = filteredImages as Array<{
@@ -376,10 +382,10 @@ export async function spawnAgent(
 
     if (imagesToProcess.length > 0) {
       serverLogger.info(
-        `[AgentSpawner] Processing ${imagesToProcess.length} images`
+        `[AgentSpawner] Processing ${imagesToProcess.length} images`,
       );
       serverLogger.info(
-        `[AgentSpawner] Original task description: ${options.taskDescription}`
+        `[AgentSpawner] Original task description: ${options.taskDescription}`,
       );
 
       // Create image files and update prompt
@@ -405,20 +411,20 @@ export async function spawnAgent(
           // Escape special regex characters in the filename
           const escapedFileName = image.fileName.replace(
             /[.*+?^${}()|[\]\\]/g,
-            "\\$&"
+            "\\$&",
           );
           processedTaskDescription = processedTaskDescription.replace(
             new RegExp(escapedFileName, "g"),
-            imagePath
+            imagePath,
           );
           if (beforeReplace !== processedTaskDescription) {
             serverLogger.info(
-              `[AgentSpawner] Replaced "${image.fileName}" with "${imagePath}"`
+              `[AgentSpawner] Replaced "${image.fileName}" with "${imagePath}"`,
             );
             replaced = true;
           } else {
             serverLogger.warn(
-              `[AgentSpawner] Failed to find "${image.fileName}" in prompt text`
+              `[AgentSpawner] Failed to find "${image.fileName}" in prompt text`,
             );
           }
         }
@@ -435,15 +441,15 @@ export async function spawnAgent(
             const beforeReplace = processedTaskDescription;
             const escapedName = nameWithoutExt.replace(
               /[.*+?^${}()|[\]\\]/g,
-              "\\$&"
+              "\\$&",
             );
             processedTaskDescription = processedTaskDescription.replace(
               new RegExp(escapedName, "g"),
-              imagePath
+              imagePath,
             );
             if (beforeReplace !== processedTaskDescription) {
               serverLogger.info(
-                `[AgentSpawner] Replaced "${nameWithoutExt}" with "${imagePath}"`
+                `[AgentSpawner] Replaced "${nameWithoutExt}" with "${imagePath}"`,
               );
             }
           }
@@ -451,26 +457,29 @@ export async function spawnAgent(
       });
 
       serverLogger.info(
-        `[AgentSpawner] Processed task description: ${processedTaskDescription}`
+        `[AgentSpawner] Processed task description: ${processedTaskDescription}`,
       );
     }
 
     // Callback URL for stop hooks to call crown/complete (Convex site URL)
     // For self-hosted Convex, use CONVEX_SITE_URL directly
     // For Convex Cloud, transform api URL to site URL
-    const callbackUrl = env.CONVEX_SITE_URL
-      ?? env.NEXT_PUBLIC_CONVEX_URL.replace('.convex.cloud', '.convex.site');
+    const callbackUrl =
+      env.CONVEX_SITE_URL ??
+      env.NEXT_PUBLIC_CONVEX_URL.replace(".convex.cloud", ".convex.site");
     // Server URL for agent-to-server API calls (spawn_agent, etc.)
     // Uses getServerBaseUrl() which derives port 9776 from www URL
     const cmuxServerUrl = getServerBaseUrl();
 
     // Start loading workspace config early so it runs in parallel with other setup work.
     // Skip for JWT-auth path since getWwwClient() requires Stack Auth headers
-    const workspaceConfigPromise = (async (): Promise<WorkspaceConfigLayer[]> => {
+    const workspaceConfigPromise = (async (): Promise<
+      WorkspaceConfigLayer[]
+    > => {
       // Skip www API calls for JWT-auth path (no Stack Auth context)
       if (!capturedAuthHeaderJson) {
         serverLogger.info(
-          `[AgentSpawner] Skipping workspace config loading - no auth headers (JWT path)`
+          `[AgentSpawner] Skipping workspace config loading - no auth headers (JWT path)`,
         );
         return [];
       }
@@ -489,7 +498,7 @@ export async function spawnAgent(
             const parsedRepo = parseGithubRepoUrl(selectedRepo);
             if (!parsedRepo) {
               serverLogger.warn(
-                `[AgentSpawner] Skipping invalid environment repo "${selectedRepo}" for workspace config loading`
+                `[AgentSpawner] Skipping invalid environment repo "${selectedRepo}" for workspace config loading`,
               );
               continue;
             }
@@ -498,7 +507,7 @@ export async function spawnAgent(
         } catch (error) {
           serverLogger.warn(
             `[AgentSpawner] Failed to load environment repos for workspace config layering`,
-            error
+            error,
           );
           return [];
         }
@@ -533,11 +542,11 @@ export async function spawnAgent(
           } catch (error) {
             serverLogger.warn(
               `[AgentSpawner] Failed to fetch workspace config for ${projectFullName}`,
-              error
+              error,
             );
             return null;
           }
-        })
+        }),
       );
 
       return workspaceConfigs.flatMap((config) => (config ? [config] : []));
@@ -553,15 +562,24 @@ export async function spawnAgent(
       CMUX_AGENT_NAME: agent.name,
       PROMPT: processedTaskDescription,
     };
+    if (options.selectedVariant) {
+      systemEnvVars.CMUX_SELECTED_VARIANT = options.selectedVariant;
+    }
 
     // Add autopilot environment variables if autopilot is enabled (Phase 6)
     if (options.autopilotOptions?.enabled) {
       systemEnvVars.CMUX_AUTOPILOT_ENABLED = "1";
-      systemEnvVars.CMUX_AUTOPILOT_MINUTES = String(options.autopilotOptions.totalMinutes);
-      systemEnvVars.CMUX_AUTOPILOT_TURN_MINUTES = String(options.autopilotOptions.turnMinutes);
-      systemEnvVars.CMUX_AUTOPILOT_WRAPUP_MINUTES = String(options.autopilotOptions.wrapUpMinutes);
+      systemEnvVars.CMUX_AUTOPILOT_MINUTES = String(
+        options.autopilotOptions.totalMinutes,
+      );
+      systemEnvVars.CMUX_AUTOPILOT_TURN_MINUTES = String(
+        options.autopilotOptions.turnMinutes,
+      );
+      systemEnvVars.CMUX_AUTOPILOT_WRAPUP_MINUTES = String(
+        options.autopilotOptions.wrapUpMinutes,
+      );
       serverLogger.info(
-        `[AgentSpawner] Autopilot mode enabled: ${options.autopilotOptions.totalMinutes}min total, ${options.autopilotOptions.turnMinutes}min/turn`
+        `[AgentSpawner] Autopilot mode enabled: ${options.autopilotOptions.totalMinutes}min total, ${options.autopilotOptions.turnMinutes}min/turn`,
       );
     }
 
@@ -569,10 +587,13 @@ export async function spawnAgent(
     if (options.ralphModeOptions?.enabled) {
       systemEnvVars.CMUX_RALPH_MODE = "1";
       systemEnvVars.CMUX_RALPH_PROMPT = processedTaskDescription;
-      systemEnvVars.CMUX_RALPH_MAX_ITERATIONS = String(options.ralphModeOptions.maxIterations ?? 50);
-      systemEnvVars.CMUX_RALPH_COMPLETION_TAG = options.ralphModeOptions.completionTag ?? "DONE";
+      systemEnvVars.CMUX_RALPH_MAX_ITERATIONS = String(
+        options.ralphModeOptions.maxIterations ?? 50,
+      );
+      systemEnvVars.CMUX_RALPH_COMPLETION_TAG =
+        options.ralphModeOptions.completionTag ?? "DONE";
       serverLogger.info(
-        `[AgentSpawner] Ralph mode enabled: max ${options.ralphModeOptions.maxIterations ?? 50} iterations, completion tag: ${options.ralphModeOptions.completionTag ?? "DONE"}`
+        `[AgentSpawner] Ralph mode enabled: max ${options.ralphModeOptions.maxIterations ?? 50} iterations, completion tag: ${options.ralphModeOptions.completionTag ?? "DONE"}`,
       );
     }
 
@@ -584,13 +605,18 @@ export async function spawnAgent(
     // Add auto-spawn sub-agents settings from pre-fetched config
     if (options.preFetchedConfig?.orchestrationSettings?.autoSpawnEnabled) {
       systemEnvVars.CMUX_AUTO_SPAWN_ENABLED = "1";
-      systemEnvVars.CMUX_DEFAULT_CODING_AGENT = options.preFetchedConfig.orchestrationSettings.defaultCodingAgent;
-      systemEnvVars.CMUX_MAX_CONCURRENT_SUBAGENTS = String(options.preFetchedConfig.orchestrationSettings.maxConcurrentSubAgents);
-      systemEnvVars.CMUX_MAX_TASK_DURATION_MINUTES = String(options.preFetchedConfig.orchestrationSettings.maxTaskDurationMinutes);
+      systemEnvVars.CMUX_DEFAULT_CODING_AGENT =
+        options.preFetchedConfig.orchestrationSettings.defaultCodingAgent;
+      systemEnvVars.CMUX_MAX_CONCURRENT_SUBAGENTS = String(
+        options.preFetchedConfig.orchestrationSettings.maxConcurrentSubAgents,
+      );
+      systemEnvVars.CMUX_MAX_TASK_DURATION_MINUTES = String(
+        options.preFetchedConfig.orchestrationSettings.maxTaskDurationMinutes,
+      );
       serverLogger.info(
         `[AgentSpawner] Auto-spawn enabled: agent=${options.preFetchedConfig.orchestrationSettings.defaultCodingAgent}, ` +
-        `max=${options.preFetchedConfig.orchestrationSettings.maxConcurrentSubAgents}, ` +
-        `timeout=${options.preFetchedConfig.orchestrationSettings.maxTaskDurationMinutes}min`
+          `max=${options.preFetchedConfig.orchestrationSettings.maxConcurrentSubAgents}, ` +
+          `timeout=${options.preFetchedConfig.orchestrationSettings.maxTaskDurationMinutes}min`,
       );
     }
     if (options.isCloudWorkspace) {
@@ -606,36 +632,37 @@ export async function spawnAgent(
       if (sp.model) {
         systemEnvVars.CMUX_SUPERVISOR_MODEL = sp.model;
       }
-      serverLogger.info(`[AgentSpawner] Supervisor profile: ${sp.name} (${sp.reasoningLevel}/${sp.reviewPosture}/${sp.delegationStyle})`);
+      serverLogger.info(
+        `[AgentSpawner] Supervisor profile: ${sp.name} (${sp.reasoningLevel}/${sp.reviewPosture}/${sp.delegationStyle})`,
+      );
     }
 
     let envVars: Record<string, string> = { ...systemEnvVars };
 
     const workspaceConfigs = await workspaceConfigPromise;
-    const workspaceEnvVarsLayer = workspaceConfigs.reduce<Record<string, string>>(
-      (acc, config) => {
-        const envContent = config.envVarsContent;
-        if (!envContent || envContent.trim().length === 0) {
-          return acc;
-        }
-        const parsed = parseDotenv(envContent);
-        if (Object.keys(parsed).length === 0) {
-          return acc;
-        }
-        return {
-          ...acc,
-          ...parsed,
-        };
-      },
-      {}
-    );
+    const workspaceEnvVarsLayer = workspaceConfigs.reduce<
+      Record<string, string>
+    >((acc, config) => {
+      const envContent = config.envVarsContent;
+      if (!envContent || envContent.trim().length === 0) {
+        return acc;
+      }
+      const parsed = parseDotenv(envContent);
+      if (Object.keys(parsed).length === 0) {
+        return acc;
+      }
+      return {
+        ...acc,
+        ...parsed,
+      };
+    }, {});
     if (Object.keys(workspaceEnvVarsLayer).length > 0) {
       envVars = {
         ...workspaceEnvVarsLayer,
         ...envVars,
       };
       serverLogger.info(
-        `[AgentSpawner] Injected ${Object.keys(workspaceEnvVarsLayer).length} env vars from ${workspaceConfigs.length} workspace config(s)`
+        `[AgentSpawner] Injected ${Object.keys(workspaceEnvVarsLayer).length} env vars from ${workspaceConfigs.length} workspace config(s)`,
       );
     }
 
@@ -658,22 +685,22 @@ export async function spawnAgent(
             };
             serverLogger.info(
               `[AgentSpawner] Injected ${Object.keys(parsed).length} env vars from environment ${String(
-                options.environmentId
-              )}`
+                options.environmentId,
+              )}`,
             );
           }
         }
       } catch (error) {
         serverLogger.error(
           `[AgentSpawner] Failed to load environment env vars for ${String(
-            options.environmentId
+            options.environmentId,
           )}`,
-          error
+          error,
         );
       }
     } else if (options.environmentId && !capturedAuthHeaderJson) {
       serverLogger.info(
-        `[AgentSpawner] Skipping environment env vars - no auth headers (JWT path)`
+        `[AgentSpawner] Skipping environment env vars - no auth headers (JWT path)`,
       );
     }
 
@@ -686,7 +713,10 @@ export async function spawnAgent(
     // BEFORE calling agent.environment() so agents can access them in their environment configuration
     // If pre-fetched config is provided (JWT auth path), use it instead of querying Convex
     let userApiKeys: Record<string, string>;
-    let workspaceSettings: { bypassAnthropicProxy?: boolean; enableShellWrappers?: boolean } | null;
+    let workspaceSettings: {
+      bypassAnthropicProxy?: boolean;
+      enableShellWrappers?: boolean;
+    } | null;
     let providerOverrides: Array<{
       teamId?: string;
       providerId: string;
@@ -699,11 +729,11 @@ export async function spawnAgent(
     }>;
     let mcpServerConfigs:
       | {
-        claude: McpServerConfig[];
-        codex: McpServerConfig[];
-        gemini: McpServerConfig[];
-        opencode: McpServerConfig[];
-      }
+          claude: McpServerConfig[];
+          codex: McpServerConfig[];
+          gemini: McpServerConfig[];
+          opencode: McpServerConfig[];
+        }
       | undefined;
     let previousKnowledge: string | null;
     let previousMailbox: string | null;
@@ -713,14 +743,17 @@ export async function spawnAgent(
 
     if (options.preFetchedConfig) {
       // Use pre-fetched config (JWT auth path - Stack Auth not available)
-      serverLogger.info("[AgentSpawner] Using pre-fetched spawn config (JWT auth path)");
+      serverLogger.info(
+        "[AgentSpawner] Using pre-fetched spawn config (JWT auth path)",
+      );
       userApiKeys = options.preFetchedConfig.apiKeys;
       workspaceSettings = options.preFetchedConfig.workspaceSettings;
       providerOverrides = options.preFetchedConfig.providerOverrides;
       mcpServerConfigs = options.preFetchedConfig.mcpServerConfigs;
       // Phase 5: Prefer scoped knowledge over legacy previousKnowledge
-      previousKnowledge = options.preFetchedConfig.scopedKnowledge?.content
-        ?? options.preFetchedConfig.previousKnowledge;
+      previousKnowledge =
+        options.preFetchedConfig.scopedKnowledge?.content ??
+        options.preFetchedConfig.previousKnowledge;
       previousMailbox = options.preFetchedConfig.previousMailbox;
       previousBehavior = options.preFetchedConfig.previousBehavior;
       policyRules = options.preFetchedConfig.policyRules;
@@ -732,7 +765,7 @@ export async function spawnAgent(
           .map((s) => `${s.scope}(${s.byteSize}b)`);
         if (activeSources.length > 0) {
           serverLogger.info(
-            `[AgentSpawner] Scoped knowledge sources: ${activeSources.join(", ")}`
+            `[AgentSpawner] Scoped knowledge sources: ${activeSources.join(", ")}`,
           );
         }
       }
@@ -741,39 +774,51 @@ export async function spawnAgent(
       const results = await Promise.all([
         getConvex().query(api.apiKeys.getAllForAgents, { teamSlugOrId }),
         getConvex().query(api.workspaceSettings.get, { teamSlugOrId }),
-        getConvex().query(api.providerOverrides.getForTeam, { teamSlugOrId })
+        getConvex()
+          .query(api.providerOverrides.getForTeam, { teamSlugOrId })
           .catch((err) => {
-            console.error("[AgentSpawner] Failed to fetch provider overrides", err);
+            console.error(
+              "[AgentSpawner] Failed to fetch provider overrides",
+              err,
+            );
             return [];
           }),
         getProviderIdFromAgentName(agent.name)
           ? Promise.all([
-            getConvex().query(api.mcpServerConfigs.getForSandbox, {
-              teamSlugOrId,
-              agentType: "claude",
-              ...(task?.projectFullName ? { projectFullName: task.projectFullName } : {}),
-            }),
-            getConvex().query(api.mcpServerConfigs.getForSandbox, {
-              teamSlugOrId,
-              agentType: "codex",
-              ...(task?.projectFullName ? { projectFullName: task.projectFullName } : {}),
-            }),
-            getConvex().query(api.mcpServerConfigs.getForSandbox, {
-              teamSlugOrId,
-              agentType: "gemini",
-              ...(task?.projectFullName ? { projectFullName: task.projectFullName } : {}),
-            }),
-            getConvex().query(api.mcpServerConfigs.getForSandbox, {
-              teamSlugOrId,
-              agentType: "opencode",
-              ...(task?.projectFullName ? { projectFullName: task.projectFullName } : {}),
-            }),
-          ]).then(([claude, codex, gemini, opencode]) => ({
-            claude,
-            codex,
-            gemini,
-            opencode,
-          }))
+              getConvex().query(api.mcpServerConfigs.getForSandbox, {
+                teamSlugOrId,
+                agentType: "claude",
+                ...(task?.projectFullName
+                  ? { projectFullName: task.projectFullName }
+                  : {}),
+              }),
+              getConvex().query(api.mcpServerConfigs.getForSandbox, {
+                teamSlugOrId,
+                agentType: "codex",
+                ...(task?.projectFullName
+                  ? { projectFullName: task.projectFullName }
+                  : {}),
+              }),
+              getConvex().query(api.mcpServerConfigs.getForSandbox, {
+                teamSlugOrId,
+                agentType: "gemini",
+                ...(task?.projectFullName
+                  ? { projectFullName: task.projectFullName }
+                  : {}),
+              }),
+              getConvex().query(api.mcpServerConfigs.getForSandbox, {
+                teamSlugOrId,
+                agentType: "opencode",
+                ...(task?.projectFullName
+                  ? { projectFullName: task.projectFullName }
+                  : {}),
+              }),
+            ]).then(([claude, codex, gemini, opencode]) => ({
+              claude,
+              codex,
+              gemini,
+              opencode,
+            }))
           : Promise.resolve(undefined),
         // Query previous knowledge for cross-run memory seeding (S5b)
         getConvex()
@@ -783,7 +828,7 @@ export async function spawnAgent(
           .catch((error) => {
             serverLogger.warn(
               "[AgentSpawner] Failed to fetch previous knowledge for memory seeding",
-              error
+              error,
             );
             return null;
           }),
@@ -795,7 +840,7 @@ export async function spawnAgent(
           .catch((error) => {
             serverLogger.warn(
               "[AgentSpawner] Failed to fetch previous mailbox for memory seeding",
-              error
+              error,
             );
             return null;
           }),
@@ -807,7 +852,7 @@ export async function spawnAgent(
           .catch((error) => {
             serverLogger.warn(
               "[AgentSpawner] Failed to fetch previous behavior for memory seeding",
-              error
+              error,
             );
             return null;
           }),
@@ -816,7 +861,10 @@ export async function spawnAgent(
           const providerId = getProviderIdFromAgentName(agent.name);
           if (!providerId) return Promise.resolve(undefined);
           // Map provider to agent type - only for explicitly supported providers
-          const providerToAgentType: Record<string, "claude" | "codex" | "gemini" | "opencode"> = {
+          const providerToAgentType: Record<
+            string,
+            "claude" | "codex" | "gemini" | "opencode"
+          > = {
             anthropic: "claude",
             openai: "codex",
             gemini: "gemini",
@@ -828,18 +876,25 @@ export async function spawnAgent(
           };
           const agentType = providerToAgentType[providerId];
           if (!agentType) {
-            serverLogger.debug(`[AgentSpawner] No policy agent type mapping for provider: ${providerId}`);
+            serverLogger.debug(
+              `[AgentSpawner] No policy agent type mapping for provider: ${providerId}`,
+            );
             return Promise.resolve(undefined);
           }
           return getConvex()
             .query(api.agentPolicyRules.getForSandbox, {
               teamSlugOrId,
               agentType,
-              ...(task?.projectFullName ? { projectFullName: task.projectFullName } : {}),
+              ...(task?.projectFullName
+                ? { projectFullName: task.projectFullName }
+                : {}),
               context: options.isCloudMode ? "cloud_workspace" : "task_sandbox",
             })
             .catch((error) => {
-              serverLogger.warn("[AgentSpawner] Failed to fetch policy rules", error);
+              serverLogger.warn(
+                "[AgentSpawner] Failed to fetch policy rules",
+                error,
+              );
               return undefined;
             });
         })(),
@@ -847,20 +902,27 @@ export async function spawnAgent(
         getConvex()
           .query(api.agentOrchestrationLearning.getActiveRules, {
             teamSlugOrId,
-            ...(task?.projectFullName ? { projectFullName: task.projectFullName } : {}),
+            ...(task?.projectFullName
+              ? { projectFullName: task.projectFullName }
+              : {}),
           })
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           .then((rules: any[]) =>
-            rules.map((r): OrchestrationRuleForInstructions => ({
-              ruleId: r._id,
-              text: r.text,
-              lane: r.lane,
-              confidence: r.confidence,
-              projectFullName: r.projectFullName,
-            }))
+            rules.map(
+              (r): OrchestrationRuleForInstructions => ({
+                ruleId: r._id,
+                text: r.text,
+                lane: r.lane,
+                confidence: r.confidence,
+                projectFullName: r.projectFullName,
+              }),
+            ),
           )
           .catch((error) => {
-            serverLogger.warn("[AgentSpawner] Failed to fetch orchestration rules", error);
+            serverLogger.warn(
+              "[AgentSpawner] Failed to fetch orchestration rules",
+              error,
+            );
             return undefined;
           }),
       ]);
@@ -877,27 +939,27 @@ export async function spawnAgent(
 
     if (previousKnowledge) {
       serverLogger.info(
-        `[AgentSpawner] Found previous knowledge (${previousKnowledge.length} chars) for cross-run seeding`
+        `[AgentSpawner] Found previous knowledge (${previousKnowledge.length} chars) for cross-run seeding`,
       );
     }
     if (previousMailbox) {
       serverLogger.info(
-        `[AgentSpawner] Found previous mailbox (${previousMailbox.length} chars) with unread messages for cross-run seeding`
+        `[AgentSpawner] Found previous mailbox (${previousMailbox.length} chars) with unread messages for cross-run seeding`,
       );
     }
     if (previousBehavior) {
       serverLogger.info(
-        `[AgentSpawner] Found previous behavior HOT (${previousBehavior.length} chars) for cross-run seeding`
+        `[AgentSpawner] Found previous behavior HOT (${previousBehavior.length} chars) for cross-run seeding`,
       );
     }
     if (policyRules && policyRules.length > 0) {
       serverLogger.info(
-        `[AgentSpawner] Loaded ${policyRules.length} centralized policy rules`
+        `[AgentSpawner] Loaded ${policyRules.length} centralized policy rules`,
       );
     }
     if (orchestrationRules && orchestrationRules.length > 0) {
       serverLogger.info(
-        `[AgentSpawner] Loaded ${orchestrationRules.length} orchestration rules for injection`
+        `[AgentSpawner] Loaded ${orchestrationRules.length} orchestration rules for injection`,
       );
     }
 
@@ -906,19 +968,19 @@ export async function spawnAgent(
     };
 
     // Pre-spawn validation: check Codex OAuth token expiry
-	    if (agent.name.toLowerCase().includes("codex") && apiKeys.CODEX_AUTH_JSON) {
-	      const codexAuth = parseCodexAuthJson(apiKeys.CODEX_AUTH_JSON);
-	      if (codexAuth) {
-	        if (isCodexTokenExpired(codexAuth)) {
-	          throw new Error(
-	            "Codex OAuth token has expired. Please run `codex login` locally " +
-	              "and update CODEX_AUTH_JSON in settings."
-	          );
-	        }
-	        if (isCodexTokenExpiring(codexAuth, 60 * 60 * 1000)) {
-	          serverLogger.warn(
+    if (agent.name.toLowerCase().includes("codex") && apiKeys.CODEX_AUTH_JSON) {
+      const codexAuth = parseCodexAuthJson(apiKeys.CODEX_AUTH_JSON);
+      if (codexAuth) {
+        if (isCodexTokenExpired(codexAuth)) {
+          throw new Error(
+            "Codex OAuth token has expired. Please run `codex login` locally " +
+              "and update CODEX_AUTH_JSON in settings.",
+          );
+        }
+        if (isCodexTokenExpiring(codexAuth, 60 * 60 * 1000)) {
+          serverLogger.warn(
             "[AgentSpawner] Codex OAuth token expires within 1 hour. " +
-              "Background refresh should handle this soon."
+              "Background refresh should handle this soon.",
           );
         }
       }
@@ -928,28 +990,32 @@ export async function spawnAgent(
     const registry = getProviderRegistry();
     const resolvedProvider = registry.resolveForAgent(
       agent.name,
-      providerOverrides.map((o): ProviderOverride => ({
-        teamId: String(o.teamId),
-        providerId: o.providerId,
-        baseUrl: o.baseUrl,
-        apiFormat: o.apiFormat,
-        apiKeyEnvVar: o.apiKeyEnvVar,
-        customHeaders: o.customHeaders,
-        fallbacks: o.fallbacks,
-        enabled: o.enabled,
-      }))
+      providerOverrides.map(
+        (o): ProviderOverride => ({
+          teamId: String(o.teamId),
+          providerId: o.providerId,
+          baseUrl: o.baseUrl,
+          apiFormat: o.apiFormat,
+          apiKeyEnvVar: o.apiKeyEnvVar,
+          customHeaders: o.customHeaders,
+          fallbacks: o.fallbacks,
+          enabled: o.enabled,
+        }),
+      ),
     );
 
     // Use environment property if available
     if (agent.environment) {
       // Build provider config from providerOverrides OR apiKeys.OPENAI_BASE_URL fallback
       // Settings UI saves base URLs to apiKeys table, so check both sources
-      let effectiveProviderConfig: {
-        baseUrl?: string;
-        customHeaders?: Record<string, string>;
-        apiFormat?: string;
-        isOverridden: boolean;
-      } | undefined;
+      let effectiveProviderConfig:
+        | {
+            baseUrl?: string;
+            customHeaders?: Record<string, string>;
+            apiFormat?: string;
+            isOverridden: boolean;
+          }
+        | undefined;
 
       if (resolvedProvider?.isOverridden) {
         effectiveProviderConfig = {
@@ -958,7 +1024,10 @@ export async function spawnAgent(
           apiFormat: resolvedProvider.apiFormat,
           isOverridden: true,
         };
-      } else if (apiKeys.OPENAI_BASE_URL && agent.name.toLowerCase().includes("codex")) {
+      } else if (
+        apiKeys.OPENAI_BASE_URL &&
+        agent.name.toLowerCase().includes("codex")
+      ) {
         // Fallback: use OPENAI_BASE_URL from apiKeys table (set via Settings UI) for Codex
         effectiveProviderConfig = {
           baseUrl: apiKeys.OPENAI_BASE_URL,
@@ -967,26 +1036,29 @@ export async function spawnAgent(
       }
 
       const providerId = getProviderIdFromAgentName(agent.name);
-      const agentMcpServerConfigs = providerId === "anthropic"
-        ? mcpServerConfigs?.claude
-        : providerId === "openai"
-          ? mcpServerConfigs?.codex
-          : providerId === "gemini"
-            ? mcpServerConfigs?.gemini
-            : providerId === "openrouter"
-              ? mcpServerConfigs?.opencode
-              : undefined;
+      const agentMcpServerConfigs =
+        providerId === "anthropic"
+          ? mcpServerConfigs?.claude
+          : providerId === "openai"
+            ? mcpServerConfigs?.codex
+            : providerId === "gemini"
+              ? mcpServerConfigs?.gemini
+              : providerId === "openrouter"
+                ? mcpServerConfigs?.opencode
+                : undefined;
 
       const envResult = await agent.environment({
         taskRunId: taskRunId,
         agentName: agent.name,
+        selectedVariant: options.selectedVariant,
         prompt: processedTaskDescription,
         taskRunJwt,
         apiKeys,
         mcpServerConfigs: agentMcpServerConfigs,
         callbackUrl,
         workspaceSettings: {
-          bypassAnthropicProxy: workspaceSettings?.bypassAnthropicProxy ?? false,
+          bypassAnthropicProxy:
+            workspaceSettings?.bypassAnthropicProxy ?? false,
         },
         providerConfig: effectiveProviderConfig,
         previousKnowledge: previousKnowledge ?? undefined,
@@ -1044,7 +1116,10 @@ export async function spawnAgent(
         startupCommands.push(...applied.startupCommands);
       }
       if (applied.postStartCommands && applied.postStartCommands.length > 0) {
-        postStartCommands = [...(postStartCommands || []), ...applied.postStartCommands];
+        postStartCommands = [
+          ...(postStartCommands || []),
+          ...applied.postStartCommands,
+        ];
       }
       if (applied.unsetEnv && applied.unsetEnv.length > 0) {
         unsetEnvVars.push(...applied.unsetEnv);
@@ -1066,12 +1141,13 @@ export async function spawnAgent(
       try {
         const userEditorSettingsFromDb = await getConvex().query(
           api.userEditorSettings.get,
-          { teamSlugOrId }
+          { teamSlugOrId },
         );
         if (userEditorSettingsFromDb) {
           userUploadedSettings = {
             settingsJson: userEditorSettingsFromDb.settingsJson ?? undefined,
-            keybindingsJson: userEditorSettingsFromDb.keybindingsJson ?? undefined,
+            keybindingsJson:
+              userEditorSettingsFromDb.keybindingsJson ?? undefined,
             snippets: userEditorSettingsFromDb.snippets ?? undefined,
             extensions: userEditorSettingsFromDb.extensions ?? undefined,
           };
@@ -1079,7 +1155,7 @@ export async function spawnAgent(
       } catch (error) {
         serverLogger.warn(
           "[AgentSpawner] Failed to fetch user editor settings from Convex",
-          error
+          error,
         );
       }
     }
@@ -1103,7 +1179,7 @@ export async function spawnAgent(
       if (envVar in envVars) {
         delete envVars[envVar];
         serverLogger.info(
-          `[AgentSpawner] Removed ${envVar} from environment for ${agent.name} as requested by agent config`
+          `[AgentSpawner] Removed ${envVar} from environment for ${agent.name} as requested by agent config`,
         );
       }
     }
@@ -1111,17 +1187,16 @@ export async function spawnAgent(
     // Apply timezone: prefer workspace TZ env var, fall back to server default
     const timezone = envVars.TZ || env.DEFAULT_SANDBOX_TIMEZONE;
     if (timezone) {
-      const timezoneStartupCommand = buildSystemTimezoneStartupCommand(
-        timezone
-      );
+      const timezoneStartupCommand =
+        buildSystemTimezoneStartupCommand(timezone);
       if (timezoneStartupCommand) {
         startupCommands.unshift(timezoneStartupCommand);
         serverLogger.info(
-          `[AgentSpawner] Will apply system timezone from TZ=${timezone}${!envVars.TZ ? " (default)" : ""}`
+          `[AgentSpawner] Will apply system timezone from TZ=${timezone}${!envVars.TZ ? " (default)" : ""}`,
         );
       } else {
         serverLogger.warn(
-          `[AgentSpawner] Invalid TZ value ${timezone}, skipping system timezone setup`
+          `[AgentSpawner] Invalid TZ value ${timezone}, skipping system timezone setup`,
         );
       }
     }
@@ -1135,13 +1210,13 @@ export async function spawnAgent(
     });
 
     const usesDangerousPermissions = processedArgs.includes(
-      "--dangerously-skip-permissions"
+      "--dangerously-skip-permissions",
     );
     if (usesDangerousPermissions && envVars.IS_SANDBOX !== "1") {
       const previousValue = envVars.IS_SANDBOX;
       envVars.IS_SANDBOX = "1";
       serverLogger.info(
-        `[AgentSpawner] Setting IS_SANDBOX=1 for ${agent.name} (was ${previousValue ?? "unset"})`
+        `[AgentSpawner] Setting IS_SANDBOX=1 for ${agent.name} (was ${previousValue ?? "unset"})`,
       );
     }
 
@@ -1151,7 +1226,7 @@ export async function spawnAgent(
     const tmuxSessionName = sanitizeTmuxSessionName("cmux");
 
     serverLogger.info(
-      `[AgentSpawner] Building command for agent ${agent.name}:`
+      `[AgentSpawner] Building command for agent ${agent.name}:`,
     );
     serverLogger.info(`  Raw command: ${agent.command}`);
     serverLogger.info(`  Processed args: ${processedArgs.join(" ")}`);
@@ -1188,7 +1263,7 @@ export async function spawnAgent(
           repoUrl: effectiveRepoUrl!,
           branch: newBranch,
         },
-        teamSlugOrId
+        teamSlugOrId,
       );
 
       // Setup workspace
@@ -1213,7 +1288,7 @@ export async function spawnAgent(
       worktreePath = workspaceResult.worktreePath;
 
       serverLogger.info(
-        `[AgentSpawner] Creating DockerVSCodeInstance for ${agent.name}`
+        `[AgentSpawner] Creating DockerVSCodeInstance for ${agent.name}`,
       );
       vscodeInstance = new DockerVSCodeInstance({
         workspacePath: worktreePath,
@@ -1234,7 +1309,7 @@ export async function spawnAgent(
           teamSlugOrId,
           id: runId,
           worktreePath: worktreePath,
-        })
+        }),
       );
     }
 
@@ -1251,7 +1326,7 @@ export async function spawnAgent(
       const canAttempt = getProviderHealthMonitor().canAttempt(providerId);
       if (!canAttempt) {
         serverLogger.warn(
-          `[AgentSpawner] Circuit breaker open for provider ${providerId}, spawn may fail`
+          `[AgentSpawner] Circuit breaker open for provider ${providerId}, spawn may fail`,
         );
         // Log available fallbacks for future model-switching support
         const allMetrics = getProviderHealthMonitor().getAllMetrics();
@@ -1260,7 +1335,7 @@ export async function spawnAgent(
           .map((m: ProviderHealthMetrics) => m.providerId);
         if (healthyProviders.length > 0) {
           serverLogger.info(
-            `[AgentSpawner] Healthy providers available: ${healthyProviders.join(", ")}`
+            `[AgentSpawner] Healthy providers available: ${healthyProviders.join(", ")}`,
           );
         }
       }
@@ -1277,13 +1352,15 @@ export async function spawnAgent(
     if (resolvedProvider?.fallbacks && resolvedProvider.fallbacks.length > 0) {
       serverLogger.warn(
         `[AgentSpawner] Fallback providers configured but switching is not implemented. ` +
-        `Using primary provider ${providerId} only.`
+          `Using primary provider ${providerId} only.`,
       );
     }
 
     if (env.ENABLE_CIRCUIT_BREAKER) {
       // Use circuit breaker without fallbacks
-      vscodeInfo = await getProviderHealthMonitor().execute(providerId, () => vscodeInstance.start());
+      vscodeInfo = await getProviderHealthMonitor().execute(providerId, () =>
+        vscodeInstance.start(),
+      );
     } else {
       // No circuit breaker
       vscodeInfo = await vscodeInstance.start();
@@ -1292,7 +1369,7 @@ export async function spawnAgent(
     const vscodeUrl = vscodeInfo.workspaceUrl;
 
     serverLogger.info(
-      `VSCode instance spawned for agent ${agent.name}: ${vscodeUrl}`
+      `VSCode instance spawned for agent ${agent.name}: ${vscodeUrl}`,
     );
 
     if (vscodeInstance instanceof CmuxVSCodeInstance) {
@@ -1302,14 +1379,14 @@ export async function spawnAgent(
         .catch((err) =>
           serverLogger.error(
             "[AgentSpawner] setupDevcontainer encountered an error",
-            err
-          )
+            err,
+          ),
         );
     }
 
     // Start file watching for real-time diff updates
     serverLogger.info(
-      `[AgentSpawner] Starting file watch for ${agent.name} at ${worktreePath}`
+      `[AgentSpawner] Starting file watch for ${agent.name} at ${worktreePath}`,
     );
     vscodeInstance.startFileWatch(worktreePath);
 
@@ -1320,7 +1397,7 @@ export async function spawnAgent(
     vscodeInstance.on("file-changes", async (data) => {
       serverLogger.info(
         `[AgentSpawner] File changes detected for ${agent.name}:`,
-        { changeCount: data.changes.length, taskRunId: data.taskRunId }
+        { changeCount: data.changes.length, taskRunId: data.taskRunId },
       );
     });
 
@@ -1328,7 +1405,7 @@ export async function spawnAgent(
     vscodeInstance.on("sync-files", async (data: WorkerSyncFiles) => {
       serverLogger.info(
         `[AgentSpawner] Sync files received for ${agent.name}:`,
-        { fileCount: data.files.length, taskRunId: data.taskRunId }
+        { fileCount: data.files.length, taskRunId: data.taskRunId },
       );
       // Write synced files to local workspace
       await localCloudSyncManager.handleCloudSync(data);
@@ -1339,11 +1416,11 @@ export async function spawnAgent(
       try {
         serverLogger.error(
           `[AgentSpawner] Terminal failed for ${agent.name}:`,
-          data
+          data,
         );
         if (data.taskRunId !== taskRunId) {
           serverLogger.warn(
-            `[AgentSpawner] Failure event taskRunId mismatch; ignoring`
+            `[AgentSpawner] Failure event taskRunId mismatch; ignoring`,
           );
           return;
         }
@@ -1357,17 +1434,15 @@ export async function spawnAgent(
               errorMessage: data.errorMessage || "Terminal failed",
               // WorkerTerminalFailed does not include exitCode in schema; default to 1
               exitCode: 1,
-            })
-          )
+            }),
+          ),
         );
 
-        serverLogger.info(
-          `[AgentSpawner] Marked taskRun ${runId} as failed`
-        );
+        serverLogger.info(`[AgentSpawner] Marked taskRun ${runId} as failed`);
       } catch (error) {
         serverLogger.error(
           `[AgentSpawner] Error handling terminal-failed:`,
-          error
+          error,
         );
       }
     });
@@ -1375,12 +1450,12 @@ export async function spawnAgent(
     // Get ports if it's a Docker instance
     let ports:
       | {
-        vscode: string;
-        worker: string;
-        extension?: string;
-        proxy?: string;
-        vnc?: string;
-      }
+          vscode: string;
+          worker: string;
+          extension?: string;
+          proxy?: string;
+          vnc?: string;
+        }
       | undefined;
     if (vscodeInstance instanceof DockerVSCodeInstance) {
       const dockerPorts = vscodeInstance.getPorts();
@@ -1414,15 +1489,15 @@ export async function spawnAgent(
             startedAt: Date.now(),
             ...(ports ? { ports } : {}),
           },
-        })
+        }),
       );
     } else if (!hasAuthContext) {
       serverLogger.info(
-        `[AgentSpawner] Skipping updateVSCodeInstance - JWT auth path`
+        `[AgentSpawner] Skipping updateVSCodeInstance - JWT auth path`,
       );
     } else {
       serverLogger.info(
-        `[AgentSpawner] Skipping updateVSCodeInstance - already persisted by www`
+        `[AgentSpawner] Skipping updateVSCodeInstance - already persisted by www`,
       );
     }
 
@@ -1431,21 +1506,21 @@ export async function spawnAgent(
     // Skip if no auth context (JWT-auth path handles task state via http-api)
     if (hasAuthContext) {
       serverLogger.info(
-        `[AgentSpawner] Updating task run ${runId} status to running`
+        `[AgentSpawner] Updating task run ${runId} status to running`,
       );
       await retryOnOptimisticConcurrency(() =>
         getConvex().mutation(api.taskRuns.updateStatusPublic, {
           teamSlugOrId,
           id: runId,
           status: "running",
-        })
+        }),
       );
       serverLogger.info(
-        `[AgentSpawner] Successfully updated task run ${runId} status to running`
+        `[AgentSpawner] Successfully updated task run ${runId} status to running`,
       );
     } else {
       serverLogger.info(
-        `[AgentSpawner] Skipping status update to running - no auth context (JWT path)`
+        `[AgentSpawner] Skipping status update to running - no auth context (JWT path)`,
       );
     }
 
@@ -1455,13 +1530,13 @@ export async function spawnAgent(
     // Log auth files if any
     if (authFiles.length > 0) {
       serverLogger.info(
-        `[AgentSpawner] Prepared ${authFiles.length} auth files for agent ${agent.name}`
+        `[AgentSpawner] Prepared ${authFiles.length} auth files for agent ${agent.name}`,
       );
     }
 
     // After VSCode instance is started, create the terminal with tmux session
     serverLogger.info(
-      `[AgentSpawner] Preparing to send terminal creation command for ${agent.name}`
+      `[AgentSpawner] Preparing to send terminal creation command for ${agent.name}`,
     );
 
     // Wait for worker connection if not already connected
@@ -1470,7 +1545,7 @@ export async function spawnAgent(
       await new Promise<void>((resolve) => {
         const timeout = setTimeout(() => {
           serverLogger.error(
-            `[AgentSpawner] Timeout waiting for worker connection`
+            `[AgentSpawner] Timeout waiting for worker connection`,
           );
           resolve();
         }, 30000); // 30 second timeout
@@ -1486,7 +1561,7 @@ export async function spawnAgent(
     const workerSocket = vscodeInstance.getWorkerSocket();
     if (!workerSocket) {
       serverLogger.error(
-        `[AgentSpawner] No worker socket available for ${agent.name}`
+        `[AgentSpawner] No worker socket available for ${agent.name}`,
       );
       return {
         agentName: agent.name,
@@ -1503,11 +1578,14 @@ export async function spawnAgent(
     }
 
     // Run maintenance script for Docker containers in a cmux-pty session (fire-and-forget)
-    if (!options.isCloudMode && vscodeInstance instanceof DockerVSCodeInstance) {
+    if (
+      !options.isCloudMode &&
+      vscodeInstance instanceof DockerVSCodeInstance
+    ) {
       void (async () => {
         try {
           const workspaceConfig = workspaceConfigs.find(
-            (config) => config.maintenanceScript?.trim().length
+            (config) => config.maintenanceScript?.trim().length,
           );
           if (!workspaceConfig?.maintenanceScript?.trim()) {
             return;
@@ -1516,7 +1594,7 @@ export async function spawnAgent(
           const projectFullName = workspaceConfig.projectFullName;
           const maintenanceScript = workspaceConfig.maintenanceScript.trim();
           serverLogger.info(
-            `[AgentSpawner] Running maintenance script for ${projectFullName} via cmux-pty`
+            `[AgentSpawner] Running maintenance script for ${projectFullName} via cmux-pty`,
           );
 
           // Write maintenance script to a file first (like cloud mode does)
@@ -1550,18 +1628,31 @@ chmod +x ${maintenanceScriptPath}`;
           if (writeScriptResult.exitCode !== 0) {
             serverLogger.error(
               `[AgentSpawner] Failed to write maintenance script file`,
-              { exitCode: writeScriptResult.exitCode, stdout: writeScriptResult.stdout, stderr: writeScriptResult.stderr }
+              {
+                exitCode: writeScriptResult.exitCode,
+                stdout: writeScriptResult.stdout,
+                stderr: writeScriptResult.stderr,
+              },
             );
             return;
           }
 
-          serverLogger.info(`[AgentSpawner] Wrote maintenance script to ${maintenanceScriptPath}`);
+          serverLogger.info(
+            `[AgentSpawner] Wrote maintenance script to ${maintenanceScriptPath}`,
+          );
 
           // Create a cmux-pty session for the maintenance script
           const createResult = await workerExec({
             workerSocket,
             command: "cmux-pty",
-            args: ["new", "--name", "maintenance", "--cwd", "/root/workspace", "--detached"],
+            args: [
+              "new",
+              "--name",
+              "maintenance",
+              "--cwd",
+              "/root/workspace",
+              "--detached",
+            ],
             cwd: "/root/workspace",
             env: {},
             timeout: 10000,
@@ -1570,7 +1661,11 @@ chmod +x ${maintenanceScriptPath}`;
           if (createResult.exitCode !== 0) {
             serverLogger.error(
               `[AgentSpawner] Failed to create maintenance PTY session`,
-              { exitCode: createResult.exitCode, stdout: createResult.stdout, stderr: createResult.stderr }
+              {
+                exitCode: createResult.exitCode,
+                stdout: createResult.stdout,
+                stderr: createResult.stderr,
+              },
             );
             return;
           }
@@ -1590,7 +1685,11 @@ chmod +x ${maintenanceScriptPath}`;
           if (sendResult.exitCode !== 0) {
             serverLogger.error(
               `[AgentSpawner] Failed to send maintenance script to PTY`,
-              { exitCode: sendResult.exitCode, stdout: sendResult.stdout, stderr: sendResult.stderr }
+              {
+                exitCode: sendResult.exitCode,
+                stdout: sendResult.stdout,
+                stderr: sendResult.stderr,
+              },
             );
             // Skip Convex update if no auth context (JWT-auth path)
             if (hasAuthContext) {
@@ -1603,7 +1702,7 @@ chmod +x ${maintenanceScriptPath}`;
             }
           } else {
             serverLogger.info(
-              `[AgentSpawner] Maintenance script sent to PTY for ${projectFullName}`
+              `[AgentSpawner] Maintenance script sent to PTY for ${projectFullName}`,
             );
             // Clear any previous error (script is now running in PTY)
             // Skip Convex update if no auth context (JWT-auth path)
@@ -1619,7 +1718,7 @@ chmod +x ${maintenanceScriptPath}`;
         } catch (error) {
           serverLogger.error(
             `[AgentSpawner] Failed to run maintenance script`,
-            error
+            error,
           );
         }
       })();
@@ -1645,7 +1744,7 @@ chmod +x ${maintenanceScriptPath}`;
     // Log the actual command for Codex agents to debug notify command
     if (agent.name.toLowerCase().includes("codex")) {
       serverLogger.info(
-        `[AgentSpawner] Codex command string: ${commandString}`
+        `[AgentSpawner] Codex command string: ${commandString}`,
       );
       serverLogger.info(`[AgentSpawner] Codex raw args:`, actualArgs);
     }
@@ -1658,30 +1757,30 @@ chmod +x ${maintenanceScriptPath}`;
     // The notify command contains complex JSON that gets mangled through shell layers
     const tmuxArgs = agent.name.toLowerCase().includes("codex")
       ? [
-        "new-session",
-        "-d",
-        "-s",
-        tmuxSessionName,
-        "-c",
-        "/root/workspace",
-        actualCommand,
-        ...actualArgs.map((arg) => {
-          // Replace $CMUX_PROMPT with actual prompt value
-          if (arg === "$CMUX_PROMPT") {
-            return processedTaskDescription;
-          }
-          return arg;
-        }),
-      ]
+          "new-session",
+          "-d",
+          "-s",
+          tmuxSessionName,
+          "-c",
+          "/root/workspace",
+          actualCommand,
+          ...actualArgs.map((arg) => {
+            // Replace $CMUX_PROMPT with actual prompt value
+            if (arg === "$CMUX_PROMPT") {
+              return processedTaskDescription;
+            }
+            return arg;
+          }),
+        ]
       : [
-        "new-session",
-        "-d",
-        "-s",
-        tmuxSessionName,
-        "bash",
-        "-lc",
-        `${unsetCommand}exec ${commandString}`,
-      ];
+          "new-session",
+          "-d",
+          "-s",
+          tmuxSessionName,
+          "bash",
+          "-lc",
+          `${unsetCommand}exec ${commandString}`,
+        ];
 
     // Build cmux-pty specific command (the actual agent command without tmux/bash wrapper)
     // For Codex agents, replace $CMUX_PROMPT with actual prompt value (matching tmux behavior)
@@ -1696,14 +1795,13 @@ chmod +x ${maintenanceScriptPath}`;
         return arg;
       });
       // Shell-escape all args with single quotes (no env var expansion needed)
-      const ptyShellEscaped = (s: string) =>
-        `'${s.replace(/'/g, "'\\''")}'`;
+      const ptyShellEscaped = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
       const ptyCommandStr = [actualCommand, ...ptyArgs]
         .map(ptyShellEscaped)
         .join(" ");
       ptyCommandString = `${unsetCommand}${ptyCommandStr}`;
       serverLogger.info(
-        `[AgentSpawner] Codex ptyCommand (prompt embedded): ${ptyCommandString.slice(0, 200)}...`
+        `[AgentSpawner] Codex ptyCommand (prompt embedded): ${ptyCommandString.slice(0, 200)}...`,
       );
     } else {
       // For other agents: use env var expansion as before
@@ -1768,7 +1866,7 @@ exit $EXIT_CODE
           {
             stdout: truncatedStdout,
             stderr: truncatedStderr,
-          }
+          },
         );
 
         const trimmedStderr = truncatedStderr.trim();
@@ -1791,7 +1889,7 @@ exit $EXIT_CODE
       }
 
       serverLogger.info(
-        `[AgentSpawner] Branch switch script completed for ${newBranch}`
+        `[AgentSpawner] Branch switch script completed for ${newBranch}`,
       );
     };
 
@@ -1801,19 +1899,19 @@ exit $EXIT_CODE
       const err = error instanceof Error ? error : new Error(String(error));
       serverLogger.error(
         `[AgentSpawner] Branch switch command errored for ${newBranch}`,
-        err
+        err,
       );
       await vscodeInstance.stop().catch((stopError) => {
         serverLogger.error(
           `[AgentSpawner] Failed to stop VSCode instance after branch switch failure`,
-          stopError
+          stopError,
         );
       });
       throw err;
     }
 
     serverLogger.info(
-      `[AgentSpawner] Sending terminal creation command at ${new Date().toISOString()}:`
+      `[AgentSpawner] Sending terminal creation command at ${new Date().toISOString()}:`,
     );
     serverLogger.info(`  Terminal ID: ${tmuxSessionName}`);
     // serverLogger.info(
@@ -1833,7 +1931,7 @@ exit $EXIT_CODE
     // Create image files if any
     if (imageFiles.length > 0) {
       serverLogger.info(
-        `[AgentSpawner] Creating ${imageFiles.length} image files...`
+        `[AgentSpawner] Creating ${imageFiles.length} image files...`,
       );
 
       // First create the prompt directory
@@ -1856,27 +1954,27 @@ exit $EXIT_CODE
                 ) {
                   serverLogger.error(
                     "Socket timeout while creating prompt directory",
-                    timeoutError
+                    timeoutError,
                   );
                 } else {
                   serverLogger.error(
                     "Failed to create prompt directory",
-                    timeoutError
+                    timeoutError,
                   );
                 }
               } else if (result?.error) {
                 serverLogger.error(
                   "Failed to create prompt directory",
-                  result.error
+                  result.error,
                 );
               }
               resolve();
-            }
+            },
           );
         } catch (err) {
           serverLogger.error(
             "Error emitting command to create prompt directory",
-            err
+            err,
           );
           resolve();
         }
@@ -1929,12 +2027,12 @@ exit $EXIT_CODE
 
           const result = await response.json();
           serverLogger.info(
-            `[AgentSpawner] Successfully uploaded image: ${result.path} (${result.size} bytes)`
+            `[AgentSpawner] Successfully uploaded image: ${result.path} (${result.size} bytes)`,
           );
         } catch (error) {
           serverLogger.error(
             `[AgentSpawner] Failed to upload image ${imageFile.path}:`,
-            error
+            error,
           );
         }
       }
@@ -1942,18 +2040,18 @@ exit $EXIT_CODE
 
     // Send the terminal creation command
     serverLogger.info(
-      `[AgentSpawner] About to emit worker:create-terminal at ${new Date().toISOString()}`
+      `[AgentSpawner] About to emit worker:create-terminal at ${new Date().toISOString()}`,
     );
     serverLogger.info(
       `[AgentSpawner] Socket connected:`,
-      workerSocket.connected
+      workerSocket.connected,
     );
     serverLogger.info(`[AgentSpawner] Socket id:`, workerSocket.id);
 
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         serverLogger.error(
-          `[AgentSpawner] Timeout waiting for terminal creation response after 30s`
+          `[AgentSpawner] Timeout waiting for terminal creation response after 30s`,
         );
         reject(new Error("Timeout waiting for terminal creation"));
       }, 30000);
@@ -1961,11 +2059,14 @@ exit $EXIT_CODE
       workerSocket.emit(
         "worker:create-terminal",
         terminalCreationCommand,
-        (result: { error: Error | null; data: WorkerTerminalCreated | null }) => {
+        (result: {
+          error: Error | null;
+          data: WorkerTerminalCreated | null;
+        }) => {
           clearTimeout(timeout);
           serverLogger.info(
             `[AgentSpawner] Got response from worker:create-terminal at ${new Date().toISOString()}:`,
-            result
+            result,
           );
           if (result.error) {
             reject(result.error);
@@ -1985,30 +2086,33 @@ exit $EXIT_CODE
             if (ptySessionId && ptyBackend && hasAuthContext) {
               // Capture taskRunId for TypeScript narrowing in async closure
               const capturedTaskRunId = taskRunId;
-              runWithAuth(capturedAuthToken, capturedAuthHeaderJson, async () => {
-                await getConvex()
-                  .mutation(api.taskRuns.updatePtySession, {
+              runWithAuth(
+                capturedAuthToken,
+                capturedAuthHeaderJson,
+                async () => {
+                  await getConvex().mutation(api.taskRuns.updatePtySession, {
                     teamSlugOrId,
                     id: capturedTaskRunId,
                     ptySessionId,
                     ptyBackend,
                   });
-                serverLogger.info(
-                  `[AgentSpawner] Stored PTY session info: ${ptyBackend}/${ptySessionId}`
-                );
-              }).catch((err) => {
+                  serverLogger.info(
+                    `[AgentSpawner] Stored PTY session info: ${ptyBackend}/${ptySessionId}`,
+                  );
+                },
+              ).catch((err) => {
                 serverLogger.warn(
                   `[AgentSpawner] Failed to store PTY session info:`,
-                  err
+                  err,
                 );
               });
             } else if (!ptySessionId || !ptyBackend) {
               serverLogger.info(
-                `[AgentSpawner] Worker did not report PTY session info, skipping persistence`
+                `[AgentSpawner] Worker did not report PTY session info, skipping persistence`,
               );
             } else {
               serverLogger.info(
-                `[AgentSpawner] Skipping PTY session persistence - JWT auth path`
+                `[AgentSpawner] Skipping PTY session persistence - JWT auth path`,
               );
             }
 
@@ -2016,33 +2120,37 @@ exit $EXIT_CODE
             // Skip if no auth context (JWT-auth path handles task state via http-api)
             if (options.autopilotOptions?.enabled && hasAuthContext) {
               const capturedTaskRunId = taskRunId;
-              const { totalMinutes, turnMinutes, wrapUpMinutes } = options.autopilotOptions;
-              runWithAuth(capturedAuthToken, capturedAuthHeaderJson, async () => {
-                await getConvex()
-                  .mutation(api.taskRuns.initializeAutopilot, {
+              const { totalMinutes, turnMinutes, wrapUpMinutes } =
+                options.autopilotOptions;
+              runWithAuth(
+                capturedAuthToken,
+                capturedAuthHeaderJson,
+                async () => {
+                  await getConvex().mutation(api.taskRuns.initializeAutopilot, {
                     teamSlugOrId,
                     id: capturedTaskRunId,
                     totalMinutes,
                     turnMinutes,
                     wrapUpMinutes,
                   });
-                serverLogger.info(
-                  `[AgentSpawner] Initialized autopilot config for task run ${capturedTaskRunId}`
-                );
-              }).catch((err) => {
+                  serverLogger.info(
+                    `[AgentSpawner] Initialized autopilot config for task run ${capturedTaskRunId}`,
+                  );
+                },
+              ).catch((err) => {
                 serverLogger.warn(
                   `[AgentSpawner] Failed to initialize autopilot config:`,
-                  err
+                  err,
                 );
               });
             }
           }
 
           resolve(result.data);
-        }
+        },
       );
       serverLogger.info(
-        `[AgentSpawner] Emitted worker:create-terminal at ${new Date().toISOString()}`
+        `[AgentSpawner] Emitted worker:create-terminal at ${new Date().toISOString()}`,
       );
     });
 
@@ -2080,15 +2188,15 @@ exit $EXIT_CODE
             id: failedRunId,
             errorMessage: `Agent spawn failed: ${errorMessage}`,
             exitCode: 1,
-          })
+          }),
         );
         serverLogger.info(
-          `[AgentSpawner] Marked taskRun ${failedRunId} as failed due to spawn error`
+          `[AgentSpawner] Marked taskRun ${failedRunId} as failed due to spawn error`,
         );
       } catch (failError) {
         serverLogger.error(
           `[AgentSpawner] Failed to mark taskRun as failed`,
-          failError
+          failError,
         );
       }
     }
@@ -2113,6 +2221,10 @@ export async function spawnAllAgents(
     prTitle?: string;
     branchNames?: string[]; // Pre-generated branch names (one per agent)
     selectedAgents?: string[];
+    selectedAgentSelections?: Array<{
+      agentName: string;
+      selectedVariant?: string;
+    }>;
     taskRunIds?: Id<"taskRuns">[]; // Pre-created task run IDs (one per agent)
     isCloudMode?: boolean;
     environmentId?: Id<"environments">;
@@ -2127,46 +2239,78 @@ export async function spawnAllAgents(
     isCloudWorkspace?: boolean;
     isOrchestrationHead?: boolean;
   },
-  teamSlugOrId: string
+  teamSlugOrId: string,
 ): Promise<AgentSpawnResult[]> {
-  // If selectedAgents is provided, map each entry to an AgentConfig to preserve duplicates
-  const agentsToSpawn = options.selectedAgents
-    ? options.selectedAgents
-        .map((name) => {
-          // First try static configs
-          const staticConfig = AGENT_CONFIGS.find(
-            (agent) => agent.name === name
-          );
-          if (staticConfig) return staticConfig;
+  type AgentSpawnRequest = {
+    agent: AgentConfig;
+    selectedVariant?: string;
+  };
 
-          // Try dynamic OpenCode free model config for discovered models
-          const dynamicConfig = createOpencodeFreeDynamicConfig(name);
-          if (dynamicConfig) {
-            serverLogger.info(
-              `[AgentSpawner] Using dynamic config for discovered model: ${name}`
+  const agentsToSpawn: AgentSpawnRequest[] = options.selectedAgentSelections
+    ?.length
+    ? options.selectedAgentSelections.map((selection) => {
+        const resolved = resolveAgentSelection({
+          agentName: selection.agentName,
+          selectedVariant: selection.selectedVariant,
+        });
+        return {
+          agent: resolved.agentConfig,
+          selectedVariant: resolved.selectedVariant,
+        };
+      })
+    : options.selectedAgents
+        ? options.selectedAgents.flatMap((name) => {
+            const staticConfig = AGENT_CONFIGS.find(
+              (agent) => agent.name === name,
             );
-            return dynamicConfig;
-          }
+            if (staticConfig) {
+              return [
+                {
+                  agent: staticConfig,
+                },
+              ];
+            }
 
-          serverLogger.warn(`[AgentSpawner] No config found for agent: ${name}`);
-          return null;
-        })
-        .filter((a): a is AgentConfig => Boolean(a))
-    : AGENT_CONFIGS;
+            const dynamicConfig = createOpencodeFreeDynamicConfig(name);
+            if (dynamicConfig) {
+              serverLogger.info(
+                `[AgentSpawner] Using dynamic config for discovered model: ${name}`,
+              );
+              return [
+                {
+                  agent: dynamicConfig,
+                },
+              ];
+            }
+
+            serverLogger.warn(
+              `[AgentSpawner] No config found for agent: ${name}`,
+            );
+            return [];
+          })
+        : AGENT_CONFIGS.map((agent) => ({
+            agent,
+          }));
 
   // Validate taskRunIds count matches agents count if provided
-  if (options.taskRunIds && options.taskRunIds.length !== agentsToSpawn.length) {
+  if (
+    options.taskRunIds &&
+    options.taskRunIds.length !== agentsToSpawn.length
+  ) {
     serverLogger.warn(
-      `[AgentSpawner] taskRunIds count (${options.taskRunIds.length}) doesn't match agents count (${agentsToSpawn.length})`
+      `[AgentSpawner] taskRunIds count (${options.taskRunIds.length}) doesn't match agents count (${agentsToSpawn.length})`,
     );
   }
 
   // Use pre-generated branch names if provided, otherwise generate them
   let branchNames: string[];
-  if (options.branchNames && options.branchNames.length >= agentsToSpawn.length) {
+  if (
+    options.branchNames &&
+    options.branchNames.length >= agentsToSpawn.length
+  ) {
     branchNames = options.branchNames;
     serverLogger.info(
-      `[AgentSpawner] Using ${branchNames.length} pre-generated branch names`
+      `[AgentSpawner] Using ${branchNames.length} pre-generated branch names`,
     );
   } else {
     // Generate unique branch names for all agents at once to ensure no collisions
@@ -2174,21 +2318,21 @@ export async function spawnAllAgents(
       ? await generateUniqueBranchNamesFromTitle(
           options.prTitle,
           agentsToSpawn.length,
-          teamSlugOrId
+          teamSlugOrId,
         )
       : await generateUniqueBranchNames(
           options.taskDescription,
           agentsToSpawn.length,
-          teamSlugOrId
+          teamSlugOrId,
         );
     serverLogger.info(
-      `[AgentSpawner] Generated ${branchNames.length} unique branch names for agents`
+      `[AgentSpawner] Generated ${branchNames.length} unique branch names for agents`,
     );
   }
 
   // Spawn all agents in parallel with their pre-generated branch names
   const results = await Promise.all(
-    agentsToSpawn.map((agent, index) =>
+    agentsToSpawn.map(({ agent, selectedVariant }, index) =>
       spawnAgent(
         agent,
         taskId,
@@ -2196,10 +2340,11 @@ export async function spawnAllAgents(
           ...options,
           newBranch: branchNames[index],
           taskRunId: options.taskRunIds?.[index],
+          selectedVariant,
         },
-        teamSlugOrId
-      )
-    )
+        teamSlugOrId,
+      ),
+    ),
   );
 
   return results;
