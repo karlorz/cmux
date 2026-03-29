@@ -63,10 +63,39 @@ export const PROJECT_QUERIES = {
     }
   `,
 
-  // Get a single project by number
-  getProject: `
-    query($owner: String!, $number: Int!, $ownerType: String!) {
-      node: ${/* dynamic based on ownerType */ ""}
+  // Get a single user project by number
+  getUserProject: `
+    query($login: String!, $number: Int!) {
+      user(login: $login) {
+        projectV2(number: $number) {
+          id
+          title
+          number
+          url
+          shortDescription
+          closed
+          createdAt
+          updatedAt
+        }
+      }
+    }
+  `,
+
+  // Get a single org project by number
+  getOrgProject: `
+    query($login: String!, $number: Int!) {
+      organization(login: $login) {
+        projectV2(number: $number) {
+          id
+          title
+          number
+          url
+          shortDescription
+          closed
+          createdAt
+          updatedAt
+        }
+      }
     }
   `,
 
@@ -570,4 +599,115 @@ export function mapProjectStatusToCmux(
     Closed: "completed",
   };
   return statusMap[projectStatus] ?? "pending";
+}
+
+// ============================================================================
+// GitHub Project URL Linking
+// ============================================================================
+
+/**
+ * Parse a GitHub Project URL to extract owner, number, and ownerType.
+ * Supports both user and org project URLs:
+ * - https://github.com/users/{owner}/projects/{number}
+ * - https://github.com/orgs/{owner}/projects/{number}
+ *
+ * @returns Parsed info or null if URL doesn't match expected format
+ */
+export function parseGitHubProjectUrl(
+  url: string
+): { owner: string; number: number; ownerType: "user" | "organization" } | null {
+  // Match: https://github.com/users/{owner}/projects/{number}
+  // Match: https://github.com/orgs/{owner}/projects/{number}
+  const match = url.match(/github\.com\/(users|orgs)\/([^/]+)\/projects\/(\d+)/);
+  if (!match) return null;
+  return {
+    ownerType: match[1] === "orgs" ? "organization" : "user",
+    owner: match[2],
+    number: parseInt(match[3], 10),
+  };
+}
+
+/**
+ * Get a single project by number.
+ *
+ * IMPORTANT: For user-owned projects, userOAuthToken with "project" scope is required.
+ * GitHub Apps cannot access user-owned Projects v2 (platform limitation).
+ *
+ * @returns The project node or null if not found / not accessible
+ */
+export async function getProjectByNumber(
+  owner: string,
+  number: number,
+  ownerType: "user" | "organization",
+  installationId: number,
+  options?: { userOAuthToken?: string }
+): Promise<ProjectV2Node | null> {
+  // For user-owned projects, OAuth token is required
+  const octokit =
+    ownerType === "user" && options?.userOAuthToken
+      ? createUserOctokit(options.userOAuthToken)
+      : createGitHubAppOctokit(installationId);
+
+  const query =
+    ownerType === "organization"
+      ? PROJECT_QUERIES.getOrgProject
+      : PROJECT_QUERIES.getUserProject;
+
+  try {
+    const result = await octokit.graphql<{
+      user?: { projectV2: ProjectV2Node | null };
+      organization?: { projectV2: ProjectV2Node | null };
+    }>(query, { login: owner, number });
+
+    return ownerType === "organization"
+      ? result.organization?.projectV2 ?? null
+      : result.user?.projectV2 ?? null;
+  } catch (error) {
+    console.error("[github-projects] getProjectByNumber failed:", error);
+    return null;
+  }
+}
+
+/**
+ * Fetch all items from a GitHub Project and count them by status.
+ * Pages through all items (max 500 to avoid excessive API calls).
+ *
+ * @returns Item counts by status { total, done, inProgress }
+ */
+export async function getProjectItemCounts(
+  projectId: string,
+  installationId: number,
+  options?: { userOAuthToken?: string }
+): Promise<{ total: number; done: number; inProgress: number }> {
+  const counts = { total: 0, done: 0, inProgress: 0 };
+  let cursor: string | null = null;
+  const maxItems = 500; // Safety limit
+
+  while (counts.total < maxItems) {
+    const result = await getProjectItems(projectId, installationId, {
+      first: 100,
+      after: cursor ?? undefined,
+      userOAuthToken: options?.userOAuthToken,
+    });
+
+    for (const item of result.items) {
+      counts.total++;
+      const statusValue = item.fieldValues.Status;
+      if (typeof statusValue === "string") {
+        const cmuxStatus = mapProjectStatusToCmux(statusValue);
+        if (cmuxStatus === "completed") {
+          counts.done++;
+        } else if (cmuxStatus === "in_progress") {
+          counts.inProgress++;
+        }
+      }
+    }
+
+    if (!result.pageInfo.hasNextPage || !result.pageInfo.endCursor) {
+      break;
+    }
+    cursor = result.pageInfo.endCursor;
+  }
+
+  return counts;
 }

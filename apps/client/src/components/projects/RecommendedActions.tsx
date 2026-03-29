@@ -1,7 +1,8 @@
 /**
  * RecommendedActions Component
  *
- * Displays recommended actions from Obsidian vault with dispatch capability.
+ * Displays recommended actions from both project state and Obsidian vault.
+ * Project-state recommendations work without vault configuration.
  */
 
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -15,6 +16,9 @@ import {
   Loader2,
   Play,
   Settings,
+  XCircle,
+  PlayCircle,
+  FileQuestion,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
@@ -24,12 +28,24 @@ import { getApiVaultRecommendationsOptions } from "@cmux/www-openapi-client/reac
 import { postApiVaultDispatch } from "@cmux/www-openapi-client";
 import { toast } from "sonner";
 
+// Extended type to include both vault and project-sourced recommendations
+type RecommendedActionType =
+  | "todo"
+  | "stale_note"
+  | "missing_docs"
+  | "broken_link"
+  | "stale_project"
+  | "failed_tasks"
+  | "unstarted_plan"
+  | "no_plan";
+
 interface RecommendedAction {
-  type: "todo" | "stale_note" | "missing_docs" | "broken_link";
+  type: RecommendedActionType;
   source: string;
   description: string;
   priority: "high" | "medium" | "low";
   suggestedPrompt?: string;
+  projectId?: string; // Present for project-sourced recommendations
 }
 
 interface RecommendedActionsProps {
@@ -40,7 +56,11 @@ interface RecommendedActionsProps {
   onActionDispatch?: (action: RecommendedAction, taskId: string) => void;
 }
 
-const ACTION_TYPE_CONFIG = {
+const ACTION_TYPE_CONFIG: Record<
+  RecommendedActionType,
+  { icon: typeof CheckSquare; label: string; color: string; bgColor: string }
+> = {
+  // Vault-sourced types
   todo: {
     icon: CheckSquare,
     label: "TODO",
@@ -49,7 +69,7 @@ const ACTION_TYPE_CONFIG = {
   },
   stale_note: {
     icon: Clock,
-    label: "Stale",
+    label: "Stale Note",
     color: "text-amber-500",
     bgColor: "bg-amber-50 dark:bg-amber-950/30",
   },
@@ -64,6 +84,31 @@ const ACTION_TYPE_CONFIG = {
     label: "Broken Link",
     color: "text-red-500",
     bgColor: "bg-red-50 dark:bg-red-950/30",
+  },
+  // Project-sourced types
+  stale_project: {
+    icon: Clock,
+    label: "Stale Project",
+    color: "text-amber-500",
+    bgColor: "bg-amber-50 dark:bg-amber-950/30",
+  },
+  failed_tasks: {
+    icon: XCircle,
+    label: "Failed Tasks",
+    color: "text-red-500",
+    bgColor: "bg-red-50 dark:bg-red-950/30",
+  },
+  unstarted_plan: {
+    icon: PlayCircle,
+    label: "Ready to Dispatch",
+    color: "text-blue-500",
+    bgColor: "bg-blue-50 dark:bg-blue-950/30",
+  },
+  no_plan: {
+    icon: FileQuestion,
+    label: "No Plan",
+    color: "text-purple-500",
+    bgColor: "bg-purple-50 dark:bg-purple-950/30",
   },
 };
 
@@ -87,11 +132,13 @@ const PRIORITY_CONFIG = {
 
 function ActionItem({
   action,
+  teamSlugOrId,
   showDispatch,
   onDispatch,
   isDispatching,
 }: {
   action: RecommendedAction;
+  teamSlugOrId: string;
   showDispatch: boolean;
   onDispatch: (action: RecommendedAction) => void;
   isDispatching: boolean;
@@ -121,9 +168,19 @@ function ActionItem({
           >
             {priorityConfig.label}
           </span>
-          <span className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
-            {action.source}
-          </span>
+          {action.projectId ? (
+            <Link
+              to="/$teamSlugOrId/projects/detail/$projectId"
+              params={{ teamSlugOrId, projectId: action.projectId }}
+              className="text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 truncate"
+            >
+              {action.source}
+            </Link>
+          ) : (
+            <span className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
+              {action.source}
+            </span>
+          )}
         </div>
         <p className="mt-1 text-sm text-neutral-900 dark:text-neutral-100 line-clamp-2">
           {action.description}
@@ -262,47 +319,8 @@ export function RecommendedActions({
     );
   }
 
-  // Vault not configured
-  if (!data?.vaultConfigured) {
-    return (
-      <div
-        className={clsx(
-          "rounded-lg border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900",
-          className
-        )}
-      >
-        <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-          <h3 className="font-medium text-neutral-900 dark:text-neutral-100">
-            Recommended Actions
-          </h3>
-        </div>
-        <div className="flex flex-col items-center gap-3 py-8 text-center px-4">
-          <FolderOpen className="size-8 text-neutral-400" />
-          <div>
-            <p className="font-medium text-neutral-900 dark:text-neutral-100">
-              Obsidian Integration
-            </p>
-            <p className="mt-1 text-sm text-neutral-500">
-              Configure your vault to see recommended actions.
-            </p>
-          </div>
-          <Link
-            to="/$teamSlugOrId/settings"
-            params={{ teamSlugOrId }}
-            search={{ section: "general" }}
-          >
-            <Button variant="outline" size="sm">
-              <Settings className="mr-2 size-4" />
-              Configure Vault
-            </Button>
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  // Empty state
-  if (!data.recommendations || data.recommendations.length === 0) {
+  // Empty state (no recommendations from either source)
+  if (!data?.recommendations || data.recommendations.length === 0) {
     return (
       <div
         className={clsx(
@@ -322,9 +340,23 @@ export function RecommendedActions({
               All Caught Up
             </p>
             <p className="mt-1 text-sm text-neutral-500">
-              No pending actions found in your vault.
+              No pending actions found.
             </p>
           </div>
+          {/* Vault config suggestion if not configured */}
+          {!data?.vaultConfigured && (
+            <Link
+              to="/$teamSlugOrId/settings"
+              params={{ teamSlugOrId }}
+              search={{ section: "general" }}
+              className="mt-2"
+            >
+              <Button variant="ghost" size="sm" className="text-xs">
+                <Settings className="mr-1.5 size-3" />
+                Configure Obsidian vault for more recommendations
+              </Button>
+            </Link>
+          )}
         </div>
       </div>
     );
@@ -349,14 +381,30 @@ export function RecommendedActions({
       <div className="space-y-3 p-4">
         {data.recommendations.map((action, index) => (
           <ActionItem
-            key={`${action.source}-${index}`}
-            action={action}
+            key={`${action.source}-${action.type}-${index}`}
+            action={action as RecommendedAction}
+            teamSlugOrId={teamSlugOrId}
             showDispatch={showDispatch}
             onDispatch={handleDispatch}
             isDispatching={dispatchMutation.isPending}
           />
         ))}
       </div>
+      {/* Vault config note if not configured but we have project recommendations */}
+      {!data?.vaultConfigured && (
+        <div className="border-t border-neutral-200 px-4 py-2 dark:border-neutral-800">
+          <Link
+            to="/$teamSlugOrId/settings"
+            params={{ teamSlugOrId }}
+            search={{ section: "general" }}
+          >
+            <Button variant="ghost" size="sm" className="w-full text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300">
+              <FolderOpen className="mr-1.5 size-3" />
+              Configure Obsidian vault for more recommendations
+            </Button>
+          </Link>
+        </div>
+      )}
     </div>
   );
 }
