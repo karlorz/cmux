@@ -65,6 +65,22 @@ jobs:
             git diff --stat
           fi
 
+      - name: Write sync summary
+        run: |
+          RUN_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          {
+            echo "## Codex model sync"
+            echo
+            echo "- Ran at: \`$RUN_AT\`"
+            if [ "${{ steps.changes.outputs.has_changes }}" = "true" ]; then
+              echo "- Result: catalog changed"
+              echo "- Action: branch and PR will be created"
+            else
+              echo "- Result: no catalog changes"
+              echo "- Action: no PR created"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Configure git user
         if: steps.changes.outputs.has_changes == 'true'
         run: |
