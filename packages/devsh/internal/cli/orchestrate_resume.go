@@ -14,12 +14,20 @@ import (
 
 var orchestrateResumeCmd = &cobra.Command{
 	Use:   "resume <task-id>",
-	Short: "Get provider session for resuming a task",
-	Long: `Retrieve the provider session binding for a task to enable session resume.
+	Short: "Inspect run-control summary for a task's latest run",
+	Long: `Inspect the shared run-control summary for the latest run in a task.
 
-This command fetches the stored session information including provider-specific
-session IDs (e.g., Claude session ID, Codex thread identifier) that can be used to
-reconnect to an existing agent session.
+This command resolves the newest task run for the task, then reads the shared
+run-control contract so the output uses the same vocabulary as the UI and API:
+
+  - Resolve approval
+  - Continue session
+  - Resume checkpoint
+  - Append instruction
+
+Provider-specific session details are only shown as supporting information for
+the selected continuation lane. The command does not imply checkpoint restore
+when only provider-session continuation exists.
 
 Examples:
   devsh orchestrate resume k97xcv2...
@@ -42,69 +50,56 @@ Examples:
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		session, err := client.GetProviderSession(ctx, taskID)
+		task, err := client.GetTask(ctx, taskID)
 		if err != nil {
-			return fmt.Errorf("failed to get provider session: %w", err)
+			return fmt.Errorf("failed to get task: %w", err)
+		}
+
+		selectedRun, err := latestTaskRun(task)
+		if err != nil {
+			return err
+		}
+
+		runControl, err := client.GetRunControlSummary(ctx, selectedRun.ID)
+		if err != nil {
+			return fmt.Errorf("failed to get run-control summary: %w", err)
 		}
 
 		if flagJSON {
-			data, _ := json.MarshalIndent(session, "", "  ")
+			data, marshalErr := json.MarshalIndent(runControl, "", "  ")
+			if marshalErr != nil {
+				return fmt.Errorf("failed to marshal run-control summary: %w", marshalErr)
+			}
 			fmt.Println(string(data))
 			return nil
 		}
 
-		printProviderSession(session)
+		taskRun, err := client.GetTaskRunWithPty(ctx, selectedRun.ID)
+		if err != nil {
+			return fmt.Errorf("failed to get task run: %w", err)
+		}
+
+		fmt.Printf("Task: %s\n", task.ID)
+		fmt.Printf("Selected run: %s\n", selectedRun.ID)
+		fmt.Println()
+		printTaskResumeSummary(runControl, taskRun)
 		return nil
 	},
 }
 
-func printProviderSession(session *vm.ProviderSession) {
-	fmt.Println("Provider Session")
-	fmt.Println("================")
-	fmt.Printf("  Task ID:         %s\n", session.TaskID)
-	fmt.Printf("  Orchestration:   %s\n", session.OrchestrationID)
-	fmt.Printf("  Provider:        %s\n", session.Provider)
-	fmt.Printf("  Agent:           %s\n", session.AgentName)
-	fmt.Printf("  Mode:            %s\n", session.Mode)
-	fmt.Printf("  Status:          %s\n", session.Status)
-
-	if session.ProviderSessionID != nil && *session.ProviderSessionID != "" {
-		fmt.Printf("  Session ID:      %s\n", *session.ProviderSessionID)
-	}
-	if session.ProviderThreadID != nil && *session.ProviderThreadID != "" {
-		fmt.Printf("  Thread ID:       %s\n", *session.ProviderThreadID)
-	}
-	if session.ReplyChannel != nil && *session.ReplyChannel != "" {
-		fmt.Printf("  Reply Channel:   %s\n", *session.ReplyChannel)
-	}
-	if session.LastActiveAt != nil && *session.LastActiveAt > 0 {
-		fmt.Printf("  Last Active:     %s\n", time.Unix(*session.LastActiveAt/1000, 0).Format(time.RFC3339))
+func latestTaskRun(task *vm.TaskDetail) (*vm.TaskRun, error) {
+	if len(task.TaskRuns) == 0 {
+		return nil, fmt.Errorf("task %s has no runs yet", task.ID)
 	}
 
-	// Print resume instructions based on provider
-	fmt.Println()
-	fmt.Println("Resume Instructions")
-	fmt.Println("-------------------")
-	switch session.Provider {
-	case "claude":
-		if session.ProviderSessionID != nil && *session.ProviderSessionID != "" {
-			fmt.Printf("  Claude session: claude --session-id %s\n", *session.ProviderSessionID)
-		} else {
-			fmt.Println("  No Claude session ID stored - session may not be resumable")
+	best := task.TaskRuns[0]
+	for _, candidate := range task.TaskRuns[1:] {
+		if candidate.CreatedAt > best.CreatedAt {
+			best = candidate
 		}
-	case "codex":
-		if session.ProviderThreadID != nil && *session.ProviderThreadID != "" {
-			fmt.Printf("  Codex interactive: %s\n", formatCodexInteractiveResumeCommand(*session.ProviderThreadID))
-			fmt.Printf(
-				"  Codex non-interactive follow-up: %s\n",
-				formatCodexNonInteractiveResumeCommand(*session.ProviderThreadID, "'<prompt>'"),
-			)
-		} else {
-			fmt.Println("  No Codex thread ID stored - session may not be resumable")
-		}
-	default:
-		fmt.Printf("  Provider '%s' resume not yet supported\n", session.Provider)
 	}
+
+	return &best, nil
 }
 
 func init() {

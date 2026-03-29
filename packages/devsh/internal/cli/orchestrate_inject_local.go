@@ -32,15 +32,15 @@ var (
 
 var orchestrateInjectLocalCmd = &cobra.Command{
 	Use:   "inject-local <run-id> <message>",
-	Short: "Inject an instruction into a running local task",
+	Short: "Continue a local run when possible, otherwise append instruction fallback",
 	Long: `Inject an instruction into a running local orchestration task using active
 or passive injection depending on agent support.
 
-Active injection (preferred):
+Continue session lane (preferred when available):
   - Claude: Uses --continue --session-id to inject into the same session
   - Codex: Uses codex exec resume <thread-id> <message> for non-interactive follow-up on the same stored conversation binding
 
-Passive injection (fallback):
+Append instruction lane (fallback):
   - Writes to append.txt for agents to poll
 
 The command auto-detects the best injection mode based on the running agent
@@ -157,12 +157,18 @@ func activeInjectionTarget(info *LocalSessionInfo) (fieldName, displayLabel, val
 }
 
 func printInjectLocalResult(runID, mode, message string, sessionInfo *LocalSessionInfo) {
+	controlLane := controlLaneForInjectionMode(mode)
+	continuationMode := continuationModeForInjectionMode(mode)
+
 	if flagJSON {
 		output := map[string]interface{}{
-			"runId":          runID,
-			"mode":           mode,
-			"message":        message,
-			"injectionCount": sessionInfo.InjectionCount,
+			"runId":            runID,
+			"mode":             mode,
+			"message":          message,
+			"injectionCount":   sessionInfo.InjectionCount,
+			"controlLane":      controlLane,
+			"continuationMode": continuationMode,
+			"availableActions": []string{controlLane},
 		}
 		fieldName, _, value := activeInjectionTarget(sessionInfo)
 		if mode == "active" && fieldName != "" {
@@ -175,6 +181,8 @@ func printInjectLocalResult(runID, mode, message string, sessionInfo *LocalSessi
 
 	fmt.Printf("Injected instruction into run %s\n", runID)
 	fmt.Printf("Mode: %s\n", mode)
+	fmt.Printf("Control lane: %s\n", formatRunControlActionLabel(controlLane))
+	fmt.Printf("Continuation mode: %s\n", continuationMode)
 	fmt.Printf("Message: %s\n", message)
 	if mode == "active" {
 		_, label, value := activeInjectionTarget(sessionInfo)
@@ -390,6 +398,20 @@ func UpdateCodexHome(runDir, codexHome string) error {
 }
 
 func init() {
-	orchestrateInjectLocalCmd.Flags().StringVar(&injectLocalMode, "mode", "auto", "Injection mode: 'active' (session continuation), 'passive' (file polling), or 'auto'")
+	orchestrateInjectLocalCmd.Flags().StringVar(&injectLocalMode, "mode", "auto", "Injection mode: 'active' (continue session), 'passive' (append instruction), or 'auto'")
 	orchestrateCmd.AddCommand(orchestrateInjectLocalCmd)
+}
+
+func controlLaneForInjectionMode(mode string) string {
+	if mode == "active" {
+		return "continue_session"
+	}
+	return "append_instruction"
+}
+
+func continuationModeForInjectionMode(mode string) string {
+	if mode == "active" {
+		return "session_continuation"
+	}
+	return "append_instruction"
 }
