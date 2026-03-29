@@ -389,6 +389,11 @@ export function ProjectDetailView({
         project={project}
         teamSlugOrId={teamSlugOrId}
         onLinked={onProjectRefresh}
+        draftTaskCount={
+          seededPlanTasks.length > 0 && (plan?.tasks.length ?? 0) === 0
+            ? seededPlanTasks.length
+            : 0
+        }
       />
 
       {/* Progress */}
