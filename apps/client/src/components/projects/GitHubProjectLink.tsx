@@ -8,12 +8,13 @@
  * - Linked + resolved: External link, cached counts, "Refresh" button
  */
 
-import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   postApiProjectsByProjectIdLinkGithub,
   postApiProjectsByProjectIdRefreshGithub,
 } from "@cmux/www-openapi-client";
+import { convexQuery } from "@convex-dev/react-query";
 import {
   ExternalLink,
   Link2,
@@ -21,11 +22,14 @@ import {
   AlertCircle,
   CheckCircle2,
   Loader2,
+  ListTodo,
 } from "lucide-react";
 import { useUser } from "@stackframe/react";
+import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { api } from "@cmux/convex/api";
 import type { Doc } from "@cmux/convex/dataModel";
 
 interface GitHubProjectLinkProps {
@@ -36,11 +40,15 @@ interface GitHubProjectLinkProps {
 
 export function GitHubProjectLink({
   project,
-  teamSlugOrId: _teamSlugOrId,
+  teamSlugOrId,
   onLinked,
 }: GitHubProjectLinkProps) {
   const user = useUser({ or: "return-null" });
   const [urlInput, setUrlInput] = useState("");
+
+  const { data: connections } = useQuery(
+    convexQuery(api.github.listProviderConnections, { teamSlugOrId }),
+  );
 
   // Link mutation
   const linkMutation = useMutation({
@@ -112,6 +120,49 @@ export function GitHubProjectLink({
   const isResolved = Boolean(project.githubProjectId);
   const needsReauth =
     isLinked && !isResolved && project.githubProjectOwnerType === "user";
+  const matchingConnection = useMemo(() => {
+    const activeConnections =
+      connections?.filter((connection) => connection.isActive) ?? [];
+    const normalizedOwner = project.githubProjectOwner?.toLowerCase();
+
+    if (!normalizedOwner) {
+      return activeConnections[0];
+    }
+
+    return (
+      activeConnections.find(
+        (connection) =>
+          connection.accountLogin?.toLowerCase() === normalizedOwner,
+      ) ?? activeConnections[0]
+    );
+  }, [connections, project.githubProjectOwner]);
+  const internalProjectItemsSearch = useMemo(() => {
+    if (!project.githubProjectId || !matchingConnection) {
+      return null;
+    }
+
+    const owner = project.githubProjectOwner ?? matchingConnection.accountLogin;
+    const ownerType =
+      project.githubProjectOwnerType ??
+      (matchingConnection.accountType === "Organization"
+        ? "organization"
+        : "user");
+
+    if (!owner) {
+      return null;
+    }
+
+    return {
+      installationId: matchingConnection.installationId,
+      owner,
+      ownerType,
+    } as const;
+  }, [
+    matchingConnection,
+    project.githubProjectId,
+    project.githubProjectOwner,
+    project.githubProjectOwnerType,
+  ]);
 
   // Format cached time
   const formatCacheTime = (timestamp?: number) => {
@@ -249,21 +300,42 @@ export function GitHubProjectLink({
                 Updated {formatCacheTime(project.githubItemsCachedAt)}
               </span>
             )}
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => refreshMutation.mutate()}
-              disabled={refreshMutation.isPending}
-              className={clsx(!project.githubItemsCachedAt && "ml-auto")}
+            <div
+              className={clsx(
+                "flex items-center gap-2",
+                !project.githubItemsCachedAt && "ml-auto",
+              )}
             >
-              <RefreshCw
-                className={clsx(
-                  "h-4 w-4 mr-1.5",
-                  refreshMutation.isPending && "animate-spin"
-                )}
-              />
-              Refresh
-            </Button>
+              {project.githubProjectId && internalProjectItemsSearch && (
+                <Button asChild size="sm" variant="outline">
+                  <Link
+                    to="/$teamSlugOrId/projects/$projectId"
+                    params={{
+                      teamSlugOrId,
+                      projectId: project.githubProjectId,
+                    }}
+                    search={internalProjectItemsSearch}
+                  >
+                    <ListTodo className="h-4 w-4 mr-1.5" />
+                    View Items
+                  </Link>
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => refreshMutation.mutate()}
+                disabled={refreshMutation.isPending}
+              >
+                <RefreshCw
+                  className={clsx(
+                    "h-4 w-4 mr-1.5",
+                    refreshMutation.isPending && "animate-spin"
+                  )}
+                />
+                Refresh
+              </Button>
+            </div>
           </div>
         </div>
       )}
