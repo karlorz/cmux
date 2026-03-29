@@ -291,6 +291,12 @@ func TestPrintInjectLocalResultCodexText(t *testing.T) {
 	if !strings.Contains(output, "Injected instruction into run local_123") {
 		t.Fatalf("expected run summary, got:\n%s", output)
 	}
+	if !strings.Contains(output, "Control lane: Continue session") {
+		t.Fatalf("expected continue-session lane label, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Continuation mode: session_continuation") {
+		t.Fatalf("expected session continuation mode, got:\n%s", output)
+	}
 	if !strings.Contains(output, "Thread ID: thread-456") {
 		t.Fatalf("expected thread id label, got:\n%s", output)
 	}
@@ -325,6 +331,12 @@ func TestPrintInjectLocalResultCodexJSON(t *testing.T) {
 
 	if payload["threadId"] != "thread-456" {
 		t.Fatalf("expected threadId field, got %#v", payload["threadId"])
+	}
+	if payload["controlLane"] != "continue_session" {
+		t.Fatalf("expected continue_session control lane, got %#v", payload["controlLane"])
+	}
+	if payload["continuationMode"] != "session_continuation" {
+		t.Fatalf("expected session_continuation mode, got %#v", payload["continuationMode"])
 	}
 	if _, ok := payload["sessionId"]; ok {
 		t.Fatalf("expected sessionId field to be absent, got %#v", payload["sessionId"])

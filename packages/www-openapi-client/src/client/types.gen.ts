@@ -1233,6 +1233,8 @@ export type CreateProjectRequest = {
     githubProjectId?: string;
 };
 
+export type GithubProjectOwnerType = 'user' | 'organization';
+
 export type PlanTask = {
     /**
      * Task ID
@@ -1333,9 +1335,38 @@ export type Project = {
      */
     obsidianNotePath?: string;
     /**
-     * GitHub Projects v2 node ID
+     * GitHub Projects v2 node ID (PVT_xxx)
      */
     githubProjectId?: string;
+    /**
+     * GitHub Project URL
+     */
+    githubProjectUrl?: string;
+    /**
+     * GitHub Project owner login
+     */
+    githubProjectOwner?: string;
+    /**
+     * GitHub Project number
+     */
+    githubProjectNumber?: number;
+    githubProjectOwnerType?: GithubProjectOwnerType;
+    /**
+     * Total GitHub Project items
+     */
+    githubItemsTotal?: number;
+    /**
+     * Done GitHub Project items
+     */
+    githubItemsDone?: number;
+    /**
+     * In-progress GitHub Project items
+     */
+    githubItemsInProgress?: number;
+    /**
+     * Cache timestamp (epoch ms)
+     */
+    githubItemsCachedAt?: number;
     plan?: ProjectPlan;
     /**
      * Creation timestamp
@@ -1427,15 +1458,95 @@ export type UpdateProjectRequest = {
      * GitHub Projects node ID
      */
     githubProjectId?: string;
+    /**
+     * GitHub Project URL
+     */
+    githubProjectUrl?: string;
+    /**
+     * GitHub Project owner login
+     */
+    githubProjectOwner?: string;
+    /**
+     * GitHub Project number
+     */
+    githubProjectNumber?: number;
+    githubProjectOwnerType?: GithubProjectOwnerType;
 };
 
-export type RecommendedAction = {
+export type LinkGithubResponse = {
     /**
-     * Type of recommended action
+     * Whether the URL was stored
      */
-    type: 'todo' | 'stale_note' | 'missing_docs' | 'broken_link';
+    linked: boolean;
     /**
-     * Source note path
+     * Whether the project node ID was resolved
+     */
+    resolved: boolean;
+    /**
+     * True if OAuth 'project' scope is needed for user-owned projects
+     */
+    needsReauthorization?: boolean;
+    /**
+     * Resolved GitHub Project node ID
+     */
+    githubProjectId?: string;
+    /**
+     * GitHub Project title
+     */
+    githubProjectTitle?: string;
+    /**
+     * Cached item counts (if resolved)
+     */
+    itemCounts?: {
+        total: number;
+        done: number;
+        inProgress: number;
+    };
+};
+
+export type LinkGithubRequest = {
+    /**
+     * GitHub Project URL (e.g., https://github.com/users/owner/projects/1)
+     */
+    githubProjectUrl: string;
+};
+
+export type RefreshGithubResponse = {
+    /**
+     * Whether the refresh succeeded
+     */
+    refreshed: boolean;
+    /**
+     * Whether the project was resolved (if previously unresolved)
+     */
+    resolved?: boolean;
+    /**
+     * True if OAuth 'project' scope is needed
+     */
+    needsReauthorization?: boolean;
+    /**
+     * Updated item counts
+     */
+    itemCounts?: {
+        total: number;
+        done: number;
+        inProgress: number;
+    };
+    /**
+     * Cache timestamp (epoch ms)
+     */
+    cachedAt?: number;
+};
+
+/**
+ * Type of recommended action
+ */
+export type RecommendedActionType = 'todo' | 'stale_note' | 'missing_docs' | 'broken_link' | 'stale_project' | 'failed_tasks' | 'unstarted_plan' | 'no_plan';
+
+export type RecommendedAction = {
+    type: RecommendedActionType;
+    /**
+     * Source (note path or project name)
      */
     source: string;
     /**
@@ -1450,6 +1561,10 @@ export type RecommendedAction = {
      * Suggested prompt for agent
      */
     suggestedPrompt?: string;
+    /**
+     * cmux project ID (for project-sourced actions)
+     */
+    projectId?: string;
 };
 
 export type DispatchRequest = {
@@ -5355,6 +5470,86 @@ export type PostApiProjectsByProjectIdDispatchResponses = {
 
 export type PostApiProjectsByProjectIdDispatchResponse = PostApiProjectsByProjectIdDispatchResponses[keyof PostApiProjectsByProjectIdDispatchResponses];
 
+export type PostApiProjectsByProjectIdLinkGithubData = {
+    body: LinkGithubRequest;
+    path: {
+        /**
+         * Project ID
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/projects/{projectId}/link-github';
+};
+
+export type PostApiProjectsByProjectIdLinkGithubErrors = {
+    /**
+     * Invalid GitHub Project URL
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Project not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiProjectsByProjectIdLinkGithubResponses = {
+    /**
+     * GitHub Project linked successfully
+     */
+    200: LinkGithubResponse;
+};
+
+export type PostApiProjectsByProjectIdLinkGithubResponse = PostApiProjectsByProjectIdLinkGithubResponses[keyof PostApiProjectsByProjectIdLinkGithubResponses];
+
+export type PostApiProjectsByProjectIdRefreshGithubData = {
+    body?: never;
+    path: {
+        /**
+         * Project ID
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/projects/{projectId}/refresh-github';
+};
+
+export type PostApiProjectsByProjectIdRefreshGithubErrors = {
+    /**
+     * No GitHub Project linked
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Project not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiProjectsByProjectIdRefreshGithubResponses = {
+    /**
+     * GitHub Project cache refreshed
+     */
+    200: RefreshGithubResponse;
+};
+
+export type PostApiProjectsByProjectIdRefreshGithubResponse = PostApiProjectsByProjectIdRefreshGithubResponses[keyof PostApiProjectsByProjectIdRefreshGithubResponses];
+
 export type PostApiVaultDispatchData = {
     body: DispatchRequest;
     path?: never;
@@ -5655,7 +5850,7 @@ export type GetApiVaultRecommendationsData = {
         /**
          * Filter by type
          */
-        type?: 'todo' | 'stale_note' | 'missing_docs' | 'broken_link';
+        type?: RecommendedActionType & unknown;
     };
     url: '/api/vault/recommendations';
 };
@@ -5678,6 +5873,10 @@ export type GetApiVaultRecommendationsResponses = {
     200: {
         recommendations: Array<RecommendedAction>;
         vaultConfigured: boolean;
+        /**
+         * Number of projects analyzed
+         */
+        projectsScanned: number;
     };
 };
 

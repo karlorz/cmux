@@ -18,6 +18,7 @@ import {
   FolderKanban,
   Search,
   X,
+  Github,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -360,11 +361,28 @@ function ProjectCard({
   teamSlugOrId: string;
 }) {
   const statusConfig = PROJECT_STATUS_CONFIG[project.status];
-  const progressPercent = project.totalTasks && project.totalTasks > 0
-    ? Math.round(((project.completedTasks ?? 0) / project.totalTasks) * 100)
+
+  // Merge cmux tasks + GitHub items for progress
+  const cmuxTotalTasks = project.totalTasks ?? 0;
+  const cmuxCompletedTasks = project.completedTasks ?? 0;
+  const cmuxRunningTasks = project.runningTasks ?? 0;
+  const cmuxFailedTasks = project.failedTasks ?? 0;
+
+  const ghTotal = project.githubItemsTotal ?? 0;
+  const ghDone = project.githubItemsDone ?? 0;
+  const ghInProgress = project.githubItemsInProgress ?? 0;
+
+  const totalTasks = cmuxTotalTasks + ghTotal;
+  const completedTasks = cmuxCompletedTasks + ghDone;
+  const runningTasks = cmuxRunningTasks + ghInProgress;
+  const failedTasks = cmuxFailedTasks;
+  const pendingTasks = Math.max(0, totalTasks - completedTasks - failedTasks - runningTasks);
+
+  const progressPercent = totalTasks > 0
+    ? Math.round((completedTasks / totalTasks) * 100)
     : 0;
 
-  const runningTasks = project.runningTasks ?? 0;
+  const hasGitHubLink = Boolean(project.githubProjectUrl);
 
   return (
     <a
@@ -378,6 +396,9 @@ function ProjectCard({
               <CardTitle className="text-base truncate flex items-center gap-2">
                 <FolderKanban className="h-4 w-4 flex-shrink-0" />
                 {project.name}
+                {hasGitHubLink && (
+                  <Github className="h-3.5 w-3.5 text-neutral-400 flex-shrink-0" />
+                )}
               </CardTitle>
               {project.description && (
                 <CardDescription className="mt-1 line-clamp-2">
@@ -393,16 +414,16 @@ function ProjectCard({
         <CardContent className="pt-2">
           <div className="space-y-2">
             <ProjectProgressBar
-              completed={project.completedTasks ?? 0}
+              completed={completedTasks}
               running={runningTasks}
-              failed={project.failedTasks ?? 0}
-              pending={Math.max(0, (project.totalTasks ?? 0) - (project.completedTasks ?? 0) - (project.failedTasks ?? 0) - runningTasks)}
-              total={project.totalTasks ?? 0}
+              failed={failedTasks}
+              pending={pendingTasks}
+              total={totalTasks}
             />
             <div className="flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">
               <span>
-                {project.totalTasks ?? 0} tasks
-                {(project.completedTasks ?? 0) > 0 && ` (${project.completedTasks} done)`}
+                {totalTasks} {ghTotal > 0 && cmuxTotalTasks > 0 ? "items" : "tasks"}
+                {completedTasks > 0 && ` (${completedTasks} done)`}
               </span>
               <span>{progressPercent}% complete</span>
             </div>

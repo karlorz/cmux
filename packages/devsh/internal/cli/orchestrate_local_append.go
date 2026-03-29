@@ -13,15 +13,15 @@ import (
 
 var orchestrateAppendLocalCmd = &cobra.Command{
 	Use:   "append-local <run-id> <message>",
-	Short: "Append an instruction to a running local task (alias for inject-local --mode passive)",
+	Short: "Append instruction to a running local task",
 	Long: `Append an instruction to a running local orchestration task using passive injection.
 
 This writes to the append.txt file in the run directory, which the running
 task can poll for new instructions. The message is appended with a timestamp.
 
-Note: This is the passive injection mode. For active injection that uses
-session continuation (when supported by the agent CLI), use 'inject-local'
-instead, which auto-detects the best injection mode.
+This command is the append instruction lane. It does not continue a live
+provider session. For the continue session lane, use 'inject-local' instead,
+which auto-detects whether active continuation is available.
 
 See also: devsh orchestrate inject-local --help
 
@@ -85,12 +85,31 @@ Examples:
 			}
 		}
 
+		if flagJSON {
+			output := map[string]interface{}{
+				"runId":            runID,
+				"message":          message,
+				"file":             appendPath,
+				"controlLane":      "append_instruction",
+				"continuationMode": "append_instruction",
+				"availableActions": []string{"append_instruction"},
+			}
+			data, marshalErr := json.MarshalIndent(output, "", "  ")
+			if marshalErr != nil {
+				return fmt.Errorf("failed to marshal append result: %w", marshalErr)
+			}
+			fmt.Println(string(data))
+			return nil
+		}
+
 		fmt.Printf("Appended instruction to run %s\n", runID)
+		fmt.Printf("Control lane: %s\n", formatRunControlActionLabel("append_instruction"))
+		fmt.Printf("Continuation mode: append_instruction\n")
 		fmt.Printf("Message: %s\n", message)
 		fmt.Printf("File: %s\n", appendPath)
 		fmt.Println()
 		fmt.Println("Note: The running agent must check append.txt for new instructions.")
-		fmt.Println("This is currently a passive mechanism - agents can poll this file for updates.")
+		fmt.Println("This does not continue a live provider session or resume a checkpoint.")
 
 		return nil
 	},
@@ -128,7 +147,6 @@ func readAppendedInstructions(runDir string) ([]string, error) {
 
 	return instructions, nil
 }
-
 
 func init() {
 	orchestrateCmd.AddCommand(orchestrateAppendLocalCmd)
