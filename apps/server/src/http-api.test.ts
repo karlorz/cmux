@@ -17,7 +17,7 @@
 
 import { beforeAll, describe, expect, it } from "vitest";
 import { once } from "node:events";
-import { createServer } from "node:http";
+import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { AGENT_CATALOG } from "@cmux/shared/agent-catalog";
 import { handleHttpRequest, matchesOrchestrationTaskGroup } from "./http-api";
@@ -58,10 +58,7 @@ const serverCheckPromise = checkServerAvailability();
  * Suite-level gating helper: wraps `it` to skip when server is unavailable.
  * Resolves the server check at test execution time (inside beforeAll).
  */
-function itWhenServer(
-  name: string,
-  fn: () => Promise<void> | void,
-): void {
+function itWhenServer(name: string, fn: () => Promise<void> | void): void {
   it(name, async () => {
     const available = await serverCheckPromise;
     if (!available) {
@@ -101,6 +98,45 @@ async function safeFetch(
   }
 }
 
+async function closeServer(server: Server): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => {
+      if (!error) {
+        resolve();
+        return;
+      }
+      if ((error as NodeJS.ErrnoException).code === "ERR_SERVER_NOT_RUNNING") {
+        resolve();
+        return;
+      }
+      reject(error);
+    });
+  });
+}
+
+async function withLocalHttpApiServer<T>(
+  fn: (baseUrl: string) => Promise<T>,
+): Promise<T> {
+  const server = createServer((req, res) => {
+    if (!handleHttpRequest(req, res)) {
+      res.statusCode = 404;
+      res.end();
+    }
+  });
+
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+
+  const address = server.address() as AddressInfo;
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  try {
+    return await fn(baseUrl);
+  } finally {
+    await closeServer(server);
+  }
+}
+
 describe("HTTP API - apps/server", () => {
   describe("Orchestration filtering helpers", () => {
     it("matches a single-task local flow by task id", () => {
@@ -112,9 +148,9 @@ describe("HTTP API - apps/server", () => {
       };
 
       expect(matchesOrchestrationTaskGroup(task, orchestrationId)).toBe(true);
-      expect(matchesOrchestrationTaskGroup(task, "different_orchestration")).toBe(
-        false,
-      );
+      expect(
+        matchesOrchestrationTaskGroup(task, "different_orchestration"),
+      ).toBe(false);
     });
 
     it("matches a grouped orchestration flow by metadata.orchestrationId", () => {
@@ -134,10 +170,12 @@ describe("HTTP API - apps/server", () => {
         },
       };
 
-      expect(matchesOrchestrationTaskGroup(groupedTask, orchestrationId)).toBe(true);
-      expect(matchesOrchestrationTaskGroup(unrelatedTask, orchestrationId)).toBe(
-        false,
+      expect(matchesOrchestrationTaskGroup(groupedTask, orchestrationId)).toBe(
+        true,
       );
+      expect(
+        matchesOrchestrationTaskGroup(unrelatedTask, orchestrationId),
+      ).toBe(false);
     });
   });
 
@@ -159,8 +197,7 @@ describe("HTTP API - apps/server", () => {
       );
 
       expect(response.status).toBe(401);
-      await server.closeAllConnections();
-      server.close();
+      await closeServer(server);
     });
   });
 
@@ -217,68 +254,77 @@ describe("HTTP API - apps/server", () => {
       expect(response!.status).toBe(400);
     });
 
-    itWhenServer("POST /api/start-task rejects missing required fields", async () => {
-      const response = await safeFetch(`${SERVER_URL}/api/start-task`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer fake_token",
-        },
-        body: JSON.stringify({
-          // Missing taskId, taskDescription, projectFullName
-          teamSlugOrId: "dev",
-        }),
-      });
+    itWhenServer(
+      "POST /api/start-task rejects missing required fields",
+      async () => {
+        const response = await safeFetch(`${SERVER_URL}/api/start-task`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer fake_token",
+          },
+          body: JSON.stringify({
+            // Missing taskId, taskDescription, projectFullName
+            teamSlugOrId: "dev",
+          }),
+        });
 
-      expect(response).not.toBeNull();
-      expect(response!.status).toBe(400);
-      const data = await response!.json();
-      expect(data.error).toContain("Missing required fields");
-    });
+        expect(response).not.toBeNull();
+        expect(response!.status).toBe(400);
+        const data = await response!.json();
+        expect(data.error).toContain("Missing required fields");
+      },
+    );
 
-    itWhenServer("POST /api/start-task rejects missing teamSlugOrId", async () => {
-      const response = await safeFetch(`${SERVER_URL}/api/start-task`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer fake_token",
-        },
-        body: JSON.stringify({
-          taskId: "test_task_123",
-          taskDescription: "Test task",
-          projectFullName: "test/repo",
-          // Missing teamSlugOrId
-        }),
-      });
+    itWhenServer(
+      "POST /api/start-task rejects missing teamSlugOrId",
+      async () => {
+        const response = await safeFetch(`${SERVER_URL}/api/start-task`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer fake_token",
+          },
+          body: JSON.stringify({
+            taskId: "test_task_123",
+            taskDescription: "Test task",
+            projectFullName: "test/repo",
+            // Missing teamSlugOrId
+          }),
+        });
 
-      expect(response).not.toBeNull();
-      expect(response!.status).toBe(400);
-      const data = await response!.json();
-      expect(data.error).toContain("teamSlugOrId");
-    });
+        expect(response).not.toBeNull();
+        expect(response!.status).toBe(400);
+        const data = await response!.json();
+        expect(data.error).toContain("teamSlugOrId");
+      },
+    );
 
-    itWhenServer("POST /api/start-task rejects invalid branchNames length", async () => {
-      const response = await safeFetch(`${SERVER_URL}/api/start-task`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer fake_token",
-        },
-        body: JSON.stringify({
-          taskId: "test_task_123",
-          taskDescription: "Test task",
-          projectFullName: "test/repo",
-          teamSlugOrId: "dev",
-          selectedAgents: ["claude/haiku-4.5", "claude/haiku-4.5"],
-          branchNames: ["only-one-branch"],
-        }),
-      });
+    itWhenServer(
+      "POST /api/start-task rejects invalid branchNames length",
+      async () => {
+        const response = await safeFetch(`${SERVER_URL}/api/start-task`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer fake_token",
+          },
+          body: JSON.stringify({
+            taskId: "test_task_123",
+            taskDescription: "Test task",
+            projectFullName: "test/repo",
+            teamSlugOrId: "dev",
+            selectedAgents: ["claude/haiku-4.5", "claude/haiku-4.5"],
+            branchNames: ["only-one-branch"],
+          }),
+        });
 
-      expect(response).not.toBeNull();
-      expect(response!.status).toBe(400);
-      const data = await response!.json();
-      expect(String(data.error)).toContain("branchNames length");
-    });
+        expect(response).not.toBeNull();
+        expect(response!.status).toBe(400);
+        const data = await response!.json();
+        expect(String(data.error)).toContain("branchNames length");
+      },
+    );
   });
 
   describe("CORS", () => {
@@ -319,30 +365,93 @@ describe("HTTP API - apps/server", () => {
       expect(model).toHaveProperty("disabled");
       expect(model).toHaveProperty("requiredApiKeys");
     });
+
+    it("local handler returns variant metadata for effort-capable models", async () => {
+      await withLocalHttpApiServer(async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/models`);
+
+        expect(response.status).toBe(200);
+        const data = await response.json();
+
+        const opus = data.models.find(
+          (model: { name: string }) => model.name === "claude/opus-4.6",
+        );
+        expect(opus).toBeDefined();
+        expect(opus.defaultVariant).toBe("medium");
+        expect(
+          opus.variants.map((variant: { id: string }) => variant.id),
+        ).toEqual(["low", "medium", "high", "max"]);
+      });
+    });
+
+    it("local handler returns codex reasoning variants on static fallback", async () => {
+      await withLocalHttpApiServer(async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/models?vendor=openai`);
+
+        expect(response.status).toBe(200);
+        const data = await response.json();
+
+        const gpt54 = data.models.find(
+          (model: { name: string }) => model.name === "codex/gpt-5.4",
+        );
+        expect(gpt54).toBeDefined();
+        expect(gpt54.defaultVariant).toBe("medium");
+        expect(
+          gpt54.variants.some(
+            (variant: { id: string }) => variant.id === "xhigh",
+          ),
+        ).toBe(true);
+      });
+    });
+
+    it("local handler does not synthesize effort variants for catalog models without them", async () => {
+      await withLocalHttpApiServer(async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/models?vendor=google`);
+
+        expect(response.status).toBe(200);
+        const data = await response.json();
+
+        const gemini = data.models.find(
+          (model: { name: string }) => model.name === "gemini/2.5-pro",
+        );
+        expect(gemini).toBeDefined();
+        expect(gemini.variants).toBeUndefined();
+        expect(gemini.defaultVariant).toBeUndefined();
+      });
+    });
   });
 
   describe("Models API - Auth Headers", () => {
-    itWhenServer("accepts x-stack-auth header for browser clients", async () => {
-      // Without valid Convex auth this will still fall back to static,
-      // but we verify the header is parsed without errors
-      const response = await safeFetch(`${SERVER_URL}/api/models?teamSlugOrId=test-team`, {
-        headers: {
-          "x-stack-auth": JSON.stringify({ accessToken: "invalid-token" }),
-        },
-      });
-      expect(response).not.toBeNull();
-      // Should get 200 (falls back to static on auth failure, not 401)
-      expect(response!.status).toBe(200);
-      const data = await response!.json();
-      expect(data).toHaveProperty("models");
-    });
+    itWhenServer(
+      "accepts x-stack-auth header for browser clients",
+      async () => {
+        // Without valid Convex auth this will still fall back to static,
+        // but we verify the header is parsed without errors
+        const response = await safeFetch(
+          `${SERVER_URL}/api/models?teamSlugOrId=test-team`,
+          {
+            headers: {
+              "x-stack-auth": JSON.stringify({ accessToken: "invalid-token" }),
+            },
+          },
+        );
+        expect(response).not.toBeNull();
+        // Should get 200 (falls back to static on auth failure, not 401)
+        expect(response!.status).toBe(200);
+        const data = await response!.json();
+        expect(data).toHaveProperty("models");
+      },
+    );
 
     itWhenServer("handles malformed x-stack-auth gracefully", async () => {
-      const response = await safeFetch(`${SERVER_URL}/api/models?teamSlugOrId=test-team`, {
-        headers: {
-          "x-stack-auth": "not-valid-json",
+      const response = await safeFetch(
+        `${SERVER_URL}/api/models?teamSlugOrId=test-team`,
+        {
+          headers: {
+            "x-stack-auth": "not-valid-json",
+          },
         },
-      });
+      );
       expect(response).not.toBeNull();
       // Should still return 200 with static fallback
       expect(response!.status).toBe(200);
@@ -350,38 +459,46 @@ describe("HTTP API - apps/server", () => {
       expect(data).toHaveProperty("models");
     });
 
-    itWhenServer("includes source metadata in response for diagnostics", async () => {
-      // Without valid auth, should show static source
-      const response = await safeFetch(`${SERVER_URL}/api/models`);
-      expect(response).not.toBeNull();
-      expect(response!.status).toBe(200);
-      const data = await response!.json();
+    itWhenServer(
+      "includes source metadata in response for diagnostics",
+      async () => {
+        // Without valid auth, should show static source
+        const response = await safeFetch(`${SERVER_URL}/api/models`);
+        expect(response).not.toBeNull();
+        expect(response!.status).toBe(200);
+        const data = await response!.json();
 
-      // Response should always include source metadata for debugging
-      expect(data).toHaveProperty("source");
-      expect(["static", "convex"]).toContain(data.source);
+        // Response should always include source metadata for debugging
+        expect(data).toHaveProperty("source");
+        expect(["static", "convex"]).toContain(data.source);
 
-      // When unauthenticated, should be static and unfiltered
-      if (data.source === "static") {
-        expect(data.filtered).toBe(false);
-      }
-    });
+        // When unauthenticated, should be static and unfiltered
+        if (data.source === "static") {
+          expect(data.filtered).toBe(false);
+        }
+      },
+    );
 
-    itWhenServer("response never returns null body (regression check)", async () => {
-      // Dashboard audit found some routes returning literal null
-      // This ensures /api/models always returns a valid object
-      const response = await safeFetch(`${SERVER_URL}/api/models?teamSlugOrId=test-team`);
-      expect(response).not.toBeNull();
-      expect(response!.status).toBe(200);
+    itWhenServer(
+      "response never returns null body (regression check)",
+      async () => {
+        // Dashboard audit found some routes returning literal null
+        // This ensures /api/models always returns a valid object
+        const response = await safeFetch(
+          `${SERVER_URL}/api/models?teamSlugOrId=test-team`,
+        );
+        expect(response).not.toBeNull();
+        expect(response!.status).toBe(200);
 
-      const rawText = await response!.text();
-      expect(rawText).not.toBe("null");
-      expect(rawText.trim()).not.toBe("");
+        const rawText = await response!.text();
+        expect(rawText).not.toBe("null");
+        expect(rawText.trim()).not.toBe("");
 
-      const data = JSON.parse(rawText);
-      expect(data).not.toBeNull();
-      expect(data).toHaveProperty("models");
-    });
+        const data = JSON.parse(rawText);
+        expect(data).not.toBeNull();
+        expect(data).toHaveProperty("models");
+      },
+    );
   });
 
   describe("Models API - Data Integrity", () => {
@@ -414,29 +531,35 @@ describe("HTTP API - apps/server", () => {
   describe("Orchestration API", () => {
     describe("POST /api/orchestrate/spawn", () => {
       itWhenServer("rejects unauthorized requests", async () => {
-        const response = await safeFetch(`${SERVER_URL}/api/orchestrate/spawn`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            teamSlugOrId: "dev",
-            agent: "claude/haiku-4.5",
-            prompt: "test prompt",
-          }),
-        });
+        const response = await safeFetch(
+          `${SERVER_URL}/api/orchestrate/spawn`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              teamSlugOrId: "dev",
+              agent: "claude/haiku-4.5",
+              prompt: "test prompt",
+            }),
+          },
+        );
 
         expect(response).not.toBeNull();
         expect(response!.status).toBe(401);
       });
 
       itWhenServer("validates required fields", async () => {
-        const response = await safeFetch(`${SERVER_URL}/api/orchestrate/spawn`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: "Bearer fake_token",
+        const response = await safeFetch(
+          `${SERVER_URL}/api/orchestrate/spawn`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: "Bearer fake_token",
+            },
+            body: JSON.stringify({ teamSlugOrId: "dev" }), // missing agent and prompt
           },
-          body: JSON.stringify({ teamSlugOrId: "dev" }), // missing agent and prompt
-        });
+        );
 
         expect(response).not.toBeNull();
         expect(response!.status).toBe(400);
@@ -445,14 +568,17 @@ describe("HTTP API - apps/server", () => {
       });
 
       itWhenServer("rejects invalid JSON body", async () => {
-        const response = await safeFetch(`${SERVER_URL}/api/orchestrate/spawn`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: "Bearer fake_token",
+        const response = await safeFetch(
+          `${SERVER_URL}/api/orchestrate/spawn`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: "Bearer fake_token",
+            },
+            body: "not json",
           },
-          body: "not json",
-        });
+        );
 
         expect(response).not.toBeNull();
         expect(response!.status).toBe(400);
@@ -491,16 +617,19 @@ describe("HTTP API - apps/server", () => {
         expect(response!.status).toBe(401);
       });
 
-      itWhenServer("returns error for invalid orchestration task ID", async () => {
-        const response = await safeFetch(
-          `${SERVER_URL}/api/orchestrate/status/invalid_id_123?teamSlugOrId=dev`,
-          { headers: { Authorization: "Bearer fake_token" } },
-        );
+      itWhenServer(
+        "returns error for invalid orchestration task ID",
+        async () => {
+          const response = await safeFetch(
+            `${SERVER_URL}/api/orchestrate/status/invalid_id_123?teamSlugOrId=dev`,
+            { headers: { Authorization: "Bearer fake_token" } },
+          );
 
-        expect(response).not.toBeNull();
-        // Expect either 401 (invalid token) or 500 (not found error)
-        expect([401, 500]).toContain(response!.status);
-      });
+          expect(response).not.toBeNull();
+          // Expect either 401 (invalid token) or 500 (not found error)
+          expect([401, 500]).toContain(response!.status);
+        },
+      );
 
       itWhenServer("requires teamSlugOrId query parameter", async () => {
         const response = await safeFetch(
@@ -712,163 +841,177 @@ describe("HTTP API - apps/server", () => {
         process.env.STACK_SUPER_SECRET_ADMIN_KEY
       );
 
-      itWhenServer.skipIf(!hasCredentials)("GET /api/orchestrate/list returns tasks array with valid auth", async () => {
-        // Import auth helper dynamically to avoid issues if not available
-        const { authenticatedFetch, TEST_TEAM, buildUrl } = await import(
-          "./test-fixtures/auth-helper"
-        );
+      itWhenServer.skipIf(!hasCredentials)(
+        "GET /api/orchestrate/list returns tasks array with valid auth",
+        async () => {
+          // Import auth helper dynamically to avoid issues if not available
+          const { authenticatedFetch, TEST_TEAM, buildUrl } =
+            await import("./test-fixtures/auth-helper");
 
-        const url = buildUrl(SERVER_URL, "/api/orchestrate/list", {
-          teamSlugOrId: TEST_TEAM,
-        });
+          const url = buildUrl(SERVER_URL, "/api/orchestrate/list", {
+            teamSlugOrId: TEST_TEAM,
+          });
 
-        const result = await authenticatedFetch<{ tasks: unknown[] }>(url);
+          const result = await authenticatedFetch<{ tasks: unknown[] }>(url);
 
-        // Either success with tasks array, or team not found (both valid)
-        if (result.ok) {
-          expect(result.data?.tasks).toBeDefined();
-          expect(Array.isArray(result.data?.tasks)).toBe(true);
-        } else {
-          // 500 is acceptable if team doesn't exist or other backend issue
-          expect([401, 403, 500]).toContain(result.status);
-        }
-      });
-
-      itWhenServer.skipIf(!hasCredentials)("GET /api/orchestrate/list filters by status", async () => {
-        const { authenticatedFetch, TEST_TEAM, buildUrl } = await import(
-          "./test-fixtures/auth-helper"
-        );
-
-        // Test filtering by pending status
-        const url = buildUrl(SERVER_URL, "/api/orchestrate/list", {
-          teamSlugOrId: TEST_TEAM,
-          status: "pending",
-        });
-
-        const result = await authenticatedFetch<{
-          tasks: Array<{ status: string }>;
-        }>(url);
-
-        if (result.ok && result.data?.tasks) {
-          // All returned tasks should have pending status
-          for (const task of result.data.tasks) {
-            expect(task.status).toBe("pending");
+          // Either success with tasks array, or team not found (both valid)
+          if (result.ok) {
+            expect(result.data?.tasks).toBeDefined();
+            expect(Array.isArray(result.data?.tasks)).toBe(true);
+          } else {
+            // 500 is acceptable if team doesn't exist or other backend issue
+            expect([401, 403, 500]).toContain(result.status);
           }
-        }
-        // Non-ok responses are acceptable (team not found, etc.)
-      });
+        },
+      );
 
-      itWhenServer.skipIf(!hasCredentials)("GET /api/orchestrate/list rejects invalid status filter", async () => {
-        const { authenticatedFetch, TEST_TEAM, buildUrl } = await import(
-          "./test-fixtures/auth-helper"
-        );
+      itWhenServer.skipIf(!hasCredentials)(
+        "GET /api/orchestrate/list filters by status",
+        async () => {
+          const { authenticatedFetch, TEST_TEAM, buildUrl } =
+            await import("./test-fixtures/auth-helper");
 
-        const url = buildUrl(SERVER_URL, "/api/orchestrate/list", {
-          teamSlugOrId: TEST_TEAM,
-          status: "invalid_status",
-        });
+          // Test filtering by pending status
+          const url = buildUrl(SERVER_URL, "/api/orchestrate/list", {
+            teamSlugOrId: TEST_TEAM,
+            status: "pending",
+          });
 
-        const result = await authenticatedFetch<unknown>(url);
-        expect(result.ok).toBe(false);
-        expect(result.status).toBe(400);
-        expect(result.error).toContain("Invalid status");
-      });
+          const result = await authenticatedFetch<{
+            tasks: Array<{ status: string }>;
+          }>(url);
 
-      itWhenServer.skipIf(!hasCredentials)("POST /api/orchestrate/spawn validates agent name", async () => {
-        const { authenticatedFetch, TEST_TEAM } = await import(
-          "./test-fixtures/auth-helper"
-        );
+          if (result.ok && result.data?.tasks) {
+            // All returned tasks should have pending status
+            for (const task of result.data.tasks) {
+              expect(task.status).toBe("pending");
+            }
+          }
+          // Non-ok responses are acceptable (team not found, etc.)
+        },
+      );
 
-        const result = await authenticatedFetch<{ error: string }>(
-          `${SERVER_URL}/api/orchestrate/spawn`,
-          {
+      itWhenServer.skipIf(!hasCredentials)(
+        "GET /api/orchestrate/list rejects invalid status filter",
+        async () => {
+          const { authenticatedFetch, TEST_TEAM, buildUrl } =
+            await import("./test-fixtures/auth-helper");
+
+          const url = buildUrl(SERVER_URL, "/api/orchestrate/list", {
+            teamSlugOrId: TEST_TEAM,
+            status: "invalid_status",
+          });
+
+          const result = await authenticatedFetch<unknown>(url);
+          expect(result.ok).toBe(false);
+          expect(result.status).toBe(400);
+          expect(result.error).toContain("Invalid status");
+        },
+      );
+
+      itWhenServer.skipIf(!hasCredentials)(
+        "POST /api/orchestrate/spawn validates agent name",
+        async () => {
+          const { authenticatedFetch, TEST_TEAM } =
+            await import("./test-fixtures/auth-helper");
+
+          const result = await authenticatedFetch<{ error: string }>(
+            `${SERVER_URL}/api/orchestrate/spawn`,
+            {
+              method: "POST",
+              body: {
+                teamSlugOrId: TEST_TEAM,
+                agent: "invalid/nonexistent-agent",
+                prompt: "Test prompt",
+              },
+            },
+          );
+
+          // Should fail because agent doesn't exist
+          expect(result.ok).toBe(false);
+          expect(result.status).toBe(500);
+          expect(result.error).toContain("Agent not found");
+        },
+      );
+
+      itWhenServer.skipIf(!hasCredentials)(
+        "GET /api/orchestrate/status returns 500 for nonexistent task",
+        async () => {
+          const { authenticatedFetch, TEST_TEAM, buildUrl } =
+            await import("./test-fixtures/auth-helper");
+
+          const url = buildUrl(
+            SERVER_URL,
+            "/api/orchestrate/status/nonexistent_task_id_12345",
+            { teamSlugOrId: TEST_TEAM },
+          );
+
+          const result = await authenticatedFetch<{ error: string }>(url);
+
+          // Should fail because task doesn't exist
+          expect(result.ok).toBe(false);
+          // Can be 500 (not found error) or 401 (team membership check failed)
+          expect([401, 500]).toContain(result.status);
+        },
+      );
+
+      itWhenServer.skipIf(!hasCredentials)(
+        "POST /api/orchestrate/cancel returns error for nonexistent task",
+        async () => {
+          const { authenticatedFetch, TEST_TEAM } =
+            await import("./test-fixtures/auth-helper");
+
+          const result = await authenticatedFetch<{ error: string }>(
+            `${SERVER_URL}/api/orchestrate/cancel/nonexistent_task_id_12345`,
+            {
+              method: "POST",
+              body: { teamSlugOrId: TEST_TEAM },
+            },
+          );
+
+          // Should fail because task doesn't exist
+          expect(result.ok).toBe(false);
+          expect([401, 500]).toContain(result.status);
+        },
+      );
+
+      itWhenServer.skipIf(!hasCredentials)(
+        "POST /api/orchestrate/migrate rejects empty plan tasks",
+        async () => {
+          const { authenticatedFetch, TEST_TEAM } =
+            await import("./test-fixtures/auth-helper");
+
+          // Valid plan with headAgent but no tasks
+          const validPlan = {
+            headAgent: "claude/haiku-4.5",
+            orchestrationId: "test_orch_123",
+            description: "Test migration",
+            tasks: [],
+          };
+
+          const result = await authenticatedFetch<{
+            orchestrationTaskId: string;
+            status: string;
+          }>(`${SERVER_URL}/api/orchestrate/migrate`, {
             method: "POST",
             body: {
               teamSlugOrId: TEST_TEAM,
-              agent: "invalid/nonexistent-agent",
-              prompt: "Test prompt",
+              planJson: JSON.stringify(validPlan),
             },
+          });
+
+          // Either succeeds (creates head agent task) or fails on team validation
+          // Both are valid outcomes for this test
+          if (result.ok) {
+            expect(result.data?.orchestrationTaskId).toBeDefined();
+            // Status could be "running" or "failed" depending on spawn success
+            expect(["running", "failed"]).toContain(result.data?.status);
+          } else {
+            // Team not found or other auth issue
+            expect([401, 500]).toContain(result.status);
           }
-        );
-
-        // Should fail because agent doesn't exist
-        expect(result.ok).toBe(false);
-        expect(result.status).toBe(500);
-        expect(result.error).toContain("Agent not found");
-      });
-
-      itWhenServer.skipIf(!hasCredentials)("GET /api/orchestrate/status returns 500 for nonexistent task", async () => {
-        const { authenticatedFetch, TEST_TEAM, buildUrl } = await import(
-          "./test-fixtures/auth-helper"
-        );
-
-        const url = buildUrl(
-          SERVER_URL,
-          "/api/orchestrate/status/nonexistent_task_id_12345",
-          { teamSlugOrId: TEST_TEAM }
-        );
-
-        const result = await authenticatedFetch<{ error: string }>(url);
-
-        // Should fail because task doesn't exist
-        expect(result.ok).toBe(false);
-        // Can be 500 (not found error) or 401 (team membership check failed)
-        expect([401, 500]).toContain(result.status);
-      });
-
-      itWhenServer.skipIf(!hasCredentials)("POST /api/orchestrate/cancel returns error for nonexistent task", async () => {
-        const { authenticatedFetch, TEST_TEAM } = await import(
-          "./test-fixtures/auth-helper"
-        );
-
-        const result = await authenticatedFetch<{ error: string }>(
-          `${SERVER_URL}/api/orchestrate/cancel/nonexistent_task_id_12345`,
-          {
-            method: "POST",
-            body: { teamSlugOrId: TEST_TEAM },
-          }
-        );
-
-        // Should fail because task doesn't exist
-        expect(result.ok).toBe(false);
-        expect([401, 500]).toContain(result.status);
-      });
-
-      itWhenServer.skipIf(!hasCredentials)("POST /api/orchestrate/migrate rejects empty plan tasks", async () => {
-        const { authenticatedFetch, TEST_TEAM } = await import(
-          "./test-fixtures/auth-helper"
-        );
-
-        // Valid plan with headAgent but no tasks
-        const validPlan = {
-          headAgent: "claude/haiku-4.5",
-          orchestrationId: "test_orch_123",
-          description: "Test migration",
-          tasks: [],
-        };
-
-        const result = await authenticatedFetch<{
-          orchestrationTaskId: string;
-          status: string;
-        }>(`${SERVER_URL}/api/orchestrate/migrate`, {
-          method: "POST",
-          body: {
-            teamSlugOrId: TEST_TEAM,
-            planJson: JSON.stringify(validPlan),
-          },
-        });
-
-        // Either succeeds (creates head agent task) or fails on team validation
-        // Both are valid outcomes for this test
-        if (result.ok) {
-          expect(result.data?.orchestrationTaskId).toBeDefined();
-          // Status could be "running" or "failed" depending on spawn success
-          expect(["running", "failed"]).toContain(result.data?.status);
-        } else {
-          // Team not found or other auth issue
-          expect([401, 500]).toContain(result.status);
-        }
-      });
+        },
+      );
     });
   });
 });

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -170,7 +171,7 @@ func TestLocalStateJSONSerialization(t *testing.T) {
 
 func TestExportLocalStateStatusMapping(t *testing.T) {
 	tests := []struct {
-		status          string
+		status            string
 		expectedCompleted int
 		expectedFailed    int
 		expectedRunning   int
@@ -242,6 +243,79 @@ func TestFormatDuration(t *testing.T) {
 				t.Errorf("formatDuration(%d) = %q, want %q", tt.ms, result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestRunLocalDryRunDoesNotCreateArtifacts(t *testing.T) {
+	workspaceDir := t.TempDir()
+	runDir := t.TempDir()
+
+	prevLocalAgent := localAgent
+	prevLocalWorkspace := localWorkspace
+	prevLocalTimeout := localTimeout
+	prevLocalExport := localExport
+	prevLocalTUI := localTUI
+	prevLocalDryRun := localDryRun
+	prevLocalModel := localModel
+	prevLocalVariant := localVariant
+	prevLocalEffort := localEffort
+	prevLocalPersist := localPersist
+	prevLocalRunDir := localRunDir
+	prevLocalIncludeLogs := localIncludeLogs
+	prevLocalSelftest := localSelftest
+	prevFlagJSON := flagJSON
+	prevFlagVerbose := flagVerbose
+
+	t.Cleanup(func() {
+		localAgent = prevLocalAgent
+		localWorkspace = prevLocalWorkspace
+		localTimeout = prevLocalTimeout
+		localExport = prevLocalExport
+		localTUI = prevLocalTUI
+		localDryRun = prevLocalDryRun
+		localModel = prevLocalModel
+		localVariant = prevLocalVariant
+		localEffort = prevLocalEffort
+		localPersist = prevLocalPersist
+		localRunDir = prevLocalRunDir
+		localIncludeLogs = prevLocalIncludeLogs
+		localSelftest = prevLocalSelftest
+		flagJSON = prevFlagJSON
+		flagVerbose = prevFlagVerbose
+	})
+
+	localAgent = "codex/gpt-5.4"
+	localWorkspace = workspaceDir
+	localTimeout = "30m"
+	localExport = ""
+	localTUI = false
+	localDryRun = true
+	localModel = ""
+	localVariant = "xhigh"
+	localEffort = ""
+	localPersist = true
+	localRunDir = runDir
+	localIncludeLogs = false
+	localSelftest = false
+	flagJSON = false
+	flagVerbose = false
+
+	output := captureStdout(t, func() {
+		if err := orchestrateLocalCmd.RunE(orchestrateLocalCmd, []string{"dry run prompt"}); err != nil {
+			t.Fatalf("RunE returned error: %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "[DRY RUN] Would execute:") {
+		t.Fatalf("expected dry-run output, got %q", output)
+	}
+
+	entries, err := os.ReadDir(runDir)
+	if err != nil {
+		t.Fatalf("failed to read run dir: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected no dry-run artifacts, found %d entries", len(entries))
 	}
 }
 

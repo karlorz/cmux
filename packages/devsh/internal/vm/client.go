@@ -2175,6 +2175,7 @@ func (c *Client) GetTaskRunMemory(ctx context.Context, taskRunID string, memoryT
 type OrchestrationSpawnOptions struct {
 	Prompt              string
 	Agent               string
+	SelectedVariant     string
 	Repo                string
 	Branch              string
 	PRTitle             string
@@ -2243,6 +2244,9 @@ func (c *Client) OrchestrationSpawn(ctx context.Context, opts OrchestrationSpawn
 		"prompt":       opts.Prompt,
 		"agent":        opts.Agent,
 		"isCloudMode":  opts.IsCloudMode,
+	}
+	if opts.SelectedVariant != "" {
+		body["selectedVariant"] = opts.SelectedVariant
 	}
 	if opts.Repo != "" {
 		body["repo"] = opts.Repo

@@ -8,6 +8,29 @@ export const CLAUDE_CATALOG: AgentCatalogEntry[] = [
     requiredApiKeys: ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
     tier: "paid",
     tags: ["latest", "recommended", "reasoning"],
+    variants: [
+      {
+        id: "low",
+        displayName: "Low",
+        description: "Lower thinking effort for faster responses",
+      },
+      {
+        id: "medium",
+        displayName: "Medium",
+        description: "Balanced thinking effort for everyday work",
+      },
+      {
+        id: "high",
+        displayName: "High",
+        description: "Higher thinking effort for complex tasks",
+      },
+      {
+        id: "max",
+        displayName: "Max",
+        description: "Maximum thinking effort supported by Opus 4.6",
+      },
+    ],
+    defaultVariant: "medium",
     contextWindow: 1000000, // 1M context
     maxOutputTokens: 32000,
   },
@@ -18,6 +41,7 @@ export const CLAUDE_CATALOG: AgentCatalogEntry[] = [
     requiredApiKeys: ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
     tier: "paid",
     tags: ["reasoning"],
+    variants: [],
     contextWindow: 200000,
     maxOutputTokens: 16000,
   },
@@ -28,6 +52,7 @@ export const CLAUDE_CATALOG: AgentCatalogEntry[] = [
     requiredApiKeys: ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
     tier: "paid",
     tags: ["reasoning"],
+    variants: [],
     contextWindow: 200000,
     maxOutputTokens: 16000,
   },
@@ -38,6 +63,7 @@ export const CLAUDE_CATALOG: AgentCatalogEntry[] = [
     requiredApiKeys: ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
     tier: "paid",
     tags: ["fast"],
+    variants: [],
     contextWindow: 200000,
     maxOutputTokens: 8000,
   },

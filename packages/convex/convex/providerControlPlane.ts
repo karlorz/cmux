@@ -24,7 +24,7 @@ import { BASE_PROVIDERS } from "@cmux/shared/provider-registry";
 const viewValidator = v.union(
   v.literal("all"),
   v.literal("connected"),
-  v.literal("vendor")
+  v.literal("vendor"),
 );
 
 /**
@@ -34,14 +34,14 @@ const viewValidator = v.union(
 async function buildControlPlaneContext(
   ctx: { db: QueryCtx["db"] },
   teamId: string,
-  userId: string
+  userId: string,
 ): Promise<ControlPlaneContext> {
   // Fetch all required data in parallel
   const [apiKeysRaw, providerOverridesRaw, modelsRaw] = await Promise.all([
     ctx.db
       .query("apiKeys")
       .withIndex("by_team_user", (q) =>
-        q.eq("teamId", teamId).eq("userId", userId)
+        q.eq("teamId", teamId).eq("userId", userId),
       )
       .collect(),
     ctx.db
@@ -83,6 +83,8 @@ async function buildControlPlaneContext(
     tags: m.tags,
     enabled: m.enabled,
     sortOrder: m.sortOrder,
+    variants: m.variants,
+    defaultVariant: m.defaultVariant,
     disabled: m.disabled,
     disabledReason: m.disabledReason,
     discoveredAt: m.discoveredAt,
@@ -154,7 +156,7 @@ export const getDiscoveryFreshnessQuery = authQuery({
     return computeDiscoveryFreshness(
       BASE_PROVIDERS,
       context,
-      args.staleDurationMs
+      args.staleDurationMs,
     );
   },
 });
@@ -184,7 +186,7 @@ export const connect = authMutation({
     const existing = await ctx.db
       .query("apiKeys")
       .withIndex("by_team_user", (q) =>
-        q.eq("teamId", teamId).eq("userId", userId)
+        q.eq("teamId", teamId).eq("userId", userId),
       )
       .filter((q) => q.eq(q.field("envVar"), args.envVar))
       .first();
@@ -229,7 +231,7 @@ export const disconnect = authMutation({
     const existing = await ctx.db
       .query("apiKeys")
       .withIndex("by_team_user", (q) =>
-        q.eq("teamId", teamId).eq("userId", userId)
+        q.eq("teamId", teamId).eq("userId", userId),
       )
       .filter((q) => q.eq(q.field("envVar"), args.envVar))
       .first();
@@ -259,7 +261,7 @@ export const refresh = authMutation({
     // For now, just return success - actual discovery is handled by modelDiscovery.ts
     // This mutation serves as the control plane entry point
     console.log(
-      `[providerControlPlane.refresh] Refresh requested for provider ${args.providerId}, team ${teamId}`
+      `[providerControlPlane.refresh] Refresh requested for provider ${args.providerId}, team ${teamId}`,
     );
 
     return {
@@ -287,7 +289,7 @@ export const getControlPlaneDataInternal = internalQuery({
     const context = await buildControlPlaneContext(
       ctx,
       args.teamId,
-      args.userId
+      args.userId,
     );
     return {
       providers: listProviders(BASE_PROVIDERS, context),
@@ -310,7 +312,7 @@ export const getConnectedProviderIdsInternal = internalQuery({
     const context = await buildControlPlaneContext(
       ctx,
       args.teamId,
-      args.userId
+      args.userId,
     );
     const result = listProviders(BASE_PROVIDERS, context);
 
@@ -333,7 +335,7 @@ export const getProviderDefaultModelInternal = internalQuery({
     const context = await buildControlPlaneContext(
       ctx,
       args.teamId,
-      args.userId
+      args.userId,
     );
     const result = listProviders(BASE_PROVIDERS, context);
     const provider = result.providers.find((p) => p.id === args.providerId);
