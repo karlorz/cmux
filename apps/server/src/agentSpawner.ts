@@ -5,6 +5,7 @@ import {
   type AgentConfig,
   type EnvironmentResult,
 } from "@cmux/shared/agentConfig";
+import { resolveAgentSelection } from "@cmux/shared/agent-selection";
 import { createOpencodeFreeDynamicConfig } from "@cmux/shared/providers/opencode/configs";
 import type { McpServerConfig } from "@cmux/shared";
 import type {
@@ -2220,6 +2221,10 @@ export async function spawnAllAgents(
     prTitle?: string;
     branchNames?: string[]; // Pre-generated branch names (one per agent)
     selectedAgents?: string[];
+    selectedAgentSelections?: Array<{
+      agentName: string;
+      selectedVariant?: string;
+    }>;
     taskRunIds?: Id<"taskRuns">[]; // Pre-created task run IDs (one per agent)
     isCloudMode?: boolean;
     environmentId?: Id<"environments">;
@@ -2236,32 +2241,56 @@ export async function spawnAllAgents(
   },
   teamSlugOrId: string,
 ): Promise<AgentSpawnResult[]> {
-  // If selectedAgents is provided, map each entry to an AgentConfig to preserve duplicates
-  const agentsToSpawn = options.selectedAgents
-    ? options.selectedAgents
-        .map((name) => {
-          // First try static configs
-          const staticConfig = AGENT_CONFIGS.find(
-            (agent) => agent.name === name,
-          );
-          if (staticConfig) return staticConfig;
+  type AgentSpawnRequest = {
+    agent: AgentConfig;
+    selectedVariant?: string;
+  };
 
-          // Try dynamic OpenCode free model config for discovered models
-          const dynamicConfig = createOpencodeFreeDynamicConfig(name);
-          if (dynamicConfig) {
-            serverLogger.info(
-              `[AgentSpawner] Using dynamic config for discovered model: ${name}`,
+  const agentsToSpawn: AgentSpawnRequest[] = options.selectedAgentSelections
+    ?.length
+    ? options.selectedAgentSelections.map((selection) => {
+        const resolved = resolveAgentSelection({
+          agentName: selection.agentName,
+          selectedVariant: selection.selectedVariant,
+        });
+        return {
+          agent: resolved.agentConfig,
+          selectedVariant: resolved.selectedVariant,
+        };
+      })
+    : options.selectedAgents
+        ? options.selectedAgents.flatMap((name) => {
+            const staticConfig = AGENT_CONFIGS.find(
+              (agent) => agent.name === name,
             );
-            return dynamicConfig;
-          }
+            if (staticConfig) {
+              return [
+                {
+                  agent: staticConfig,
+                },
+              ];
+            }
 
-          serverLogger.warn(
-            `[AgentSpawner] No config found for agent: ${name}`,
-          );
-          return null;
-        })
-        .filter((a): a is AgentConfig => Boolean(a))
-    : AGENT_CONFIGS;
+            const dynamicConfig = createOpencodeFreeDynamicConfig(name);
+            if (dynamicConfig) {
+              serverLogger.info(
+                `[AgentSpawner] Using dynamic config for discovered model: ${name}`,
+              );
+              return [
+                {
+                  agent: dynamicConfig,
+                },
+              ];
+            }
+
+            serverLogger.warn(
+              `[AgentSpawner] No config found for agent: ${name}`,
+            );
+            return [];
+          })
+        : AGENT_CONFIGS.map((agent) => ({
+            agent,
+          }));
 
   // Validate taskRunIds count matches agents count if provided
   if (
@@ -2303,7 +2332,7 @@ export async function spawnAllAgents(
 
   // Spawn all agents in parallel with their pre-generated branch names
   const results = await Promise.all(
-    agentsToSpawn.map((agent, index) =>
+    agentsToSpawn.map(({ agent, selectedVariant }, index) =>
       spawnAgent(
         agent,
         taskId,
@@ -2311,6 +2340,7 @@ export async function spawnAllAgents(
           ...options,
           newBranch: branchNames[index],
           taskRunId: options.taskRunIds?.[index],
+          selectedVariant,
         },
         teamSlugOrId,
       ),

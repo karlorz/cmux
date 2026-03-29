@@ -55,6 +55,10 @@ interface StartTaskRequest {
   branchNames?: string[];
   taskRunIds?: string[];
   selectedAgents?: string[];
+  selectedAgentSelections?: Array<{
+    agentName: string;
+    selectedVariant?: string;
+  }>;
   isCloudMode?: boolean;
   environmentId?: string;
   theme?: "dark" | "light" | "system";
@@ -250,6 +254,7 @@ async function handleStartTask(
     branchNames: branchNamesOverride,
     taskRunIds,
     selectedAgents,
+    selectedAgentSelections,
     isCloudMode = true, // Default to cloud mode for CLI
     environmentId,
     theme,
@@ -283,15 +288,22 @@ async function handleStartTask(
     taskId,
     projectFullName,
     selectedAgents,
+    selectedAgentSelections,
     isCloudMode,
   });
 
   try {
+    const requestedAgentSelections =
+      selectedAgentSelections && selectedAgentSelections.length > 0
+        ? selectedAgentSelections
+        : selectedAgents && selectedAgents.length > 0
+          ? selectedAgents.map((agentName) => ({ agentName }))
+          : [{ agentName: "claude/opus-4.5" }];
+
     // Validate branchNames override early so we can return 400 (not 500)
-    const agentsToSpawnPreview =
-      selectedAgents && selectedAgents.length > 0
-        ? selectedAgents
-        : ["claude/opus-4.5"];
+    const agentsToSpawnPreview = requestedAgentSelections.map(
+      (selection) => selection.agentName,
+    );
     // Validate whenever branchNames is present (not just when length > 0)
     // to reject non-array truthy values like `123` or `true`
     if (branchNamesOverride !== undefined && branchNamesOverride !== null) {
@@ -329,10 +341,9 @@ async function handleStartTask(
     }
 
     // Determine which agents to spawn (pure computation from request body)
-    const agentsToSpawn =
-      selectedAgents && selectedAgents.length > 0
-        ? selectedAgents
-        : ["claude/opus-4.5"];
+    const agentsToSpawn = requestedAgentSelections.map(
+      (selection) => selection.agentName,
+    );
 
     // Build 202 response immediately - no auth or DB calls needed
     const responseResults = agentsToSpawn.map((agentName, i) => ({
@@ -479,6 +490,7 @@ async function handleStartTask(
           prTitle,
           branchNames,
           selectedAgents: agentsToSpawn,
+          selectedAgentSelections: requestedAgentSelections,
           taskRunIds: taskRunIds as Id<"taskRuns">[] | undefined,
           isCloudMode,
           environmentId: environmentId as Id<"environments"> | undefined,

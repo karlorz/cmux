@@ -25,6 +25,7 @@ import { getVendorDisplayName, sortModelsByVendor } from "@/lib/model-vendor-uti
 import { WWW_ORIGIN } from "@/lib/wwwOrigin";
 import { api } from "@cmux/convex/api";
 import type { ProviderStatusResponse } from "@cmux/shared";
+import type { SelectedAgentSelection } from "@cmux/shared/agent-selection-core";
 import { type AgentVendor } from "@cmux/shared/agent-catalog";
 import { parseGithubRepoUrl } from "@cmux/shared";
 import { useUser } from "@stackframe/react";
@@ -62,8 +63,8 @@ interface DashboardInputControlsProps {
   onBranchLoadMore?: () => void;
   canLoadMoreBranches?: boolean;
   isLoadingMoreBranches?: boolean;
-  selectedAgents: string[];
-  onAgentChange: (agents: string[]) => void;
+  selectedAgentSelections: SelectedAgentSelection[];
+  onAgentSelectionsChange: (selections: SelectedAgentSelection[]) => void;
   isCloudMode: boolean;
   onCloudModeToggle: () => void;
   isLoadingProjects: boolean;
@@ -95,6 +96,12 @@ interface ConvexModelEntry {
   sortOrder: number;
   contextWindow?: number;
   maxOutputTokens?: number;
+  variants?: Array<{
+    id: string;
+    displayName: string;
+    description?: string;
+  }>;
+  defaultVariant?: string;
 }
 
 type AgentOption = SelectOptionObject & {
@@ -107,7 +114,7 @@ type AgentOption = SelectOptionObject & {
 };
 
 type AgentSelectionInstance = {
-  agent: string;
+  selection: SelectedAgentSelection;
   id: string;
 };
 
@@ -128,6 +135,43 @@ function formatTokenCount(tokens: number | undefined): string | undefined {
   if (tokens >= 1000000) return `${(tokens / 1000000).toFixed(tokens % 1000000 === 0 ? 0 : 1)}M`;
   if (tokens >= 1000) return `${(tokens / 1000).toFixed(0)}K`;
   return `${tokens}`;
+}
+
+function normalizeSelectionForModel(
+  selection: SelectedAgentSelection,
+  model: ConvexModelEntry | undefined,
+): SelectedAgentSelection {
+  const variants = model?.variants ?? [];
+  if (variants.length <= 1) {
+    return { agentName: selection.agentName };
+  }
+
+  const selectedVariant =
+    selection.selectedVariant &&
+    variants.some((variant) => variant.id === selection.selectedVariant)
+      ? selection.selectedVariant
+      : model?.defaultVariant ?? variants[0]?.id;
+
+  return {
+    agentName: selection.agentName,
+    ...(selectedVariant ? { selectedVariant } : {}),
+  };
+}
+
+function getSelectionKey(selection: SelectedAgentSelection): string {
+  return `${selection.agentName}::${selection.selectedVariant ?? ""}`;
+}
+
+function getVariantDisplayLabel(
+  model: ConvexModelEntry | undefined,
+  selectedVariant: string | undefined,
+): string | undefined {
+  if (!model || !selectedVariant) {
+    return undefined;
+  }
+
+  return model.variants?.find((variant) => variant.id === selectedVariant)
+    ?.displayName;
 }
 
 function watchPopupClosed(win: Window | null, onClose: () => void): void {
@@ -205,8 +249,8 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   onBranchLoadMore,
   canLoadMoreBranches = false,
   isLoadingMoreBranches = false,
-  selectedAgents,
-  onAgentChange,
+  selectedAgentSelections,
+  onAgentSelectionsChange,
   isCloudMode,
   onCloudModeToggle,
   isLoadingProjects,
@@ -237,6 +281,10 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     () => buildAggregatedVendorStatuses(providerStatus),
     [providerStatus]
   );
+  const selectedAgents = useMemo(
+    () => selectedAgentSelections.map((selection) => selection.agentName),
+    [selectedAgentSelections],
+  );
   const hasProviderStatus = Boolean(providerStatus?.success);
   const providerHealthSummary = useMemo(() => {
     if (!providerStatus?.success) {
@@ -266,6 +314,11 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       dockerImageName: dockerStatus?.workerImage?.name,
     };
   }, [providerStatus, vendorStatuses]);
+  const convexModelMap = useMemo(
+    () =>
+      new Map((convexModels ?? []).map((model) => [model.name, model])),
+    [convexModels],
+  );
   const agentOptions = useMemo<AgentOption[]>(() => {
     const baseModels: Array<{
       name: string;
@@ -378,20 +431,22 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     const remaining = [...previous];
     const next: AgentSelectionInstance[] = [];
 
-    for (const agent of selectedAgents) {
+    for (const selection of selectedAgentSelections) {
       const matchIndex = remaining.findIndex(
-        (instance) => instance.agent === agent,
+        (instance) =>
+          instance.selection.agentName === selection.agentName &&
+          instance.selection.selectedVariant === selection.selectedVariant,
       );
       if (matchIndex !== -1) {
         next.push(remaining.splice(matchIndex, 1)[0]);
       } else {
-        next.push({ agent, id: generateInstanceId() });
+        next.push({ selection, id: generateInstanceId() });
       }
     }
 
     agentInstancesRef.current = next;
     return next;
-  }, [selectedAgents]);
+  }, [selectedAgentSelections]);
 
   const instanceIndexMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -410,17 +465,26 @@ export const DashboardInputControls = memo(function DashboardInputControls({
 
     const grouped = new Map<
       string,
-      { option: AgentOption; instances: AgentSelectionInstance[] }
+      {
+        option: AgentOption;
+        selection: SelectedAgentSelection;
+        instances: AgentSelectionInstance[];
+      }
     >();
 
     for (const instance of agentInstances) {
-      const option = agentOptionsByValue.get(instance.agent);
+      const option = agentOptionsByValue.get(instance.selection.agentName);
       if (!option) continue;
-      const existing = grouped.get(option.value);
+      const key = getSelectionKey(instance.selection);
+      const existing = grouped.get(key);
       if (existing) {
         existing.instances.push(instance);
       } else {
-        grouped.set(option.value, { option, instances: [instance] });
+        grouped.set(key, {
+          option,
+          selection: instance.selection,
+          instances: [instance],
+        });
       }
     }
 
@@ -434,6 +498,10 @@ export const DashboardInputControls = memo(function DashboardInputControls({
         b.option.displayLabel,
       );
       if (labelComparison !== 0) return labelComparison;
+      const variantComparison = (a.selection.selectedVariant ?? "").localeCompare(
+        b.selection.selectedVariant ?? "",
+      );
+      if (variantComparison !== 0) return variantComparison;
       const idA = a.instances[0]?.id ?? "";
       const idB = b.instances[0]?.id ?? "";
       return idA.localeCompare(idB);
@@ -517,15 +585,66 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       if (instanceIndex === undefined) {
         return;
       }
-      const next = selectedAgents.filter((_, index) => index !== instanceIndex);
-      onAgentChange(next);
+      const next = selectedAgentSelections.filter(
+        (_, index) => index !== instanceIndex,
+      );
+      onAgentSelectionsChange(next);
     },
-    [instanceIndexMap, onAgentChange, selectedAgents],
+    [
+      instanceIndexMap,
+      onAgentSelectionsChange,
+      selectedAgentSelections,
+    ],
   );
 
   const handleFocusAgentOption = useCallback((agent: string) => {
     agentSelectRef.current?.open({ focusValue: agent });
   }, []);
+
+  const handleAgentChange = useCallback(
+    (nextAgents: string[]) => {
+      const remaining = [...selectedAgentSelections];
+      const nextSelections: SelectedAgentSelection[] = [];
+
+      for (const agentName of nextAgents) {
+        const matchIndex = remaining.findIndex(
+          (selection) => selection.agentName === agentName,
+        );
+        const selection =
+          matchIndex !== -1
+            ? remaining.splice(matchIndex, 1)[0]
+            : { agentName };
+        nextSelections.push(
+          normalizeSelectionForModel(
+            selection,
+            convexModelMap.get(agentName),
+          ),
+        );
+      }
+
+      onAgentSelectionsChange(nextSelections);
+    },
+    [convexModelMap, onAgentSelectionsChange, selectedAgentSelections],
+  );
+
+  const handleVariantChange = useCallback(
+    (instanceIds: string[], selectedVariant: string) => {
+      const targetIds = new Set(instanceIds);
+      const nextSelections = agentInstances.map((instance) =>
+        targetIds.has(instance.id)
+          ? normalizeSelectionForModel(
+              {
+                ...instance.selection,
+                selectedVariant,
+              },
+              convexModelMap.get(instance.selection.agentName),
+            )
+          : instance.selection,
+      );
+      onAgentSelectionsChange(nextSelections);
+    },
+    [agentInstances, convexModelMap, onAgentSelectionsChange],
+  );
 
   const handleCustomRepoSubmit = useCallback(async () => {
     const trimmedUrl = customRepoUrl.trim();
@@ -653,8 +772,16 @@ export const DashboardInputControls = memo(function DashboardInputControls({
           className="max-h-32 overflow-y-auto py-2 px-2"
         >
           <div className="flex flex-wrap gap-1">
-            {aggregatedAgentSelections.map(({ option, instances }) => {
-              const label = option.displayLabel;
+            {aggregatedAgentSelections.map(({ option, selection, instances }) => {
+              const label = getVariantDisplayLabel(
+                convexModelMap.get(selection.agentName),
+                selection.selectedVariant,
+              )
+                ? `${option.displayLabel} · ${getVariantDisplayLabel(
+                    convexModelMap.get(selection.agentName),
+                    selection.selectedVariant,
+                  )}`
+                : option.displayLabel;
               const representativeInstance = instances[0];
               if (!representativeInstance) {
                 return null;
@@ -662,17 +789,21 @@ export const DashboardInputControls = memo(function DashboardInputControls({
               const count = instances.length;
               return (
                 <div
-                  key={option.value}
+                  key={getSelectionKey(selection)}
                   className="inline-flex cursor-default items-center rounded-full bg-neutral-200/70 dark:bg-neutral-800/80 pl-1.5 pr-2 py-1 text-[11px] text-neutral-700 dark:text-neutral-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400/60 hover:bg-neutral-200 dark:hover:bg-neutral-700/80"
                   role="button"
                   tabIndex={0}
                   onClick={() =>
-                    handleFocusAgentOption(representativeInstance.agent)
+                    handleFocusAgentOption(
+                      representativeInstance.selection.agentName,
+                    )
                   }
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
-                      handleFocusAgentOption(representativeInstance.agent);
+                      handleFocusAgentOption(
+                        representativeInstance.selection.agentName,
+                      );
                     }
                   }}
                   aria-label={`Focus selection for ${label}`}
@@ -715,6 +846,50 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       No agents selected yet.
     </div>
   );
+
+  const visibleVariantControls = aggregatedAgentSelections
+    .filter(({ selection }) => {
+      const variants = convexModelMap.get(selection.agentName)?.variants ?? [];
+      return variants.length > 1;
+    })
+    .map(({ option, selection, instances }) => {
+      const model = convexModelMap.get(selection.agentName);
+      const normalizedSelection = normalizeSelectionForModel(selection, model);
+      const currentVariant = normalizedSelection.selectedVariant ?? "";
+      const instanceIds = instances.map((instance) => instance.id);
+
+      return (
+        <div
+          key={getSelectionKey(selection)}
+          className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900/70"
+        >
+          <div className="min-w-0">
+            <p className="truncate text-[11px] font-medium text-neutral-900 dark:text-neutral-100">
+              {option.displayLabel}
+              {instances.length > 1 ? ` x${instances.length}` : ""}
+            </p>
+            <p className="text-[10px] text-neutral-500 dark:text-neutral-400">
+              Effort
+            </p>
+          </div>
+          <select
+            value={currentVariant}
+            onChange={(event) =>
+              handleVariantChange(instanceIds, event.target.value)
+            }
+            className="min-w-[150px] rounded-lg border border-neutral-200 bg-white px-2 py-1 text-[12px] font-medium text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 dark:focus:ring-neutral-700"
+            aria-label={`Select effort for ${option.displayLabel}`}
+          >
+            {model?.variants?.map((variant) => (
+              <option key={variant.id} value={variant.id}>
+                {variant.displayName}
+                {variant.id === model.defaultVariant ? " (Default)" : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+      );
+    });
 
   // Function to open GitHub App installation popup (without OAuth check)
   const openGitHubAppInstallPopup = useCallback(async () => {
@@ -772,8 +947,9 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   }, [openGitHubAppInstallPopup, teamSlugOrId]);
 
   return (
-    <div className="flex items-end gap-1 grow">
-      <div className="flex items-end gap-1">
+    <div className="flex flex-col gap-1 grow">
+      <div className="flex items-end gap-1 grow">
+        <div className="flex items-end gap-1">
         <div data-onboarding="repo-picker">
           <SearchableSelect
             options={projectOptions}
@@ -965,7 +1141,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
             ref={agentSelectRef}
             options={agentOptions}
             value={selectedAgents}
-            onChange={onAgentChange}
+            onChange={handleAgentChange}
             placeholder="Select agents"
             singleSelect={false}
             maxTagCount={1}
@@ -981,9 +1157,9 @@ export const DashboardInputControls = memo(function DashboardInputControls({
             maxCountPerValue={MAX_AGENT_COMMAND_COUNT}
           />
         </div>
-      </div>
+        </div>
 
-      <div className="flex items-center justify-end gap-2.5 ml-auto mr-0 pr-1">
+        <div className="flex items-center justify-end gap-2.5 ml-auto mr-0 pr-1">
         {/* Cloud/Local Mode Toggle - hidden in web mode (always cloud) */}
         {!env.NEXT_PUBLIC_WEB_MODE && (
           <div data-onboarding="cloud-toggle">
@@ -1053,6 +1229,16 @@ export const DashboardInputControls = memo(function DashboardInputControls({
           <Mic className="w-4 h-4" />
         </button>
       </div>
+      </div>
+
+      {visibleVariantControls.length > 0 ? (
+        <div
+          className="flex flex-wrap gap-2"
+          data-onboarding="effort-picker"
+        >
+          {visibleVariantControls}
+        </div>
+      ) : null}
     </div>
   );
 });

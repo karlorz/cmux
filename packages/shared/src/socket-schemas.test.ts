@@ -131,6 +131,15 @@ describe("socket-schemas", () => {
         taskDescription: "Implement feature",
         projectFullName: "org/repo",
         taskId: "k573abc123def456ghi789jkl",
+        selectedAgentSelections: [
+          {
+            agentName: "claude/opus-4.5",
+            selectedVariant: "medium",
+          },
+          {
+            agentName: "codex/gpt-5.1-codex-mini",
+          },
+        ],
         selectedAgents: ["claude/opus-4.5", "codex/gpt-5.1-codex-mini"],
         isCloudMode: true,
         images: [
@@ -151,6 +160,9 @@ describe("socket-schemas", () => {
         expect(result.data.ralphMode?.enabled).toBe(true);
         expect(result.data.ralphMode?.maxIterations).toBe(100);
         expect(result.data.ralphMode?.completionTag).toBe("DONE");
+        expect(result.data.selectedAgentSelections?.[0]?.selectedVariant).toBe(
+          "medium",
+        );
       }
     });
 
