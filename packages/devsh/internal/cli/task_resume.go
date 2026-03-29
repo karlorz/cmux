@@ -72,6 +72,7 @@ Examples:
 
 func printTaskResumeSummary(runControl *vm.RunControlSummary, taskRun *vm.TaskRun) {
 	fmt.Printf("Task Run: %s\n", runControl.TaskRunID)
+	fmt.Printf("  Task: %s\n", runControl.TaskID)
 	if runControl.AgentName != nil && *runControl.AgentName != "" {
 		fmt.Printf("  Agent: %s\n", *runControl.AgentName)
 	} else {
@@ -94,9 +95,12 @@ func printTaskResumeSummary(runControl *vm.RunControlSummary, taskRun *vm.TaskRu
 	if len(runControl.Actions.AvailableActions) == 0 {
 		fmt.Println("Available actions: none")
 	} else {
-		fmt.Printf("Available actions: %s\n", formatStringList(runControl.Actions.AvailableActions))
+		fmt.Printf("Available actions: %s\n", formatRunControlActionList(runControl.Actions.AvailableActions))
 	}
 	fmt.Printf("Continuation mode: %s\n", runControl.Continuation.Mode)
+	if primaryLane := primaryRunControlLane(runControl); primaryLane != "" {
+		fmt.Printf("Primary lane: %s\n", primaryLane)
+	}
 	if runControl.Approvals.PendingCount > 0 {
 		fmt.Printf("Pending approvals: %d\n", runControl.Approvals.PendingCount)
 	}
@@ -109,12 +113,13 @@ func printTaskResumeSummary(runControl *vm.RunControlSummary, taskRun *vm.TaskRu
 	fmt.Println("----------")
 
 	if runControl.Actions.CanResolveApproval {
-		fmt.Println("Resolve the pending approval before any continuation lane can proceed.")
+		fmt.Println("Resolve approval before any continuation lane can proceed.")
 		return
 	}
 
 	if runControl.Actions.CanResumeCheckpoint && runControl.Continuation.CheckpointRef != nil {
-		fmt.Printf("Checkpoint restore is available for %s\n", *runControl.Continuation.CheckpointRef)
+		fmt.Println("Resume checkpoint is available.")
+		fmt.Printf("  Checkpoint ref: %s\n", *runControl.Continuation.CheckpointRef)
 		return
 	}
 
@@ -122,7 +127,7 @@ func printTaskResumeSummary(runControl *vm.RunControlSummary, taskRun *vm.TaskRu
 		if runControl.Continuation.ProviderThreadID != nil && *runControl.Continuation.ProviderThreadID != "" {
 			threadID := *runControl.Continuation.ProviderThreadID
 
-			fmt.Println("Provider session continuation is available.")
+			fmt.Println("Continue session is available.")
 			fmt.Printf("  Thread ID: %s\n", threadID)
 			fmt.Println()
 			fmt.Println("Option 1: Attach to the running sandbox terminal")
@@ -146,7 +151,7 @@ func printTaskResumeSummary(runControl *vm.RunControlSummary, taskRun *vm.TaskRu
 		}
 
 		if runControl.Continuation.ProviderSessionID != nil && *runControl.Continuation.ProviderSessionID != "" {
-			fmt.Println("Provider session continuation is available.")
+			fmt.Println("Continue session is available.")
 			fmt.Printf("  Session ID: %s\n", *runControl.Continuation.ProviderSessionID)
 			fmt.Println()
 			fmt.Println("Attach to the sandbox terminal and continue the same provider session.")
@@ -156,8 +161,8 @@ func printTaskResumeSummary(runControl *vm.RunControlSummary, taskRun *vm.TaskRu
 	}
 
 	if runControl.Actions.CanAppendInstruction {
-		fmt.Println("No active provider-session continuation is available.")
-		fmt.Println("Use an append-style follow-up or attach to inspect the sandbox manually.")
+		fmt.Println("Append instruction is the available fallback lane.")
+		fmt.Println("No live provider session or checkpoint restore is currently advertised.")
 		if taskRun.Status == "running" {
 			fmt.Printf("  devsh task attach %s\n", taskRun.ID)
 		}
@@ -169,6 +174,45 @@ func printTaskResumeSummary(runControl *vm.RunControlSummary, taskRun *vm.TaskRu
 
 func formatStringList(items []string) string {
 	return strings.Join(items, ", ")
+}
+
+func formatRunControlActionList(actions []string) string {
+	labels := make([]string, 0, len(actions))
+	for _, action := range actions {
+		labels = append(labels, formatRunControlActionLabel(action))
+	}
+	return strings.Join(labels, ", ")
+}
+
+func formatRunControlActionLabel(action string) string {
+	labels := map[string]string{
+		"resolve_approval":   "Resolve approval",
+		"continue_session":   "Continue session",
+		"resume_checkpoint":  "Resume checkpoint",
+		"append_instruction": "Append instruction",
+	}
+
+	if label, ok := labels[action]; ok {
+		return label
+	}
+
+	return strings.ReplaceAll(action, "_", " ")
+}
+
+func primaryRunControlLane(runControl *vm.RunControlSummary) string {
+	if runControl.Actions.CanResolveApproval {
+		return "Resolve approval"
+	}
+	switch runControl.Continuation.Mode {
+	case "session_continuation":
+		return "Continue session"
+	case "checkpoint_restore":
+		return "Resume checkpoint"
+	case "append_instruction":
+		return "Append instruction"
+	default:
+		return ""
+	}
 }
 
 func init() {

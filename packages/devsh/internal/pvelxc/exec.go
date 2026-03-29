@@ -27,6 +27,12 @@ type execEvent struct {
 	Message string `json:"message,omitempty"`
 }
 
+const (
+	execReadyProbeCommand = "echo ready"
+	execReadyProbeTimeout = 2 * time.Second
+	execReadyPollInterval = 1 * time.Second
+)
+
 func buildExecURL(host string) (string, error) {
 	if strings.HasPrefix(host, "http://") || strings.HasPrefix(host, "https://") {
 		u, err := url.Parse(host)
@@ -139,11 +145,7 @@ func (c *Client) tryHTTPExec(ctx context.Context, host string, command string, t
 	}, nil
 }
 
-func (c *Client) ExecCommand(ctx context.Context, instanceID string, command string) (string, string, int, error) {
-	if strings.TrimSpace(command) == "" {
-		return "", "", -1, errors.New("command is required")
-	}
-
+func (c *Client) resolveExecCandidates(ctx context.Context, instanceID string) (int, []string, error) {
 	vmid, ok := ParseVMID(instanceID)
 	hostname := normalizeHostID(instanceID)
 	if ok {
@@ -157,7 +159,7 @@ func (c *Client) ExecCommand(ctx context.Context, instanceID string, command str
 	} else {
 		resolved, err := c.findVMIDByHostname(ctx, instanceID)
 		if err != nil {
-			return "", "", -1, err
+			return 0, nil, err
 		}
 		vmid = resolved
 	}
@@ -176,7 +178,103 @@ func (c *Client) ExecCommand(ctx context.Context, instanceID string, command str
 	}
 
 	if len(candidates) == 0 {
-		return "", "", -1, fmt.Errorf("cannot execute command in container %d: no reachable exec host candidates", vmid)
+		return 0, nil, fmt.Errorf("cannot execute command in container %d: no reachable exec host candidates", vmid)
+	}
+
+	return vmid, candidates, nil
+}
+
+func execReadyProbeError(instanceID string, waitErr error, lastErr error) error {
+	if errors.Is(waitErr, context.Canceled) {
+		return waitErr
+	}
+	if lastErr != nil {
+		return fmt.Errorf("exec endpoint did not become ready for %s: %w; last probe: %v", instanceID, waitErr, lastErr)
+	}
+	return fmt.Errorf("exec endpoint did not become ready for %s: %w", instanceID, waitErr)
+}
+
+func (c *Client) WaitForExecReady(ctx context.Context, instanceID string, timeout time.Duration) error {
+	if strings.TrimSpace(instanceID) == "" {
+		return errors.New("instanceID is required")
+	}
+
+	waitCtx := ctx
+	cancel := func() {}
+	if timeout > 0 {
+		waitCtx, cancel = context.WithTimeout(ctx, timeout)
+	}
+	defer cancel()
+
+	_, candidates, err := c.resolveExecCandidates(waitCtx, instanceID)
+	if err != nil {
+		return err
+	}
+
+	var lastErr error
+	for {
+		if err := waitCtx.Err(); err != nil {
+			return execReadyProbeError(instanceID, err, lastErr)
+		}
+
+		probeTimeout := execReadyProbeTimeout
+		if deadline, ok := waitCtx.Deadline(); ok {
+			remaining := time.Until(deadline)
+			if remaining <= 0 {
+				return execReadyProbeError(instanceID, context.DeadlineExceeded, lastErr)
+			}
+			if remaining < probeTimeout {
+				probeTimeout = remaining
+			}
+		}
+
+		for _, host := range candidates {
+			probeCtx, cancelProbe := context.WithTimeout(waitCtx, probeTimeout)
+			result, probeErr := c.tryHTTPExec(probeCtx, host, execReadyProbeCommand, probeTimeout)
+			cancelProbe()
+
+			if probeErr != nil {
+				if waitCtx.Err() != nil {
+					return execReadyProbeError(instanceID, waitCtx.Err(), lastErr)
+				}
+				lastErr = fmt.Errorf("probe via %s failed: %w", host, probeErr)
+				continue
+			}
+
+			if result == nil {
+				lastErr = fmt.Errorf("probe via %s returned no result", host)
+				continue
+			}
+
+			if result.ExitCode == 0 && strings.Contains(result.Stdout, "ready") {
+				return nil
+			}
+
+			lastErr = fmt.Errorf(
+				"probe via %s returned exit=%d stdout=%q stderr=%q",
+				host,
+				result.ExitCode,
+				result.Stdout,
+				result.Stderr,
+			)
+		}
+
+		select {
+		case <-waitCtx.Done():
+			return execReadyProbeError(instanceID, waitCtx.Err(), lastErr)
+		case <-time.After(execReadyPollInterval):
+		}
+	}
+}
+
+func (c *Client) ExecCommand(ctx context.Context, instanceID string, command string) (string, string, int, error) {
+	if strings.TrimSpace(command) == "" {
+		return "", "", -1, errors.New("command is required")
+	}
+
+	vmid, candidates, err := c.resolveExecCandidates(ctx, instanceID)
+	if err != nil {
+		return "", "", -1, err
 	}
 
 	maxRetries := 5

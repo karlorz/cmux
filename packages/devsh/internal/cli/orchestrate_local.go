@@ -82,6 +82,7 @@ Persistent Run Directory (default):
   - state.json    Final state with result/error
   - events.jsonl  Event timeline (appended during run)
   - bundle.json   Export bundle compatible with 'devsh orchestrate view'
+  - session.json  Local continuation metadata for continue-session or append-instruction follow-up
 
   This enables disk-first observability: even if the process crashes, you have
   partial state and events up to that point. Use --persist=false to disable.
