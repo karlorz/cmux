@@ -106,6 +106,8 @@ export interface SearchableSelectProps {
   onSearchChange?: (search: string) => void;
   // Whether search results are being fetched (shows loading indicator in input)
   searchLoading?: boolean;
+  // Optional element rendered on the right side of the search row
+  searchRightElement?: ReactNode;
   // Disable client-side filtering (use when server handles filtering)
   disableClientFilter?: boolean;
   // Callback when the list is near the end to load more options
@@ -321,6 +323,7 @@ const SearchableSelect = forwardRef<
     onOpenChange,
     onSearchChange,
     searchLoading = false,
+    searchRightElement,
     disableClientFilter = false,
     onLoadMore,
     canLoadMore = false,
@@ -791,8 +794,13 @@ const SearchableSelect = forwardRef<
                 }}
                 className={clsx("text-[13.5px] py-2", classNames.commandInput)}
                 rightElement={
-                  searchLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-neutral-400 ml-2" />
+                  searchLoading || searchRightElement ? (
+                    <div className="ml-2 flex items-center gap-1.5">
+                      {searchLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />
+                      ) : null}
+                      {searchRightElement}
+                    </div>
                   ) : null
                 }
               />

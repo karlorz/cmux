@@ -43,12 +43,17 @@ vi.mock("@/components/ui/searchable-select", async () => {
       singleSelect?: boolean;
       triggerAriaLabel?: string;
       value?: string[];
+      searchRightElement?: React.ReactNode;
       onChange: (value: string[]) => void;
     },
-    ref: React.ForwardedRef<{ open: (options?: { focusValue?: string }) => void }>,
+    ref: React.ForwardedRef<{
+      open: (options?: { focusValue?: string }) => void;
+      close: () => void;
+    }>,
   ) {
     React.useImperativeHandle(ref, () => ({
       open: () => undefined,
+      close: () => undefined,
     }));
 
     if (props.singleSelect) {
@@ -75,7 +80,12 @@ vi.mock("@/components/ui/searchable-select", async () => {
       );
     }
 
-    return <div data-testid="searchable-select">{props.value?.join(",")}</div>;
+    return (
+      <div data-testid="searchable-select">
+        {props.value?.join(",")}
+        {props.searchRightElement}
+      </div>
+    );
   });
 
   return {
@@ -297,5 +307,66 @@ describe("DashboardInputControls", () => {
         selectedVariant: "high",
       },
     ]);
+  });
+
+  it("routes provider settings access through the agent picker controls", async () => {
+    await act(async () => {
+      root.render(
+        <DashboardInputControls
+          projectOptions={[{ label: "karlorz/cmux", value: "karlorz/cmux" }]}
+          selectedProject={["karlorz/cmux"]}
+          onProjectChange={vi.fn()}
+          branchOptions={["main"]}
+          selectedBranch={["main"]}
+          onBranchChange={vi.fn()}
+          selectedAgentSelections={[
+            {
+              agentName: "codex/gpt-5.2",
+              selectedVariant: "medium",
+            },
+          ]}
+          onAgentSelectionsChange={vi.fn()}
+          isCloudMode
+          onCloudModeToggle={vi.fn()}
+          isLoadingProjects={false}
+          isLoadingBranches={false}
+          teamSlugOrId="dev"
+          convexModels={[
+            {
+              _id: "model-1",
+              name: "codex/gpt-5.2",
+              displayName: "GPT-5.2",
+              vendor: "openai",
+              tier: "paid",
+              enabled: true,
+              requiredApiKeys: [],
+              sortOrder: 1,
+              variants: [
+                { id: "low", displayName: "Low" },
+                { id: "medium", displayName: "Medium" },
+              ],
+              defaultVariant: "medium",
+            },
+          ]}
+        />,
+      );
+    });
+
+    const providerSettingsButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Open AI provider settings"]',
+    );
+    expect(providerSettingsButton).not.toBeNull();
+
+    await act(async () => {
+      providerSettingsButton?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/$teamSlugOrId/settings",
+      params: { teamSlugOrId: "dev" },
+      search: { section: "ai-providers" },
+    });
   });
 });
