@@ -130,25 +130,25 @@ export const recordRefreshFailure = internalMutation({
 });
 
 /**
- * Get the token status for a team+user's Codex token.
+ * Get the token status for a team's Codex token.
  * Used for pre-spawn and orchestration checks.
  */
 export const getTokenStatus = internalQuery({
   args: {
     teamId: v.string(),
-    userId: v.string(),
   },
   handler: async (
     ctx,
     args
   ): Promise<"valid" | "expiring" | "expired" | "missing"> => {
-    const key = await ctx.db
+    const keys = await ctx.db
       .query("apiKeys")
-      .withIndex("by_team_user", (q) =>
-        q.eq("teamId", args.teamId).eq("userId", args.userId)
-      )
-      .filter((q) => q.eq(q.field("envVar"), "CODEX_AUTH_JSON"))
-      .first();
+      .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
+      .collect();
+    const sortedKeys = keys
+      .filter((entry) => entry.envVar === "CODEX_AUTH_JSON")
+      .sort((a, b) => a.updatedAt - b.updatedAt || a.createdAt - b.createdAt);
+    const key = sortedKeys[sortedKeys.length - 1];
 
     if (!key) return "missing";
 
@@ -162,23 +162,23 @@ export const getTokenStatus = internalQuery({
 });
 
 /**
- * Check if OPENAI_API_KEY is set for a team+user.
+ * Check if OPENAI_API_KEY is set for a team.
  * Used as fallback when CODEX_AUTH_JSON is missing.
  */
 export const hasOpenAIApiKey = internalQuery({
   args: {
     teamId: v.string(),
-    userId: v.string(),
   },
   handler: async (ctx, args): Promise<boolean> => {
-    const key = await ctx.db
+    const keys = await ctx.db
       .query("apiKeys")
-      .withIndex("by_team_user", (q) =>
-        q.eq("teamId", args.teamId).eq("userId", args.userId)
-      )
-      .filter((q) => q.eq(q.field("envVar"), "OPENAI_API_KEY"))
-      .first();
+      .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
+      .collect();
+    const sortedKeys = keys
+      .filter((entry) => entry.envVar === "OPENAI_API_KEY")
+      .sort((a, b) => a.updatedAt - b.updatedAt || a.createdAt - b.createdAt);
+    const key = sortedKeys[sortedKeys.length - 1];
 
-    return key !== null && key.value.trim().length > 0;
+    return Boolean(key) && key.value.trim().length > 0;
   },
 });

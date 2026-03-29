@@ -1,13 +1,22 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { aggregateByVendor, checkAllProvidersStatusWebMode } from "./providerStatus";
 import type { ProviderStatus } from "@cmux/shared";
+
+const { queryMock } = vi.hoisted(() => ({
+  queryMock: vi.fn(),
+}));
 
 // Mock the Convex client
 vi.mock("./convexClient.js", () => ({
   getConvex: () => ({
-    query: vi.fn().mockResolvedValue({}),
+    query: queryMock,
   }),
 }));
+
+beforeEach(() => {
+  queryMock.mockReset();
+  queryMock.mockResolvedValue({});
+});
 
 describe("aggregateByVendor", () => {
   it("returns empty array for empty input", () => {
@@ -119,6 +128,22 @@ describe("checkAllProvidersStatusWebMode", () => {
     );
     expect(claudeOpus?.isAvailable).toBe(false);
     expect(claudeOpus?.missingRequirements).toBeDefined();
+  });
+
+  it("marks Codex as available when team-wide Codex credentials are present", async () => {
+    queryMock.mockResolvedValueOnce({
+      CODEX_AUTH_JSON:
+        '{"tokens":{"access_token":"token","refresh_token":"refresh"}}',
+      OPENAI_API_KEY: "sk-test-key",
+    });
+
+    const result = await checkAllProvidersStatusWebMode({
+      teamSlugOrId: "test-team",
+    });
+
+    const codex = result.providers.find((p) => p.name === "codex/gpt-5.4");
+    expect(codex?.isAvailable).toBe(true);
+    expect(codex?.missingRequirements).toBeUndefined();
   });
 
   it("returns Docker as ready in web mode", async () => {
