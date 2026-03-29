@@ -76,6 +76,8 @@ interface PlanEditorProps {
 }
 
 interface AgentSelectProps {
+  id: string;
+  name: string;
   value: string;
   agents: string[];
   onChange: (value: string) => void;
@@ -345,6 +347,8 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function AgentSelect({
+  id,
+  name,
   value,
   agents,
   onChange,
@@ -354,6 +358,8 @@ function AgentSelect({
   return (
     <div className={clsx("relative", className)}>
       <select
+        id={id}
+        name={name}
         value={value}
         aria-label={ariaLabel}
         onChange={(event: ChangeEvent<HTMLSelectElement>) =>
@@ -389,6 +395,8 @@ function EditableTaskCard({
   const [dependenciesOpen, setDependenciesOpen] = useState(
     Boolean(task.dependsOn?.length),
   );
+  const promptInputId = `plan-task-${task.id}-prompt`;
+  const modelInputId = `plan-task-${task.id}-agent`;
 
   const dependencyOptions = tasks.filter((otherTask) => otherTask.id !== task.id);
   const dependencyLabels = (task.dependsOn ?? [])
@@ -470,10 +478,15 @@ function EditableTaskCard({
 
       <div className="grid gap-4 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_280px]">
         <div className="space-y-2">
-          <label className="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+          <label
+            htmlFor={promptInputId}
+            className="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400"
+          >
             Prompt
           </label>
           <textarea
+            id={promptInputId}
+            name={promptInputId}
             value={task.prompt}
             onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
               onUpdate({ prompt: event.target.value })
@@ -496,10 +509,15 @@ function EditableTaskCard({
 
         <div className="space-y-3">
           <div className="space-y-2">
-            <label className="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+            <label
+              htmlFor={modelInputId}
+              className="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400"
+            >
               Model
             </label>
             <AgentSelect
+              id={modelInputId}
+              name={modelInputId}
               value={task.agentName}
               agents={availableAgents}
               onChange={(agentName) => onUpdate({ agentName })}
@@ -551,6 +569,8 @@ function EditableTaskCard({
                       >
                         <input
                           type="checkbox"
+                          id={`plan-task-${task.id}-dependency-${dependencyTask.id}`}
+                          name={`plan-task-${task.id}-dependency-${dependencyTask.id}`}
                           checked={isChecked}
                           onChange={() => onToggleDependency(dependencyTask.id)}
                           className="mt-0.5 size-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 dark:border-neutral-600 dark:bg-neutral-950"
@@ -669,6 +689,8 @@ export function PlanEditor({
   const [isSaving, setIsSaving] = useState(false);
 
   const displayedTaskCount = taskCountOverride ?? tasks.length;
+  const headAgentInputId = `${orchestrationId}-head-agent`;
+  const descriptionInputId = `${orchestrationId}-description`;
 
   const { positions, edges, canvasWidth, canvasHeight } = useMemo(() => {
     const taskLevels = computeTaskLevels(tasks);
@@ -953,11 +975,16 @@ export function PlanEditor({
 
       <div className="grid gap-4 border-b border-neutral-100 px-4 py-4 dark:border-neutral-800 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">
         <div className="space-y-2">
-          <label className="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+          <label
+            htmlFor={headAgentInputId}
+            className="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400"
+          >
             Head Agent
           </label>
           {isEditable ? (
             <AgentSelect
+              id={headAgentInputId}
+              name={headAgentInputId}
               value={headAgent}
               agents={availableAgents}
               onChange={setHeadAgent}
@@ -971,11 +998,16 @@ export function PlanEditor({
         </div>
 
         <div className="space-y-2">
-          <label className="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+          <label
+            htmlFor={descriptionInputId}
+            className="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400"
+          >
             Plan Description
           </label>
           {isEditable ? (
             <input
+              id={descriptionInputId}
+              name={descriptionInputId}
               value={description}
               onChange={(event: ChangeEvent<HTMLInputElement>) =>
                 setDescription(event.target.value)

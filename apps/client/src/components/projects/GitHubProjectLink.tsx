@@ -216,6 +216,8 @@ export function GitHubProjectLink({
           <div className="flex gap-2">
             <input
               type="url"
+              name="githubProjectUrl"
+              aria-label="GitHub Project URL"
               placeholder="https://github.com/users/owner/projects/1"
               value={urlInput}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUrlInput(e.target.value)}
