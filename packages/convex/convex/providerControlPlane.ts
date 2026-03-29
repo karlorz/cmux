@@ -34,15 +34,14 @@ const viewValidator = v.union(
 async function buildControlPlaneContext(
   ctx: { db: QueryCtx["db"] },
   teamId: string,
-  userId: string,
+  _userId: string,
 ): Promise<ControlPlaneContext> {
   // Fetch all required data in parallel
+  // Note: API keys are team-wide (any team member can configure them for all team members)
   const [apiKeysRaw, providerOverridesRaw, modelsRaw] = await Promise.all([
     ctx.db
       .query("apiKeys")
-      .withIndex("by_team_user", (q) =>
-        q.eq("teamId", teamId).eq("userId", userId),
-      )
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
       .collect(),
     ctx.db
       .query("providerOverrides")
