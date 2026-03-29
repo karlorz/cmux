@@ -21,7 +21,7 @@ import {
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { authMutation, authQuery } from "./users/utils";
-import { getTeamId } from "../_shared/team";
+import { getTeamId, resolveTeamIdLoose } from "../_shared/team";
 
 export const ORCHESTRATION_STATUSES = [
   "pending",
@@ -40,6 +40,24 @@ const MAX_COUNT_LIMIT = 1000;
 
 type OrchestrationStatus = (typeof ORCHESTRATION_STATUSES)[number];
 type OrchestrationTask = Doc<"orchestrationTasks">;
+type LinkedCreateTaskRecord = {
+  _id: Id<"tasks"> | Id<"taskRuns"> | Id<"orchestrationTasks">;
+  teamId: string;
+  userId: string;
+  taskId?: Id<"tasks">;
+};
+type CreateTaskLinkedRefs = {
+  taskId?: Id<"tasks">;
+  taskRunId?: Id<"taskRuns">;
+  parentTaskId?: Id<"orchestrationTasks">;
+};
+type LinkedCreateTaskReader = {
+  db: {
+    get(
+      id: Id<"tasks"> | Id<"taskRuns"> | Id<"orchestrationTasks">,
+    ): Promise<LinkedCreateTaskRecord | null>;
+  };
+};
 
 function clampTaskListLimit(limit: number | undefined): number {
   return Math.max(
@@ -50,6 +68,53 @@ function clampTaskListLimit(limit: number | undefined): number {
 
 function clampRecentLimit(limit: number | undefined): number {
   return Math.max(1, Math.min(limit ?? DEFAULT_RECENT_LIMIT, MAX_RECENT_LIMIT));
+}
+
+export function hasLinkedCreateTaskRefs(refs: CreateTaskLinkedRefs): boolean {
+  return !!(refs.taskId || refs.taskRunId || refs.parentTaskId);
+}
+
+export async function validateCreateTaskLinkedRefs(
+  ctx: LinkedCreateTaskReader,
+  args: CreateTaskLinkedRefs & {
+    teamId: string;
+    userId: string;
+  },
+): Promise<void> {
+  const [task, taskRun, parentTask] = await Promise.all([
+    args.taskId ? ctx.db.get(args.taskId) : Promise.resolve(null),
+    args.taskRunId ? ctx.db.get(args.taskRunId) : Promise.resolve(null),
+    args.parentTaskId ? ctx.db.get(args.parentTaskId) : Promise.resolve(null),
+  ]);
+
+  if (
+    args.taskId &&
+    (!task || task.teamId !== args.teamId || task.userId !== args.userId)
+  ) {
+    throw new Error("Task not found or unauthorized");
+  }
+
+  if (
+    args.taskRunId &&
+    (!taskRun ||
+      taskRun.teamId !== args.teamId ||
+      taskRun.userId !== args.userId)
+  ) {
+    throw new Error("Task run not found or unauthorized");
+  }
+
+  if (
+    args.parentTaskId &&
+    (!parentTask ||
+      parentTask.teamId !== args.teamId ||
+      parentTask.userId !== args.userId)
+  ) {
+    throw new Error("Parent orchestration task not found or unauthorized");
+  }
+
+  if (args.taskId && taskRun && taskRun.taskId !== args.taskId) {
+    throw new Error("Task run does not belong to task");
+  }
 }
 
 async function getOrchestrationTaskMap(
@@ -447,8 +512,19 @@ export const createTask = authMutation({
   },
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
-    // Verify team membership and get canonical teamId
-    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+    const teamId = hasLinkedCreateTaskRefs(args)
+      ? await resolveTeamIdLoose(ctx, args.teamSlugOrId)
+      : await getTeamId(ctx, args.teamSlugOrId);
+
+    if (hasLinkedCreateTaskRefs(args)) {
+      await validateCreateTaskLinkedRefs(ctx, {
+        teamId,
+        userId,
+        taskId: args.taskId,
+        taskRunId: args.taskRunId,
+        parentTaskId: args.parentTaskId,
+      });
+    }
 
     const now = Date.now();
 
