@@ -2364,7 +2364,19 @@ const convexSchema = defineSchema({
     failedTasks: v.optional(v.number()),
     // External linkages
     obsidianNotePath: v.optional(v.string()), // Path to linked Obsidian note
-    githubProjectId: v.optional(v.string()), // GitHub Projects v2 node ID
+    githubProjectId: v.optional(v.string()), // GitHub Projects v2 node ID (PVT_xxx)
+    // GitHub Project linking metadata (for URL-based linking)
+    githubProjectUrl: v.optional(v.string()), // Raw URL, stored even if resolve fails
+    githubProjectOwner: v.optional(v.string()), // Parsed from URL: owner login
+    githubProjectNumber: v.optional(v.number()), // Parsed from URL: project number
+    githubProjectOwnerType: v.optional(
+      v.union(v.literal("user"), v.literal("organization"))
+    ),
+    // Cached GitHub Project item counts (refreshed on demand)
+    githubItemsTotal: v.optional(v.number()),
+    githubItemsDone: v.optional(v.number()),
+    githubItemsInProgress: v.optional(v.number()),
+    githubItemsCachedAt: v.optional(v.number()), // Epoch ms of last cache refresh
     // Orchestration plan (stored inline for fast access)
     plan: v.optional(
       v.object({

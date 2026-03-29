@@ -16,6 +16,9 @@ import { projectGetRouter } from "./project.get.route";
 import { projectListRouter } from "./project.list.route";
 import { projectPlanRouter } from "./project.plan.route";
 import { projectUpdateRouter } from "./project.update.route";
+import { projectLinkGithubRouter } from "./project.link-github.route";
+import { projectRefreshGithubRouter } from "./project.refresh-github.route";
+
 // ============================================================================
 // Router
 // ============================================================================
@@ -27,4 +30,6 @@ projectRouter.route("/", projectGetRouter);
 projectRouter.route("/", projectListRouter);
 projectRouter.route("/", projectPlanRouter);
 projectRouter.route("/", projectUpdateRouter);
+projectRouter.route("/", projectLinkGithubRouter);
+projectRouter.route("/", projectRefreshGithubRouter);
 
