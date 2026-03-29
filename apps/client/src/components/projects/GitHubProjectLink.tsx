@@ -8,12 +8,13 @@
  * - Linked + resolved: External link, cached counts, "Refresh" button
  */
 
-import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   postApiProjectsByProjectIdLinkGithub,
   postApiProjectsByProjectIdRefreshGithub,
 } from "@cmux/www-openapi-client";
+import { convexQuery } from "@convex-dev/react-query";
 import {
   ExternalLink,
   Link2,
@@ -21,26 +22,35 @@ import {
   AlertCircle,
   CheckCircle2,
   Loader2,
+  ListTodo,
 } from "lucide-react";
 import { useUser } from "@stackframe/react";
+import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { api } from "@cmux/convex/api";
 import type { Doc } from "@cmux/convex/dataModel";
 
 interface GitHubProjectLinkProps {
   project: Doc<"projects">;
   teamSlugOrId: string;
   onLinked?: () => void;
+  draftTaskCount?: number;
 }
 
 export function GitHubProjectLink({
   project,
-  teamSlugOrId: _teamSlugOrId,
+  teamSlugOrId,
   onLinked,
+  draftTaskCount = 0,
 }: GitHubProjectLinkProps) {
   const user = useUser({ or: "return-null" });
   const [urlInput, setUrlInput] = useState("");
+
+  const { data: connections } = useQuery(
+    convexQuery(api.github.listProviderConnections, { teamSlugOrId }),
+  );
 
   // Link mutation
   const linkMutation = useMutation({
@@ -112,8 +122,6 @@ export function GitHubProjectLink({
   const isResolved = Boolean(project.githubProjectId);
   const needsReauth =
     isLinked && !isResolved && project.githubProjectOwnerType === "user";
-
-  // Format cached time
   const formatCacheTime = (timestamp?: number) => {
     if (!timestamp) return null;
     const diff = Date.now() - timestamp;
@@ -125,6 +133,69 @@ export function GitHubProjectLink({
     const days = Math.floor(hours / 24);
     return `${days}d ago`;
   };
+  const localPlanTaskCount = Array.isArray(project.plan?.tasks)
+    ? project.plan.tasks.length
+    : 0;
+  const pendingGitHubItems = Math.max(
+    0,
+    (project.githubItemsTotal ?? 0) -
+      (project.githubItemsDone ?? 0) -
+      (project.githubItemsInProgress ?? 0),
+  );
+  const planSyncLabel =
+    draftTaskCount > 0
+      ? `${draftTaskCount} draft task${draftTaskCount === 1 ? "" : "s"} loaded in editor`
+      : localPlanTaskCount > 0
+        ? `${localPlanTaskCount} task${localPlanTaskCount === 1 ? "" : "s"} saved to cmux`
+        : "Linked board only";
+  const syncLabel = project.githubItemsCachedAt
+    ? `Updated ${formatCacheTime(project.githubItemsCachedAt)}`
+    : "Awaiting first refresh";
+  const matchingConnection = useMemo(() => {
+    const activeConnections =
+      connections?.filter((connection) => connection.isActive) ?? [];
+    const normalizedOwner = project.githubProjectOwner?.toLowerCase();
+
+    if (!normalizedOwner) {
+      return activeConnections[0];
+    }
+
+    return (
+      activeConnections.find(
+        (connection) =>
+          connection.accountLogin?.toLowerCase() === normalizedOwner,
+      ) ?? activeConnections[0]
+    );
+  }, [connections, project.githubProjectOwner]);
+  const internalProjectItemsSearch = useMemo(() => {
+    if (!project.githubProjectId || !matchingConnection) {
+      return null;
+    }
+
+    const owner = project.githubProjectOwner ?? matchingConnection.accountLogin;
+    const ownerType =
+      project.githubProjectOwnerType ??
+      (matchingConnection.accountType === "Organization"
+        ? "organization"
+        : "user");
+
+    if (!owner) {
+      return null;
+    }
+
+    return {
+      installationId: matchingConnection.installationId,
+      owner,
+      ownerType,
+      ...(project.githubProjectUrl ? { projectUrl: project.githubProjectUrl } : {}),
+    } as const;
+  }, [
+    matchingConnection,
+    project.githubProjectId,
+    project.githubProjectOwner,
+    project.githubProjectOwnerType,
+    project.githubProjectUrl,
+  ]);
 
   return (
     <div className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
@@ -145,6 +216,8 @@ export function GitHubProjectLink({
           <div className="flex gap-2">
             <input
               type="url"
+              name="githubProjectUrl"
+              aria-label="GitHub Project URL"
               placeholder="https://github.com/users/owner/projects/1"
               value={urlInput}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUrlInput(e.target.value)}
@@ -203,7 +276,7 @@ export function GitHubProjectLink({
       ) : (
         // Linked and resolved
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <CheckCircle2 className="h-4 w-4 text-green-500" />
             <a
               href={project.githubProjectUrl ?? "#"}
@@ -216,54 +289,114 @@ export function GitHubProjectLink({
             </a>
           </div>
 
-          {/* Cached item counts */}
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-950">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                Board
+              </p>
+              <p className="mt-1 text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                {project.githubProjectOwnerType === "organization"
+                  ? "Organization project"
+                  : "User project"}
+              </p>
+            </div>
+            <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-950">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                Connection
+              </p>
+              <p className="mt-1 text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                Linked and resolved
+              </p>
+            </div>
+            <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-950">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                Plan State
+              </p>
+              <p className="mt-1 text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                {planSyncLabel}
+              </p>
+            </div>
+            <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-950">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                Sync
+              </p>
+              <p className="mt-1 text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                {syncLabel}
+              </p>
+            </div>
+          </div>
+
           {project.githubItemsTotal != null && (
-            <div className="flex items-center gap-4 text-sm">
-              <div className="flex items-center gap-1.5">
-                <span className="text-neutral-500 dark:text-neutral-400">
-                  Items:
-                </span>
-                <span className="font-medium text-neutral-900 dark:text-neutral-100">
-                  {project.githubItemsTotal}
-                </span>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-lg border border-neutral-200 bg-white px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                  Done
+                </p>
+                <p className="mt-1 text-base font-semibold text-green-600 dark:text-green-400">
+                  {project.githubItemsDone ?? 0}
+                </p>
               </div>
-              <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-green-500" />
-                <span className="text-neutral-700 dark:text-neutral-300">
-                  {project.githubItemsDone ?? 0} done
-                </span>
+              <div className="rounded-lg border border-neutral-200 bg-white px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                  In Progress
+                </p>
+                <p className="mt-1 text-base font-semibold text-blue-600 dark:text-blue-400">
+                  {project.githubItemsInProgress ?? 0}
+                </p>
               </div>
-              <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-blue-500" />
-                <span className="text-neutral-700 dark:text-neutral-300">
-                  {project.githubItemsInProgress ?? 0} in progress
-                </span>
+              <div className="rounded-lg border border-neutral-200 bg-white px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                  Pending
+                </p>
+                <p className="mt-1 text-base font-semibold text-neutral-900 dark:text-neutral-100">
+                  {pendingGitHubItems}
+                </p>
               </div>
             </div>
           )}
 
           {/* Refresh button and cache time */}
           <div className="flex items-center justify-between">
-            {project.githubItemsCachedAt && (
-              <span className="text-xs text-neutral-400 dark:text-neutral-500">
-                Updated {formatCacheTime(project.githubItemsCachedAt)}
-              </span>
-            )}
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => refreshMutation.mutate()}
-              disabled={refreshMutation.isPending}
-              className={clsx(!project.githubItemsCachedAt && "ml-auto")}
+            <span className="text-xs text-neutral-400 dark:text-neutral-500">
+              {project.githubItemsTotal ?? 0} linked item
+              {(project.githubItemsTotal ?? 0) === 1 ? "" : "s"}
+            </span>
+            <div
+              className={clsx(
+                "flex items-center gap-2",
+                project.githubItemsTotal == null && "ml-auto",
+              )}
             >
-              <RefreshCw
-                className={clsx(
-                  "h-4 w-4 mr-1.5",
-                  refreshMutation.isPending && "animate-spin"
-                )}
-              />
-              Refresh
-            </Button>
+              {project.githubProjectId && internalProjectItemsSearch && (
+                <Button asChild size="sm" variant="outline">
+                  <Link
+                    to="/$teamSlugOrId/projects/$projectId"
+                    params={{
+                      teamSlugOrId,
+                      projectId: project.githubProjectId,
+                    }}
+                    search={internalProjectItemsSearch}
+                  >
+                    <ListTodo className="h-4 w-4 mr-1.5" />
+                    View Items
+                  </Link>
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => refreshMutation.mutate()}
+                disabled={refreshMutation.isPending}
+              >
+                <RefreshCw
+                  className={clsx(
+                    "h-4 w-4 mr-1.5",
+                    refreshMutation.isPending && "animate-spin"
+                  )}
+                />
+                Refresh
+              </Button>
+            </div>
           </div>
         </div>
       )}

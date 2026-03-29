@@ -401,6 +401,7 @@ function ProjectCard({
                   installationId,
                   owner,
                   ownerType,
+                  projectUrl: project.url,
                 }}
                 className="hover:text-blue-600 dark:hover:text-blue-400 inline-flex items-center gap-2"
               >
