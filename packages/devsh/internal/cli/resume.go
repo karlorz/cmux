@@ -50,9 +50,11 @@ Examples:
 				return fmt.Errorf("failed to resume VM: %w", err)
 			}
 
-			instance, err := client.GetInstance(ctx, instanceID)
+			// Wait for exec lane to become ready
+			fmt.Println("Waiting for VM to be ready...")
+			instance, err := client.WaitForReady(ctx, instanceID, 2*time.Minute)
 			if err != nil {
-				return fmt.Errorf("failed to get instance: %w", err)
+				return fmt.Errorf("VM failed to resume: %w", err)
 			}
 
 			_ = state.SetLastInstance(instance.ID, "")

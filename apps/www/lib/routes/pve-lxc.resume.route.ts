@@ -105,6 +105,11 @@ pveLxcResumeRouter.openapi(
       const instance = await client.instances.get({ instanceId });
 
       await instance.start();
+      console.log(`[pve-lxc.resume-task-run] Container ${instanceId} started, waiting for exec readiness...`);
+
+      // Wait for exec lane to become ready before returning success
+      await instance.waitForReady({ timeoutMs: 60_000 });
+      console.log(`[pve-lxc.resume-task-run] Container ${instanceId} exec lane ready`);
 
       await convex.mutation(api.sandboxInstances.recordResume, {
         instanceId,

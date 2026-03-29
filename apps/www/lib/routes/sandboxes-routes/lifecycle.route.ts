@@ -223,7 +223,16 @@ sandboxesLifecycleRouter.openapi(
         }
 
         await pveLxcInstance.resume();
-        console.log(`[sandboxes.resume] PVE LXC container ${id} started`);
+        console.log(`[sandboxes.resume] PVE LXC container ${id} started, waiting for exec readiness...`);
+
+        // Wait for exec lane to become ready before returning success
+        try {
+          await pveLxcInstance.waitForReady({ timeoutMs: 60_000 });
+          console.log(`[sandboxes.resume] PVE LXC container ${id} exec lane ready`);
+        } catch (readyError) {
+          console.error(`[sandboxes.resume] PVE LXC container ${id} exec lane not ready:`, readyError);
+          return c.text("Sandbox resumed but exec lane not ready", 500);
+        }
 
         // Record resume activity for PVE LXC instance
         if (teamSlugOrId) {
@@ -320,7 +329,16 @@ sandboxesLifecycleRouter.openapi(
           }
 
           await pveLxcInstance.resume();
-          console.log(`[sandboxes.resume] PVE LXC container ${taskRun.vscode.containerName} started`);
+          console.log(`[sandboxes.resume] PVE LXC container ${taskRun.vscode.containerName} started, waiting for exec readiness...`);
+
+          // Wait for exec lane to become ready before returning success
+          try {
+            await pveLxcInstance.waitForReady({ timeoutMs: 60_000 });
+            console.log(`[sandboxes.resume] PVE LXC container ${taskRun.vscode.containerName} exec lane ready`);
+          } catch (readyError) {
+            console.error(`[sandboxes.resume] PVE LXC container ${taskRun.vscode.containerName} exec lane not ready:`, readyError);
+            return c.text("Sandbox resumed but exec lane not ready", 500);
+          }
 
           // Record resume activity for PVE LXC instance
           try {
