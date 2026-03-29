@@ -1,10 +1,10 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery as useTanstackQuery } from "@tanstack/react-query";
-import { useLiveDiff } from "@/hooks/useLiveDiff";
+import { useLiveDiff, useLiveDiffFile } from "@/hooks/useLiveDiff";
 import { gitDiffQueryOptions } from "@/queries/git-diff";
 import { normalizeGitRef } from "@/lib/refWithOrigin";
-import { NewGitDiffViewerWithSidebar } from "./git-diff-view";
-import type { ReplaceDiffEntry, DiffStatus } from "@cmux/shared/diff-types";
+import { NewGitDiffViewer, NewGitDiffViewerWithSidebar } from "./git-diff-view";
+import type { ReplaceDiffEntry } from "@cmux/shared/diff-types";
 import type { Id } from "@cmux/convex/dataModel";
 import type { TaskRunWithChildren } from "@/types/task";
 
@@ -31,17 +31,15 @@ export function LiveDiffPanel({
   baseBranch,
   headBranch,
 }: LiveDiffPanelProps) {
-  // Normalize branches for committed diff query
   const normalizedBaseBranch = useMemo(
     () => normalizeGitRef(baseBranch),
-    [baseBranch]
+    [baseBranch],
   );
   const normalizedHeadBranch = useMemo(
     () => normalizeGitRef(headBranch),
-    [headBranch]
+    [headBranch],
   );
 
-  // Live diff from running sandbox
   const liveDiffQuery = useLiveDiff({
     sandboxId,
     includeContent: true,
@@ -49,7 +47,6 @@ export function LiveDiffPanel({
     enabled: isRunning && Boolean(sandboxId),
   });
 
-  // Committed diff fallback (when not running)
   const committedDiffQuery = useTanstackQuery({
     ...gitDiffQueryOptions({
       repoFullName,
@@ -63,55 +60,46 @@ export function LiveDiffPanel({
       Boolean(normalizedHeadBranch?.trim()),
   });
 
-  // Convert live diff result to ReplaceDiffEntry format
-  const liveDiffs = useMemo((): ReplaceDiffEntry[] => {
-    if (!liveDiffQuery.data?.files) return [];
+  const [selectedLiveDiffPath, setSelectedLiveDiffPath] = useState<string>();
 
-    return liveDiffQuery.data.files.map((file) => {
-      // Map live diff status to DiffStatus
-      let status: DiffStatus;
-      switch (file.status) {
-        case "added":
-        case "untracked":
-          status = "added";
-          break;
-        case "deleted":
-          status = "deleted";
-          break;
-        case "renamed":
-          status = "renamed";
-          break;
-        case "modified":
-        default:
-          status = "modified";
-          break;
+  useEffect(() => {
+    if (!isRunning || liveDiffQuery.data?.mode !== "file_list_only") {
+      setSelectedLiveDiffPath(undefined);
+      return;
+    }
+
+    const liveDiffFiles = liveDiffQuery.data.files;
+    setSelectedLiveDiffPath((previous) => {
+      if (previous && liveDiffFiles.some((file) => file.path === previous)) {
+        return previous;
       }
-
-      return {
-        filePath: file.path,
-        status,
-        additions: file.insertions,
-        deletions: file.deletions,
-        isBinary: false,
-        // Content from live diff is raw unified diff stored in patch field
-        patch: liveDiffQuery.data?.diff,
-      };
+      return liveDiffFiles[0]?.path;
     });
-  }, [liveDiffQuery.data]);
+  }, [isRunning, liveDiffQuery.data]);
 
-  // Determine which diffs to show
-  const diffs = isRunning ? liveDiffs : (committedDiffQuery.data ?? []);
-  const isLoading = isRunning
-    ? liveDiffQuery.isLoading
-    : committedDiffQuery.isLoading;
-  const hasError = isRunning
-    ? liveDiffQuery.isError
-    : committedDiffQuery.isError;
-  const errorMessage = isRunning
-    ? liveDiffQuery.error?.message
-    : committedDiffQuery.error?.message;
+  const liveDiffFileQuery = useLiveDiffFile({
+    sandboxId,
+    path: selectedLiveDiffPath,
+    enabled:
+      isRunning &&
+      liveDiffQuery.data?.mode === "file_list_only" &&
+      Boolean(selectedLiveDiffPath),
+  });
 
-  // No sandbox selected
+  const liveDiffs = useMemo((): ReplaceDiffEntry[] => {
+    if (!isRunning) {
+      return [];
+    }
+
+    if (liveDiffQuery.data?.mode === "full") {
+      return liveDiffQuery.data.entries ?? [];
+    }
+
+    return liveDiffFileQuery.data ? [liveDiffFileQuery.data] : [];
+  }, [isRunning, liveDiffFileQuery.data, liveDiffQuery.data]);
+
+  const committedDiffs = committedDiffQuery.data ?? [];
+
   if (!selectedRun) {
     return (
       <div className="flex h-full items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
@@ -120,7 +108,6 @@ export function LiveDiffPanel({
     );
   }
 
-  // Running but no sandbox ID yet
   if (isRunning && !sandboxId) {
     return (
       <div className="flex h-full items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
@@ -129,7 +116,6 @@ export function LiveDiffPanel({
     );
   }
 
-  // Not running and no head branch
   if (!isRunning && !normalizedHeadBranch) {
     return (
       <div className="flex h-full items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
@@ -138,33 +124,129 @@ export function LiveDiffPanel({
     );
   }
 
-  if (hasError) {
+  if (isRunning && liveDiffQuery.isError) {
     return (
       <div className="flex h-full items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
-        Failed to load diff{errorMessage ? `: ${errorMessage}` : ""}
+        Failed to load diff
+        {liveDiffQuery.error?.message ? `: ${liveDiffQuery.error.message}` : ""}
       </div>
     );
   }
 
-  if (isLoading) {
+  if (!isRunning && committedDiffQuery.isError) {
     return (
       <div className="flex h-full items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
-        Loading {isRunning ? "live" : "committed"} diff...
+        Failed to load diff
+        {committedDiffQuery.error?.message
+          ? `: ${committedDiffQuery.error.message}`
+          : ""}
       </div>
     );
   }
 
-  if (diffs.length === 0) {
+  if (isRunning && liveDiffQuery.isLoading) {
     return (
       <div className="flex h-full items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
-        {isRunning ? "No uncommitted changes" : "No changes found"}
+        Loading live diff...
+      </div>
+    );
+  }
+
+  if (!isRunning && committedDiffQuery.isLoading) {
+    return (
+      <div className="flex h-full items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
+        Loading committed diff...
+      </div>
+    );
+  }
+
+  if (!isRunning && committedDiffs.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
+        No changes found
+      </div>
+    );
+  }
+
+  if (isRunning && liveDiffQuery.data?.summary.totalFiles === 0) {
+    return (
+      <div className="flex h-full items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
+        No uncommitted changes
+      </div>
+    );
+  }
+
+  if (isRunning && liveDiffQuery.data?.mode === "file_list_only") {
+    return (
+      <div className="flex h-full min-h-0 bg-white dark:bg-neutral-900">
+        <div className="w-80 shrink-0 border-r border-neutral-200 dark:border-neutral-800">
+          <div className="border-b border-neutral-200 px-3 py-2 text-xs text-neutral-500 dark:border-neutral-800 dark:text-neutral-400">
+            Large live diff ({Math.ceil(liveDiffQuery.data.totalDiffBytes / 1024)} KB)
+          </div>
+          <div className="overflow-y-auto">
+            {liveDiffQuery.data.files.map((file) => {
+              const isSelected = file.path === selectedLiveDiffPath;
+              return (
+                <button
+                  key={file.path}
+                  type="button"
+                  onClick={() => setSelectedLiveDiffPath(file.path)}
+                  className={`flex w-full flex-col gap-1 border-b border-neutral-200 px-3 py-2 text-left transition-colors dark:border-neutral-800 ${
+                    isSelected
+                      ? "bg-neutral-100 dark:bg-neutral-800"
+                      : "hover:bg-neutral-50 dark:hover:bg-neutral-800/70"
+                  }`}
+                >
+                  <span className="truncate text-sm text-neutral-900 dark:text-neutral-100">
+                    {file.path}
+                  </span>
+                  <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                    +{file.insertions} / -{file.deletions}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="min-w-0 flex-1 overflow-auto">
+          {liveDiffFileQuery.isLoading ? (
+            <div className="flex h-full items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
+              Loading file diff...
+            </div>
+          ) : liveDiffFileQuery.isError ? (
+            <div className="flex h-full items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
+              Failed to load file diff
+              {liveDiffFileQuery.error?.message
+                ? `: ${liveDiffFileQuery.error.message}`
+                : ""}
+            </div>
+          ) : liveDiffs.length === 0 ? (
+            <div className="flex h-full items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
+              Select a file to inspect its live diff
+            </div>
+          ) : (
+            <NewGitDiffViewer diffs={liveDiffs} isLoading={false} />
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (isRunning && liveDiffs.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
+        No uncommitted changes
       </div>
     );
   }
 
   return (
     <div className="h-full min-h-0 overflow-auto">
-      <NewGitDiffViewerWithSidebar diffs={diffs} isLoading={isLoading} />
+      <NewGitDiffViewerWithSidebar
+        diffs={isRunning ? liveDiffs : committedDiffs}
+        isLoading={false}
+      />
     </div>
   );
 }

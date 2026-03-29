@@ -1,4 +1,4 @@
-import { api } from "@cmux/convex/api";
+import { api, internal } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
 import {
   AGENT_CONFIGS,
@@ -6,7 +6,7 @@ import {
   type EnvironmentResult,
 } from "@cmux/shared/agentConfig";
 import { createOpencodeFreeDynamicConfig } from "@cmux/shared/providers/opencode/configs";
-import type { McpServerConfig } from "@cmux/shared";
+import type { McpServerConfig, RunControlSummary } from "@cmux/shared";
 import type { PolicyRuleForInstructions, OrchestrationRuleForInstructions } from "@cmux/shared/agent-memory-protocol";
 import {
   getProviderIdFromAgentName,
@@ -38,6 +38,7 @@ import {
   generateUniqueBranchNamesFromTitle,
 } from "./utils/branchNameGenerator";
 import { getConvex } from "./utils/convexClient";
+import { getConvexAdmin } from "./utils/convexAdminClient";
 import { retryOnOptimisticConcurrency } from "./utils/convexRetry";
 import { serverLogger } from "./utils/fileLogger";
 import {
@@ -63,6 +64,8 @@ import { workerExec } from "./utils/workerExec";
 import rawSwitchBranchScript from "./utils/switch-branch.ts?raw";
 
 const SWITCH_BRANCH_BUN_SCRIPT = rawSwitchBranchScript;
+const RUN_CONTROL_POLL_INTERVAL_MS = 60_000;
+const LIVE_DIFF_ACTIVITY_DEBOUNCE_MS = 5 * 60 * 1000;
 
 /**
  * Log provider health metrics for debugging.
@@ -324,6 +327,93 @@ export async function spawnAgent(
           id: taskId,
         })
       : null;
+    const convexAdmin = getConvexAdmin();
+    const canMonitorRunControl = hasAuthContext || convexAdmin !== null;
+
+    if (!canMonitorRunControl) {
+      serverLogger.warn(
+        `[AgentSpawner] Run-control monitoring disabled for ${runId}: missing auth context and Convex admin key`,
+      );
+    }
+
+    const queryRunControlSummary = async (): Promise<RunControlSummary | null> => {
+      if (hasAuthContext) {
+        return runWithAuth(
+          capturedAuthToken,
+          capturedAuthHeaderJson,
+          async () =>
+            getConvex().query(api.taskRuns.getRunControlSummary, {
+              teamSlugOrId,
+              taskRunId: runId,
+            }),
+        );
+      }
+
+      if (!convexAdmin) {
+        return null;
+      }
+
+      return convexAdmin.query(internal.taskRuns.getRunControlSummaryInternal, {
+        taskRunId: runId,
+      });
+    };
+
+    const recordRunControlActivity = async (
+      source:
+        | "file_write"
+        | "git_commit"
+        | "live_diff",
+    ): Promise<void> => {
+      if (hasAuthContext) {
+        await runWithAuth(
+          capturedAuthToken,
+          capturedAuthHeaderJson,
+          async () => {
+            await getConvex().mutation(api.taskRuns.recordRunControlActivity, {
+              teamSlugOrId,
+              taskRunId: runId,
+              source,
+            });
+          },
+        );
+        return;
+      }
+
+      if (!convexAdmin) {
+        return;
+      }
+
+      await convexAdmin.mutation(internal.taskRuns.recordRunControlActivityInternal, {
+        taskRunId: runId,
+        source,
+      });
+    };
+
+    const markRunControlTimedOut = async (reason: string): Promise<void> => {
+      if (hasAuthContext) {
+        await runWithAuth(
+          capturedAuthToken,
+          capturedAuthHeaderJson,
+          async () => {
+            await getConvex().mutation(api.taskRuns.markRunControlTimedOut, {
+              teamSlugOrId,
+              taskRunId: runId,
+              reason,
+            });
+          },
+        );
+        return;
+      }
+
+      if (!convexAdmin) {
+        return;
+      }
+
+      await convexAdmin.mutation(internal.taskRuns.markRunControlTimedOutInternal, {
+        taskRunId: runId,
+        reason,
+      });
+    };
     const effectiveRepoUrl = resolveGitHubRepoUrl(
       options.repoUrl,
       task?.projectFullName,
@@ -1322,6 +1412,17 @@ export async function spawnAgent(
         `[AgentSpawner] File changes detected for ${agent.name}:`,
         { changeCount: data.changes.length, taskRunId: data.taskRunId }
       );
+      if (!canMonitorRunControl) {
+        return;
+      }
+      try {
+        await recordRunControlActivity("file_write");
+      } catch (error) {
+        serverLogger.warn(
+          `[AgentSpawner] Failed to record file-write activity for ${runId}:`,
+          error,
+        );
+      }
     });
 
     // Set up sync-files event handler for cloud-to-local sync
@@ -2045,6 +2146,142 @@ exit $EXIT_CODE
         `[AgentSpawner] Emitted worker:create-terminal at ${new Date().toISOString()}`
       );
     });
+
+    if (canMonitorRunControl) {
+      let runControlPollInFlight = false;
+      let runControlPollTimer: ReturnType<typeof setInterval> | null = null;
+      let lastSeenHeadCommit: string | null = null;
+      let lastDiffFingerprint: string | null = null;
+      let lastLiveDiffRecordedAt = 0;
+      let runControlMonitorStopped = false;
+
+      const runControlEventNames = [
+        "terminal-exit",
+        "task-complete",
+        "terminal-failed",
+        "worker-disconnected",
+      ] as const;
+
+      const stopRunControlMonitor = () => {
+        if (runControlPollTimer) {
+          clearInterval(runControlPollTimer);
+          runControlPollTimer = null;
+        }
+        for (const eventName of runControlEventNames) {
+          vscodeInstance.removeListener(eventName, stopRunControlMonitor);
+        }
+        runControlMonitorStopped = true;
+      };
+
+      const pollRunControl = async () => {
+        if (runControlMonitorStopped || runControlPollInFlight) {
+          return;
+        }
+
+        runControlPollInFlight = true;
+
+        try {
+          const summary = await queryRunControlSummary();
+          if (!summary) {
+            stopRunControlMonitor();
+            return;
+          }
+
+          if (
+            summary.runStatus === "completed" ||
+            summary.runStatus === "failed" ||
+            summary.runStatus === "skipped" ||
+            summary.timeout.status === "timed_out"
+          ) {
+            stopRunControlMonitor();
+            return;
+          }
+
+          let activityRecordedThisPoll = false;
+
+          const headResult = await workerExec({
+            workerSocket,
+            command: "bash",
+            args: [
+              "-lc",
+              "cd /root/workspace && (git rev-parse HEAD 2>/dev/null || true)",
+            ],
+            cwd: "/root/workspace",
+            env: {},
+            timeout: 15_000,
+          });
+          const currentHeadCommit = headResult.stdout.trim();
+          if (currentHeadCommit) {
+            if (
+              lastSeenHeadCommit !== null &&
+              currentHeadCommit !== lastSeenHeadCommit
+            ) {
+              await recordRunControlActivity("git_commit");
+              activityRecordedThisPoll = true;
+            }
+            lastSeenHeadCommit = currentHeadCommit;
+          }
+
+          const diffFingerprintResult = await workerExec({
+            workerSocket,
+            command: "bash",
+            args: [
+              "-lc",
+              "cd /root/workspace && (git status --porcelain --untracked-files=all 2>/dev/null || true)",
+            ],
+            cwd: "/root/workspace",
+            env: {},
+            timeout: 15_000,
+          });
+          const currentDiffFingerprint = diffFingerprintResult.stdout.trim();
+          const now = Date.now();
+
+          if (lastDiffFingerprint !== null && currentDiffFingerprint !== lastDiffFingerprint) {
+            if (now - lastLiveDiffRecordedAt >= LIVE_DIFF_ACTIVITY_DEBOUNCE_MS) {
+              await recordRunControlActivity("live_diff");
+              lastLiveDiffRecordedAt = now;
+              activityRecordedThisPoll = true;
+            }
+          }
+          lastDiffFingerprint = currentDiffFingerprint;
+
+          if (activityRecordedThisPoll || summary.timeout.status !== "active") {
+            return;
+          }
+
+          if (
+            summary.timeout.nextTimeoutAt &&
+            now >= summary.timeout.nextTimeoutAt
+          ) {
+            const timeoutReason = `No activity detected for ${summary.timeout.inactivityTimeoutMinutes} minutes`;
+            await markRunControlTimedOut(timeoutReason);
+            stopRunControlMonitor();
+            await vscodeInstance.stop().catch((error) => {
+              serverLogger.error(
+                `[AgentSpawner] Failed to stop VSCode instance after timeout for ${runId}:`,
+                error,
+              );
+            });
+          }
+        } catch (error) {
+          serverLogger.warn(
+            `[AgentSpawner] Run-control poll failed for ${runId}:`,
+            error,
+          );
+        } finally {
+          runControlPollInFlight = false;
+        }
+      };
+
+      for (const eventName of runControlEventNames) {
+        vscodeInstance.on(eventName, stopRunControlMonitor);
+      }
+
+      runControlPollTimer = setInterval(() => {
+        void pollRunControl();
+      }, RUN_CONTROL_POLL_INTERVAL_MS);
+      void pollRunControl();
+    }
 
     // Log provider health metrics for debugging
     logProviderHealthMetrics(providerId);

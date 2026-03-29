@@ -1,5 +1,6 @@
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
+import { RUN_CONTROL_DEFAULT_TIMEOUT_MINUTES } from "@cmux/shared";
 import { getTeamId, resolveTeamIdLoose } from "../_shared/team";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -803,6 +804,11 @@ export const create = authMutation({
             teamId,
             environmentId: args.environmentId,
             isCloudWorkspace: args.isCloudWorkspace,
+            runControlState: {
+              inactivityTimeoutMinutes: RUN_CONTROL_DEFAULT_TIMEOUT_MINUTES,
+              lastActivityAt: now,
+              lastActivitySource: "spawn",
+            },
           });
 
           // Record lineage for each agent run (all initial)

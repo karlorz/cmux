@@ -439,6 +439,28 @@ const convexSchema = defineSchema({
         checkpointGeneration: v.optional(v.number()), // Monotonic counter for checkpoint ordering
       })
     ),
+    runControlState: v.optional(
+      v.object({
+        inactivityTimeoutMinutes: v.number(),
+        lastActivityAt: v.number(),
+        lastActivitySource: v.union(
+          v.literal("spawn"),
+          v.literal("file_write"),
+          v.literal("git_commit"),
+          v.literal("live_diff"),
+          v.literal("approval_resolved"),
+          v.literal("session_continue"),
+          v.literal("checkpoint_restore"),
+          v.literal("manual")
+        ),
+        lastFileWriteAt: v.optional(v.number()),
+        lastGitCommitAt: v.optional(v.number()),
+        lastLiveDiffAt: v.optional(v.number()),
+        lastCheckpointAt: v.optional(v.number()),
+        timeoutTriggeredAt: v.optional(v.number()),
+        timeoutReason: v.optional(v.string()),
+      })
+    ),
     // /simplify pre-merge gate tracking
     simplifyPassedAt: v.optional(v.number()), // Timestamp when /simplify completed successfully
     simplifyMode: v.optional(v.string()), // Which mode was used: "quick", "full", "staged-only"

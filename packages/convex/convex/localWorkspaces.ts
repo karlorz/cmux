@@ -3,6 +3,7 @@ import {
   generateWorkspaceName,
   workspaceSequenceToName,
 } from "@cmux/shared/utils/generate-workspace-name";
+import { RUN_CONTROL_DEFAULT_TIMEOUT_MINUTES } from "@cmux/shared";
 import { v } from "convex/values";
 import { resolveTeamIdLoose } from "../_shared/team";
 import { internal } from "./_generated/api";
@@ -139,6 +140,11 @@ export const reserve = authMutation({
         provider: "other",
         status: "starting",
         startedAt: now,
+      },
+      runControlState: {
+        inactivityTimeoutMinutes: RUN_CONTROL_DEFAULT_TIMEOUT_MINUTES,
+        lastActivityAt: now,
+        lastActivitySource: "spawn",
       },
     });
 

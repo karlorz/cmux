@@ -16,6 +16,7 @@ import {
   aggregatePullRequestState,
   type StoredPullRequestInfo,
 } from "@cmux/shared/pull-request-state";
+import { RUN_CONTROL_DEFAULT_TIMEOUT_MINUTES } from "@cmux/shared";
 import {
   buildRunControlSummary,
   type RunControlApproval,
@@ -25,8 +26,71 @@ import {
 const CLOUD_WORKSPACE_JWT_TTL = "7d";
 const DEFAULT_JWT_TTL = "12h";
 
+const runControlActivitySourceValidator = v.union(
+  v.literal("spawn"),
+  v.literal("file_write"),
+  v.literal("git_commit"),
+  v.literal("live_diff"),
+  v.literal("approval_resolved"),
+  v.literal("session_continue"),
+  v.literal("checkpoint_restore"),
+  v.literal("manual"),
+);
+
+type RunControlActivitySource =
+  | "spawn"
+  | "file_write"
+  | "git_commit"
+  | "live_diff"
+  | "approval_resolved"
+  | "session_continue"
+  | "checkpoint_restore"
+  | "manual";
+
+type RunControlState = NonNullable<Doc<"taskRuns">["runControlState"]>;
+
 function getJwtTtl(isCloudWorkspace?: boolean): string {
   return isCloudWorkspace ? CLOUD_WORKSPACE_JWT_TTL : DEFAULT_JWT_TTL;
+}
+
+function createInitialRunControlState(now: number): RunControlState {
+  return {
+    inactivityTimeoutMinutes: RUN_CONTROL_DEFAULT_TIMEOUT_MINUTES,
+    lastActivityAt: now,
+    lastActivitySource: "spawn",
+  };
+}
+
+function buildRunControlStateForActivity(input: {
+  existingState?: Doc<"taskRuns">["runControlState"];
+  source: RunControlActivitySource;
+  now: number;
+}): RunControlState {
+  const current = input.existingState ?? createInitialRunControlState(input.now);
+  const next: RunControlState = {
+    ...current,
+    inactivityTimeoutMinutes:
+      current.inactivityTimeoutMinutes ?? RUN_CONTROL_DEFAULT_TIMEOUT_MINUTES,
+    lastActivityAt: input.now,
+    lastActivitySource: input.source,
+    timeoutTriggeredAt: undefined,
+    timeoutReason: undefined,
+  };
+
+  if (input.source === "file_write") {
+    next.lastFileWriteAt = input.now;
+  }
+  if (input.source === "git_commit") {
+    next.lastGitCommitAt = input.now;
+  }
+  if (input.source === "live_diff") {
+    next.lastLiveDiffAt = input.now;
+  }
+  if (input.source === "checkpoint_restore") {
+    next.lastCheckpointAt = input.now;
+  }
+
+  return next;
 }
 
 function rewriteMorphUrl(url: string): string {
@@ -589,6 +653,7 @@ export const createInternal = internalMutation({
       orchestrationId: args.orchestrationId,
       githubCommentId: args.githubCommentId,
       githubCommentUrl: args.githubCommentUrl,
+      runControlState: createInitialRunControlState(now),
     });
 
     // Update task's lastActivityAt and selectedTaskRunId
@@ -688,6 +753,7 @@ export const create = authMutation({
       isCloudWorkspace: task.isCloudWorkspace,
       isOrchestrationHead: args.isOrchestrationHead,
       orchestrationId: args.orchestrationId,
+      runControlState: createInitialRunControlState(now),
     });
 
     // Update task's lastActivityAt for sorting
@@ -1161,7 +1227,7 @@ export const getInterruptionState = authQuery({
 });
 
 async function getRunControlSummaryForRun(
-  ctx: QueryCtx,
+  ctx: QueryCtx | MutationCtx,
   run: Doc<"taskRuns">,
 ) {
   const [approvalDocs, bindingByTaskRun, bindingByTask] = await Promise.all([
@@ -1233,6 +1299,20 @@ async function getRunControlSummaryForRun(
             checkpointGeneration: run.interruptionState.checkpointGeneration,
           }
         : undefined,
+      runControlState: run.runControlState
+        ? {
+            inactivityTimeoutMinutes:
+              run.runControlState.inactivityTimeoutMinutes,
+            lastActivityAt: run.runControlState.lastActivityAt,
+            lastActivitySource: run.runControlState.lastActivitySource,
+            lastFileWriteAt: run.runControlState.lastFileWriteAt,
+            lastGitCommitAt: run.runControlState.lastGitCommitAt,
+            lastLiveDiffAt: run.runControlState.lastLiveDiffAt,
+            lastCheckpointAt: run.runControlState.lastCheckpointAt,
+            timeoutTriggeredAt: run.runControlState.timeoutTriggeredAt,
+            timeoutReason: run.runControlState.timeoutReason,
+          }
+        : undefined,
     },
     approvals,
     sessionBinding,
@@ -1267,6 +1347,503 @@ export const getRunControlSummary = authQuery({
     }
 
     return getRunControlSummaryForRun(ctx, run);
+  },
+});
+
+function getRunControlOrchestrationId(run: Doc<"taskRuns">): string {
+  return run.orchestrationId ?? String(run._id);
+}
+
+async function getRunControlMutationContext(
+  ctx: MutationCtx,
+  teamSlugOrId: string,
+  taskRunId: Id<"taskRuns">,
+) {
+  const teamId = await getTeamId(ctx, teamSlugOrId);
+  const run = await ctx.db.get(taskRunId);
+
+  if (!run || run.teamId !== teamId) {
+    throw new Error("Task run not found");
+  }
+
+  return { run, teamId };
+}
+
+async function recordRunControlActivityForRun(
+  ctx: MutationCtx,
+  input: {
+    run: Doc<"taskRuns">;
+    source: RunControlActivitySource;
+    now?: number;
+  },
+): Promise<void> {
+  if (
+    input.run.status === "completed" ||
+    input.run.status === "failed" ||
+    input.run.status === "skipped"
+  ) {
+    return;
+  }
+
+  const now = input.now ?? Date.now();
+  await ctx.db.patch(input.run._id, {
+    runControlState: buildRunControlStateForActivity({
+      existingState: input.run.runControlState,
+      source: input.source,
+      now,
+    }),
+    updatedAt: now,
+  });
+}
+
+async function markRunControlTimedOutForRun(
+  ctx: MutationCtx,
+  input: {
+    run: Doc<"taskRuns">;
+    reason: string;
+    at?: number;
+  },
+): Promise<void> {
+  if (
+    input.run.status === "completed" ||
+    input.run.status === "failed" ||
+    input.run.status === "skipped"
+  ) {
+    return;
+  }
+
+  const now = input.at ?? Date.now();
+  const currentRunControlState =
+    input.run.runControlState ?? createInitialRunControlState(now);
+
+  await ctx.db.patch(input.run._id, {
+    status: "failed",
+    errorMessage: input.reason,
+    exitCode: input.run.exitCode ?? 124,
+    completedAt: input.run.completedAt ?? now,
+    updatedAt: now,
+    interruptionState: {
+      status: "timed_out",
+      reason: input.reason,
+      approvalRequestId: input.run.interruptionState?.approvalRequestId,
+      blockedAt: input.run.interruptionState?.blockedAt ?? now,
+      expiresAt: input.run.interruptionState?.expiresAt,
+      resumeToken: input.run.interruptionState?.resumeToken,
+      resolvedAt: input.run.interruptionState?.resolvedAt,
+      resolvedBy: input.run.interruptionState?.resolvedBy,
+      providerSessionId: input.run.interruptionState?.providerSessionId,
+      resumeTargetId: input.run.interruptionState?.resumeTargetId,
+      checkpointRef: input.run.interruptionState?.checkpointRef,
+      checkpointGeneration: input.run.interruptionState?.checkpointGeneration,
+    },
+    runControlState: {
+      ...currentRunControlState,
+      inactivityTimeoutMinutes:
+        currentRunControlState.inactivityTimeoutMinutes ??
+        RUN_CONTROL_DEFAULT_TIMEOUT_MINUTES,
+      timeoutTriggeredAt: now,
+      timeoutReason: input.reason,
+    },
+  });
+
+  await updateTaskStatusFromRuns(
+    ctx,
+    input.run.taskId,
+    input.run.teamId,
+    input.run.userId,
+  );
+
+  const updatedRun = await ctx.db.get(input.run._id);
+  if (updatedRun) {
+    await updateParentRunOnChildComplete(ctx, updatedRun);
+  }
+}
+
+type QueuedRunControlInstructionResult = {
+  inputId: Id<"operatorInputQueue">;
+  queueDepth: number;
+};
+
+async function queueRunControlInstruction(
+  ctx: MutationCtx,
+  input: {
+    run: Doc<"taskRuns">;
+    content: string;
+    priority?: "high" | "normal" | "low";
+    userId: string;
+  },
+): Promise<QueuedRunControlInstructionResult> {
+  const result = await ctx.runMutation(internal.operatorInputQueue.queueInputInternal, {
+    teamId: input.run.teamId,
+    userId: input.userId,
+    orchestrationId: getRunControlOrchestrationId(input.run),
+    taskRunId: input.run._id,
+    content: input.content,
+    priority: input.priority,
+  });
+
+  if (!result.success) {
+    throw new Error(
+      `Operator input queue is full (${result.queueDepth}/${result.queueCapacity})`,
+    );
+  }
+
+  return result;
+}
+
+async function resolveRunInterruptionIfNeeded(
+  ctx: MutationCtx,
+  run: Doc<"taskRuns">,
+  resolvedBy: string,
+): Promise<void> {
+  if (!run.interruptionState || run.interruptionState.status === "none") {
+    return;
+  }
+
+  if (run.interruptionState.status === "approval_pending") {
+    throw new Error("Run control action unavailable while approval is pending");
+  }
+
+  await ctx.runMutation(internal.taskRuns.resolveInterruption, {
+    taskRunId: run._id,
+    resolvedBy,
+  });
+}
+
+export const recordRunControlActivityInternal = internalMutation({
+  args: {
+    taskRunId: v.id("taskRuns"),
+    source: runControlActivitySourceValidator,
+    at: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.taskRunId);
+    if (!run) {
+      return { success: false };
+    }
+
+    await recordRunControlActivityForRun(ctx, {
+      run,
+      source: args.source,
+      now: args.at,
+    });
+
+    return { success: true };
+  },
+});
+
+export const recordRunControlActivity = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    taskRunId: v.id("taskRuns"),
+    source: runControlActivitySourceValidator,
+    at: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { run } = await getRunControlMutationContext(
+      ctx,
+      args.teamSlugOrId,
+      args.taskRunId,
+    );
+
+    await recordRunControlActivityForRun(ctx, {
+      run,
+      source: args.source,
+      now: args.at,
+    });
+
+    return { success: true };
+  },
+});
+
+export const markRunControlTimedOutInternal = internalMutation({
+  args: {
+    taskRunId: v.id("taskRuns"),
+    reason: v.string(),
+    at: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.taskRunId);
+    if (!run) {
+      return { success: false };
+    }
+
+    await markRunControlTimedOutForRun(ctx, {
+      run,
+      reason: args.reason,
+      at: args.at,
+    });
+
+    return { success: true };
+  },
+});
+
+export const markRunControlTimedOut = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    taskRunId: v.id("taskRuns"),
+    reason: v.string(),
+    at: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { run } = await getRunControlMutationContext(
+      ctx,
+      args.teamSlugOrId,
+      args.taskRunId,
+    );
+
+    await markRunControlTimedOutForRun(ctx, {
+      run,
+      reason: args.reason,
+      at: args.at,
+    });
+
+    return { success: true };
+  },
+});
+
+export const approveRunControl = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    taskRunId: v.id("taskRuns"),
+    requestId: v.optional(v.string()),
+    resolution: v.union(
+      v.literal("allow"),
+      v.literal("allow_once"),
+      v.literal("allow_session"),
+      v.literal("deny"),
+      v.literal("deny_always"),
+    ),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { run } = await getRunControlMutationContext(
+      ctx,
+      args.teamSlugOrId,
+      args.taskRunId,
+    );
+    const summary = await getRunControlSummaryForRun(ctx, run);
+    const resolvedBy = ctx.identity.subject;
+    const requestId =
+      args.requestId ??
+      summary.approvals.currentRequestId ??
+      summary.approvals.pendingRequestIds[0];
+
+    if (!requestId) {
+      throw new Error("No pending approval request found");
+    }
+
+    await ctx.runMutation(internal.approvalBroker.resolveRequestInternal, {
+      requestId,
+      resolution: args.resolution,
+      resolvedBy,
+      note: args.note,
+    });
+
+    const updatedRun = await ctx.db.get(args.taskRunId);
+    if (!updatedRun) {
+      throw new Error("Task run not found");
+    }
+
+    await recordRunControlActivityForRun(ctx, {
+      run: updatedRun,
+      source: "approval_resolved",
+    });
+
+    const refreshedRun = await ctx.db.get(args.taskRunId);
+    if (!refreshedRun) {
+      throw new Error("Task run not found");
+    }
+
+    return {
+      success: true,
+      action: "approve" as const,
+      requestId,
+      summary: await getRunControlSummaryForRun(ctx, refreshedRun),
+    };
+  },
+});
+
+export const continueRunControl = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    taskRunId: v.id("taskRuns"),
+    instruction: v.optional(v.string()),
+    priority: v.optional(
+      v.union(v.literal("high"), v.literal("normal"), v.literal("low")),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const { run } = await getRunControlMutationContext(
+      ctx,
+      args.teamSlugOrId,
+      args.taskRunId,
+    );
+
+    if (
+      run.status === "completed" ||
+      run.status === "failed" ||
+      run.status === "skipped"
+    ) {
+      throw new Error("Run control action unavailable for terminal runs");
+    }
+
+    await resolveRunInterruptionIfNeeded(ctx, run, ctx.identity.subject);
+
+    const queueResult = await queueRunControlInstruction(ctx, {
+      run,
+      content: args.instruction?.trim() || "Continue with the current task.",
+      priority: args.priority,
+      userId: ctx.identity.subject,
+    });
+
+    const updatedRun = await ctx.db.get(args.taskRunId);
+    if (!updatedRun) {
+      throw new Error("Task run not found");
+    }
+
+    await recordRunControlActivityForRun(ctx, {
+      run: updatedRun,
+      source: "session_continue",
+    });
+
+    const refreshedRun = await ctx.db.get(args.taskRunId);
+    if (!refreshedRun) {
+      throw new Error("Task run not found");
+    }
+
+    return {
+      success: true,
+      action: "continue" as const,
+      queuedInputId: queueResult.inputId,
+      queueDepth: queueResult.queueDepth,
+      summary: await getRunControlSummaryForRun(ctx, refreshedRun),
+    };
+  },
+});
+
+export const resumeRunControl = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    taskRunId: v.id("taskRuns"),
+    instruction: v.optional(v.string()),
+    priority: v.optional(
+      v.union(v.literal("high"), v.literal("normal"), v.literal("low")),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const { run } = await getRunControlMutationContext(
+      ctx,
+      args.teamSlugOrId,
+      args.taskRunId,
+    );
+
+    if (
+      run.status === "completed" ||
+      run.status === "failed" ||
+      run.status === "skipped"
+    ) {
+      throw new Error("Run control action unavailable for terminal runs");
+    }
+
+    const checkpointInstruction =
+      run.interruptionState?.status === "checkpoint_pending" &&
+      run.interruptionState.checkpointRef
+        ? `Resume from checkpoint ${run.interruptionState.checkpointRef}.`
+        : "Resume the interrupted task.";
+
+    await resolveRunInterruptionIfNeeded(ctx, run, ctx.identity.subject);
+
+    const queueResult = await queueRunControlInstruction(ctx, {
+      run,
+      content: args.instruction?.trim() || checkpointInstruction,
+      priority: args.priority,
+      userId: ctx.identity.subject,
+    });
+
+    const updatedRun = await ctx.db.get(args.taskRunId);
+    if (!updatedRun) {
+      throw new Error("Task run not found");
+    }
+
+    await recordRunControlActivityForRun(ctx, {
+      run: updatedRun,
+      source:
+        run.interruptionState?.status === "checkpoint_pending"
+          ? "checkpoint_restore"
+          : "manual",
+    });
+
+    const refreshedRun = await ctx.db.get(args.taskRunId);
+    if (!refreshedRun) {
+      throw new Error("Task run not found");
+    }
+
+    return {
+      success: true,
+      action: "resume" as const,
+      queuedInputId: queueResult.inputId,
+      queueDepth: queueResult.queueDepth,
+      summary: await getRunControlSummaryForRun(ctx, refreshedRun),
+    };
+  },
+});
+
+export const appendInstructionRunControl = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    taskRunId: v.id("taskRuns"),
+    instruction: v.string(),
+    priority: v.optional(
+      v.union(v.literal("high"), v.literal("normal"), v.literal("low")),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const { run } = await getRunControlMutationContext(
+      ctx,
+      args.teamSlugOrId,
+      args.taskRunId,
+    );
+
+    if (
+      run.status === "completed" ||
+      run.status === "failed" ||
+      run.status === "skipped"
+    ) {
+      throw new Error("Run control action unavailable for terminal runs");
+    }
+
+    await resolveRunInterruptionIfNeeded(ctx, run, ctx.identity.subject);
+
+    const queueResult = await queueRunControlInstruction(ctx, {
+      run,
+      content: args.instruction.trim(),
+      priority: args.priority,
+      userId: ctx.identity.subject,
+    });
+
+    const updatedRun = await ctx.db.get(args.taskRunId);
+    if (!updatedRun) {
+      throw new Error("Task run not found");
+    }
+
+    await recordRunControlActivityForRun(ctx, {
+      run: updatedRun,
+      source: "manual",
+    });
+
+    const refreshedRun = await ctx.db.get(args.taskRunId);
+    if (!refreshedRun) {
+      throw new Error("Task run not found");
+    }
+
+    return {
+      success: true,
+      action: "append_instruction" as const,
+      queuedInputId: queueResult.inputId,
+      queueDepth: queueResult.queueDepth,
+      summary: await getRunControlSummaryForRun(ctx, refreshedRun),
+    };
   },
 });
 
@@ -3243,6 +3820,7 @@ export const createForPreview = internalMutation({
       isLocalWorkspace: task.isLocalWorkspace,
       isCloudWorkspace: task.isCloudWorkspace,
       isPreviewJob: true,
+      runControlState: createInitialRunControlState(now),
     });
 
     // Update task's lastActivityAt for sorting
@@ -4142,6 +4720,7 @@ export const createWorkspaceTaskRun = internalMutation({
       updatedAt: now,
       userId: args.userId,
       teamId: args.teamId,
+      runControlState: createInitialRunControlState(now),
     });
 
     // Generate JWT
