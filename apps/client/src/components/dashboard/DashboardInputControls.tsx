@@ -701,39 +701,34 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     <button
       type="button"
       onClick={openAiProviderSettings}
-      className="mb-1 flex w-full items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-left dark:border-neutral-700 dark:bg-neutral-900/70"
+      className="inline-flex h-7 max-w-[260px] items-center gap-2 rounded-2xl border border-neutral-200 bg-white px-2.5 text-left text-[11px] text-neutral-600 transition-colors hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-300 dark:hover:bg-neutral-900"
     >
-      <div className="flex min-w-0 items-start gap-2">
+      <div className="flex min-w-0 items-center gap-2">
         {providerHealthSummary.pendingCount > 0 || !providerHealthSummary.dockerRunning ? (
-          <AlertCircle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <AlertCircle className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
         ) : providerHealthSummary.dockerImagePulling ? (
-          <RefreshCw className="mt-0.5 size-4 shrink-0 animate-spin text-blue-600 dark:text-blue-400" />
+          <RefreshCw className="size-3.5 shrink-0 animate-spin text-blue-600 dark:text-blue-400" />
         ) : (
-          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-green-600 dark:text-green-400" />
+          <CheckCircle2 className="size-3.5 shrink-0 text-green-600 dark:text-green-400" />
         )}
-        <div className="min-w-0">
-          <p className="text-xs font-medium text-neutral-900 dark:text-neutral-100">
-            Provider health
-          </p>
-          <p className="text-[11px] text-neutral-600 dark:text-neutral-400">
-            {providerHealthSummary.readyCount} ready
-            {providerHealthSummary.pendingCount > 0
-              ? ` · ${providerHealthSummary.pendingCount} need setup`
+        <span className="truncate font-medium text-neutral-700 dark:text-neutral-200">
+          Provider health
+        </span>
+        <span className="truncate text-neutral-500 dark:text-neutral-400">
+          {providerHealthSummary.readyCount} ready
+          {providerHealthSummary.pendingCount > 0
+            ? ` · ${providerHealthSummary.pendingCount} need setup`
+            : ""}
+          {!providerHealthSummary.dockerRunning
+            ? " · Docker not running"
+            : !providerHealthSummary.dockerImageAvailable &&
+                providerHealthSummary.dockerImageName
+              ? providerHealthSummary.dockerImagePulling
+                ? ` · Pulling ${providerHealthSummary.dockerImageName}`
+                : ` · ${providerHealthSummary.dockerImageName} unavailable`
               : ""}
-            {!providerHealthSummary.dockerRunning
-              ? " · Docker not running"
-              : !providerHealthSummary.dockerImageAvailable &&
-                  providerHealthSummary.dockerImageName
-                ? providerHealthSummary.dockerImagePulling
-                  ? ` · Pulling ${providerHealthSummary.dockerImageName}`
-                  : ` · ${providerHealthSummary.dockerImageName} unavailable`
-                : ""}
-          </p>
-        </div>
+        </span>
       </div>
-      <span className="shrink-0 text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
-        Open settings
-      </span>
     </button>
   ) : null;
 
@@ -1161,8 +1156,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
           </div>
         )}
 
-        <div className="flex flex-col gap-1" data-onboarding="agent-picker">
-          {providerStatusBanner}
+        <div className="flex items-center gap-1" data-onboarding="agent-picker">
           <SearchableSelect
             ref={agentSelectRef}
             options={agentOptions}
@@ -1182,6 +1176,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
             optionItemComponent={AgentCommandItem}
             maxCountPerValue={MAX_AGENT_COMMAND_COUNT}
           />
+          {providerStatusBanner}
         </div>
         </div>
 
