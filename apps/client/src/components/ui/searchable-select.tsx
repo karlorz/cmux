@@ -67,6 +67,7 @@ export interface SearchableSelectProps {
   options: SelectOption[];
   value: string[];
   onChange: (value: string[]) => void;
+  triggerAriaLabel?: string;
   onSearchPaste?: (value: string) => boolean | Promise<boolean>;
   placeholder?: string;
   singleSelect?: boolean;
@@ -298,6 +299,7 @@ const SearchableSelect = forwardRef<
     options,
     value,
     onChange,
+    triggerAriaLabel,
     onSearchPaste,
     placeholder = "Select",
     singleSelect = false,
@@ -716,6 +718,7 @@ const SearchableSelect = forwardRef<
           <button
             ref={triggerRef}
             type="button"
+            aria-label={triggerAriaLabel}
             disabled={disabled}
             className={clsx(
               `relative inline-flex h-7 items-center rounded-md border border-neutral-200 bg-white px-2.5 pr-6 text-sm text-neutral-900 transition-colors outline-none focus:outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-60 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-100 aria-expanded:bg-neutral-50 dark:aria-expanded:bg-neutral-900 w-auto`,

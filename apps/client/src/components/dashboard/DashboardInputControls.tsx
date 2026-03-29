@@ -857,11 +857,19 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       const normalizedSelection = normalizeSelectionForModel(selection, model);
       const currentVariant = normalizedSelection.selectedVariant ?? "";
       const instanceIds = instances.map((instance) => instance.id);
+      const variantOptions =
+        model?.variants?.map((variant) => ({
+          label:
+            variant.id === model.defaultVariant
+              ? `${variant.displayName} (Default)`
+              : variant.displayName,
+          value: variant.id,
+        })) ?? [];
 
       return (
         <div
           key={getSelectionKey(selection)}
-          className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900/70"
+          className="flex items-center gap-2 rounded-2xl border border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-800 dark:bg-neutral-900/70"
         >
           <div className="min-w-0">
             <p className="truncate text-[11px] font-medium text-neutral-900 dark:text-neutral-100">
@@ -872,21 +880,25 @@ export const DashboardInputControls = memo(function DashboardInputControls({
               Effort
             </p>
           </div>
-          <select
-            value={currentVariant}
-            onChange={(event) =>
-              handleVariantChange(instanceIds, event.target.value)
-            }
-            className="min-w-[150px] rounded-lg border border-neutral-200 bg-white px-2 py-1 text-[12px] font-medium text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 dark:focus:ring-neutral-700"
-            aria-label={`Select effort for ${option.displayLabel}`}
-          >
-            {model?.variants?.map((variant) => (
-              <option key={variant.id} value={variant.id}>
-                {variant.displayName}
-                {variant.id === model.defaultVariant ? " (Default)" : ""}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            options={variantOptions}
+            value={currentVariant ? [currentVariant] : []}
+            onChange={(nextValue) => {
+              const nextVariant = nextValue[0];
+              if (!nextVariant) {
+                return;
+              }
+              handleVariantChange(instanceIds, nextVariant);
+            }}
+            triggerAriaLabel={`Select effort for ${option.displayLabel}`}
+            placeholder="Select effort"
+            singleSelect={true}
+            showSearch={false}
+            className="min-w-[165px] rounded-xl"
+            classNames={{
+              popover: "w-[190px]",
+            }}
+          />
         </div>
       );
     });

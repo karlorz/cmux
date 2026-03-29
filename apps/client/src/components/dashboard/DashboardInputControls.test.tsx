@@ -38,13 +38,42 @@ vi.mock("@/components/ui/searchable-select", async () => {
   const React = await import("react");
   const SearchableSelect = React.forwardRef(function MockSearchableSelect(
     props: {
+      options: Array<string | { label: string; value: string; heading?: boolean }>;
+      placeholder?: string;
+      singleSelect?: boolean;
+      triggerAriaLabel?: string;
       value?: string[];
+      onChange: (value: string[]) => void;
     },
     ref: React.ForwardedRef<{ open: (options?: { focusValue?: string }) => void }>,
   ) {
     React.useImperativeHandle(ref, () => ({
       open: () => undefined,
     }));
+
+    if (props.singleSelect) {
+      const normalizedOptions = props.options
+        .map((option) =>
+          typeof option === "string"
+            ? { label: option, value: option, heading: false }
+            : { label: option.label, value: option.value, heading: option.heading ?? false },
+        )
+        .filter((option) => !option.heading);
+
+      return (
+        <select
+          aria-label={props.triggerAriaLabel ?? props.placeholder ?? "searchable-select"}
+          value={props.value?.[0] ?? ""}
+          onChange={(event) => props.onChange([event.target.value])}
+        >
+          {normalizedOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      );
+    }
 
     return <div data-testid="searchable-select">{props.value?.join(",")}</div>;
   });
