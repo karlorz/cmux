@@ -231,6 +231,18 @@ export const updateProject = authMutation({
     status: v.optional(projectStatusValidator),
     obsidianNotePath: v.optional(v.string()),
     githubProjectId: v.optional(v.string()),
+    // GitHub Project linking metadata
+    githubProjectUrl: v.optional(v.string()),
+    githubProjectOwner: v.optional(v.string()),
+    githubProjectNumber: v.optional(v.number()),
+    githubProjectOwnerType: v.optional(
+      v.union(v.literal("user"), v.literal("organization"))
+    ),
+    // Cached GitHub item counts
+    githubItemsTotal: v.optional(v.number()),
+    githubItemsDone: v.optional(v.number()),
+    githubItemsInProgress: v.optional(v.number()),
+    githubItemsCachedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const project = await ctx.db.get(args.projectId);
@@ -252,6 +264,16 @@ export const updateProject = authMutation({
     if (args.status !== undefined) updates.status = args.status;
     if (args.obsidianNotePath !== undefined) updates.obsidianNotePath = args.obsidianNotePath;
     if (args.githubProjectId !== undefined) updates.githubProjectId = args.githubProjectId;
+    // GitHub Project linking fields
+    if (args.githubProjectUrl !== undefined) updates.githubProjectUrl = args.githubProjectUrl;
+    if (args.githubProjectOwner !== undefined) updates.githubProjectOwner = args.githubProjectOwner;
+    if (args.githubProjectNumber !== undefined) updates.githubProjectNumber = args.githubProjectNumber;
+    if (args.githubProjectOwnerType !== undefined) updates.githubProjectOwnerType = args.githubProjectOwnerType;
+    // GitHub cached item counts
+    if (args.githubItemsTotal !== undefined) updates.githubItemsTotal = args.githubItemsTotal;
+    if (args.githubItemsDone !== undefined) updates.githubItemsDone = args.githubItemsDone;
+    if (args.githubItemsInProgress !== undefined) updates.githubItemsInProgress = args.githubItemsInProgress;
+    if (args.githubItemsCachedAt !== undefined) updates.githubItemsCachedAt = args.githubItemsCachedAt;
 
     await ctx.db.patch(args.projectId, updates);
 
@@ -782,5 +804,98 @@ export const syncPlanStatusFromOrchestration = internalMutation({
       status,
       updatedAt: now,
     });
+  },
+});
+
+// ============================================================================
+// GitHub Project Cache (Internal)
+// ============================================================================
+
+/**
+ * Update GitHub Project cached item counts.
+ * Called from HTTP actions after fetching from GitHub API.
+ */
+export const updateGitHubCache = internalMutation({
+  args: {
+    projectId: v.id("projects"),
+    githubProjectId: v.optional(v.string()),
+    githubItemsTotal: v.number(),
+    githubItemsDone: v.number(),
+    githubItemsInProgress: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const project = await ctx.db.get(args.projectId);
+    if (!project) {
+      return;
+    }
+
+    const now = Date.now();
+    const updates: Partial<Doc<"projects">> = {
+      githubItemsTotal: args.githubItemsTotal,
+      githubItemsDone: args.githubItemsDone,
+      githubItemsInProgress: args.githubItemsInProgress,
+      githubItemsCachedAt: now,
+      updatedAt: now,
+    };
+
+    // Also update the resolved githubProjectId if provided
+    if (args.githubProjectId !== undefined) {
+      updates.githubProjectId = args.githubProjectId;
+    }
+
+    await ctx.db.patch(args.projectId, updates);
+  },
+});
+
+/**
+ * List projects for recommendations generation.
+ * Returns active and planning projects with fields needed for recommendation logic.
+ * Requires authentication and team membership.
+ */
+export const listProjectsForRecommendations = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+  },
+  handler: async (ctx, { teamSlugOrId }) => {
+    // Verify team membership and get canonical teamId
+    const teamId = await getTeamId(ctx, teamSlugOrId);
+    // Query active projects
+    const activeProjects = await ctx.db
+      .query("projects")
+      .withIndex("by_team_status", (q) =>
+        q.eq("teamId", teamId).eq("status", "active")
+      )
+      .collect();
+
+    // Query planning projects
+    const planningProjects = await ctx.db
+      .query("projects")
+      .withIndex("by_team_status", (q) =>
+        q.eq("teamId", teamId).eq("status", "planning")
+      )
+      .collect();
+
+    // Combine and return fields needed for recommendation generation
+    const allProjects = [...activeProjects, ...planningProjects];
+
+    return allProjects.map((p) => ({
+      id: p._id,
+      name: p.name,
+      status: p.status,
+      updatedAt: p.updatedAt,
+      totalTasks: p.totalTasks,
+      completedTasks: p.completedTasks,
+      failedTasks: p.failedTasks,
+      plan: p.plan
+        ? {
+            tasks: p.plan.tasks.map((t) => ({
+              status: t.status,
+              orchestrationTaskId: t.orchestrationTaskId,
+            })),
+          }
+        : null,
+      githubProjectId: p.githubProjectId,
+      githubProjectUrl: p.githubProjectUrl,
+    }));
   },
 });

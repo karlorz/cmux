@@ -25,6 +25,7 @@ import { ProjectProgress, ProjectProgressBar } from "./ProjectProgress";
 import { PlanEditor } from "./PlanEditor";
 import { DispatchPlanDialog } from "./DispatchPlanDialog";
 import { MilestoneEditor, type Milestone } from "./MilestoneEditor";
+import { GitHubProjectLink } from "./GitHubProjectLink";
 import type { Plan } from "./PlanEditor";
 import type { Doc } from "@cmux/convex/dataModel";
 
@@ -36,6 +37,7 @@ interface ProjectDetailViewProps {
   teamSlugOrId: string;
   onSavePlan: (plan: Plan) => Promise<void>;
   onDispatchComplete?: () => void;
+  onProjectRefresh?: () => void;
   milestones?: Milestone[];
   onAddMilestone?: (milestone: Omit<Milestone, "id">) => Promise<void>;
   onUpdateMilestone?: (id: string, updates: Partial<Milestone>) => Promise<void>;
@@ -67,6 +69,7 @@ export function ProjectDetailView({
   teamSlugOrId,
   onSavePlan,
   onDispatchComplete,
+  onProjectRefresh,
   milestones = [],
   onAddMilestone,
   onUpdateMilestone,
@@ -105,17 +108,31 @@ export function ProjectDetailView({
     return statusMap.size > 0 ? statusMap : undefined;
   }, [plan?.tasks, orchTasks]);
 
-  // Progress metrics
-  const totalTasks = project.totalTasks ?? 0;
-  const completedTasks = project.completedTasks ?? 0;
-  const failedTasks = project.failedTasks ?? 0;
-  const runningTasks = project.runningTasks ?? orchTasks.filter(
+  // Progress metrics - merge cmux tasks + GitHub items
+  const cmuxTotalTasks = project.totalTasks ?? 0;
+  const cmuxCompletedTasks = project.completedTasks ?? 0;
+  const cmuxFailedTasks = project.failedTasks ?? 0;
+  const cmuxRunningTasks = project.runningTasks ?? orchTasks.filter(
     (t) => t.status === "running" || t.status === "assigned"
   ).length;
+
+  // GitHub cached item counts
+  const ghTotal = project.githubItemsTotal ?? 0;
+  const ghDone = project.githubItemsDone ?? 0;
+  const ghInProgress = project.githubItemsInProgress ?? 0;
+
+  // Merged totals for progress display
+  const totalTasks = cmuxTotalTasks + ghTotal;
+  const completedTasks = cmuxCompletedTasks + ghDone;
+  const runningTasks = cmuxRunningTasks + ghInProgress;
+  const failedTasks = cmuxFailedTasks; // GitHub doesn't have failed state
   const pendingTasks = totalTasks - completedTasks - failedTasks - runningTasks;
   const progressPercent = totalTasks > 0
     ? Math.round((completedTasks / totalTasks) * 100)
     : 0;
+
+  // Show split if both sources have items
+  const showSplit = cmuxTotalTasks > 0 && ghTotal > 0;
 
   const statusConfig = PROJECT_STATUS_CONFIG[project.status] ?? PROJECT_STATUS_CONFIG.planning;
 
@@ -163,27 +180,41 @@ export function ProjectDetailView({
         )}
       </div>
 
+      {/* GitHub Project Link */}
+      <GitHubProjectLink
+        project={project}
+        teamSlugOrId={teamSlugOrId}
+        onLinked={onProjectRefresh}
+      />
+
       {/* Progress */}
       {totalTasks > 0 && (
-        <div className="flex items-center gap-6">
-          <ProjectProgress
-            total={totalTasks}
-            completed={completedTasks}
-            running={runningTasks}
-            failed={failedTasks}
-            pending={pendingTasks}
-            progressPercent={progressPercent}
-            size="sm"
-          />
-          <div className="flex-1">
-            <ProjectProgressBar
+        <div className="space-y-2">
+          <div className="flex items-center gap-6">
+            <ProjectProgress
+              total={totalTasks}
               completed={completedTasks}
               running={runningTasks}
               failed={failedTasks}
               pending={pendingTasks}
-              total={totalTasks}
+              progressPercent={progressPercent}
+              size="sm"
             />
+            <div className="flex-1">
+              <ProjectProgressBar
+                completed={completedTasks}
+                running={runningTasks}
+                failed={failedTasks}
+                pending={pendingTasks}
+                total={totalTasks}
+              />
+            </div>
           </div>
+          {showSplit && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              {cmuxTotalTasks} agent task{cmuxTotalTasks === 1 ? "" : "s"} + {ghTotal} GitHub item{ghTotal === 1 ? "" : "s"}
+            </p>
+          )}
         </div>
       )}
 

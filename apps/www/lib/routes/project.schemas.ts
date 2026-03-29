@@ -56,6 +56,10 @@ export const ProjectPlanSchema = z
   })
   .openapi("ProjectPlan");
 
+export const GithubProjectOwnerTypeSchema = z
+  .enum(["user", "organization"])
+  .openapi("GithubProjectOwnerType");
+
 export const ProjectSchema = z
   .object({
     _id: z.string().openapi({ description: "Project ID (Convex document ID)" }),
@@ -69,7 +73,17 @@ export const ProjectSchema = z
     completedTasks: z.number().optional().openapi({ description: "Completed task count" }),
     failedTasks: z.number().optional().openapi({ description: "Failed task count" }),
     obsidianNotePath: z.string().optional().openapi({ description: "Path to linked Obsidian note" }),
-    githubProjectId: z.string().optional().openapi({ description: "GitHub Projects v2 node ID" }),
+    githubProjectId: z.string().optional().openapi({ description: "GitHub Projects v2 node ID (PVT_xxx)" }),
+    // GitHub Project linking metadata
+    githubProjectUrl: z.string().optional().openapi({ description: "GitHub Project URL" }),
+    githubProjectOwner: z.string().optional().openapi({ description: "GitHub Project owner login" }),
+    githubProjectNumber: z.number().optional().openapi({ description: "GitHub Project number" }),
+    githubProjectOwnerType: GithubProjectOwnerTypeSchema.optional(),
+    // Cached GitHub item counts
+    githubItemsTotal: z.number().optional().openapi({ description: "Total GitHub Project items" }),
+    githubItemsDone: z.number().optional().openapi({ description: "Done GitHub Project items" }),
+    githubItemsInProgress: z.number().optional().openapi({ description: "In-progress GitHub Project items" }),
+    githubItemsCachedAt: z.number().optional().openapi({ description: "Cache timestamp (epoch ms)" }),
     plan: ProjectPlanSchema.optional().openapi({ description: "Embedded orchestration plan" }),
     createdAt: z.number().openapi({ description: "Creation timestamp" }),
     updatedAt: z.number().openapi({ description: "Last update timestamp" }),
@@ -96,5 +110,10 @@ export const UpdateProjectRequestSchema = z
     status: ProjectStatusSchema.optional().openapi({ description: "Project status" }),
     obsidianNotePath: z.string().optional().openapi({ description: "Path to Obsidian note" }),
     githubProjectId: z.string().optional().openapi({ description: "GitHub Projects node ID" }),
+    // GitHub Project linking metadata
+    githubProjectUrl: z.string().url().optional().openapi({ description: "GitHub Project URL" }),
+    githubProjectOwner: z.string().optional().openapi({ description: "GitHub Project owner login" }),
+    githubProjectNumber: z.number().optional().openapi({ description: "GitHub Project number" }),
+    githubProjectOwnerType: GithubProjectOwnerTypeSchema.optional(),
   })
   .openapi("UpdateProjectRequest");
