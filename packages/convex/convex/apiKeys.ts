@@ -16,15 +16,12 @@ function sortApiKeysByFreshness(apiKeys: ApiKeyDoc[]): ApiKeyDoc[] {
   );
 }
 
-function getLatestApiKeyByEnvVar(
+export function getLatestApiKeyByEnvVar(
   apiKeys: ApiKeyDoc[],
   envVar: string,
 ): ApiKeyDoc | null {
-  return (
-    sortApiKeysByFreshness(apiKeys)
-      .filter((key) => key.envVar === envVar)
-      .at(-1) ?? null
-  );
+  const matching = apiKeys.filter((key) => key.envVar === envVar);
+  return sortApiKeysByFreshness(matching).at(-1) ?? null;
 }
 
 function dedupeApiKeysByEnvVar(apiKeys: ApiKeyDoc[]): ApiKeyDoc[] {
@@ -94,7 +91,7 @@ export const upsert = authMutation({
     const matchingKeys = sortApiKeysByFreshness(apiKeys).filter(
       (key) => key.envVar === args.envVar,
     );
-    const existing = matchingKeys[matchingKeys.length - 1];
+    const existing = getLatestApiKeyByEnvVar(apiKeys, args.envVar);
 
     // Extract token expiry for Codex OAuth tokens
     let tokenExpiresAt: number | undefined;

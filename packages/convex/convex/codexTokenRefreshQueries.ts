@@ -12,6 +12,7 @@ import {
   isCodexTokenExpired,
   isCodexTokenExpiring,
 } from "@cmux/shared/providers/openai/codex-token";
+import { getLatestApiKeyByEnvVar } from "./apiKeys";
 
 const LEAD_TIME_MS = 24 * 60 * 60 * 1000; // 24 hours
 const MAX_FAILURE_COUNT = 10;
@@ -145,10 +146,7 @@ export const getTokenStatus = internalQuery({
       .query("apiKeys")
       .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
       .collect();
-    const sortedKeys = keys
-      .filter((entry) => entry.envVar === "CODEX_AUTH_JSON")
-      .sort((a, b) => a.updatedAt - b.updatedAt || a.createdAt - b.createdAt);
-    const key = sortedKeys[sortedKeys.length - 1];
+    const key = getLatestApiKeyByEnvVar(keys, "CODEX_AUTH_JSON");
 
     if (!key) return "missing";
 
@@ -174,11 +172,8 @@ export const hasOpenAIApiKey = internalQuery({
       .query("apiKeys")
       .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
       .collect();
-    const sortedKeys = keys
-      .filter((entry) => entry.envVar === "OPENAI_API_KEY")
-      .sort((a, b) => a.updatedAt - b.updatedAt || a.createdAt - b.createdAt);
-    const key = sortedKeys[sortedKeys.length - 1];
+    const key = getLatestApiKeyByEnvVar(keys, "OPENAI_API_KEY");
 
-    return Boolean(key) && key.value.trim().length > 0;
+    return key !== null && key.value.trim().length > 0;
   },
 });
