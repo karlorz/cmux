@@ -8,6 +8,7 @@ import type { PersistentWebViewProps } from "../persistent-webview";
 import { EnvironmentWorkspaceConfig } from "./EnvironmentWorkspaceConfig";
 import { PersistentWebView } from "@/components/persistent-webview";
 import { useVncClipboardBridge } from "@/hooks/useVncClipboardBridge";
+import { VncViewer } from "@cmux/shared/components/vnc-viewer";
 
 vi.mock("@/hooks/useVncClipboardBridge", () => ({
   useVncClipboardBridge: vi.fn(),
@@ -21,6 +22,10 @@ vi.mock("@/components/persistent-webview", () => ({
       data-src={props.src}
     />
   )),
+}));
+
+vi.mock("@cmux/shared/components/vnc-viewer", () => ({
+  VncViewer: vi.fn(() => <div data-testid="vnc-viewer" />),
 }));
 
 const hasDomEnvironment =
@@ -102,6 +107,7 @@ describe("EnvironmentWorkspaceConfig", () => {
 
     const clipboardBridgeMock = vi.mocked(useVncClipboardBridge);
     const persistentWebViewMock = vi.mocked(PersistentWebView);
+    const vncViewerMock = vi.mocked(VncViewer);
 
     expect(clipboardBridgeMock).toHaveBeenCalledTimes(1);
     expect(clipboardBridgeMock).toHaveBeenCalledWith({
@@ -115,6 +121,7 @@ describe("EnvironmentWorkspaceConfig", () => {
     expect(persistentWebViewMock.mock.calls[0]?.[0].src).toBe(
       commonProps.browserHtmlUrl
     );
+    expect(vncViewerMock).not.toHaveBeenCalled();
 
     await act(async () => {
       root.unmount();
@@ -145,6 +152,41 @@ describe("EnvironmentWorkspaceConfig", () => {
       enabled: false,
     });
     expect(persistentWebViewMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("falls back to direct VNC only when the HTML viewer URL is missing", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <EnvironmentWorkspaceConfig
+          {...commonProps}
+          browserHtmlUrl={undefined}
+          vncWebsocketUrl="wss://example.com/websockify"
+        />
+      );
+    });
+
+    const clipboardBridgeMock = vi.mocked(useVncClipboardBridge);
+    const persistentWebViewMock = vi.mocked(PersistentWebView);
+    const vncViewerMock = vi.mocked(VncViewer);
+
+    expect(clipboardBridgeMock).toHaveBeenCalledTimes(1);
+    expect(clipboardBridgeMock).toHaveBeenCalledWith({
+      persistKey: commonProps.browserPersistKey,
+      enabled: false,
+    });
+    expect(persistentWebViewMock).not.toHaveBeenCalled();
+    expect(vncViewerMock).toHaveBeenCalledTimes(1);
+    expect(vncViewerMock.mock.calls[0]?.[0].url).toBe(
+      "wss://example.com/websockify"
+    );
 
     await act(async () => {
       root.unmount();

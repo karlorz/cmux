@@ -78,15 +78,15 @@ function BrowserComponent() {
     [vscodeInfo?.vncUrl, rawBrowserUrl]
   );
 
-  const useDirectVncViewer = Boolean(vncWebsocketUrl);
+  const useIframeBrowserView = Boolean(browserUrl);
+  const useDirectVncFallback = !useIframeBrowserView && Boolean(vncWebsocketUrl);
 
   const persistKey = useMemo(
     () => getTaskRunBrowserPersistKey(taskRunId),
     [taskRunId]
   );
 
-  // Direct VNC panels use the React viewer and don't need the iframe clipboard bridge.
-  const isVncIframe = !useDirectVncViewer && Boolean(browserUrl?.includes("/vnc.html"));
+  const isVncIframe = Boolean(browserUrl?.includes("/vnc.html"));
   useVncClipboardBridge({
     persistKey,
     enabled: isVncIframe,
@@ -130,7 +130,7 @@ function BrowserComponent() {
     return addBrowserReloadListener((runId) => {
       if (runId !== taskRunId) return;
       const previousFocus = document.activeElement;
-      if (useDirectVncViewer) {
+      if (useDirectVncFallback) {
         const viewer = vncViewerRef.current;
         if (!viewer) return;
         viewer.disconnect();
@@ -156,7 +156,7 @@ function BrowserComponent() {
         }
       });
     });
-  }, [persistKey, taskRunId, useDirectVncViewer]);
+  }, [persistKey, taskRunId, useDirectVncFallback]);
 
   const loadingFallback = useMemo(
     () => <WorkspaceLoadingIndicator variant="browser" status="loading" />,
@@ -168,7 +168,7 @@ function BrowserComponent() {
   );
 
   const hasBrowserConnection = Boolean(vncWebsocketUrl || browserUrl);
-  const isBrowserBusy = useDirectVncViewer
+  const isBrowserBusy = useDirectVncFallback
     ? !hasBrowserConnection || vncStatus !== "connected"
     : !hasBrowserConnection || browserStatus !== "loaded";
 
@@ -179,18 +179,7 @@ function BrowserComponent() {
           className="flex flex-row grow min-h-0 relative"
           aria-busy={isBrowserBusy}
         >
-          {useDirectVncViewer && vncWebsocketUrl ? (
-            <VncViewer
-              ref={vncViewerRef}
-              url={vncWebsocketUrl}
-              autoConnect
-              scaleViewport
-              className="grow flex"
-              loadingFallback={loadingFallback}
-              errorFallback={errorFallback}
-              onStatusChange={setVncStatus}
-            />
-          ) : browserUrl ? (
+          {useIframeBrowserView && browserUrl ? (
             <PersistentWebView
               key={persistKey}
               persistKey={persistKey}
@@ -208,6 +197,17 @@ function BrowserComponent() {
               errorFallback={errorFallback}
               errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
               loadTimeoutMs={45_000}
+            />
+          ) : useDirectVncFallback && vncWebsocketUrl ? (
+            <VncViewer
+              ref={vncViewerRef}
+              url={vncWebsocketUrl}
+              autoConnect
+              scaleViewport
+              className="grow flex"
+              loadingFallback={loadingFallback}
+              errorFallback={errorFallback}
+              onStatusChange={setVncStatus}
             />
           ) : (
             <div className="grow" />
