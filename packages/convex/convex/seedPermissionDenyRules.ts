@@ -1,8 +1,8 @@
 /**
  * Seed Permission Deny Rules
  *
- * Seeds the default system-level permission deny rules that prevent
- * task sandboxes from bypassing cmux-managed workflows.
+ * Seeds the default system-level permission deny rules in a disabled state.
+ * Operators can enable them explicitly when they want sandbox-level enforcement.
  *
  * These rules apply ONLY to task_sandbox context - NOT to cloud_workspace
  * (head agents) which need full capabilities.
@@ -115,17 +115,30 @@ export const seed = internalMutation({
   handler: async (ctx) => {
     const now = Date.now();
     let created = 0;
+    let updated = 0;
     let skipped = 0;
 
+    const existingSystemRules = await ctx.db
+      .query("permissionDenyRules")
+      .withIndex("by_scope", (q) => q.eq("scope", "system"))
+      .collect();
+    const existingRulesByRuleId = new Map(
+      existingSystemRules.map((rule) => [rule.ruleId, rule]),
+    );
+
     for (const rule of SYSTEM_DENY_RULES) {
-      // Check if rule already exists
-      const existing = await ctx.db
-        .query("permissionDenyRules")
-        .withIndex("by_ruleId", (q) => q.eq("ruleId", rule.ruleId))
-        .first();
+      const existing = existingRulesByRuleId.get(rule.ruleId);
 
       if (existing) {
-        skipped++;
+        if (existing.enabled !== false) {
+          await ctx.db.patch(existing._id, {
+            enabled: false,
+            updatedAt: now,
+          });
+          updated++;
+        } else {
+          skipped++;
+        }
         continue;
       }
 
@@ -139,7 +152,7 @@ export const seed = internalMutation({
         projectFullName: undefined,
         // Only apply to task_sandbox - NOT cloud_workspace (head agents)
         contexts: ["task_sandbox"],
-        enabled: true,
+        enabled: false,
         priority: rule.priority,
         createdAt: now,
         updatedAt: now,
@@ -149,9 +162,9 @@ export const seed = internalMutation({
     }
 
     console.log(
-      `[seedPermissionDenyRules] Created ${created} rules, skipped ${skipped} existing`,
+      `[seedPermissionDenyRules] Created ${created} rules, updated ${updated}, skipped ${skipped} already-disabled`,
     );
-    return { created, skipped };
+    return { created, updated, skipped };
   },
 });
 

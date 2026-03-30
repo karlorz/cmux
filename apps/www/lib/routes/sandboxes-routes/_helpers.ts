@@ -757,7 +757,7 @@ export async function setupProviderAuth(
               "[setupProviderAuth] Failed to fetch permission deny rules, using defaults",
               err,
             );
-            return [] as string[];
+            return undefined;
           }),
   ]);
 

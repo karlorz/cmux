@@ -111,6 +111,24 @@ describe("getCursorEnvironment", () => {
       expect(cliJsonFile).toBeUndefined();
     });
 
+    it("does not fall back to legacy deny rules when Convex returns an empty list", async () => {
+      const result = await getCursorEnvironment({
+        ...BASE_CONTEXT,
+        permissionDenyRules: [],
+      });
+
+      const cliJsonFile = result.files.find(
+        (f) => f.destinationPath === "/root/workspace/.cursor/cli.json"
+      );
+
+      expect(cliJsonFile).toBeDefined();
+
+      const content = Buffer.from(cliJsonFile!.contentBase64, "base64").toString("utf-8");
+      const config = JSON.parse(content);
+
+      expect(config.permissions.deny).toEqual([]);
+    });
+
     it("translates cmux deny rules (Claude format) to Cursor format", async () => {
       const result = await getCursorEnvironment({
         ...BASE_CONTEXT,

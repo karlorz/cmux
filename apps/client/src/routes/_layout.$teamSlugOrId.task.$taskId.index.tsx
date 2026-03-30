@@ -21,6 +21,7 @@ import {
   getActivePanelPositions,
   removePanelFromAllPositions,
   getCurrentLayoutPanels,
+  ensureBrowserPanelVisible,
   PANEL_LABELS,
   PANEL_ICON_COMPONENTS,
 } from "@/lib/panel-config";
@@ -907,6 +908,18 @@ function TaskDetailPage() {
     () => getActivePanelPositions(effectiveLayoutMode),
     [effectiveLayoutMode]
   );
+
+  useEffect(() => {
+    if (!selectedRunId || !isBrowserSupported || isLocalWorkspaceTask) {
+      return;
+    }
+
+    const next = ensureBrowserPanelVisible(panelConfig);
+    if (next !== panelConfig) {
+      setPanelConfig(next);
+      savePanelConfig(next);
+    }
+  }, [isBrowserSupported, isLocalWorkspaceTask, panelConfig, selectedRunId]);
 
   useEffect(() => {
     setActivePanelPosition((current) =>

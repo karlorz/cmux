@@ -23,7 +23,7 @@ import {
   type FormState,
   validateForm,
 } from "@/lib/mcp-form-helpers";
-import { settingsSectionSchema } from "@/routes/_layout.$teamSlugOrId.settings";
+import { settingsSectionSchema } from "./settings-section";
 import { api } from "@cmux/convex/api";
 import { MCP_SERVER_PRESETS, type McpServerPreset } from "@cmux/shared";
 import { convexQuery } from "@convex-dev/react-query";

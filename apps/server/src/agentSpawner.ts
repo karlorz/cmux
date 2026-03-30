@@ -53,6 +53,7 @@ import {
 } from "./utils/editorSettings";
 import { env, getServerBaseUrl, getWwwBaseUrl } from "./utils/server-env";
 import { buildTaskRunCreateArgs } from "./utils/taskRunCreateArgs";
+import { loadTeamApiKeysForAgents } from "./utils/teamApiKeys";
 import { getWwwClient } from "./utils/wwwClient";
 import { getWwwOpenApiModule } from "./utils/wwwOpenApiModule";
 import { buildSystemTimezoneStartupCommand } from "./utils/timezone";
@@ -859,7 +860,7 @@ export async function spawnAgent(
     } else {
       // Fetch from Convex (Stack Auth available)
       const results = await Promise.all([
-        getConvex().query(api.apiKeys.getAllForAgents, { teamSlugOrId }),
+        loadTeamApiKeysForAgents(teamSlugOrId),
         getConvex().query(api.workspaceSettings.get, { teamSlugOrId }),
         getConvex()
           .query(api.providerOverrides.getForTeam, { teamSlugOrId })

@@ -15,7 +15,7 @@ import type { McpServerConfig } from "../../mcp-server-config";
 
 /**
  * Fallback deny rules for Cursor CLI in task sandboxes.
- * Used when permissionDenyRules from Convex is not available.
+ * Used when permissionDenyRules from Convex is unavailable.
  *
  * These use Cursor's native permission format:
  * - Shell(commandBase) - deny shell commands starting with pattern
@@ -320,14 +320,11 @@ export async function getCursorEnvironment(
   const shouldApplyDenyRules = hasTaskRunJwt && !ctx.isOrchestrationHead;
 
   if (shouldApplyDenyRules) {
-    // Use Convex rules if available, otherwise fall back to defaults
-    const cmuxDenyRules = ctx.permissionDenyRules?.length
-      ? ctx.permissionDenyRules
-      : [];
-    // Translate cmux rules (Claude format) to Cursor format, merge with fallback
-    const cursorDenyRules = cmuxDenyRules.length > 0
-      ? translateDenyRulesToCursor(cmuxDenyRules)
-      : CURSOR_FALLBACK_DENY_RULES;
+    // Use Convex rules if available, otherwise fall back to defaults.
+    // An empty array means "apply no deny rules".
+    const cursorDenyRules = translateDenyRulesToCursor(
+      ctx.permissionDenyRules ?? CURSOR_FALLBACK_DENY_RULES,
+    );
 
     const cursorCliJson = buildCursorCliJson(cursorDenyRules);
     files.push({

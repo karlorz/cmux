@@ -22,4 +22,5 @@ export * from "./screenshots/sanitize-markdown";
 export * from "./mcp-server-config";
 export * from "./mcp-injection";
 export * from "./agent-comm-events";
+export * from "./run-control-types";
 // Note: worker-schemas is excluded because it imports agentConfig which has Node.js dependencies

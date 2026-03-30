@@ -137,7 +137,7 @@ export function EnvironmentSetupFlow({
     [vncUrlFromStatus, vscodeUrl]
   );
 
-  // WebSocket URL for direct VncViewer connection (preferred over iframe)
+  // WebSocket URL kept as a fallback when the noVNC HTML viewer URL is unavailable
   const vncWebsocketUrl = useMemo(
     () =>
       resolveBrowserPreviewWebsocketUrl({

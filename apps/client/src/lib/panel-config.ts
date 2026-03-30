@@ -269,6 +269,79 @@ export function ensureTerminalPanelVisible(config: PanelConfig): PanelConfig {
   return config;
 }
 
+const BROWSER_EMPTY_POSITION_PREFERENCE: readonly PanelPosition[] = [
+  "topRight",
+  "bottomRight",
+  "bottomLeft",
+  "topLeft",
+];
+
+function isLegacyThreeLeftBrowserlessLayout(layout: LayoutPanels): boolean {
+  return (
+    layout.topLeft === "chat" &&
+    layout.topRight === "liveDiff" &&
+    layout.bottomLeft === null &&
+    layout.bottomRight === "workspace"
+  );
+}
+
+/**
+ * Restores the browser panel for cloud task layouts without aggressively
+ * rewriting custom panel arrangements.
+ *
+ * This is intentionally conservative:
+ * - keep existing browser panels untouched
+ * - fill an empty active slot when one exists
+ * - migrate the legacy default three-left layout by replacing live diff
+ */
+export function ensureBrowserPanelVisible(config: PanelConfig): PanelConfig {
+  const currentLayout = getCurrentLayoutPanels(config);
+  const activePositions = getActivePanelPositions(config.layoutMode);
+
+  for (const pos of activePositions) {
+    if (currentLayout[pos] === "browser") {
+      return config;
+    }
+  }
+
+  for (const pos of BROWSER_EMPTY_POSITION_PREFERENCE) {
+    if (!activePositions.includes(pos)) {
+      continue;
+    }
+    if (currentLayout[pos] !== null) {
+      continue;
+    }
+    return {
+      ...config,
+      layouts: {
+        ...config.layouts,
+        [config.layoutMode]: {
+          ...currentLayout,
+          [pos]: "browser",
+        },
+      },
+    };
+  }
+
+  if (
+    config.layoutMode === "three-left" &&
+    isLegacyThreeLeftBrowserlessLayout(currentLayout)
+  ) {
+    return {
+      ...config,
+      layouts: {
+        ...config.layouts,
+        [config.layoutMode]: {
+          ...currentLayout,
+          topRight: "browser",
+        },
+      },
+    };
+  }
+
+  return config;
+}
+
 /**
  * Returns which panel positions are visible for the given layout mode
  */
