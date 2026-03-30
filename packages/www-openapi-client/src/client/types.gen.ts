@@ -8903,6 +8903,46 @@ export type PostApiRunControlAppendInstructionByRunIdResponses = {
 
 export type PostApiRunControlAppendInstructionByRunIdResponse = PostApiRunControlAppendInstructionByRunIdResponses[keyof PostApiRunControlAppendInstructionByRunIdResponses];
 
+export type GetApiHooksDispatchData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Hook event type (e.g., session_start, session_stop)
+         */
+        event: string;
+        /**
+         * Provider name (e.g., claude, codex, gemini)
+         */
+        provider: string;
+    };
+    url: '/api/hooks/dispatch';
+};
+
+export type GetApiHooksDispatchErrors = {
+    /**
+     * Invalid event type or provider
+     */
+    400: unknown;
+    /**
+     * Unauthorized - missing or invalid JWT
+     */
+    401: unknown;
+    /**
+     * Hook not supported for this provider
+     */
+    404: unknown;
+};
+
+export type GetApiHooksDispatchResponses = {
+    /**
+     * Shell script for the requested hook
+     */
+    200: string;
+};
+
+export type GetApiHooksDispatchResponse = GetApiHooksDispatchResponses[keyof GetApiHooksDispatchResponses];
+
 export type GetApiApiKeysData = {
     body?: never;
     path?: never;

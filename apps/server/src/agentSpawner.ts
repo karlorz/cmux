@@ -2335,6 +2335,7 @@ exit $EXIT_CODE
       let lastDiffFingerprint: string | null = null;
       let lastLiveDiffRecordedAt = 0;
       let runControlMonitorStopped = false;
+      let lastMemorySyncAt = Date.now();
 
       const runControlEventNames = [
         "terminal-exit",
@@ -2425,6 +2426,31 @@ exit $EXIT_CODE
             }
           }
           lastDiffFingerprint = currentDiffFingerprint;
+
+          // Server-side memory sync fallback (5 minute interval)
+          // This ensures memory is synced even if client-side hooks fail
+          const MEMORY_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+          if (now - lastMemorySyncAt >= MEMORY_SYNC_INTERVAL_MS) {
+            try {
+              await workerExec({
+                workerSocket,
+                command: "bash",
+                args: ["-lc", "/root/lifecycle/memory/sync.sh"],
+                cwd: "/root/workspace",
+                env: {},
+                timeout: 30_000,
+              });
+              serverLogger.debug(
+                `[AgentSpawner] Memory sync completed for ${runId}`,
+              );
+            } catch (syncError) {
+              serverLogger.warn(
+                `[AgentSpawner] Memory sync failed for ${runId}:`,
+                syncError,
+              );
+            }
+            lastMemorySyncAt = now;
+          }
 
           if (activityRecordedThisPoll || summary.timeout.status !== "active") {
             return;

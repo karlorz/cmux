@@ -1200,3 +1200,153 @@ export function buildMcpCapabilitiesPayload(
     sessionId: options?.sessionId,
   };
 }
+
+// =============================================================================
+// Thin Hook Stub Generation (Hook Portability)
+// =============================================================================
+
+/**
+ * Options for building thin hook stubs.
+ */
+export interface ThinHookStubOptions {
+  /** Timeout for fetch in seconds (default: 5) */
+  timeout?: number;
+  /** Inline fallback script to use if fetch fails */
+  fallbackScript?: string;
+  /** Cache TTL in seconds (default: 60) */
+  cacheTtlSeconds?: number;
+}
+
+/**
+ * Build a thin hook stub that fetches dispatch logic from the cmux server.
+ *
+ * The stub:
+ * 1. Checks for cached script in /tmp/cmux-hook-cache-{event}-{provider} (TTL-based)
+ * 2. If cache miss/stale, fetches from /api/hooks/dispatch
+ * 3. Executes fetched script or falls back to inline fallback
+ * 4. Passes through stdin (hook input) to executed script
+ *
+ * @param eventType - The lifecycle event type
+ * @param provider - The provider name
+ * @param options - Configuration options
+ * @returns Shell script string for the thin stub
+ */
+export function buildThinHookStub(
+  eventType: LifecycleEventType,
+  provider: ProviderName,
+  options?: ThinHookStubOptions
+): string {
+  const timeout = options?.timeout ?? 5;
+  const cacheTtl = options?.cacheTtlSeconds ?? 60;
+  const cacheFile = `/tmp/cmux-hook-cache-${eventType}-${provider}`;
+  const cacheTsFile = `${cacheFile}.ts`;
+
+  // Build the fallback section if provided
+  let fallbackSection = "";
+  if (options?.fallbackScript) {
+    // Escape the fallback script for embedding in heredoc
+    const escapedFallback = options.fallbackScript
+      .replace(/\\/g, "\\\\")
+      .replace(/'/g, "'\\''");
+    fallbackSection = `
+# Inline fallback for critical hooks
+run_fallback() {
+  cat <<'FALLBACK_EOF' | bash
+${escapedFallback}
+FALLBACK_EOF
+}
+`;
+  } else {
+    fallbackSection = `
+# No fallback - exit gracefully
+run_fallback() {
+  exit 0
+}
+`;
+  }
+
+  return `#!/bin/bash
+set -eu
+
+# Thin hook stub for ${eventType} (${provider})
+# Fetches dispatch logic from cmux server with caching
+
+CACHE_FILE="${cacheFile}"
+CACHE_TS_FILE="${cacheTsFile}"
+CACHE_TTL_SECONDS=${cacheTtl}
+EVENT_TYPE="${eventType}"
+PROVIDER="${provider}"
+FETCH_TIMEOUT=${timeout}
+
+# Capture stdin for passing to dispatched script
+HOOK_INPUT="$(cat)"
+${fallbackSection}
+# Check if we have cmux context
+if [ -z "\${CMUX_TASK_RUN_JWT:-}" ] || [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
+  # No cmux context - run fallback or exit
+  printf '%s' "$HOOK_INPUT" | run_fallback
+  exit 0
+fi
+
+# Check cache validity
+use_cache=false
+if [ -f "$CACHE_FILE" ] && [ -f "$CACHE_TS_FILE" ]; then
+  cached_ts=$(cat "$CACHE_TS_FILE" 2>/dev/null || echo "0")
+  now_ts=$(date +%s)
+  age=$((now_ts - cached_ts))
+  if [ "$age" -lt "$CACHE_TTL_SECONDS" ]; then
+    use_cache=true
+  fi
+fi
+
+# Fetch fresh script if cache is stale or missing
+if [ "$use_cache" = false ]; then
+  # Fetch from dispatch endpoint
+  dispatch_url="\${CMUX_CALLBACK_URL}/api/hooks/dispatch?event=$EVENT_TYPE&provider=$PROVIDER"
+
+  fetched_script=$(curl -sS --max-time "$FETCH_TIMEOUT" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    "$dispatch_url" 2>/dev/null) || fetched_script=""
+
+  # Validate we got a script (should start with #!/bin/bash or similar)
+  if [ -n "$fetched_script" ] && echo "$fetched_script" | head -1 | grep -q "^#!"; then
+    # Update cache
+    printf '%s' "$fetched_script" > "$CACHE_FILE"
+    date +%s > "$CACHE_TS_FILE"
+    use_cache=true
+  fi
+fi
+
+# Execute cached script or fallback
+if [ "$use_cache" = true ] && [ -f "$CACHE_FILE" ]; then
+  printf '%s' "$HOOK_INPUT" | bash "$CACHE_FILE"
+else
+  # Cache miss and fetch failed - use fallback
+  printf '%s' "$HOOK_INPUT" | run_fallback
+fi
+`;
+}
+
+/**
+ * Build a thin hook stub file entry for environment result.
+ *
+ * @param eventType - The lifecycle event type
+ * @param provider - The provider name
+ * @param destinationPath - Where to place the hook script
+ * @param bufferFrom - Buffer.from function for base64 encoding
+ * @param options - Configuration options
+ */
+export function buildThinHookStubFile(
+  eventType: LifecycleEventType,
+  provider: ProviderName,
+  destinationPath: string,
+  bufferFrom: (content: string) => { toString(encoding: "base64"): string },
+  options?: ThinHookStubOptions
+): { destinationPath: string; contentBase64: string; mode: string } {
+  const script = buildThinHookStub(eventType, provider, options);
+  return {
+    destinationPath,
+    contentBase64: bufferFrom(script).toString("base64"),
+    mode: "755",
+  };
+}

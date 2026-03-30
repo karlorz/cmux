@@ -50,6 +50,7 @@ import {
   worktreesRouter,
   providerControlPlaneRouter,
   runControlRouter,
+  hooksDispatchRouter,
 } from "@/lib/routes/index";
 import {
   sandboxesStartRouter,
@@ -211,6 +212,7 @@ app.route("/", providersRouter);
 app.route("/", providersStatusRouter);
 app.route("/", providerControlPlaneRouter);
 app.route("/", runControlRouter);
+app.route("/", hooksDispatchRouter);
 app.route("/", apiKeysRouter);
 app.route("/", mcpServersRouter);
 
