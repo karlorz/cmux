@@ -2,10 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   aggregateByVendor,
   checkAllProvidersStatusWebMode,
-  checkAllProvidersStatusWebModeWithAuthToken,
 } from "./providerStatus";
 import type { ProviderStatus } from "@cmux/shared";
-import { getAuthToken } from "./requestContext";
+import { getAuthToken, runWithAuthToken } from "./requestContext";
 
 const { queryMock } = vi.hoisted(() => ({
   queryMock: vi.fn(),
@@ -161,9 +160,9 @@ describe("checkAllProvidersStatusWebMode", () => {
       };
     });
 
-    await checkAllProvidersStatusWebModeWithAuthToken("socket-auth-token", {
-      teamSlugOrId: "test-team",
-    });
+    await runWithAuthToken("socket-auth-token", () =>
+      checkAllProvidersStatusWebMode({ teamSlugOrId: "test-team" })
+    );
 
     expect(authTokensSeen).toEqual(["socket-auth-token"]);
   });
