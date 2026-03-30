@@ -628,24 +628,52 @@ export function getEnvironmentOverridesForAgent(
     taskRunJwt?: string;
     resolvedProvider: ResolvedProvider | undefined;
     openAiBaseUrl?: string;
+    agentConfigs?: {
+      claude?: string;
+      codex?: string;
+    };
+    permissionDenyRules?: string[];
+    enableShellWrappers?: boolean;
+    isOrchestrationHead?: boolean;
+    callbackUrl?: string;
   },
 ): Pick<
   Parameters<NonNullable<(typeof AGENT_CONFIGS)[number]["environment"]>>[0],
-  "mcpServerConfigs" | "workspaceSettings" | "providerConfig"
+  | "mcpServerConfigs"
+  | "workspaceSettings"
+  | "providerConfig"
+  | "agentConfigs"
+  | "permissionDenyRules"
+  | "enableShellWrappers"
+  | "isOrchestrationHead"
+  | "orchestrationEnv"
 > {
+  const sharedOverrides = {
+    workspaceSettings: options.workspaceSettings ?? undefined,
+    agentConfigs: options.agentConfigs,
+    permissionDenyRules: options.permissionDenyRules,
+    enableShellWrappers: options.enableShellWrappers,
+    isOrchestrationHead: options.isOrchestrationHead,
+    orchestrationEnv:
+      options.isOrchestrationHead && options.callbackUrl
+        ? {
+            CMUX_CALLBACK_URL: options.callbackUrl,
+          }
+        : undefined,
+  };
   const providerId = getProviderIdFromAgentName(agentName);
 
   switch (providerId) {
     case "anthropic":
       return {
+        ...sharedOverrides,
         mcpServerConfigs: options.mcpConfigs.claude,
-        workspaceSettings: options.workspaceSettings ?? undefined,
         providerConfig: buildProviderConfig(options.resolvedProvider),
       };
     case "openai":
       return {
+        ...sharedOverrides,
         mcpServerConfigs: options.mcpConfigs.codex,
-        workspaceSettings: options.workspaceSettings ?? undefined,
         providerConfig: buildOpenAiProviderConfig(
           options.resolvedProvider,
           options.openAiBaseUrl,
@@ -653,14 +681,14 @@ export function getEnvironmentOverridesForAgent(
       };
     case "gemini":
       return {
+        ...sharedOverrides,
         mcpServerConfigs: options.mcpConfigs.gemini,
-        workspaceSettings: options.workspaceSettings ?? undefined,
         providerConfig: buildProviderConfig(options.resolvedProvider),
       };
     default:
       return {
+        ...sharedOverrides,
         mcpServerConfigs: options.mcpConfigs.opencode,
-        workspaceSettings: options.workspaceSettings ?? undefined,
         providerConfig: buildProviderConfig(options.resolvedProvider),
       };
   }

@@ -458,6 +458,11 @@ describe("sandboxes-routes helpers", () => {
       workspaceSettings: null,
       resolvedProvider: undefined,
       openAiBaseUrl: undefined,
+      agentConfigs: undefined,
+      permissionDenyRules: undefined,
+      enableShellWrappers: undefined,
+      isOrchestrationHead: undefined,
+      callbackUrl: undefined,
     };
 
     it("returns claude MCP configs for anthropic agents", () => {
@@ -538,6 +543,31 @@ describe("sandboxes-routes helpers", () => {
     it("returns undefined providerConfig when not overridden", () => {
       const result = getEnvironmentOverridesForAgent("claude/opus-4.6", baseOptions);
       expect(result.providerConfig).toBeUndefined();
+    });
+
+    it("passes through agent configs, deny rules, shell wrappers, and orchestration context", () => {
+      const result = getEnvironmentOverridesForAgent("claude/opus-4.6", {
+        ...baseOptions,
+        agentConfigs: {
+          claude: '{"theme":"cmux"}',
+          codex: 'model = "gpt-5.4"',
+        },
+        permissionDenyRules: ["WebFetch", "WebSearch"],
+        enableShellWrappers: true,
+        isOrchestrationHead: true,
+        callbackUrl: "https://cmux.example.com",
+      });
+
+      expect(result.agentConfigs).toEqual({
+        claude: '{"theme":"cmux"}',
+        codex: 'model = "gpt-5.4"',
+      });
+      expect(result.permissionDenyRules).toEqual(["WebFetch", "WebSearch"]);
+      expect(result.enableShellWrappers).toBe(true);
+      expect(result.isOrchestrationHead).toBe(true);
+      expect(result.orchestrationEnv).toEqual({
+        CMUX_CALLBACK_URL: "https://cmux.example.com",
+      });
     });
   });
 
