@@ -914,15 +914,12 @@ function TaskDetailPage() {
       return;
     }
 
-    setPanelConfig((prev) => {
-      const next = ensureBrowserPanelVisible(prev);
-      if (next === prev) {
-        return prev;
-      }
+    const next = ensureBrowserPanelVisible(panelConfig);
+    if (next !== panelConfig) {
+      setPanelConfig(next);
       savePanelConfig(next);
-      return next;
-    });
-  }, [isBrowserSupported, isLocalWorkspaceTask, selectedRunId]);
+    }
+  }, [isBrowserSupported, isLocalWorkspaceTask, panelConfig, selectedRunId]);
 
   useEffect(() => {
     setActivePanelPosition((current) =>
