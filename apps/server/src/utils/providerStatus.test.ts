@@ -150,6 +150,41 @@ describe("checkAllProvidersStatusWebMode", () => {
     expect(codex?.missingRequirements).toBeUndefined();
   });
 
+  it("falls back to the legacy apiKeys.getAll shape when getAllForAgents is unavailable", async () => {
+    queryMock
+      .mockRejectedValueOnce(new Error("Query not found: api.apiKeys.getAllForAgents"))
+      .mockResolvedValueOnce([
+        {
+          envVar: "OPENAI_API_KEY",
+          value: "sk-test-key",
+        },
+      ]);
+
+    const result = await checkAllProvidersStatusWebMode({
+      teamSlugOrId: "test-team",
+    });
+
+    const codex = result.providers.find((p) => p.name === "codex/gpt-5.4");
+    expect(codex?.isAvailable).toBe(true);
+    expect(codex?.missingRequirements).toBeUndefined();
+    expect(queryMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces API key loading failures instead of masking them as setup needed", async () => {
+    queryMock.mockRejectedValueOnce(
+      new Error("Query not found: api.apiKeys.getAllForAgents")
+    );
+    queryMock.mockRejectedValueOnce(
+      new Error("Query not found: api.apiKeys.getAll")
+    );
+
+    await expect(
+      checkAllProvidersStatusWebMode({
+        teamSlugOrId: "test-team",
+      })
+    ).rejects.toThrow("Query not found: api.apiKeys.getAll");
+  });
+
   it("propagates auth token when fetching provider status for socket consumers", async () => {
     const authTokensSeen: Array<string | undefined> = [];
     queryMock.mockImplementationOnce(async () => {
