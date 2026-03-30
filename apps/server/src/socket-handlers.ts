@@ -118,6 +118,62 @@ const isWindows = process.platform === "win32";
 const DOCKER_PULL_TIMEOUT_MS = 10 * 60 * 1000;
 const DOCKER_PULL_PROGRESS_THROTTLE_MS = 2_000;
 
+/**
+ * In-memory cache for provider status per team.
+ * Reduces Convex query load when multiple clients poll frequently.
+ * TTL: 60 seconds per team. Max 500 entries to prevent unbounded growth.
+ */
+interface ProviderStatusCacheEntry {
+  data: Awaited<ReturnType<typeof checkAllProvidersStatus>>;
+  expiresAt: number;
+}
+
+const providerStatusCache = new Map<string, ProviderStatusCacheEntry>();
+const PROVIDER_STATUS_CACHE_TTL_MS = 60_000; // 60 seconds
+const PROVIDER_STATUS_CACHE_MAX_SIZE = 500;
+
+/** In-flight requests to prevent thundering herd on cache miss */
+const providerStatusInflight = new Map<
+  string,
+  Promise<ProviderStatusCacheEntry["data"]>
+>();
+
+function getCachedProviderStatus(
+  teamSlugOrId: string
+): ProviderStatusCacheEntry["data"] | null {
+  const entry = providerStatusCache.get(teamSlugOrId);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    providerStatusCache.delete(teamSlugOrId);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCachedProviderStatus(
+  teamSlugOrId: string,
+  data: ProviderStatusCacheEntry["data"]
+): void {
+  // Evict expired entries if cache is at capacity
+  if (providerStatusCache.size >= PROVIDER_STATUS_CACHE_MAX_SIZE) {
+    const now = Date.now();
+    for (const [key, entry] of providerStatusCache) {
+      if (now > entry.expiresAt) {
+        providerStatusCache.delete(key);
+      }
+    }
+    // If still at capacity, delete oldest entry (first in Map iteration order)
+    if (providerStatusCache.size >= PROVIDER_STATUS_CACHE_MAX_SIZE) {
+      const oldestKey = providerStatusCache.keys().next().value;
+      if (oldestKey) providerStatusCache.delete(oldestKey);
+    }
+  }
+  providerStatusCache.set(teamSlugOrId, {
+    data,
+    expiresAt: Date.now() + PROVIDER_STATUS_CACHE_TTL_MS,
+  });
+}
+
 type DockerPullProgressEvent = {
   status?: string;
   progress?: string;
@@ -3841,12 +3897,31 @@ Please address the issue mentioned in the comment above.`;
 
     socket.on("check-provider-status", async (callback) => {
       try {
-        // In web mode, only check API keys from Convex (no local files/keychains)
-        const status = await runWithAuthToken(currentAuthToken, () =>
-          env.NEXT_PUBLIC_WEB_MODE
-            ? checkAllProvidersStatusWebMode({ teamSlugOrId: safeTeam })
-            : checkAllProvidersStatus({ teamSlugOrId: safeTeam })
-        );
+        // Check cache first to reduce Convex query load
+        const cached = getCachedProviderStatus(safeTeam);
+        if (cached) {
+          callback({ success: true, ...cached });
+          return;
+        }
+
+        // Check for in-flight request to prevent thundering herd
+        let statusPromise = providerStatusInflight.get(safeTeam);
+        if (!statusPromise) {
+          // In web mode, only check API keys from Convex (no local files/keychains)
+          statusPromise = runWithAuthToken(currentAuthToken, () =>
+            env.NEXT_PUBLIC_WEB_MODE
+              ? checkAllProvidersStatusWebMode({ teamSlugOrId: safeTeam })
+              : checkAllProvidersStatus({ teamSlugOrId: safeTeam })
+          );
+          providerStatusInflight.set(safeTeam, statusPromise);
+          statusPromise.finally(() => providerStatusInflight.delete(safeTeam));
+        }
+
+        const status = await statusPromise;
+
+        // Cache the result for subsequent requests
+        setCachedProviderStatus(safeTeam, status);
+
         callback({ success: true, ...status });
       } catch (error) {
         serverLogger.error("Error checking provider status:", error);
