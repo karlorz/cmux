@@ -557,6 +557,62 @@ export async function getSandboxMcpConfigs(
   return { claude, codex, gemini, opencode };
 }
 
+type PermissionDenyRulesClient = Pick<ConvexAdminClient, "query">;
+
+export async function getSandboxPermissionDenyRules(
+  convexAdmin: PermissionDenyRulesClient | null,
+  options: {
+    teamId: string;
+    projectFullName?: string;
+    logPrefix: string;
+    isOrchestrationHead?: boolean;
+  },
+): Promise<string[]> {
+  if (options.isOrchestrationHead) {
+    return [];
+  }
+
+  if (!convexAdmin) {
+    console.error(
+      `[${options.logPrefix}] Permission deny rules unavailable: admin client not configured`,
+      {
+        teamId: options.teamId,
+        projectFullName: options.projectFullName,
+      },
+    );
+    return [];
+  }
+
+  try {
+    const rules = await convexAdmin.query(
+      internal.permissionDenyRules.getForSandboxInternal,
+      {
+        teamId: options.teamId,
+        context: "task_sandbox",
+        projectFullName: options.projectFullName,
+      },
+    );
+
+    console.log(`[${options.logPrefix}] Loaded permission deny rules`, {
+      teamId: options.teamId,
+      projectFullName: options.projectFullName,
+      count: rules.length,
+    });
+
+    return rules;
+  } catch (error) {
+    console.error(
+      `[${options.logPrefix}] Failed to fetch permission deny rules`,
+      {
+        teamId: options.teamId,
+        projectFullName: options.projectFullName,
+        error,
+      },
+    );
+    return [];
+  }
+}
+
 export function getEnvironmentOverridesForAgent(
   agentName: string,
   options: {
@@ -682,8 +738,9 @@ export const TeamQueryParam = z.object({
 
 /**
  * Set up provider auth (Claude + Codex + OpenCode) on a sandbox instance.
- * Fetches API keys, provider overrides, and workspace settings from Convex,
- * then applies full environment setup for all supported CLIs.
+ * Fetches API keys, provider overrides, workspace settings, and sandbox
+ * permission rules from Convex, then applies full environment setup for all
+ * supported CLIs.
  *
  * This is non-fatal: failures are logged but do not block sandbox creation.
  */
@@ -691,6 +748,7 @@ export async function setupProviderAuth(
   instance: SandboxInstance,
   convex: ReturnType<typeof getConvex>,
   options: {
+    teamId: string;
     teamSlugOrId: string;
     projectFullName?: string;
     taskRunId?: string;
@@ -704,6 +762,7 @@ export async function setupProviderAuth(
   },
 ): Promise<{ providers: string[] }> {
   const configuredProviders: string[] = [];
+  const convexAdmin = getConvexAdmin();
 
   // Fetch API keys, provider overrides, workspace settings, MCP configs, agent configs, and permission deny rules in parallel
   const [apiKeys, providerOverrides, workspaceSettings, mcpConfigs, agentConfigs, permissionDenyRules] = await Promise.all([
@@ -742,23 +801,12 @@ export async function setupProviderAuth(
       projectFullName: options.projectFullName,
       logPrefix: "setupProviderAuth",
     }),
-    // Fetch permission deny rules for task sandboxes
-    // Skip for head agents (they need full capabilities) - determined by isOrchestrationHead flag
-    options.isOrchestrationHead
-      ? Promise.resolve([])
-      : convex
-          .query(api.permissionDenyRules.getForSandbox, {
-            teamSlugOrId: options.teamSlugOrId,
-            context: "task_sandbox",
-            projectFullName: options.projectFullName,
-          })
-          .catch((err: unknown) => {
-            console.error(
-              "[setupProviderAuth] Failed to fetch permission deny rules, using defaults",
-              err,
-            );
-            return undefined;
-          }),
+    getSandboxPermissionDenyRules(convexAdmin, {
+      teamId: options.teamId,
+      projectFullName: options.projectFullName,
+      logPrefix: "setupProviderAuth",
+      isOrchestrationHead: options.isOrchestrationHead,
+    }),
   ]);
 
   const mcpConfigCounts = {

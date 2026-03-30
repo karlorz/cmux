@@ -273,21 +273,21 @@ describe("getClaudeEnvironment", () => {
     }
   });
 
-  it("denies dangerous commands for task-backed sandboxes", async () => {
-    const settings = await decodeClaudeSettings();
+  it("includes provided permission deny rules for task-backed sandboxes", async () => {
+    const settings = await decodeClaudeSettings({
+      permissionDenyRules: ["WebFetch", "WebSearch"],
+    });
 
     const deny = settings.permissions?.deny;
-    expect(deny).toContain("Bash(gh pr create:*)");
-    expect(deny).toContain("Bash(gh pr merge:*)");
-    expect(deny).toContain("Bash(gh pr close:*)");
-    expect(deny).toContain("Bash(git push --force:*)");
-    expect(deny).toContain("Bash(git push --force-with-lease:*)");
-    expect(deny).toContain("Bash(git push -f:*)");
-    expect(deny).toContain("Bash(devsh start:*)");
-    expect(deny).toContain("Bash(devsh delete:*)");
-    expect(deny).toContain("Bash(cloudrouter start:*)");
-    expect(deny).toContain("Bash(cloudrouter delete:*)");
-    expect(deny).toContain("Bash(gh workflow run:*)");
+    expect(deny).toEqual(["WebFetch", "WebSearch"]);
+  });
+
+  it("omits deny rules when task-backed sandbox rules are unavailable", async () => {
+    const settings = await decodeClaudeSettings();
+
+    expect(settings.permissions).toBeDefined();
+    expect(settings.permissions.defaultMode).toBe("bypassPermissions");
+    expect(settings.permissions.deny).toBeUndefined();
   });
 
   it("does not deny commands when task JWT is absent", async () => {

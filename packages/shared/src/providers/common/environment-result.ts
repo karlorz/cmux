@@ -105,9 +105,7 @@ export type EnvironmentContext = {
   /**
    * Permission deny patterns fetched from Convex.
    * These are injected into Claude's settings.json permissions.deny array.
-   * When empty, no deny rules are applied.
-   * When undefined, the provider may fall back to legacy defaults while
-   * the sandbox rule fetch path is unavailable.
+   * When empty or undefined, no deny rules are applied.
    */
   permissionDenyRules?: string[];
   /**

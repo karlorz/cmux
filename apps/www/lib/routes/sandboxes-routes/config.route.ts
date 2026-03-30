@@ -214,6 +214,7 @@ sandboxesConfigRouter.openapi(
           }),
       ]);
       const result = await setupProviderAuth(instance, convex, {
+        teamId: team.uuid,
         teamSlugOrId: body.teamSlugOrId,
         projectFullName: parsedRepoUrl?.fullName,
         taskRunId: body.taskRunId,

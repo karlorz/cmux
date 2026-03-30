@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   concatConfigBlocks,
   getSandboxStartErrorMessage,
+  getSandboxPermissionDenyRules,
   mapProviderOverrides,
   buildProviderConfig,
   buildOpenAiProviderConfig,
@@ -537,6 +538,54 @@ describe("sandboxes-routes helpers", () => {
     it("returns undefined providerConfig when not overridden", () => {
       const result = getEnvironmentOverridesForAgent("claude/opus-4.6", baseOptions);
       expect(result.providerConfig).toBeUndefined();
+    });
+  });
+
+  describe("getSandboxPermissionDenyRules", () => {
+    it("loads task sandbox deny rules from the admin client", async () => {
+      const calls: Array<{
+        queryRef: unknown;
+        args: Record<string, unknown>;
+      }> = [];
+      const convexAdmin = {
+        query: async (queryRef: unknown, args: Record<string, unknown>) => {
+          calls.push({ queryRef, args });
+          return ["WebFetch", "WebSearch"];
+        },
+      };
+
+      const rules = await getSandboxPermissionDenyRules(convexAdmin, {
+        teamId: "team-123",
+        projectFullName: "karlorz/testing-repo-1",
+        logPrefix: "test",
+      });
+
+      expect(rules).toEqual(["WebFetch", "WebSearch"]);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.args).toEqual({
+        teamId: "team-123",
+        context: "task_sandbox",
+        projectFullName: "karlorz/testing-repo-1",
+      });
+    });
+
+    it("skips deny rules for orchestration heads", async () => {
+      let called = false;
+      const convexAdmin = {
+        query: async () => {
+          called = true;
+          return ["WebFetch"];
+        },
+      };
+
+      const rules = await getSandboxPermissionDenyRules(convexAdmin, {
+        teamId: "team-123",
+        logPrefix: "test",
+        isOrchestrationHead: true,
+      });
+
+      expect(rules).toEqual([]);
+      expect(called).toBe(false);
     });
   });
 });
