@@ -1,5 +1,6 @@
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
+import { isActivityTypeSupported } from "@cmux/shared/hook-registry";
 import { useQuery } from "convex/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -26,6 +27,7 @@ import {
   Bell,
   MessagesSquare,
   ServerCog,
+  Info,
 } from "lucide-react";
 import { ActivityStreamSkeleton } from "@/components/dashboard/DashboardSkeletons";
 import { formatDuration } from "@/lib/time";
@@ -554,9 +556,11 @@ function getActivitySearchText(activity: ActivityLike): string {
 
 interface ActivityStreamProps {
   taskRunId: Id<"taskRuns">;
+  /** Provider name for event coverage indicators (e.g., "claude", "codex") */
+  provider?: string;
 }
 
-export function ActivityStream({ taskRunId }: ActivityStreamProps) {
+export function ActivityStream({ taskRunId, provider }: ActivityStreamProps) {
   const activities = useQuery(api.taskRunActivity.getByTaskRunAsc, {
     taskRunId,
     limit: 200,
@@ -682,8 +686,21 @@ export function ActivityStream({ taskRunId }: ActivityStreamProps) {
 
   const hasActiveFilters = activeFilters.size > 0 || searchQuery.trim().length > 0;
 
+  // Check if provider has limited event coverage (not Claude)
+  const hasLimitedCoverage = provider && provider !== "claude";
+
   return (
     <div className="flex flex-col h-full">
+      {/* Limited coverage info banner */}
+      {hasLimitedCoverage && (
+        <div className="px-3 py-2 bg-blue-50 dark:bg-blue-950/30 border-b border-blue-200 dark:border-blue-900 flex items-center gap-2">
+          <Info className="h-4 w-4 text-blue-500 flex-shrink-0" />
+          <span className="text-xs text-blue-700 dark:text-blue-300">
+            Some event types are not available for {provider}. Grayed-out filters indicate unsupported events.
+          </span>
+        </div>
+      )}
+
       {/* Error banner */}
       {errorCount > 0 && (
         <div className="px-3 py-2 bg-red-50 dark:bg-red-950/40 border-b border-red-200 dark:border-red-900 flex items-center gap-2">
@@ -799,20 +816,32 @@ export function ActivityStream({ taskRunId }: ActivityStreamProps) {
                 const { icon: Icon, label } = getActivityConfig(type);
                 const isActive = activeFilters.has(type);
                 const count = activities.filter((a) => a.type === type).length;
-                if (count === 0) return null;
+                const isSupported = !provider || isActivityTypeSupported(type, provider);
+
+                // Show chip if there are events OR if provider doesn't support this type (to explain why it's missing)
+                if (count === 0 && isSupported) return null;
 
                 return (
                   <button
                     key={type}
-                    onClick={() => toggleFilter(type)}
+                    onClick={() => isSupported && toggleFilter(type)}
+                    disabled={!isSupported}
+                    title={
+                      isSupported
+                        ? undefined
+                        : `Not available for ${provider} provider`
+                    }
                     className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors ${
-                      isActive
-                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
-                        : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                      !isSupported
+                        ? "bg-neutral-50 text-neutral-400 dark:bg-neutral-900 dark:text-neutral-600 cursor-not-allowed opacity-60"
+                        : isActive
+                          ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
+                          : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700"
                     }`}
                   >
                     <Icon className="h-3 w-3" />
-                    {label} ({count})
+                    {label} {count > 0 ? `(${count})` : ""}
+                    {!isSupported && <Info className="h-2.5 w-2.5 ml-0.5" />}
                   </button>
                 );
               })}

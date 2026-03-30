@@ -152,7 +152,7 @@ function TaskRunActivity() {
         name="Activity Stream"
         fallback={<CompactErrorFallback name="Activity Stream" />}
       >
-        <ActivityStream taskRunId={taskRunId} />
+        <ActivityStream taskRunId={taskRunId} provider={selectedRun?.vscode?.provider} />
       </ErrorBoundary>
     </div>
   );

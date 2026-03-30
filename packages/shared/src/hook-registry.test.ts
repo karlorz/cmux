@@ -6,6 +6,8 @@ import {
   getHooksForProvider,
   isHookCritical,
   getDispatchScript,
+  getEventSupportMatrix,
+  isActivityTypeSupported,
 } from "./hook-registry";
 
 describe("hook-registry", () => {
@@ -92,6 +94,74 @@ describe("hook-registry", () => {
     it("returns false for non-critical hooks", () => {
       expect(isHookCritical("session_start")).toBe(false);
       expect(isHookCritical("error")).toBe(false);
+    });
+  });
+
+  describe("getEventSupportMatrix", () => {
+    it("returns all events with provider coverage", () => {
+      const matrix = getEventSupportMatrix();
+
+      expect(matrix.length).toBe(HOOK_REGISTRY.length);
+      expect(matrix[0].providers.claude).toBeDefined();
+      expect(matrix[0].providers.codex).toBeDefined();
+    });
+
+    it("includes event metadata", () => {
+      const matrix = getEventSupportMatrix();
+      const sessionStart = matrix.find((e) => e.eventType === "session_start");
+
+      expect(sessionStart).toBeDefined();
+      expect(sessionStart?.description).toBeTruthy();
+      expect(sessionStart?.critical).toBe(false);
+    });
+
+    it("correctly reflects provider support", () => {
+      const matrix = getEventSupportMatrix();
+
+      // session_start is supported by all providers
+      const sessionStart = matrix.find((e) => e.eventType === "session_start");
+      expect(sessionStart?.providers.claude).toBe(true);
+      expect(sessionStart?.providers.codex).toBe(true);
+
+      // context_warning is Claude-only
+      const contextWarning = matrix.find(
+        (e) => e.eventType === "context_warning"
+      );
+      expect(contextWarning?.providers.claude).toBe(true);
+      expect(contextWarning?.providers.codex).toBe(false);
+    });
+  });
+
+  describe("isActivityTypeSupported", () => {
+    it("returns true for universal events", () => {
+      expect(isActivityTypeSupported("session_start", "claude")).toBe(true);
+      expect(isActivityTypeSupported("session_start", "codex")).toBe(true);
+      expect(isActivityTypeSupported("session_start", "gemini")).toBe(true);
+    });
+
+    it("returns false for Claude-only events on other providers", () => {
+      expect(isActivityTypeSupported("context_warning", "codex")).toBe(false);
+      expect(isActivityTypeSupported("approval_requested", "gemini")).toBe(
+        false
+      );
+      expect(isActivityTypeSupported("subagent_start", "codex")).toBe(false);
+    });
+
+    it("maps tool activity types to tool_call support", () => {
+      // Claude and Codex support tool_call
+      expect(isActivityTypeSupported("file_edit", "claude")).toBe(true);
+      expect(isActivityTypeSupported("file_edit", "codex")).toBe(true);
+
+      // Gemini does not support tool_call events
+      expect(isActivityTypeSupported("file_edit", "gemini")).toBe(false);
+      expect(isActivityTypeSupported("bash_command", "gemini")).toBe(false);
+    });
+
+    it("returns true for unmapped activity types", () => {
+      // thinking has no hook backing, should always be shown
+      expect(isActivityTypeSupported("thinking", "claude")).toBe(true);
+      expect(isActivityTypeSupported("thinking", "codex")).toBe(true);
+      expect(isActivityTypeSupported("thinking", "gemini")).toBe(true);
     });
   });
 
