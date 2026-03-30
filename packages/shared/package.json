@@ -214,6 +214,10 @@
       "import": "./src/provider-lifecycle-adapter.ts",
       "types": "./src/provider-lifecycle-adapter.ts"
     },
+    "./hook-registry": {
+      "import": "./src/hook-registry.ts",
+      "types": "./src/hook-registry.ts"
+    },
     "./observability": {
       "import": "./src/observability/index.ts",
       "types": "./src/observability/index.ts"

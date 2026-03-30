@@ -102,3 +102,4 @@ export { mcpServersWriteRouter } from "./mcp-servers.write.route";
 export { mcpServersRouter } from "./mcp-servers.route";
 export { providerControlPlaneRouter } from "./provider-control-plane.route";
 export { runControlRouter } from "./run-control.route";
+export { hooksDispatchRouter } from "./hooks.dispatch.route";
