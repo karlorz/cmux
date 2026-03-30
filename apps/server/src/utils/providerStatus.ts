@@ -1,4 +1,3 @@
-import { api } from "@cmux/convex/api";
 import {
   AGENT_CONFIGS,
   type DockerStatus,
@@ -8,7 +7,7 @@ import {
 import { AGENT_CATALOG } from "@cmux/shared/agent-catalog";
 import { checkDockerStatus } from "@cmux/shared/providers/common/check-docker";
 import { isAuthFreeModel } from "@cmux/shared/providers/control-plane";
-import { getConvex } from "./convexClient.js";
+import { loadTeamApiKeysForAgents } from "./teamApiKeys.js";
 
 export interface AggregatedProviderStatus {
   /** Vendor name: "anthropic", "openai", "google", etc. */
@@ -65,16 +64,7 @@ export async function checkAllProvidersStatus(
   let apiKeys: ProviderRequirementsContext["apiKeys"] = undefined;
 
   if (options.teamSlugOrId) {
-    try {
-      apiKeys = await getConvex().query(api.apiKeys.getAllForAgents, {
-        teamSlugOrId: options.teamSlugOrId,
-      });
-    } catch (error) {
-      console.warn(
-        `Failed to load API keys for team ${options.teamSlugOrId}:`,
-        error
-      );
-    }
+    apiKeys = await loadTeamApiKeysForAgents(options.teamSlugOrId);
   }
 
   // Check each provider's specific requirements
@@ -118,19 +108,7 @@ export async function checkAllProvidersStatusWebMode(options: {
   // In web mode, Docker is managed by cloud provider - always report as ready
   const dockerStatus: DockerStatus = { isRunning: true, version: "web-mode" };
 
-  let apiKeys: Record<string, string> = {};
-
-  try {
-    apiKeys =
-      (await getConvex().query(api.apiKeys.getAllForAgents, {
-        teamSlugOrId: options.teamSlugOrId,
-      })) ?? {};
-  } catch (error) {
-    console.warn(
-      `Failed to load API keys for team ${options.teamSlugOrId}:`,
-      error
-    );
-  }
+  const apiKeys = await loadTeamApiKeysForAgents(options.teamSlugOrId);
 
   // Check each agent's required API keys (skip local file checks)
   const providerChecks = AGENT_CONFIGS.map((agent) => {

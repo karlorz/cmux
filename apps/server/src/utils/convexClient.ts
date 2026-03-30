@@ -3,14 +3,19 @@ import {
   ConvexHttpClient,
 } from "@cmux/shared/node/convex-cache";
 import { getAuthToken } from "./requestContext";
+import { serverLogger } from "./fileLogger";
 import { env } from "./server-env";
 
 // Return a Convex client bound to the current auth context (requires auth)
 export function getConvex() {
   const auth = getAuthToken();
   if (!auth) {
+    serverLogger.error("[getConvex] No auth token found in request context");
     throw new Error("No auth token found");
   }
+  serverLogger.debug("[getConvex] Auth token present", {
+    length: auth.length,
+  });
 
   // Try to get from cache first
   const cachedClient = convexClientCache.get(auth, env.NEXT_PUBLIC_CONVEX_URL);
