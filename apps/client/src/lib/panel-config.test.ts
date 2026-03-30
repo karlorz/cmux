@@ -6,6 +6,7 @@ import {
   removePanelFromAllPositions,
   getCurrentLayoutPanels,
   ensureTerminalPanelVisible,
+  ensureBrowserPanelVisible,
   ALL_PANEL_TYPES,
   DEFAULT_PANEL_CONFIG,
   type PanelConfig,
@@ -307,6 +308,87 @@ describe("panel-config", () => {
 
       const result = ensureTerminalPanelVisible(config);
       expect(result).toBe(config); // Unchanged
+    });
+  });
+
+  describe("ensureBrowserPanelVisible", () => {
+    it("returns unchanged config if browser is already visible", () => {
+      const config: PanelConfig = {
+        layoutMode: "four-panel",
+        layouts: {
+          ...DEFAULT_PANEL_CONFIG.layouts,
+          "four-panel": {
+            topLeft: "chat",
+            topRight: "workspace",
+            bottomLeft: "terminal",
+            bottomRight: "browser",
+          },
+        },
+      };
+
+      const result = ensureBrowserPanelVisible(config);
+      expect(result).toBe(config);
+    });
+
+    it("adds browser to an empty preferred active slot", () => {
+      const config: PanelConfig = {
+        layoutMode: "three-left",
+        layouts: {
+          ...DEFAULT_PANEL_CONFIG.layouts,
+          "three-left": {
+            topLeft: "chat",
+            topRight: null,
+            bottomLeft: null,
+            bottomRight: "workspace",
+          },
+        },
+      };
+
+      const result = ensureBrowserPanelVisible(config);
+      const panels = getCurrentLayoutPanels(result);
+
+      expect(panels.topRight).toBe("browser");
+      expect(panels.bottomRight).toBe("workspace");
+    });
+
+    it("migrates the legacy three-left default to restore browser visibility", () => {
+      const config: PanelConfig = {
+        layoutMode: "three-left",
+        layouts: {
+          ...DEFAULT_PANEL_CONFIG.layouts,
+          "three-left": {
+            topLeft: "chat",
+            topRight: "liveDiff",
+            bottomLeft: null,
+            bottomRight: "workspace",
+          },
+        },
+      };
+
+      const result = ensureBrowserPanelVisible(config);
+      const panels = getCurrentLayoutPanels(result);
+
+      expect(panels.topLeft).toBe("chat");
+      expect(panels.topRight).toBe("browser");
+      expect(panels.bottomRight).toBe("workspace");
+    });
+
+    it("leaves unrelated full custom layouts unchanged", () => {
+      const config: PanelConfig = {
+        layoutMode: "three-right",
+        layouts: {
+          ...DEFAULT_PANEL_CONFIG.layouts,
+          "three-right": {
+            topLeft: "chat",
+            topRight: null,
+            bottomLeft: "terminal",
+            bottomRight: "workspace",
+          },
+        },
+      };
+
+      const result = ensureBrowserPanelVisible(config);
+      expect(result).toBe(config);
     });
   });
 

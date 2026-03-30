@@ -63,7 +63,7 @@ interface EnvironmentWorkspaceConfigProps {
   exposedPorts: string;
   vscodeUrl?: string;
   browserHtmlUrl?: string;
-  /** WebSocket URL for direct VncViewer connection (preferred over iframe) */
+  /** WebSocket URL used only when the noVNC HTML viewer URL is unavailable */
   vncWebsocketUrl?: string;
   browserPersistKey: string;
   isSaving: boolean;
@@ -382,8 +382,8 @@ export function EnvironmentWorkspaceConfig({
     [vscodeUrl]
   );
 
-  // Use direct VncViewer when websocket URL is available
-  const useDirectVncViewer = Boolean(vncWebsocketUrl);
+  const useIframeBrowserView = Boolean(browserHtmlUrl);
+  const useDirectVncFallback = !useIframeBrowserView && Boolean(vncWebsocketUrl);
 
   const browserPlaceholder = useMemo(
     () =>
@@ -396,9 +396,9 @@ export function EnvironmentWorkspaceConfig({
     [browserHtmlUrl, vncWebsocketUrl]
   );
 
-  // Only use clipboard bridge for iframe fallback path (not direct VncViewer)
+  // The visible noVNC toolbar lives in the iframe viewer path.
   const isVncIframeFallback =
-    showBrowser && !useDirectVncViewer && Boolean(browserHtmlUrl?.includes("/vnc.html"));
+    showBrowser && useIframeBrowserView && Boolean(browserHtmlUrl?.includes("/vnc.html"));
   useVncClipboardBridge({
     persistKey: browserPersistKey,
     enabled: isVncIframeFallback,
@@ -910,19 +910,7 @@ export function EnvironmentWorkspaceConfig({
         )}
 
         {/* Browser preview (shown for browser-setup step) */}
-        {/* Prefer direct VncViewer when websocket URL is available */}
-        {showBrowser && useDirectVncViewer && vncWebsocketUrl && (
-          <VncViewer
-            url={vncWebsocketUrl}
-            autoConnect
-            scaleViewport
-            className="absolute inset-0"
-            loadingFallback={<WorkspaceLoadingIndicator variant="browser" status="loading" />}
-            errorFallback={<WorkspaceLoadingIndicator variant="browser" status="error" />}
-          />
-        )}
-        {/* Fallback to iframe when only HTML URL is available */}
-        {showBrowser && !useDirectVncViewer && browserHtmlUrl && (
+        {showBrowser && useIframeBrowserView && browserHtmlUrl && (
           <PersistentWebView
             persistKey={browserPersistKey}
             src={browserHtmlUrl}
@@ -936,6 +924,16 @@ export function EnvironmentWorkspaceConfig({
             errorFallback={<WorkspaceLoadingIndicator variant="browser" status="error" />}
             errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
             loadTimeoutMs={45_000}
+          />
+        )}
+        {showBrowser && useDirectVncFallback && vncWebsocketUrl && (
+          <VncViewer
+            url={vncWebsocketUrl}
+            autoConnect
+            scaleViewport
+            className="absolute inset-0"
+            loadingFallback={<WorkspaceLoadingIndicator variant="browser" status="loading" />}
+            errorFallback={<WorkspaceLoadingIndicator variant="browser" status="error" />}
           />
         )}
       </div>
