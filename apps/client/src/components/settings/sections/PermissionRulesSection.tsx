@@ -21,7 +21,12 @@ import { toast } from "sonner";
 
 type PermissionRule = Doc<"permissionDenyRules">;
 type PermissionScope = "system" | "team" | "workspace";
-type PermissionContext = "task_sandbox" | "cloud_workspace";
+export const PERMISSION_RULE_CONTEXTS = [
+  "task_sandbox",
+  "cloud_workspace",
+  "local_dev",
+] as const;
+type PermissionContext = (typeof PERMISSION_RULE_CONTEXTS)[number];
 
 interface PermissionRulesSectionProps {
   teamSlugOrId: string;
@@ -54,7 +59,7 @@ function buildFormFromRule(rule: PermissionRule): FormState {
     pattern: rule.pattern,
     description: rule.description,
     scope: rule.scope,
-    contexts: (rule.contexts as PermissionContext[]) ?? ["task_sandbox"],
+    contexts: rule.contexts ?? ["task_sandbox"],
     priority: rule.priority,
     enabled: rule.enabled,
   };
@@ -392,25 +397,23 @@ export function PermissionRulesSection({ teamSlugOrId, enableShellWrappers, onEn
                   Applies to Contexts
                 </label>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {(Object.entries(CONTEXT_LABELS) as [PermissionContext, string][]).map(
-                    ([value, label]) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => toggleContext(value)}
-                        className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                          form.contexts.includes(value)
-                            ? "bg-blue-600 text-white"
-                            : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    )
-                  )}
+                  {PERMISSION_RULE_CONTEXTS.map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => toggleContext(value)}
+                      className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                        form.contexts.includes(value)
+                          ? "bg-blue-600 text-white"
+                          : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
+                      }`}
+                    >
+                      {CONTEXT_LABELS[value]}
+                    </button>
+                  ))}
                 </div>
                 <p className="mt-1 text-xs text-neutral-500">
-                  Task Sandbox = regular tasks, Cloud Workspace = head agents
+                  Task Sandbox = regular tasks, Cloud Workspace = head agents, Local Dev = local runs
                 </p>
               </div>
 

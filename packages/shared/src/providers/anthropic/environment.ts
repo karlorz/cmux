@@ -48,35 +48,6 @@ function resolveClaudeEffortLevel(
   return effort;
 }
 
-/**
- * @deprecated Use permissionDenyRules from Convex instead.
- * Kept as fallback if Convex fetch fails during migration period.
- *
- * These deny rules were previously hardcoded and are now stored in Convex
- * as system-level permissionDenyRules with contexts: ["task_sandbox"].
- * They do NOT apply to head agents (cloud workspaces) which need full capabilities.
- */
-const FALLBACK_DENY_RULES = [
-  // PR lifecycle — cmux manages PR creation/merging automatically
-  "Bash(gh pr create:*)",
-  "Bash(gh pr merge:*)",
-  "Bash(gh pr close:*)",
-  // Force push — destructive history rewrite
-  "Bash(git push --force:*)",
-  "Bash(git push --force-with-lease:*)",
-  "Bash(git push -f:*)",
-  // Sandbox lifecycle — only the orchestration system should manage sandboxes
-  "Bash(devsh start:*)",
-  "Bash(devsh delete:*)",
-  "Bash(devsh pause:*)",
-  "Bash(devsh resume:*)",
-  "Bash(cloudrouter start:*)",
-  "Bash(cloudrouter delete:*)",
-  "Bash(cloudrouter stop:*)",
-  // Infrastructure — snapshot rebuilds affect all future sandboxes
-  "Bash(gh workflow run:*)",
-];
-
 export async function getClaudeEnvironment(
   ctx: EnvironmentContext,
 ): Promise<EnvironmentResult> {
@@ -1072,12 +1043,10 @@ exit 0`;
 
   // Determine deny rules to apply:
   // 1. Head agents (isOrchestrationHead) get NO deny rules - they need full capabilities
-  // 2. Task sandboxes use permissionDenyRules from Convex if available
-  // 3. Fall back to FALLBACK_DENY_RULES only when the Convex fetch is unavailable
+  // 2. Task sandboxes use permissionDenyRules from Convex when provided
+  // 3. If no rules are provided, omit permissions.deny entirely
   const shouldApplyDenyRules = hasTaskRunJwt && !ctx.isOrchestrationHead;
-  const denyRules = shouldApplyDenyRules
-    ? ctx.permissionDenyRules ?? FALLBACK_DENY_RULES
-    : undefined;
+  const denyRules = shouldApplyDenyRules ? ctx.permissionDenyRules : undefined;
 
   const settingsConfig: Record<string, unknown> = {
     alwaysThinkingEnabled: true,

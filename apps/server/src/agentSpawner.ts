@@ -144,6 +144,11 @@ export interface PreFetchedSpawnConfig {
     bypassAnthropicProxy: boolean;
     enableShellWrappers?: boolean;
   } | null;
+  agentConfigs?: {
+    claude?: string;
+    codex?: string;
+  };
+  permissionDenyRules?: string[];
   providerOverrides: Array<{
     providerId: string;
     baseUrl?: string;
@@ -823,6 +828,13 @@ export async function spawnAgent(
           opencode: McpServerConfig[];
         }
       | undefined;
+    let agentConfigs:
+      | {
+          claude?: string;
+          codex?: string;
+        }
+      | undefined;
+    let permissionDenyRules: string[] | undefined;
     let previousKnowledge: string | null;
     let previousMailbox: string | null;
     let previousBehavior: string | null;
@@ -836,6 +848,8 @@ export async function spawnAgent(
       );
       userApiKeys = options.preFetchedConfig.apiKeys;
       workspaceSettings = options.preFetchedConfig.workspaceSettings;
+      agentConfigs = options.preFetchedConfig.agentConfigs;
+      permissionDenyRules = options.preFetchedConfig.permissionDenyRules;
       providerOverrides = options.preFetchedConfig.providerOverrides;
       mcpServerConfigs = options.preFetchedConfig.mcpServerConfigs;
       // Phase 5: Prefer scoped knowledge over legacy previousKnowledge
@@ -908,6 +922,58 @@ export async function spawnAgent(
               opencode,
             }))
           : Promise.resolve(undefined),
+        Promise.all([
+          getConvex()
+            .query(api.agentConfigs.getForSandbox, {
+              teamSlugOrId,
+              agentType: "claude",
+              ...(task?.projectFullName
+                ? { projectFullName: task.projectFullName }
+                : {}),
+            })
+            .catch((error) => {
+              serverLogger.warn(
+                "[AgentSpawner] Failed to fetch claude agent config",
+                error,
+              );
+              return null;
+            }),
+          getConvex()
+            .query(api.agentConfigs.getForSandbox, {
+              teamSlugOrId,
+              agentType: "codex",
+              ...(task?.projectFullName
+                ? { projectFullName: task.projectFullName }
+                : {}),
+            })
+            .catch((error) => {
+              serverLogger.warn(
+                "[AgentSpawner] Failed to fetch codex agent config",
+                error,
+              );
+              return null;
+            }),
+        ]).then(([claude, codex]) => ({
+          ...(claude ? { claude } : {}),
+          ...(codex ? { codex } : {}),
+        })),
+        getConvex()
+          .query(api.permissionDenyRules.getForSandbox, {
+            teamSlugOrId,
+            context: options.isOrchestrationHead
+              ? "cloud_workspace"
+              : "task_sandbox",
+            ...(task?.projectFullName
+              ? { projectFullName: task.projectFullName }
+              : {}),
+          })
+          .catch((error) => {
+            serverLogger.warn(
+              "[AgentSpawner] Failed to fetch permission deny rules",
+              error,
+            );
+            return [];
+          }),
         // Query previous knowledge for cross-run memory seeding (S5b)
         getConvex()
           .query(api.agentMemoryQueries.getLatestTeamKnowledge, {
@@ -1018,11 +1084,13 @@ export async function spawnAgent(
       workspaceSettings = results[1];
       providerOverrides = results[2];
       mcpServerConfigs = results[3];
-      previousKnowledge = results[4];
-      previousMailbox = results[5];
-      previousBehavior = results[6];
-      policyRules = results[7];
-      orchestrationRules = results[8];
+      agentConfigs = results[4];
+      permissionDenyRules = results[5];
+      previousKnowledge = results[6];
+      previousMailbox = results[7];
+      previousBehavior = results[8];
+      policyRules = results[9];
+      orchestrationRules = results[10];
     }
 
     if (previousKnowledge) {
@@ -1048,6 +1116,11 @@ export async function spawnAgent(
     if (orchestrationRules && orchestrationRules.length > 0) {
       serverLogger.info(
         `[AgentSpawner] Loaded ${orchestrationRules.length} orchestration rules for injection`,
+      );
+    }
+    if (permissionDenyRules && permissionDenyRules.length > 0) {
+      serverLogger.info(
+        `[AgentSpawner] Loaded ${permissionDenyRules.length} permission deny rules`,
       );
     }
 
@@ -1148,6 +1221,7 @@ export async function spawnAgent(
           bypassAnthropicProxy:
             workspaceSettings?.bypassAnthropicProxy ?? false,
         },
+        agentConfigs,
         providerConfig: effectiveProviderConfig,
         previousKnowledge: previousKnowledge ?? undefined,
         previousMailbox: previousMailbox ?? undefined,
@@ -1157,6 +1231,7 @@ export async function spawnAgent(
         policyRules,
         // Orchestration rules (self-improving memory)
         orchestrationRules,
+        permissionDenyRules,
         // Shell wrappers disabled by default - must be explicitly enabled in settings
         enableShellWrappers: workspaceSettings?.enableShellWrappers ?? false,
         // Orchestration environment for MCP server passthrough (spawn_agent needs these)

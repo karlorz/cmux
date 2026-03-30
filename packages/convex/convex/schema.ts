@@ -3036,7 +3036,8 @@ const convexSchema = defineSchema({
     contexts: v.array(
       v.union(
         v.literal("task_sandbox"), // Regular task spawns
-        v.literal("cloud_workspace") // Head agent / cloud workspaces
+        v.literal("cloud_workspace"), // Head agent / cloud workspaces
+        v.literal("local_dev") // Desktop/local development
       )
     ),
 

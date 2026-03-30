@@ -24,9 +24,10 @@ const scopeValidator = v.union(
 const contextValidator = v.union(
   v.literal("task_sandbox"),
   v.literal("cloud_workspace"),
+  v.literal("local_dev"),
 );
 
-type PermissionContext = "task_sandbox" | "cloud_workspace";
+type PermissionContext = "task_sandbox" | "cloud_workspace" | "local_dev";
 type PermissionScope = "system" | "team" | "workspace";
 
 // Scope priority (lower index = broader scope, later scopes can override)

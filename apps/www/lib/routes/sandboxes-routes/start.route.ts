@@ -35,7 +35,9 @@ import {
   getMorphClientOrNull,
   getProviderRegistry,
   getPveLxcClient,
+  getSandboxAgentConfigs,
   getSandboxMcpConfigs,
+  getSandboxPermissionDenyRules,
   getSandboxStartErrorMessage,
   getUserFromRequest,
   hydrateWorkspace,
@@ -669,6 +671,7 @@ sandboxesStartRouter.openapi(
               }),
           ]);
           const result = await setupProviderAuth(instance, convex, {
+            teamId: team.uuid,
             teamSlugOrId: body.teamSlugOrId,
             projectFullName: parsedRepoUrl?.fullName,
             taskRunId: body.taskRunId || undefined,
@@ -992,7 +995,7 @@ sandboxesStartRouter.openapi(
                       return null;
                     }),
                 ]);
-              const [workspaceSettings, providerOverrides, mcpConfigs] =
+              const [workspaceSettings, providerOverrides, mcpConfigs, agentConfigs, permissionDenyRules] =
                 await Promise.all([
                   convex
                     .query(api.workspaceSettings.get, {
@@ -1021,7 +1024,20 @@ sandboxesStartRouter.openapi(
                     projectFullName: parsedRepoUrl?.fullName,
                     logPrefix: "sandboxes.start",
                   }),
+                  getSandboxAgentConfigs(convex, {
+                    teamSlugOrId: body.teamSlugOrId,
+                    projectFullName: parsedRepoUrl?.fullName,
+                    logPrefix: "sandboxes.start",
+                  }),
+                  getSandboxPermissionDenyRules(rawAdminClient ?? getConvexAdmin(), {
+                    teamId: team.uuid,
+                    projectFullName: parsedRepoUrl?.fullName,
+                    logPrefix: "sandboxes.start:agent-env",
+                    isOrchestrationHead,
+                  }),
                 ]);
+              const enableShellWrappers =
+                workspaceSettings?.enableShellWrappers ?? false;
               const registry = getProviderRegistry();
               const overrideMapped = mapProviderOverrides(providerOverrides);
               const resolvedProvider = registry.resolveForAgent(
@@ -1036,6 +1052,11 @@ sandboxesStartRouter.openapi(
                   taskRunJwt: body.taskRunJwt,
                   resolvedProvider,
                   openAiBaseUrl: resolvedApiKeys.OPENAI_BASE_URL,
+                  agentConfigs,
+                  permissionDenyRules,
+                  enableShellWrappers,
+                  isOrchestrationHead,
+                  callbackUrl,
                 },
               );
               console.log("[sandboxes.start] Agent environment overrides", {
@@ -1043,6 +1064,12 @@ sandboxesStartRouter.openapi(
                 mcpServerConfigCount: envOverrides.mcpServerConfigs?.length ?? 0,
                 hasWorkspaceSettings: !!envOverrides.workspaceSettings,
                 hasProviderConfig: !!envOverrides.providerConfig,
+                permissionDenyRuleCount:
+                  envOverrides.permissionDenyRules?.length ?? 0,
+                enableShellWrappers:
+                  envOverrides.enableShellWrappers ?? false,
+                isOrchestrationHead:
+                  envOverrides.isOrchestrationHead ?? false,
               });
               const envResult = await agentConfig.environment({
                 taskRunId: body.taskRunId || "",

@@ -6,7 +6,7 @@
  * Auth: x-cmux-token header with valid task run JWT
  *
  * Query params:
- *   context: "task_sandbox" | "cloud_workspace" (required)
+ *   context: "task_sandbox" | "cloud_workspace" | "local_dev" (required)
  *   projectFullName?: string (owner/repo format)
  *
  * Returns: { ok: true, patterns: string[] } on success
@@ -19,7 +19,7 @@ import { httpAction } from "./_generated/server";
 import { getWorkerAuth } from "./users/utils/getWorkerAuth";
 
 const GetPermissionDenyRulesQuerySchema = z.object({
-  context: z.enum(["task_sandbox", "cloud_workspace"]),
+  context: z.enum(["task_sandbox", "cloud_workspace", "local_dev"]),
   projectFullName: z.string().optional(),
 });
 
