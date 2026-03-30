@@ -10,6 +10,7 @@ import { env } from "./server-env";
 export function getConvex() {
   const auth = getAuthToken();
   if (!auth) {
+    console.error("[getConvex] No auth token found in request context");
     serverLogger.error("[getConvex] No auth token found in request context");
     throw new Error("No auth token found");
   }

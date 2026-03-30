@@ -34,14 +34,22 @@ function buildApiKeyMap(apiKeys: StoredApiKey[]): Record<string, string> {
 export async function loadTeamApiKeysForAgents(
   teamSlugOrId: string
 ): Promise<Record<string, string>> {
+  console.log(`[TeamApiKeys] Loading keys for team=${teamSlugOrId}`);
   const convex = getConvex();
 
   try {
     const apiKeys = await convex.query(api.apiKeys.getAllForAgents, {
       teamSlugOrId,
     });
+    console.log(
+      `[TeamApiKeys] Got ${Object.keys(apiKeys ?? {}).length} keys: [${Object.keys(apiKeys ?? {}).sort().join(", ")}]`
+    );
     return apiKeys ?? {};
   } catch (error) {
+    console.warn(
+      `[TeamApiKeys] getAllForAgents failed for team=${teamSlugOrId}; falling back to getAll:`,
+      formatError(error)
+    );
     serverLogger.warn(
       `[TeamApiKeys] getAllForAgents failed for team=${teamSlugOrId}; falling back to getAll`,
       formatError(error)
@@ -54,11 +62,19 @@ export async function loadTeamApiKeysForAgents(
       teamSlugOrId,
     });
   } catch (error) {
+    console.error(
+      `[TeamApiKeys] Failed to load API keys for team=${teamSlugOrId} using getAll fallback:`,
+      formatError(error)
+    );
     serverLogger.error(
       `[TeamApiKeys] Failed to load API keys for team=${teamSlugOrId} using getAll fallback`,
       formatError(error)
     );
     throw error;
   }
-  return buildApiKeyMap(apiKeyDocs);
+  const apiKeys = buildApiKeyMap(apiKeyDocs);
+  console.log(
+    `[TeamApiKeys] Fallback got ${Object.keys(apiKeys).length} keys: [${Object.keys(apiKeys).sort().join(", ")}]`
+  );
+  return apiKeys;
 }
