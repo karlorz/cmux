@@ -60,6 +60,5 @@ export async function loadTeamApiKeysForAgents(
     );
     throw error;
   }
-  const apiKeys = buildApiKeyMap(apiKeyDocs);
-  return apiKeys;
+  return buildApiKeyMap(apiKeyDocs);
 }
