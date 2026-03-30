@@ -3842,9 +3842,11 @@ Please address the issue mentioned in the comment above.`;
     socket.on("check-provider-status", async (callback) => {
       try {
         // In web mode, only check API keys from Convex (no local files/keychains)
-        const status = env.NEXT_PUBLIC_WEB_MODE
-          ? await checkAllProvidersStatusWebMode({ teamSlugOrId: safeTeam })
-          : await checkAllProvidersStatus({ teamSlugOrId: safeTeam });
+        const status = await runWithAuthToken(currentAuthToken, () =>
+          env.NEXT_PUBLIC_WEB_MODE
+            ? checkAllProvidersStatusWebMode({ teamSlugOrId: safeTeam })
+            : checkAllProvidersStatus({ teamSlugOrId: safeTeam })
+        );
         callback({ success: true, ...status });
       } catch (error) {
         serverLogger.error("Error checking provider status:", error);
