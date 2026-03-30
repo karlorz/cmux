@@ -2,6 +2,39 @@ import { describe, expect, it } from "vitest";
 import { checkOpenAIRequirements } from "./check-requirements";
 
 describe("checkOpenAIRequirements", () => {
+  describe("settings-based credentials", () => {
+    it("accepts CODEX_AUTH_JSON from context", async () => {
+      const result = await checkOpenAIRequirements({
+        apiKeys: {
+          CODEX_AUTH_JSON: '{"tokens":{"access_token":"token"}}',
+        },
+      });
+
+      expect(result).toEqual([]);
+    });
+
+    it("accepts OPENAI_API_KEY from context", async () => {
+      const result = await checkOpenAIRequirements({
+        apiKeys: {
+          OPENAI_API_KEY: "sk-test",
+        },
+      });
+
+      expect(result).toEqual([]);
+    });
+
+    it("reports missing context credentials when provided keys are blank", async () => {
+      const result = await checkOpenAIRequirements({
+        apiKeys: {
+          CODEX_AUTH_JSON: "   ",
+          OPENAI_API_KEY: "",
+        },
+      });
+
+      expect(result).toEqual(["Codex Auth JSON or OpenAI API Key"]);
+    });
+  });
+
   describe("return type", () => {
     it("returns a Promise", () => {
       const result = checkOpenAIRequirements();
@@ -17,25 +50,16 @@ describe("checkOpenAIRequirements", () => {
   describe("file detection", () => {
     it("reports missing files as strings in the array", async () => {
       const result = await checkOpenAIRequirements();
-      // Each missing item should be a string description
       for (const item of result) {
         expect(typeof item).toBe("string");
       }
     });
 
-    it("detects auth.json file requirement", async () => {
-      const result = await checkOpenAIRequirements();
-      // Should check for .codex/auth.json
-      const hasAuthCheck = result.some((item) => item.includes("auth.json"));
-      // This depends on whether the file exists, so we just verify the function runs
-      expect(Array.isArray(result)).toBe(true);
-    });
+    it("falls back to local file checks when context omits apiKeys", async () => {
+      const result = await checkOpenAIRequirements({
+        teamSlugOrId: "team-123",
+      });
 
-    it("detects config.toml file requirement", async () => {
-      const result = await checkOpenAIRequirements();
-      // Should check for .codex/config.toml
-      const hasConfigCheck = result.some((item) => item.includes("config.toml"));
-      // This depends on whether the file exists, so we just verify the function runs
       expect(Array.isArray(result)).toBe(true);
     });
   });
@@ -43,7 +67,6 @@ describe("checkOpenAIRequirements", () => {
   describe("error message format", () => {
     it("includes file path in error messages", async () => {
       const result = await checkOpenAIRequirements();
-      // If files are missing, error messages should include the path
       for (const item of result) {
         expect(item).toMatch(/\.(json|toml)/);
       }
