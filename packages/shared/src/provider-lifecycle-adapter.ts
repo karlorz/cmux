@@ -97,7 +97,18 @@ export type LifecycleEventType =
   | "approval_requested"
   | "approval_resolved"
   // MCP runtime (P5 Lifecycle Parity)
-  | "mcp_capabilities_negotiated";
+  | "mcp_capabilities_negotiated"
+  // Phase 2 Hook Portability additions
+  | "subagent_start"
+  | "subagent_stop"
+  | "notification"
+  | "task_created"
+  | "user_prompt"
+  | "plan_sync"
+  | "simplify_track"
+  | "precompact"
+  | "postcompact"
+  | "simplify_gate";
 
 /**
  * Context for building lifecycle hooks.
@@ -399,7 +410,15 @@ export type CanonicalActivityType =
   | "approval_requested"
   | "approval_resolved"
   // Notifications
-  | "notification";
+  | "notification"
+  // Phase 2 Hook Portability additions
+  | "task_created"
+  | "plan_sync"
+  | "simplify_track"
+  | "simplify_passed"
+  | "precompact"
+  | "postcompact"
+  | "simplify_gate";
 
 /**
  * Context warning subtypes for canonical events.
