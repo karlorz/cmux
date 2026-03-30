@@ -525,7 +525,6 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
     ] = await Promise.all([
       ctx.runQuery(internal.apiKeys.getAllForAgentsInternal, {
         teamId,
-        userId,
       }),
       ctx.runQuery(internal.workspaceSettings.getByTeamAndUserInternal, {
         teamId,

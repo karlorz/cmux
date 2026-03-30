@@ -198,7 +198,7 @@ export const dispatchSpawn = internalAction({
       if (agentName.toLowerCase().includes("codex")) {
         const tokenStatus = await ctx.runQuery(
           internal.codexTokenRefreshQueries.getTokenStatus,
-          { teamId: args.teamId, userId: task.userId },
+          { teamId: args.teamId },
         );
         if (tokenStatus === "expired") {
           throw new Error(
@@ -210,7 +210,7 @@ export const dispatchSpawn = internalAction({
           // Check if OPENAI_API_KEY is set as fallback (Codex supports both auth methods)
           const hasOpenAIKey = await ctx.runQuery(
             internal.codexTokenRefreshQueries.hasOpenAIApiKey,
-            { teamId: args.teamId, userId: task.userId },
+            { teamId: args.teamId },
           );
           if (!hasOpenAIKey) {
             throw new Error(

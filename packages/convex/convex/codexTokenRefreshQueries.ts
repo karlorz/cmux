@@ -12,6 +12,7 @@ import {
   isCodexTokenExpired,
   isCodexTokenExpiring,
 } from "@cmux/shared/providers/openai/codex-token";
+import { getLatestApiKeyByEnvVar } from "./apiKeys";
 
 const LEAD_TIME_MS = 24 * 60 * 60 * 1000; // 24 hours
 const MAX_FAILURE_COUNT = 10;
@@ -130,25 +131,22 @@ export const recordRefreshFailure = internalMutation({
 });
 
 /**
- * Get the token status for a team+user's Codex token.
+ * Get the token status for a team's Codex token.
  * Used for pre-spawn and orchestration checks.
  */
 export const getTokenStatus = internalQuery({
   args: {
     teamId: v.string(),
-    userId: v.string(),
   },
   handler: async (
     ctx,
     args
   ): Promise<"valid" | "expiring" | "expired" | "missing"> => {
-    const key = await ctx.db
+    const keys = await ctx.db
       .query("apiKeys")
-      .withIndex("by_team_user", (q) =>
-        q.eq("teamId", args.teamId).eq("userId", args.userId)
-      )
-      .filter((q) => q.eq(q.field("envVar"), "CODEX_AUTH_JSON"))
-      .first();
+      .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
+      .collect();
+    const key = getLatestApiKeyByEnvVar(keys, "CODEX_AUTH_JSON");
 
     if (!key) return "missing";
 
@@ -162,22 +160,19 @@ export const getTokenStatus = internalQuery({
 });
 
 /**
- * Check if OPENAI_API_KEY is set for a team+user.
+ * Check if OPENAI_API_KEY is set for a team.
  * Used as fallback when CODEX_AUTH_JSON is missing.
  */
 export const hasOpenAIApiKey = internalQuery({
   args: {
     teamId: v.string(),
-    userId: v.string(),
   },
   handler: async (ctx, args): Promise<boolean> => {
-    const key = await ctx.db
+    const keys = await ctx.db
       .query("apiKeys")
-      .withIndex("by_team_user", (q) =>
-        q.eq("teamId", args.teamId).eq("userId", args.userId)
-      )
-      .filter((q) => q.eq(q.field("envVar"), "OPENAI_API_KEY"))
-      .first();
+      .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
+      .collect();
+    const key = getLatestApiKeyByEnvVar(keys, "OPENAI_API_KEY");
 
     return key !== null && key.value.trim().length > 0;
   },
