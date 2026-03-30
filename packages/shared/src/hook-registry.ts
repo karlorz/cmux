@@ -29,6 +29,16 @@ export interface HookDefinition {
 }
 
 /**
+ * Event support matrix entry for documentation and UI display.
+ */
+export interface EventSupportMatrix {
+  eventType: LifecycleEventType;
+  description: string;
+  critical: boolean;
+  providers: Record<ProviderName, boolean>;
+}
+
+/**
  * Registry of all supported hooks with provider support matrix.
  */
 export const HOOK_REGISTRY: HookDefinition[] = [
@@ -200,6 +210,91 @@ export function getHooksForProvider(provider: ProviderName): HookDefinition[] {
 export function isHookCritical(type: LifecycleEventType): boolean {
   const def = getHookDefinition(type);
   return def?.critical ?? false;
+}
+
+/**
+ * All known provider names for matrix generation.
+ */
+const ALL_PROVIDERS: ProviderName[] = [
+  "claude",
+  "codex",
+  "gemini",
+  "amp",
+  "opencode",
+  "grok",
+  "qwen",
+  "cursor",
+];
+
+/**
+ * Get the full event support matrix for documentation and UI display.
+ * Returns all events with their provider support status.
+ */
+export function getEventSupportMatrix(): EventSupportMatrix[] {
+  return HOOK_REGISTRY.map((hook) => ({
+    eventType: hook.type,
+    description: hook.description,
+    critical: hook.critical,
+    providers: Object.fromEntries(
+      ALL_PROVIDERS.map((p) => [p, hook.providers.includes(p)])
+    ) as Record<ProviderName, boolean>,
+  }));
+}
+
+/**
+ * Check if an activity type is supported by a provider.
+ * Maps activity types to lifecycle event types for coverage checking.
+ */
+export function isActivityTypeSupported(
+  activityType: string,
+  provider: string
+): boolean {
+  // Map activity types to lifecycle event types
+  const activityToEventMap: Record<string, LifecycleEventType | null> = {
+    // Direct mappings
+    session_start: "session_start",
+    session_stop: "session_stop",
+    session_resumed: "session_resumed",
+    session_finished: "session_finished",
+    stop_requested: "stop_requested",
+    stop_blocked: "stop_blocked",
+    stop_failed: "stop_failed",
+    context_warning: "context_warning",
+    context_compacted: "context_compacted",
+    memory_loaded: "memory_loaded",
+    memory_scope_changed: "memory_scope_changed",
+    tool_requested: "tool_requested",
+    tool_completed: "tool_completed",
+    approval_requested: "approval_requested",
+    approval_resolved: "approval_resolved",
+    user_prompt: "user_prompt",
+    subagent_start: "subagent_start",
+    subagent_stop: "subagent_stop",
+    notification: "notification",
+    prompt_submitted: "prompt_submitted",
+    run_resumed: "run_resumed",
+    error: "error",
+    mcp_capabilities_negotiated: "mcp_capabilities_negotiated",
+    // Activity types that map to tool_call event
+    tool_call: "tool_call",
+    file_edit: "tool_call",
+    file_read: "tool_call",
+    bash_command: "tool_call",
+    test_run: "tool_call",
+    git_commit: "tool_call",
+    // Activity types with no hook backing (always shown)
+    thinking: null,
+  };
+
+  const eventType = activityToEventMap[activityType];
+
+  // If no mapping exists or it's null, assume it's always available
+  if (eventType === undefined || eventType === null) {
+    return true;
+  }
+
+  // Check if the provider supports this event type
+  return isHookSupported(eventType, provider as ProviderName);
 }
 
 // =============================================================================
@@ -692,7 +787,7 @@ exit 0
 // Phase 2 Hook Portability - Additional Script Builders
 // =============================================================================
 
-function buildSubagentStartScript(provider: ProviderName, logFile: string): string {
+function buildSubagentStartScript(_provider: ProviderName, logFile: string): string {
   return `#!/bin/bash
 set -eu
 LOG_FILE="${logFile}"
@@ -723,7 +818,7 @@ exit 0
 `;
 }
 
-function buildSubagentStopScript(provider: ProviderName, logFile: string): string {
+function buildSubagentStopScript(_provider: ProviderName, logFile: string): string {
   return `#!/bin/bash
 set -eu
 LOG_FILE="${logFile}"
@@ -756,7 +851,7 @@ exit 0
 `;
 }
 
-function buildNotificationScript(provider: ProviderName, logFile: string): string {
+function buildNotificationScript(_provider: ProviderName, logFile: string): string {
   return `#!/bin/bash
 set -eu
 LOG_FILE="${logFile}"
@@ -787,7 +882,7 @@ exit 0
 `;
 }
 
-function buildTaskCreatedScript(provider: ProviderName, logFile: string): string {
+function buildTaskCreatedScript(_provider: ProviderName, logFile: string): string {
   return `#!/bin/bash
 set -eu
 LOG_FILE="${logFile}"
@@ -820,7 +915,7 @@ exit 0
 `;
 }
 
-function buildUserPromptScript(provider: ProviderName, logFile: string): string {
+function buildUserPromptScript(_provider: ProviderName, logFile: string): string {
   return `#!/bin/bash
 set -eu
 LOG_FILE="${logFile}"
@@ -855,7 +950,7 @@ exit 0
 `;
 }
 
-function buildPlanSyncScript(provider: ProviderName, logFile: string): string {
+function buildPlanSyncScript(_provider: ProviderName, logFile: string): string {
   return `#!/bin/bash
 set -eu
 LOG_FILE="${logFile}"
@@ -904,7 +999,7 @@ exit 0
 `;
 }
 
-function buildSimplifyTrackScript(provider: ProviderName, logFile: string): string {
+function buildSimplifyTrackScript(_provider: ProviderName, logFile: string): string {
   return `#!/bin/bash
 set -eu
 LOG_FILE="${logFile}"
@@ -955,7 +1050,7 @@ exit 0
 `;
 }
 
-function buildPrecompactScript(provider: ProviderName, logFile: string): string {
+function buildPrecompactScript(_provider: ProviderName, logFile: string): string {
   return `#!/bin/bash
 set -eu
 LOG_FILE="${logFile}"
@@ -1014,7 +1109,7 @@ exit 0
 `;
 }
 
-function buildPostcompactScript(provider: ProviderName, logFile: string): string {
+function buildPostcompactScript(_provider: ProviderName, logFile: string): string {
   return `#!/bin/bash
 set -eu
 LOG_FILE="${logFile}"
@@ -1058,7 +1153,7 @@ exit 0
 `;
 }
 
-function buildSimplifyGateScript(provider: ProviderName, logFile: string): string {
+function buildSimplifyGateScript(_provider: ProviderName, logFile: string): string {
   return `#!/bin/bash
 set -eu
 
