@@ -23,7 +23,13 @@ export interface SpawnConfigData {
   apiKeys: Record<string, string>;
   workspaceSettings: {
     bypassAnthropicProxy: boolean;
+    enableShellWrappers?: boolean;
   } | null;
+  agentConfigs?: {
+    claude?: string;
+    codex?: string;
+  };
+  permissionDenyRules?: string[];
   providerOverrides: Array<{
     providerId: string;
     baseUrl?: string;
@@ -511,6 +517,9 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
     const [
       apiKeys,
       workspaceSettings,
+      claudeAgentConfig,
+      codexAgentConfig,
+      permissionDenyRules,
       providerOverrides,
       claudeMcpConfigs,
       codexMcpConfigs,
@@ -529,6 +538,21 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
       ctx.runQuery(internal.workspaceSettings.getByTeamAndUserInternal, {
         teamId,
         userId,
+      }),
+      ctx.runQuery(internal.agentConfigs.getForSandboxInternal, {
+        teamId,
+        agentType: "claude",
+        ...(projectFullName ? { projectFullName } : {}),
+      }),
+      ctx.runQuery(internal.agentConfigs.getForSandboxInternal, {
+        teamId,
+        agentType: "codex",
+        ...(projectFullName ? { projectFullName } : {}),
+      }),
+      ctx.runQuery(internal.permissionDenyRules.getForSandboxInternal, {
+        teamId,
+        context: "task_sandbox",
+        ...(projectFullName ? { projectFullName } : {}),
       }),
       ctx.runQuery(internal.providerOverrides.getAllEnabledForTeam, { teamId }),
       ctx.runQuery(internal.mcpServerConfigs.getForSandboxInternal, {
@@ -584,8 +608,14 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
         ? {
             bypassAnthropicProxy:
               workspaceSettings.bypassAnthropicProxy ?? false,
+            enableShellWrappers: workspaceSettings.enableShellWrappers ?? false,
           }
         : null,
+      agentConfigs: {
+        ...(claudeAgentConfig ? { claude: claudeAgentConfig } : {}),
+        ...(codexAgentConfig ? { codex: codexAgentConfig } : {}),
+      },
+      permissionDenyRules,
       providerOverrides: providerOverrides.map((o) => ({
         providerId: o.providerId,
         baseUrl: o.baseUrl,
