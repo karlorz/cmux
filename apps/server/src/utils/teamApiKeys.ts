@@ -24,10 +24,6 @@ function buildApiKeyMap(apiKeys: StoredApiKey[]): Record<string, string> {
   return apiKeyMap;
 }
 
-function formatApiKeyNames(apiKeys: Record<string, string>): string {
-  return Object.keys(apiKeys).sort().join(", ");
-}
-
 /**
  * Load team-scoped API keys for provider selection and agent spawning.
  *
@@ -44,9 +40,6 @@ export async function loadTeamApiKeysForAgents(
     const apiKeys = await convex.query(api.apiKeys.getAllForAgents, {
       teamSlugOrId,
     });
-    serverLogger.debug(
-      `[TeamApiKeys] Loaded ${Object.keys(apiKeys ?? {}).length} keys via getAllForAgents for team=${teamSlugOrId}: [${formatApiKeyNames(apiKeys ?? {})}]`
-    );
     return apiKeys ?? {};
   } catch (error) {
     serverLogger.warn(
@@ -68,8 +61,5 @@ export async function loadTeamApiKeysForAgents(
     throw error;
   }
   const apiKeys = buildApiKeyMap(apiKeyDocs);
-  serverLogger.debug(
-    `[TeamApiKeys] Loaded ${Object.keys(apiKeys).length} keys via getAll fallback for team=${teamSlugOrId}: [${formatApiKeyNames(apiKeys)}]`
-  );
   return apiKeys;
 }

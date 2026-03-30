@@ -13,9 +13,6 @@ export function getConvex() {
     serverLogger.error("[getConvex] No auth token found in request context");
     throw new Error("No auth token found");
   }
-  serverLogger.debug("[getConvex] Auth token present", {
-    length: auth.length,
-  });
 
   // Try to get from cache first
   const cachedClient = convexClientCache.get(auth, env.NEXT_PUBLIC_CONVEX_URL);
