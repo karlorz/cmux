@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { aggregateByVendor, checkAllProvidersStatusWebMode } from "./providerStatus";
+import {
+  aggregateByVendor,
+  checkAllProvidersStatusWebMode,
+  checkAllProvidersStatusWebModeWithAuthToken,
+} from "./providerStatus";
 import type { ProviderStatus } from "@cmux/shared";
+import { getAuthToken } from "./requestContext";
 
 const { queryMock } = vi.hoisted(() => ({
   queryMock: vi.fn(),
@@ -144,6 +149,23 @@ describe("checkAllProvidersStatusWebMode", () => {
     const codex = result.providers.find((p) => p.name === "codex/gpt-5.4");
     expect(codex?.isAvailable).toBe(true);
     expect(codex?.missingRequirements).toBeUndefined();
+  });
+
+  it("propagates auth token when fetching provider status for socket consumers", async () => {
+    const authTokensSeen: Array<string | undefined> = [];
+    queryMock.mockImplementationOnce(async () => {
+      authTokensSeen.push(getAuthToken());
+      return {
+        CODEX_AUTH_JSON:
+          '{"tokens":{"access_token":"token","refresh_token":"refresh"}}',
+      };
+    });
+
+    await checkAllProvidersStatusWebModeWithAuthToken("socket-auth-token", {
+      teamSlugOrId: "test-team",
+    });
+
+    expect(authTokensSeen).toEqual(["socket-auth-token"]);
   });
 
   it("returns Docker as ready in web mode", async () => {

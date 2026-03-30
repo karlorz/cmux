@@ -62,8 +62,8 @@ import { getGitHubOAuthToken } from "./utils/getGitHubToken";
 import { createDraftPr, fetchPrDetail } from "./utils/githubPr";
 import { getOctokit } from "./utils/octokit";
 import {
-  checkAllProvidersStatus,
-  checkAllProvidersStatusWebMode,
+  checkAllProvidersStatusWithAuthToken,
+  checkAllProvidersStatusWebModeWithAuthToken,
 } from "./utils/providerStatus";
 import { refreshGitHubData } from "./utils/refreshGitHubData";
 import { runWithAuth, runWithAuthToken } from "./utils/requestContext";
@@ -3843,8 +3843,13 @@ Please address the issue mentioned in the comment above.`;
       try {
         // In web mode, only check API keys from Convex (no local files/keychains)
         const status = env.NEXT_PUBLIC_WEB_MODE
-          ? await checkAllProvidersStatusWebMode({ teamSlugOrId: safeTeam })
-          : await checkAllProvidersStatus({ teamSlugOrId: safeTeam });
+          ? await checkAllProvidersStatusWebModeWithAuthToken(
+              currentAuthToken,
+              { teamSlugOrId: safeTeam }
+            )
+          : await checkAllProvidersStatusWithAuthToken(currentAuthToken, {
+              teamSlugOrId: safeTeam,
+            });
         callback({ success: true, ...status });
       } catch (error) {
         serverLogger.error("Error checking provider status:", error);

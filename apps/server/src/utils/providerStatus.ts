@@ -9,6 +9,7 @@ import { AGENT_CATALOG } from "@cmux/shared/agent-catalog";
 import { checkDockerStatus } from "@cmux/shared/providers/common/check-docker";
 import { isAuthFreeModel } from "@cmux/shared/providers/control-plane";
 import { getConvex } from "./convexClient.js";
+import { runWithAuthToken } from "./requestContext";
 
 export interface AggregatedProviderStatus {
   /** Vendor name: "anthropic", "openai", "google", etc. */
@@ -101,6 +102,16 @@ export async function checkAllProvidersStatus(
     providers: providerChecks,
     dockerStatus,
   };
+}
+
+export function checkAllProvidersStatusWithAuthToken(
+  authToken: string | null | undefined,
+  options: CheckAllProvidersStatusOptions = {}
+): Promise<{
+  providers: SharedProviderStatus[];
+  dockerStatus: DockerStatus;
+}> {
+  return runWithAuthToken(authToken, () => checkAllProvidersStatus(options));
 }
 
 /**
@@ -205,4 +216,16 @@ export async function checkAllProvidersStatusWebMode(options: {
     providers: providerChecks,
     dockerStatus,
   };
+}
+
+export function checkAllProvidersStatusWebModeWithAuthToken(
+  authToken: string | null | undefined,
+  options: { teamSlugOrId: string }
+): Promise<{
+  providers: SharedProviderStatus[];
+  dockerStatus: DockerStatus;
+}> {
+  return runWithAuthToken(authToken, () =>
+    checkAllProvidersStatusWebMode(options)
+  );
 }
