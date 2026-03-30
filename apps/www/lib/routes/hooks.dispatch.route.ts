@@ -104,6 +104,17 @@ hooksDispatchRouter.openapi(
       "approval_requested",
       "approval_resolved",
       "mcp_capabilities_negotiated",
+      // Phase 2 Hook Portability additions
+      "subagent_start",
+      "subagent_stop",
+      "notification",
+      "task_created",
+      "user_prompt",
+      "plan_sync",
+      "simplify_track",
+      "precompact",
+      "postcompact",
+      "simplify_gate",
     ];
     if (!validEvents.includes(event as LifecycleEventType)) {
       return c.text(`Invalid event type: ${event}`, 400);

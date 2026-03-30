@@ -358,4 +358,121 @@ describe("getClaudeEnvironment", () => {
       }),
     ).rejects.toThrow(/does not support effort selection/);
   });
+
+  describe("thin hook stubs (Phase 2 Hook Portability)", () => {
+    it("generates thin stub hooks that contain /api/hooks/dispatch URL", async () => {
+      const result = await getClaudeEnvironment(BASE_CONTEXT);
+
+      // Check several hooks that should be thin stubs
+      const thinStubHooks = [
+        "/root/lifecycle/claude/subagent-start-hook.sh",
+        "/root/lifecycle/claude/subagent-stop-hook.sh",
+        "/root/lifecycle/claude/user-prompt-hook.sh",
+        "/root/lifecycle/claude/notification-hook.sh",
+        "/root/lifecycle/claude/task-created-hook.sh",
+        "/root/lifecycle/claude/postcompact-hook.sh",
+        "/root/lifecycle/claude/plan-hook.sh",
+        "/root/lifecycle/claude/simplify-track-hook.sh",
+        "/root/lifecycle/claude/activity-hook.sh",
+        "/root/lifecycle/claude/error-hook.sh",
+      ];
+
+      for (const hookPath of thinStubHooks) {
+        const hookFile = result.files.find(
+          (f) => f.destinationPath === hookPath,
+        );
+        expect(hookFile, `Hook ${hookPath} should exist`).toBeDefined();
+
+        const script = Buffer.from(
+          hookFile!.contentBase64,
+          "base64",
+        ).toString("utf-8");
+
+        // Thin stubs should reference the dispatch endpoint
+        expect(
+          script,
+          `Hook ${hookPath} should contain dispatch URL`,
+        ).toContain("/api/hooks/dispatch");
+
+        // Thin stubs should have cache handling
+        expect(
+          script,
+          `Hook ${hookPath} should have cache file`,
+        ).toContain("CACHE_FILE=");
+      }
+    });
+
+    it("generates critical hooks with fallback functions", async () => {
+      const result = await getClaudeEnvironment(BASE_CONTEXT);
+
+      // Critical hooks that need fallback
+      const criticalHooks = [
+        {
+          path: "/root/lifecycle/claude/stop-hook.sh",
+          mustContain: ["run_fallback()", "done.txt"],
+        },
+        {
+          path: "/root/lifecycle/claude/precompact-hook.sh",
+          mustContain: ["run_fallback()", '{"continue": true}'],
+        },
+        {
+          path: "/root/lifecycle/claude/simplify-gate-hook.sh",
+          mustContain: ["run_fallback()"],
+        },
+      ];
+
+      for (const { path, mustContain } of criticalHooks) {
+        const hookFile = result.files.find((f) => f.destinationPath === path);
+        expect(hookFile, `Critical hook ${path} should exist`).toBeDefined();
+
+        const script = Buffer.from(
+          hookFile!.contentBase64,
+          "base64",
+        ).toString("utf-8");
+
+        for (const content of mustContain) {
+          expect(
+            script,
+            `Critical hook ${path} should contain "${content}"`,
+          ).toContain(content);
+        }
+      }
+    });
+
+    it("stop hook fallback includes memory sync and completion marker", async () => {
+      const result = await getClaudeEnvironment(BASE_CONTEXT);
+
+      const stopHook = result.files.find(
+        (f) => f.destinationPath === "/root/lifecycle/claude/stop-hook.sh",
+      );
+      expect(stopHook).toBeDefined();
+
+      const script = Buffer.from(stopHook!.contentBase64, "base64").toString(
+        "utf-8",
+      );
+
+      // Fallback should include memory sync
+      expect(script).toContain("memory/sync.sh");
+
+      // Fallback should create completion marker
+      expect(script).toContain("done.txt");
+    });
+
+    it("precompact hook fallback returns continue:true", async () => {
+      const result = await getClaudeEnvironment(BASE_CONTEXT);
+
+      const precompactHook = result.files.find(
+        (f) => f.destinationPath === "/root/lifecycle/claude/precompact-hook.sh",
+      );
+      expect(precompactHook).toBeDefined();
+
+      const script = Buffer.from(
+        precompactHook!.contentBase64,
+        "base64",
+      ).toString("utf-8");
+
+      // Fallback should output JSON to allow compaction
+      expect(script).toContain('{"continue": true}');
+    });
+  });
 });
