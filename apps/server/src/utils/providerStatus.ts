@@ -179,6 +179,17 @@ export async function checkAllProvidersStatusWebMode(options: {
     };
   });
 
+  // Debug: log Codex provider status
+  const codexStatuses = providerChecks.filter((p) =>
+    p.name.startsWith("codex/")
+  );
+  console.log(
+    `[ProviderStatus] Codex agents: ${JSON.stringify(codexStatuses)}`
+  );
+  console.log(
+    `[ProviderStatus] apiKeys.OPENAI_API_KEY present: ${!!apiKeys.OPENAI_API_KEY}, length: ${apiKeys.OPENAI_API_KEY?.length ?? 0}`
+  );
+
   return {
     providers: providerChecks,
     dockerStatus,

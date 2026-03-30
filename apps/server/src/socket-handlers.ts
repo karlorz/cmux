@@ -3847,6 +3847,13 @@ Please address the issue mentioned in the comment above.`;
             ? checkAllProvidersStatusWebMode({ teamSlugOrId: safeTeam })
             : checkAllProvidersStatus({ teamSlugOrId: safeTeam })
         );
+        // Debug: log what we're returning to client
+        const codexProviders = status.providers.filter((p) =>
+          p.name.startsWith("codex/")
+        );
+        console.log(
+          `[Socket:check-provider-status] Returning ${status.providers.length} providers, Codex: ${JSON.stringify(codexProviders)}`
+        );
         callback({ success: true, ...status });
       } catch (error) {
         serverLogger.error("Error checking provider status:", error);
