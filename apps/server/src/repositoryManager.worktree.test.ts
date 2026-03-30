@@ -336,7 +336,10 @@ describe("RepositoryManager worktree operations", () => {
       );
 
       expect(second).toBeTruthy();
-      expect(second).toBe(first);
+      // Normalize paths for comparison (macOS /var -> /private/var symlink)
+      const firstReal = first ? await realpath(first) : null;
+      const secondReal = second ? await realpath(second) : null;
+      expect(secondReal).toBe(firstReal);
     });
 
     it("should not break subsequent operations if cleanup fails", async () => {
@@ -444,7 +447,9 @@ describe("RepositoryManager worktree operations", () => {
         repoManager as any
       ).findWorktreeUsingBranch(repoPath, branchName);
 
-      expect(found).toBe(worktreePath);
+      // Normalize for macOS /var -> /private/var symlink
+      const worktreePathReal = await realpath(worktreePath);
+      expect(found).toBe(worktreePathReal);
     });
 
     it("should return null when finding non-existent branch", async () => {
@@ -476,9 +481,12 @@ describe("RepositoryManager worktree operations", () => {
       // Should include main + 2 created worktrees
       expect(worktrees.length).toBeGreaterThanOrEqual(2);
 
+      // Normalize paths for comparison (macOS /var -> /private/var symlink)
       const paths = worktrees.map((w) => w.path);
-      expect(paths).toContain(wt1);
-      expect(paths).toContain(wt2);
+      const wt1Real = await realpath(wt1);
+      const wt2Real = await realpath(wt2);
+      expect(paths).toContain(wt1Real);
+      expect(paths).toContain(wt2Real);
     });
 
     it("should include branch and HEAD info in worktree listing", async () => {
@@ -498,9 +506,10 @@ describe("RepositoryManager worktree operations", () => {
       // List worktrees
       const worktrees = await repoManager.listWorktrees(repoPath);
 
-      // Find the created worktree
+      // Find the created worktree (normalize for macOS /var -> /private/var)
+      const worktreePathReal = await realpath(worktreePath);
       const created = worktrees.find(
-        (w) => w.path === worktreePath
+        (w) => w.path === worktreePathReal
       );
 
       expect(created).toBeDefined();
@@ -593,7 +602,10 @@ describe("RepositoryManager worktree operations", () => {
         "main"
       );
 
-      expect(second).toBe(first);
+      // Normalize paths for comparison (macOS /var -> /private/var symlink)
+      const firstReal = first ? await realpath(first) : null;
+      const secondReal = second ? await realpath(second) : null;
+      expect(secondReal).toBe(firstReal);
     });
 
     it("should handle concurrent createWorktreeFromLocalRepo calls", async () => {
