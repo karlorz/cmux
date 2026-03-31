@@ -27,6 +27,11 @@ import { api } from "@cmux/convex/api";
 import type { ProviderStatusResponse } from "@cmux/shared";
 import type { SelectedAgentSelection } from "@cmux/shared/agent-selection-core";
 import { type AgentVendor } from "@cmux/shared/agent-catalog";
+import {
+  type TaskClass,
+  TASK_CLASS_MAPPINGS,
+  getTaskClassMapping,
+} from "@cmux/shared";
 import { parseGithubRepoUrl } from "@cmux/shared";
 import { useUser } from "@stackframe/react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -81,6 +86,9 @@ interface DashboardInputControlsProps {
   /** Ralph Mode: keep working until explicit completion signal */
   isRalphMode?: boolean;
   onRalphModeToggle?: () => void;
+  /** Task class for automatic model routing */
+  selectedTaskClass?: TaskClass | null;
+  onTaskClassChange?: (taskClass: TaskClass | null) => void;
 }
 
 // Type for models from Convex
@@ -264,6 +272,8 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   convexModels,
   isRalphMode = false,
   onRalphModeToggle,
+  selectedTaskClass = null,
+  onTaskClassChange,
 }: DashboardInputControlsProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -320,6 +330,49 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       new Map((convexModels ?? []).map((model) => [model.name, model])),
     [convexModels],
   );
+
+  // Task class options for automatic model routing
+  const taskClassOptions = useMemo<SelectOptionObject[]>(() => {
+    return TASK_CLASS_MAPPINGS.map((mapping) => ({
+      value: mapping.taskClass,
+      label: mapping.displayName,
+      description: mapping.description,
+    }));
+  }, []);
+
+  // Handle task class change - auto-populate agent based on mapping
+  const handleTaskClassChange = useCallback(
+    (values: string[]) => {
+      const taskClass = values[0] as TaskClass | undefined;
+      onTaskClassChange?.(taskClass ?? null);
+
+      if (taskClass && convexModels) {
+        const mapping = getTaskClassMapping(taskClass);
+        if (mapping) {
+          // Find first available model from the mapping
+          const availableModelNames = new Set(convexModels.map((m) => m.name));
+          const defaultModel = mapping.defaultModels.find((m) =>
+            availableModelNames.has(m)
+          );
+          const escalationModel = mapping.escalationModels.find((m) =>
+            availableModelNames.has(m)
+          );
+          const selectedModel = defaultModel ?? escalationModel;
+
+          if (selectedModel) {
+            onAgentSelectionsChange([
+              {
+                agentName: selectedModel,
+                selectedVariant: mapping.defaultVariant,
+              },
+            ]);
+          }
+        }
+      }
+    },
+    [convexModels, onAgentSelectionsChange, onTaskClassChange]
+  );
+
   const agentOptions = useMemo<AgentOption[]>(() => {
     const baseModels: Array<{
       name: string;
@@ -1176,6 +1229,39 @@ export const DashboardInputControls = memo(function DashboardInputControls({
                 </div>
               </TooltipTrigger>
               <TooltipContent>Branch this task starts from</TooltipContent>
+            </Tooltip>
+          </div>
+        )}
+
+        {/* Task Class Selector - auto-routes to recommended models */}
+        {onTaskClassChange && (
+          <div data-onboarding="task-class-picker">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <SearchableSelect
+                    options={taskClassOptions}
+                    value={selectedTaskClass ? [selectedTaskClass] : []}
+                    onChange={handleTaskClassChange}
+                    placeholder="Work type"
+                    singleSelect={true}
+                    className="rounded-2xl min-w-[130px]"
+                    classNames={{
+                      popover: "w-[240px]",
+                    }}
+                    showSearch={false}
+                    leftIcon={
+                      <SlidersHorizontal className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />
+                    }
+                  />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-64">
+                <p className="font-medium">Task-Class Routing</p>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  Select work type to auto-pick the best model for cost/capability
+                </p>
+              </TooltipContent>
             </Tooltip>
           </div>
         )}

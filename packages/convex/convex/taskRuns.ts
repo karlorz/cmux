@@ -608,6 +608,23 @@ export const createInternal = internalMutation({
     prompt: v.string(),
     agentName: v.optional(v.string()),
     selectedVariant: v.optional(v.string()),
+    taskClass: v.optional(
+      v.union(
+        v.literal("routine"),
+        v.literal("deep-coding"),
+        v.literal("review"),
+        v.literal("eval"),
+        v.literal("architecture"),
+        v.literal("large-context")
+      )
+    ),
+    agentSelectionSource: v.optional(
+      v.union(
+        v.literal("explicit"),
+        v.literal("task-class-default"),
+        v.literal("system-default")
+      )
+    ),
     newBranch: v.optional(v.string()),
     environmentId: v.optional(v.id("environments")),
     parentRunId: v.optional(v.id("taskRuns")), // Agent Teams (D4) - parent-child relationships
@@ -642,6 +659,8 @@ export const createInternal = internalMutation({
       prompt: args.prompt,
       agentName: args.agentName,
       selectedVariant: args.selectedVariant,
+      taskClass: args.taskClass,
+      agentSelectionSource: args.agentSelectionSource,
       newBranch: args.newBranch,
       status: "pending",
       createdAt: now,
@@ -714,6 +733,23 @@ export const create = authMutation({
     prompt: v.string(),
     agentName: v.optional(v.string()),
     selectedVariant: v.optional(v.string()),
+    taskClass: v.optional(
+      v.union(
+        v.literal("routine"),
+        v.literal("deep-coding"),
+        v.literal("review"),
+        v.literal("eval"),
+        v.literal("architecture"),
+        v.literal("large-context")
+      )
+    ),
+    agentSelectionSource: v.optional(
+      v.union(
+        v.literal("explicit"),
+        v.literal("task-class-default"),
+        v.literal("system-default")
+      )
+    ),
     newBranch: v.optional(v.string()),
     environmentId: v.optional(v.id("environments")),
     isOrchestrationHead: v.optional(v.boolean()),
@@ -746,6 +782,8 @@ export const create = authMutation({
       prompt: args.prompt,
       agentName: args.agentName,
       selectedVariant: args.selectedVariant,
+      taskClass: args.taskClass,
+      agentSelectionSource: args.agentSelectionSource,
       newBranch: args.newBranch,
       status: "pending",
       createdAt: now,

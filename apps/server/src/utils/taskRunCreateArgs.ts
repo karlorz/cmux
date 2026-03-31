@@ -1,3 +1,5 @@
+import type { TaskClass, AgentSelectionSource } from "@cmux/shared";
+
 type TaskRunCreateArgsInput<
   TTaskId extends string = string,
   TEnvironmentId extends string | undefined = string | undefined,
@@ -7,6 +9,8 @@ type TaskRunCreateArgsInput<
   prompt: string;
   agentName?: string;
   selectedVariant?: string;
+  taskClass?: TaskClass;
+  agentSelectionSource?: AgentSelectionSource;
   newBranch?: string;
   environmentId?: TEnvironmentId;
   isOrchestrationHead?: boolean;
@@ -32,6 +36,10 @@ export function buildTaskRunCreateArgs<
     ...(args.agentName !== undefined ? { agentName: args.agentName } : {}),
     ...(args.selectedVariant !== undefined
       ? { selectedVariant: args.selectedVariant }
+      : {}),
+    ...(args.taskClass !== undefined ? { taskClass: args.taskClass } : {}),
+    ...(args.agentSelectionSource !== undefined
+      ? { agentSelectionSource: args.agentSelectionSource }
       : {}),
     ...(args.newBranch !== undefined ? { newBranch: args.newBranch } : {}),
     ...(args.environmentId !== undefined

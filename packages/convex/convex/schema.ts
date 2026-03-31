@@ -207,6 +207,23 @@ const convexSchema = defineSchema({
     prompt: v.string(), // The prompt that will be passed to claude
     agentName: v.optional(v.string()), // Name of the agent that ran this task (e.g., "claude/sonnet-4")
     selectedVariant: v.optional(v.string()), // Optional effort/reasoning selection for this run
+    taskClass: v.optional(
+      v.union(
+        v.literal("routine"),
+        v.literal("deep-coding"),
+        v.literal("review"),
+        v.literal("eval"),
+        v.literal("architecture"),
+        v.literal("large-context")
+      )
+    ), // Task class for automatic model selection
+    agentSelectionSource: v.optional(
+      v.union(
+        v.literal("explicit"),
+        v.literal("task-class-default"),
+        v.literal("system-default")
+      )
+    ), // How the agent was selected
     summary: v.optional(v.string()), // Markdown summary of the run
     status: v.union(
       v.literal("pending"),
@@ -482,7 +499,8 @@ const convexSchema = defineSchema({
       "orchestrationStatus",
       "orchestrationHeartbeat",
     ])
-    .index("by_team_orchestration_head", ["teamId", "orchestrationId", "isOrchestrationHead"]),
+    .index("by_team_orchestration_head", ["teamId", "orchestrationId", "isOrchestrationHead"])
+    .index("by_task_class", ["taskClass", "createdAt"]),
 
   // Junction table linking taskRuns to pull requests by PR identity
   // Enables efficient lookup of taskRuns when a PR webhook fires

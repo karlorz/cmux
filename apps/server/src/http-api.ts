@@ -44,6 +44,8 @@ import { env } from "./utils/server-env";
 import { getResponseErrorMessage } from "./utils/httpError";
 import { buildTaskRunCreateArgs } from "./utils/taskRunCreateArgs";
 
+import type { TaskClass } from "@cmux/shared";
+
 interface StartTaskRequest {
   // Required fields
   taskId: string;
@@ -85,6 +87,8 @@ interface StartTaskRequest {
   // Cloud workspace and orchestration head flags
   isCloudWorkspace?: boolean;
   isOrchestrationHead?: boolean;
+  // Task-class model routing
+  taskClass?: TaskClass;
 }
 
 interface StartTaskResponse {

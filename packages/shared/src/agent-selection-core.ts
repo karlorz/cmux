@@ -119,6 +119,8 @@ export interface SelectedAgentSelection {
   selectedVariant?: string;
 }
 
+import type { AgentSelectionSource, TaskClass } from "./task-class-routing";
+
 export interface NormalizedAgentSelection {
   requestedAgentName: string;
   assignedAgentName: string;
@@ -126,12 +128,18 @@ export interface NormalizedAgentSelection {
   catalogEntry?: AgentCatalogEntry;
   variants: ModelVariant[];
   defaultVariant?: string;
+  /** Task class used for model selection (if applicable) */
+  taskClass?: TaskClass;
+  /** How the agent was selected */
+  selectionSource: AgentSelectionSource;
 }
 
 export function normalizeAgentSelection(options: {
   agentName: string;
   selectedVariant?: string | null;
   applyDefaultVariant?: boolean;
+  taskClass?: TaskClass;
+  selectionSource?: AgentSelectionSource;
 }): NormalizedAgentSelection {
   const requestedAgentName = options.agentName.trim();
   if (!requestedAgentName) {
@@ -155,5 +163,7 @@ export function normalizeAgentSelection(options: {
     catalogEntry,
     variants: getDeclaredVariants(catalogEntry),
     defaultVariant: catalogEntry?.defaultVariant,
+    taskClass: options.taskClass,
+    selectionSource: options.selectionSource ?? "explicit",
   };
 }
