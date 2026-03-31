@@ -80,15 +80,16 @@ export function useVisibilityAwareInterval({
 
     // For Electron: also pause on window blur
     const handleWindowBlur = () => {
-      if (isElectron) {
-        stopInterval();
-      }
+      isVisibleRef.current = false;
+      stopInterval();
     };
 
     const handleWindowFocus = () => {
-      if (isElectron && document.visibilityState === "visible") {
+      if (document.visibilityState === "visible") {
+        const wasHidden = !isVisibleRef.current;
+        isVisibleRef.current = true;
         startInterval();
-        if (executeOnRestore) {
+        if (wasHidden && executeOnRestore) {
           callbackRef.current();
         }
       }
