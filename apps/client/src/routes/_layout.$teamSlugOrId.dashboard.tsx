@@ -65,6 +65,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useVisibilityAwareInterval } from "@/hooks/useVisibilityAwareInterval";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -1174,25 +1175,13 @@ function DashboardComponent() {
   // }, [reposByOrg, fetchRepos]);
 
   // Check provider status on mount and keep it fresh without page refresh
-  // Reduced from 5s to 30s since provider status changes infrequently
-  useEffect(() => {
-    // Initial check
-    checkProviderStatus();
-
-    // Poll with reduced frequency - provider status changes slowly
-    const interval = setInterval(() => {
-      checkProviderStatus();
-    }, 30_000);
-
-    // Also refresh on window focus to catch recent changes quickly
-    const handleFocus = () => checkProviderStatus();
-    window.addEventListener("focus", handleFocus);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener("focus", handleFocus);
-    };
-  }, [checkProviderStatus]);
+  // Pauses when tab/window is hidden to reduce CPU usage
+  useVisibilityAwareInterval({
+    callback: checkProviderStatus,
+    intervalMs: 30_000,
+    executeOnMount: true,
+    executeOnRestore: true,
+  });
 
   // Format repos for multiselect
   // Fetch environments

@@ -1,7 +1,8 @@
 import { useSocket } from "@/contexts/socket/use-socket";
+import { useVisibilityAwareInterval } from "@/hooks/useVisibilityAwareInterval";
 import type { ProviderStatus, ProviderStatusResponse } from "@cmux/shared";
 import { AlertCircle, CheckCircle2, RefreshCw, XCircle } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 interface ProviderStatusSettingsProps {
   showSystemChecks?: boolean;
@@ -195,12 +196,13 @@ export function ProviderStatusSettings({
     });
   }, [socket]);
 
-  // Check status on mount and every 5 seconds
-  useEffect(() => {
-    checkProviderStatus();
-    const interval = setInterval(checkProviderStatus, 5000);
-    return () => clearInterval(interval);
-  }, [checkProviderStatus]);
+  // Check status on mount and every 5 seconds, pausing when tab is hidden
+  useVisibilityAwareInterval({
+    callback: checkProviderStatus,
+    intervalMs: 5000,
+    executeOnMount: true,
+    executeOnRestore: true,
+  });
 
   return (
     <ProviderStatusSettingsContent
