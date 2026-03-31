@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "updatedAt": "2026-03-31T17:56:03Z",
+  "updatedAt": "2026-03-31T22:49:02Z",
   "presets": [
     {
       "presetId": "4vcpu_8gb_32gb",
@@ -45,6 +45,12 @@
           "snapshotId": "snapshot_6b744b32",
           "templateVmid": 9027,
           "capturedAt": "2026-03-31T17:55:33Z"
+        },
+        {
+          "version": 98,
+          "snapshotId": "snapshot_ed096356",
+          "templateVmid": 9029,
+          "capturedAt": "2026-03-31T22:48:32Z"
         }
       ]
     },
@@ -91,6 +97,12 @@
           "snapshotId": "snapshot_3c6d2ac6",
           "templateVmid": 9026,
           "capturedAt": "2026-03-31T17:56:03Z"
+        },
+        {
+          "version": 82,
+          "snapshotId": "snapshot_5d9cd8e8",
+          "templateVmid": 9030,
+          "capturedAt": "2026-03-31T22:49:02Z"
         }
       ]
     }
