@@ -7,12 +7,18 @@ import { typedZid } from "@cmux/shared/utils/typed-zid";
 
 /**
  * Activity event types for dashboard timeline.
- * Extended to include canonical lifecycle events from agent-comm-events.ts.
  *
- * Phase 4 additions align with provider-lifecycle-adapter.ts for full parity.
+ * This list includes:
+ * 1. Canonical lifecycle events from agent-comm-events.ts (normalized naming)
+ * 2. Dashboard-specific events (tool_call, thinking, etc.) not in canonical set
+ *
+ * Naming convention: Use canonical names (e.g., session_started, session_stop_requested)
+ * to align with CANONICAL_EVENT_TYPES in agent-comm-events.ts.
+ *
+ * Legacy aliases are handled via CLIENT_TYPE_ALIASES for backward compatibility.
  */
 const ACTIVITY_TYPES = [
-  // Tool-use events (original)
+  // Tool-use events (dashboard-specific)
   "tool_call",
   "file_edit",
   "file_read",
@@ -21,38 +27,57 @@ const ACTIVITY_TYPES = [
   "git_commit",
   "error",
   "thinking",
-  // Session lifecycle events (Phase 2)
-  "session_start",
-  "session_stop",
+  // Session lifecycle events (canonical names)
+  "session_started", // was: session_start
   "session_resumed",
-  "session_finished", // P1: Clean session exit (distinct from error)
-  // Stop lifecycle events (Phase 4 - lifecycle parity)
-  "stop_requested",
-  "stop_blocked",
-  "stop_failed",
-  // Context health events (Phase 2)
+  "session_finished",
+  // Stop lifecycle events (canonical names)
+  "session_stop_requested", // was: stop_requested
+  "session_stop_blocked", // was: stop_blocked
+  "session_stop_failed", // was: stop_failed
+  // Context health events (canonical)
   "context_warning",
   "context_compacted",
-  // Memory events (Phase 2 + Phase 4)
+  // Memory events (canonical)
   "memory_loaded",
   "memory_scope_changed",
-  // Tool lifecycle events (Phase 4 - detailed tool tracking)
+  // Tool lifecycle events (canonical)
   "tool_requested",
   "tool_completed",
-  // Approval flow events (Phase 4 - runtime interruptions)
-  "approval_requested",
+  // Approval flow events (canonical names)
+  "approval_required", // was: approval_requested
   "approval_resolved",
-  // Interaction events (Phase 2)
+  // Interaction events (dashboard-specific)
   "user_prompt",
   "subagent_start",
   "subagent_stop",
   "notification",
-  // Prompt/Turn tracking events (P1 Lifecycle Parity)
-  "prompt_submitted", // P1: Track prompts/turns submitted to agent
-  "run_resumed", // P1: Resume from checkpoint/session
-  // MCP runtime events (P5 Lifecycle Parity)
-  "mcp_capabilities_negotiated", // P5: MCP server capability negotiation
+  // Prompt/Turn tracking events (canonical)
+  "prompt_submitted",
+  "run_resumed",
+  // MCP runtime events (canonical)
+  "mcp_capabilities_negotiated",
+  // Hook portability events (Phase 5)
+  "task_created",
+  "plan_sync",
+  "simplify_track",
+  "precompact",
+  "postcompact",
+  "simplify_gate",
 ] as const;
+
+/**
+ * Aliases for backward compatibility with legacy event names.
+ * Maps old names to canonical names for client-side migration.
+ */
+export const ACTIVITY_TYPE_ALIASES: Record<string, typeof ACTIVITY_TYPES[number]> = {
+  session_start: "session_started",
+  session_stop: "session_stop_requested",
+  stop_requested: "session_stop_requested",
+  stop_blocked: "session_stop_blocked",
+  stop_failed: "session_stop_failed",
+  approval_requested: "approval_required",
+};
 
 /**
  * Schema for activity events posted by agent hooks.

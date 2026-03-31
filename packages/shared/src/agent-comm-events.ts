@@ -597,6 +597,69 @@ export type AgentCommEvent =
  */
 export type AgentCommEventType = AgentCommEvent["type"];
 
+/**
+ * Canonical event types as a const array.
+ * This is the single source of truth for all event type names.
+ * Use this to derive validators in Convex and other subsystems.
+ */
+export const CANONICAL_EVENT_TYPES = [
+  // Task Lifecycle
+  "task_spawn_requested",
+  "task_started",
+  "task_status_changed",
+  "task_completed",
+  // Worker Communication
+  "worker_message",
+  "worker_status",
+  // Approval and Review
+  "approval_required",
+  "approval_resolved",
+  // Plan and Orchestration
+  "plan_updated",
+  "orchestration_completed",
+  // Provider Session
+  "provider_session_bound",
+  // Session Lifecycle
+  "session_started",
+  "session_resumed",
+  "session_stop_requested",
+  "session_stop_blocked",
+  "session_stop_failed",
+  "session_finished",
+  // Prompt and Turn
+  "prompt_submitted",
+  "run_resumed",
+  // Tool Lifecycle
+  "tool_requested",
+  "tool_completed",
+  // Memory and Instructions
+  "instructions_loaded",
+  "memory_loaded",
+  "memory_updated",
+  "memory_scope_changed",
+  // Context Health
+  "context_warning",
+  "context_compacted",
+  // MCP Runtime
+  "mcp_capabilities_negotiated",
+  // Operator Input Queue
+  "operator_input_queued",
+  "operator_input_drained",
+  "queue_full_rejected",
+] as const;
+
+/**
+ * Type assertion to ensure CANONICAL_EVENT_TYPES matches AgentCommEventType.
+ * This will cause a compile error if the types diverge.
+ */
+type _AssertCanonicalTypes = typeof CANONICAL_EVENT_TYPES[number] extends AgentCommEventType
+  ? AgentCommEventType extends typeof CANONICAL_EVENT_TYPES[number]
+    ? true
+    : never
+  : never;
+const _assertCanonicalTypes: _AssertCanonicalTypes = true;
+void _assertCanonicalTypes; // Prevent unused variable warning
+
 // =============================================================================
 // Event Utilities
 // =============================================================================
