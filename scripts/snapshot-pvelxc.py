@@ -2166,25 +2166,66 @@ async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
 
         NOVNC_VERSION="v1.7.0-beta"
         NOVNC_DIR="/usr/share/novnc"
+        MARKER_FILE="${NOVNC_DIR}/.cmux-novnc-version"
+
+        # Log current state for debugging
+        echo "[upgrade-novnc] Current noVNC state:"
+        echo "[upgrade-novnc]   Directory exists: $([ -d "$NOVNC_DIR" ] && echo yes || echo no)"
+        echo "[upgrade-novnc]   Marker file: $(cat "$MARKER_FILE" 2>/dev/null || echo 'not found')"
+        echo "[upgrade-novnc]   vnc.html exists: $([ -f "$NOVNC_DIR/vnc.html" ] && echo yes || echo no)"
 
         # Check if already upgraded by looking for version marker
-        MARKER_FILE="${NOVNC_DIR}/.cmux-novnc-version"
         if [ -f "$MARKER_FILE" ] && grep -qF "$NOVNC_VERSION" "$MARKER_FILE" 2>/dev/null; then
-            echo "[upgrade-novnc] Already at $NOVNC_VERSION, skipping"
-            exit 0
+            # Double-check the actual files exist (marker might be stale)
+            if [ -f "$NOVNC_DIR/vnc.html" ] && [ -f "$NOVNC_DIR/core/rfb.js" ]; then
+                echo "[upgrade-novnc] Already at $NOVNC_VERSION, skipping"
+                exit 0
+            else
+                echo "[upgrade-novnc] Marker says $NOVNC_VERSION but files missing, re-installing"
+            fi
         fi
 
         echo "[upgrade-novnc] Downloading noVNC $NOVNC_VERSION from GitHub..."
         cd /tmp
-        rm -rf noVNC-* novnc-*.tar.gz
+        rm -rf noVNC-* novnc-*.tar.gz novnc.tar.gz
 
-        # Download and extract noVNC release
-        curl -fsSL "https://github.com/novnc/noVNC/archive/refs/tags/${NOVNC_VERSION}.tar.gz" -o novnc.tar.gz
+        # Download with retries
+        for attempt in 1 2 3; do
+            echo "[upgrade-novnc] Download attempt $attempt/3..."
+            if curl -fsSL --retry 3 --retry-delay 5 \
+                "https://github.com/novnc/noVNC/archive/refs/tags/${NOVNC_VERSION}.tar.gz" \
+                -o novnc.tar.gz; then
+                break
+            fi
+            if [ $attempt -eq 3 ]; then
+                echo "[upgrade-novnc] ERROR: Failed to download after 3 attempts" >&2
+                exit 1
+            fi
+            sleep 5
+        done
+
+        # Verify download
+        if [ ! -f novnc.tar.gz ] || [ ! -s novnc.tar.gz ]; then
+            echo "[upgrade-novnc] ERROR: Downloaded file is missing or empty" >&2
+            ls -la novnc.tar.gz 2>/dev/null || true
+            exit 1
+        fi
+        echo "[upgrade-novnc] Downloaded $(stat -c%s novnc.tar.gz 2>/dev/null || echo '?') bytes"
+
+        # Extract
         tar xzf novnc.tar.gz
         EXTRACTED_DIR="$(ls -d noVNC-* 2>/dev/null | head -1)"
 
         if [ -z "$EXTRACTED_DIR" ] || [ ! -d "$EXTRACTED_DIR" ]; then
-            echo "[upgrade-novnc] Failed to extract noVNC archive" >&2
+            echo "[upgrade-novnc] ERROR: Failed to extract noVNC archive" >&2
+            ls -la /tmp/noVNC-* 2>/dev/null || echo "No extracted dirs found"
+            exit 1
+        fi
+
+        # Verify extracted content has expected files
+        if [ ! -f "$EXTRACTED_DIR/vnc.html" ] || [ ! -f "$EXTRACTED_DIR/core/rfb.js" ]; then
+            echo "[upgrade-novnc] ERROR: Extracted archive missing expected files" >&2
+            ls -la "$EXTRACTED_DIR/" 2>/dev/null || true
             exit 1
         fi
 
@@ -2218,7 +2259,17 @@ async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
         # Cleanup
         rm -rf /tmp/noVNC-* /tmp/novnc.tar.gz
 
+        # Final verification
+        if [ ! -f "$NOVNC_DIR/vnc.html" ] || [ ! -f "$NOVNC_DIR/core/rfb.js" ]; then
+            echo "[upgrade-novnc] ERROR: Installation verification failed" >&2
+            ls -la "$NOVNC_DIR/" 2>/dev/null || true
+            exit 1
+        fi
+
         echo "[upgrade-novnc] Successfully installed noVNC $NOVNC_VERSION"
+        echo "[upgrade-novnc] Verified files:"
+        echo "[upgrade-novnc]   vnc.html: $(ls -la "$NOVNC_DIR/vnc.html")"
+        echo "[upgrade-novnc]   marker: $(cat "$MARKER_FILE")"
 
         # Note: vnc-clipboard-bridge will be re-injected by install-vnc-clipboard-bridge task
         if [ "$HAD_BRIDGE" = "1" ]; then
@@ -3995,6 +4046,73 @@ async def task_cleanup_build_artifacts(ctx: PveTaskContext) -> None:
         """
     ).strip()
     await ctx.run("cleanup-disk-artifacts", cleanup_script)
+
+
+@registry.task(
+    name="verify-novnc-installation",
+    deps=("install-vnc-clipboard-bridge",),
+    description="Verify noVNC 1.7.0-beta is correctly installed with clipboard bridge",
+)
+@update_registry.task(
+    name="verify-novnc-installation",
+    deps=("install-vnc-clipboard-bridge",),
+    description="Verify noVNC 1.7.0-beta is correctly installed with clipboard bridge",
+)
+async def task_verify_novnc_installation(ctx: PveTaskContext) -> None:
+    """
+    Final verification that noVNC 1.7.0-beta is correctly installed.
+    This task runs after all noVNC-related tasks to catch any issues.
+    """
+    cmd = textwrap.dedent(
+        """
+        set -eux
+
+        NOVNC_DIR="/usr/share/novnc"
+        MARKER_FILE="${NOVNC_DIR}/.cmux-novnc-version"
+        EXPECTED_VERSION="v1.7.0-beta"
+
+        echo "[verify-novnc] Checking noVNC installation..."
+
+        # Check marker file
+        if [ ! -f "$MARKER_FILE" ]; then
+            echo "[verify-novnc] ERROR: Version marker file not found: $MARKER_FILE" >&2
+            echo "[verify-novnc] noVNC upgrade task may not have run" >&2
+            ls -la "$NOVNC_DIR/" 2>/dev/null || true
+            exit 1
+        fi
+
+        INSTALLED_VERSION="$(cat "$MARKER_FILE")"
+        if [ "$INSTALLED_VERSION" != "$EXPECTED_VERSION" ]; then
+            echo "[verify-novnc] ERROR: Version mismatch" >&2
+            echo "[verify-novnc]   Expected: $EXPECTED_VERSION" >&2
+            echo "[verify-novnc]   Found: $INSTALLED_VERSION" >&2
+            exit 1
+        fi
+
+        # Check critical files exist
+        if [ ! -f "$NOVNC_DIR/vnc.html" ]; then
+            echo "[verify-novnc] ERROR: vnc.html not found" >&2
+            exit 1
+        fi
+
+        if [ ! -f "$NOVNC_DIR/core/rfb.js" ]; then
+            echo "[verify-novnc] ERROR: core/rfb.js not found" >&2
+            exit 1
+        fi
+
+        # Check clipboard bridge is injected
+        if ! grep -q "vnc-clipboard-bridge" "$NOVNC_DIR/vnc.html" 2>/dev/null; then
+            echo "[verify-novnc] ERROR: Clipboard bridge not found in vnc.html" >&2
+            exit 1
+        fi
+
+        echo "[verify-novnc] OK: noVNC $EXPECTED_VERSION installed with clipboard bridge"
+        echo "[verify-novnc]   Marker: $(cat "$MARKER_FILE")"
+        echo "[verify-novnc]   vnc.html: $(stat -c '%s bytes' "$NOVNC_DIR/vnc.html")"
+        echo "[verify-novnc]   Bridge: $(grep -c 'vnc-clipboard-bridge' "$NOVNC_DIR/vnc.html") occurrences"
+        """
+    )
+    await ctx.run("verify-novnc-installation", cmd)
 
 
 # ---------------------------------------------------------------------------
