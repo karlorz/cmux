@@ -48,6 +48,15 @@ export * from "./agent-comm-events";
 export * from "./a2a-protocol";
 export * from "./approval-risk-classifier";
 export * from "./timezone-constants";
+export * from "./task-class-routing";
+export * from "./agent-selection";
+// agent-selection-core exports SelectedAgentSelection which conflicts with socket-schemas
+// Only export what's needed from agent-selection-core, not the duplicate type
+export {
+  normalizeAgentSelection,
+  type NormalizedAgentSelection,
+} from "./agent-selection-core";
+export * from "./agent-catalog";
 // Note: useNetwork hook is NOT exported here to avoid SSR issues.
 // Import directly from "@cmux/shared/hooks/use-network" in client components.
 // Note: Environment component utilities are NOT exported here.
