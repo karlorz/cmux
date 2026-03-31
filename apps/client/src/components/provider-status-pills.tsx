@@ -1,10 +1,11 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useSocket } from "@/contexts/socket/use-socket";
+import { useVisibilityAwareInterval } from "@/hooks/useVisibilityAwareInterval";
 import type { ProviderStatus, ProviderStatusResponse } from "@cmux/shared";
 import { useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
 import { RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 export function ProviderStatusPills({ teamSlugOrId }: { teamSlugOrId: string }) {
   const { socket } = useSocket();
@@ -24,12 +25,13 @@ export function ProviderStatusPills({ teamSlugOrId }: { teamSlugOrId: string }) 
     });
   }, [socket]);
 
-  // Check status on mount and every 5 seconds so UI updates quickly
-  useEffect(() => {
-    checkProviderStatus();
-    const interval = setInterval(checkProviderStatus, 5000);
-    return () => clearInterval(interval);
-  }, [checkProviderStatus]);
+  // Check status on mount and every 5 seconds, pausing when tab is hidden
+  useVisibilityAwareInterval({
+    callback: checkProviderStatus,
+    intervalMs: 5000,
+    executeOnMount: true,
+    executeOnRestore: true,
+  });
 
   if (!status) return null;
 
