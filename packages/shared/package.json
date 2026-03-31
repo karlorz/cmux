@@ -237,6 +237,14 @@
     "./project-recommendations": {
       "import": "./src/project-recommendations.ts",
       "types": "./src/project-recommendations.ts"
+    },
+    "./operator-presets": {
+      "import": "./src/operator-presets.ts",
+      "types": "./src/operator-presets.ts"
+    },
+    "./task-class-routing": {
+      "import": "./src/task-class-routing.ts",
+      "types": "./src/task-class-routing.ts"
     }
   },
   "peerDependencies": {

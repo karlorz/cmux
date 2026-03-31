@@ -5,7 +5,7 @@ import {
   BUILTIN_PRESETS,
   isBuiltinPresetId,
   type OperatorPreset,
-} from "@cmux/shared";
+} from "@cmux/shared/operator-presets";
 
 const taskClassValidator = v.optional(
   v.union(
