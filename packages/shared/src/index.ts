@@ -57,6 +57,7 @@ export {
   type NormalizedAgentSelection,
 } from "./agent-selection-core";
 export * from "./agent-catalog";
+export * from "./operator-presets";
 // Note: useNetwork hook is NOT exported here to avoid SSR issues.
 // Import directly from "@cmux/shared/hooks/use-network" in client components.
 // Note: Environment component utilities are NOT exported here.
