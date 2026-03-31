@@ -383,10 +383,12 @@ export const discoverAnthropicModels = internalAction({
     const now = Date.now();
     const modelsToUpsert = relevantModels.map((model) => {
       // Map Anthropic model ID to Claude Code naming convention
-      // e.g., claude-opus-4-6 -> claude/opus-4.6
+      // e.g., claude-opus-4-6-20260301 -> claude/opus-4.6
+      // e.g., claude-3-5-sonnet-20240620 -> claude/3-5-sonnet (legacy)
       const normalizedId = model.id
         .replace("claude-", "")
-        .replace(/-(\d+)-(\d+)/, "-$1.$2"); // Convert claude-opus-4-6 to opus-4.6
+        .replace(/-(\d+)-(\d+)(-\d{8})?$/, "-$1.$2") // Strip date suffix and convert version
+        .replace(/-\d{8}$/, ""); // Strip any remaining date suffix (legacy models)
 
       return {
         name: `claude/${normalizedId}`,
