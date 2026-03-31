@@ -107,13 +107,13 @@ crons.daily(
   internal.modelDiscovery.discoverAnthropicModels
 );
 
-// Refresh expiring Codex OAuth tokens every 15 minutes
-// Centralizes token refresh to avoid stale refresh_token issues in sandboxes
-crons.interval(
-  "refresh codex oauth tokens",
-  { minutes: 15 },
-  internal.codexTokenRefresh.refreshExpiring
-);
+// DISABLED 2026-03-31: OpenAI flagged account for irregular auth activity
+// DO NOT RE-ENABLE without verifying with OpenAI that this is safe
+// crons.interval(
+//   "refresh codex oauth tokens",
+//   { minutes: 15 },
+//   internal.codexTokenRefresh.refreshExpiring
+// );
 
 // Poll orchestration tasks every 5 minutes for auto-spawning
 // This enables autonomous multi-agent orchestration
