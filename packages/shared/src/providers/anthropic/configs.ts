@@ -85,6 +85,7 @@ function createClaudeConfig(spec: ClaudeModelSpec): AgentConfig {
 
 const CLAUDE_MODEL_SPECS: ClaudeModelSpec[] = [
   { nameSuffix: "opus-4.6", modelApiId: "claude-opus-4-6" },
+  { nameSuffix: "sonnet-4.6", modelApiId: "claude-sonnet-4-6" },
   { nameSuffix: "opus-4.5", modelApiId: "claude-opus-4-5-20251101" },
   { nameSuffix: "sonnet-4.5", modelApiId: "claude-sonnet-4-5-20250929" },
   { nameSuffix: "haiku-4.5", modelApiId: "claude-haiku-4-5-20251001" },
