@@ -32,7 +32,12 @@ import {
 import { ActivityStreamSkeleton } from "@/components/dashboard/DashboardSkeletons";
 import { formatDuration } from "@/lib/time";
 
+/**
+ * Activity types for dashboard timeline (canonical naming).
+ * Aligned with CANONICAL_EVENT_TYPES in agent-comm-events.ts.
+ */
 const ACTIVITY_TYPES = [
+  // Dashboard-specific events
   "tool_call",
   "file_edit",
   "file_read",
@@ -41,29 +46,60 @@ const ACTIVITY_TYPES = [
   "git_commit",
   "error",
   "thinking",
-  "session_start",
-  "session_stop",
+  // Session lifecycle (canonical)
+  "session_started",
   "session_resumed",
   "session_finished",
-  "stop_requested",
-  "stop_blocked",
-  "stop_failed",
+  // Stop lifecycle (canonical)
+  "session_stop_requested",
+  "session_stop_blocked",
+  "session_stop_failed",
+  // Context health (canonical)
   "context_warning",
   "context_compacted",
+  // Memory (canonical)
   "memory_loaded",
   "memory_scope_changed",
+  // Tool lifecycle (canonical)
   "tool_requested",
   "tool_completed",
-  "approval_requested",
+  // Approval (canonical)
+  "approval_required",
   "approval_resolved",
+  // Interaction
   "user_prompt",
   "subagent_start",
   "subagent_stop",
   "notification",
+  // Prompt/Turn (canonical)
   "prompt_submitted",
   "run_resumed",
+  // MCP (canonical)
   "mcp_capabilities_negotiated",
+  // Hook portability events
+  "task_created",
+  "plan_sync",
+  "simplify_track",
+  "precompact",
+  "postcompact",
+  "simplify_gate",
 ] as const;
+
+/**
+ * Normalize legacy event type names to canonical names.
+ * Handles backward compatibility for events stored with old naming.
+ */
+function normalizeActivityType(type: string): string {
+  const aliases: Record<string, string> = {
+    session_start: "session_started",
+    session_stop: "session_stop_requested",
+    stop_requested: "session_stop_requested",
+    stop_blocked: "session_stop_blocked",
+    stop_failed: "session_stop_failed",
+    approval_requested: "approval_required",
+  };
+  return aliases[type] ?? type;
+}
 
 type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
@@ -166,18 +202,11 @@ const ACTIVITY_CONFIG: Record<ActivityType, ActivityConfig> = {
       "bg-neutral-100 text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300",
     label: "Thinking",
   },
-  session_start: {
+  session_started: {
     icon: Play,
     colorClass: "text-blue-500 dark:text-blue-400",
     badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200",
-    label: "Session Start",
-  },
-  session_stop: {
-    icon: Square,
-    colorClass: "text-neutral-500 dark:text-neutral-400",
-    badgeClass:
-      "bg-neutral-100 text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300",
-    label: "Session Stop",
+    label: "Session Started",
   },
   session_resumed: {
     icon: RotateCcw,
@@ -192,21 +221,21 @@ const ACTIVITY_CONFIG: Record<ActivityType, ActivityConfig> = {
       "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-200",
     label: "Session Finished",
   },
-  stop_requested: {
+  session_stop_requested: {
     icon: Square,
     colorClass: "text-amber-500 dark:text-amber-400",
     badgeClass:
       "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-200",
     label: "Stop Requested",
   },
-  stop_blocked: {
+  session_stop_blocked: {
     icon: AlertTriangle,
     colorClass: "text-amber-500 dark:text-amber-400",
     badgeClass:
       "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-200",
     label: "Stop Blocked",
   },
-  stop_failed: {
+  session_stop_failed: {
     icon: AlertTriangle,
     colorClass: "text-red-500 dark:text-red-400",
     badgeClass: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-200",
@@ -251,12 +280,12 @@ const ACTIVITY_CONFIG: Record<ActivityType, ActivityConfig> = {
       "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-200",
     label: "Tool Completed",
   },
-  approval_requested: {
+  approval_required: {
     icon: Shield,
     colorClass: "text-amber-500 dark:text-amber-400",
     badgeClass:
       "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-200",
-    label: "Approval Requested",
+    label: "Approval Required",
   },
   approval_resolved: {
     icon: ShieldCheck,
@@ -308,6 +337,46 @@ const ACTIVITY_CONFIG: Record<ActivityType, ActivityConfig> = {
     badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200",
     label: "MCP Capabilities",
   },
+  // Hook portability events
+  task_created: {
+    icon: Play,
+    colorClass: "text-blue-500 dark:text-blue-400",
+    badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200",
+    label: "Task Created",
+  },
+  plan_sync: {
+    icon: RotateCcw,
+    colorClass: "text-blue-500 dark:text-blue-400",
+    badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200",
+    label: "Plan Sync",
+  },
+  simplify_track: {
+    icon: Search,
+    colorClass: "text-blue-500 dark:text-blue-400",
+    badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200",
+    label: "Simplify Track",
+  },
+  precompact: {
+    icon: Database,
+    colorClass: "text-amber-500 dark:text-amber-400",
+    badgeClass:
+      "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-200",
+    label: "Pre-Compact",
+  },
+  postcompact: {
+    icon: Database,
+    colorClass: "text-green-600 dark:text-green-400",
+    badgeClass:
+      "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-200",
+    label: "Post-Compact",
+  },
+  simplify_gate: {
+    icon: Shield,
+    colorClass: "text-amber-500 dark:text-amber-400",
+    badgeClass:
+      "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-200",
+    label: "Simplify Gate",
+  },
 };
 
 function formatRelativeTime(timestamp: number): string {
@@ -351,12 +420,14 @@ function formatActivityTypeLabel(type: string): string {
 }
 
 function isKnownActivityType(type: string): type is ActivityType {
-  return ACTIVITY_TYPES.some((activityType) => activityType === type);
+  const normalized = normalizeActivityType(type);
+  return ACTIVITY_TYPES.some((activityType) => activityType === normalized);
 }
 
 function getActivityConfig(type: string): ActivityConfig {
-  if (isKnownActivityType(type)) {
-    return ACTIVITY_CONFIG[type];
+  const normalized = normalizeActivityType(type);
+  if (ACTIVITY_TYPES.some((t) => t === normalized)) {
+    return ACTIVITY_CONFIG[normalized as ActivityType];
   }
 
   return {
@@ -392,9 +463,10 @@ function getActivityMetadata(activity: ActivityLike): string[] {
     metadata.push(activity.toolName);
   }
 
-  switch (activity.type) {
-    case "session_start":
-    case "session_stop":
+  const normalizedType = normalizeActivityType(activity.type);
+  switch (normalizedType) {
+    case "session_started":
+    case "session_stop_requested":
     case "session_resumed":
       if (activity.providerSessionId) {
         metadata.push(`Session: ${activity.providerSessionId}`);
@@ -414,9 +486,8 @@ function getActivityMetadata(activity: ActivityLike): string[] {
         metadata.push(`Exit: ${activity.exitCode}`);
       }
       break;
-    case "stop_requested":
-    case "stop_blocked":
-    case "stop_failed":
+    case "session_stop_blocked":
+    case "session_stop_failed":
       if (activity.stopSource) {
         metadata.push(`Source: ${formatActivityValue(activity.stopSource)}`);
       }
@@ -454,7 +525,7 @@ function getActivityMetadata(activity: ActivityLike): string[] {
         metadata.push(`Size: ${formatBytes(activity.scopeBytes)}`);
       }
       break;
-    case "approval_requested":
+    case "approval_required":
       if (activity.approvalId) {
         metadata.push(`Approval: ${activity.approvalId}`);
       }
@@ -525,11 +596,12 @@ function getActivitySecondaryText(activity: ActivityLike): string | null {
     return trimmedDetail;
   }
 
-  if (activity.type === "stop_blocked" && activity.continuationPrompt) {
+  const normalizedType = normalizeActivityType(activity.type);
+  if (normalizedType === "session_stop_blocked" && activity.continuationPrompt) {
     return `Continuation prompt: ${activity.continuationPrompt}`;
   }
 
-  if (activity.type === "mcp_capabilities_negotiated") {
+  if (normalizedType === "mcp_capabilities_negotiated") {
     const capabilities = getEnabledMcpCapabilities(activity.mcpCapabilities);
     if (capabilities.length > 0) {
       return `Capabilities: ${capabilities.map(formatActivityValue).join(", ")}`;
@@ -884,16 +956,17 @@ export function ActivityStream({ taskRunId, provider }: ActivityStreamProps) {
         ) : (
           <div className="divide-y divide-neutral-100 dark:divide-neutral-900">
             {filteredActivities.map((activity) => {
+              const normalizedType = normalizeActivityType(activity.type);
               const { icon: Icon, colorClass, badgeClass, label } = getActivityConfig(
                 activity.type
               );
               const metadata = getActivityMetadata(activity);
               const secondaryText = getActivitySecondaryText(activity);
-              const isError = activity.type === "error" || activity.type === "stop_failed";
+              const isError = normalizedType === "error" || normalizedType === "session_stop_failed";
               const isWarning =
-                activity.type === "approval_requested" ||
-                activity.type === "stop_blocked" ||
-                activity.type === "context_warning";
+                normalizedType === "approval_required" ||
+                normalizedType === "session_stop_blocked" ||
+                normalizedType === "context_warning";
 
               return (
                 <div
