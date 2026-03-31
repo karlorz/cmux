@@ -4,39 +4,32 @@ import { convexQuery } from "@convex-dev/react-query";
 import { api } from "@cmux/convex/api";
 import { useConvex } from "convex/react";
 import { toast } from "sonner";
-import { ChevronDown } from "lucide-react";
+import {
+  ChevronDown,
+  Zap,
+  Target,
+  Search,
+  Building2,
+  Box,
+  type LucideIcon,
+} from "lucide-react";
 import { FormDialog } from "@/components/ui/form-dialog";
+import { applyPresetToSpawnOptions, type OperatorPreset } from "@cmux/shared";
 
-// Behavior presets that combine recommended model + profile settings
-const BEHAVIOR_PRESETS = [
-  {
-    id: "quick",
-    name: "Quick Task",
-    description: "Fast execution with minimal review",
-    icon: "⚡",
-    model: "", // auto-select (uses haiku)
-    profile: "", // no profile
-    priority: 5,
-  },
-  {
-    id: "standard",
-    name: "Standard",
-    description: "Balanced speed and quality (recommended)",
-    icon: "🎯",
-    model: "", // auto-select
-    profile: "", // no profile
-    priority: 5,
-  },
-  {
-    id: "thorough",
-    name: "Thorough Review",
-    description: "Extra validation and testing",
-    icon: "🔍",
-    model: "", // will prefer opus if available
-    profile: "", // no profile, but priority lower
-    priority: 3,
-  },
-] as const;
+/**
+ * Map icon name to Lucide component.
+ */
+const ICON_MAP: Record<string, LucideIcon> = {
+  zap: Zap,
+  target: Target,
+  search: Search,
+  building: Building2,
+  box: Box,
+};
+
+function getPresetIcon(iconName: string): LucideIcon {
+  return ICON_MAP[iconName] ?? Box;
+}
 
 interface OrchestrationSpawnDialogProps {
   teamSlugOrId: string;
@@ -53,23 +46,33 @@ export function OrchestrationSpawnDialog({
   const queryClient = useQueryClient();
 
   const [prompt, setPrompt] = useState("");
-  const [selectedPreset, setSelectedPreset] = useState("standard");
+  const [selectedPresetId, setSelectedPresetId] = useState("standard");
   const [showAdvanced, setShowAdvanced] = useState(false);
   // Advanced options (hidden by default)
   const [priority, setPriority] = useState(5);
   const [selectedModel, setSelectedModel] = useState("");
   const [selectedVariant, setSelectedVariant] = useState("");
   const [selectedProfile, setSelectedProfile] = useState("");
+  const [selectedTaskClass, setSelectedTaskClass] = useState<
+    string | undefined
+  >(undefined);
+
+  // Fetch operator presets (built-in + custom)
+  const { data: presets } = useQuery(
+    convexQuery(api.operatorPresets.list, { teamSlugOrId }),
+  );
 
   // Apply preset settings when preset changes
   const handlePresetChange = (presetId: string) => {
-    setSelectedPreset(presetId);
-    const preset = BEHAVIOR_PRESETS.find((p) => p.id === presetId);
+    setSelectedPresetId(presetId);
+    const preset = presets?.find((p: OperatorPreset) => p.id === presetId);
     if (preset) {
-      setPriority(preset.priority);
-      setSelectedModel(preset.model);
-      setSelectedVariant("");
-      setSelectedProfile(preset.profile);
+      const options = applyPresetToSpawnOptions(preset);
+      setPriority(options.priority);
+      setSelectedModel(options.agentName ?? "");
+      setSelectedVariant(options.selectedVariant ?? "");
+      setSelectedProfile(options.supervisorProfileId ?? "");
+      setSelectedTaskClass(options.taskClass);
     }
   };
 
@@ -109,6 +112,7 @@ export function OrchestrationSpawnDialog({
       if (selectedModel && selectedVariant)
         metadata.selectedVariant = selectedVariant;
       if (selectedProfile) metadata.supervisorProfileId = selectedProfile;
+      if (selectedTaskClass) metadata.taskClass = selectedTaskClass;
       const taskId = await convex.mutation(
         api.orchestrationQueries.createTask,
         {
@@ -128,6 +132,7 @@ export function OrchestrationSpawnDialog({
       setSelectedModel("");
       setSelectedVariant("");
       setSelectedProfile("");
+      setSelectedTaskClass(undefined);
       onOpenChange(false);
       void queryClient.invalidateQueries();
     },
@@ -180,27 +185,40 @@ export function OrchestrationSpawnDialog({
         <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
           Behavior
         </label>
-        <div className="grid grid-cols-3 gap-2">
-          {BEHAVIOR_PRESETS.map((preset) => (
-            <button
-              key={preset.id}
-              type="button"
-              onClick={() => handlePresetChange(preset.id)}
-              className={`flex flex-col items-center rounded-lg border p-3 text-center transition-colors ${
-                selectedPreset === preset.id
-                  ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-900/20"
-                  : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-700 dark:hover:border-neutral-600"
-              }`}
-            >
-              <span className="text-lg mb-1">{preset.icon}</span>
-              <span className="text-xs font-medium text-neutral-900 dark:text-neutral-100">
-                {preset.name}
-              </span>
-              <span className="text-[10px] text-neutral-500 dark:text-neutral-400 mt-0.5">
-                {preset.description}
-              </span>
-            </button>
-          ))}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {!presets && (
+            <div className="col-span-full text-center text-sm text-neutral-500 py-4">
+              Loading presets...
+            </div>
+          )}
+          {presets?.map((preset: OperatorPreset) => {
+            const IconComponent = getPresetIcon(preset.icon);
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => handlePresetChange(preset.id)}
+                className={`flex flex-col items-center rounded-lg border p-3 text-center transition-colors ${
+                  selectedPresetId === preset.id
+                    ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-900/20"
+                    : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-700 dark:hover:border-neutral-600"
+                }`}
+              >
+                <IconComponent className="h-5 w-5 mb-1 text-neutral-600 dark:text-neutral-400" />
+                <span className="text-xs font-medium text-neutral-900 dark:text-neutral-100">
+                  {preset.name}
+                </span>
+                <span className="text-[10px] text-neutral-500 dark:text-neutral-400 mt-0.5 line-clamp-2">
+                  {preset.description}
+                </span>
+                {!preset.isBuiltin && (
+                  <span className="text-[9px] text-blue-500 dark:text-blue-400 mt-1">
+                    Custom
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 

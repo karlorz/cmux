@@ -2695,6 +2695,37 @@ const convexSchema = defineSchema({
     updatedAt: v.number(),
   }).index("by_team", ["teamId"]),
 
+  // Operator presets - user-configurable bundles of orchestration settings
+  operatorPresets: defineTable({
+    teamId: v.string(),
+    userId: v.string(), // Creator
+    // Display
+    name: v.string(),
+    description: v.optional(v.string()),
+    icon: v.optional(v.string()), // Lucide icon name
+    // Spawn settings
+    taskClass: v.optional(
+      v.union(
+        v.literal("routine"),
+        v.literal("deep-coding"),
+        v.literal("review"),
+        v.literal("eval"),
+        v.literal("architecture"),
+        v.literal("large-context")
+      )
+    ), // Task class for automatic model selection
+    agentName: v.optional(v.string()), // Explicit agent (overrides taskClass)
+    selectedVariant: v.optional(v.string()), // Effort/reasoning level
+    supervisorProfileId: v.optional(v.id("supervisorProfiles")),
+    priority: v.number(), // Queue priority (1-10)
+    // Timestamps
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_team", ["teamId"])
+    .index("by_team_user", ["teamId", "userId"])
+    .index("by_team_name", ["teamId", "name"]),
+
   // Session activity tracking for visual change dashboards
   sessionActivity: defineTable({
     // Link to task run
