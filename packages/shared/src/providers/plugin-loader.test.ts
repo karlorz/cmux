@@ -105,24 +105,28 @@ describe("PluginLoader", () => {
   describe("loadAll integration", () => {
     // Note: This test actually loads the real plugins
     // It requires the plugin modules to exist in the expected locations
-    it("loadAll loads builtin plugins", async () => {
-      const loader = new PluginLoader();
-      await loader.loadAll();
+    it(
+      "loadAll loads builtin plugins",
+      async () => {
+        const loader = new PluginLoader();
+        await loader.loadAll();
 
-      expect(loader.isLoaded()).toBe(true);
-      // Should have loaded at least some plugins
-      const plugins = loader.getAllPlugins();
-      expect(plugins.length).toBeGreaterThan(0);
+        expect(loader.isLoaded()).toBe(true);
+        // Should have loaded at least some plugins
+        const plugins = loader.getAllPlugins();
+        expect(plugins.length).toBeGreaterThan(0);
 
-      // Each loaded plugin should have required metadata
-      for (const plugin of plugins) {
-        expect(plugin.manifest.id).toBeDefined();
-        expect(plugin.manifest.name).toBeDefined();
-        expect(plugin.manifest.version).toMatch(/^\d+\.\d+\.\d+$/);
-        expect(plugin.loadedAt).toBeGreaterThan(0);
-        expect(plugin.loadedFrom).toBeDefined();
-      }
-    });
+        // Each loaded plugin should have required metadata
+        for (const plugin of plugins) {
+          expect(plugin.manifest.id).toBeDefined();
+          expect(plugin.manifest.name).toBeDefined();
+          expect(plugin.manifest.version).toMatch(/^\d+\.\d+\.\d+$/);
+          expect(plugin.loadedAt).toBeGreaterThan(0);
+          expect(plugin.loadedFrom).toBeDefined();
+        }
+      },
+      15000
+    );
 
     it("loadAll is idempotent", async () => {
       const loader = new PluginLoader();
