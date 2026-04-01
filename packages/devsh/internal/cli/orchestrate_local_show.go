@@ -18,11 +18,11 @@ var (
 
 var orchestrateShowLocalCmd = &cobra.Command{
 	Use:   "show-local <run-id>",
-	Short: "Show details of a local orchestration run",
-	Long: `Display detailed information about a specific local orchestration run.
+	Short: "Show run control summary for a local run",
+	Long: `Display run control summary for a specific local orchestration run.
 
-Shows configuration, state, events, and optionally logs from a run
-created with 'devsh orchestrate run-local --persist'.
+Shows the same operator-facing information as the cloud dashboard:
+lifecycle status, continuation mode, events, and logs.
 
 The run-id can be:
 - The full orchestration ID (e.g., local_abc123)
@@ -154,7 +154,7 @@ Examples:
 		}
 
 		fmt.Printf("\nRun directory: %s\n", runDir)
-		fmt.Printf("View in browser: devsh orchestrate view %s --watch\n", runDir)
+		fmt.Printf("Open dashboard: devsh orchestrate view %s --live\n", runDir)
 
 		return nil
 	},
