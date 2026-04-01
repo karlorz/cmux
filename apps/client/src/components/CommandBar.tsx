@@ -1310,7 +1310,6 @@ export function CommandBar({
                   teamSlugOrId,
                   taskId,
                   runId,
-                  taskRunId: runId,
                 },
               });
             } else {
@@ -1528,7 +1527,6 @@ export function CommandBar({
                 teamSlugOrId,
                 taskId,
                 runId,
-                taskRunId: runId,
               },
             });
           } else {

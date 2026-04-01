@@ -2131,7 +2131,6 @@ function TaskRunDetails({
               teamSlugOrId,
               taskId,
               runId: run._id,
-              taskRunId: run._id,
             },
           });
         }
