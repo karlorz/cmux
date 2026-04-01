@@ -17,6 +17,7 @@ import {
   OPENAI_BASE_URL_KEY,
   OPENROUTER_API_KEY,
   OPENROUTER_BASE_URL_KEY,
+  OPENCODE_AUTH_JSON,
   XAI_API_KEY,
   XAI_BASE_URL_KEY,
   AMP_API_KEY,
@@ -135,6 +136,14 @@ export const BASE_PROVIDERS: ProviderSpec[] = [
     apiFormat: "passthrough",
     authEnvVars: ["CURSOR_API_KEY"],
     apiKeys: [CURSOR_API_KEY],
+  },
+  {
+    id: "opencode",
+    name: "OpenCode",
+    defaultBaseUrl: "https://opencode.ai/zen/v1",
+    apiFormat: "openai",
+    authEnvVars: ["OPENCODE_AUTH_JSON", "OPENROUTER_API_KEY"],
+    apiKeys: [OPENCODE_AUTH_JSON, OPENROUTER_API_KEY],
   },
 ];
 
