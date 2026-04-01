@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Orchestration Viewer</title>
+  <title>Run Dashboard</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -13,6 +13,38 @@
       min-height: 100vh;
     }
     .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+    /* Status Strip - compact persistent bar */
+    .status-strip {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 16px;
+      background: #171717;
+      border: 1px solid #262626;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 12px;
+      overflow-x: auto;
+    }
+    .status-chip {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .chip-green { background: #166534; color: #bbf7d0; }
+    .chip-amber { background: #92400e; color: #fde68a; }
+    .chip-red { background: #991b1b; color: #fecaca; }
+    .chip-blue { background: #1e40af; color: #bfdbfe; }
+    .chip-neutral { background: #404040; color: #d4d4d4; }
+    .status-divider { width: 1px; height: 16px; background: #404040; }
+    .status-meta { color: #a3a3a3; display: flex; align-items: center; gap: 4px; }
+    .status-meta code { font-family: monospace; color: #d4d4d4; }
+
     header {
       display: flex;
       justify-content: space-between;
@@ -112,6 +144,7 @@
       overflow-y: auto;
     }
 
+    /* Activity Timeline */
     .events-timeline { max-height: 500px; overflow-y: auto; }
     .event-item {
       display: flex;
@@ -122,6 +155,13 @@
     .event-time { font-family: monospace; font-size: 12px; color: #737373; white-space: nowrap; }
     .event-type { font-size: 12px; font-weight: 500; }
     .event-message { font-size: 13px; color: #d4d4d4; }
+
+    /* Inspector panel */
+    .inspector-section { margin-bottom: 16px; }
+    .inspector-section:last-child { margin-bottom: 0; }
+    .inspector-label { font-size: 11px; color: #737373; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    .inspector-value { font-size: 13px; color: #e5e5e5; }
+    .inspector-value code { font-family: monospace; background: #262626; padding: 2px 6px; border-radius: 4px; }
 
     .empty-state {
       text-align: center;
@@ -137,9 +177,14 @@
 </head>
 <body>
   <div class="container">
+    <!-- Region 1: Status Strip -->
+    <div class="status-strip" id="status-strip">
+      <span class="status-chip chip-neutral" id="lifecycle-chip">Loading...</span>
+    </div>
+
     <header>
       <div>
-        <h1>Orchestration Viewer</h1>
+        <h1>Run Dashboard</h1>
         <p id="orchestration-id" style="font-family: monospace; font-size: 12px; color: #737373; margin-top: 4px;"></p>
       </div>
       <span id="status-badge" class="badge"></span>
@@ -148,25 +193,19 @@
     <div class="summary" id="summary"></div>
 
     <div class="tabs">
-      <button class="tab active" data-surface="operator">Operator Brief</button>
+      <button class="tab active" data-surface="timeline">Activity Timeline</button>
       <button class="tab" data-surface="tasks">Tasks</button>
-      <button class="tab" data-surface="events">Events</button>
+      <button class="tab" data-surface="inspector">Inspector</button>
       <button class="tab" data-surface="logs" id="logs-tab" style="display: none;">Logs</button>
     </div>
 
-    <div id="operator" class="surface active">
-      <div class="detail-panel">
-        <div class="detail-section">
-          <div class="detail-label">Orchestration Summary</div>
-          <div class="detail-content" id="operator-summary"></div>
-        </div>
-        <div class="detail-section">
-          <div class="detail-label">Export Info</div>
-          <div class="detail-content" id="export-info"></div>
-        </div>
-      </div>
+    <!-- Region 2: Activity Timeline -->
+    <div id="timeline" class="surface active">
+      <div class="events-timeline" id="events-list"></div>
+      <div class="empty-state" id="events-empty" style="display: none;">No events captured yet</div>
     </div>
 
+    <!-- Tasks surface -->
     <div id="tasks" class="surface">
       <div class="task-list" id="task-list"></div>
       <div class="detail-panel" id="task-detail" style="display: none;">
@@ -185,10 +224,38 @@
       </div>
     </div>
 
-    <div id="events" class="surface">
-      <div class="events-timeline" id="events-list"></div>
+    <!-- Region 5: Inspector (continuation, session, memory) -->
+    <div id="inspector" class="surface">
+      <div class="detail-panel">
+        <div class="detail-section">
+          <div class="detail-label">Run Control</div>
+          <div class="detail-content" id="run-control-summary"></div>
+        </div>
+        <div class="detail-section">
+          <div class="detail-label">Continuation</div>
+          <div id="continuation-info">
+            <div class="inspector-section">
+              <div class="inspector-label">Mode</div>
+              <div class="inspector-value" id="continuation-mode">--</div>
+            </div>
+            <div class="inspector-section" id="session-section" style="display: none;">
+              <div class="inspector-label">Session / Thread ID</div>
+              <div class="inspector-value"><code id="session-id">--</code></div>
+            </div>
+            <div class="inspector-section" id="checkpoint-section" style="display: none;">
+              <div class="inspector-label">Checkpoint Ref</div>
+              <div class="inspector-value"><code id="checkpoint-ref">--</code></div>
+            </div>
+          </div>
+        </div>
+        <div class="detail-section">
+          <div class="detail-label">Export Info</div>
+          <div class="detail-content" id="export-info"></div>
+        </div>
+      </div>
     </div>
 
+    <!-- Logs surface -->
     <div id="logs" class="surface">
       <div class="detail-panel">
         <div class="detail-section" id="stdout-section">
@@ -220,6 +287,9 @@
       statusBadge.textContent = bundle.orchestration.status;
       statusBadge.className = 'badge badge-' + bundle.orchestration.status;
 
+      // Render Status Strip
+      renderStatusStrip();
+
       document.getElementById('summary').innerHTML = `
         <div class="stat-card">
           <div class="stat-value">${bundle.summary.totalTasks}</div>
@@ -243,7 +313,8 @@
         </div>
       `;
 
-      document.getElementById('operator-summary').textContent =
+      // Render Inspector run-control summary
+      document.getElementById('run-control-summary').textContent =
         `Status: ${bundle.orchestration.status}\n` +
         `Tasks: ${bundle.summary.totalTasks} total\n` +
         `  - Completed: ${bundle.summary.completedTasks}\n` +
@@ -257,6 +328,106 @@
       renderTasks();
       renderEvents();
       renderLogs();
+      renderInspector();
+    }
+
+    function renderStatusStrip() {
+      const strip = document.getElementById('status-strip');
+      const status = bundle.orchestration.status;
+      const chipClass = {
+        completed: 'chip-green',
+        failed: 'chip-red',
+        running: 'chip-blue',
+        pending: 'chip-neutral'
+      }[status] || 'chip-neutral';
+
+      let html = `<span class="status-chip ${chipClass}">${capitalize(status)}</span>`;
+
+      // Add metadata from bundle if available
+      if (bundle.metadata) {
+        if (bundle.metadata.gitBranch) {
+          html += `<span class="status-divider"></span>`;
+          html += `<span class="status-meta"><code>${bundle.metadata.gitBranch}</code></span>`;
+        }
+        if (bundle.metadata.agentCLI) {
+          html += `<span class="status-divider"></span>`;
+          html += `<span class="status-meta">${bundle.metadata.agentCLI}</span>`;
+        }
+      }
+
+      // Add freshness indicator
+      if (bundle.exportedAt) {
+        const age = Date.now() - new Date(bundle.exportedAt).getTime();
+        const freshness = formatFreshness(age);
+        html += `<span style="margin-left: auto;" class="status-meta">${freshness}</span>`;
+      }
+
+      strip.innerHTML = html;
+    }
+
+    function renderInspector() {
+      // Determine continuation mode from bundle data
+      let mode = 'append_instruction';
+      let sessionId = null;
+      let checkpointRef = null;
+
+      // Check if we have continuation info in metadata
+      if (bundle.metadata) {
+        if (bundle.metadata.sessionId) {
+          mode = 'session_continuation';
+          sessionId = bundle.metadata.sessionId;
+        }
+        if (bundle.metadata.threadId) {
+          mode = 'session_continuation';
+          sessionId = bundle.metadata.threadId;
+        }
+        if (bundle.metadata.checkpointRef) {
+          mode = 'checkpoint_restore';
+          checkpointRef = bundle.metadata.checkpointRef;
+        }
+      }
+
+      // Update continuation mode display
+      const modeLabels = {
+        'session_continuation': 'Continue session',
+        'checkpoint_restore': 'Resume checkpoint',
+        'append_instruction': 'Append instruction'
+      };
+      document.getElementById('continuation-mode').textContent = modeLabels[mode] || mode;
+
+      // Show/hide session section
+      const sessionSection = document.getElementById('session-section');
+      if (sessionId) {
+        sessionSection.style.display = 'block';
+        document.getElementById('session-id').textContent = sessionId;
+      } else {
+        sessionSection.style.display = 'none';
+      }
+
+      // Show/hide checkpoint section
+      const checkpointSection = document.getElementById('checkpoint-section');
+      if (checkpointRef) {
+        checkpointSection.style.display = 'block';
+        document.getElementById('checkpoint-ref').textContent = checkpointRef;
+      } else {
+        checkpointSection.style.display = 'none';
+      }
+    }
+
+    function capitalize(str) {
+      return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+
+    function formatFreshness(ageMs) {
+      const seconds = Math.floor(ageMs / 1000);
+      const minutes = Math.floor(seconds / 60);
+      const hours = Math.floor(minutes / 60);
+
+      if (seconds < 10) return 'just now';
+      if (seconds < 60) return seconds + 's ago';
+      if (minutes < 60) return minutes + 'm ago';
+      if (hours < 24) return hours + 'h ago';
+      return Math.floor(hours / 24) + 'd ago';
     }
 
     function renderLogs() {
@@ -310,11 +481,15 @@
 
     function renderEvents() {
       const list = document.getElementById('events-list');
+      const emptyState = document.getElementById('events-empty');
+
       if (!bundle.events || bundle.events.length === 0) {
-        list.innerHTML = '<div class="empty-state">No events captured in this export</div>';
+        list.innerHTML = '';
+        emptyState.style.display = 'block';
         return;
       }
 
+      emptyState.style.display = 'none';
       list.innerHTML = bundle.events.map(event => `
         <div class="event-item">
           <span class="event-time">${formatTime(event.timestamp)}</span>
@@ -393,14 +568,14 @@
         const res = await fetch('/api/watch');
         const data = await res.json();
         if (data.watch || data.live) {
-          // Show watch mode indicator
-          const header = document.querySelector('header > div');
+          // Show watch mode indicator in status strip
+          const strip = document.getElementById('status-strip');
           const indicator = document.createElement('span');
           const isLive = data.live;
-          indicator.style.cssText = 'display: inline-block; background: ' + (isLive ? '#166534' : '#1e40af') + '; color: ' + (isLive ? '#bbf7d0' : '#bfdbfe') + '; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 12px; vertical-align: middle;';
+          indicator.className = 'status-chip ' + (isLive ? 'chip-green' : 'chip-blue');
           indicator.textContent = isLive ? 'LIVE' : 'WATCH';
           indicator.id = 'live-indicator';
-          header.querySelector('h1').appendChild(indicator);
+          strip.insertBefore(indicator, strip.firstChild);
 
           // Auto-refresh: 2s for live mode, 5s for watch mode
           const interval = data.interval || (isLive ? 2000 : 5000);
@@ -410,7 +585,7 @@
             const ind = document.getElementById('live-indicator');
             if (ind) {
               ind.style.background = '#22c55e';
-              setTimeout(() => ind.style.background = isLive ? '#166534' : '#1e40af', 200);
+              setTimeout(() => ind.className = 'status-chip ' + (isLive ? 'chip-green' : 'chip-blue'), 200);
             }
           }, interval);
         }

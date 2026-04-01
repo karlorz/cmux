@@ -32,19 +32,20 @@ var (
 
 var orchestrateInjectLocalCmd = &cobra.Command{
 	Use:   "inject-local <run-id> <message>",
-	Short: "Continue a local run when possible, otherwise append instruction fallback",
-	Long: `Inject an instruction into a running local orchestration task using active
-or passive injection depending on agent support.
+	Short: "Continue session or append instruction to a running local task",
+	Long: `Send an instruction to a running local orchestration task.
 
-Continue session lane (preferred when available):
-  - Claude: Uses --continue --session-id to inject into the same session
-  - Codex: Uses codex exec resume <thread-id> <message> for non-interactive follow-up on the same stored conversation binding
+Uses the same continuation lanes as the cloud dashboard:
 
-Append instruction lane (fallback):
-  - Writes to append.txt for agents to poll
+  Continue session (preferred when available):
+    - Claude: Uses --continue --session-id to inject into the same session
+    - Codex: Uses codex exec resume <thread-id> <message> for thread continuation
 
-The command auto-detects the best injection mode based on the running agent
-and session info. Use --mode to force a specific mode.
+  Append instruction (fallback):
+    - Writes to append.txt for agents to poll
+
+The command auto-detects the best continuation mode based on session info.
+Use --mode to force a specific mode.
 
 Examples:
   devsh orchestrate inject-local local_abc123 "Also add tests for edge cases"

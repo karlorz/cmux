@@ -30,14 +30,17 @@ var viewerHTML embed.FS
 
 var orchestrateViewCmd = &cobra.Command{
 	Use:   "view <bundle.json|run-dir>",
-	Short: "View an exported orchestration bundle in a local browser",
-	Long: `Open a local HTTP server to view an exported orchestration bundle.
+	Short: "Open the run dashboard in a local browser",
+	Long: `Open a local HTTP server to view orchestration runs in a browser.
 
-This provides an offline, read-only replay viewer for debugging orchestrations
+The run dashboard provides the same operator model as the cloud UI:
+
+  Status Strip     - Lifecycle, trust mode, branch, freshness
+  Activity Timeline - Sequential event log
+  Inspector        - Continuation mode, session/checkpoint info
+
+This provides an offline, read-only viewer for debugging orchestrations
 without requiring Convex, server, or client services running.
-
-The viewer shows the 3-surface split (Operator/Supervisor/Worker) from the
-exported bundle data.
 
 Live Modes:
 
@@ -160,7 +163,7 @@ Examples:
 		addr := fmt.Sprintf("localhost:%d", port)
 		url := fmt.Sprintf("http://%s", addr)
 
-		fmt.Printf("Orchestration Viewer starting at %s\n", url)
+		fmt.Printf("Run Dashboard starting at %s\n", url)
 		fmt.Printf("Bundle: %s\n", bundlePath)
 		if isRunDir {
 			fmt.Printf("Run Directory: %s\n", inputPath)
@@ -375,7 +378,7 @@ func serveLiveRunDirectory(runDir string) error {
 	addr := fmt.Sprintf("localhost:%d", port)
 	url := fmt.Sprintf("http://%s", addr)
 
-	fmt.Printf("Orchestration Viewer (LIVE) starting at %s\n", url)
+	fmt.Printf("Run Dashboard (LIVE) starting at %s\n", url)
 	fmt.Printf("Run Directory: %s\n", runDir)
 	fmt.Printf("Mode: LIVE (reading raw files, 2s auto-refresh)\n")
 	fmt.Println("Press Ctrl+C to stop")
