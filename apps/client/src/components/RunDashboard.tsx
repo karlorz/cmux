@@ -229,7 +229,13 @@ export function RunDashboard({
 }
 
 /**
- * ApprovalLane - Dedicated approval interface for the run
+ * ApprovalLane - Dedicated approval queue and history for the run
+ *
+ * Issue #958: Make approval a stable lane showing:
+ * - Whether approval is the current blocker
+ * - What action is waiting
+ * - Recent approval history
+ * - Next valid operator action after resolution
  */
 function ApprovalLane({
   taskRunId,
@@ -238,6 +244,8 @@ function ApprovalLane({
   taskRunId: Id<"taskRuns">;
   teamSlugOrId: string;
 }) {
+  const [showHistory, setShowHistory] = useState(false);
+
   const approvalsQuery = useRQ({
     ...convexQuery(api.approvalBroker.getByTaskRun, {
       teamSlugOrId,
@@ -246,74 +254,128 @@ function ApprovalLane({
     enabled: Boolean(teamSlugOrId && taskRunId),
   });
 
-  const approvals = useMemo(() => {
+  const { pendingApprovals, resolvedApprovals, pendingCount } = useMemo(() => {
     if (!approvalsQuery.data) {
-      return [];
+      return { pendingApprovals: [], resolvedApprovals: [], pendingCount: 0 };
     }
-    return [...approvalsQuery.data].sort((left, right) => {
-      if (left.status === right.status) {
-        return right.createdAt - left.createdAt;
-      }
-      if (left.status === "pending") return -1;
-      if (right.status === "pending") return 1;
-      return right.createdAt - left.createdAt;
-    });
+    const sorted = [...approvalsQuery.data].sort(
+      (left, right) => right.createdAt - left.createdAt
+    );
+    const pending = sorted.filter((a) => a.status === "pending");
+    const resolved = sorted.filter((a) => a.status !== "pending");
+    return {
+      pendingApprovals: pending,
+      resolvedApprovals: resolved,
+      pendingCount: pending.length,
+    };
   }, [approvalsQuery.data]);
 
   if (approvalsQuery.error) {
     throw approvalsQuery.error;
   }
 
-  const pendingCount = approvals.filter((a) => a.status === "pending").length;
+  const isBlocking = pendingCount > 0;
 
   return (
     <div className="px-4 py-3">
+      {/* Header with status indicator */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <Shield
             className={clsx(
               "size-4",
-              pendingCount > 0
+              isBlocking
                 ? "text-amber-600 dark:text-amber-400"
                 : "text-neutral-400 dark:text-neutral-500"
             )}
           />
           <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-            Approvals
+            Approval Lane
           </span>
         </div>
-        <span
-          className={clsx(
-            "px-2 py-0.5 text-xs font-medium rounded-full",
-            pendingCount > 0
-              ? "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
-              : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
+        <div className="flex items-center gap-2">
+          {resolvedApprovals.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowHistory(!showHistory)}
+              className="text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+            >
+              {showHistory ? "Hide" : "Show"} history ({resolvedApprovals.length})
+            </button>
           )}
-        >
-          {pendingCount > 0 ? `${pendingCount} pending` : approvals.length > 0 ? `${approvals.length} resolved` : "None"}
-        </span>
+          <span
+            className={clsx(
+              "px-2 py-0.5 text-xs font-medium rounded-full",
+              isBlocking
+                ? "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
+                : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
+            )}
+          >
+            {isBlocking ? `${pendingCount} blocking` : "Clear"}
+          </span>
+        </div>
       </div>
+
+      {/* Blocking indicator and next action guidance */}
+      {isBlocking && (
+        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-2 dark:border-amber-800 dark:bg-amber-900/20">
+          <div className="flex items-center gap-2 text-sm font-medium text-amber-800 dark:text-amber-200">
+            <Shield className="size-4" />
+            Run is blocked on approval
+          </div>
+          <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+            Resolve pending approval{pendingCount > 1 ? "s" : ""} to continue. After resolution,
+            the run will resume via its continuation path.
+          </p>
+        </div>
+      )}
 
       {approvalsQuery.isLoading ? (
         <div className="h-12 animate-pulse rounded bg-neutral-200 dark:bg-neutral-700" />
-      ) : approvals.length === 0 ? (
+      ) : pendingApprovals.length === 0 && resolvedApprovals.length === 0 ? (
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
           No approval requests for this run.
         </p>
       ) : (
-        <div className="space-y-2 max-h-48 overflow-y-auto">
-          {approvals.slice(0, 3).map((approval) => (
-            <ApprovalRequestCard
-              key={approval._id}
-              request={approval}
-              teamSlugOrId={teamSlugOrId}
-              onResolved={() => void approvalsQuery.refetch()}
-            />
-          ))}
-          {approvals.length > 3 && (
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 text-center">
-              +{approvals.length - 3} more approvals
-            </p>
+        <div className="space-y-2">
+          {/* Pending approvals - always shown */}
+          {pendingApprovals.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">
+                Pending ({pendingApprovals.length})
+              </div>
+              {pendingApprovals.map((approval) => (
+                <ApprovalRequestCard
+                  key={approval._id}
+                  request={approval}
+                  teamSlugOrId={teamSlugOrId}
+                  onResolved={() => void approvalsQuery.refetch()}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Resolved approvals - shown when history expanded */}
+          {showHistory && resolvedApprovals.length > 0 && (
+            <div className="space-y-2 pt-2 border-t border-neutral-200 dark:border-neutral-700">
+              <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">
+                History ({resolvedApprovals.length})
+              </div>
+              <div className="max-h-40 overflow-y-auto space-y-2">
+                {resolvedApprovals.slice(0, 5).map((approval) => (
+                  <ApprovalRequestCard
+                    key={approval._id}
+                    request={approval}
+                    teamSlugOrId={teamSlugOrId}
+                  />
+                ))}
+                {resolvedApprovals.length > 5 && (
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 text-center">
+                    +{resolvedApprovals.length - 5} more in history
+                  </p>
+                )}
+              </div>
+            </div>
           )}
         </div>
       )}
