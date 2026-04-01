@@ -21,10 +21,11 @@ import clsx from "clsx";
 import {
   ChevronDown,
   ChevronRight,
-  Code2,
+  ExternalLink,
   GitCompare,
   Image,
   Shield,
+  Terminal,
   TestTube2,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -110,16 +111,18 @@ export function RunDashboard({
               <RuntimeLifecycleCard taskRunId={taskRunId} teamSlugOrId={teamSlugOrId} />
             </ErrorBoundary>
 
-            {/* Quick actions */}
+            {/* Deep-dive workspace access - positioned as escalation, not default */}
             <div className="flex items-center gap-2 flex-shrink-0">
               {onOpenWorkspace && (
                 <button
                   type="button"
                   onClick={onOpenWorkspace}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 transition-colors"
+                  title="Open VS Code workspace for detailed inspection or manual editing"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-neutral-200 hover:border-neutral-300 dark:border-neutral-700 dark:hover:border-neutral-600 bg-white hover:bg-neutral-50 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-neutral-600 dark:text-neutral-400 transition-colors"
                 >
-                  <Code2 className="size-4" />
-                  Open Workspace
+                  <Terminal className="size-3.5" />
+                  Deep Dive
+                  <ExternalLink className="size-3 opacity-60" />
                 </button>
               )}
             </div>
