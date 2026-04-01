@@ -1,6 +1,19 @@
 ---
 name: devsh-orchestrator
 description: Multi-agent orchestration skill for spawning and coordinating sub-agents in sandboxes. Enables head agents (like Claude Code CLI) to manage parallel task execution, dependency management, and coordination.
+context: fork
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - Glob
+  - Grep
+  - Agent
+when_to_use: >
+  When you need to delegate work to remote sandboxes, run parallel tasks,
+  or coordinate multiple agents. Use for compute-heavy tasks, isolated
+  environments, or when the local context window is insufficient.
+argument-hint: <spawn|status|wait|list|cancel> [options]
 ---
 
 # devsh-orchestrator - Multi-Agent Orchestration Skill
@@ -353,6 +366,75 @@ if (process.env.CMUX_AUTO_SPAWN_ENABLED === "1") {
 }
 ```
 
+## Fractal Agency: Headless Remote Execution
+
+### How Remote Workers Actually Run
+
+When you spawn a sub-agent, the remote sandbox doesn't run a custom cmux worker script. It runs the **exact same native CLI** (Claude Code or Codex CLI) in headless mode:
+
+- **Claude Code**: `claude --print --yes --json "Your prompt here"`
+- **Codex CLI**: `codex exec "Your prompt here"` with full autonomy
+
+This is called **Fractal Agency** — the local mastermind delegates to remote copies of itself.
+
+### Sandbox Security Model
+
+Remote sandboxes are **fully disposable and maximally permissive**:
+
+1. **API keys are never exposed** — sandboxes receive a proxy URL + placeholder key. The real key is injected server-side by the Convex proxy.
+2. **Full tool permissions** — `.claude/settings.json` in the sandbox allows all commands. If the agent destroys the sandbox, it only destroys a temporary clone.
+3. **Fire-and-forget** — if a worker fails or goes wrong, kill it (`orchestrate cancel`) and re-spawn with an adjusted prompt. No mid-flight steering needed.
+
+### Backend Selection
+
+Choose the backend based on your task:
+
+| Backend | When to use | Spawn time |
+|---------|-------------|------------|
+| `pve-lxc` (default) | Most tasks. Fast spawn, good isolation. | ~30s |
+| `morph` | Pre-baked snapshots with warm repos. Fastest for repeat work on same codebase. | ~15s |
+| `--cloud-workspace` | When the spawned agent needs to be an orchestration head itself (nested coordination). | ~45s |
+
+Backend is auto-detected from environment. To force a specific backend:
+```bash
+devsh orchestrate spawn --provider pve-lxc --agent claude/haiku-4.5 "Task"
+devsh orchestrate spawn --provider morph --agent codex/gpt-5.1-codex-mini "Task"
+```
+
+### Result Collection Pattern
+
+Standard pattern for spawn-wait-collect:
+
+```bash
+# 1. Spawn and capture the task ID
+TASK_ID=$(devsh orchestrate spawn --agent claude/opus-4.6 --repo owner/repo "Implement feature X" --json | jq -r '.OrchestrationTaskID')
+
+# 2. Wait for completion (blocks until terminal state)
+devsh orchestrate wait $TASK_ID --timeout 600
+
+# 3. Collect the result
+RESULT=$(devsh orchestrate status $TASK_ID --json | jq '{status: .Task.Status, result: .Task.Result, error: .Task.ErrorMessage, pr: .TaskRun.PullRequestURL}')
+echo "$RESULT"
+```
+
+### Failure Handling: Kill and Re-Spawn
+
+When a worker fails or goes down the wrong path:
+
+```bash
+# Check why it failed
+devsh orchestrate status $TASK_ID --json | jq '.Task.ErrorMessage'
+
+# Cancel if still running
+devsh orchestrate cancel $TASK_ID
+
+# Re-spawn with adjusted prompt
+NEW_TASK_ID=$(devsh orchestrate spawn --agent claude/opus-4.6 --repo owner/repo \
+  "Implement feature X. NOTE: Previous attempt failed because of Y. Avoid Z." --json | jq -r '.OrchestrationTaskID')
+```
+
+This "fail fast, re-spawn" pattern is simpler than mid-flight steering and matches the disposable sandbox philosophy.
+
 ## Best Practices
 
 1. **Prefer the portable default first**: local planning plus inline prompt delegation is the safest default workflow
@@ -362,6 +444,7 @@ if (process.env.CMUX_AUTO_SPAWN_ENABLED === "1") {
 5. **Use the right ID**: `<orch-task-id>` for status/debug/wait/cancel, `<task-run-id>` for message, `<task-id>` for `task retry`, `<orchestration-id>` for results
 6. **Use advanced head-agent paths intentionally**: `--cloud-workspace`, `--use-env-jwt`, `pull_orchestration_updates`, and `orchestrate migrate` are advanced workflow options
 7. **Keep prompts focused**: each sub-agent should have a clear, specific task
+8. **Embrace fire-and-forget**: if a worker fails, analyze the error and re-spawn with a better prompt rather than trying to steer mid-flight
 
 ## Integration with MCP
 

@@ -36,6 +36,7 @@ import {
   anthropicCountTokens,
   anthropicEventLogging,
 } from "./anthropic_http";
+import { openaiProxy } from "./openai_http";
 import { serveMedia } from "./media_proxy_http";
 import {
   createInstance as devboxCreateInstance,
@@ -278,6 +279,13 @@ http.route({
   path: "/api/anthropic/api/event_logging/batch",
   method: "POST",
   handler: anthropicEventLogging,
+});
+
+// OpenAI API proxy for Codex CLI and direct OpenAI API usage
+http.route({
+  path: "/api/openai/v1/chat/completions",
+  method: "POST",
+  handler: openaiProxy,
 });
 
 http.route({
