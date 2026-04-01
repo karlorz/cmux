@@ -24,6 +24,9 @@ var orchestrateSpawnCloudWorkspace bool
 var orchestrateSpawnSupervisorProfile string
 var orchestrateSpawnVariant string
 var orchestrateSpawnEffort string
+var orchestrateSpawnSync bool
+var orchestrateSpawnSyncTimeout string
+var orchestrateSpawnCompact bool
 
 var orchestrateSpawnCmd = &cobra.Command{
 	Use:   "spawn <prompt>",
@@ -51,7 +54,8 @@ Examples:
   devsh orchestrate spawn --agent claude/haiku-4.5 --priority 1 "High priority task"
   devsh orchestrate spawn --agent claude/haiku-4.5 --use-env-jwt "Sub-task from head agent"
   devsh orchestrate spawn --cloud-workspace --agent claude/opus-4.6 --effort max "Coordinate feature implementation"
-  devsh orchestrate spawn --supervisor-profile <profile-id> --agent claude/opus-4.6 "Supervised task"`,
+  devsh orchestrate spawn --supervisor-profile <profile-id> --agent claude/opus-4.6 "Supervised task"
+  devsh orchestrate spawn --sync --timeout 10m --agent claude/haiku-4.5 "Quick task with wait"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		prompt := args[0]
@@ -110,6 +114,85 @@ Examples:
 			return fmt.Errorf("failed to spawn agent: %w", err)
 		}
 
+		// If --sync flag is set, wait for completion after spawn
+		if orchestrateSpawnSync {
+			syncTimeout, err := time.ParseDuration(orchestrateSpawnSyncTimeout)
+			if err != nil {
+				return fmt.Errorf("invalid sync timeout duration: %w", err)
+			}
+
+			if !flagJSON {
+				fmt.Printf("Spawned task %s, waiting for completion (timeout: %s)...\n",
+					result.OrchestrationTaskID, syncTimeout)
+			}
+
+			waitCtx, waitCancel := context.WithTimeout(context.Background(), syncTimeout)
+			defer waitCancel()
+
+			config := DefaultPollConfig(5 * time.Second)
+			var finalResult *vm.OrchestrationStatusResult
+
+			err = PollUntil(
+				waitCtx,
+				config,
+				func(ctx context.Context) (interface{}, error) {
+					return client.OrchestrationStatus(ctx, result.OrchestrationTaskID)
+				},
+				func(pollResult interface{}, lastValue string) (bool, string, error) {
+					r := pollResult.(*vm.OrchestrationStatusResult)
+					status := r.Task.Status
+					if !flagJSON && status != lastValue {
+						fmt.Printf("  Status: %s\n", status)
+					}
+					finalResult = r
+					switch status {
+					case "completed", "failed", "cancelled":
+						return true, status, nil
+					}
+					return false, status, nil
+				},
+				func(pollResult interface{}, isInitial bool) {},
+			)
+
+			if err != nil {
+				if waitCtx.Err() != nil {
+					return fmt.Errorf("timeout waiting for task to complete")
+				}
+				return err
+			}
+
+			if finalResult == nil {
+				return fmt.Errorf("no result received")
+			}
+
+			if flagJSON {
+				if orchestrateSpawnCompact {
+					compact := toCompactStatus(finalResult)
+					data, _ := json.Marshal(compact)
+					fmt.Println(string(data))
+				} else {
+					data, _ := json.MarshalIndent(finalResult, "", "  ")
+					fmt.Println(string(data))
+				}
+			} else {
+				fmt.Printf("\nTask finished with status: %s\n", finalResult.Task.Status)
+				if finalResult.Task.ErrorMessage != nil {
+					fmt.Printf("Error: %s\n", *finalResult.Task.ErrorMessage)
+				}
+				if finalResult.Task.Result != nil {
+					fmt.Printf("Result: %s\n", *finalResult.Task.Result)
+				}
+				if finalResult.TaskRun != nil && finalResult.TaskRun.PullRequestURL != "" {
+					fmt.Printf("PR: %s\n", finalResult.TaskRun.PullRequestURL)
+				}
+			}
+
+			if finalResult.Task.Status == "failed" || finalResult.Task.Status == "cancelled" {
+				return fmt.Errorf("task %s", finalResult.Task.Status)
+			}
+			return nil
+		}
+
 		if flagJSON {
 			data, _ := json.MarshalIndent(result, "", "  ")
 			fmt.Println(string(data))
@@ -147,5 +230,8 @@ func init() {
 	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnSupervisorProfile, "supervisor-profile", "", "Supervisor profile ID to use for head agent behavior (Convex doc ID)")
 	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnVariant, "variant", "", "Effort variant to use for the selected model")
 	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnEffort, "effort", "", "Alias for --variant")
+	orchestrateSpawnCmd.Flags().BoolVar(&orchestrateSpawnSync, "sync", false, "Wait for task completion after spawning (combines spawn + wait)")
+	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnSyncTimeout, "timeout", "10m", "Timeout for --sync mode (default: 10m)")
+	orchestrateSpawnCmd.Flags().BoolVar(&orchestrateSpawnCompact, "compact", false, "Output compact JSON with essential fields only (use with --json --sync)")
 	orchestrateCmd.AddCommand(orchestrateSpawnCmd)
 }

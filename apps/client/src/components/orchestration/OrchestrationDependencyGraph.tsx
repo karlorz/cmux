@@ -15,7 +15,7 @@ import {
   BackgroundVariant,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Users, Clock, CheckCircle2, XCircle, Loader2, Pause, Play } from "lucide-react";
+import { Users, Clock, CheckCircle2, XCircle, Loader2, Pause, Play, Crown } from "lucide-react";
 import { STATUS_CONFIG, STATUS_GRAPH_COLORS, type TaskStatus } from "./status-config";
 import type { OrchestrationTaskWithDeps } from "./OrchestrationDashboard";
 
@@ -30,6 +30,7 @@ interface TaskNodeData extends Record<string, unknown> {
   label: string;
   status: TaskStatus;
   agent?: string;
+  isHeadAgent?: boolean;
   onTaskClick?: (taskId: string) => void;
 }
 
@@ -69,6 +70,7 @@ function TaskNode({ data, selected }: NodeProps<TaskNode>) {
   const statusConf = STATUS_CONFIG[nodeData.status];
   const StatusIcon = STATUS_ICONS[nodeData.status];
   const isRunning = nodeData.status === "running";
+  const isHeadAgent = nodeData.isHeadAgent;
 
   return (
     <>
@@ -81,18 +83,29 @@ function TaskNode({ data, selected }: NodeProps<TaskNode>) {
 
       <div
         className={`
-          relative rounded-lg border-2 p-3 shadow-sm transition-all duration-200 cursor-pointer
+          relative rounded-lg p-3 shadow-sm transition-all duration-200 cursor-pointer
           ${colors.border} ${colors.bg}
+          ${isHeadAgent ? "border-[3px] border-double border-amber-500 dark:border-amber-400" : "border-2"}
           ${selected ? "ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-neutral-900" : ""}
           hover:shadow-md hover:scale-[1.02]
         `}
-        style={{ width: 240, minHeight: 72 }}
+        style={{ width: isHeadAgent ? 260 : 240, minHeight: 72 }}
         onMouseEnter={() => setShowPopover(true)}
         onMouseLeave={() => setShowPopover(false)}
         onClick={() => nodeData.onTaskClick?.(nodeData.task._id)}
       >
+        {/* Head agent crown indicator */}
+        {isHeadAgent && (
+          <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+            <div className="flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-900/50 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-600">
+              <Crown className="size-3" />
+              <span>Head Agent</span>
+            </div>
+          </div>
+        )}
+
         {/* Status indicator with animation */}
-        <div className="flex items-start gap-2">
+        <div className={`flex items-start gap-2 ${isHeadAgent ? "mt-2" : ""}`}>
           <div className={`mt-0.5 ${isRunning ? "animate-spin" : ""}`}>
             <StatusIcon className={`size-4 ${statusConf?.color ?? "text-neutral-500"}`} />
           </div>
@@ -292,6 +305,13 @@ function computeGraphLayout(
       const x = PADDING + level * (NODE_WIDTH + LEVEL_GAP);
       const y = startY + idx * (NODE_HEIGHT + NODE_GAP);
 
+      // Check if this task is a head agent (from metadata or if it has no dependencies but has dependents)
+      const isHeadAgent = Boolean(
+        task.metadata?.isOrchestrationHead ||
+        task.metadata?.isCloudWorkspace ||
+        (level === 0 && task.dependents && task.dependents.length > 0)
+      );
+
       nodes.push({
         id: task._id,
         type: "taskNode",
@@ -301,6 +321,7 @@ function computeGraphLayout(
           label: truncatePrompt(task.prompt),
           status: task.status as TaskStatus,
           agent: task.assignedAgentName ?? undefined,
+          isHeadAgent,
           onTaskClick,
         },
       });
@@ -429,6 +450,10 @@ export function OrchestrationDependencyGraph({
             </span>
           );
         })}
+        <span className="flex items-center gap-1.5">
+          <Crown className="size-3 text-amber-500" />
+          Head Agent
+        </span>
         {!hasDeps && (
           <span className="ml-auto text-neutral-400 dark:text-neutral-500 italic">
             No dependency edges

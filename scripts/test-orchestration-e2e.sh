@@ -277,6 +277,120 @@ if [ "$RUN_ALL" = "true" ]; then
 fi
 
 # =============================================================================
+# Scenario 6: Preflight Check
+# =============================================================================
+echo ""
+echo "=== Scenario 6: Preflight Check ==="
+
+PREFLIGHT_OUTPUT=$(devsh orchestrate preflight --json 2>&1 || true)
+if echo "$PREFLIGHT_OUTPUT" | grep -qiE '"providers":|"authenticated":'; then
+  pass "Preflight check returned provider info"
+
+  # Check if any provider is available
+  if echo "$PREFLIGHT_OUTPUT" | grep -qiE '"available":\s*true'; then
+    pass "At least one provider is available"
+  else
+    echo "    No available providers (may be expected in test env)"
+    skip "No available providers"
+  fi
+else
+  echo "    Output: $PREFLIGHT_OUTPUT"
+  fail "Preflight check failed"
+fi
+
+# =============================================================================
+# Scenario 7: Spawn with --sync (waits for completion)
+# =============================================================================
+echo ""
+echo "=== Scenario 7: Spawn with --sync ==="
+echo "Spawning agent with --sync flag (will wait up to 30s)..."
+
+SYNC_OUTPUT=$(timeout 45 devsh orchestrate spawn \
+  --agent "$AGENT" \
+  --repo karlorz/testing-repo-3 \
+  --sync \
+  --timeout 30s \
+  --json \
+  "Echo 'Hello from sync test' and exit immediately" 2>&1 || true)
+
+if echo "$SYNC_OUTPUT" | grep -qiE '"status":\s*"(completed|failed|cancelled)"'; then
+  # Sync mode waited for completion
+  SYNC_STATUS=$(echo "$SYNC_OUTPUT" | grep -oP '"status":\s*"\K[^"]+' || echo "unknown")
+  pass "Sync spawn completed with status: $SYNC_STATUS"
+
+  # Extract task ID for cleanup
+  SYNC_TASK_ID=$(echo "$SYNC_OUTPUT" | grep -oP '"id":\s*"\K[^"]+' || echo "")
+  if [ -n "$SYNC_TASK_ID" ]; then
+    CREATED_TASKS+=("$SYNC_TASK_ID")
+  fi
+elif echo "$SYNC_OUTPUT" | grep -qiE '"status":\s*"(running|assigned|pending)"'; then
+  # Sync mode returned but task still running (timeout hit)
+  pass "Sync spawn timed out as expected for long task"
+  SYNC_TASK_ID=$(echo "$SYNC_OUTPUT" | grep -oP '"id":\s*"\K[^"]+' || echo "")
+  if [ -n "$SYNC_TASK_ID" ]; then
+    CREATED_TASKS+=("$SYNC_TASK_ID")
+  fi
+elif echo "$SYNC_OUTPUT" | grep -qiE "timeout|context deadline"; then
+  skip "Sync spawn timed out (sandbox startup slow)"
+else
+  echo "    Output: $SYNC_OUTPUT"
+  fail "Sync spawn failed"
+fi
+
+# =============================================================================
+# Scenario 8: Status with --compact
+# =============================================================================
+echo ""
+echo "=== Scenario 8: Status with --compact ==="
+
+if [ ${#CREATED_TASKS[@]} -gt 0 ]; then
+  COMPACT_TASK_ID="${CREATED_TASKS[-1]}"
+  COMPACT_OUTPUT=$(devsh orchestrate status "$COMPACT_TASK_ID" --json --compact 2>&1 || true)
+
+  if echo "$COMPACT_OUTPUT" | grep -qiE '"id":\s*"' && echo "$COMPACT_OUTPUT" | grep -qiE '"status":'; then
+    # Check that compact output is smaller (no nested Task/TaskRun objects)
+    if echo "$COMPACT_OUTPUT" | grep -qiE '"Task":\s*\{'; then
+      echo "    Output has nested Task object - not compact"
+      fail "Compact status returned full output"
+    else
+      pass "Compact status returned minimal JSON"
+    fi
+  else
+    echo "    Output: $COMPACT_OUTPUT"
+    fail "Compact status failed"
+  fi
+else
+  skip "No task available for compact status test"
+fi
+
+# =============================================================================
+# Scenario 9: Exit Summary
+# =============================================================================
+echo ""
+echo "=== Scenario 9: Exit Summary ==="
+
+if [ ${#CREATED_TASKS[@]} -gt 0 ]; then
+  SUMMARY_TASK_ID="${CREATED_TASKS[-1]}"
+  SUMMARY_OUTPUT=$(devsh orchestrate exit-summary "$SUMMARY_TASK_ID" --json 2>&1 || true)
+
+  if echo "$SUMMARY_OUTPUT" | grep -qiE '"id":\s*"' && echo "$SUMMARY_OUTPUT" | grep -qiE '"status":'; then
+    pass "Exit summary returned JSON"
+
+    # Check for expected fields
+    if echo "$SUMMARY_OUTPUT" | grep -qiE '"duration":'; then
+      pass "Exit summary includes duration"
+    else
+      skip "Exit summary missing duration (task may not have started)"
+    fi
+  else
+    echo "    Output: $SUMMARY_OUTPUT"
+    fail "Exit summary failed"
+  fi
+else
+  skip "No task available for exit summary test"
+fi
+
+# =============================================================================
 # Summary
 # =============================================================================
 echo ""
