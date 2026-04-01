@@ -1136,6 +1136,76 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         },
       },
       {
+        name: "spawn_batch",
+        description:
+          "Spawn multiple sub-agents with dependency management. " +
+          "Tasks are executed in topological order based on their dependencies. " +
+          "Requires CMUX_TASK_RUN_JWT for authentication.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            tasks: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  id: {
+                    type: "string",
+                    description: "Unique task ID for dependency references",
+                  },
+                  prompt: {
+                    type: "string",
+                    description: "Task prompt",
+                  },
+                  agentName: {
+                    type: "string",
+                    description: "Agent (e.g., claude/haiku-4.5)",
+                  },
+                  dependsOn: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "Task IDs this depends on",
+                  },
+                  priority: {
+                    type: "number",
+                    description: "Priority (0=highest, default 5)",
+                  },
+                  repo: {
+                    type: "string",
+                    description: "GitHub repo (owner/repo)",
+                  },
+                  branch: {
+                    type: "string",
+                    description: "Branch to checkout",
+                  },
+                },
+                required: ["id", "prompt", "agentName"],
+              },
+              description: "Array of tasks to spawn",
+            },
+            defaults: {
+              type: "object",
+              properties: {
+                repo: {
+                  type: "string",
+                  description: "Default GitHub repo (owner/repo)",
+                },
+                branch: {
+                  type: "string",
+                  description: "Default branch",
+                },
+                agentName: {
+                  type: "string",
+                  description: "Default agent",
+                },
+              },
+              description: "Default values applied to all tasks",
+            },
+          },
+          required: ["tasks"],
+        },
+      },
+      {
         name: "get_agent_status",
         description: "Get the status of a spawned sub-agent by orchestration task ID. Returns current status, result, and linked task run info.",
         inputSchema: {
@@ -2414,6 +2484,218 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
             }],
           };
         }
+      }
+
+      case "spawn_batch": {
+        interface BatchTask {
+          id: string;
+          prompt: string;
+          agentName: string;
+          dependsOn?: string[];
+          priority?: number;
+          repo?: string;
+          branch?: string;
+        }
+        interface BatchDefaults {
+          repo?: string;
+          branch?: string;
+          agentName?: string;
+        }
+        const { tasks, defaults } = args as {
+          tasks: BatchTask[];
+          defaults?: BatchDefaults;
+        };
+
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        const serverUrl = process.env.CMUX_SERVER_URL ?? "https://cmux-server.karldigi.dev";
+        const orchestrationId = process.env.CMUX_ORCHESTRATION_ID;
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "CMUX_TASK_RUN_JWT environment variable not set. This tool requires JWT authentication.",
+            }],
+          };
+        }
+
+        if (!tasks || tasks.length === 0) {
+          return {
+            content: [{
+              type: "text",
+              text: "No tasks provided in batch",
+            }],
+          };
+        }
+
+        // Apply defaults
+        const normalizedTasks = tasks.map(task => ({
+          ...task,
+          agentName: task.agentName || defaults?.agentName || "",
+          repo: task.repo || defaults?.repo,
+          branch: task.branch || defaults?.branch,
+          priority: task.priority ?? 5,
+        }));
+
+        // Validate
+        const ids = new Set<string>();
+        for (const task of normalizedTasks) {
+          if (!task.id) {
+            return { content: [{ type: "text", text: "Task missing required 'id' field" }] };
+          }
+          if (ids.has(task.id)) {
+            return { content: [{ type: "text", text: `Duplicate task ID: ${task.id}` }] };
+          }
+          ids.add(task.id);
+          if (!task.prompt) {
+            return { content: [{ type: "text", text: `Task ${task.id} missing 'prompt'` }] };
+          }
+          if (!task.agentName) {
+            return { content: [{ type: "text", text: `Task ${task.id} missing 'agentName'` }] };
+          }
+        }
+
+        // Validate dependencies exist
+        for (const task of normalizedTasks) {
+          for (const dep of task.dependsOn || []) {
+            if (!ids.has(dep)) {
+              return { content: [{ type: "text", text: `Task ${task.id} depends on unknown task: ${dep}` }] };
+            }
+          }
+        }
+
+        // Topological sort
+        const inDegree = new Map<string, number>();
+        const dependents = new Map<string, string[]>();
+        for (const task of normalizedTasks) {
+          if (!inDegree.has(task.id)) inDegree.set(task.id, 0);
+          for (const dep of task.dependsOn || []) {
+            inDegree.set(task.id, (inDegree.get(task.id) || 0) + 1);
+            if (!dependents.has(dep)) dependents.set(dep, []);
+            dependents.get(dep)!.push(task.id);
+          }
+        }
+
+        const batches: BatchTask[][] = [];
+        let remaining = normalizedTasks.length;
+        const _taskMap = new Map(normalizedTasks.map(t => [t.id, t])); // Used for future lookup
+
+        while (remaining > 0) {
+          const batch: BatchTask[] = [];
+          for (const task of normalizedTasks) {
+            if (inDegree.get(task.id) === 0) {
+              batch.push(task);
+            }
+          }
+          if (batch.length === 0) {
+            return { content: [{ type: "text", text: "Circular dependency detected in task graph" }] };
+          }
+          batches.push(batch);
+          remaining -= batch.length;
+          for (const task of batch) {
+            inDegree.set(task.id, -1); // Mark processed
+            for (const depId of dependents.get(task.id) || []) {
+              const deg = inDegree.get(depId) || 0;
+              if (deg > 0) inDegree.set(depId, deg - 1);
+            }
+          }
+        }
+
+        // Spawn tasks batch by batch
+        const orchTaskIDs = new Map<string, string>();
+        const results: Array<{
+          id: string;
+          orchestrationTaskId?: string;
+          taskId?: string;
+          status: string;
+          error?: string;
+        }> = [];
+
+        for (const batch of batches) {
+          for (const task of batch) {
+            // Resolve dependsOn to orchestration task IDs
+            const resolvedDeps = (task.dependsOn || [])
+              .map(dep => orchTaskIDs.get(dep))
+              .filter((id): id is string => !!id);
+
+            try {
+              const url = `${serverUrl}/api/orchestrate/spawn`;
+              const response = await fetch(url, {
+                method: "POST",
+                headers: {
+                  "X-Task-Run-JWT": jwt,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  prompt: task.prompt,
+                  agent: task.agentName,
+                  repo: task.repo,
+                  branch: task.branch,
+                  dependsOn: resolvedDeps,
+                  priority: task.priority,
+                  orchestrationId,
+                }),
+              });
+
+              if (!response.ok) {
+                const errorText = await response.text();
+                results.push({
+                  id: task.id,
+                  status: "spawn_failed",
+                  error: `${response.status} ${errorText}`,
+                });
+                continue;
+              }
+
+              const result = await response.json() as {
+                orchestrationTaskId: string;
+                taskId: string;
+                taskRunId: string;
+                status: string;
+              };
+
+              orchTaskIDs.set(task.id, result.orchestrationTaskId);
+              results.push({
+                id: task.id,
+                orchestrationTaskId: result.orchestrationTaskId,
+                taskId: result.taskId,
+                status: "spawned",
+              });
+
+              // Append event
+              appendEvent({
+                timestamp: new Date().toISOString(),
+                event: "agent_spawned",
+                message: `Batch spawn: ${task.agentName} for ${task.id}`,
+                agentName: task.agentName,
+                taskRunId: result.taskRunId,
+              });
+            } catch (error) {
+              const errorMsg = error instanceof Error ? error.message : String(error);
+              results.push({
+                id: task.id,
+                status: "spawn_failed",
+                error: errorMsg,
+              });
+            }
+          }
+        }
+
+        const success = results.filter(r => r.status === "spawned").length;
+        const failed = results.filter(r => r.status === "spawn_failed").length;
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              batches: batches.length,
+              total: normalizedTasks.length,
+              success,
+              failed,
+              tasks: results,
+            }, null, 2),
+          }],
+        };
       }
 
       case "get_agent_status": {

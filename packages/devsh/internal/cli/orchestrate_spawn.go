@@ -27,6 +27,9 @@ var orchestrateSpawnEffort string
 var orchestrateSpawnSync bool
 var orchestrateSpawnSyncTimeout string
 var orchestrateSpawnCompact bool
+var orchestrateSpawnRetry int
+var orchestrateSpawnRetryBackoff string
+var orchestrateSpawnRetryInjectContext bool
 
 var orchestrateSpawnCmd = &cobra.Command{
 	Use:   "spawn <prompt>",
@@ -55,13 +58,21 @@ Examples:
   devsh orchestrate spawn --agent claude/haiku-4.5 --use-env-jwt "Sub-task from head agent"
   devsh orchestrate spawn --cloud-workspace --agent claude/opus-4.6 --effort max "Coordinate feature implementation"
   devsh orchestrate spawn --supervisor-profile <profile-id> --agent claude/opus-4.6 "Supervised task"
-  devsh orchestrate spawn --sync --timeout 10m --agent claude/haiku-4.5 "Quick task with wait"`,
+  devsh orchestrate spawn --sync --timeout 10m --agent claude/haiku-4.5 "Quick task with wait"
+  devsh orchestrate spawn --retry 3 --agent claude/haiku-4.5 "Task with auto-retry"
+  devsh orchestrate spawn --retry 3 --retry-backoff exponential --agent claude/haiku-4.5 "Retry with backoff"
+  devsh orchestrate spawn --retry 3 --retry-inject-context --agent claude/haiku-4.5 "Retry with failure context"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		prompt := args[0]
 
 		if orchestrateSpawnAgent == "" {
 			return fmt.Errorf("--agent flag is required")
+		}
+
+		// Retry requires --sync
+		if orchestrateSpawnRetry > 0 && !orchestrateSpawnSync {
+			return fmt.Errorf("--retry requires --sync flag to track task completion")
 		}
 
 		selectedVariant, err := resolveVariantFlagValue(
@@ -71,9 +82,6 @@ Examples:
 		if err != nil {
 			return err
 		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
 
 		teamSlug, err := auth.GetTeamSlug()
 		if err != nil {
@@ -95,127 +103,226 @@ Examples:
 			}
 		}
 
-		result, err := client.OrchestrationSpawn(ctx, vm.OrchestrationSpawnOptions{
-			Prompt:              prompt,
-			Agent:               orchestrateSpawnAgent,
-			SelectedVariant:     selectedVariant,
-			Repo:                orchestrateSpawnRepo,
-			Branch:              orchestrateSpawnBranch,
-			PRTitle:             orchestrateSpawnPRTitle,
-			DependsOn:           orchestrateSpawnDependsOn,
-			Priority:            orchestrateSpawnPriority,
-			IsCloudMode:         true,
-			TaskRunJwt:          taskRunJwt,
-			IsCloudWorkspace:    orchestrateSpawnCloudWorkspace,
-			IsOrchestrationHead: orchestrateSpawnCloudWorkspace, // Cloud workspaces are orchestration heads
-			SupervisorProfileID: orchestrateSpawnSupervisorProfile,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to spawn agent: %w", err)
+		// Retry loop
+		maxAttempts := 1
+		if orchestrateSpawnRetry > 0 {
+			maxAttempts = orchestrateSpawnRetry + 1 // retry count is additional attempts
 		}
 
-		// If --sync flag is set, wait for completion after spawn
-		if orchestrateSpawnSync {
-			syncTimeout, err := time.ParseDuration(orchestrateSpawnSyncTimeout)
-			if err != nil {
-				return fmt.Errorf("invalid sync timeout duration: %w", err)
+		var lastError error
+		var lastErrorMsg string
+
+		for attempt := 1; attempt <= maxAttempts; attempt++ {
+			currentPrompt := prompt
+
+			// Inject context from previous failure if enabled
+			if attempt > 1 && orchestrateSpawnRetryInjectContext && lastErrorMsg != "" {
+				currentPrompt = fmt.Sprintf("%s\n\n[RETRY CONTEXT: Previous attempt failed with: %s. Please adjust your approach accordingly.]",
+					prompt, lastErrorMsg)
+				if !flagJSON {
+					fmt.Printf("Retry %d/%d: Injecting failure context into prompt\n", attempt, maxAttempts)
+				}
+			} else if attempt > 1 && !flagJSON {
+				fmt.Printf("Retry %d/%d\n", attempt, maxAttempts)
 			}
 
-			if !flagJSON {
-				fmt.Printf("Spawned task %s, waiting for completion (timeout: %s)...\n",
-					result.OrchestrationTaskID, syncTimeout)
+			// Apply backoff delay before retry
+			if attempt > 1 {
+				delay := calculateRetryDelay(attempt-1, orchestrateSpawnRetryBackoff)
+				if !flagJSON {
+					fmt.Printf("  Waiting %s before retry...\n", delay)
+				}
+				time.Sleep(delay)
 			}
 
-			waitCtx, waitCancel := context.WithTimeout(context.Background(), syncTimeout)
-			defer waitCancel()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 
-			config := DefaultPollConfig(5 * time.Second)
-			var finalResult *vm.OrchestrationStatusResult
-
-			err = PollUntil(
-				waitCtx,
-				config,
-				func(ctx context.Context) (interface{}, error) {
-					return client.OrchestrationStatus(ctx, result.OrchestrationTaskID)
-				},
-				func(pollResult interface{}, lastValue string) (bool, string, error) {
-					r := pollResult.(*vm.OrchestrationStatusResult)
-					status := r.Task.Status
-					if !flagJSON && status != lastValue {
-						fmt.Printf("  Status: %s\n", status)
-					}
-					finalResult = r
-					switch status {
-					case "completed", "failed", "cancelled":
-						return true, status, nil
-					}
-					return false, status, nil
-				},
-				func(pollResult interface{}, isInitial bool) {},
-			)
+			result, err := client.OrchestrationSpawn(ctx, vm.OrchestrationSpawnOptions{
+				Prompt:              currentPrompt,
+				Agent:               orchestrateSpawnAgent,
+				SelectedVariant:     selectedVariant,
+				Repo:                orchestrateSpawnRepo,
+				Branch:              orchestrateSpawnBranch,
+				PRTitle:             orchestrateSpawnPRTitle,
+				DependsOn:           orchestrateSpawnDependsOn,
+				Priority:            orchestrateSpawnPriority,
+				IsCloudMode:         true,
+				TaskRunJwt:          taskRunJwt,
+				IsCloudWorkspace:    orchestrateSpawnCloudWorkspace,
+				IsOrchestrationHead: orchestrateSpawnCloudWorkspace,
+				SupervisorProfileID: orchestrateSpawnSupervisorProfile,
+			})
+			cancel()
 
 			if err != nil {
-				if waitCtx.Err() != nil {
-					return fmt.Errorf("timeout waiting for task to complete")
+				lastError = fmt.Errorf("failed to spawn agent: %w", err)
+				lastErrorMsg = err.Error()
+				if attempt < maxAttempts {
+					continue
+				}
+				return lastError
+			}
+
+			// Handle non-sync mode (fire and forget)
+			if !orchestrateSpawnSync {
+				return outputSpawnResult(result)
+			}
+
+			// Sync mode: wait and check result
+			finalResult, err := waitForSpawnCompletion(client, result.OrchestrationTaskID)
+			if err != nil {
+				lastError = err
+				lastErrorMsg = err.Error()
+				if attempt < maxAttempts {
+					continue
 				}
 				return err
 			}
 
-			if finalResult == nil {
-				return fmt.Errorf("no result received")
-			}
-
-			if flagJSON {
-				if orchestrateSpawnCompact {
-					compact := toCompactStatus(finalResult)
-					data, _ := json.Marshal(compact)
-					fmt.Println(string(data))
-				} else {
-					data, _ := json.MarshalIndent(finalResult, "", "  ")
-					fmt.Println(string(data))
-				}
-			} else {
-				fmt.Printf("\nTask finished with status: %s\n", finalResult.Task.Status)
-				if finalResult.Task.ErrorMessage != nil {
-					fmt.Printf("Error: %s\n", *finalResult.Task.ErrorMessage)
-				}
-				if finalResult.Task.Result != nil {
-					fmt.Printf("Result: %s\n", *finalResult.Task.Result)
-				}
-				if finalResult.TaskRun != nil && finalResult.TaskRun.PullRequestURL != "" {
-					fmt.Printf("PR: %s\n", finalResult.TaskRun.PullRequestURL)
-				}
-			}
-
+			// Check if task failed
 			if finalResult.Task.Status == "failed" || finalResult.Task.Status == "cancelled" {
-				return fmt.Errorf("task %s", finalResult.Task.Status)
+				if finalResult.Task.ErrorMessage != nil {
+					lastErrorMsg = *finalResult.Task.ErrorMessage
+				} else {
+					lastErrorMsg = finalResult.Task.Status
+				}
+				lastError = fmt.Errorf("task %s", finalResult.Task.Status)
+
+				if attempt < maxAttempts {
+					continue
+				}
+				// Output final failed result
+				outputSyncResult(finalResult)
+				return lastError
 			}
+
+			// Success!
+			outputSyncResult(finalResult)
 			return nil
 		}
 
-		if flagJSON {
-			data, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(data))
-			return nil
-		}
-
-		fmt.Println("Agent Spawned")
-		fmt.Println("=============")
-		fmt.Printf("  %-22s %s\n", "Orchestration Task ID:", result.OrchestrationTaskID)
-		fmt.Printf("  %-22s %s\n", "Task ID:", result.TaskID)
-		fmt.Printf("  %-22s %s\n", "Task Run ID:", result.TaskRunID)
-		fmt.Printf("  %-22s %s\n", "Agent:", result.AgentName)
-		fmt.Printf("  %-22s %s\n", "Status:", result.Status)
-		if result.Status == "spawning" {
-			fmt.Println("  Sandbox is being provisioned in the background.")
-			fmt.Println("  Use 'devsh task status' to check progress.")
-		}
-		if result.VSCodeURL != "" {
-			fmt.Printf("  %-22s %s\n", "VSCode:", result.VSCodeURL)
-		}
-
-		return nil
+		return lastError
 	},
+}
+
+// calculateRetryDelay returns the delay duration before a retry attempt.
+func calculateRetryDelay(attempt int, backoffType string) time.Duration {
+	baseDelay := 30 * time.Second
+
+	switch backoffType {
+	case "exponential":
+		// 30s, 60s, 120s, 240s, ...
+		multiplier := 1 << (attempt - 1) // 2^(attempt-1)
+		return baseDelay * time.Duration(multiplier)
+	case "linear":
+		// 30s, 60s, 90s, 120s, ...
+		return baseDelay * time.Duration(attempt)
+	default: // constant
+		return baseDelay
+	}
+}
+
+// waitForSpawnCompletion waits for a spawned task to reach a terminal state.
+func waitForSpawnCompletion(client *vm.Client, orchTaskID string) (*vm.OrchestrationStatusResult, error) {
+	syncTimeout, err := time.ParseDuration(orchestrateSpawnSyncTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("invalid sync timeout duration: %w", err)
+	}
+
+	if !flagJSON {
+		fmt.Printf("Spawned task %s, waiting for completion (timeout: %s)...\n", orchTaskID, syncTimeout)
+	}
+
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), syncTimeout)
+	defer waitCancel()
+
+	config := DefaultPollConfig(5 * time.Second)
+	var finalResult *vm.OrchestrationStatusResult
+
+	err = PollUntil(
+		waitCtx,
+		config,
+		func(ctx context.Context) (interface{}, error) {
+			return client.OrchestrationStatus(ctx, orchTaskID)
+		},
+		func(pollResult interface{}, lastValue string) (bool, string, error) {
+			r := pollResult.(*vm.OrchestrationStatusResult)
+			status := r.Task.Status
+			if !flagJSON && status != lastValue {
+				fmt.Printf("  Status: %s\n", status)
+			}
+			finalResult = r
+			switch status {
+			case "completed", "failed", "cancelled":
+				return true, status, nil
+			}
+			return false, status, nil
+		},
+		func(pollResult interface{}, isInitial bool) {},
+	)
+
+	if err != nil {
+		if waitCtx.Err() != nil {
+			return nil, fmt.Errorf("timeout waiting for task to complete")
+		}
+		return nil, err
+	}
+
+	if finalResult == nil {
+		return nil, fmt.Errorf("no result received")
+	}
+
+	return finalResult, nil
+}
+
+// outputSpawnResult outputs the spawn result (non-sync mode).
+func outputSpawnResult(result *vm.OrchestrationSpawnResult) error {
+	if flagJSON {
+		data, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Println(string(data))
+		return nil
+	}
+
+	fmt.Println("Agent Spawned")
+	fmt.Println("=============")
+	fmt.Printf("  %-22s %s\n", "Orchestration Task ID:", result.OrchestrationTaskID)
+	fmt.Printf("  %-22s %s\n", "Task ID:", result.TaskID)
+	fmt.Printf("  %-22s %s\n", "Task Run ID:", result.TaskRunID)
+	fmt.Printf("  %-22s %s\n", "Agent:", result.AgentName)
+	fmt.Printf("  %-22s %s\n", "Status:", result.Status)
+	if result.Status == "spawning" {
+		fmt.Println("  Sandbox is being provisioned in the background.")
+		fmt.Println("  Use 'devsh task status' to check progress.")
+	}
+	if result.VSCodeURL != "" {
+		fmt.Printf("  %-22s %s\n", "VSCode:", result.VSCodeURL)
+	}
+	return nil
+}
+
+// outputSyncResult outputs the sync mode result.
+func outputSyncResult(finalResult *vm.OrchestrationStatusResult) {
+	if flagJSON {
+		if orchestrateSpawnCompact {
+			compact := toCompactStatus(finalResult)
+			data, _ := json.Marshal(compact)
+			fmt.Println(string(data))
+		} else {
+			data, _ := json.MarshalIndent(finalResult, "", "  ")
+			fmt.Println(string(data))
+		}
+	} else {
+		fmt.Printf("\nTask finished with status: %s\n", finalResult.Task.Status)
+		if finalResult.Task.ErrorMessage != nil {
+			fmt.Printf("Error: %s\n", *finalResult.Task.ErrorMessage)
+		}
+		if finalResult.Task.Result != nil {
+			fmt.Printf("Result: %s\n", *finalResult.Task.Result)
+		}
+		if finalResult.TaskRun != nil && finalResult.TaskRun.PullRequestURL != "" {
+			fmt.Printf("PR: %s\n", finalResult.TaskRun.PullRequestURL)
+		}
+	}
 }
 
 func init() {
@@ -233,5 +340,8 @@ func init() {
 	orchestrateSpawnCmd.Flags().BoolVar(&orchestrateSpawnSync, "sync", false, "Wait for task completion after spawning (combines spawn + wait)")
 	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnSyncTimeout, "timeout", "10m", "Timeout for --sync mode (default: 10m)")
 	orchestrateSpawnCmd.Flags().BoolVar(&orchestrateSpawnCompact, "compact", false, "Output compact JSON with essential fields only (use with --json --sync)")
+	orchestrateSpawnCmd.Flags().IntVar(&orchestrateSpawnRetry, "retry", 0, "Number of retry attempts on failure (requires --sync)")
+	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnRetryBackoff, "retry-backoff", "constant", "Retry backoff strategy: constant, linear, or exponential")
+	orchestrateSpawnCmd.Flags().BoolVar(&orchestrateSpawnRetryInjectContext, "retry-inject-context", false, "Inject failure reason into retry prompt")
 	orchestrateCmd.AddCommand(orchestrateSpawnCmd)
 }
