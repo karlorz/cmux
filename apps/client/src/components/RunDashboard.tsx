@@ -22,9 +22,10 @@ import {
   ChevronDown,
   ChevronRight,
   Code2,
-  FileCode,
   GitCompare,
+  Image,
   Shield,
+  TestTube2,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -36,6 +37,7 @@ import { RuntimeLifecycleCard } from "@/components/dashboard/RuntimeLifecycleCar
 import { StatusStrip } from "@/components/dashboard/StatusStrip";
 import { ApprovalRequestCard } from "@/components/orchestration/ApprovalRequestCard";
 import { RunInspectorPanel } from "@/components/dashboard/RunInspectorPanel";
+import { TestResultsPanel } from "@/components/TestResultsPanel";
 import type { TaskRunWithChildren } from "@/types/task";
 
 interface RunDashboardProps {
@@ -317,7 +319,10 @@ function ApprovalLane({
 }
 
 /**
- * DiffArtifactsPanel - Git diff and test results in one region
+ * DiffArtifactsPanel - Unified review region for diff, tests, and screenshots
+ *
+ * Issue #961: Keep live diff, tests, and screenshots in one adjacent review region
+ * so operators can review code and evidence without leaving the dashboard.
  */
 function DiffArtifactsPanel({
   taskRunId,
@@ -334,7 +339,7 @@ function DiffArtifactsPanel({
   baseBranch: string | undefined;
   headBranch: string | undefined;
 }) {
-  const [activeTab, setActiveTab] = useState<"diff" | "tests">("diff");
+  const [activeTab, setActiveTab] = useState<"diff" | "tests" | "screenshots">("diff");
   const sandboxId = selectedRun?.vscode?.containerName;
   const isRunning = selectedRun?.vscode?.status === "running";
 
@@ -364,12 +369,25 @@ function DiffArtifactsPanel({
               : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
           )}
         >
-          <FileCode className="size-4" />
+          <TestTube2 className="size-4" />
           Tests
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("screenshots")}
+          className={clsx(
+            "flex items-center gap-1.5 px-3 py-1 text-sm rounded-md transition-colors",
+            activeTab === "screenshots"
+              ? "bg-neutral-200 dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100"
+              : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+          )}
+        >
+          <Image className="size-4" />
+          Screenshots
         </button>
       </div>
       <div className="flex-1 min-h-0 overflow-auto">
-        {activeTab === "diff" ? (
+        {activeTab === "diff" && (
           <LiveDiffPanel
             sandboxId={sandboxId}
             isRunning={isRunning}
@@ -380,9 +398,19 @@ function DiffArtifactsPanel({
             baseBranch={baseBranch}
             headBranch={headBranch}
           />
-        ) : (
-          <div className="p-4 text-sm text-neutral-500 dark:text-neutral-400">
-            Test results will appear here when available.
+        )}
+        {activeTab === "tests" && (
+          <TestResultsPanel taskRunId={taskRunId} />
+        )}
+        {activeTab === "screenshots" && (
+          <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-neutral-500 dark:text-neutral-400">
+            <Image className="size-8 text-neutral-400 dark:text-neutral-500" />
+            <div className="text-sm font-medium text-neutral-600 dark:text-neutral-200">
+              Screenshots
+            </div>
+            <p className="text-xs">
+              Screenshots will appear here when operator verification runs
+            </p>
           </div>
         )}
       </div>
