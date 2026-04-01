@@ -35,7 +35,7 @@ import { LiveDiffPanel } from "@/components/LiveDiffPanel";
 import { RuntimeLifecycleCard } from "@/components/dashboard/RuntimeLifecycleCard";
 import { StatusStrip } from "@/components/dashboard/StatusStrip";
 import { ApprovalRequestCard } from "@/components/orchestration/ApprovalRequestCard";
-import { TaskRunMemoryPanel } from "@/components/TaskRunMemoryPanel";
+import { RunInspectorPanel } from "@/components/dashboard/RunInspectorPanel";
 import type { TaskRunWithChildren } from "@/types/task";
 
 interface RunDashboardProps {
@@ -54,7 +54,6 @@ export function RunDashboard({
 }: RunDashboardProps) {
   const resetKey = `${taskId}-${taskRunId}`;
   const [inspectorExpanded, setInspectorExpanded] = useState(false);
-  const [activeInspectorTab, setActiveInspectorTab] = useState<"memory" | "context">("memory");
 
   // Get task data for branch info
   const taskQuery = useRQ({
@@ -182,70 +181,37 @@ export function RunDashboard({
             </ErrorBoundary>
           </div>
 
-          {/* Region 5: Inspector (collapsible) */}
+          {/* Region 5: Inspector (collapsible) - consolidated session, checkpoint, memory */}
           <div
             className={clsx(
               "flex-shrink-0 transition-all duration-200",
-              inspectorExpanded ? "h-72" : "h-10"
+              inspectorExpanded ? "h-80" : "h-10"
             )}
           >
             <div className="h-full flex flex-col">
               <button
                 type="button"
                 onClick={() => setInspectorExpanded(!inspectorExpanded)}
-                className="flex items-center justify-between px-4 py-2 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
               >
-                <div className="flex items-center gap-2">
-                  {inspectorExpanded ? (
-                    <ChevronDown className="size-4" />
-                  ) : (
-                    <ChevronRight className="size-4" />
-                  )}
-                  <span>Inspector</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setActiveInspectorTab("memory");
-                      setInspectorExpanded(true);
-                    }}
-                    className={clsx(
-                      "px-2 py-0.5 text-xs rounded",
-                      activeInspectorTab === "memory"
-                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
-                        : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
-                    )}
-                  >
-                    Memory
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setActiveInspectorTab("context");
-                      setInspectorExpanded(true);
-                    }}
-                    className={clsx(
-                      "px-2 py-0.5 text-xs rounded",
-                      activeInspectorTab === "context"
-                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
-                        : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
-                    )}
-                  >
-                    Context
-                  </button>
-                </div>
+                {inspectorExpanded ? (
+                  <ChevronDown className="size-4" />
+                ) : (
+                  <ChevronRight className="size-4" />
+                )}
+                <span>Inspector</span>
+                <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                  (continuation, session, memory)
+                </span>
               </button>
               {inspectorExpanded && (
-                <div className="flex-1 min-h-0 overflow-auto">
+                <div className="flex-1 min-h-0 overflow-hidden">
                   <ErrorBoundary
-                    key={`${resetKey}-inspector-${activeInspectorTab}`}
+                    key={`${resetKey}-inspector`}
                     name="Inspector"
                     fallback={<CompactErrorFallback name="Inspector" />}
                   >
-                    <TaskRunMemoryPanel taskRunId={taskRunId} teamSlugOrId={teamSlugOrId} />
+                    <RunInspectorPanel taskRunId={taskRunId} teamSlugOrId={teamSlugOrId} />
                   </ErrorBoundary>
                 </div>
               )}
