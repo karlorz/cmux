@@ -13,6 +13,7 @@ import (
 )
 
 var orchestrateWaitTimeout string
+var orchestrateWaitCompact bool
 
 var orchestrateWaitCmd = &cobra.Command{
 	Use:   "wait <orch-task-id>",
@@ -90,8 +91,14 @@ Examples:
 		}
 
 		if flagJSON {
-			data, _ := json.MarshalIndent(finalResult, "", "  ")
-			fmt.Println(string(data))
+			if orchestrateWaitCompact {
+				compact := toCompactStatus(finalResult)
+				data, _ := json.Marshal(compact)
+				fmt.Println(string(data))
+			} else {
+				data, _ := json.MarshalIndent(finalResult, "", "  ")
+				fmt.Println(string(data))
+			}
 		} else {
 			fmt.Printf("\nTask finished with status: %s\n", finalResult.Task.Status)
 			if finalResult.Task.ErrorMessage != nil {
@@ -111,5 +118,6 @@ Examples:
 
 func init() {
 	orchestrateWaitCmd.Flags().StringVar(&orchestrateWaitTimeout, "timeout", "300s", "Maximum time to wait")
+	orchestrateWaitCmd.Flags().BoolVar(&orchestrateWaitCompact, "compact", false, "Output compact JSON with essential fields only (use with --json)")
 	orchestrateCmd.AddCommand(orchestrateWaitCmd)
 }

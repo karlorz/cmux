@@ -14,6 +14,18 @@ import (
 
 var orchestrateStatusWatch bool
 var orchestrateStatusInterval int
+var orchestrateStatusCompact bool
+
+// CompactStatusResult is a minimal JSON output for agent consumption
+type CompactStatusResult struct {
+	ID       string  `json:"id"`
+	Status   string  `json:"status"`
+	Agent    string  `json:"agent,omitempty"`
+	Duration string  `json:"duration,omitempty"`
+	Result   *string `json:"result,omitempty"`
+	Error    *string `json:"error,omitempty"`
+	PRURL    string  `json:"pr_url,omitempty"`
+}
 
 var orchestrateStatusCmd = &cobra.Command{
 	Use:   "status <orch-task-id>",
@@ -59,8 +71,14 @@ Examples:
 		}
 
 		if flagJSON {
-			data, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(data))
+			if orchestrateStatusCompact {
+				compact := toCompactStatus(result)
+				data, _ := json.Marshal(compact)
+				fmt.Println(string(data))
+			} else {
+				data, _ := json.MarshalIndent(result, "", "  ")
+				fmt.Println(string(data))
+			}
 			return nil
 		}
 
@@ -157,8 +175,42 @@ func printOrchestrationStatus(result *vm.OrchestrationStatusResult) {
 	}
 }
 
+// toCompactStatus converts a full status result to a minimal compact form
+func toCompactStatus(result *vm.OrchestrationStatusResult) CompactStatusResult {
+	compact := CompactStatusResult{
+		ID:     result.Task.ID,
+		Status: result.Task.Status,
+		Result: result.Task.Result,
+		Error:  result.Task.ErrorMessage,
+	}
+
+	if result.Task.AssignedAgentName != nil {
+		compact.Agent = *result.Task.AssignedAgentName
+	}
+
+	// Calculate duration if we have both start and end times
+	if result.Task.StartedAt != nil {
+		start := time.Unix(*result.Task.StartedAt/1000, 0)
+		var end time.Time
+		if result.Task.CompletedAt != nil {
+			end = time.Unix(*result.Task.CompletedAt/1000, 0)
+		} else {
+			end = time.Now()
+		}
+		duration := end.Sub(start)
+		compact.Duration = duration.Round(time.Second).String()
+	}
+
+	if result.TaskRun != nil && result.TaskRun.PullRequestURL != "" {
+		compact.PRURL = result.TaskRun.PullRequestURL
+	}
+
+	return compact
+}
+
 func init() {
 	orchestrateStatusCmd.Flags().BoolVarP(&orchestrateStatusWatch, "watch", "w", false, "Continuously poll for status changes until terminal state")
 	orchestrateStatusCmd.Flags().IntVar(&orchestrateStatusInterval, "interval", 3, "Polling interval in seconds (default: 3)")
+	orchestrateStatusCmd.Flags().BoolVar(&orchestrateStatusCompact, "compact", false, "Output compact JSON with essential fields only (use with --json)")
 	orchestrateCmd.AddCommand(orchestrateStatusCmd)
 }

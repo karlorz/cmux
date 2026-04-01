@@ -13,6 +13,21 @@ import (
 )
 
 var orchestrateListStatus string
+var orchestrateListCompact bool
+
+// CompactListItem is a minimal task entry for agent consumption
+type CompactListItem struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+	Agent  string `json:"agent,omitempty"`
+	Prompt string `json:"prompt,omitempty"`
+}
+
+// CompactListResult is a minimal list output for agent consumption
+type CompactListResult struct {
+	Tasks []CompactListItem `json:"tasks"`
+	Count int               `json:"count"`
+}
 
 var orchestrateListCmd = &cobra.Command{
 	Use:   "list",
@@ -47,8 +62,33 @@ Examples:
 		}
 
 		if flagJSON {
-			data, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(data))
+			if orchestrateListCompact {
+				compact := CompactListResult{
+					Tasks: make([]CompactListItem, len(result.Tasks)),
+					Count: len(result.Tasks),
+				}
+				for i, task := range result.Tasks {
+					item := CompactListItem{
+						ID:     task.ID,
+						Status: task.Status,
+					}
+					if task.AssignedAgentName != nil {
+						item.Agent = *task.AssignedAgentName
+					}
+					// Truncate prompt for compact output
+					if len(task.Prompt) > 80 {
+						item.Prompt = task.Prompt[:77] + "..."
+					} else {
+						item.Prompt = task.Prompt
+					}
+					compact.Tasks[i] = item
+				}
+				data, _ := json.Marshal(compact)
+				fmt.Println(string(data))
+			} else {
+				data, _ := json.MarshalIndent(result, "", "  ")
+				fmt.Println(string(data))
+			}
 			return nil
 		}
 
@@ -87,5 +127,6 @@ Examples:
 
 func init() {
 	orchestrateListCmd.Flags().StringVar(&orchestrateListStatus, "status", "", "Filter by status (pending, assigned, running, completed, failed, cancelled)")
+	orchestrateListCmd.Flags().BoolVar(&orchestrateListCompact, "compact", false, "Output compact JSON with essential fields only (use with --json)")
 	orchestrateCmd.AddCommand(orchestrateListCmd)
 }
