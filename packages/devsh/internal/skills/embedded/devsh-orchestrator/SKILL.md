@@ -176,6 +176,32 @@ devsh orchestrate spawn-batch tasks.yaml --sync
 devsh orchestrate spawn-batch '[{"id":"t1","prompt":"Task","agent":"claude/haiku-4.5"}]'
 ```
 
+### Watch Multiple Tasks
+
+Monitor multiple tasks with aggregated status updates.
+
+```bash
+devsh orchestrate watch [task-id...] [flags]
+
+# Flags:
+#   --orchestration-id <id>  Watch all tasks in an orchestration session
+#   --format <format>        Output format: normal, compact, or json
+#   --interval <seconds>     Polling interval (default: 5)
+```
+
+**Examples:**
+
+```bash
+# Watch specific tasks
+devsh orchestrate watch task1 task2 task3
+
+# Compact one-line output
+devsh orchestrate watch --format compact task1 task2
+
+# JSON streaming output
+devsh orchestrate watch --format json task1
+```
+
 ### Get Orchestration Task Status
 
 Get detailed status of a specific orchestration task.
