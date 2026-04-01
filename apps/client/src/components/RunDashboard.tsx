@@ -33,6 +33,7 @@ import { CompactErrorFallback, ErrorBoundary } from "@/components/ErrorBoundary"
 import { LiveDiffStats } from "@/components/LiveDiffStats";
 import { LiveDiffPanel } from "@/components/LiveDiffPanel";
 import { RuntimeLifecycleCard } from "@/components/dashboard/RuntimeLifecycleCard";
+import { StatusStrip } from "@/components/dashboard/StatusStrip";
 import { ApprovalRequestCard } from "@/components/orchestration/ApprovalRequestCard";
 import { TaskRunMemoryPanel } from "@/components/TaskRunMemoryPanel";
 import type { TaskRunWithChildren } from "@/types/task";
@@ -83,14 +84,27 @@ export function RunDashboard({
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-neutral-50 dark:bg-black">
-      {/* Region 1: Status Strip */}
+      {/* Region 1: Status Strip - compact persistent bar */}
+      <ErrorBoundary
+        key={`${resetKey}-status-strip`}
+        name="Status Strip"
+        fallback={<CompactErrorFallback name="Status Strip" />}
+      >
+        <StatusStrip
+          taskRunId={taskRunId}
+          teamSlugOrId={teamSlugOrId}
+          branch={headBranch}
+        />
+      </ErrorBoundary>
+
+      {/* Region 1b: Run Control - detailed lifecycle card */}
       <div className="flex-shrink-0 border-b border-neutral-200 dark:border-neutral-800">
         <div className="px-4 py-2">
           <div className="flex items-center justify-between gap-4">
             <ErrorBoundary
-              key={`${resetKey}-status-strip`}
-              name="Status Strip"
-              fallback={<CompactErrorFallback name="Status Strip" />}
+              key={`${resetKey}-run-control`}
+              name="Run Control"
+              fallback={<CompactErrorFallback name="Run Control" />}
             >
               <RuntimeLifecycleCard taskRunId={taskRunId} teamSlugOrId={teamSlugOrId} />
             </ErrorBoundary>
