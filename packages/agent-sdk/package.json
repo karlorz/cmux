@@ -31,6 +31,15 @@
     "orchestration"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/karlorz/cmux.git",
+    "directory": "packages/agent-sdk"
+  },
+  "homepage": "https://github.com/karlorz/cmux/tree/main/packages/agent-sdk",
+  "bugs": {
+    "url": "https://github.com/karlorz/cmux/issues"
+  },
   "dependencies": {
     "execa": "^9.5.2",
     "zod": "^4.1.5"
