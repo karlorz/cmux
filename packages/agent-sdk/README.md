@@ -8,6 +8,10 @@ Unified Agent SDK for cmux - spawn Claude, Codex, Gemini, Amp, and Opencode agen
 - **Multi-provider support**: PVE-LXC, Morph, E2B, Modal, Local
 - **Unified API**: Same interface for all agents and providers
 - **Session resumption**: Continue conversations across sandbox instances
+- **Session migration**: Move sessions between providers
+- **Parallel execution**: Run multiple agents concurrently with concurrency control
+- **Checkpointing**: Save and restore session state
+- **Cost tracking**: Token usage and cost estimation
 - **Streaming events**: Real-time progress updates
 
 ## Installation
@@ -74,6 +78,79 @@ const result = await client.resume({
   sessionId: task.sessionId!,
   message: "Now add tests for it",
 });
+```
+
+## Parallel Execution
+
+Run multiple agents concurrently with optional concurrency limits:
+
+```typescript
+const results = await client.spawnMany({
+  tasks: [
+    { agent: "claude/opus-4.5", prompt: "Refactor auth module" },
+    { agent: "codex/gpt-5.4", prompt: "Add test coverage" },
+    { agent: "gemini/2.5-pro", prompt: "Update documentation" },
+  ],
+  concurrency: 2,  // Max 2 agents at once
+  failFast: false, // Continue even if one fails
+});
+
+console.log(`Succeeded: ${results.succeeded}, Failed: ${results.failed}`);
+```
+
+## Session Migration
+
+Move a session from one provider to another:
+
+```typescript
+// Start on PVE-LXC
+const task = await client.spawn({
+  agent: "claude/opus-4.5",
+  prompt: "Start the work",
+  provider: "pve-lxc",
+});
+
+// Migrate to Morph with a continuation message
+const result = await client.migrate({
+  source: task.sessionId!,
+  targetProvider: "morph",
+  message: "Continue the work here",
+});
+```
+
+## Checkpointing
+
+Create checkpoints to save session state:
+
+```typescript
+const checkpoint = await client.checkpoint({
+  taskId: task.id,
+  label: "before-refactor",
+});
+
+if (checkpoint) {
+  console.log(`Checkpoint ${checkpoint.id} created`);
+  console.log(`Resumable: ${checkpoint.resumable}`);
+}
+```
+
+## Cost Tracking
+
+Track token usage and estimate costs:
+
+```typescript
+import { calculateCost, getModelPricing, MODEL_PRICING } from '@cmux/agent-sdk';
+
+// Get pricing for a model
+const pricing = getModelPricing('claude/opus-4.5');
+// { inputPerMillion: 15, outputPerMillion: 75, cacheReadPerMillion: 1.5, ... }
+
+// Calculate cost from usage (available in TaskResult.usage)
+const task = await client.spawn({ agent: "claude/opus-4.5", prompt: "..." });
+if (task.usage) {
+  console.log(`Tokens: ${task.usage.tokens.totalTokens}`);
+  console.log(`Cost: $${task.usage.cost?.totalCost.toFixed(4)}`);
+}
 ```
 
 ## Supported Agents
@@ -156,7 +233,7 @@ const result = await client.resume({
 For simple use cases without a client:
 
 ```typescript
-import { spawn, stream, resume } from '@cmux/agent-sdk';
+import { spawn, stream, resume, spawnMany, checkpoint, migrate } from '@cmux/agent-sdk';
 
 const task = await spawn({ agent: "claude/opus-4.5", prompt: "..." });
 
@@ -165,6 +242,12 @@ for await (const event of stream({ agent: "codex/gpt-5.4", prompt: "..." })) {
 }
 
 const result = await resume({ sessionId: "...", message: "..." });
+
+const parallel = await spawnMany({ tasks: [...], concurrency: 2 });
+
+const cp = await checkpoint({ taskId: "..." });
+
+const migrated = await migrate({ source: "...", targetProvider: "morph" });
 ```
 
 ## Requirements
