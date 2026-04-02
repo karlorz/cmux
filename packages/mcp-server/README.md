@@ -79,6 +79,33 @@ Use cmux_spawn to start a Claude agent:
 - repo: "owner/repo"
 ```
 
+### Spawn with Claude Agent SDK options
+
+```
+Use cmux_spawn with Claude-specific options:
+- agent: "claude/opus-4.5"
+- prompt: "Refactor the auth module"
+- provider: "pve-lxc"
+- repo: "owner/repo"
+- permissionMode: "acceptEdits"
+- settingSources: ["user", "project"]
+- systemPromptPreset: "minimal"
+- allowedTools: ["Read", "Write", "Grep"]
+```
+
+#### Claude Agent SDK Options
+
+These options only apply to `claude/*` agents:
+
+| Option | Values | Description |
+|--------|--------|-------------|
+| `permissionMode` | `default`, `acceptEdits`, `bypassPermissions`, `plan`, `delegate`, `dontAsk` | Controls how the agent handles permission requests |
+| `settingSources` | `["user", "project", "local"]` | Which settings files to load |
+| `systemPromptPreset` | `claude_code`, `minimal`, `custom` | Preset system prompt to use |
+| `systemPrompt` | string | Custom system prompt content |
+| `allowedTools` | string[] | List of tools the agent can use |
+| `disallowedTools` | string[] | List of tools the agent cannot use |
+
 ### Wait for completion
 
 ```
