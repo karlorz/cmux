@@ -13,32 +13,39 @@ import type {
 import { SpawnOptionsSchema } from "./types.js";
 
 /**
- * Execute an agent via devsh orchestrate spawn
+ * Execute an agent via devsh orchestrate spawn (remote) or run-local (local)
  */
 export async function executeAgent(
   options: SpawnOptions
 ): Promise<TaskResult> {
+  const isLocal = options.provider === "local";
 
-  // Build devsh orchestrate spawn command
-  const args = ["orchestrate", "spawn", "--json"];
+  // Build devsh orchestrate spawn or run-local command
+  const args = isLocal
+    ? ["orchestrate", "run-local", "--json", "--persist"]
+    : ["orchestrate", "spawn", "--json"];
 
-  if (options.sync) {
+  if (!isLocal && options.sync) {
     args.push("--sync");
   }
 
-  // Add provider
-  args.push("--provider", options.provider);
+  if (!isLocal) {
+    // Add provider for remote execution
+    args.push("--provider", options.provider);
+  }
 
-  // Add repo if specified
-  if (options.repo) {
+  // Add repo if specified (remote only)
+  if (!isLocal && options.repo) {
     args.push("--repo", options.repo);
   }
 
-  // Add branch
-  args.push("--branch", options.branch);
+  // Add branch (remote only)
+  if (!isLocal) {
+    args.push("--branch", options.branch);
+  }
 
-  // Add snapshot if specified
-  if (options.snapshotId) {
+  // Add snapshot if specified (remote only)
+  if (!isLocal && options.snapshotId) {
     args.push("--snapshot", options.snapshotId);
   }
 
@@ -142,20 +149,22 @@ export async function executeAgent(
 }
 
 /**
- * Execute a resume operation via devsh
+ * Execute a resume/inject operation via devsh
+ * Routes to inject-local for local run IDs and path references,
+ * or orchestrate message for remote task run IDs.
  */
 export async function executeResume(
   options: ResumeOptions
 ): Promise<TaskResult> {
-  const args = ["orchestrate", "inject", "--json"];
+  const isLocal =
+    options.provider === "local" ||
+    options.sessionId.startsWith("local_") ||
+    options.sessionId.startsWith("/") ||
+    options.sessionId.startsWith("~/");
 
-  args.push("--session-id", options.sessionId);
-
-  if (options.provider) {
-    args.push("--provider", options.provider);
-  }
-
-  args.push("--", options.message);
+  const args = isLocal
+    ? ["orchestrate", "inject-local", "--json", options.sessionId, options.message]
+    : ["orchestrate", "message", options.sessionId, options.message, "--type", "request"];
 
   const startTime = Date.now();
 
