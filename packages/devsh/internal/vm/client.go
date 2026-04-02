@@ -2187,6 +2187,14 @@ type OrchestrationSpawnOptions struct {
 	IsCloudWorkspace    bool     // If true, spawn as a cloud workspace (interactive TUI session)
 	IsOrchestrationHead bool     // If true, mark as orchestration head (coordinates sub-agents)
 	SupervisorProfileID string   // If set, use this supervisor profile for head agent behavior
+
+	// Claude Agent SDK specific options
+	PermissionMode      string   // Permission mode: default, acceptEdits, bypassPermissions, plan, delegate, dontAsk
+	SettingSources      []string // Setting sources: user, project, local
+	SystemPromptPreset  string   // System prompt preset: claude_code, minimal, custom
+	SystemPromptContent string   // Custom system prompt content
+	AllowedTools        []string // List of allowed tools
+	DisallowedTools     []string // List of disallowed tools
 }
 
 // OrchestrationSpawnResult represents the result of spawning an agent with orchestration
@@ -2273,6 +2281,26 @@ func (c *Client) OrchestrationSpawn(ctx context.Context, opts OrchestrationSpawn
 	}
 	if opts.SupervisorProfileID != "" {
 		body["supervisorProfileId"] = opts.SupervisorProfileID
+	}
+
+	// Claude Agent SDK specific options
+	if opts.PermissionMode != "" {
+		body["permissionMode"] = opts.PermissionMode
+	}
+	if len(opts.SettingSources) > 0 {
+		body["settingSources"] = opts.SettingSources
+	}
+	if opts.SystemPromptPreset != "" {
+		body["systemPromptPreset"] = opts.SystemPromptPreset
+	}
+	if opts.SystemPromptContent != "" {
+		body["systemPromptContent"] = opts.SystemPromptContent
+	}
+	if len(opts.AllowedTools) > 0 {
+		body["allowedTools"] = opts.AllowedTools
+	}
+	if len(opts.DisallowedTools) > 0 {
+		body["disallowedTools"] = opts.DisallowedTools
 	}
 
 	var resp *http.Response

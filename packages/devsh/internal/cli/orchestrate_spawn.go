@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/karlorz/devsh/internal/auth"
@@ -33,6 +34,14 @@ var orchestrateSpawnRetryBackoff string
 var orchestrateSpawnRetryInjectContext bool
 var orchestrateSpawnEstimate bool
 var orchestrateSpawnComplexity string
+
+// Claude Agent SDK specific flags
+var orchestrateSpawnPermissionMode string
+var orchestrateSpawnSettingSources string
+var orchestrateSpawnSystemPromptPreset string
+var orchestrateSpawnSystemPrompt string
+var orchestrateSpawnAllowedTools string
+var orchestrateSpawnDisallowedTools string
 
 var orchestrateSpawnCmd = &cobra.Command{
 	Use:   "spawn <prompt>",
@@ -166,6 +175,12 @@ Examples:
 				IsCloudWorkspace:    orchestrateSpawnCloudWorkspace,
 				IsOrchestrationHead: orchestrateSpawnCloudWorkspace,
 				SupervisorProfileID: orchestrateSpawnSupervisorProfile,
+				PermissionMode:      orchestrateSpawnPermissionMode,
+				SettingSources:      parseCommaSeparated(orchestrateSpawnSettingSources),
+				SystemPromptPreset:  orchestrateSpawnSystemPromptPreset,
+				SystemPromptContent: orchestrateSpawnSystemPrompt,
+				AllowedTools:        parseCommaSeparated(orchestrateSpawnAllowedTools),
+				DisallowedTools:     parseCommaSeparated(orchestrateSpawnDisallowedTools),
 			})
 			cancel()
 
@@ -218,6 +233,26 @@ Examples:
 
 		return lastError
 	},
+}
+
+// parseCommaSeparated splits a comma-separated string into a slice.
+// Returns nil if the input is empty.
+func parseCommaSeparated(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		trimmed := strings.TrimSpace(p)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 // calculateRetryDelay returns the delay duration before a retry attempt.
@@ -360,5 +395,14 @@ func init() {
 	orchestrateSpawnCmd.Flags().BoolVar(&orchestrateSpawnRetryInjectContext, "retry-inject-context", false, "Inject failure reason into retry prompt")
 	orchestrateSpawnCmd.Flags().BoolVar(&orchestrateSpawnEstimate, "estimate", false, "Show cost estimate without spawning")
 	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnComplexity, "complexity", "medium", "Task complexity for cost estimation: simple, medium, or complex")
+
+	// Claude Agent SDK specific flags
+	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnPermissionMode, "permission-mode", "", "Claude permission mode: default, acceptEdits, bypassPermissions, plan, delegate, dontAsk")
+	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnSettingSources, "setting-sources", "", "Claude setting sources (comma-separated): user, project, local")
+	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnSystemPromptPreset, "system-prompt-preset", "", "Claude system prompt preset: claude_code, minimal, custom")
+	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnSystemPrompt, "system-prompt", "", "Custom system prompt content for Claude agents")
+	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnAllowedTools, "allowed-tools", "", "Comma-separated list of allowed tools for Claude agents")
+	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnDisallowedTools, "disallowed-tools", "", "Comma-separated list of disallowed tools for Claude agents")
+
 	orchestrateCmd.AddCommand(orchestrateSpawnCmd)
 }
