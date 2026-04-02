@@ -2185,7 +2185,7 @@ export const postApiSandboxesStartMutation = (options?: Partial<Options<PostApiS
 
 /**
  * Prewarm a sandbox instance for a repo
- * Creates a Morph instance in the background with the repo already cloned. Call this when the user starts typing a task description for faster startup.
+ * Creates a sandbox instance in the background with the repo already cloned. Supports both Morph and PVE-LXC providers. Call this when the user starts typing a task description for faster startup.
  */
 export const postApiSandboxesPrewarmMutation = (options?: Partial<Options<PostApiSandboxesPrewarmData>>): UseMutationOptions<PostApiSandboxesPrewarmResponse, DefaultError, Options<PostApiSandboxesPrewarmData>> => {
     const mutationOptions: UseMutationOptions<PostApiSandboxesPrewarmResponse, DefaultError, Options<PostApiSandboxesPrewarmData>> = {
