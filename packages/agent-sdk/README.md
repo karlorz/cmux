@@ -203,8 +203,27 @@ const task = await client.spawn({
   timeoutMs: 600000,         // Timeout (default: 10 minutes)
   env: { KEY: "value" },     // Environment variables
   sync: true,                // Wait for completion (default: true)
+
+  // Claude Agent SDK options (claude/* agents only)
+  permissionMode: "acceptEdits",        // Tool permission handling
+  settingSources: ["user", "project"],  // Settings files to load
+  systemPrompt: { type: "preset", preset: "minimal" }, // System prompt
+  allowedTools: ["Read", "Write"],      // Allowed tools
+  disallowedTools: ["Bash"],            // Disallowed tools
 });
 ```
+
+#### Claude Agent SDK Options
+
+These options only apply to `claude/*` agents:
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `permissionMode` | `"default"` \| `"acceptEdits"` \| `"bypassPermissions"` \| `"plan"` \| `"delegate"` \| `"dontAsk"` | How the agent handles permission requests |
+| `settingSources` | `("user" \| "project" \| "local")[]` | Which settings files to load |
+| `systemPrompt` | `{ type: "preset", preset: "claude_code" \| "minimal" \| "custom" }` or `{ type: "custom", content: string }` | System prompt configuration |
+| `allowedTools` | `string[]` | Tools the agent can use |
+| `disallowedTools` | `string[]` | Tools the agent cannot use |
 
 ### `client.stream(options)`
 
