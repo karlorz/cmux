@@ -12,10 +12,14 @@ from cmux_agent_sdk.types import (
     MODEL_PRICING,
     ParallelResult,
     ParallelTaskResult,
+    PermissionMode,
     SandboxProvider,
+    SettingSource,
     SpawnManyOptions,
     SpawnManyTaskConfig,
     SpawnOptions,
+    SystemPromptCustom,
+    SystemPromptPreset,
     TaskResult,
     TokenUsage,
     UsageStats,
@@ -116,6 +120,131 @@ class TestSpawnOptions:
     def test_invalid_agent_backend(self):
         with pytest.raises(ValidationError):
             SpawnOptions(agent="unknown/model", prompt="Test")
+
+
+class TestPermissionMode:
+    """Tests for PermissionMode enum."""
+
+    def test_all_modes(self):
+        assert PermissionMode.DEFAULT == "default"
+        assert PermissionMode.ACCEPT_EDITS == "acceptEdits"
+        assert PermissionMode.BYPASS_PERMISSIONS == "bypassPermissions"
+        assert PermissionMode.PLAN == "plan"
+        assert PermissionMode.DELEGATE == "delegate"
+        assert PermissionMode.DONT_ASK == "dontAsk"
+
+    def test_spawn_with_permission_mode(self):
+        options = SpawnOptions(
+            agent="claude/opus-4.5",
+            prompt="Test",
+            permission_mode=PermissionMode.ACCEPT_EDITS,
+        )
+        assert options.permission_mode == PermissionMode.ACCEPT_EDITS
+
+    def test_spawn_permission_mode_string(self):
+        options = SpawnOptions(
+            agent="claude/opus-4.5",
+            prompt="Test",
+            permission_mode="bypassPermissions",
+        )
+        assert options.permission_mode == PermissionMode.BYPASS_PERMISSIONS
+
+    def test_spawn_invalid_permission_mode(self):
+        with pytest.raises(ValidationError):
+            SpawnOptions(agent="claude/opus-4.5", prompt="Test", permission_mode="invalid")
+
+
+class TestSettingSource:
+    """Tests for SettingSource enum."""
+
+    def test_all_sources(self):
+        assert SettingSource.USER == "user"
+        assert SettingSource.PROJECT == "project"
+        assert SettingSource.LOCAL == "local"
+
+    def test_spawn_with_setting_sources(self):
+        options = SpawnOptions(
+            agent="claude/opus-4.5",
+            prompt="Test",
+            setting_sources=[SettingSource.USER, SettingSource.PROJECT],
+        )
+        assert options.setting_sources == [SettingSource.USER, SettingSource.PROJECT]
+
+
+class TestSystemPromptConfig:
+    """Tests for SystemPromptConfig discriminated union."""
+
+    def test_preset_system_prompt(self):
+        sp = SystemPromptPreset(preset="claude_code")
+        assert sp.type == "preset"
+        assert sp.preset == "claude_code"
+
+    def test_custom_system_prompt(self):
+        sp = SystemPromptCustom(content="You are a code reviewer.")
+        assert sp.type == "custom"
+        assert sp.content == "You are a code reviewer."
+
+    def test_spawn_with_preset_prompt(self):
+        options = SpawnOptions(
+            agent="claude/opus-4.5",
+            prompt="Test",
+            system_prompt={"type": "preset", "preset": "minimal"},
+        )
+        assert isinstance(options.system_prompt, SystemPromptPreset)
+        assert options.system_prompt.preset == "minimal"
+
+    def test_spawn_with_custom_prompt(self):
+        options = SpawnOptions(
+            agent="claude/opus-4.5",
+            prompt="Test",
+            system_prompt={"type": "custom", "content": "You are an expert."},
+        )
+        assert isinstance(options.system_prompt, SystemPromptCustom)
+        assert options.system_prompt.content == "You are an expert."
+
+
+class TestClaudeAgentSdkOptions:
+    """Tests for Claude Agent SDK options in SpawnOptions."""
+
+    def test_allowed_tools(self):
+        options = SpawnOptions(
+            agent="claude/opus-4.5",
+            prompt="Test",
+            allowed_tools=["Read", "Write", "Bash"],
+        )
+        assert options.allowed_tools == ["Read", "Write", "Bash"]
+
+    def test_disallowed_tools(self):
+        options = SpawnOptions(
+            agent="claude/opus-4.5",
+            prompt="Test",
+            disallowed_tools=["Bash"],
+        )
+        assert options.disallowed_tools == ["Bash"]
+
+    def test_all_claude_sdk_options(self):
+        options = SpawnOptions(
+            agent="claude/opus-4.5",
+            prompt="Test",
+            permission_mode=PermissionMode.ACCEPT_EDITS,
+            setting_sources=[SettingSource.USER, SettingSource.PROJECT],
+            system_prompt={"type": "preset", "preset": "claude_code"},
+            allowed_tools=["Read", "Write"],
+            disallowed_tools=["Bash"],
+        )
+        assert options.permission_mode == PermissionMode.ACCEPT_EDITS
+        assert options.setting_sources == [SettingSource.USER, SettingSource.PROJECT]
+        assert isinstance(options.system_prompt, SystemPromptPreset)
+        assert options.allowed_tools == ["Read", "Write"]
+        assert options.disallowed_tools == ["Bash"]
+
+    def test_claude_sdk_options_default_none(self):
+        options = SpawnOptions(agent="codex/gpt-5.4", prompt="Test")
+        assert options.permission_mode is None
+        assert options.setting_sources is None
+        assert options.system_prompt is None
+        assert options.allowed_tools is None
+        assert options.disallowed_tools is None
 
 
 class TestCheckpointOptions:

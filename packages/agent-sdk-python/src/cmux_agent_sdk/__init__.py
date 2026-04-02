@@ -30,9 +30,14 @@ from cmux_agent_sdk.types import (
     # Enums
     AgentBackend,
     SandboxProvider,
+    PermissionMode,
+    SettingSource,
     # Config types
     SandboxConfig,
     SpawnOptions,
+    SystemPromptPreset,
+    SystemPromptCustom,
+    SystemPromptConfig,
     ResumeOptions,
     CheckpointOptions,
     MigrateOptions,
@@ -86,9 +91,14 @@ __all__ = [
     # Enums
     "AgentBackend",
     "SandboxProvider",
+    "PermissionMode",
+    "SettingSource",
     # Config types
     "SandboxConfig",
     "SpawnOptions",
+    "SystemPromptPreset",
+    "SystemPromptCustom",
+    "SystemPromptConfig",
     "ResumeOptions",
     "CheckpointOptions",
     "MigrateOptions",

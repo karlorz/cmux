@@ -16,6 +16,7 @@ from cmux_agent_sdk.types import (
     SandboxProvider,
     SpawnManyOptions,
     SpawnOptions,
+    SystemPromptPreset,
     TaskResult,
 )
 
@@ -64,6 +65,22 @@ async def execute_agent(options: SpawnOptions) -> TaskResult:
 
     # Add agent
     args.extend(["--agent", options.agent])
+
+    # Claude Agent SDK specific options (only for claude/* agents)
+    if options.agent.startswith("claude/"):
+        if options.permission_mode is not None:
+            args.extend(["--permission-mode", options.permission_mode.value])
+        if options.setting_sources:
+            args.extend(["--setting-sources", ",".join(s.value for s in options.setting_sources)])
+        if options.system_prompt is not None:
+            if isinstance(options.system_prompt, SystemPromptPreset):
+                args.extend(["--system-prompt-preset", options.system_prompt.preset])
+            else:
+                args.extend(["--system-prompt", options.system_prompt.content])
+        if options.allowed_tools:
+            args.extend(["--allowed-tools", ",".join(options.allowed_tools)])
+        if options.disallowed_tools:
+            args.extend(["--disallowed-tools", ",".join(options.disallowed_tools)])
 
     # Add the prompt
     args.extend(["--", options.prompt])
@@ -154,13 +171,22 @@ async def execute_resume(options: ResumeOptions) -> TaskResult:
     """
     start_time = time.time()
 
-    args = [options.devsh_path, "orchestrate", "inject", "--json"]
-    args.extend(["--session-id", options.session_id])
+    # Route to the correct devsh command based on session ID format
+    # Local runs: inject-local <run-dir> <message>
+    # Remote runs: orchestrate message <session-id> <message> --type request
+    session_id = options.session_id
+    is_local = (
+        session_id.startswith("local_")
+        or session_id.startswith("/")
+        or session_id.startswith("~/")
+    )
 
-    if options.provider:
-        args.extend(["--provider", options.provider.value])
-
-    args.extend(["--", options.message])
+    if is_local:
+        args = [options.devsh_path, "orchestrate", "inject-local", "--json", session_id, options.message]
+    else:
+        args = [options.devsh_path, "orchestrate", "message", session_id, options.message, "--type", "request"]
+        if options.provider:
+            args.extend(["--provider", options.provider.value])
 
     try:
         process = await asyncio.create_subprocess_exec(
