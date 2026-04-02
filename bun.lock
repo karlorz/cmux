@@ -415,6 +415,20 @@
         "vitest": "3.2.4",
       },
     },
+    "packages/agent-sdk": {
+      "name": "@cmux/agent-sdk",
+      "version": "0.1.0",
+      "dependencies": {
+        "execa": "^9.5.2",
+        "zod": "^4.1.5",
+      },
+      "devDependencies": {
+        "@types/node": "^24.9.1",
+        "tsup": "^8.5.0",
+        "typescript": "^5.9.3",
+        "vitest": "^3.2.4",
+      },
+    },
     "packages/claude-agent": {
       "name": "@cmux/claude-agent",
       "version": "0.1.0",
@@ -1015,6 +1029,8 @@
     "@cloudflare/workerd-linux-arm64": ["@cloudflare/workerd-linux-arm64@1.20250718.0", "", { "os": "linux", "cpu": "arm64" }, "sha512-Aa2M/DVBEBQDdATMbn217zCSFKE+ud/teS+fFS+OQqKABLn0azO2qq6ANAHYOIE6Q3Sq4CxDIQr8lGdaJHwUog=="],
 
     "@cloudflare/workerd-windows-64": ["@cloudflare/workerd-windows-64@1.20250718.0", "", { "os": "win32", "cpu": "x64" }, "sha512-dY16RXKffmugnc67LTbyjdDHZn5NoTF1yHEf2fN4+OaOnoGSp3N1x77QubTDwqZ9zECWxgQfDLjddcH8dWeFhg=="],
+
+    "@cmux/agent-sdk": ["@cmux/agent-sdk@workspace:packages/agent-sdk"],
 
     "@cmux/claude-agent": ["@cmux/claude-agent@workspace:packages/claude-agent"],
 
