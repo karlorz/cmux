@@ -17,6 +17,10 @@ import { env } from "@/lib/utils/www-env";
 import { api, internal } from "@cmux/convex/api";
 import type { Doc, Id } from "@cmux/convex/dataModel";
 import { DEFAULT_MORPH_SNAPSHOT_ID } from "@/lib/utils/morph-defaults";
+import {
+  DEFAULT_PVE_LXC_SNAPSHOT_ID,
+  getPveLxcSnapshotByPresetId,
+} from "@/lib/utils/pve-lxc-defaults";
 import { RESERVED_CMUX_PORT_SET } from "@cmux/shared/utils/reserved-cmux-ports";
 import { parseGithubRepoUrl } from "@cmux/shared/utils/parse-github-repo-url";
 import { z } from "@hono/zod-openapi";
@@ -116,6 +120,8 @@ export {
   wrapPveLxcInstance,
   getPveLxcClient,
   maskSensitive,
+  DEFAULT_PVE_LXC_SNAPSHOT_ID,
+  getPveLxcSnapshotByPresetId,
 };
 
 export type {
