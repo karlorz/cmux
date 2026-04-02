@@ -32,7 +32,7 @@ Examples:
   devsh init --update                  # Update existing skills
   devsh init --list                    # List available skills
   devsh init --target .cursor/skills   # Custom target directory
-  devsh init --mcp                     # Also configure MCP server
+  devsh init --mcp                     # Also configure MCP servers (devsh-memory + cmux)
 
 Skills installed:
   - devsh-orchestrator   Multi-agent orchestration commands
@@ -134,7 +134,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if err := configureMCP(absBase); err != nil {
 			return fmt.Errorf("failed to configure MCP: %w", err)
 		}
-		fmt.Println("\nMCP configuration added to .claude/settings.json")
+		fmt.Println("\nMCP servers configured in .claude/settings.json:")
+		fmt.Println("  - devsh-memory: Agent memory and coordination")
+		fmt.Println("  - cmux: Agent orchestration tools (spawn, status, wait, etc.)")
 	}
 
 	fmt.Println("\nDone! Skills are ready to use.")
@@ -194,6 +196,12 @@ func configureMCP(baseDir string) error {
 	mcpServers["devsh-memory"] = map[string]interface{}{
 		"command": "npx",
 		"args":    []string{"-y", "devsh-memory-mcp"},
+	}
+
+	// Add cmux orchestration MCP server
+	mcpServers["cmux"] = map[string]interface{}{
+		"command": "npx",
+		"args":    []string{"-y", "@cmux/mcp-server"},
 	}
 
 	settings["mcpServers"] = mcpServers
