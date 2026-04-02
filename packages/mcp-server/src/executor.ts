@@ -1,8 +1,12 @@
-import { readFile, readdir, stat } from "node:fs/promises";
+import {
+  readFile as nodeReadFile,
+  readdir as nodeReaddir,
+  stat as nodeStat,
+} from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { execa } from "execa";
+import { execa as nodeExeca } from "execa";
 import type {
   SpawnInput,
   StatusInput,
@@ -15,8 +19,20 @@ import type {
   ListInput,
 } from "./tools.js";
 
+type ExecaFn = typeof nodeExeca;
+type ReadFileFn = (path: string, encoding: "utf8") => Promise<string>;
+type ReaddirFn = (
+  path: string,
+  options: { withFileTypes: true }
+) => Promise<{ name: string; isDirectory(): boolean }[]>;
+type StatFn = (path: string) => Promise<{ mtimeMs: number }>;
+
 export interface ExecutorConfig {
   devshPath?: string;
+  execa?: ExecaFn;
+  readFile?: ReadFileFn;
+  readdir?: ReaddirFn;
+  stat?: StatFn;
 }
 
 type Venue = "local" | "remote";
@@ -150,9 +166,17 @@ const LOCAL_LIST_SCAN_LIMIT = 1000;
  */
 export class DevshExecutor {
   private devshPath: string;
+  private execaFn: ExecaFn;
+  private readFileFn: ReadFileFn;
+  private readdirFn: ReaddirFn;
+  private statFn: StatFn;
 
   constructor(config: ExecutorConfig = {}) {
     this.devshPath = config.devshPath ?? "devsh";
+    this.execaFn = config.execa ?? nodeExeca;
+    this.readFileFn = config.readFile ?? nodeReadFile;
+    this.readdirFn = config.readdir ?? nodeReaddir;
+    this.statFn = config.stat ?? nodeStat;
   }
 
   async spawn(input: SpawnInput): Promise<unknown> {
@@ -572,7 +596,7 @@ export class DevshExecutor {
 
     args.push(input.prompt);
 
-    const subprocess = execa(this.devshPath, args, {
+    const subprocess = this.execaFn(this.devshPath, args, {
       detached: true,
       cleanup: false,
       stdio: "ignore",
@@ -663,7 +687,7 @@ export class DevshExecutor {
   }
 
   private async runDevsh(args: string[], timeout: number): Promise<{ stdout: string; stderr: string }> {
-    const result = await execa(this.devshPath, args, { timeout });
+    const result = await this.execaFn(this.devshPath, args, { timeout });
     return {
       stdout: result.stdout,
       stderr: result.stderr,
@@ -677,7 +701,7 @@ export class DevshExecutor {
 
   private async snapshotLocalRunNames(): Promise<Set<string>> {
     try {
-      const entries = await readdir(this.getDefaultLocalRunsDir(), { withFileTypes: true });
+      const entries = await this.readdirFn(this.getDefaultLocalRunsDir(), { withFileTypes: true });
       return new Set(entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
@@ -714,7 +738,7 @@ export class DevshExecutor {
 
     let entries;
     try {
-      entries = await readdir(baseDir, { withFileTypes: true });
+      entries = await this.readdirFn(baseDir, { withFileTypes: true });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         return null;
@@ -738,7 +762,7 @@ export class DevshExecutor {
         continue;
       }
 
-      const configStats = await stat(path.join(runDir, "config.json"));
+      const configStats = await this.statFn(path.join(runDir, "config.json"));
       matches.push({ runDir, mtimeMs: configStats.mtimeMs });
     }
 
@@ -759,7 +783,7 @@ export class DevshExecutor {
 
   private async readJsonFile<T>(filePath: string): Promise<T | null> {
     try {
-      const data = await readFile(filePath, "utf8");
+      const data = await this.readFileFn(filePath, "utf8");
       return JSON.parse(data) as T;
     } catch (error) {
       if (["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) {
