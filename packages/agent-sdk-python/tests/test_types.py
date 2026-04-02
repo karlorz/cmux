@@ -7,8 +7,13 @@ from cmux_agent_sdk.types import (
     AgentBackend,
     CheckpointOptions,
     MigrateOptions,
+    ParallelResult,
+    ParallelTaskResult,
     SandboxProvider,
+    SpawnManyOptions,
+    SpawnManyTaskConfig,
     SpawnOptions,
+    TaskResult,
     parse_agent_id,
 )
 
@@ -147,3 +152,88 @@ class TestMigrateOptions:
     def test_invalid_provider(self):
         with pytest.raises(ValidationError):
             MigrateOptions(source="session_123", target_provider="invalid")  # type: ignore[arg-type]
+
+
+class TestSpawnManyOptions:
+    """Tests for SpawnManyOptions model."""
+
+    def test_minimal_options(self):
+        options = SpawnManyOptions(
+            tasks=[
+                SpawnManyTaskConfig(agent="claude/opus-4.5", prompt="Test 1"),
+                SpawnManyTaskConfig(agent="codex/gpt-5.4", prompt="Test 2"),
+            ]
+        )
+        assert len(options.tasks) == 2
+        assert options.concurrency is None
+        assert options.fail_fast is False
+        assert options.devsh_path == "devsh"
+
+    def test_full_options(self):
+        options = SpawnManyOptions(
+            tasks=[
+                SpawnManyTaskConfig(
+                    name="task-1",
+                    agent="claude/opus-4.5",
+                    prompt="Refactor auth",
+                    provider=SandboxProvider.MORPH,
+                    repo="owner/repo",
+                    branch="feature/test",
+                    timeout_ms=300000,
+                    env={"KEY": "value"},
+                ),
+            ],
+            concurrency=3,
+            fail_fast=True,
+            devsh_path="/custom/devsh",
+            api_base_url="https://api.example.com",
+            auth_token="token123",
+        )
+        assert options.tasks[0].name == "task-1"
+        assert options.concurrency == 3
+        assert options.fail_fast is True
+
+    def test_invalid_task_agent(self):
+        with pytest.raises(ValidationError):
+            SpawnManyOptions(
+                tasks=[
+                    SpawnManyTaskConfig(agent="invalid", prompt="Test"),
+                ]
+            )
+
+
+class TestParallelResult:
+    """Tests for ParallelResult model."""
+
+    def test_parallel_result(self):
+        task_result = TaskResult(
+            task_id="task_123",
+            exit_code=0,
+            stdout="output",
+            stderr="",
+            result="success",
+            duration_ms=1000,
+        )
+        result = ParallelResult(
+            results=[
+                ParallelTaskResult(
+                    name="task-1",
+                    task_id="task_123",
+                    status="completed",
+                    result=task_result,
+                ),
+                ParallelTaskResult(
+                    name="task-2",
+                    task_id="task_456",
+                    status="failed",
+                    error="Something went wrong",
+                ),
+            ],
+            succeeded=1,
+            failed=1,
+            total_duration_ms=2000,
+        )
+        assert result.succeeded == 1
+        assert result.failed == 1
+        assert result.results[0].status == "completed"
+        assert result.results[1].error == "Something went wrong"

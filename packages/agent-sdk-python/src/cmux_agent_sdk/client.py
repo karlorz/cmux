@@ -11,6 +11,7 @@ from cmux_agent_sdk.executor import (
     execute_agent,
     execute_checkpoint,
     execute_migrate,
+    execute_parallel,
     execute_resume,
 )
 from cmux_agent_sdk.types import (
@@ -19,9 +20,12 @@ from cmux_agent_sdk.types import (
     CheckpointRef,
     DoneEvent,
     MigrateOptions,
+    ParallelResult,
     ResumeOptions,
     SandboxProvider,
     SpawnEvent,
+    SpawnManyOptions,
+    SpawnManyTaskConfig,
     SpawnOptions,
     TaskHandle,
     TaskResult,
@@ -311,6 +315,43 @@ class CmuxClient:
     def get_providers(self) -> list[SandboxProvider]:
         """List available providers."""
         return list(SandboxProvider)
+
+    async def spawn_many(
+        self,
+        tasks: list[SpawnManyTaskConfig],
+        **kwargs: object,
+    ) -> ParallelResult:
+        """Spawn multiple agents in parallel with concurrency control.
+
+        Args:
+            tasks: List of task configurations
+            **kwargs: Additional options (concurrency, fail_fast, devsh_path, etc.)
+
+        Returns:
+            ParallelResult with all task results
+
+        Example:
+            >>> from cmux_agent_sdk import SpawnManyTaskConfig
+            >>> results = await client.spawn_many(
+            ...     tasks=[
+            ...         SpawnManyTaskConfig(agent="claude/opus-4.5", prompt="Refactor auth"),
+            ...         SpawnManyTaskConfig(agent="codex/gpt-5.4", prompt="Add tests"),
+            ...         SpawnManyTaskConfig(agent="gemini/2.5-pro", prompt="Update docs"),
+            ...     ],
+            ...     concurrency=2,  # Max 2 agents at once
+            ...     fail_fast=False,  # Continue even if one fails
+            ... )
+            >>> print(f"Succeeded: {results.succeeded}, Failed: {results.failed}")
+        """
+        options = SpawnManyOptions(
+            tasks=tasks,
+            devsh_path=kwargs.get("devsh_path", self.devsh_path),  # type: ignore[arg-type]
+            api_base_url=kwargs.get("api_base_url", self.api_base_url),  # type: ignore[arg-type]
+            auth_token=kwargs.get("auth_token", self.auth_token),  # type: ignore[arg-type]
+            **{k: v for k, v in kwargs.items() if k not in ("devsh_path", "api_base_url", "auth_token")},  # type: ignore[arg-type]
+        )
+
+        return await execute_parallel(options)
 
 
 def create_client(
