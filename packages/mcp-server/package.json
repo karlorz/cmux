@@ -1,0 +1,47 @@
+{
+  "name": "@cmux/mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server exposing cmux agent orchestration tools to Claude Code",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "cmux-mcp-server": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts src/cli.ts --format esm --dts",
+    "dev": "tsup src/index.ts src/cli.ts --format esm --dts --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "execa": "^9.5.2",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "tsup": "^8.5.1",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  },
+  "author": "cmux <dev@cmux.sh>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/karlorz/cmux.git",
+    "directory": "packages/mcp-server"
+  },
+  "keywords": [
+    "cmux",
+    "mcp",
+    "model-context-protocol",
+    "claude-code",
+    "agent",
+    "orchestration"
+  ]
+}
