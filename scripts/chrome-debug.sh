@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Start Chrome with remote debugging in detached mode.
-# Usage: ./scripts/chrome-debug.sh [--dry-run] [--print-config] [--json] [--check-port] [--explain] [URL]
+# Usage: ./scripts/chrome-debug.sh [--dry-run] [--print-config] [--json] [--check-port] [--explain] [--launch-and-explain] [URL]
 set -euo pipefail
 
 DEBUG_PORT="${CHROME_DEBUG_PORT:-9222}"
@@ -9,6 +9,7 @@ PRINT_CONFIG=0
 JSON_OUTPUT=0
 CHECK_PORT_ONLY=0
 EXPLAIN_ONLY=0
+LAUNCH_AND_EXPLAIN=0
 TARGET_URL="${CHROME_DEBUG_URL:-about:blank}"
 TARGET_URL_SET=0
 
@@ -50,6 +51,8 @@ Options:
   --json          Emit the resolved launch configuration as JSON
   --check-port    Report whether the debug port is free or already in use
   --explain       Print a short diagnosis and suggested next action without launching Chrome
+  --launch-and-explain
+                   Print the diagnosis first, then continue with the normal launch flow
   -h, --help      Show this help message
 EOF
 }
@@ -398,6 +401,9 @@ while [[ $# -gt 0 ]]; do
     --explain)
       EXPLAIN_ONLY=1
       ;;
+    --launch-and-explain)
+      LAUNCH_AND_EXPLAIN=1
+      ;;
     -h|--help)
       print_usage
       exit 0
@@ -450,6 +456,10 @@ fi
 if [[ "${EXPLAIN_ONLY}" == "1" ]]; then
   emit_explanation "${CHROME_BIN}"
   exit 0
+fi
+
+if [[ "${LAUNCH_AND_EXPLAIN}" == "1" ]]; then
+  emit_explanation "${CHROME_BIN}"
 fi
 
 if [[ "${PRINT_CONFIG}" == "1" || "${DRY_RUN}" == "1" ]]; then
