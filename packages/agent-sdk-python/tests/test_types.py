@@ -6,7 +6,10 @@ from pydantic import ValidationError
 from cmux_agent_sdk.types import (
     AgentBackend,
     CheckpointOptions,
+    CostBreakdown,
     MigrateOptions,
+    ModelPricing,
+    MODEL_PRICING,
     ParallelResult,
     ParallelTaskResult,
     SandboxProvider,
@@ -14,6 +17,10 @@ from cmux_agent_sdk.types import (
     SpawnManyTaskConfig,
     SpawnOptions,
     TaskResult,
+    TokenUsage,
+    UsageStats,
+    calculate_cost,
+    get_model_pricing,
     parse_agent_id,
 )
 
@@ -237,3 +244,117 @@ class TestParallelResult:
         assert result.failed == 1
         assert result.results[0].status == "completed"
         assert result.results[1].error == "Something went wrong"
+
+
+class TestCostTracking:
+    """Tests for cost tracking types and functions."""
+
+    def test_token_usage(self):
+        usage = TokenUsage(
+            input_tokens=1000,
+            output_tokens=500,
+            total_tokens=1500,
+        )
+        assert usage.input_tokens == 1000
+        assert usage.output_tokens == 500
+        assert usage.total_tokens == 1500
+        assert usage.cache_read_tokens is None
+
+    def test_token_usage_with_cache(self):
+        usage = TokenUsage(
+            input_tokens=1000,
+            output_tokens=500,
+            cache_read_tokens=200,
+            cache_write_tokens=100,
+            total_tokens=1500,
+        )
+        assert usage.cache_read_tokens == 200
+        assert usage.cache_write_tokens == 100
+
+    def test_cost_breakdown(self):
+        cost = CostBreakdown(
+            input_cost=0.015,
+            output_cost=0.0375,
+            total_cost=0.0525,
+        )
+        assert cost.input_cost == 0.015
+        assert cost.output_cost == 0.0375
+        assert cost.total_cost == 0.0525
+        assert cost.currency == "USD"
+
+    def test_calculate_cost(self):
+        tokens = TokenUsage(
+            input_tokens=1_000_000,
+            output_tokens=500_000,
+            total_tokens=1_500_000,
+        )
+        pricing = ModelPricing(
+            input_per_million=15.0,
+            output_per_million=75.0,
+        )
+        cost = calculate_cost(tokens, pricing)
+        assert cost.input_cost == 15.0  # 1M tokens * $15/M
+        assert cost.output_cost == 37.5  # 0.5M tokens * $75/M
+        assert cost.total_cost == 52.5
+        assert cost.cache_cost is None
+
+    def test_calculate_cost_with_cache(self):
+        tokens = TokenUsage(
+            input_tokens=1_000_000,
+            output_tokens=500_000,
+            cache_read_tokens=200_000,
+            cache_write_tokens=100_000,
+            total_tokens=1_500_000,
+        )
+        pricing = ModelPricing(
+            input_per_million=15.0,
+            output_per_million=75.0,
+            cache_read_per_million=1.5,
+            cache_write_per_million=18.75,
+        )
+        cost = calculate_cost(tokens, pricing)
+        assert cost.input_cost == 15.0
+        assert cost.output_cost == 37.5
+        # 0.2M * $1.5 + 0.1M * $18.75 = 0.3 + 1.875 = 2.175
+        assert cost.cache_cost == pytest.approx(2.175)
+        assert cost.total_cost == pytest.approx(54.675)
+
+    def test_get_model_pricing_exact_match(self):
+        pricing = get_model_pricing("claude-opus-4-6")
+        assert pricing is not None
+        assert pricing.input_per_million == 15
+        assert pricing.output_per_million == 75
+
+    def test_get_model_pricing_partial_match(self):
+        pricing = get_model_pricing("opus-4-6")
+        assert pricing is not None
+        assert pricing.input_per_million == 15
+
+    def test_get_model_pricing_not_found(self):
+        pricing = get_model_pricing("unknown-model")
+        assert pricing is None
+
+    def test_model_pricing_dict(self):
+        assert "claude-opus-4-6" in MODEL_PRICING
+        assert "gpt-5.4" in MODEL_PRICING
+        assert "2.5-pro" in MODEL_PRICING
+
+    def test_usage_stats(self):
+        tokens = TokenUsage(
+            input_tokens=1000,
+            output_tokens=500,
+            total_tokens=1500,
+        )
+        usage = UsageStats(
+            tokens=tokens,
+            api_requests=3,
+            tool_calls=5,
+            duration_ms=10000,
+            model="claude-opus-4-6",
+            backend=AgentBackend.CLAUDE,
+        )
+        assert usage.tokens.total_tokens == 1500
+        assert usage.api_requests == 3
+        assert usage.tool_calls == 5
+        assert usage.model == "claude-opus-4-6"
+        assert usage.backend == AgentBackend.CLAUDE

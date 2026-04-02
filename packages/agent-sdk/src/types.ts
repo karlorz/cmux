@@ -143,6 +143,8 @@ export interface TaskResult {
   sessionId?: string;
   /** Checkpoint reference (if checkpointing enabled) */
   checkpointRef?: string;
+  /** Usage statistics (tokens, cost, etc.) */
+  usage?: UsageStats;
 }
 
 /**
@@ -291,4 +293,136 @@ export interface ParallelResult {
   failed: number;
   /** Total duration in milliseconds */
   totalDurationMs: number;
+}
+
+/**
+ * Token usage statistics from an agent execution
+ */
+export interface TokenUsage {
+  /** Input/prompt tokens */
+  inputTokens: number;
+  /** Output/completion tokens */
+  outputTokens: number;
+  /** Cache read tokens (if applicable) */
+  cacheReadTokens?: number;
+  /** Cache write tokens (if applicable) */
+  cacheWriteTokens?: number;
+  /** Total tokens (input + output) */
+  totalTokens: number;
+}
+
+/**
+ * Cost breakdown for an agent execution
+ */
+export interface CostBreakdown {
+  /** Input token cost in USD */
+  inputCost: number;
+  /** Output token cost in USD */
+  outputCost: number;
+  /** Cache cost in USD (if applicable) */
+  cacheCost?: number;
+  /** Total cost in USD */
+  totalCost: number;
+  /** Cost currency (always USD) */
+  currency: "USD";
+}
+
+/**
+ * Usage statistics for an agent execution
+ */
+export interface UsageStats {
+  /** Token usage breakdown */
+  tokens: TokenUsage;
+  /** Cost breakdown (if pricing available) */
+  cost?: CostBreakdown;
+  /** Number of API requests made */
+  apiRequests: number;
+  /** Number of tool calls */
+  toolCalls: number;
+  /** Execution duration in milliseconds */
+  durationMs: number;
+  /** Model used for execution */
+  model: string;
+  /** Agent backend */
+  backend: AgentBackend;
+}
+
+/**
+ * Pricing per million tokens for a model
+ */
+export interface ModelPricing {
+  /** Input token price per million */
+  inputPerMillion: number;
+  /** Output token price per million */
+  outputPerMillion: number;
+  /** Cache read price per million (if applicable) */
+  cacheReadPerMillion?: number;
+  /** Cache write price per million (if applicable) */
+  cacheWritePerMillion?: number;
+}
+
+/**
+ * Known model pricing (as of 2026-04)
+ * Prices in USD per million tokens
+ */
+export const MODEL_PRICING: Record<string, ModelPricing> = {
+  // Claude models
+  "claude-opus-4-6": { inputPerMillion: 15, outputPerMillion: 75, cacheReadPerMillion: 1.5, cacheWritePerMillion: 18.75 },
+  "claude-opus-4-5-20251101": { inputPerMillion: 15, outputPerMillion: 75, cacheReadPerMillion: 1.5, cacheWritePerMillion: 18.75 },
+  "claude-sonnet-4-6": { inputPerMillion: 3, outputPerMillion: 15, cacheReadPerMillion: 0.3, cacheWritePerMillion: 3.75 },
+  "claude-sonnet-4-5-20250929": { inputPerMillion: 3, outputPerMillion: 15, cacheReadPerMillion: 0.3, cacheWritePerMillion: 3.75 },
+  "claude-haiku-4-5-20251001": { inputPerMillion: 0.8, outputPerMillion: 4, cacheReadPerMillion: 0.08, cacheWritePerMillion: 1 },
+  // Codex/OpenAI models (approximate)
+  "gpt-5.4": { inputPerMillion: 10, outputPerMillion: 30 },
+  "gpt-5.4-xhigh": { inputPerMillion: 10, outputPerMillion: 30 },
+  "gpt-5.1-codex": { inputPerMillion: 2.5, outputPerMillion: 10 },
+  "gpt-5.1-codex-mini": { inputPerMillion: 0.15, outputPerMillion: 0.6 },
+  // Gemini models (approximate)
+  "2.5-pro": { inputPerMillion: 1.25, outputPerMillion: 5 },
+  "2.5-flash": { inputPerMillion: 0.075, outputPerMillion: 0.3 },
+};
+
+/**
+ * Calculate cost from token usage and pricing
+ */
+export function calculateCost(tokens: TokenUsage, pricing: ModelPricing): CostBreakdown {
+  const inputCost = (tokens.inputTokens / 1_000_000) * pricing.inputPerMillion;
+  const outputCost = (tokens.outputTokens / 1_000_000) * pricing.outputPerMillion;
+
+  let cacheCost: number | undefined;
+  if (pricing.cacheReadPerMillion && tokens.cacheReadTokens) {
+    cacheCost = (tokens.cacheReadTokens / 1_000_000) * pricing.cacheReadPerMillion;
+  }
+  if (pricing.cacheWritePerMillion && tokens.cacheWriteTokens) {
+    cacheCost = (cacheCost ?? 0) + (tokens.cacheWriteTokens / 1_000_000) * pricing.cacheWritePerMillion;
+  }
+
+  return {
+    inputCost,
+    outputCost,
+    cacheCost,
+    totalCost: inputCost + outputCost + (cacheCost ?? 0),
+    currency: "USD",
+  };
+}
+
+/**
+ * Get pricing for a model, returns undefined if not found
+ */
+export function getModelPricing(model: string): ModelPricing | undefined {
+  // Try exact match first
+  if (MODEL_PRICING[model]) {
+    return MODEL_PRICING[model];
+  }
+
+  // Try partial match (e.g., "opus-4.5" matches "claude-opus-4-5-20251101")
+  const normalizedModel = model.toLowerCase().replace(/[.-]/g, "");
+  for (const [key, pricing] of Object.entries(MODEL_PRICING)) {
+    const normalizedKey = key.toLowerCase().replace(/[.-]/g, "");
+    if (normalizedKey.includes(normalizedModel) || normalizedModel.includes(normalizedKey)) {
+      return pricing;
+    }
+  }
+
+  return undefined;
 }

@@ -77,6 +77,10 @@ export {
   type SpawnManyOptions,
   type SpawnManyOptionsInput,
   type ParallelResult,
+  type TokenUsage,
+  type CostBreakdown,
+  type UsageStats,
+  type ModelPricing,
   AgentBackendSchema,
   AgentIdSchema,
   SandboxProviderSchema,
@@ -86,7 +90,10 @@ export {
   CheckpointOptionsSchema,
   MigrateOptionsSchema,
   SpawnManyOptionsSchema,
+  MODEL_PRICING,
   parseAgentId,
+  calculateCost,
+  getModelPricing,
 } from "./types.js";
 
 // Client
