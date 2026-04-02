@@ -7,4 +7,17 @@ notify = [
   "echo \"$1\" | jq -r '.[\"last-assistant-message\"] // \"Awaiting input\"' | xargs -I{} cmux-bridge notify \"Codex: {}\"",
   "--",
 ]
+
+# Sandbox mode controls Codex CLI's internal bubblewrap sandboxing.
+# Options:
+#   - "danger-full-access" (default): Trusts outer LXC/container for isolation, no internal sandbox
+#   - "workspace-write": Enables bubblewrap sandboxing with workspace write access
+#                        Requires kernel.unprivileged_userns_clone=1 inside the container
+#   - "off": No file system protection at all
+#
+# To enable bubblewrap inside PVE-LXC containers, the template needs:
+# 1. lxc.apparmor.profile: unconfined (already configured in pve-lxc-setup.sh)
+# 2. kernel.unprivileged_userns_clone = 1 (sysctl inside container)
+#
+# Override at runtime via CODEX_SANDBOX_MODE environment variable.
 sandbox_mode = "danger-full-access"

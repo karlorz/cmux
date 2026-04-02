@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"reflect"
 	"testing"
 )
@@ -90,6 +91,29 @@ func TestBuildLocalCommandArgs(t *testing.T) {
 			"danger-full-access",
 			"-c",
 			`model_reasoning_effort="xhigh"`,
+			"fix bug",
+		}
+		if !reflect.DeepEqual(args, want) {
+			t.Fatalf("got %#v, want %#v", args, want)
+		}
+	})
+
+	t.Run("builds Codex args with CODEX_SANDBOX_MODE override", func(t *testing.T) {
+		os.Setenv("CODEX_SANDBOX_MODE", "workspace-write")
+		defer os.Unsetenv("CODEX_SANDBOX_MODE")
+
+		selection := localAgentSelection{
+			AgentName:  "codex/gpt-5.4",
+			Provider:   "codex",
+			CodexModel: "gpt-5.4",
+		}
+
+		args := buildLocalCodexArgs(selection, "fix bug")
+		want := []string{
+			"--model",
+			"gpt-5.4",
+			"--sandbox",
+			"workspace-write",
 			"fix bug",
 		}
 		if !reflect.DeepEqual(args, want) {

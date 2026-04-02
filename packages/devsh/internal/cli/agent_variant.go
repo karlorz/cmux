@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"strings"
 )
 
@@ -179,7 +180,14 @@ func buildLocalClaudeArgs(selection localAgentSelection, prompt string, modelOve
 }
 
 func buildLocalCodexArgs(selection localAgentSelection, prompt string) []string {
-	args := []string{"--model", selection.CodexModel, "--sandbox", "danger-full-access"}
+	// Allow override via CODEX_SANDBOX_MODE env var, default to danger-full-access
+	// Options: danger-full-access (default), workspace-write, off
+	// workspace-write requires bubblewrap support in the container (kernel.unprivileged_userns_clone=1)
+	sandboxMode := os.Getenv("CODEX_SANDBOX_MODE")
+	if sandboxMode == "" {
+		sandboxMode = "danger-full-access"
+	}
+	args := []string{"--model", selection.CodexModel, "--sandbox", sandboxMode}
 	if selection.SelectedVariant != "" {
 		args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=\"%s\"", selection.SelectedVariant))
 	}
