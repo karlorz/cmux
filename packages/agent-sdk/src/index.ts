@@ -70,12 +70,18 @@ export {
   type ResumeOptions,
   type ResumeOptionsInput,
   type CheckpointRef,
+  type CheckpointOptions,
+  type CheckpointOptionsInput,
+  type MigrateOptions,
+  type MigrateOptionsInput,
   AgentBackendSchema,
   AgentIdSchema,
   SandboxProviderSchema,
   SandboxConfigSchema,
   SpawnOptionsSchema,
   ResumeOptionsSchema,
+  CheckpointOptionsSchema,
+  MigrateOptionsSchema,
   parseAgentId,
 } from "./types.js";
 
@@ -89,11 +95,13 @@ export {
   checkDevshAvailable,
   getSupportedProviders,
   getSupportedBackends,
+  executeCheckpoint,
+  executeMigrate,
 } from "./executor.js";
 
 // Convenience functions that use default client
 import { CmuxClient } from "./client.js";
-import type { SpawnOptionsInput, TaskHandle, TaskResult, UnifiedEvent, ResumeOptionsInput } from "./types.js";
+import type { SpawnOptionsInput, TaskHandle, TaskResult, UnifiedEvent, ResumeOptionsInput, CheckpointOptionsInput, CheckpointRef, MigrateOptionsInput } from "./types.js";
 
 let defaultClient: CmuxClient | null = null;
 
@@ -125,4 +133,18 @@ export async function* stream(
  */
 export async function resume(options: ResumeOptionsInput): Promise<TaskResult> {
   return getDefaultClient().resume(options);
+}
+
+/**
+ * Create a checkpoint (uses default client)
+ */
+export async function checkpoint(options: CheckpointOptionsInput): Promise<CheckpointRef | null> {
+  return getDefaultClient().checkpoint(options);
+}
+
+/**
+ * Migrate a session to a different provider (uses default client)
+ */
+export async function migrate(options: MigrateOptionsInput): Promise<TaskResult> {
+  return getDefaultClient().migrate(options);
 }

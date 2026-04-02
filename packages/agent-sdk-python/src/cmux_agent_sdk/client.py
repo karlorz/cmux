@@ -6,11 +6,21 @@ import time
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 
-from cmux_agent_sdk.executor import check_devsh_available, execute_agent, execute_resume
+from cmux_agent_sdk.executor import (
+    check_devsh_available,
+    execute_agent,
+    execute_checkpoint,
+    execute_migrate,
+    execute_resume,
+)
 from cmux_agent_sdk.types import (
     CheckpointEvent,
+    CheckpointOptions,
+    CheckpointRef,
     DoneEvent,
+    MigrateOptions,
     ResumeOptions,
+    SandboxProvider,
     SpawnEvent,
     SpawnOptions,
     TaskHandle,
@@ -226,6 +236,81 @@ class CmuxClient:
             "version": result.version,
             "error": result.error,
         }
+
+    async def checkpoint(
+        self,
+        task_id: str,
+        **kwargs: object,
+    ) -> CheckpointRef | None:
+        """Create a checkpoint for a task.
+
+        Checkpoints capture session state and can be used to:
+        - Resume the session later
+        - Migrate the session to a different provider
+
+        Args:
+            task_id: Task ID to checkpoint
+            **kwargs: Additional options (label, devsh_path)
+
+        Returns:
+            CheckpointRef if successful, None otherwise
+
+        Example:
+            >>> checkpoint = await client.checkpoint(task.id)
+            >>> if checkpoint:
+            ...     print(f"Checkpoint created: {checkpoint.id}")
+        """
+        options = CheckpointOptions(
+            task_id=task_id,
+            devsh_path=kwargs.get("devsh_path", self.devsh_path),  # type: ignore[arg-type]
+            **{k: v for k, v in kwargs.items() if k != "devsh_path"},  # type: ignore[arg-type]
+        )
+
+        return await execute_checkpoint(options)
+
+    async def migrate(
+        self,
+        source: str,
+        target_provider: SandboxProvider | str,
+        **kwargs: object,
+    ) -> TaskResult:
+        """Migrate a session to a different provider.
+
+        This allows moving a running or checkpointed session from one
+        sandbox provider to another (e.g., from pve-lxc to morph).
+
+        Args:
+            source: Session ID or checkpoint reference to migrate from
+            target_provider: Target provider to migrate to
+            **kwargs: Additional options (repo, branch, message)
+
+        Returns:
+            TaskResult with execution details
+
+        Example:
+            >>> result = await client.migrate(
+            ...     source=task.session_id,
+            ...     target_provider="morph",
+            ...     message="Continue the work",
+            ... )
+        """
+        if isinstance(target_provider, str):
+            target_provider = SandboxProvider(target_provider)
+
+        options = MigrateOptions(
+            source=source,
+            target_provider=target_provider,
+            devsh_path=kwargs.get("devsh_path", self.devsh_path),  # type: ignore[arg-type]
+            api_base_url=kwargs.get("api_base_url", self.api_base_url),  # type: ignore[arg-type]
+            auth_token=kwargs.get("auth_token", self.auth_token),  # type: ignore[arg-type]
+            **{k: v for k, v in kwargs.items() if k not in ("devsh_path", "api_base_url", "auth_token")},  # type: ignore[arg-type]
+        )
+
+        return await execute_migrate(options)
+
+    def get_providers(self) -> list[SandboxProvider]:
+        """List available providers."""
+        return list(SandboxProvider)
 
 
 def create_client(

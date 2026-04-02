@@ -7,6 +7,9 @@ import time
 from typing import NamedTuple
 
 from cmux_agent_sdk.types import (
+    CheckpointOptions,
+    CheckpointRef,
+    MigrateOptions,
     ResumeOptions,
     SandboxProvider,
     SpawnOptions,
@@ -233,3 +236,134 @@ def get_supported_providers() -> list[SandboxProvider]:
 def get_supported_backends() -> list[str]:
     """Get list of supported agent backends."""
     return ["claude", "codex", "gemini", "amp", "opencode"]
+
+
+async def execute_checkpoint(options: CheckpointOptions) -> CheckpointRef | None:
+    """Create a checkpoint for a running or completed task.
+
+    Args:
+        options: Checkpoint options
+
+    Returns:
+        CheckpointRef if successful, None otherwise
+    """
+    args = [options.devsh_path, "orchestrate", "checkpoint", "--json"]
+    args.extend(["--task-id", options.task_id])
+
+    if options.label:
+        args.extend(["--label", options.label])
+
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=30.0)
+        stdout_str = stdout.decode("utf-8", errors="replace")
+
+        try:
+            from datetime import timezone
+
+            output = json.loads(stdout_str)
+            created_at_str = output.get("createdAt")
+            created_at = (
+                datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+                if created_at_str
+                else datetime.now(timezone.utc)
+            )
+            return CheckpointRef(
+                id=output.get("checkpointId", output.get("id", "unknown")),
+                task_id=options.task_id,
+                agent=output.get("agent", "unknown/unknown"),
+                source_provider=SandboxProvider(output.get("provider", "local")),
+                session_id=output.get("sessionId", ""),
+                created_at=created_at,
+                resumable=output.get("resumable", True),
+                data=output.get("data"),
+            )
+        except (json.JSONDecodeError, ValueError):
+            return None
+    except Exception:
+        return None
+
+
+async def execute_migrate(options: MigrateOptions) -> TaskResult:
+    """Migrate a session to a different provider.
+
+    Args:
+        options: Migration options
+
+    Returns:
+        TaskResult with execution details
+    """
+    start_time = time.time()
+
+    args = [options.devsh_path, "orchestrate", "migrate", "--json"]
+    args.extend(["--source", options.source])
+    args.extend(["--target-provider", options.target_provider.value])
+
+    if options.repo:
+        args.extend(["--repo", options.repo])
+
+    if options.branch:
+        args.extend(["--branch", options.branch])
+
+    if options.message:
+        args.extend(["--", options.message])
+
+    env = os.environ.copy()
+    if options.api_base_url:
+        env["CMUX_API_BASE_URL"] = options.api_base_url
+    if options.auth_token:
+        env["CMUX_AUTH_TOKEN"] = options.auth_token
+
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *args,
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(),
+            timeout=300.0,
+        )
+
+        duration_ms = int((time.time() - start_time) * 1000)
+        stdout_str = stdout.decode("utf-8", errors="replace")
+        stderr_str = stderr.decode("utf-8", errors="replace")
+
+        try:
+            output = json.loads(stdout_str)
+            return TaskResult(
+                task_id=output.get("taskId", "migrated"),
+                exit_code=output.get("exitCode", process.returncode or 0),
+                stdout=output.get("stdout", stdout_str),
+                stderr=output.get("stderr", stderr_str),
+                result=output.get("result", output.get("stdout", "")),
+                duration_ms=duration_ms,
+                session_id=output.get("sessionId"),
+                checkpoint_ref=output.get("checkpointRef"),
+            )
+        except json.JSONDecodeError:
+            return TaskResult(
+                task_id="migrated",
+                exit_code=process.returncode or 0,
+                stdout=stdout_str,
+                stderr=stderr_str,
+                result=stdout_str,
+                duration_ms=duration_ms,
+            )
+
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        return TaskResult(
+            task_id="error",
+            exit_code=1,
+            stdout="",
+            stderr=str(e),
+            result="",
+            duration_ms=duration_ms,
+        )

@@ -4,6 +4,9 @@ import type {
   TaskResult,
   SandboxProvider,
   ResumeOptions,
+  CheckpointOptions,
+  CheckpointRef,
+  MigrateOptions,
 } from "./types.js";
 
 /**
@@ -197,4 +200,120 @@ export function getSupportedProviders(): SandboxProvider[] {
  */
 export function getSupportedBackends(): string[] {
   return ["claude", "codex", "gemini", "amp", "opencode"];
+}
+
+/**
+ * Create a checkpoint for a running or completed task
+ */
+export async function executeCheckpoint(
+  options: CheckpointOptions
+): Promise<CheckpointRef | null> {
+  const args = ["orchestrate", "checkpoint", "--json"];
+  args.push("--task-id", options.taskId);
+
+  if (options.label) {
+    args.push("--label", options.label);
+  }
+
+  try {
+    const result = await execa(options.devshPath, args, { timeout: 30000 });
+
+    try {
+      const output = JSON.parse(result.stdout);
+      return {
+        id: output.checkpointId ?? output.id,
+        taskId: options.taskId,
+        agent: output.agent ?? "unknown/unknown",
+        sourceProvider: output.provider ?? "local",
+        sessionId: output.sessionId,
+        createdAt: new Date(output.createdAt ?? Date.now()),
+        resumable: output.resumable ?? true,
+        data: output.data,
+      };
+    } catch {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Migrate a session to a different provider
+ */
+export async function executeMigrate(
+  options: MigrateOptions
+): Promise<TaskResult> {
+  const args = ["orchestrate", "migrate", "--json"];
+
+  args.push("--source", options.source);
+  args.push("--target-provider", options.targetProvider);
+
+  if (options.repo) {
+    args.push("--repo", options.repo);
+  }
+
+  if (options.branch) {
+    args.push("--branch", options.branch);
+  }
+
+  if (options.message) {
+    args.push("--", options.message);
+  }
+
+  // Build environment
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined) {
+      env[key] = value;
+    }
+  }
+  if (options.apiBaseUrl) {
+    env.CMUX_API_BASE_URL = options.apiBaseUrl;
+  }
+  if (options.authToken) {
+    env.CMUX_AUTH_TOKEN = options.authToken;
+  }
+
+  const startTime = Date.now();
+
+  try {
+    const result = await execa(options.devshPath, args, { env, timeout: 300000 });
+    const durationMs = Date.now() - startTime;
+
+    try {
+      const output = JSON.parse(result.stdout);
+      return {
+        taskId: output.taskId ?? "migrated",
+        exitCode: output.exitCode ?? 0,
+        stdout: output.stdout ?? result.stdout,
+        stderr: output.stderr ?? result.stderr,
+        result: output.result ?? output.stdout ?? "",
+        durationMs,
+        sessionId: output.sessionId,
+        checkpointRef: output.checkpointRef,
+      };
+    } catch {
+      return {
+        taskId: "migrated",
+        exitCode: result.exitCode ?? 0,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        result: result.stdout,
+        durationMs,
+      };
+    }
+  } catch (error) {
+    const durationMs = Date.now() - startTime;
+    const err = error as Error & { exitCode?: number };
+
+    return {
+      taskId: "error",
+      exitCode: err.exitCode ?? 1,
+      stdout: "",
+      stderr: err.message ?? String(error),
+      result: "",
+      durationMs,
+    };
+  }
 }

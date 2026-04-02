@@ -182,6 +182,12 @@ export interface CheckpointRef {
   id: string;
   /** Task ID this checkpoint belongs to */
   taskId: string;
+  /** Agent that created this checkpoint */
+  agent: AgentId;
+  /** Provider where checkpoint was created */
+  sourceProvider: SandboxProvider;
+  /** Session ID for resumption */
+  sessionId: string;
   /** Timestamp when checkpoint was created */
   createdAt: Date;
   /** Whether this checkpoint can be resumed */
@@ -189,3 +195,41 @@ export interface CheckpointRef {
   /** Provider-specific checkpoint data */
   data?: Record<string, unknown>;
 }
+
+/**
+ * Options for creating a checkpoint
+ */
+export const CheckpointOptionsSchema = z.object({
+  /** Task ID to checkpoint */
+  taskId: z.string(),
+  /** Optional label for the checkpoint */
+  label: z.string().optional(),
+  /** devsh CLI path */
+  devshPath: z.string().default("devsh"),
+});
+export type CheckpointOptions = z.infer<typeof CheckpointOptionsSchema>;
+export type CheckpointOptionsInput = z.input<typeof CheckpointOptionsSchema>;
+
+/**
+ * Options for migrating a session to a different provider
+ */
+export const MigrateOptionsSchema = z.object({
+  /** Checkpoint reference or session ID to migrate from */
+  source: z.string(),
+  /** Target provider to migrate to */
+  targetProvider: SandboxProviderSchema,
+  /** Optional: new repo (if different from source) */
+  repo: z.string().optional(),
+  /** Optional: new branch */
+  branch: z.string().optional(),
+  /** Optional: continuation message */
+  message: z.string().optional(),
+  /** devsh CLI path */
+  devshPath: z.string().default("devsh"),
+  /** cmux API base URL */
+  apiBaseUrl: z.string().optional(),
+  /** cmux authentication token */
+  authToken: z.string().optional(),
+});
+export type MigrateOptions = z.infer<typeof MigrateOptionsSchema>;
+export type MigrateOptionsInput = z.input<typeof MigrateOptionsSchema>;

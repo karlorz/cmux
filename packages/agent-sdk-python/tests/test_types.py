@@ -5,6 +5,8 @@ from pydantic import ValidationError
 
 from cmux_agent_sdk.types import (
     AgentBackend,
+    CheckpointOptions,
+    MigrateOptions,
     SandboxProvider,
     SpawnOptions,
     parse_agent_id,
@@ -102,3 +104,46 @@ class TestSpawnOptions:
     def test_invalid_agent_backend(self):
         with pytest.raises(ValidationError):
             SpawnOptions(agent="unknown/model", prompt="Test")
+
+
+class TestCheckpointOptions:
+    """Tests for CheckpointOptions model."""
+
+    def test_minimal_options(self):
+        options = CheckpointOptions(task_id="task_123")
+        assert options.task_id == "task_123"
+        assert options.devsh_path == "devsh"
+        assert options.label is None
+
+    def test_with_label(self):
+        options = CheckpointOptions(task_id="task_123", label="before-refactor")
+        assert options.label == "before-refactor"
+
+
+class TestMigrateOptions:
+    """Tests for MigrateOptions model."""
+
+    def test_minimal_options(self):
+        options = MigrateOptions(
+            source="session_abc123",
+            target_provider=SandboxProvider.MORPH,
+        )
+        assert options.source == "session_abc123"
+        assert options.target_provider == SandboxProvider.MORPH
+        assert options.devsh_path == "devsh"
+
+    def test_full_options(self):
+        options = MigrateOptions(
+            source="checkpoint_xyz",
+            target_provider=SandboxProvider.E2B,
+            repo="owner/repo",
+            branch="feature/test",
+            message="Continue the work",
+        )
+        assert options.repo == "owner/repo"
+        assert options.branch == "feature/test"
+        assert options.message == "Continue the work"
+
+    def test_invalid_provider(self):
+        with pytest.raises(ValidationError):
+            MigrateOptions(source="session_123", target_provider="invalid")  # type: ignore[arg-type]
