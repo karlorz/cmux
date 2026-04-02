@@ -5,7 +5,11 @@ import {
   SpawnOptionsSchema,
   CheckpointOptionsSchema,
   MigrateOptionsSchema,
+  SpawnManyOptionsSchema,
+  MODEL_PRICING,
   parseAgentId,
+  calculateCost,
+  getModelPricing,
 } from "./types.js";
 
 describe("AgentIdSchema", () => {
@@ -153,5 +157,157 @@ describe("MigrateOptionsSchema", () => {
         targetProvider: "invalid",
       })
     ).toThrow();
+  });
+});
+
+describe("SpawnManyOptionsSchema", () => {
+  it("should accept valid parallel spawn options", () => {
+    const result = SpawnManyOptionsSchema.parse({
+      tasks: [
+        { agent: "claude/opus-4.5", prompt: "Task 1" },
+        { agent: "codex/gpt-5.4", prompt: "Task 2" },
+      ],
+    });
+
+    expect(result.tasks).toHaveLength(2);
+    expect(result.failFast).toBe(false);
+    expect(result.devshPath).toBe("devsh");
+  });
+
+  it("should apply defaults to task items", () => {
+    const result = SpawnManyOptionsSchema.parse({
+      tasks: [{ agent: "gemini/2.5-pro", prompt: "Test" }],
+    });
+
+    expect(result.tasks[0].provider).toBe("pve-lxc");
+    expect(result.tasks[0].branch).toBe("main");
+    expect(result.tasks[0].timeoutMs).toBe(600000);
+  });
+
+  it("should accept concurrency and failFast options", () => {
+    const result = SpawnManyOptionsSchema.parse({
+      tasks: [{ agent: "amp/claude-3.5", prompt: "Test" }],
+      concurrency: 3,
+      failFast: true,
+    });
+
+    expect(result.concurrency).toBe(3);
+    expect(result.failFast).toBe(true);
+  });
+
+  it("should accept optional task names", () => {
+    const result = SpawnManyOptionsSchema.parse({
+      tasks: [
+        { name: "auth-refactor", agent: "claude/opus-4.5", prompt: "Refactor auth" },
+        { agent: "codex/gpt-5.4", prompt: "Add tests" },
+      ],
+    });
+
+    expect(result.tasks[0].name).toBe("auth-refactor");
+    expect(result.tasks[1].name).toBeUndefined();
+  });
+});
+
+describe("MODEL_PRICING", () => {
+  it("should have pricing for Claude models", () => {
+    expect(MODEL_PRICING["claude-opus-4-6"]).toBeDefined();
+    expect(MODEL_PRICING["claude-opus-4-6"].inputPerMillion).toBe(15);
+    expect(MODEL_PRICING["claude-opus-4-6"].outputPerMillion).toBe(75);
+  });
+
+  it("should have pricing for Codex models", () => {
+    expect(MODEL_PRICING["gpt-5.4"]).toBeDefined();
+    expect(MODEL_PRICING["gpt-5.1-codex-mini"]).toBeDefined();
+  });
+
+  it("should have pricing for Gemini models", () => {
+    expect(MODEL_PRICING["2.5-pro"]).toBeDefined();
+    expect(MODEL_PRICING["2.5-flash"]).toBeDefined();
+  });
+
+  it("should include cache pricing for Claude models", () => {
+    const opus = MODEL_PRICING["claude-opus-4-6"];
+    expect(opus.cacheReadPerMillion).toBe(1.5);
+    expect(opus.cacheWritePerMillion).toBe(18.75);
+  });
+});
+
+describe("calculateCost", () => {
+  it("should calculate basic input/output costs", () => {
+    const tokens = {
+      inputTokens: 1000000,
+      outputTokens: 500000,
+      totalTokens: 1500000,
+    };
+    const pricing = { inputPerMillion: 10, outputPerMillion: 30 };
+
+    const cost = calculateCost(tokens, pricing);
+
+    expect(cost.inputCost).toBe(10);
+    expect(cost.outputCost).toBe(15);
+    expect(cost.totalCost).toBe(25);
+    expect(cost.currency).toBe("USD");
+  });
+
+  it("should include cache costs when applicable", () => {
+    const tokens = {
+      inputTokens: 100000,
+      outputTokens: 50000,
+      cacheReadTokens: 200000,
+      cacheWriteTokens: 100000,
+      totalTokens: 150000,
+    };
+    const pricing = {
+      inputPerMillion: 15,
+      outputPerMillion: 75,
+      cacheReadPerMillion: 1.5,
+      cacheWritePerMillion: 18.75,
+    };
+
+    const cost = calculateCost(tokens, pricing);
+
+    expect(cost.inputCost).toBeCloseTo(1.5);
+    expect(cost.outputCost).toBeCloseTo(3.75);
+    expect(cost.cacheCost).toBeCloseTo(0.3 + 1.875);
+    expect(cost.totalCost).toBeCloseTo(1.5 + 3.75 + 0.3 + 1.875);
+  });
+
+  it("should handle zero tokens", () => {
+    const tokens = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+    const pricing = { inputPerMillion: 15, outputPerMillion: 75 };
+
+    const cost = calculateCost(tokens, pricing);
+
+    expect(cost.totalCost).toBe(0);
+  });
+});
+
+describe("getModelPricing", () => {
+  it("should return pricing for exact model match", () => {
+    const pricing = getModelPricing("claude-opus-4-6");
+
+    expect(pricing).toBeDefined();
+    expect(pricing!.inputPerMillion).toBe(15);
+  });
+
+  it("should return pricing for partial model match", () => {
+    const pricing = getModelPricing("opus-4.5");
+
+    expect(pricing).toBeDefined();
+    expect(pricing!.inputPerMillion).toBe(15);
+  });
+
+  it("should return undefined for unknown models", () => {
+    const pricing = getModelPricing("unknown-model-xyz");
+
+    expect(pricing).toBeUndefined();
+  });
+
+  it("should normalize model names for matching", () => {
+    const pricing1 = getModelPricing("gpt-5.4");
+    const pricing2 = getModelPricing("gpt54");
+
+    expect(pricing1).toBeDefined();
+    expect(pricing2).toBeDefined();
   });
 });
