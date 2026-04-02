@@ -18,6 +18,22 @@ export const SpawnToolSchema = z.object({
   repo: z.string().optional().describe("GitHub repository in owner/repo format"),
   branch: z.string().optional().describe("Git branch to checkout"),
   timeoutMs: z.number().optional().describe("Timeout in milliseconds"),
+  // Claude Agent SDK specific options (only used for claude/* agents)
+  permissionMode: z
+    .enum(["default", "acceptEdits", "bypassPermissions", "plan", "delegate", "dontAsk"])
+    .optional()
+    .describe("Claude permission mode for tool use"),
+  settingSources: z
+    .array(z.enum(["user", "project", "local"]))
+    .optional()
+    .describe("Claude setting sources to load"),
+  systemPromptPreset: z
+    .enum(["claude_code", "minimal", "custom"])
+    .optional()
+    .describe("Claude system prompt preset"),
+  systemPrompt: z.string().optional().describe("Custom system prompt content for Claude agents"),
+  allowedTools: z.array(z.string()).optional().describe("List of allowed tools for Claude agents"),
+  disallowedTools: z.array(z.string()).optional().describe("List of disallowed tools for Claude agents"),
 });
 
 export const StatusToolSchema = z.object({

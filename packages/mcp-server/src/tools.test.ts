@@ -67,6 +67,43 @@ describe("SpawnToolSchema", () => {
       expect(result.provider).toBe(provider);
     }
   });
+
+  it("should accept Claude Agent SDK options", () => {
+    const input = {
+      agent: "claude/opus-4.5",
+      prompt: "Test",
+      permissionMode: "acceptEdits" as const,
+      settingSources: ["user", "project"] as const,
+      systemPromptPreset: "minimal" as const,
+      allowedTools: ["Read", "Write"],
+      disallowedTools: ["Bash"],
+    };
+    const result = SpawnToolSchema.parse(input);
+    expect(result.permissionMode).toBe("acceptEdits");
+    expect(result.settingSources).toEqual(["user", "project"]);
+    expect(result.systemPromptPreset).toBe("minimal");
+    expect(result.allowedTools).toEqual(["Read", "Write"]);
+    expect(result.disallowedTools).toEqual(["Bash"]);
+  });
+
+  it("should accept custom system prompt", () => {
+    const input = {
+      agent: "claude/opus-4.5",
+      prompt: "Test",
+      systemPrompt: "You are a helpful code reviewer.",
+    };
+    const result = SpawnToolSchema.parse(input);
+    expect(result.systemPrompt).toBe("You are a helpful code reviewer.");
+  });
+
+  it("should reject invalid permission mode", () => {
+    const input = {
+      agent: "claude/opus-4.5",
+      prompt: "Test",
+      permissionMode: "invalid",
+    };
+    expect(() => SpawnToolSchema.parse(input)).toThrow();
+  });
 });
 
 describe("StatusToolSchema", () => {

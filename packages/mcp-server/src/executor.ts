@@ -43,6 +43,28 @@ export class DevshExecutor {
       args.push("--timeout", `${Math.ceil(input.timeoutMs / 1000)}s`);
     }
 
+    // Claude Agent SDK specific options (only for claude/* agents)
+    if (input.agent.startsWith("claude/")) {
+      if (input.permissionMode) {
+        args.push("--permission-mode", input.permissionMode);
+      }
+      if (input.settingSources && input.settingSources.length > 0) {
+        args.push("--setting-sources", input.settingSources.join(","));
+      }
+      if (input.systemPromptPreset) {
+        args.push("--system-prompt-preset", input.systemPromptPreset);
+      }
+      if (input.systemPrompt) {
+        args.push("--system-prompt", input.systemPrompt);
+      }
+      if (input.allowedTools && input.allowedTools.length > 0) {
+        args.push("--allowed-tools", input.allowedTools.join(","));
+      }
+      if (input.disallowedTools && input.disallowedTools.length > 0) {
+        args.push("--disallowed-tools", input.disallowedTools.join(","));
+      }
+    }
+
     args.push("--", input.prompt);
 
     const result = await execa(this.devshPath, args, {
