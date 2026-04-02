@@ -4,10 +4,22 @@ import {
   type TaskResult,
   type UnifiedEvent,
   type ResumeOptionsInput,
+  type CheckpointOptionsInput,
+  type CheckpointRef,
+  type MigrateOptionsInput,
+  type SandboxProvider,
   SpawnOptionsSchema,
   ResumeOptionsSchema,
+  CheckpointOptionsSchema,
+  MigrateOptionsSchema,
 } from "./types.js";
-import { executeAgent, executeResume, checkDevshAvailable } from "./executor.js";
+import {
+  executeAgent,
+  executeResume,
+  checkDevshAvailable,
+  executeCheckpoint,
+  executeMigrate,
+} from "./executor.js";
 
 /**
  * cmux Unified Agent SDK Client
@@ -180,6 +192,64 @@ export class CmuxClient {
     error?: string;
   }> {
     return checkDevshAvailable(this.devshPath);
+  }
+
+  /**
+   * Create a checkpoint for a task
+   *
+   * Checkpoints capture session state and can be used to:
+   * - Resume the session later
+   * - Migrate the session to a different provider
+   *
+   * @example
+   * ```ts
+   * const checkpoint = await client.checkpoint({ taskId: task.id });
+   * if (checkpoint) {
+   *   console.log(`Checkpoint created: ${checkpoint.id}`);
+   * }
+   * ```
+   */
+  async checkpoint(options: CheckpointOptionsInput): Promise<CheckpointRef | null> {
+    const parsed = CheckpointOptionsSchema.parse({
+      ...options,
+      devshPath: options.devshPath ?? this.devshPath,
+    });
+
+    return executeCheckpoint(parsed);
+  }
+
+  /**
+   * Migrate a session to a different provider
+   *
+   * This allows moving a running or checkpointed session from one
+   * sandbox provider to another (e.g., from pve-lxc to morph).
+   *
+   * @example
+   * ```ts
+   * // Migrate from PVE-LXC to Morph
+   * const result = await client.migrate({
+   *   source: task.sessionId,
+   *   targetProvider: "morph",
+   *   message: "Continue the work",
+   * });
+   * ```
+   */
+  async migrate(options: MigrateOptionsInput): Promise<TaskResult> {
+    const parsed = MigrateOptionsSchema.parse({
+      ...options,
+      devshPath: options.devshPath ?? this.devshPath,
+      apiBaseUrl: options.apiBaseUrl ?? this.apiBaseUrl,
+      authToken: options.authToken ?? this.authToken,
+    });
+
+    return executeMigrate(parsed);
+  }
+
+  /**
+   * List available providers
+   */
+  getProviders(): SandboxProvider[] {
+    return ["pve-lxc", "morph", "e2b", "modal", "local"];
   }
 }
 

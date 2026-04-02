@@ -34,6 +34,8 @@ from cmux_agent_sdk.types import (
     SandboxConfig,
     SpawnOptions,
     ResumeOptions,
+    CheckpointOptions,
+    MigrateOptions,
     # Result types
     TaskHandle,
     TaskResult,
@@ -58,6 +60,8 @@ from cmux_agent_sdk.client import (
 from cmux_agent_sdk.executor import (
     execute_agent,
     execute_resume,
+    execute_checkpoint,
+    execute_migrate,
     check_devsh_available,
     get_supported_providers,
     get_supported_backends,
@@ -73,6 +77,8 @@ __all__ = [
     "SandboxConfig",
     "SpawnOptions",
     "ResumeOptions",
+    "CheckpointOptions",
+    "MigrateOptions",
     # Result types
     "TaskHandle",
     "TaskResult",
@@ -95,6 +101,8 @@ __all__ = [
     # Executor
     "execute_agent",
     "execute_resume",
+    "execute_checkpoint",
+    "execute_migrate",
     "check_devsh_available",
     "get_supported_providers",
     "get_supported_backends",
@@ -127,3 +135,15 @@ async def stream(agent: str, prompt: str, **kwargs: object):
 async def resume(session_id: str, message: str, **kwargs: object) -> TaskResult:
     """Resume a previous session (uses default client)."""
     return await _get_default_client().resume(session_id, message, **kwargs)
+
+
+async def checkpoint(task_id: str, **kwargs: object) -> CheckpointRef | None:
+    """Create a checkpoint (uses default client)."""
+    return await _get_default_client().checkpoint(task_id, **kwargs)
+
+
+async def migrate(
+    source: str, target_provider: SandboxProvider | str, **kwargs: object
+) -> TaskResult:
+    """Migrate a session to a different provider (uses default client)."""
+    return await _get_default_client().migrate(source, target_provider, **kwargs)

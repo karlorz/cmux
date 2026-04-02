@@ -3,6 +3,8 @@ import {
   AgentIdSchema,
   SandboxProviderSchema,
   SpawnOptionsSchema,
+  CheckpointOptionsSchema,
+  MigrateOptionsSchema,
   parseAgentId,
 } from "./types.js";
 
@@ -94,5 +96,62 @@ describe("SpawnOptionsSchema", () => {
     expect(result.repo).toBe("owner/repo");
     expect(result.snapshotId).toBe("snap-123");
     expect(result.env).toEqual({ KEY: "value" });
+  });
+});
+
+describe("CheckpointOptionsSchema", () => {
+  it("should require taskId", () => {
+    const result = CheckpointOptionsSchema.parse({
+      taskId: "task_123",
+    });
+
+    expect(result.taskId).toBe("task_123");
+    expect(result.devshPath).toBe("devsh");
+    expect(result.label).toBeUndefined();
+  });
+
+  it("should accept optional label", () => {
+    const result = CheckpointOptionsSchema.parse({
+      taskId: "task_123",
+      label: "before-refactor",
+    });
+
+    expect(result.label).toBe("before-refactor");
+  });
+});
+
+describe("MigrateOptionsSchema", () => {
+  it("should require source and targetProvider", () => {
+    const result = MigrateOptionsSchema.parse({
+      source: "session_abc123",
+      targetProvider: "morph",
+    });
+
+    expect(result.source).toBe("session_abc123");
+    expect(result.targetProvider).toBe("morph");
+    expect(result.devshPath).toBe("devsh");
+  });
+
+  it("should accept optional fields", () => {
+    const result = MigrateOptionsSchema.parse({
+      source: "checkpoint_xyz",
+      targetProvider: "e2b",
+      repo: "owner/repo",
+      branch: "feature/test",
+      message: "Continue the work",
+    });
+
+    expect(result.repo).toBe("owner/repo");
+    expect(result.branch).toBe("feature/test");
+    expect(result.message).toBe("Continue the work");
+  });
+
+  it("should validate targetProvider enum", () => {
+    expect(() =>
+      MigrateOptionsSchema.parse({
+        source: "session_123",
+        targetProvider: "invalid",
+      })
+    ).toThrow();
   });
 });

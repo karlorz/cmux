@@ -196,12 +196,36 @@ class CheckpointRef(BaseModel):
 
     id: str = Field(description="Unique checkpoint ID")
     task_id: str = Field(description="Task ID this checkpoint belongs to")
+    agent: str = Field(description="Agent that created this checkpoint")
+    source_provider: SandboxProvider = Field(description="Provider where checkpoint was created")
+    session_id: str = Field(description="Session ID for resumption")
     created_at: datetime = Field(description="Timestamp when checkpoint was created")
     resumable: bool = Field(description="Whether this checkpoint can be resumed")
     data: dict[str, object] | None = Field(
         default=None,
         description="Provider-specific checkpoint data",
     )
+
+
+class CheckpointOptions(BaseModel):
+    """Options for creating a checkpoint."""
+
+    task_id: str = Field(description="Task ID to checkpoint")
+    label: str | None = Field(default=None, description="Optional label for the checkpoint")
+    devsh_path: str = Field(default="devsh", description="devsh CLI path")
+
+
+class MigrateOptions(BaseModel):
+    """Options for migrating a session to a different provider."""
+
+    source: str = Field(description="Checkpoint reference or session ID to migrate from")
+    target_provider: SandboxProvider = Field(description="Target provider to migrate to")
+    repo: str | None = Field(default=None, description="Optional: new repo (if different)")
+    branch: str | None = Field(default=None, description="Optional: new branch")
+    message: str | None = Field(default=None, description="Optional: continuation message")
+    devsh_path: str = Field(default="devsh", description="devsh CLI path")
+    api_base_url: str | None = Field(default=None, description="cmux API base URL")
+    auth_token: str | None = Field(default=None, description="cmux authentication token")
 
 
 # Unified event types
