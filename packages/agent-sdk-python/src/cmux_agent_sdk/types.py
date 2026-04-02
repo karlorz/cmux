@@ -177,6 +177,7 @@ class TaskResult(BaseModel):
     duration_ms: int = Field(description="Execution duration in milliseconds")
     session_id: str | None = Field(default=None, description="Session ID for resumption")
     checkpoint_ref: str | None = Field(default=None, description="Checkpoint reference")
+    usage: "UsageStats | None" = Field(default=None, description="Usage statistics")
 
 
 class ResumeOptions(BaseModel):
@@ -357,3 +358,99 @@ class ParallelResult(BaseModel):
     succeeded: int = Field(description="Number of successful tasks")
     failed: int = Field(description="Number of failed tasks")
     total_duration_ms: int = Field(description="Total duration in milliseconds")
+
+
+class TokenUsage(BaseModel):
+    """Token usage statistics from an agent execution."""
+
+    input_tokens: int = Field(description="Input/prompt tokens")
+    output_tokens: int = Field(description="Output/completion tokens")
+    cache_read_tokens: int | None = Field(default=None, description="Cache read tokens")
+    cache_write_tokens: int | None = Field(default=None, description="Cache write tokens")
+    total_tokens: int = Field(description="Total tokens (input + output)")
+
+
+class CostBreakdown(BaseModel):
+    """Cost breakdown for an agent execution."""
+
+    input_cost: float = Field(description="Input token cost in USD")
+    output_cost: float = Field(description="Output token cost in USD")
+    cache_cost: float | None = Field(default=None, description="Cache cost in USD")
+    total_cost: float = Field(description="Total cost in USD")
+    currency: Literal["USD"] = Field(default="USD", description="Cost currency")
+
+
+class UsageStats(BaseModel):
+    """Usage statistics for an agent execution."""
+
+    tokens: TokenUsage = Field(description="Token usage breakdown")
+    cost: CostBreakdown | None = Field(default=None, description="Cost breakdown")
+    api_requests: int = Field(description="Number of API requests made")
+    tool_calls: int = Field(description="Number of tool calls")
+    duration_ms: int = Field(description="Execution duration in milliseconds")
+    model: str = Field(description="Model used for execution")
+    backend: AgentBackend = Field(description="Agent backend")
+
+
+class ModelPricing(BaseModel):
+    """Pricing per million tokens for a model."""
+
+    input_per_million: float = Field(description="Input token price per million")
+    output_per_million: float = Field(description="Output token price per million")
+    cache_read_per_million: float | None = Field(default=None, description="Cache read price per million")
+    cache_write_per_million: float | None = Field(default=None, description="Cache write price per million")
+
+
+# Known model pricing (as of 2026-04)
+MODEL_PRICING: dict[str, ModelPricing] = {
+    # Claude models
+    "claude-opus-4-6": ModelPricing(input_per_million=15, output_per_million=75, cache_read_per_million=1.5, cache_write_per_million=18.75),
+    "claude-opus-4-5-20251101": ModelPricing(input_per_million=15, output_per_million=75, cache_read_per_million=1.5, cache_write_per_million=18.75),
+    "claude-sonnet-4-6": ModelPricing(input_per_million=3, output_per_million=15, cache_read_per_million=0.3, cache_write_per_million=3.75),
+    "claude-sonnet-4-5-20250929": ModelPricing(input_per_million=3, output_per_million=15, cache_read_per_million=0.3, cache_write_per_million=3.75),
+    "claude-haiku-4-5-20251001": ModelPricing(input_per_million=0.8, output_per_million=4, cache_read_per_million=0.08, cache_write_per_million=1),
+    # Codex/OpenAI models (approximate)
+    "gpt-5.4": ModelPricing(input_per_million=10, output_per_million=30),
+    "gpt-5.4-xhigh": ModelPricing(input_per_million=10, output_per_million=30),
+    "gpt-5.1-codex": ModelPricing(input_per_million=2.5, output_per_million=10),
+    "gpt-5.1-codex-mini": ModelPricing(input_per_million=0.15, output_per_million=0.6),
+    # Gemini models (approximate)
+    "2.5-pro": ModelPricing(input_per_million=1.25, output_per_million=5),
+    "2.5-flash": ModelPricing(input_per_million=0.075, output_per_million=0.3),
+}
+
+
+def calculate_cost(tokens: TokenUsage, pricing: ModelPricing) -> CostBreakdown:
+    """Calculate cost from token usage and pricing."""
+    input_cost = (tokens.input_tokens / 1_000_000) * pricing.input_per_million
+    output_cost = (tokens.output_tokens / 1_000_000) * pricing.output_per_million
+
+    cache_cost: float | None = None
+    if pricing.cache_read_per_million and tokens.cache_read_tokens:
+        cache_cost = (tokens.cache_read_tokens / 1_000_000) * pricing.cache_read_per_million
+    if pricing.cache_write_per_million and tokens.cache_write_tokens:
+        cache_cost = (cache_cost or 0) + (tokens.cache_write_tokens / 1_000_000) * pricing.cache_write_per_million
+
+    return CostBreakdown(
+        input_cost=input_cost,
+        output_cost=output_cost,
+        cache_cost=cache_cost,
+        total_cost=input_cost + output_cost + (cache_cost or 0),
+        currency="USD",
+    )
+
+
+def get_model_pricing(model: str) -> ModelPricing | None:
+    """Get pricing for a model, returns None if not found."""
+    # Try exact match first
+    if model in MODEL_PRICING:
+        return MODEL_PRICING[model]
+
+    # Try partial match
+    normalized_model = model.lower().replace(".", "").replace("-", "")
+    for key, pricing in MODEL_PRICING.items():
+        normalized_key = key.lower().replace(".", "").replace("-", "")
+        if normalized_key in normalized_model or normalized_model in normalized_key:
+            return pricing
+
+    return None

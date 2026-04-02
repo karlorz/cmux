@@ -44,6 +44,12 @@ from cmux_agent_sdk.types import (
     CheckpointRef,
     ParallelResult,
     ParallelTaskResult,
+    # Usage/cost types
+    TokenUsage,
+    CostBreakdown,
+    UsageStats,
+    ModelPricing,
+    MODEL_PRICING,
     # Event types
     SpawnEvent,
     TextEvent,
@@ -56,6 +62,8 @@ from cmux_agent_sdk.types import (
     UnifiedEvent,
     # Helpers
     parse_agent_id,
+    calculate_cost,
+    get_model_pricing,
 )
 from cmux_agent_sdk.client import (
     CmuxClient,
@@ -92,6 +100,12 @@ __all__ = [
     "CheckpointRef",
     "ParallelResult",
     "ParallelTaskResult",
+    # Usage/cost types
+    "TokenUsage",
+    "CostBreakdown",
+    "UsageStats",
+    "ModelPricing",
+    "MODEL_PRICING",
     # Event types
     "SpawnEvent",
     "TextEvent",
@@ -104,6 +118,8 @@ __all__ = [
     "UnifiedEvent",
     # Helpers
     "parse_agent_id",
+    "calculate_cost",
+    "get_model_pricing",
     # Client
     "CmuxClient",
     "create_client",
