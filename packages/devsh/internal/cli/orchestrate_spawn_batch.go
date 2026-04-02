@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/karlorz/devsh/internal/auth"
+	"github.com/karlorz/devsh/internal/cost"
 	"github.com/karlorz/devsh/internal/plan"
 	"github.com/karlorz/devsh/internal/vm"
 	"github.com/spf13/cobra"
@@ -31,6 +32,9 @@ var (
 	spawnBatchRepo     string
 	spawnBatchBranch   string
 	spawnBatchAgent    string
+	// Cost estimation flags
+	spawnBatchEstimate   bool
+	spawnBatchComplexity string
 )
 
 var orchestrateSpawnBatchCmd = &cobra.Command{
@@ -96,6 +100,10 @@ func init() {
 	orchestrateSpawnBatchCmd.Flags().StringVar(&spawnBatchRepo, "repo", "", "Repository for template (owner/repo)")
 	orchestrateSpawnBatchCmd.Flags().StringVar(&spawnBatchBranch, "branch", "", "Branch for template")
 	orchestrateSpawnBatchCmd.Flags().StringVar(&spawnBatchAgent, "agent", "", "Override default agent for template")
+
+	// Cost estimation flags
+	orchestrateSpawnBatchCmd.Flags().BoolVar(&spawnBatchEstimate, "estimate", false, "Show cost estimate without spawning")
+	orchestrateSpawnBatchCmd.Flags().StringVar(&spawnBatchComplexity, "complexity", "medium", "Task complexity for cost estimation: simple, medium, or complex")
 }
 
 // SpawnBatchResult contains results from a batch spawn operation.
@@ -145,6 +153,11 @@ func runSpawnBatch(cmd *cobra.Command, args []string) error {
 	// Dry run: just show the execution plan
 	if spawnBatchDryRun {
 		return showExecutionPlan(spec, batches)
+	}
+
+	// Cost estimate: show estimated costs without spawning
+	if spawnBatchEstimate {
+		return showCostEstimate(spec, spawnBatchComplexity)
 	}
 
 	// Get auth
@@ -444,5 +457,24 @@ func waitForAllTasks(client *vm.Client, tasks []plan.BatchTask, orchTaskIDs map[
 		}
 	}
 
+	return nil
+}
+
+func showCostEstimate(spec *plan.BatchSpec, complexity string) error {
+	// Collect all agents from tasks
+	var agents []string
+	for _, task := range spec.Tasks {
+		agents = append(agents, task.Agent)
+	}
+
+	estimate := cost.EstimateBatchCost(agents, complexity)
+
+	if flagJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(estimate)
+	}
+
+	fmt.Println(cost.FormatBatchCostEstimate(estimate))
 	return nil
 }
