@@ -134,7 +134,22 @@ Use cmux_results to get the full output:
 - `morph` - Morph cloud VMs
 - `e2b` - E2B sandboxes
 - `modal` - Modal containers
-- `local` - Local execution
+- `local` - Local execution (no sandbox)
+
+## Local vs Remote Execution
+
+When no explicit `provider` is specified, the executor automatically routes tasks:
+
+**Remote execution** (cloud sandbox) is used when:
+- A `repo` or `branch` is specified (needs git clone)
+- Claude SDK options are specified (`permissionMode`, `settingSources`, etc.)
+- The prompt suggests test/CI work or resource-intensive tasks
+
+**Local execution** is used for:
+- Simple, quick tasks without repo requirements
+- When explicitly set via `provider: "local"`
+
+Local runs use `devsh orchestrate run-local` and persist state for later inspection. Remote runs use `devsh orchestrate spawn` with the selected cloud provider.
 
 ## Programmatic Usage
 
