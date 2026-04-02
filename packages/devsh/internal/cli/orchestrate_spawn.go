@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/karlorz/devsh/internal/auth"
+	"github.com/karlorz/devsh/internal/cost"
 	"github.com/karlorz/devsh/internal/vm"
 	"github.com/spf13/cobra"
 )
@@ -30,6 +31,8 @@ var orchestrateSpawnCompact bool
 var orchestrateSpawnRetry int
 var orchestrateSpawnRetryBackoff string
 var orchestrateSpawnRetryInjectContext bool
+var orchestrateSpawnEstimate bool
+var orchestrateSpawnComplexity string
 
 var orchestrateSpawnCmd = &cobra.Command{
 	Use:   "spawn <prompt>",
@@ -68,6 +71,18 @@ Examples:
 
 		if orchestrateSpawnAgent == "" {
 			return fmt.Errorf("--agent flag is required")
+		}
+
+		// Handle --estimate flag
+		if orchestrateSpawnEstimate {
+			estimate := cost.EstimateCost(orchestrateSpawnAgent, orchestrateSpawnComplexity)
+			if flagJSON {
+				enc := json.NewEncoder(os.Stdout)
+				enc.SetIndent("", "  ")
+				return enc.Encode(estimate)
+			}
+			fmt.Println(cost.FormatCostEstimate(estimate))
+			return nil
 		}
 
 		// Retry requires --sync
@@ -343,5 +358,7 @@ func init() {
 	orchestrateSpawnCmd.Flags().IntVar(&orchestrateSpawnRetry, "retry", 0, "Number of retry attempts on failure (requires --sync)")
 	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnRetryBackoff, "retry-backoff", "constant", "Retry backoff strategy: constant, linear, or exponential")
 	orchestrateSpawnCmd.Flags().BoolVar(&orchestrateSpawnRetryInjectContext, "retry-inject-context", false, "Inject failure reason into retry prompt")
+	orchestrateSpawnCmd.Flags().BoolVar(&orchestrateSpawnEstimate, "estimate", false, "Show cost estimate without spawning")
+	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnComplexity, "complexity", "medium", "Task complexity for cost estimation: simple, medium, or complex")
 	orchestrateCmd.AddCommand(orchestrateSpawnCmd)
 }
