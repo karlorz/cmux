@@ -233,3 +233,62 @@ export const MigrateOptionsSchema = z.object({
 });
 export type MigrateOptions = z.infer<typeof MigrateOptionsSchema>;
 export type MigrateOptionsInput = z.input<typeof MigrateOptionsSchema>;
+
+/**
+ * Options for spawning multiple agents in parallel
+ */
+export const SpawnManyOptionsSchema = z.object({
+  /** Array of spawn configurations */
+  tasks: z.array(
+    z.object({
+      /** Optional task name for identification */
+      name: z.string().optional(),
+      /** Agent to use */
+      agent: AgentIdSchema,
+      /** The prompt/task for the agent */
+      prompt: z.string(),
+      /** Sandbox provider */
+      provider: SandboxProviderSchema.default("pve-lxc"),
+      /** GitHub repository */
+      repo: z.string().optional(),
+      /** Branch to checkout */
+      branch: z.string().default("main"),
+      /** Timeout in milliseconds */
+      timeoutMs: z.number().default(600000),
+      /** Environment variables */
+      env: z.record(z.string(), z.string()).optional(),
+    })
+  ),
+  /** Maximum concurrent tasks (default: unlimited) */
+  concurrency: z.number().optional(),
+  /** Fail fast: stop all tasks if one fails */
+  failFast: z.boolean().default(false),
+  /** devsh CLI path */
+  devshPath: z.string().default("devsh"),
+  /** cmux API base URL */
+  apiBaseUrl: z.string().optional(),
+  /** cmux authentication token */
+  authToken: z.string().optional(),
+});
+export type SpawnManyOptions = z.infer<typeof SpawnManyOptionsSchema>;
+export type SpawnManyOptionsInput = z.input<typeof SpawnManyOptionsSchema>;
+
+/**
+ * Result from parallel execution
+ */
+export interface ParallelResult {
+  /** All task results (in order of tasks array) */
+  results: Array<{
+    name?: string;
+    taskId: string;
+    status: "completed" | "failed" | "cancelled";
+    result?: TaskResult;
+    error?: string;
+  }>;
+  /** Number of successful tasks */
+  succeeded: number;
+  /** Number of failed tasks */
+  failed: number;
+  /** Total duration in milliseconds */
+  totalDurationMs: number;
+}

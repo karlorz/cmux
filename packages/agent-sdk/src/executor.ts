@@ -7,7 +7,10 @@ import type {
   CheckpointOptions,
   CheckpointRef,
   MigrateOptions,
+  SpawnManyOptions,
+  ParallelResult,
 } from "./types.js";
+import { SpawnOptionsSchema } from "./types.js";
 
 /**
  * Execute an agent via devsh orchestrate spawn
@@ -316,4 +319,120 @@ export async function executeMigrate(
       durationMs,
     };
   }
+}
+
+/**
+ * Execute multiple agents in parallel with concurrency control
+ */
+export async function executeParallel(
+  options: SpawnManyOptions
+): Promise<ParallelResult> {
+  const startTime = Date.now();
+  const results: ParallelResult["results"] = [];
+  const { tasks, concurrency, failFast, devshPath, apiBaseUrl, authToken } = options;
+
+  // Track cancelled state for failFast
+  let cancelled = false;
+
+  // Process tasks with concurrency control
+  const activePromises: Map<number, Promise<void>> = new Map();
+  let taskIndex = 0;
+
+  const processTask = async (
+    task: (typeof tasks)[number],
+    index: number
+  ): Promise<void> => {
+    if (cancelled) {
+      results[index] = {
+        name: task.name,
+        taskId: "cancelled",
+        status: "cancelled",
+      };
+      return;
+    }
+
+    try {
+      const spawnOptions = SpawnOptionsSchema.parse({
+        agent: task.agent,
+        prompt: task.prompt,
+        provider: task.provider,
+        repo: task.repo,
+        branch: task.branch,
+        timeoutMs: task.timeoutMs,
+        env: task.env,
+        sync: true,
+        devshPath,
+        apiBaseUrl,
+        authToken,
+      });
+
+      const result = await executeAgent(spawnOptions);
+
+      if (result.exitCode === 0) {
+        results[index] = {
+          name: task.name,
+          taskId: result.taskId,
+          status: "completed",
+          result,
+        };
+      } else {
+        results[index] = {
+          name: task.name,
+          taskId: result.taskId,
+          status: "failed",
+          result,
+          error: result.stderr || "Non-zero exit code",
+        };
+        if (failFast) {
+          cancelled = true;
+        }
+      }
+    } catch (error) {
+      results[index] = {
+        name: task.name,
+        taskId: "error",
+        status: "failed",
+        error: error instanceof Error ? error.message : String(error),
+      };
+      if (failFast) {
+        cancelled = true;
+      }
+    }
+  };
+
+  // Execute with concurrency limit
+  while (taskIndex < tasks.length || activePromises.size > 0) {
+    // Start new tasks up to concurrency limit
+    while (
+      taskIndex < tasks.length &&
+      (concurrency === undefined || activePromises.size < concurrency) &&
+      !cancelled
+    ) {
+      const currentIndex = taskIndex;
+      const task = tasks[currentIndex];
+      taskIndex++;
+
+      const promise = processTask(task, currentIndex).finally(() => {
+        activePromises.delete(currentIndex);
+      });
+      activePromises.set(currentIndex, promise);
+    }
+
+    // Wait for at least one task to complete
+    if (activePromises.size > 0) {
+      await Promise.race(activePromises.values());
+    }
+  }
+
+  // Calculate summary
+  const succeeded = results.filter((r) => r.status === "completed").length;
+  const failed = results.filter((r) => r.status === "failed").length;
+  const totalDurationMs = Date.now() - startTime;
+
+  return {
+    results,
+    succeeded,
+    failed,
+    totalDurationMs,
+  };
 }

@@ -303,3 +303,57 @@ UnifiedEvent = (
     | ErrorEvent
     | DoneEvent
 )
+
+
+class SpawnManyTaskConfig(BaseModel):
+    """Configuration for a single task in parallel execution."""
+
+    name: str | None = Field(default=None, description="Optional task name for identification")
+    agent: str = Field(description="Agent to use")
+    prompt: str = Field(description="The prompt/task for the agent")
+    provider: SandboxProvider = Field(default=SandboxProvider.PVE_LXC, description="Sandbox provider")
+    repo: str | None = Field(default=None, description="GitHub repository")
+    branch: str = Field(default="main", description="Branch to checkout")
+    timeout_ms: int = Field(default=600000, description="Timeout in milliseconds")
+    env: dict[str, str] | None = Field(default=None, description="Environment variables")
+
+    @field_validator("agent")
+    @classmethod
+    def validate_agent_id(cls, v: str) -> str:
+        """Validate agent ID format."""
+        if not AGENT_ID_PATTERN.match(v):
+            raise ValueError(
+                f"Invalid agent ID: {v}. Must be in format: backend/model "
+                "(e.g., claude/opus-4.5)"
+            )
+        return v
+
+
+class SpawnManyOptions(BaseModel):
+    """Options for spawning multiple agents in parallel."""
+
+    tasks: list[SpawnManyTaskConfig] = Field(description="Array of spawn configurations")
+    concurrency: int | None = Field(default=None, description="Maximum concurrent tasks")
+    fail_fast: bool = Field(default=False, description="Fail fast: stop all if one fails")
+    devsh_path: str = Field(default="devsh", description="devsh CLI path")
+    api_base_url: str | None = Field(default=None, description="cmux API base URL")
+    auth_token: str | None = Field(default=None, description="cmux authentication token")
+
+
+class ParallelTaskResult(BaseModel):
+    """Result for a single task in parallel execution."""
+
+    name: str | None = Field(default=None, description="Task name if provided")
+    task_id: str = Field(description="Task ID")
+    status: Literal["completed", "failed", "cancelled"] = Field(description="Task status")
+    result: TaskResult | None = Field(default=None, description="Task result if completed")
+    error: str | None = Field(default=None, description="Error message if failed")
+
+
+class ParallelResult(BaseModel):
+    """Result from parallel execution."""
+
+    results: list[ParallelTaskResult] = Field(description="All task results")
+    succeeded: int = Field(description="Number of successful tasks")
+    failed: int = Field(description="Number of failed tasks")
+    total_duration_ms: int = Field(description="Total duration in milliseconds")

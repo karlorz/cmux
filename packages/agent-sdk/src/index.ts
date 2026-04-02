@@ -74,6 +74,9 @@ export {
   type CheckpointOptionsInput,
   type MigrateOptions,
   type MigrateOptionsInput,
+  type SpawnManyOptions,
+  type SpawnManyOptionsInput,
+  type ParallelResult,
   AgentBackendSchema,
   AgentIdSchema,
   SandboxProviderSchema,
@@ -82,6 +85,7 @@ export {
   ResumeOptionsSchema,
   CheckpointOptionsSchema,
   MigrateOptionsSchema,
+  SpawnManyOptionsSchema,
   parseAgentId,
 } from "./types.js";
 
@@ -97,11 +101,12 @@ export {
   getSupportedBackends,
   executeCheckpoint,
   executeMigrate,
+  executeParallel,
 } from "./executor.js";
 
 // Convenience functions that use default client
 import { CmuxClient } from "./client.js";
-import type { SpawnOptionsInput, TaskHandle, TaskResult, UnifiedEvent, ResumeOptionsInput, CheckpointOptionsInput, CheckpointRef, MigrateOptionsInput } from "./types.js";
+import type { SpawnOptionsInput, TaskHandle, TaskResult, UnifiedEvent, ResumeOptionsInput, CheckpointOptionsInput, CheckpointRef, MigrateOptionsInput, SpawnManyOptionsInput, ParallelResult } from "./types.js";
 
 let defaultClient: CmuxClient | null = null;
 
@@ -147,4 +152,11 @@ export async function checkpoint(options: CheckpointOptionsInput): Promise<Check
  */
 export async function migrate(options: MigrateOptionsInput): Promise<TaskResult> {
   return getDefaultClient().migrate(options);
+}
+
+/**
+ * Spawn multiple agents in parallel (uses default client)
+ */
+export async function spawnMany(options: SpawnManyOptionsInput): Promise<ParallelResult> {
+  return getDefaultClient().spawnMany(options);
 }

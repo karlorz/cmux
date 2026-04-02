@@ -10,8 +10,11 @@ from cmux_agent_sdk.types import (
     CheckpointOptions,
     CheckpointRef,
     MigrateOptions,
+    ParallelResult,
+    ParallelTaskResult,
     ResumeOptions,
     SandboxProvider,
+    SpawnManyOptions,
     SpawnOptions,
     TaskResult,
 )
@@ -367,3 +370,100 @@ async def execute_migrate(options: MigrateOptions) -> TaskResult:
             result="",
             duration_ms=duration_ms,
         )
+
+
+async def execute_parallel(options: SpawnManyOptions) -> ParallelResult:
+    """Execute multiple agents in parallel with concurrency control.
+
+    Args:
+        options: Parallel spawn options
+
+    Returns:
+        ParallelResult with all task results
+    """
+    from datetime import datetime, timezone
+
+    start_time = time.time()
+    results: list[ParallelTaskResult] = [
+        ParallelTaskResult(name=None, task_id="pending", status="cancelled")
+        for _ in options.tasks
+    ]
+    cancelled = False
+
+    async def process_task(task_config: SpawnManyOptions, index: int) -> None:
+        nonlocal cancelled
+        task = options.tasks[index]
+
+        if cancelled:
+            results[index] = ParallelTaskResult(
+                name=task.name,
+                task_id="cancelled",
+                status="cancelled",
+            )
+            return
+
+        try:
+            spawn_options = SpawnOptions(
+                agent=task.agent,
+                prompt=task.prompt,
+                provider=task.provider,
+                repo=task.repo,
+                branch=task.branch,
+                timeout_ms=task.timeout_ms,
+                env=task.env,
+                sync=True,
+                devsh_path=options.devsh_path,
+                api_base_url=options.api_base_url,
+                auth_token=options.auth_token,
+            )
+
+            result = await execute_agent(spawn_options)
+
+            if result.exit_code == 0:
+                results[index] = ParallelTaskResult(
+                    name=task.name,
+                    task_id=result.task_id,
+                    status="completed",
+                    result=result,
+                )
+            else:
+                results[index] = ParallelTaskResult(
+                    name=task.name,
+                    task_id=result.task_id,
+                    status="failed",
+                    result=result,
+                    error=result.stderr or "Non-zero exit code",
+                )
+                if options.fail_fast:
+                    cancelled = True
+
+        except Exception as e:
+            results[index] = ParallelTaskResult(
+                name=task.name,
+                task_id="error",
+                status="failed",
+                error=str(e),
+            )
+            if options.fail_fast:
+                cancelled = True
+
+    # Execute with concurrency control using semaphore
+    semaphore = asyncio.Semaphore(options.concurrency or len(options.tasks))
+
+    async def limited_task(idx: int) -> None:
+        async with semaphore:
+            await process_task(options, idx)
+
+    await asyncio.gather(*[limited_task(i) for i in range(len(options.tasks))])
+
+    # Calculate summary
+    succeeded = sum(1 for r in results if r.status == "completed")
+    failed = sum(1 for r in results if r.status == "failed")
+    total_duration_ms = int((time.time() - start_time) * 1000)
+
+    return ParallelResult(
+        results=results,
+        succeeded=succeeded,
+        failed=failed,
+        total_duration_ms=total_duration_ms,
+    )

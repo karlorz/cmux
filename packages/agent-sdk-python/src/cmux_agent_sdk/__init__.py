@@ -36,10 +36,14 @@ from cmux_agent_sdk.types import (
     ResumeOptions,
     CheckpointOptions,
     MigrateOptions,
+    SpawnManyOptions,
+    SpawnManyTaskConfig,
     # Result types
     TaskHandle,
     TaskResult,
     CheckpointRef,
+    ParallelResult,
+    ParallelTaskResult,
     # Event types
     SpawnEvent,
     TextEvent,
@@ -62,6 +66,7 @@ from cmux_agent_sdk.executor import (
     execute_resume,
     execute_checkpoint,
     execute_migrate,
+    execute_parallel,
     check_devsh_available,
     get_supported_providers,
     get_supported_backends,
@@ -79,10 +84,14 @@ __all__ = [
     "ResumeOptions",
     "CheckpointOptions",
     "MigrateOptions",
+    "SpawnManyOptions",
+    "SpawnManyTaskConfig",
     # Result types
     "TaskHandle",
     "TaskResult",
     "CheckpointRef",
+    "ParallelResult",
+    "ParallelTaskResult",
     # Event types
     "SpawnEvent",
     "TextEvent",
@@ -103,6 +112,7 @@ __all__ = [
     "execute_resume",
     "execute_checkpoint",
     "execute_migrate",
+    "execute_parallel",
     "check_devsh_available",
     "get_supported_providers",
     "get_supported_backends",
@@ -147,3 +157,8 @@ async def migrate(
 ) -> TaskResult:
     """Migrate a session to a different provider (uses default client)."""
     return await _get_default_client().migrate(source, target_provider, **kwargs)
+
+
+async def spawn_many(tasks: list[SpawnManyTaskConfig], **kwargs: object) -> ParallelResult:
+    """Spawn multiple agents in parallel (uses default client)."""
+    return await _get_default_client().spawn_many(tasks, **kwargs)

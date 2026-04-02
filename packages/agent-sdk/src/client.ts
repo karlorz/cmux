@@ -8,10 +8,13 @@ import {
   type CheckpointRef,
   type MigrateOptionsInput,
   type SandboxProvider,
+  type SpawnManyOptionsInput,
+  type ParallelResult,
   SpawnOptionsSchema,
   ResumeOptionsSchema,
   CheckpointOptionsSchema,
   MigrateOptionsSchema,
+  SpawnManyOptionsSchema,
 } from "./types.js";
 import {
   executeAgent,
@@ -19,6 +22,7 @@ import {
   checkDevshAvailable,
   executeCheckpoint,
   executeMigrate,
+  executeParallel,
 } from "./executor.js";
 
 /**
@@ -250,6 +254,35 @@ export class CmuxClient {
    */
   getProviders(): SandboxProvider[] {
     return ["pve-lxc", "morph", "e2b", "modal", "local"];
+  }
+
+  /**
+   * Spawn multiple agents in parallel with concurrency control
+   *
+   * @example
+   * ```ts
+   * const results = await client.spawnMany({
+   *   tasks: [
+   *     { agent: "claude/opus-4.5", prompt: "Refactor auth module" },
+   *     { agent: "codex/gpt-5.4", prompt: "Add test coverage" },
+   *     { agent: "gemini/2.5-pro", prompt: "Update documentation" },
+   *   ],
+   *   concurrency: 2, // Max 2 agents at once
+   *   failFast: false, // Continue even if one fails
+   * });
+   *
+   * console.log(`Succeeded: ${results.succeeded}, Failed: ${results.failed}`);
+   * ```
+   */
+  async spawnMany(options: SpawnManyOptionsInput): Promise<ParallelResult> {
+    const parsed = SpawnManyOptionsSchema.parse({
+      ...options,
+      devshPath: options.devshPath ?? this.devshPath,
+      apiBaseUrl: options.apiBaseUrl ?? this.apiBaseUrl,
+      authToken: options.authToken ?? this.authToken,
+    });
+
+    return executeParallel(parsed);
   }
 }
 
