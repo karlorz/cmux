@@ -234,6 +234,30 @@ else
     mark_done "01-base"
 fi
 
+# Step 1.5: Configure kernel for bubblewrap support (Codex CLI sandboxing)
+if step_done "01.5-bwrap"; then
+    echo "[1.5/10] Bubblewrap kernel config... SKIP (already done)"
+else
+    echo "[1.5/10] Configuring kernel for bubblewrap support..."
+    # Enable unprivileged user namespaces (required for bubblewrap inside LXC)
+    # This allows Codex CLI's internal sandbox to work with workspace-write mode
+    cat > /etc/sysctl.d/99-cmux-bubblewrap.conf << 'SYSCTL_CONF'
+# Allow unprivileged user namespaces (required for bubblewrap inside LXC)
+# Enables Codex CLI workspace-write mode for defense-in-depth sandboxing
+kernel.unprivileged_userns_clone = 1
+SYSCTL_CONF
+    sysctl -p /etc/sysctl.d/99-cmux-bubblewrap.conf 2>/dev/null || true
+
+    # Verify bubblewrap works (may fail in some restricted LXC configs)
+    if bwrap --ro-bind /usr /usr --proc /proc --dev /dev --unshare-pid true 2>/dev/null; then
+        echo "    Bubblewrap works - Codex workspace-write mode available"
+        touch /opt/cmux/.bubblewrap-supported
+    else
+        echo "    Bubblewrap limited - using danger-full-access mode (LXC provides isolation)"
+    fi
+    mark_done "01.5-bwrap"
+fi
+
 # Step 2: Docker
 if step_done "02-docker"; then
     echo "[2/10] Docker... SKIP (already done)"
