@@ -23,12 +23,20 @@ var (
 	spawnBatchDryRun    bool
 	spawnBatchUseEnvJwt bool
 	spawnBatchCompact   bool
+	// Template flags
+	spawnBatchTemplate string
+	spawnBatchPrompt   string
+	spawnBatchPrompts  string
+	spawnBatchFiles    string
+	spawnBatchRepo     string
+	spawnBatchBranch   string
+	spawnBatchAgent    string
 )
 
 var orchestrateSpawnBatchCmd = &cobra.Command{
-	Use:   "spawn-batch <file|-|json>",
+	Use:   "spawn-batch [file|-|json]",
 	Short: "Spawn multiple agents with dependency management",
-	Long: `Spawn multiple agents from a YAML/JSON batch specification.
+	Long: `Spawn multiple agents from a YAML/JSON batch specification or template.
 
 Tasks are executed in topological order based on their dependencies.
 Tasks without dependencies or with satisfied dependencies run in parallel.
@@ -38,6 +46,13 @@ Input formats:
   - JSON file:  devsh orchestrate spawn-batch tasks.json
   - Stdin:      cat tasks.yaml | devsh orchestrate spawn-batch -
   - Inline JSON: devsh orchestrate spawn-batch '[{"id":"t1","prompt":"task","agent":"claude/haiku-4.5"}]'
+  - Template:   devsh orchestrate spawn-batch --template pipeline --prompt "Add auth"
+
+Templates:
+  fan-out   - Spawn multiple agents for files/prompts in parallel
+  pipeline  - Sequential stages: design -> implement -> test -> review
+  review    - One agent implements, another reviews
+  parallel  - Run independent tasks in parallel
 
 YAML/JSON schema:
   tasks:
@@ -48,11 +63,6 @@ YAML/JSON schema:
       prompt: "..."
       agent: codex/gpt-5.4-xhigh
       depends_on: [design]  # Wait for 'design' to complete
-    - id: test
-      prompt: "..."
-      agent: codex/gpt-5.1-codex-mini
-      depends_on: [implement]
-      priority: 3         # 0=highest, default=5
   defaults:
     repo: owner/repo      # Applied to all tasks
     branch: main
@@ -60,9 +70,11 @@ YAML/JSON schema:
 Examples:
   devsh orchestrate spawn-batch tasks.yaml
   devsh orchestrate spawn-batch tasks.yaml --sync
-  devsh orchestrate spawn-batch tasks.yaml --dry-run
-  devsh orchestrate spawn-batch --parallel 3 tasks.yaml`,
-	Args: cobra.ExactArgs(1),
+  devsh orchestrate spawn-batch --template pipeline --prompt "Add user auth" --repo owner/repo
+  devsh orchestrate spawn-batch --template fan-out --files "a.ts,b.ts,c.ts" --prompt "Fix bugs"
+  devsh orchestrate spawn-batch --template review --prompt "Refactor auth" --repo owner/repo
+  devsh orchestrate spawn-batch --template parallel --prompts "Task A,Task B,Task C"`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: runSpawnBatch,
 }
 
@@ -75,6 +87,15 @@ func init() {
 	orchestrateSpawnBatchCmd.Flags().BoolVar(&spawnBatchDryRun, "dry-run", false, "Show execution plan without spawning")
 	orchestrateSpawnBatchCmd.Flags().BoolVar(&spawnBatchUseEnvJwt, "use-env-jwt", false, "Use CMUX_TASK_RUN_JWT for auth")
 	orchestrateSpawnBatchCmd.Flags().BoolVar(&spawnBatchCompact, "compact", false, "Compact output")
+
+	// Template flags
+	orchestrateSpawnBatchCmd.Flags().StringVar(&spawnBatchTemplate, "template", "", "Use built-in template (fan-out, pipeline, review, parallel)")
+	orchestrateSpawnBatchCmd.Flags().StringVar(&spawnBatchPrompt, "prompt", "", "Primary prompt for template")
+	orchestrateSpawnBatchCmd.Flags().StringVar(&spawnBatchPrompts, "prompts", "", "Comma-separated prompts for parallel/fan-out templates")
+	orchestrateSpawnBatchCmd.Flags().StringVar(&spawnBatchFiles, "files", "", "Comma-separated files for fan-out template")
+	orchestrateSpawnBatchCmd.Flags().StringVar(&spawnBatchRepo, "repo", "", "Repository for template (owner/repo)")
+	orchestrateSpawnBatchCmd.Flags().StringVar(&spawnBatchBranch, "branch", "", "Branch for template")
+	orchestrateSpawnBatchCmd.Flags().StringVar(&spawnBatchAgent, "agent", "", "Override default agent for template")
 }
 
 // SpawnBatchResult contains results from a batch spawn operation.
@@ -96,12 +117,23 @@ type SpawnBatchTaskResult struct {
 }
 
 func runSpawnBatch(cmd *cobra.Command, args []string) error {
-	input := args[0]
+	var spec *plan.BatchSpec
+	var err error
 
-	// Parse batch spec
-	spec, err := parseBatchInput(input)
-	if err != nil {
-		return fmt.Errorf("failed to parse batch spec: %w", err)
+	// Handle template mode vs file mode
+	if spawnBatchTemplate != "" {
+		spec, err = generateFromTemplate()
+		if err != nil {
+			return fmt.Errorf("failed to generate from template: %w", err)
+		}
+	} else {
+		if len(args) == 0 {
+			return fmt.Errorf("provide a batch file or use --template")
+		}
+		spec, err = parseBatchInput(args[0])
+		if err != nil {
+			return fmt.Errorf("failed to parse batch spec: %w", err)
+		}
 	}
 
 	// Get topological batches
@@ -232,6 +264,38 @@ func runSpawnBatch(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func generateFromTemplate() (*plan.BatchSpec, error) {
+	templateName, err := plan.ValidateTemplateName(spawnBatchTemplate)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse comma-separated values
+	var prompts, files []string
+	if spawnBatchPrompts != "" {
+		prompts = strings.Split(spawnBatchPrompts, ",")
+		for i := range prompts {
+			prompts[i] = strings.TrimSpace(prompts[i])
+		}
+	}
+	if spawnBatchFiles != "" {
+		files = strings.Split(spawnBatchFiles, ",")
+		for i := range files {
+			files[i] = strings.TrimSpace(files[i])
+		}
+	}
+
+	return plan.GenerateFromTemplate(plan.TemplateParams{
+		Template: templateName,
+		Prompt:   spawnBatchPrompt,
+		Prompts:  prompts,
+		Files:    files,
+		Repo:     spawnBatchRepo,
+		Branch:   spawnBatchBranch,
+		Agent:    spawnBatchAgent,
+	})
 }
 
 func parseBatchInput(input string) (*plan.BatchSpec, error) {
