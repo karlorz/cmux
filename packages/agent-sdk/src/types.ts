@@ -70,6 +70,46 @@ export type SandboxConfig = z.infer<typeof SandboxConfigSchema>;
 export type SandboxConfigInput = z.input<typeof SandboxConfigSchema>;
 
 /**
+ * Permission modes for Claude Agent SDK
+ * Controls how the agent handles permission requests for tool use
+ */
+export const PermissionModeSchema = z.enum([
+  "default",         // Ask for permission on each action
+  "acceptEdits",     // Auto-approve file edits
+  "bypassPermissions", // Skip all permission checks
+  "plan",            // Plan mode for review
+  "delegate",        // Delegate to sub-agents
+  "dontAsk",         // Never ask, deny if not permitted
+]);
+export type PermissionMode = z.infer<typeof PermissionModeSchema>;
+
+/**
+ * Setting sources for Claude Agent SDK
+ * Controls which filesystem settings to load
+ */
+export const SettingSourceSchema = z.enum([
+  "user",     // User-level settings (~/.claude/)
+  "project",  // Project-level settings (.claude/)
+  "local",    // Local settings
+]);
+export type SettingSource = z.infer<typeof SettingSourceSchema>;
+
+/**
+ * System prompt configuration for Claude Agent SDK
+ */
+export const SystemPromptConfigSchema = z.union([
+  z.object({
+    type: z.literal("preset"),
+    preset: z.enum(["claude_code", "minimal", "custom"]),
+  }),
+  z.object({
+    type: z.literal("custom"),
+    content: z.string(),
+  }),
+]);
+export type SystemPromptConfig = z.infer<typeof SystemPromptConfigSchema>;
+
+/**
  * Options for spawning an agent
  */
 export const SpawnOptionsSchema = z.object({
@@ -99,6 +139,18 @@ export const SpawnOptionsSchema = z.object({
   apiBaseUrl: z.string().optional(),
   /** cmux authentication token */
   authToken: z.string().optional(),
+
+  // Claude Agent SDK specific options (for claude/* agents)
+  /** Permission mode for tool use (Claude agents only) */
+  permissionMode: PermissionModeSchema.optional(),
+  /** Setting sources to load (Claude agents only) */
+  settingSources: z.array(SettingSourceSchema).optional(),
+  /** System prompt configuration (Claude agents only) */
+  systemPrompt: SystemPromptConfigSchema.optional(),
+  /** Allowed tools (Claude agents only) */
+  allowedTools: z.array(z.string()).optional(),
+  /** Disallowed tools (Claude agents only) */
+  disallowedTools: z.array(z.string()).optional(),
 });
 export type SpawnOptions = z.infer<typeof SpawnOptionsSchema>;
 export type SpawnOptionsInput = z.input<typeof SpawnOptionsSchema>;

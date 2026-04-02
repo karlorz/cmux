@@ -6,6 +6,9 @@ import {
   CheckpointOptionsSchema,
   MigrateOptionsSchema,
   SpawnManyOptionsSchema,
+  PermissionModeSchema,
+  SettingSourceSchema,
+  SystemPromptConfigSchema,
   MODEL_PRICING,
   parseAgentId,
   calculateCost,
@@ -309,5 +312,173 @@ describe("getModelPricing", () => {
 
     expect(pricing1).toBeDefined();
     expect(pricing2).toBeDefined();
+  });
+});
+
+describe("PermissionModeSchema", () => {
+  it("should accept all valid permission modes", () => {
+    expect(PermissionModeSchema.parse("default")).toBe("default");
+    expect(PermissionModeSchema.parse("acceptEdits")).toBe("acceptEdits");
+    expect(PermissionModeSchema.parse("bypassPermissions")).toBe("bypassPermissions");
+    expect(PermissionModeSchema.parse("plan")).toBe("plan");
+    expect(PermissionModeSchema.parse("delegate")).toBe("delegate");
+    expect(PermissionModeSchema.parse("dontAsk")).toBe("dontAsk");
+  });
+
+  it("should reject invalid permission modes", () => {
+    expect(() => PermissionModeSchema.parse("invalid")).toThrow();
+    expect(() => PermissionModeSchema.parse("yolo")).toThrow();
+  });
+});
+
+describe("SettingSourceSchema", () => {
+  it("should accept all valid setting sources", () => {
+    expect(SettingSourceSchema.parse("user")).toBe("user");
+    expect(SettingSourceSchema.parse("project")).toBe("project");
+    expect(SettingSourceSchema.parse("local")).toBe("local");
+  });
+
+  it("should reject invalid setting sources", () => {
+    expect(() => SettingSourceSchema.parse("invalid")).toThrow();
+    expect(() => SettingSourceSchema.parse("global")).toThrow();
+  });
+});
+
+describe("SystemPromptConfigSchema", () => {
+  it("should accept preset system prompts", () => {
+    const result = SystemPromptConfigSchema.parse({
+      type: "preset",
+      preset: "claude_code",
+    });
+    expect(result).toEqual({ type: "preset", preset: "claude_code" });
+  });
+
+  it("should accept all preset types", () => {
+    expect(SystemPromptConfigSchema.parse({ type: "preset", preset: "claude_code" })).toBeDefined();
+    expect(SystemPromptConfigSchema.parse({ type: "preset", preset: "minimal" })).toBeDefined();
+    expect(SystemPromptConfigSchema.parse({ type: "preset", preset: "custom" })).toBeDefined();
+  });
+
+  it("should accept custom system prompts", () => {
+    const result = SystemPromptConfigSchema.parse({
+      type: "custom",
+      content: "You are a helpful assistant.",
+    });
+    expect(result).toEqual({
+      type: "custom",
+      content: "You are a helpful assistant.",
+    });
+  });
+
+  it("should reject invalid system prompt types", () => {
+    expect(() =>
+      SystemPromptConfigSchema.parse({
+        type: "invalid",
+        content: "test",
+      })
+    ).toThrow();
+  });
+
+  it("should reject preset with missing preset field", () => {
+    expect(() =>
+      SystemPromptConfigSchema.parse({
+        type: "preset",
+      })
+    ).toThrow();
+  });
+
+  it("should reject custom with missing content field", () => {
+    expect(() =>
+      SystemPromptConfigSchema.parse({
+        type: "custom",
+      })
+    ).toThrow();
+  });
+});
+
+describe("SpawnOptionsSchema Claude Agent SDK options", () => {
+  it("should accept permissionMode option", () => {
+    const result = SpawnOptionsSchema.parse({
+      agent: "claude/opus-4.5",
+      prompt: "Test prompt",
+      permissionMode: "acceptEdits",
+    });
+    expect(result.permissionMode).toBe("acceptEdits");
+  });
+
+  it("should accept settingSources option", () => {
+    const result = SpawnOptionsSchema.parse({
+      agent: "claude/opus-4.5",
+      prompt: "Test prompt",
+      settingSources: ["user", "project"],
+    });
+    expect(result.settingSources).toEqual(["user", "project"]);
+  });
+
+  it("should accept systemPrompt preset option", () => {
+    const result = SpawnOptionsSchema.parse({
+      agent: "claude/opus-4.5",
+      prompt: "Test prompt",
+      systemPrompt: { type: "preset", preset: "minimal" },
+    });
+    expect(result.systemPrompt).toEqual({ type: "preset", preset: "minimal" });
+  });
+
+  it("should accept systemPrompt custom option", () => {
+    const result = SpawnOptionsSchema.parse({
+      agent: "claude/opus-4.5",
+      prompt: "Test prompt",
+      systemPrompt: { type: "custom", content: "Custom prompt" },
+    });
+    expect(result.systemPrompt).toEqual({ type: "custom", content: "Custom prompt" });
+  });
+
+  it("should accept allowedTools option", () => {
+    const result = SpawnOptionsSchema.parse({
+      agent: "claude/opus-4.5",
+      prompt: "Test prompt",
+      allowedTools: ["Read", "Write", "Bash"],
+    });
+    expect(result.allowedTools).toEqual(["Read", "Write", "Bash"]);
+  });
+
+  it("should accept disallowedTools option", () => {
+    const result = SpawnOptionsSchema.parse({
+      agent: "claude/opus-4.5",
+      prompt: "Test prompt",
+      disallowedTools: ["Bash", "Agent"],
+    });
+    expect(result.disallowedTools).toEqual(["Bash", "Agent"]);
+  });
+
+  it("should accept all Claude Agent SDK options together", () => {
+    const result = SpawnOptionsSchema.parse({
+      agent: "claude/opus-4.5",
+      prompt: "Test prompt",
+      permissionMode: "bypassPermissions",
+      settingSources: ["project", "local"],
+      systemPrompt: { type: "preset", preset: "claude_code" },
+      allowedTools: ["Read", "Grep", "Glob"],
+      disallowedTools: ["Bash"],
+    });
+
+    expect(result.permissionMode).toBe("bypassPermissions");
+    expect(result.settingSources).toEqual(["project", "local"]);
+    expect(result.systemPrompt).toEqual({ type: "preset", preset: "claude_code" });
+    expect(result.allowedTools).toEqual(["Read", "Grep", "Glob"]);
+    expect(result.disallowedTools).toEqual(["Bash"]);
+  });
+
+  it("should allow omitting Claude Agent SDK options for non-Claude agents", () => {
+    const result = SpawnOptionsSchema.parse({
+      agent: "codex/gpt-5.4",
+      prompt: "Test prompt",
+    });
+
+    expect(result.permissionMode).toBeUndefined();
+    expect(result.settingSources).toBeUndefined();
+    expect(result.systemPrompt).toBeUndefined();
+    expect(result.allowedTools).toBeUndefined();
+    expect(result.disallowedTools).toBeUndefined();
   });
 });
