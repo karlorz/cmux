@@ -1,5 +1,9 @@
 # @cmux/claude-agent
 
+> **DEPRECATED**: This package is deprecated. Use [`@cmux/agent-sdk`](../agent-sdk) instead, which provides unified support for multiple agent backends (Claude, Codex, Gemini, Amp, Opencode) and sandbox providers.
+
+---
+
 cmux wrapper for the Claude Agent SDK - route sub-agent execution to remote sandboxes.
 
 ## Overview
@@ -132,6 +136,44 @@ interface CmuxSandboxConfig {
 - Node.js 20+
 - `devsh` CLI installed and configured
 - Valid cmux authentication (for sandbox providers)
+
+## Migration to @cmux/agent-sdk
+
+Replace this package with the unified SDK:
+
+```bash
+npm uninstall @cmux/claude-agent
+npm install @cmux/agent-sdk
+```
+
+Update your imports:
+
+```typescript
+// Before
+import { query, executeSandbox } from "@cmux/claude-agent";
+
+// After
+import { createClient } from "@cmux/agent-sdk";
+
+const client = createClient();
+
+// spawn() replaces executeSandbox()
+const task = await client.spawn({
+  agent: "claude/opus-4.5",
+  prompt: "Your task here",
+  provider: "pve-lxc",
+  repo: "owner/repo",
+});
+
+// stream() replaces query()
+for await (const event of client.stream({
+  agent: "claude/opus-4.5",
+  prompt: "Your task here",
+  provider: "pve-lxc",
+})) {
+  // Handle unified events
+}
+```
 
 ## License
 

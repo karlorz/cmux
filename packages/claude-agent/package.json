@@ -1,7 +1,8 @@
 {
   "name": "@cmux/claude-agent",
   "version": "0.1.0",
-  "description": "cmux wrapper for Claude Agent SDK - route sub-agent execution to remote sandboxes",
+  "description": "DEPRECATED: Use @cmux/agent-sdk instead. cmux wrapper for Claude Agent SDK.",
+  "deprecated": "This package is deprecated. Use @cmux/agent-sdk for unified multi-agent support.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
