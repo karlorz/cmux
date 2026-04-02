@@ -1,0 +1,281 @@
+"""Type definitions for cmux unified agent SDK."""
+
+import re
+from datetime import datetime
+from enum import Enum
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator
+
+
+class AgentBackend(str, Enum):
+    """Supported agent backends."""
+
+    CLAUDE = "claude"
+    CODEX = "codex"
+    GEMINI = "gemini"
+    AMP = "amp"
+    OPENCODE = "opencode"
+
+
+class SandboxProvider(str, Enum):
+    """Sandbox provider options for cmux remote execution."""
+
+    PVE_LXC = "pve-lxc"
+    MORPH = "morph"
+    E2B = "e2b"
+    MODAL = "modal"
+    LOCAL = "local"
+
+
+# Agent ID pattern: backend/model
+AGENT_ID_PATTERN = re.compile(r"^(claude|codex|gemini|amp|opencode)/[\w.-]+$")
+
+
+def parse_agent_id(agent_id: str) -> tuple[AgentBackend, str]:
+    """Parse agent ID into backend and model.
+
+    Args:
+        agent_id: Agent ID in format "backend/model"
+
+    Returns:
+        Tuple of (backend, model)
+
+    Raises:
+        ValueError: If agent ID format is invalid
+    """
+    if not AGENT_ID_PATTERN.match(agent_id):
+        raise ValueError(
+            f"Invalid agent ID: {agent_id}. Must be in format: backend/model "
+            "(e.g., claude/opus-4.5)"
+        )
+    backend_str, model = agent_id.split("/", 1)
+    return AgentBackend(backend_str), model
+
+
+class SandboxConfig(BaseModel):
+    """Sandbox configuration for routing agent execution."""
+
+    provider: SandboxProvider = Field(
+        default=SandboxProvider.PVE_LXC,
+        description="Sandbox provider to use",
+    )
+    repo: str | None = Field(
+        default=None,
+        description="GitHub repository in owner/repo format",
+    )
+    branch: str = Field(
+        default="main",
+        description="Branch to checkout",
+    )
+    snapshot_id: str | None = Field(
+        default=None,
+        description="Snapshot/template ID (provider-specific)",
+    )
+    work_dir: str = Field(
+        default="/root/workspace",
+        description="Working directory inside sandbox",
+    )
+    timeout_ms: int = Field(
+        default=600000,
+        description="Timeout in milliseconds (default: 10 minutes)",
+    )
+    env: dict[str, str] | None = Field(
+        default=None,
+        description="Environment variables to inject",
+    )
+
+
+class SpawnOptions(BaseModel):
+    """Options for spawning an agent."""
+
+    agent: str = Field(
+        description='Agent to use (e.g., "claude/opus-4.5", "codex/gpt-5.4")',
+    )
+    prompt: str = Field(
+        description="The prompt/task for the agent",
+    )
+    provider: SandboxProvider = Field(
+        default=SandboxProvider.PVE_LXC,
+        description="Sandbox provider",
+    )
+    repo: str | None = Field(
+        default=None,
+        description="GitHub repository in owner/repo format",
+    )
+    branch: str = Field(
+        default="main",
+        description="Branch to checkout",
+    )
+    snapshot_id: str | None = Field(
+        default=None,
+        description="Snapshot/template ID (provider-specific)",
+    )
+    work_dir: str = Field(
+        default="/root/workspace",
+        description="Working directory inside sandbox",
+    )
+    timeout_ms: int = Field(
+        default=600000,
+        description="Timeout in milliseconds",
+    )
+    env: dict[str, str] | None = Field(
+        default=None,
+        description="Environment variables to inject",
+    )
+    sync: bool = Field(
+        default=True,
+        description="Run in synchronous mode (wait for completion)",
+    )
+    devsh_path: str = Field(
+        default="devsh",
+        description="devsh CLI path",
+    )
+    api_base_url: str | None = Field(
+        default=None,
+        description="cmux API base URL",
+    )
+    auth_token: str | None = Field(
+        default=None,
+        description="cmux authentication token",
+    )
+
+    @field_validator("agent")
+    @classmethod
+    def validate_agent_id(cls, v: str) -> str:
+        """Validate agent ID format."""
+        if not AGENT_ID_PATTERN.match(v):
+            raise ValueError(
+                f"Invalid agent ID: {v}. Must be in format: backend/model "
+                "(e.g., claude/opus-4.5)"
+            )
+        return v
+
+
+class TaskHandle(BaseModel):
+    """Task handle returned from spawn()."""
+
+    id: str = Field(description="Unique task ID")
+    agent: str = Field(description="Agent that was spawned")
+    provider: SandboxProvider = Field(description="Provider where agent is running")
+    instance_id: str | None = Field(default=None, description="Sandbox instance ID")
+    session_id: str | None = Field(default=None, description="Session ID for resumption")
+    status: Literal["pending", "running", "completed", "failed", "cancelled"] = Field(
+        description="Status of the task"
+    )
+    created_at: datetime = Field(description="Creation timestamp")
+
+
+class TaskResult(BaseModel):
+    """Result from a completed task."""
+
+    task_id: str = Field(description="Task ID")
+    exit_code: int = Field(description="Exit code from execution")
+    stdout: str = Field(description="Standard output")
+    stderr: str = Field(description="Standard error")
+    result: str = Field(description="Final result/response from agent")
+    duration_ms: int = Field(description="Execution duration in milliseconds")
+    session_id: str | None = Field(default=None, description="Session ID for resumption")
+    checkpoint_ref: str | None = Field(default=None, description="Checkpoint reference")
+
+
+class ResumeOptions(BaseModel):
+    """Options for resuming a task."""
+
+    session_id: str = Field(description="Session ID from previous execution")
+    message: str = Field(description="New message/prompt to continue with")
+    provider: SandboxProvider | None = Field(
+        default=None,
+        description="Optional: migrate to different provider",
+    )
+    devsh_path: str = Field(default="devsh", description="devsh CLI path")
+
+
+class CheckpointRef(BaseModel):
+    """Checkpoint reference for saving/restoring state."""
+
+    id: str = Field(description="Unique checkpoint ID")
+    task_id: str = Field(description="Task ID this checkpoint belongs to")
+    created_at: datetime = Field(description="Timestamp when checkpoint was created")
+    resumable: bool = Field(description="Whether this checkpoint can be resumed")
+    data: dict[str, object] | None = Field(
+        default=None,
+        description="Provider-specific checkpoint data",
+    )
+
+
+# Unified event types
+class SpawnEvent(BaseModel):
+    """Event emitted when agent spawns."""
+
+    type: Literal["spawn"] = "spawn"
+    task_id: str
+    agent: str
+    provider: SandboxProvider
+
+
+class TextEvent(BaseModel):
+    """Event with text content."""
+
+    type: Literal["text"] = "text"
+    content: str
+
+
+class ToolUseEvent(BaseModel):
+    """Event when tool is used."""
+
+    type: Literal["tool_use"] = "tool_use"
+    tool: str
+    input: object
+
+
+class ToolResultEvent(BaseModel):
+    """Event with tool result."""
+
+    type: Literal["tool_result"] = "tool_result"
+    tool: str
+    output: object
+
+
+class ProgressEvent(BaseModel):
+    """Progress update event."""
+
+    type: Literal["progress"] = "progress"
+    message: str
+    percent: float | None = None
+
+
+class CheckpointEvent(BaseModel):
+    """Checkpoint created event."""
+
+    type: Literal["checkpoint"] = "checkpoint"
+    ref: str
+    resumable: bool
+
+
+class ErrorEvent(BaseModel):
+    """Error event."""
+
+    type: Literal["error"] = "error"
+    code: str
+    message: str
+
+
+class DoneEvent(BaseModel):
+    """Completion event."""
+
+    type: Literal["done"] = "done"
+    task_id: str
+    result: TaskResult
+
+
+UnifiedEvent = (
+    SpawnEvent
+    | TextEvent
+    | ToolUseEvent
+    | ToolResultEvent
+    | ProgressEvent
+    | CheckpointEvent
+    | ErrorEvent
+    | DoneEvent
+)
