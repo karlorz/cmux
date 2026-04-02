@@ -8,6 +8,10 @@ Unified Agent SDK for cmux - spawn Claude, Codex, Gemini, Amp, and Opencode agen
 - **Multi-provider support**: PVE-LXC, Morph, E2B, Modal, Local
 - **Unified API**: Same interface for all agents and providers
 - **Session resumption**: Continue conversations across sandbox instances
+- **Session migration**: Move sessions between providers
+- **Parallel execution**: Run multiple agents concurrently with concurrency control
+- **Checkpointing**: Save and restore session state
+- **Cost tracking**: Token usage and cost estimation
 - **Streaming events**: Real-time progress updates
 
 ## Installation
@@ -74,6 +78,76 @@ result = await client.resume(
     session_id=task.session_id,
     message="Now add tests for it",
 )
+```
+
+## Parallel Execution
+
+Run multiple agents concurrently with optional concurrency limits:
+
+```python
+from cmux_agent_sdk import SpawnManyTaskConfig
+
+results = await client.spawn_many(
+    tasks=[
+        SpawnManyTaskConfig(agent="claude/opus-4.5", prompt="Refactor auth module"),
+        SpawnManyTaskConfig(agent="codex/gpt-5.4", prompt="Add test coverage"),
+        SpawnManyTaskConfig(agent="gemini/2.5-pro", prompt="Update documentation"),
+    ],
+    concurrency=2,   # Max 2 agents at once
+    fail_fast=False, # Continue even if one fails
+)
+
+print(f"Succeeded: {results.succeeded}, Failed: {results.failed}")
+```
+
+## Session Migration
+
+Move a session from one provider to another:
+
+```python
+# Start on PVE-LXC
+task = await client.spawn(
+    agent="claude/opus-4.5",
+    prompt="Start the work",
+    provider="pve-lxc",
+)
+
+# Migrate to Morph with a continuation message
+result = await client.migrate(
+    source=task.session_id,
+    target_provider="morph",
+    message="Continue the work here",
+)
+```
+
+## Checkpointing
+
+Create checkpoints to save session state:
+
+```python
+checkpoint = await client.checkpoint(task_id=task.id, label="before-refactor")
+
+if checkpoint:
+    print(f"Checkpoint {checkpoint.id} created")
+    print(f"Resumable: {checkpoint.resumable}")
+```
+
+## Cost Tracking
+
+Track token usage and estimate costs:
+
+```python
+from cmux_agent_sdk import calculate_cost, get_model_pricing, MODEL_PRICING
+
+# Get pricing for a model
+pricing = get_model_pricing("claude/opus-4.5")
+# ModelPricing(input_per_million=15, output_per_million=75, ...)
+
+# Usage is available in TaskResult.usage (when returned by devsh)
+task = await client.spawn(agent="claude/opus-4.5", prompt="...")
+if task.usage:
+    print(f"Tokens: {task.usage.tokens.total_tokens}")
+    print(f"Cost: ${task.usage.cost.total_cost:.4f}")
 ```
 
 ## Supported Agents
@@ -155,7 +229,7 @@ result = await client.resume(
 For simple use cases without a client:
 
 ```python
-from cmux_agent_sdk import spawn, stream, resume
+from cmux_agent_sdk import spawn, stream, resume, spawn_many, checkpoint, migrate
 
 task = await spawn(agent="claude/opus-4.5", prompt="...")
 
@@ -163,6 +237,12 @@ async for event in stream(agent="codex/gpt-5.4", prompt="..."):
     ...
 
 result = await resume(session_id="...", message="...")
+
+parallel = await spawn_many(tasks=[...], concurrency=2)
+
+cp = await checkpoint(task_id="...")
+
+migrated = await migrate(source="...", target_provider="morph")
 ```
 
 ## Requirements
