@@ -1,0 +1,43 @@
+{
+  "name": "@cmux/agent-sdk",
+  "version": "0.1.0",
+  "description": "Unified agent SDK for cmux - spawn Claude, Codex, Gemini, Amp, Opencode agents in remote sandboxes",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "cmux",
+    "agent",
+    "sdk",
+    "claude",
+    "codex",
+    "gemini",
+    "sandbox",
+    "orchestration"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "execa": "^9.5.2",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.1",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
