@@ -1690,11 +1690,12 @@ const convexSchema = defineSchema({
     gpu: v.optional(v.string()), // GPU config used (e.g., "T4", "A100", "H100:2")
   }).index("by_instanceId", ["instanceId"]),
 
-  // Prewarmed Morph instances for fast task startup.
+  // Prewarmed sandbox instances for fast task startup.
   // Instances are provisioned with a specific repo already cloned,
   // triggered when a user starts typing a task description.
+  // Supports both Morph and PVE-LXC providers.
   warmPool: defineTable({
-    instanceId: v.string(), // Morph instance ID (morphvm_xxx)
+    instanceId: v.string(), // Morph: morphvm_xxx, PVE-LXC: hostname (pvelxc-xxx)
     snapshotId: v.string(), // Snapshot used to create this instance
     status: v.union(
       v.literal("provisioning"), // Instance is being created + repo cloning
@@ -1713,10 +1714,18 @@ const convexSchema = defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     errorMessage: v.optional(v.string()),
+    // Provider-specific fields (added for multi-provider support)
+    provider: v.optional(v.union(v.literal("morph"), v.literal("pve-lxc"))), // Default: "morph"
+    vmid: v.optional(v.number()), // PVE-LXC only: numeric VMID
+    hostname: v.optional(v.string()), // PVE-LXC only: container hostname
+    templateVmid: v.optional(v.number()), // PVE-LXC only: template VMID used
+    vncUrl: v.optional(v.string()), // VNC URL (both providers)
+    xtermUrl: v.optional(v.string()), // XTerm URL (both providers)
   })
     .index("by_status", ["status", "createdAt"])
     .index("by_instanceId", ["instanceId"])
-    .index("by_team_status", ["teamId", "status", "createdAt"]),
+    .index("by_team_status", ["teamId", "status", "createdAt"])
+    .index("by_provider_status", ["provider", "status", "createdAt"]),
 
   // Provider override configurations for custom proxies and endpoints
   // Enables teams to customize base URLs, API formats, and fallback chains

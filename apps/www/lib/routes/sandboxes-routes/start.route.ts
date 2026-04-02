@@ -15,6 +15,8 @@ import {
   internal,
   AGENT_CONFIGS,
   DEFAULT_MORPH_SNAPSHOT_ID,
+  DEFAULT_PVE_LXC_SNAPSHOT_ID,
+  getPveLxcSnapshotByPresetId,
   StartSandboxBody,
   StartSandboxResponse,
   allocateScriptIdentifiers,
@@ -374,21 +376,73 @@ sandboxesStartRouter.openapi(
           `[sandboxes.start] Starting PVE LXC sandbox with snapshot ${resolvedSnapshotId}`,
         );
         const pveClient = getPveLxcClient();
-        rawPveLxcInstance = await pveClient.instances.start({
-          snapshotId: resolvedSnapshotId,
-          templateVmid: resolvedTemplateVmid,
-          ttlSeconds: body.ttlSeconds ?? 60 * 60,
-          ttlAction: "pause",
-          metadata: {
-            app: "cmux",
-            teamId: team.uuid,
-            userId: user?.id ?? jwtPayload?.userId ?? "unknown",
-            ...(body.environmentId ? { environmentId: body.environmentId } : {}),
-            ...(body.metadata || {}),
-          },
-        });
-        instance = wrapPveLxcInstance(rawPveLxcInstance);
-        console.log(`[sandboxes.start] PVE LXC sandbox started: ${instance.id}`);
+
+        // Try warm pool first (unless using custom environment)
+        if (!body.environmentId) {
+          try {
+            const claimed = await convex.mutation(api.warmPool.claimInstance, {
+              teamId: team.uuid,
+              repoUrl: repoUrl ?? undefined,
+              branch: body.branch ?? undefined,
+              taskRunId: body.taskRunId || "",
+              provider: "pve-lxc",
+            });
+
+            if (claimed) {
+              console.log(
+                `[sandboxes.start] Claimed PVE-LXC warm pool instance ${claimed.instanceId}`,
+              );
+              // Get instance by hostname (PVE-LXC uses hostname as ID)
+              const claimedPveInstance = await pveClient.instances.get({
+                instanceId: claimed.instanceId,
+              });
+
+              const claimedWrapped = wrapPveLxcInstance(claimedPveInstance);
+              const claimedExposed = claimedWrapped.networking.httpServices;
+              const claimedVscodeService = claimedExposed.find(
+                (service) => service.port === 39378,
+              );
+              const claimedWorkerService = claimedExposed.find(
+                (service) => service.port === 39376,
+              );
+              if (claimedVscodeService && claimedWorkerService) {
+                rawPveLxcInstance = claimedPveInstance;
+                instance = claimedWrapped;
+                usedWarmPool = true;
+                warmPoolRepoUrl = claimed.repoUrl ?? undefined;
+                warmPoolBranch = claimed.branch ?? undefined;
+              } else {
+                console.warn(
+                  `[sandboxes.start] PVE-LXC warm pool instance ${claimed.instanceId} missing services, falling back to on-demand start`,
+                );
+              }
+            }
+          } catch (error) {
+            console.error(
+              "[sandboxes.start] PVE-LXC warm pool claim failed, falling back to on-demand start",
+              error,
+            );
+          }
+        }
+
+        // On-demand start only if warm pool miss
+        if (!usedWarmPool) {
+          rawPveLxcInstance = await pveClient.instances.start({
+            snapshotId: resolvedSnapshotId,
+            templateVmid: resolvedTemplateVmid,
+            ttlSeconds: body.ttlSeconds ?? 60 * 60,
+            ttlAction: "pause",
+            metadata: {
+              app: "cmux",
+              teamId: team.uuid,
+              userId: user?.id ?? jwtPayload?.userId ?? "unknown",
+              ...(body.environmentId ? { environmentId: body.environmentId } : {}),
+              ...(body.metadata || {}),
+            },
+          });
+          instance = wrapPveLxcInstance(rawPveLxcInstance);
+        }
+        console.log(`[sandboxes.start] PVE LXC sandbox started: ${instance!.id}`);
       } else {
         const client = getMorphClient();
 
@@ -1197,7 +1251,8 @@ sandboxesStartRouter.openapi(
     tags: ["Sandboxes"],
     summary: "Prewarm a sandbox instance for a repo",
     description:
-      "Creates a Morph instance in the background with the repo already cloned. " +
+      "Creates a sandbox instance in the background with the repo already cloned. " +
+      "Supports both Morph and PVE-LXC providers. " +
       "Call this when the user starts typing a task description for faster startup.",
     request: {
       body: {
@@ -1233,7 +1288,10 @@ sandboxesStartRouter.openapi(
     }
 
     const providerConfig = getActiveSandboxProvider();
-    if (providerConfig.provider !== "morph") {
+    const provider = providerConfig.provider;
+
+    // Only Morph and PVE-LXC support warm pool
+    if (provider !== "morph" && provider !== "pve-lxc") {
       return c.json({ id: "", alreadyExists: true });
     }
 
@@ -1247,13 +1305,26 @@ sandboxesStartRouter.openapi(
         teamSlugOrId: body.teamSlugOrId,
       });
 
-      const snapshotId = DEFAULT_MORPH_SNAPSHOT_ID;
+      // Determine snapshot and template based on provider
+      const snapshotId =
+        provider === "pve-lxc"
+          ? DEFAULT_PVE_LXC_SNAPSHOT_ID
+          : DEFAULT_MORPH_SNAPSHOT_ID;
+
+      let templateVmid: number | undefined;
+      if (provider === "pve-lxc") {
+        const pveSnapshot = getPveLxcSnapshotByPresetId("base");
+        templateVmid = pveSnapshot?.templateVmid;
+      }
+
       const result = await convex.mutation(api.warmPool.createPrewarmEntry, {
         teamId: team.uuid,
         userId: user.id,
         snapshotId,
         repoUrl: body.repoUrl,
         branch: body.branch,
+        provider: provider as "morph" | "pve-lxc",
+        templateVmid,
       });
 
       if (result.alreadyExists) {
@@ -1262,92 +1333,197 @@ sandboxesStartRouter.openapi(
 
       const githubAccountPromise = user.getConnectedAccount("github");
       const prewarmEntryId = result.id;
-      void (async () => {
-        try {
-          const client = getMorphClient();
 
-          let morphInstance = await client.instances.start({
-            snapshotId,
-            ttlSeconds: 3600,
-            ttlAction: "pause",
-            metadata: {
-              app: "cmux-warm-pool",
-              teamId: team.uuid,
-              userId: user.id,
-            },
-          });
+      // Background provisioning - provider-specific
+      if (provider === "pve-lxc") {
+        // PVE-LXC background provisioning
+        void (async () => {
+          try {
+            const pveClient = getPveLxcClient();
 
-          if (morphInstance.networking.httpServices.length === 0) {
-            morphInstance = await client.instances.get({
-              instanceId: morphInstance.id,
+            const pveInstance = await pveClient.instances.start({
+              snapshotId,
+              templateVmid,
+              metadata: {
+                app: "cmux-warm-pool",
+                teamId: team.uuid,
+                userId: user.id,
+              },
             });
-          }
 
-          const instance = wrapMorphInstance(morphInstance);
-          void (async () => {
-            await instance.setWakeOn(true, true);
-          })();
+            const instance = wrapPveLxcInstance(pveInstance);
+            const exposed = instance.networking.httpServices;
+            const vscodeService = exposed.find((s) => s.port === 39378);
+            const workerService = exposed.find((s) => s.port === 39376);
+            const vncService = exposed.find((s) => s.port === 39380);
+            const xtermService = exposed.find((s) => s.port === 39383);
 
-          const exposed = instance.networking.httpServices;
-          const vscodeService = exposed.find((service) => service.port === 39378);
-          const workerService = exposed.find((service) => service.port === 39377);
-          if (!vscodeService || !workerService) {
-            throw new Error(
-              `VSCode or worker service not found on instance ${instance.id}`,
+            if (!vscodeService || !workerService) {
+              throw new Error(
+                `VSCode or worker service not found on PVE instance ${instance.id}`,
+              );
+            }
+
+            await waitForVSCodeReady(vscodeService.url, { timeoutMs: 45_000 });
+
+            const githubAccount = await githubAccountPromise;
+            if (githubAccount) {
+              const { accessToken: githubAccessToken } =
+                await githubAccount.getAccessToken();
+              if (githubAccessToken) {
+                await configureGithubAccess(instance, githubAccessToken);
+              }
+            }
+
+            if (body.repoUrl) {
+              const parsedRepo = parseGithubRepoUrl(body.repoUrl);
+              if (parsedRepo) {
+                await hydrateWorkspace({
+                  instance,
+                  repo: {
+                    owner: parsedRepo.owner,
+                    name: parsedRepo.repo,
+                    repoFull: parsedRepo.fullName,
+                    cloneUrl: parsedRepo.gitUrl,
+                    maskedCloneUrl: parsedRepo.gitUrl,
+                    depth: 1,
+                    baseBranch: body.branch || "main",
+                    newBranch: "",
+                  },
+                });
+              }
+            }
+
+            await convex.mutation(api.warmPool.markInstanceReady, {
+              id: prewarmEntryId,
+              instanceId: instance.id,
+              vscodeUrl: vscodeService.url,
+              workerUrl: workerService.url,
+              vncUrl: vncService?.url,
+              xtermUrl: xtermService?.url,
+              vmid: pveInstance.vmid,
+              hostname: pveInstance.networking.hostname,
+            });
+
+            console.log(
+              `[sandboxes.prewarm] PVE-LXC instance ready: ${instance.id}`,
             );
-          }
-
-          await waitForVSCodeReady(vscodeService.url, { timeoutMs: 30_000 });
-
-          const githubAccount = await githubAccountPromise;
-          if (githubAccount) {
-            const { accessToken: githubAccessToken } =
-              await githubAccount.getAccessToken();
-            if (githubAccessToken) {
-              await configureGithubAccess(instance, githubAccessToken);
+          } catch (error) {
+            console.error(
+              "[sandboxes.prewarm] PVE-LXC background provisioning failed:",
+              error,
+            );
+            try {
+              await convex.mutation(api.warmPool.markInstanceFailed, {
+                id: prewarmEntryId,
+                errorMessage:
+                  error instanceof Error ? error.message : String(error),
+              });
+            } catch (markError) {
+              console.error(
+                "[sandboxes.prewarm] Failed to mark entry as failed:",
+                markError,
+              );
             }
           }
+        })();
+      } else {
+        // Morph background provisioning (existing logic)
+        void (async () => {
+          try {
+            const client = getMorphClient();
 
-          if (body.repoUrl) {
-            const parsedRepo = parseGithubRepoUrl(body.repoUrl);
-            if (parsedRepo) {
-              await hydrateWorkspace({
-                instance,
-                repo: {
-                  owner: parsedRepo.owner,
-                  name: parsedRepo.repo,
-                  repoFull: parsedRepo.fullName,
-                  cloneUrl: parsedRepo.gitUrl,
-                  maskedCloneUrl: parsedRepo.gitUrl,
-                  depth: 1,
-                  baseBranch: body.branch || "main",
-                  newBranch: "",
-                },
+            let morphInstance = await client.instances.start({
+              snapshotId,
+              ttlSeconds: 3600,
+              ttlAction: "pause",
+              metadata: {
+                app: "cmux-warm-pool",
+                teamId: team.uuid,
+                userId: user.id,
+              },
+            });
+
+            if (morphInstance.networking.httpServices.length === 0) {
+              morphInstance = await client.instances.get({
+                instanceId: morphInstance.id,
               });
             }
-          }
 
-          await convex.mutation(api.warmPool.markInstanceReady, {
-            id: prewarmEntryId,
-            instanceId: instance.id,
-            vscodeUrl: vscodeService.url,
-            workerUrl: workerService.url,
-          });
-        } catch (error) {
-          console.error("[sandboxes.prewarm] Background provisioning failed:", error);
-          try {
-            await convex.mutation(api.warmPool.markInstanceFailed, {
-              id: prewarmEntryId,
-              errorMessage: error instanceof Error ? error.message : String(error),
-            });
-          } catch (markError) {
-            console.error(
-              "[sandboxes.prewarm] Failed to mark entry as failed:",
-              markError,
+            const instance = wrapMorphInstance(morphInstance);
+            void (async () => {
+              await instance.setWakeOn(true, true);
+            })();
+
+            const exposed = instance.networking.httpServices;
+            const vscodeService = exposed.find(
+              (service) => service.port === 39378,
             );
+            const workerService = exposed.find(
+              (service) => service.port === 39377,
+            );
+            if (!vscodeService || !workerService) {
+              throw new Error(
+                `VSCode or worker service not found on instance ${instance.id}`,
+              );
+            }
+
+            await waitForVSCodeReady(vscodeService.url, { timeoutMs: 30_000 });
+
+            const githubAccount = await githubAccountPromise;
+            if (githubAccount) {
+              const { accessToken: githubAccessToken } =
+                await githubAccount.getAccessToken();
+              if (githubAccessToken) {
+                await configureGithubAccess(instance, githubAccessToken);
+              }
+            }
+
+            if (body.repoUrl) {
+              const parsedRepo = parseGithubRepoUrl(body.repoUrl);
+              if (parsedRepo) {
+                await hydrateWorkspace({
+                  instance,
+                  repo: {
+                    owner: parsedRepo.owner,
+                    name: parsedRepo.repo,
+                    repoFull: parsedRepo.fullName,
+                    cloneUrl: parsedRepo.gitUrl,
+                    maskedCloneUrl: parsedRepo.gitUrl,
+                    depth: 1,
+                    baseBranch: body.branch || "main",
+                    newBranch: "",
+                  },
+                });
+              }
+            }
+
+            await convex.mutation(api.warmPool.markInstanceReady, {
+              id: prewarmEntryId,
+              instanceId: instance.id,
+              vscodeUrl: vscodeService.url,
+              workerUrl: workerService.url,
+            });
+          } catch (error) {
+            console.error(
+              "[sandboxes.prewarm] Background provisioning failed:",
+              error,
+            );
+            try {
+              await convex.mutation(api.warmPool.markInstanceFailed, {
+                id: prewarmEntryId,
+                errorMessage:
+                  error instanceof Error ? error.message : String(error),
+              });
+            } catch (markError) {
+              console.error(
+                "[sandboxes.prewarm] Failed to mark entry as failed:",
+                markError,
+              );
+            }
           }
-        }
-      })();
+        })();
+      }
 
       return c.json({ id: result.id, alreadyExists: false });
     } catch (error) {
