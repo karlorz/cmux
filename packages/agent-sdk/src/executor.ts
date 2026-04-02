@@ -48,6 +48,29 @@ export async function executeAgent(
   // Add agent
   args.push("--agent", options.agent);
 
+  // Claude Agent SDK specific options (only for claude/* agents)
+  if (options.agent.startsWith("claude/")) {
+    if (options.permissionMode) {
+      args.push("--permission-mode", options.permissionMode);
+    }
+    if (options.settingSources && options.settingSources.length > 0) {
+      args.push("--setting-sources", options.settingSources.join(","));
+    }
+    if (options.systemPrompt) {
+      if (options.systemPrompt.type === "preset") {
+        args.push("--system-prompt-preset", options.systemPrompt.preset);
+      } else {
+        args.push("--system-prompt", options.systemPrompt.content);
+      }
+    }
+    if (options.allowedTools && options.allowedTools.length > 0) {
+      args.push("--allowed-tools", options.allowedTools.join(","));
+    }
+    if (options.disallowedTools && options.disallowedTools.length > 0) {
+      args.push("--disallowed-tools", options.disallowedTools.join(","));
+    }
+  }
+
   // Add the prompt
   args.push("--", options.prompt);
 
