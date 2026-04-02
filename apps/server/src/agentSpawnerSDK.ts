@@ -168,6 +168,8 @@ export async function spawnAgentWithSDK(
   const cmuxServerUrl = getServerBaseUrl();
 
   // Create SDK session with hooks
+  // Note: The SDK runtime supports more options than the type definitions expose
+  // Using type assertion to work around incomplete type definitions
   const session = unstable_v2_createSession({
     model,
     permissionMode: "acceptEdits",
@@ -193,7 +195,7 @@ export async function spawnAgentWithSDK(
       PreToolUse: [{ hooks: [preToolUseHook] }],
       PostToolUse: [{ hooks: [postToolUseHook] }],
     },
-  });
+  } as Parameters<typeof unstable_v2_createSession>[0]);
 
   try {
     // Send the task description
