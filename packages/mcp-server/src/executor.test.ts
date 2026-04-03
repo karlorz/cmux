@@ -299,4 +299,78 @@ describe("DevshExecutor", () => {
       controlId: "task_123",
     });
   });
+
+  it("creates local checkpoint for local runs", async () => {
+    const readFileFn = async (filePath: string, _enc: "utf8") => {
+      if (filePath.endsWith("session.json")) {
+        return JSON.stringify({
+          sessionId: "session_abc",
+          injectionMode: "active",
+        });
+      }
+      return "{}";
+    };
+
+    const readdirFn = async () => [
+      { name: "local_run_001", isDirectory: () => true },
+    ];
+
+    const statFn = async () => ({ mtimeMs: Date.now() });
+
+    const executor = new DevshExecutor({
+      devshPath: "devsh",
+      execa: (() => Promise.resolve({ stdout: "", stderr: "" })) as never,
+      readFile: readFileFn,
+      readdir: readdirFn as never,
+      stat: statFn as never,
+    });
+
+    const result = await executor.checkpoint({
+      taskId: "local://local_run_001",
+      label: "before-refactor",
+    });
+
+    expect(result).toMatchObject({
+      venue: "local",
+      success: true,
+      checkpointGeneration: 1,
+      label: "before-refactor",
+    });
+    expect((result as { checkpointRef: string }).checkpointRef).toMatch(/^cp_local_/);
+  });
+
+  it("routes remote checkpoint to devsh", async () => {
+    const execaCalls: unknown[] = [];
+
+    const execaFn = (_bin: string, args: string[]) => {
+      execaCalls.push({ args: [...args] });
+      return Promise.resolve({
+        stdout: JSON.stringify({
+          taskId: "task_xyz",
+          checkpointRef: "cp_task_xyz_1",
+          checkpointGeneration: 1,
+          createdAt: "2026-04-03T00:00:00Z",
+        }),
+        stderr: "",
+      });
+    };
+
+    const executor = new DevshExecutor({
+      devshPath: "devsh",
+      execa: execaFn as never,
+    });
+
+    const result = await executor.checkpoint({
+      taskId: "task_xyz",
+      label: "pre-deploy",
+    });
+
+    expect(execaCalls[0]).toMatchObject({
+      args: ["orchestrate", "checkpoint", "--json", "--task-id", "task_xyz", "--label", "pre-deploy"],
+    });
+    expect(result).toMatchObject({
+      checkpointRef: "cp_task_xyz_1",
+      checkpointGeneration: 1,
+    });
+  });
 });

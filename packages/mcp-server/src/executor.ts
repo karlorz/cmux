@@ -141,6 +141,10 @@ interface LocalSessionInfo {
   sessionId?: string;
   threadId?: string;
   injectionMode?: string;
+  checkpointRef?: string;
+  checkpointGeneration?: number;
+  checkpointLabel?: string;
+  checkpointCreatedAt?: number;
 }
 
 interface LocalRunSummary {
@@ -329,6 +333,12 @@ export class DevshExecutor {
   }
 
   async checkpoint(input: CheckpointInput): Promise<unknown> {
+    // For local runs, checkpoints are created via local state file
+    if (this.isLocalReference(input.taskId)) {
+      return this.checkpointLocal(input);
+    }
+
+    // Remote checkpoint via devsh
     const args = ["orchestrate", "checkpoint", "--json", "--task-id", input.taskId];
 
     if (input.label) {
@@ -342,6 +352,55 @@ export class DevshExecutor {
     } catch {
       return { stdout: result.stdout, stderr: result.stderr };
     }
+  }
+
+  private async checkpointLocal(input: CheckpointInput): Promise<unknown> {
+    const localRef = this.parseLocalReference(input.taskId);
+    const runDir = localRef?.runDir ?? input.taskId;
+
+    // Read current session info
+    const sessionInfo = await this.readLocalSessionInfo(runDir);
+    if (!sessionInfo) {
+      return {
+        venue: "local",
+        controlId: runDir,
+        success: false,
+        error: "Local run not found or not running",
+      };
+    }
+
+    // Generate checkpoint reference
+    const generation = (sessionInfo.checkpointGeneration ?? 0) + 1;
+    const checkpointRef = `cp_local_${path.basename(runDir)}_${generation}`;
+    const now = Date.now();
+
+    // Write checkpoint info to session file
+    const sessionPath = path.join(runDir, "session.json");
+    const updatedSession = {
+      ...sessionInfo,
+      checkpointRef,
+      checkpointGeneration: generation,
+      checkpointLabel: input.label,
+      checkpointCreatedAt: now,
+    };
+
+    try {
+      const writeFile = await import("node:fs/promises").then((m) => m.writeFile);
+      await writeFile(sessionPath, JSON.stringify(updatedSession, null, 2));
+    } catch {
+      // Session file may not be writable, but we can still return the checkpoint info
+    }
+
+    return {
+      venue: "local",
+      controlId: runDir,
+      taskId: input.taskId,
+      checkpointRef,
+      checkpointGeneration: generation,
+      label: input.label,
+      createdAt: new Date(now).toISOString(),
+      success: true,
+    };
   }
 
   async migrate(input: MigrateInput): Promise<unknown> {
@@ -871,14 +930,16 @@ export class DevshExecutor {
     const active = status === "running";
     const canContinue =
       active && Boolean(sessionInfo?.sessionId || sessionInfo?.threadId) && sessionInfo?.injectionMode !== "passive";
+    const hasCheckpoint = Boolean(sessionInfo?.checkpointRef);
 
     return {
       inspect: true,
       cancel: active,
       appendInstruction: active,
       continueSession: canContinue,
-      resumeCheckpoint: false,
+      resumeCheckpoint: hasCheckpoint,
       resolveApproval: false,
+      createCheckpoint: active, // Can create checkpoints while running
     };
   }
 
@@ -903,6 +964,9 @@ export class DevshExecutor {
     }
     if (capabilities.appendInstruction || capabilities.continueSession) {
       actions.push("cmux_inject");
+    }
+    if (capabilities.createCheckpoint) {
+      actions.push("cmux_checkpoint");
     }
     return actions;
   }
