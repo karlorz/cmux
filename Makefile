@@ -207,12 +207,14 @@ install-devsh-prod:
 		CMUX_SERVER_URL="$$CMUX_SERVER_URL" \
 		VERSION="$$VERSION"
 
-# Start Chrome with remote debugging on port 9222 (for CDP/MCP)
+# Start Chrome with remote debugging on port 9222 (for CDP/MCP).
+# Reuses the last debug-safe clone of the selected Chrome profile.
 chrome-debug:
 	@chmod +x scripts/chrome-debug.sh
 	./scripts/chrome-debug.sh
 
-# Re-sync the cloned default Chrome debug profile before starting remote debugging
+# Re-sync the debug-safe clone from the real Chrome profile before launch.
+# Chrome should be fully closed before running this target.
 chrome-debug-refresh:
 	@chmod +x scripts/chrome-debug.sh
 	./scripts/chrome-debug.sh --refresh-from-default
