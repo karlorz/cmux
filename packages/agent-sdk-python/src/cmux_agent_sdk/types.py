@@ -3,7 +3,7 @@
 import re
 from datetime import datetime
 from enum import Enum
-from typing import Literal
+from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -26,6 +26,45 @@ class SandboxProvider(str, Enum):
     E2B = "e2b"
     MODAL = "modal"
     LOCAL = "local"
+
+
+class PermissionMode(str, Enum):
+    """Claude Code permission modes for tool use."""
+
+    DEFAULT = "default"
+    ACCEPT_EDITS = "acceptEdits"
+    BYPASS_PERMISSIONS = "bypassPermissions"
+    PLAN = "plan"
+    DELEGATE = "delegate"
+    DONT_ASK = "dontAsk"
+
+
+class SettingSource(str, Enum):
+    """Claude Code setting sources to load."""
+
+    USER = "user"
+    PROJECT = "project"
+    LOCAL = "local"
+
+
+class SystemPromptPreset(BaseModel):
+    """Use a named system prompt preset."""
+
+    type: Literal["preset"] = "preset"
+    preset: str = Field(description="Preset name (e.g. 'claude_code', 'minimal', 'custom')")
+
+
+class SystemPromptCustom(BaseModel):
+    """Use a custom system prompt string."""
+
+    type: Literal["custom"] = "custom"
+    content: str = Field(description="Full system prompt content")
+
+
+SystemPromptConfig = Annotated[
+    Union[SystemPromptPreset, SystemPromptCustom],
+    Field(discriminator="type"),
+]
 
 
 # Agent ID pattern: backend/model
@@ -138,6 +177,27 @@ class SpawnOptions(BaseModel):
     auth_token: str | None = Field(
         default=None,
         description="cmux authentication token",
+    )
+    # Claude Agent SDK specific options (only used for claude/* agents)
+    permission_mode: PermissionMode | None = Field(
+        default=None,
+        description="Claude permission mode for tool use",
+    )
+    setting_sources: list[SettingSource] | None = Field(
+        default=None,
+        description="Claude setting sources to load",
+    )
+    system_prompt: SystemPromptConfig | None = Field(
+        default=None,
+        description="Claude system prompt (preset or custom content)",
+    )
+    allowed_tools: list[str] | None = Field(
+        default=None,
+        description="List of allowed tools for Claude agents",
+    )
+    disallowed_tools: list[str] | None = Field(
+        default=None,
+        description="List of disallowed tools for Claude agents",
     )
 
     @field_validator("agent")
