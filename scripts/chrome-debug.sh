@@ -21,6 +21,7 @@ LOG_FILE="${ROOT_DIR}/logs/chrome-debug.log"
 PROFILE_DIR="${CHROME_DEBUG_PROFILE:-}"
 PROFILE_MARKER=""
 PROFILE_LABEL=""
+PROFILE_SOURCE_DIR=""
 CHROME_ARGS=()
 
 get_repo_local_profile_dir() {
@@ -34,6 +35,15 @@ get_dedicated_profile_dir() {
   fi
 
   printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/cmux/chrome-debug-profile"
+}
+
+get_default_user_clone_dir() {
+  if [[ "${OSTYPE:-}" == "darwin"* ]]; then
+    printf '%s\n' "$HOME/Library/Application Support/cmux/chrome-debug-profile-from-default"
+    return 0
+  fi
+
+  printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/cmux/chrome-debug-profile-from-default"
 }
 
 log_info() {
@@ -61,7 +71,7 @@ Options:
   --launch-and-explain
                    Print the diagnosis first, then continue with the normal launch flow
   --default-user-profile
-                   Use the normal Chrome user-data directory with --profile-directory (default)
+                   Clone the normal Chrome profile into a debug-safe user-data directory (default)
   --repo-local-profile
                    Use ${ROOT_DIR}/.chrome-debug-profile instead of the normal Chrome user data
   --dedicated-profile
@@ -157,19 +167,23 @@ resolve_profile_config() {
     PROFILE_MODE="custom-path"
     PROFILE_DIR="${CHROME_DEBUG_PROFILE}"
     PROFILE_LABEL="custom profile path from CHROME_DEBUG_PROFILE"
+    PROFILE_SOURCE_DIR=""
   else
     case "${PROFILE_MODE}" in
       default-user)
-        PROFILE_DIR="$(resolve_default_user_data_dir "${chrome_bin}")"
-        PROFILE_LABEL="Chrome user-data directory (${PROFILE_DIRECTORY_NAME})"
+        PROFILE_SOURCE_DIR="$(resolve_default_user_data_dir "${chrome_bin}")"
+        PROFILE_DIR="$(get_default_user_clone_dir)"
+        PROFILE_LABEL="clone of Chrome user-data directory (${PROFILE_DIRECTORY_NAME})"
         ;;
       repo-local)
         PROFILE_DIR="$(get_repo_local_profile_dir)"
         PROFILE_LABEL="repo-local debug profile"
+        PROFILE_SOURCE_DIR=""
         ;;
       dedicated)
         PROFILE_DIR="$(get_dedicated_profile_dir)"
         PROFILE_LABEL="cmux dedicated debug profile"
+        PROFILE_SOURCE_DIR=""
         ;;
       *)
         log_error "Unknown profile mode: ${PROFILE_MODE}"
@@ -202,6 +216,70 @@ profile_is_default_user_mode() {
 
 profile_supports_local_seeding() {
   [[ "${PROFILE_MODE}" != "default-user" ]]
+}
+
+profile_requires_clone_sync() {
+  [[ "${PROFILE_MODE}" == "default-user" ]]
+}
+
+copy_path_if_present() {
+  local source_path="$1"
+  local target_path="$2"
+
+  if [[ ! -e "${source_path}" ]]; then
+    return 0
+  fi
+
+  mkdir -p "$(dirname "${target_path}")"
+  cp -R "${source_path}" "${target_path}"
+}
+
+sync_default_user_profile() {
+  local source_profile_dir target_profile_dir
+
+  if [[ -z "${PROFILE_SOURCE_DIR}" ]]; then
+    log_error "Default-user mode is missing the source Chrome profile directory."
+    exit 1
+  fi
+
+  source_profile_dir="${PROFILE_SOURCE_DIR}/${PROFILE_DIRECTORY_NAME}"
+  target_profile_dir="${PROFILE_DIR}/${PROFILE_DIRECTORY_NAME}"
+
+  if [[ ! -d "${source_profile_dir}" ]]; then
+    log_error "Chrome profile directory does not exist: ${source_profile_dir}"
+    exit 1
+  fi
+
+  mkdir -p "${PROFILE_DIR}"
+  rm -rf "${target_profile_dir}"
+
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a --delete \
+      --exclude='Cache/' \
+      --exclude='Code Cache/' \
+      --exclude='GPUCache/' \
+      --exclude='GrShaderCache/' \
+      --exclude='ShaderCache/' \
+      --exclude='Crashpad/' \
+      --exclude='Singleton*' \
+      "${source_profile_dir}/" "${target_profile_dir}/"
+  else
+    cp -R "${source_profile_dir}" "${target_profile_dir}"
+    rm -rf \
+      "${target_profile_dir}/Cache" \
+      "${target_profile_dir}/Code Cache" \
+      "${target_profile_dir}/GPUCache" \
+      "${target_profile_dir}/GrShaderCache" \
+      "${target_profile_dir}/ShaderCache" \
+      "${target_profile_dir}/Crashpad"
+    rm -f \
+      "${target_profile_dir}/SingletonLock" \
+      "${target_profile_dir}/SingletonSocket" \
+      "${target_profile_dir}/SingletonCookie"
+  fi
+
+  rm -f "${PROFILE_DIR}/Local State"
+  copy_path_if_present "${PROFILE_SOURCE_DIR}/Local State" "${PROFILE_DIR}/Local State"
 }
 
 list_profile_pids() {
@@ -355,7 +433,7 @@ emit_explanation() {
     free)
       if profile_is_default_user_mode && chrome_any_process_running; then
         summary="Port ${DEBUG_PORT} is free, but Chrome is already running outside the script-managed debugger session."
-        next_action="Close Chrome first, or rerun with --repo-local-profile / --dedicated-profile for an isolated debug profile."
+        next_action="Close Chrome first so the script can clone your selected Chrome profile, or rerun with --repo-local-profile / --dedicated-profile."
       else
         summary="Port ${DEBUG_PORT} is free; Chrome is not currently serving DevTools there."
         next_action="Run ./scripts/chrome-debug.sh to start the debug browser."
@@ -375,6 +453,7 @@ emit_explanation() {
     CHROME_BIN_JSON="${chrome_bin}" \
     DEBUG_PORT_JSON="${DEBUG_PORT}" \
     PROFILE_DIR_JSON="${PROFILE_DIR}" \
+    PROFILE_SOURCE_DIR_JSON="${PROFILE_SOURCE_DIR}" \
     PROFILE_MODE_JSON="${PROFILE_MODE}" \
     PORT_STATUS_JSON="${port_status}" \
     PROFILE_EXISTS_JSON="${profile_exists}" \
@@ -391,6 +470,7 @@ print(
             "chromeBin": os.environ["CHROME_BIN_JSON"],
             "debugPort": int(os.environ["DEBUG_PORT_JSON"]),
             "profileDir": os.environ["PROFILE_DIR_JSON"],
+            "profileSourceDir": os.environ["PROFILE_SOURCE_DIR_JSON"],
             "profileMode": os.environ["PROFILE_MODE_JSON"],
             "portStatus": os.environ["PORT_STATUS_JSON"],
             "profileExists": os.environ["PROFILE_EXISTS_JSON"] == "yes",
@@ -409,6 +489,7 @@ Chrome binary : ${chrome_bin}
 Debug port    : ${DEBUG_PORT}
 Profile mode  : ${PROFILE_MODE}
 Profile label : ${PROFILE_LABEL}
+Profile source: ${PROFILE_SOURCE_DIR:-<none>}
 Profile dir   : ${PROFILE_DIR}
 Port status   : ${port_status}
 Profile exists: ${profile_exists}
@@ -420,6 +501,8 @@ EOF_EXPLAIN
 
 build_chrome_args() {
   CHROME_ARGS=(
+    --no-first-run
+    --no-default-browser-check
     --remote-debugging-port="${DEBUG_PORT}"
     --remote-debugging-address=127.0.0.1
     --remote-allow-origins=*
@@ -436,13 +519,7 @@ build_chrome_args() {
     "${TARGET_URL}"
   )
 
-  if profile_supports_local_seeding; then
-    CHROME_ARGS=(
-      --no-first-run
-      --no-default-browser-check
-      "${CHROME_ARGS[@]}"
-    )
-  else
+  if profile_is_default_user_mode; then
     CHROME_ARGS=(
       --profile-directory="${PROFILE_DIRECTORY_NAME}"
       "${CHROME_ARGS[@]}"
@@ -471,6 +548,7 @@ print_config() {
     PROFILE_DIR_JSON="${PROFILE_DIR}" \
     PROFILE_MODE_JSON="${PROFILE_MODE}" \
     PROFILE_DIRECTORY_JSON="${PROFILE_DIRECTORY_NAME}" \
+    PROFILE_SOURCE_DIR_JSON="${PROFILE_SOURCE_DIR}" \
     LOG_FILE_JSON="${LOG_FILE}" \
     TARGET_URL_JSON="${TARGET_URL}" \
     LAUNCH_ARGS_JSON_SOURCE="${launch_args_payload}" \
@@ -489,6 +567,7 @@ print(
             "profileDir": os.environ["PROFILE_DIR_JSON"],
             "profileMode": os.environ["PROFILE_MODE_JSON"],
             "profileDirectory": os.environ["PROFILE_DIRECTORY_JSON"],
+            "profileSourceDir": os.environ["PROFILE_SOURCE_DIR_JSON"],
             "logFile": os.environ["LOG_FILE_JSON"],
             "targetUrl": os.environ["TARGET_URL_JSON"],
             "launchArgs": launch_args,
@@ -505,6 +584,7 @@ DEBUG_PORT=${DEBUG_PORT}
 PROFILE_MODE=${PROFILE_MODE}
 PROFILE_LABEL=${PROFILE_LABEL}
 PROFILE_DIRECTORY_NAME=${PROFILE_DIRECTORY_NAME}
+PROFILE_SOURCE_DIR=${PROFILE_SOURCE_DIR}
 PROFILE_DIR=${PROFILE_DIR}
 LOG_FILE=${LOG_FILE}
 TARGET_URL=${TARGET_URL}
@@ -630,16 +710,22 @@ if port_is_healthy; then
 fi
 
 if profile_is_default_user_mode && chrome_any_process_running; then
-  log_error "Chrome is already running, so the default Chrome profile cannot be safely relaunched with remote debugging."
+  log_error "Chrome is already running, so the script cannot safely clone the selected Chrome profile for remote debugging."
   log_error "Close Chrome first, or rerun with --repo-local-profile / --dedicated-profile."
   exit 1
 fi
 
 mkdir -p "$(dirname "${LOG_FILE}")" "${PROFILE_DIR}"
+if profile_requires_clone_sync; then
+  sync_default_user_profile
+fi
 if profile_supports_local_seeding; then
   stop_profile_processes
   cleanup_profile_locks
   seed_profile_preferences
+else
+  stop_profile_processes
+  cleanup_profile_locks
 fi
 
 log_info "Starting Chrome in detached mode."
@@ -647,6 +733,9 @@ log_info "Chrome: ${CHROME_BIN}"
 log_info "Port: ${DEBUG_PORT}"
 log_info "Profile mode: ${PROFILE_MODE}"
 log_info "Profile label: ${PROFILE_LABEL}"
+if [[ -n "${PROFILE_SOURCE_DIR}" ]]; then
+  log_info "Profile source: ${PROFILE_SOURCE_DIR}"
+fi
 log_info "Profile: ${PROFILE_DIR}"
 log_info "URL: ${TARGET_URL}"
 log_info "Log file: ${LOG_FILE}"
