@@ -61,8 +61,8 @@ export class CmuxMcpServer {
               Object.entries(tool.inputSchema.shape).map(([key, schema]) => [
                 key,
                 {
-                  type: this.zodTypeToJsonType(schema),
-                  description: schema.description,
+                  ...this.zodToJsonSchema(schema),
+                  description: (schema as { description?: string }).description,
                 },
               ])
             ),
@@ -136,24 +136,25 @@ export class CmuxMcpServer {
     });
   }
 
-  private zodTypeToJsonType(schema: unknown): string {
-    // Simple type mapping - can be extended
-    const typeName = (schema as { _def?: { typeName?: string } })?._def?.typeName;
+  private zodToJsonSchema(schema: unknown): Record<string, unknown> {
+    const def = (schema as { _def?: Record<string, unknown> })?._def;
+    const typeName = def?.typeName as string | undefined;
     switch (typeName) {
       case "ZodString":
-        return "string";
+        return { type: "string" };
       case "ZodNumber":
-        return "number";
+        return { type: "number" };
       case "ZodBoolean":
-        return "boolean";
+        return { type: "boolean" };
       case "ZodEnum":
-        return "string";
+        return { type: "string", enum: (def?.values as string[]) ?? [] };
+      case "ZodArray":
+        return { type: "array", items: this.zodToJsonSchema(def?.type) };
       case "ZodOptional":
-        return this.zodTypeToJsonType((schema as { _def?: { innerType?: unknown } })?._def?.innerType);
       case "ZodDefault":
-        return this.zodTypeToJsonType((schema as { _def?: { innerType?: unknown } })?._def?.innerType);
+        return this.zodToJsonSchema(def?.innerType);
       default:
-        return "string";
+        return { type: "string" };
     }
   }
 
