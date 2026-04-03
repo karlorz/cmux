@@ -4779,3 +4779,87 @@ export const createWorkspaceTaskRun = internalMutation({
     return { taskRunId, taskId, jwt, reused: false };
   },
 });
+
+// ============================================================================
+// Checkpoint Management
+// ============================================================================
+
+/**
+ * Create a checkpoint for a task run.
+ * Captures the current state for later resume.
+ */
+export const createCheckpoint = internalMutation({
+  args: {
+    taskId: v.id("tasks"),
+    label: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    // Find the latest running task run for this task
+    const runs = await ctx.db
+      .query("taskRuns")
+      .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
+      .order("desc")
+      .take(1);
+
+    const run = runs[0];
+    if (!run || run.status !== "running") {
+      return null;
+    }
+
+    // Generate checkpoint reference and increment generation
+    const currentGeneration = run.interruptionState?.checkpointGeneration ?? 0;
+    const newGeneration = currentGeneration + 1;
+    const checkpointRef = `cp_${run._id}_${newGeneration}`;
+    const now = Date.now();
+
+    // Update the task run with checkpoint info
+    await ctx.db.patch(run._id, {
+      interruptionState: {
+        status: "checkpoint_pending" as const,
+        checkpointRef,
+        checkpointGeneration: newGeneration,
+        blockedAt: now,
+        reason: args.label ?? "Checkpoint created",
+        // Preserve existing fields
+        approvalRequestId: run.interruptionState?.approvalRequestId,
+        expiresAt: run.interruptionState?.expiresAt,
+        resumeToken: run.interruptionState?.resumeToken,
+        providerSessionId: run.interruptionState?.providerSessionId,
+        resumeTargetId: run.interruptionState?.resumeTargetId,
+      },
+    });
+
+    return {
+      checkpointRef,
+      checkpointGeneration: newGeneration,
+    };
+  },
+});
+
+/**
+ * List checkpoints for a task.
+ */
+export const listCheckpoints = internalQuery({
+  args: {
+    taskId: v.id("tasks"),
+  },
+  handler: async (ctx, args) => {
+    // Get all task runs for this task that have checkpoint refs
+    const runs = await ctx.db
+      .query("taskRuns")
+      .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
+      .collect();
+
+    const checkpoints = runs
+      .filter((run) => run.interruptionState?.checkpointRef)
+      .map((run) => ({
+        checkpointRef: run.interruptionState!.checkpointRef!,
+        checkpointGeneration: run.interruptionState!.checkpointGeneration ?? 0,
+        label: run.interruptionState?.reason,
+        createdAt: run.interruptionState?.blockedAt ?? run.createdAt,
+      }))
+      .sort((a, b) => b.checkpointGeneration - a.checkpointGeneration);
+
+    return checkpoints;
+  },
+});

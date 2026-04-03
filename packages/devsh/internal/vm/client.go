@@ -3020,3 +3020,55 @@ func (c *Client) UploadBundle(ctx context.Context, bundleJSON []byte, taskRunJwt
 
 	return &result, nil
 }
+
+// CreateCheckpointOptions represents options for creating a checkpoint
+type CreateCheckpointOptions struct {
+	TaskID string // Task ID to checkpoint (required)
+	Label  string // Optional label for the checkpoint
+}
+
+// CreateCheckpointResult represents the result of creating a checkpoint
+type CreateCheckpointResult struct {
+	TaskID               string `json:"taskId"`
+	CheckpointRef        string `json:"checkpointRef"`
+	CheckpointGeneration int64  `json:"checkpointGeneration"`
+	Label                string `json:"label,omitempty"`
+	CreatedAt            string `json:"createdAt"`
+}
+
+// CreateCheckpoint creates a checkpoint of the current task state
+func (c *Client) CreateCheckpoint(ctx context.Context, opts CreateCheckpointOptions) (*CreateCheckpointResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	if opts.TaskID == "" {
+		return nil, fmt.Errorf("taskId is required")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+		"taskId":       opts.TaskID,
+	}
+	if opts.Label != "" {
+		body["label"] = opts.Label
+	}
+
+	resp, err := c.doServerRequest(ctx, "POST", "/api/orchestrate/checkpoint", body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("checkpoint creation failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var checkpointResult CreateCheckpointResult
+	if err := json.NewDecoder(resp.Body).Decode(&checkpointResult); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &checkpointResult, nil
+}
+

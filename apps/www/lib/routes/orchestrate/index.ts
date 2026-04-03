@@ -12,6 +12,7 @@
  * - events.route.ts - SSE real-time updates
  * - approvals.route.ts - Human-in-the-loop approvals
  * - learning.route.ts - Self-improving orchestration rules
+ * - checkpoint.route.ts - Checkpoint management
  */
 
 import { OpenAPIHono } from "@hono/zod-openapi";
@@ -25,6 +26,7 @@ import { orchestrateLearningRouter } from "./learning.route";
 import { orchestrateInputRouter } from "./input.route";
 import { orchestrateSimplifyRouter } from "./simplify.route";
 import { orchestrateContextHealthRouter } from "./context-health.route";
+import { orchestrateCheckpointRouter } from "./checkpoint.route";
 
 export const orchestrateRouter = new OpenAPIHono();
 
@@ -39,6 +41,7 @@ orchestrateRouter.route("/", orchestrateLearningRouter);
 orchestrateRouter.route("/", orchestrateInputRouter);
 orchestrateRouter.route("/", orchestrateSimplifyRouter);
 orchestrateRouter.route("/", orchestrateContextHealthRouter);
+orchestrateRouter.route("/", orchestrateCheckpointRouter);
 
 // Re-export for backwards compatibility
 export { orchestrateTasksRouter } from "./tasks.route";
@@ -51,3 +54,4 @@ export { orchestrateLearningRouter } from "./learning.route";
 export { orchestrateInputRouter } from "./input.route";
 export { orchestrateSimplifyRouter } from "./simplify.route";
 export { orchestrateContextHealthRouter } from "./context-health.route";
+export { orchestrateCheckpointRouter } from "./checkpoint.route";
