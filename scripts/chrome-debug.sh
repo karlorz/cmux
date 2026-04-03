@@ -10,14 +10,24 @@ JSON_OUTPUT=0
 CHECK_PORT_ONLY=0
 EXPLAIN_ONLY=0
 LAUNCH_AND_EXPLAIN=0
+PROFILE_MODE="${CHROME_DEBUG_PROFILE_MODE:-default-user}"
+PROFILE_DIRECTORY_NAME="${CHROME_DEBUG_PROFILE_DIRECTORY:-Default}"
 TARGET_URL="${CHROME_DEBUG_URL:-about:blank}"
 TARGET_URL_SET=0
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 LOG_FILE="${ROOT_DIR}/logs/chrome-debug.log"
+PROFILE_DIR="${CHROME_DEBUG_PROFILE:-}"
+PROFILE_MARKER=""
+PROFILE_LABEL=""
+CHROME_ARGS=()
 
-get_default_profile_dir() {
+get_repo_local_profile_dir() {
+  printf '%s\n' "${ROOT_DIR}/.chrome-debug-profile"
+}
+
+get_dedicated_profile_dir() {
   if [[ "${OSTYPE:-}" == "darwin"* ]]; then
     printf '%s\n' "$HOME/Library/Application Support/cmux/chrome-debug-profile"
     return 0
@@ -25,9 +35,6 @@ get_default_profile_dir() {
 
   printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/cmux/chrome-debug-profile"
 }
-
-PROFILE_DIR="${CHROME_DEBUG_PROFILE:-$(get_default_profile_dir)}"
-PROFILE_MARKER="--user-data-dir=${PROFILE_DIR}"
 
 log_info() {
   echo "[INFO] $*"
@@ -42,7 +49,7 @@ log_error() {
 }
 
 print_usage() {
-  cat <<EOF
+  cat <<EOF_USAGE
 Usage: ./scripts/chrome-debug.sh [--dry-run] [--print-config] [--json] [URL]
 
 Options:
@@ -53,8 +60,17 @@ Options:
   --explain       Print a short diagnosis and suggested next action without launching Chrome
   --launch-and-explain
                    Print the diagnosis first, then continue with the normal launch flow
+  --default-user-profile
+                   Use the normal Chrome user-data directory with --profile-directory (default)
+  --repo-local-profile
+                   Use ${ROOT_DIR}/.chrome-debug-profile instead of the normal Chrome user data
+  --dedicated-profile
+                   Use the persistent cmux-only OS-native debug profile
+  --profile-directory NAME
+                   Pick a Chrome profile subdirectory (Default, Profile 1, etc.) when using
+                   --default-user-profile
   -h, --help      Show this help message
-EOF
+EOF_USAGE
 }
 
 detect_chrome() {
@@ -104,6 +120,88 @@ detect_chrome() {
   fi
 
   return 1
+}
+
+resolve_default_user_data_dir() {
+  local chrome_bin="$1"
+
+  if [[ "${OSTYPE:-}" == "darwin"* ]]; then
+    case "${chrome_bin}" in
+      *"Google Chrome Canary"*)
+        printf '%s\n' "$HOME/Library/Application Support/Google/Chrome Canary"
+        ;;
+      *"/Chromium")
+        printf '%s\n' "$HOME/Library/Application Support/Chromium"
+        ;;
+      *)
+        printf '%s\n' "$HOME/Library/Application Support/Google/Chrome"
+        ;;
+    esac
+    return 0
+  fi
+
+  case "$(basename "${chrome_bin}")" in
+    chromium|chromium-browser)
+      printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/chromium"
+      ;;
+    *)
+      printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/google-chrome"
+      ;;
+  esac
+}
+
+resolve_profile_config() {
+  local chrome_bin="$1"
+
+  if [[ -n "${CHROME_DEBUG_PROFILE:-}" ]]; then
+    PROFILE_MODE="custom-path"
+    PROFILE_DIR="${CHROME_DEBUG_PROFILE}"
+    PROFILE_LABEL="custom profile path from CHROME_DEBUG_PROFILE"
+  else
+    case "${PROFILE_MODE}" in
+      default-user)
+        PROFILE_DIR="$(resolve_default_user_data_dir "${chrome_bin}")"
+        PROFILE_LABEL="Chrome user-data directory (${PROFILE_DIRECTORY_NAME})"
+        ;;
+      repo-local)
+        PROFILE_DIR="$(get_repo_local_profile_dir)"
+        PROFILE_LABEL="repo-local debug profile"
+        ;;
+      dedicated)
+        PROFILE_DIR="$(get_dedicated_profile_dir)"
+        PROFILE_LABEL="cmux dedicated debug profile"
+        ;;
+      *)
+        log_error "Unknown profile mode: ${PROFILE_MODE}"
+        exit 1
+        ;;
+    esac
+  fi
+
+  PROFILE_MARKER="--user-data-dir=${PROFILE_DIR}"
+}
+
+chrome_any_process_running() {
+  if [[ "${OSTYPE:-}" == "darwin"* ]]; then
+    pgrep -ax "Google Chrome" >/dev/null 2>&1 || \
+      pgrep -ax "Google Chrome Canary" >/dev/null 2>&1 || \
+      pgrep -ax "Chromium" >/dev/null 2>&1
+    return $?
+  fi
+
+  pgrep -x "google-chrome" >/dev/null 2>&1 || \
+    pgrep -x "google-chrome-stable" >/dev/null 2>&1 || \
+    pgrep -x "google-chrome-unstable" >/dev/null 2>&1 || \
+    pgrep -x "chromium" >/dev/null 2>&1 || \
+    pgrep -x "chromium-browser" >/dev/null 2>&1
+}
+
+profile_is_default_user_mode() {
+  [[ "${PROFILE_MODE}" == "default-user" ]]
+}
+
+profile_supports_local_seeding() {
+  [[ "${PROFILE_MODE}" != "default-user" ]]
 }
 
 list_profile_pids() {
@@ -204,6 +302,7 @@ emit_port_status() {
     DEBUG_PORT_JSON="${DEBUG_PORT}" \
     PORT_STATUS_JSON="${port_status}" \
     PROFILE_DIR_JSON="${PROFILE_DIR}" \
+    PROFILE_MODE_JSON="${PROFILE_MODE}" \
     python3 - <<'PY'
 import json
 import os
@@ -214,6 +313,7 @@ print(
             "debugPort": int(os.environ["DEBUG_PORT_JSON"]),
             "status": os.environ["PORT_STATUS_JSON"],
             "profileDir": os.environ["PROFILE_DIR_JSON"],
+            "profileMode": os.environ["PROFILE_MODE_JSON"],
         }
     )
 )
@@ -253,11 +353,16 @@ emit_explanation() {
 
   case "${port_status}" in
     free)
-      summary="Port ${DEBUG_PORT} is free; Chrome is not currently serving DevTools there."
-      next_action="Run ./scripts/chrome-debug.sh to start the dedicated debug browser."
+      if profile_is_default_user_mode && chrome_any_process_running; then
+        summary="Port ${DEBUG_PORT} is free, but Chrome is already running outside the script-managed debugger session."
+        next_action="Close Chrome first, or rerun with --repo-local-profile / --dedicated-profile for an isolated debug profile."
+      else
+        summary="Port ${DEBUG_PORT} is free; Chrome is not currently serving DevTools there."
+        next_action="Run ./scripts/chrome-debug.sh to start the debug browser."
+      fi
       ;;
     owned_by_profile)
-      summary="Port ${DEBUG_PORT} is already owned by the dedicated cmux debug profile."
+      summary="Port ${DEBUG_PORT} is already owned by the configured ${PROFILE_LABEL}."
       next_action="Reuse the existing browser, or stop only that profile-specific Chrome if you need a clean restart."
       ;;
     occupied_by_other)
@@ -270,6 +375,7 @@ emit_explanation() {
     CHROME_BIN_JSON="${chrome_bin}" \
     DEBUG_PORT_JSON="${DEBUG_PORT}" \
     PROFILE_DIR_JSON="${PROFILE_DIR}" \
+    PROFILE_MODE_JSON="${PROFILE_MODE}" \
     PORT_STATUS_JSON="${port_status}" \
     PROFILE_EXISTS_JSON="${profile_exists}" \
     PREFERENCES_EXIST_JSON="${preferences_exist}" \
@@ -285,6 +391,7 @@ print(
             "chromeBin": os.environ["CHROME_BIN_JSON"],
             "debugPort": int(os.environ["DEBUG_PORT_JSON"]),
             "profileDir": os.environ["PROFILE_DIR_JSON"],
+            "profileMode": os.environ["PROFILE_MODE_JSON"],
             "portStatus": os.environ["PORT_STATUS_JSON"],
             "profileExists": os.environ["PROFILE_EXISTS_JSON"] == "yes",
             "preferencesExist": os.environ["PREFERENCES_EXIST_JSON"] == "yes",
@@ -297,16 +404,18 @@ PY
     return 0
   fi
 
-  cat <<EOF
+  cat <<EOF_EXPLAIN
 Chrome binary : ${chrome_bin}
 Debug port    : ${DEBUG_PORT}
+Profile mode  : ${PROFILE_MODE}
+Profile label : ${PROFILE_LABEL}
 Profile dir   : ${PROFILE_DIR}
 Port status   : ${port_status}
 Profile exists: ${profile_exists}
 Prefs seeded  : ${preferences_exist}
 Summary       : ${summary}
 Next action   : ${next_action}
-EOF
+EOF_EXPLAIN
 }
 
 build_chrome_args() {
@@ -315,8 +424,6 @@ build_chrome_args() {
     --remote-debugging-address=127.0.0.1
     --remote-allow-origins=*
     --user-data-dir="${PROFILE_DIR}"
-    --no-first-run
-    --no-default-browser-check
     --disable-session-crashed-bubble
     --disable-default-apps
     --disable-sync
@@ -328,6 +435,19 @@ build_chrome_args() {
     --window-size=1920,1080
     "${TARGET_URL}"
   )
+
+  if profile_supports_local_seeding; then
+    CHROME_ARGS=(
+      --no-first-run
+      --no-default-browser-check
+      "${CHROME_ARGS[@]}"
+    )
+  else
+    CHROME_ARGS=(
+      --profile-directory="${PROFILE_DIRECTORY_NAME}"
+      "${CHROME_ARGS[@]}"
+    )
+  fi
 
   if [[ "${OSTYPE:-}" != "darwin"* ]]; then
     CHROME_ARGS=(
@@ -349,6 +469,8 @@ print_config() {
     CHROME_BIN_JSON="${chrome_bin}" \
     DEBUG_PORT_JSON="${DEBUG_PORT}" \
     PROFILE_DIR_JSON="${PROFILE_DIR}" \
+    PROFILE_MODE_JSON="${PROFILE_MODE}" \
+    PROFILE_DIRECTORY_JSON="${PROFILE_DIRECTORY_NAME}" \
     LOG_FILE_JSON="${LOG_FILE}" \
     TARGET_URL_JSON="${TARGET_URL}" \
     LAUNCH_ARGS_JSON_SOURCE="${launch_args_payload}" \
@@ -365,6 +487,8 @@ print(
             "chromeBin": os.environ["CHROME_BIN_JSON"],
             "debugPort": int(os.environ["DEBUG_PORT_JSON"]),
             "profileDir": os.environ["PROFILE_DIR_JSON"],
+            "profileMode": os.environ["PROFILE_MODE_JSON"],
+            "profileDirectory": os.environ["PROFILE_DIRECTORY_JSON"],
             "logFile": os.environ["LOG_FILE_JSON"],
             "targetUrl": os.environ["TARGET_URL_JSON"],
             "launchArgs": launch_args,
@@ -375,13 +499,16 @@ PY
     return 0
   fi
 
-  cat <<EOF
+  cat <<EOF_CONFIG
 CHROME_BIN=${chrome_bin}
 DEBUG_PORT=${DEBUG_PORT}
+PROFILE_MODE=${PROFILE_MODE}
+PROFILE_LABEL=${PROFILE_LABEL}
+PROFILE_DIRECTORY_NAME=${PROFILE_DIRECTORY_NAME}
 PROFILE_DIR=${PROFILE_DIR}
 LOG_FILE=${LOG_FILE}
 TARGET_URL=${TARGET_URL}
-EOF
+EOF_CONFIG
 }
 
 while [[ $# -gt 0 ]]; do
@@ -403,6 +530,23 @@ while [[ $# -gt 0 ]]; do
       ;;
     --launch-and-explain)
       LAUNCH_AND_EXPLAIN=1
+      ;;
+    --default-user-profile)
+      PROFILE_MODE="default-user"
+      ;;
+    --repo-local-profile)
+      PROFILE_MODE="repo-local"
+      ;;
+    --dedicated-profile)
+      PROFILE_MODE="dedicated"
+      ;;
+    --profile-directory)
+      shift
+      if [[ $# -eq 0 ]]; then
+        log_error "--profile-directory requires a value."
+        exit 1
+      fi
+      PROFILE_DIRECTORY_NAME="$1"
       ;;
     -h|--help)
       print_usage
@@ -446,6 +590,7 @@ if [[ -z "${CHROME_BIN}" || ! -x "${CHROME_BIN}" ]]; then
   exit 1
 fi
 
+resolve_profile_config "${CHROME_BIN}"
 build_chrome_args
 
 if [[ "${CHECK_PORT_ONLY}" == "1" ]]; then
@@ -484,14 +629,24 @@ if port_is_healthy; then
   exit 1
 fi
 
+if profile_is_default_user_mode && chrome_any_process_running; then
+  log_error "Chrome is already running, so the default Chrome profile cannot be safely relaunched with remote debugging."
+  log_error "Close Chrome first, or rerun with --repo-local-profile / --dedicated-profile."
+  exit 1
+fi
+
 mkdir -p "$(dirname "${LOG_FILE}")" "${PROFILE_DIR}"
-stop_profile_processes
-cleanup_profile_locks
-seed_profile_preferences
+if profile_supports_local_seeding; then
+  stop_profile_processes
+  cleanup_profile_locks
+  seed_profile_preferences
+fi
 
 log_info "Starting Chrome in detached mode."
 log_info "Chrome: ${CHROME_BIN}"
 log_info "Port: ${DEBUG_PORT}"
+log_info "Profile mode: ${PROFILE_MODE}"
+log_info "Profile label: ${PROFILE_LABEL}"
 log_info "Profile: ${PROFILE_DIR}"
 log_info "URL: ${TARGET_URL}"
 log_info "Log file: ${LOG_FILE}"
