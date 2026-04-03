@@ -12,6 +12,7 @@ EXPLAIN_ONLY=0
 LAUNCH_AND_EXPLAIN=0
 PROFILE_MODE="${CHROME_DEBUG_PROFILE_MODE:-default-user}"
 PROFILE_DIRECTORY_NAME="${CHROME_DEBUG_PROFILE_DIRECTORY:-Default}"
+REFRESH_FROM_DEFAULT="${CHROME_DEBUG_REFRESH_FROM_DEFAULT:-0}"
 TARGET_URL="${CHROME_DEBUG_URL:-about:blank}"
 TARGET_URL_SET=0
 
@@ -72,6 +73,8 @@ Options:
                    Print the diagnosis first, then continue with the normal launch flow
   --default-user-profile
                    Clone the normal Chrome profile into a debug-safe user-data directory (default)
+  --refresh-from-default
+                   Re-sync the cloned default-user debug profile from your real Chrome profile before launch
   --repo-local-profile
                    Use ${ROOT_DIR}/.chrome-debug-profile instead of the normal Chrome user data
   --dedicated-profile
@@ -222,6 +225,14 @@ profile_requires_clone_sync() {
   [[ "${PROFILE_MODE}" == "default-user" ]]
 }
 
+clone_sync_requested() {
+  [[ "${REFRESH_FROM_DEFAULT}" == "1" ]]
+}
+
+default_clone_exists() {
+  [[ -d "${PROFILE_DIR}/${PROFILE_DIRECTORY_NAME}" ]]
+}
+
 copy_path_if_present() {
   local source_path="$1"
   local target_path="$2"
@@ -251,6 +262,7 @@ sync_default_user_profile() {
   fi
 
   mkdir -p "${PROFILE_DIR}"
+  log_info "Syncing Chrome profile ${PROFILE_DIRECTORY_NAME} from ${PROFILE_SOURCE_DIR} into ${PROFILE_DIR}."
   rm -rf "${target_profile_dir}"
 
   if command -v rsync >/dev/null 2>&1; then
@@ -431,9 +443,13 @@ emit_explanation() {
 
   case "${port_status}" in
     free)
-      if profile_is_default_user_mode && chrome_any_process_running; then
+      if profile_is_default_user_mode && chrome_any_process_running && (clone_sync_requested || ! default_clone_exists); then
         summary="Port ${DEBUG_PORT} is free, but Chrome is already running outside the script-managed debugger session."
-        next_action="Close Chrome first so the script can clone your selected Chrome profile, or rerun with --repo-local-profile / --dedicated-profile."
+        if clone_sync_requested; then
+          next_action="Close Chrome first so the script can refresh your cloned Chrome profile, or rerun without --refresh-from-default to reuse the last clone."
+        else
+          next_action="Close Chrome first so the script can create the initial cloned Chrome profile, or rerun with --repo-local-profile / --dedicated-profile."
+        fi
       else
         summary="Port ${DEBUG_PORT} is free; Chrome is not currently serving DevTools there."
         next_action="Run ./scripts/chrome-debug.sh to start the debug browser."
@@ -549,6 +565,7 @@ print_config() {
     PROFILE_MODE_JSON="${PROFILE_MODE}" \
     PROFILE_DIRECTORY_JSON="${PROFILE_DIRECTORY_NAME}" \
     PROFILE_SOURCE_DIR_JSON="${PROFILE_SOURCE_DIR}" \
+    REFRESH_FROM_DEFAULT_JSON="${REFRESH_FROM_DEFAULT}" \
     LOG_FILE_JSON="${LOG_FILE}" \
     TARGET_URL_JSON="${TARGET_URL}" \
     LAUNCH_ARGS_JSON_SOURCE="${launch_args_payload}" \
@@ -568,6 +585,7 @@ print(
             "profileMode": os.environ["PROFILE_MODE_JSON"],
             "profileDirectory": os.environ["PROFILE_DIRECTORY_JSON"],
             "profileSourceDir": os.environ["PROFILE_SOURCE_DIR_JSON"],
+            "refreshFromDefault": os.environ["REFRESH_FROM_DEFAULT_JSON"] == "1",
             "logFile": os.environ["LOG_FILE_JSON"],
             "targetUrl": os.environ["TARGET_URL_JSON"],
             "launchArgs": launch_args,
@@ -585,6 +603,7 @@ PROFILE_MODE=${PROFILE_MODE}
 PROFILE_LABEL=${PROFILE_LABEL}
 PROFILE_DIRECTORY_NAME=${PROFILE_DIRECTORY_NAME}
 PROFILE_SOURCE_DIR=${PROFILE_SOURCE_DIR}
+REFRESH_FROM_DEFAULT=${REFRESH_FROM_DEFAULT}
 PROFILE_DIR=${PROFILE_DIR}
 LOG_FILE=${LOG_FILE}
 TARGET_URL=${TARGET_URL}
@@ -613,6 +632,9 @@ while [[ $# -gt 0 ]]; do
       ;;
     --default-user-profile)
       PROFILE_MODE="default-user"
+      ;;
+    --refresh-from-default)
+      REFRESH_FROM_DEFAULT=1
       ;;
     --repo-local-profile)
       PROFILE_MODE="repo-local"
@@ -709,23 +731,29 @@ if port_is_healthy; then
   exit 1
 fi
 
-if profile_is_default_user_mode && chrome_any_process_running; then
-  log_error "Chrome is already running, so the script cannot safely clone the selected Chrome profile for remote debugging."
-  log_error "Close Chrome first, or rerun with --repo-local-profile / --dedicated-profile."
+if profile_is_default_user_mode && chrome_any_process_running && (clone_sync_requested || ! default_clone_exists); then
+  if clone_sync_requested; then
+    log_error "Chrome is already running, so the script cannot safely refresh the cloned Chrome profile for remote debugging."
+    log_error "Close Chrome first, or rerun without --refresh-from-default to reuse the last cloned profile."
+  else
+    log_error "Chrome is already running, so the script cannot create the initial cloned Chrome profile for remote debugging."
+    log_error "Close Chrome first, or rerun with --repo-local-profile / --dedicated-profile."
+  fi
   exit 1
 fi
 
 mkdir -p "$(dirname "${LOG_FILE}")" "${PROFILE_DIR}"
 if profile_requires_clone_sync; then
+  stop_profile_processes
+  cleanup_profile_locks
+fi
+if profile_requires_clone_sync && (clone_sync_requested || ! default_clone_exists); then
   sync_default_user_profile
 fi
 if profile_supports_local_seeding; then
   stop_profile_processes
   cleanup_profile_locks
   seed_profile_preferences
-else
-  stop_profile_processes
-  cleanup_profile_locks
 fi
 
 log_info "Starting Chrome in detached mode."
