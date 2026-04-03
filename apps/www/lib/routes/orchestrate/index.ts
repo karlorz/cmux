@@ -27,6 +27,7 @@ import { orchestrateInputRouter } from "./input.route";
 import { orchestrateSimplifyRouter } from "./simplify.route";
 import { orchestrateContextHealthRouter } from "./context-health.route";
 import { orchestrateCheckpointRouter } from "./checkpoint.route";
+import { orchestrateLocalSpawnRouter } from "./local-spawn.route";
 
 export const orchestrateRouter = new OpenAPIHono();
 
@@ -42,6 +43,7 @@ orchestrateRouter.route("/", orchestrateInputRouter);
 orchestrateRouter.route("/", orchestrateSimplifyRouter);
 orchestrateRouter.route("/", orchestrateContextHealthRouter);
 orchestrateRouter.route("/", orchestrateCheckpointRouter);
+orchestrateRouter.route("/", orchestrateLocalSpawnRouter);
 
 // Re-export for backwards compatibility
 export { orchestrateTasksRouter } from "./tasks.route";
@@ -55,3 +57,4 @@ export { orchestrateInputRouter } from "./input.route";
 export { orchestrateSimplifyRouter } from "./simplify.route";
 export { orchestrateContextHealthRouter } from "./context-health.route";
 export { orchestrateCheckpointRouter } from "./checkpoint.route";
+export { orchestrateLocalSpawnRouter } from "./local-spawn.route";

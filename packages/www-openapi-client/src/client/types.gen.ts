@@ -1078,6 +1078,70 @@ export type CreateCheckpointRequest = {
     label?: string;
 };
 
+export type LocalSpawnResponse = {
+    /**
+     * Execution venue
+     */
+    venue: 'local';
+    /**
+     * Local run ID
+     */
+    runId: string;
+    /**
+     * Run status
+     */
+    status: string;
+    /**
+     * Why this venue was selected
+     */
+    routingReason: string;
+    /**
+     * Available post-launch control capabilities
+     */
+    capabilities: {
+        continueSession: boolean;
+        appendInstruction: boolean;
+        createCheckpoint: boolean;
+    };
+    /**
+     * IDs to use for follow-up operations
+     */
+    followUp: {
+        statusId: string;
+        injectId: string;
+    };
+};
+
+export type LocalSpawnError = {
+    /**
+     * Error message
+     */
+    error: string;
+    /**
+     * Additional error details
+     */
+    details?: string;
+};
+
+export type LocalSpawnRequest = {
+    /**
+     * Agent ID in format 'backend/model' (e.g., 'claude/opus-4.5')
+     */
+    agent: string;
+    /**
+     * The task prompt for the agent
+     */
+    prompt: string;
+    /**
+     * Workspace directory (defaults to current directory)
+     */
+    workspace?: string;
+    /**
+     * Timeout duration (e.g., '30m', '1h')
+     */
+    timeout?: string;
+};
+
 export type ProjectGoal = {
     /**
      * Goal ID
@@ -5212,6 +5276,35 @@ export type GetApiCheckpointByTaskIdResponses = {
 };
 
 export type GetApiCheckpointByTaskIdResponse = GetApiCheckpointByTaskIdResponses[keyof GetApiCheckpointByTaskIdResponses];
+
+export type PostApiOrchestrateSpawnLocalData = {
+    body: LocalSpawnRequest;
+    path?: never;
+    query?: never;
+    url: '/api/orchestrate/spawn-local';
+};
+
+export type PostApiOrchestrateSpawnLocalErrors = {
+    /**
+     * Invalid request
+     */
+    400: LocalSpawnError;
+    /**
+     * Failed to spawn local run
+     */
+    500: LocalSpawnError;
+};
+
+export type PostApiOrchestrateSpawnLocalError = PostApiOrchestrateSpawnLocalErrors[keyof PostApiOrchestrateSpawnLocalErrors];
+
+export type PostApiOrchestrateSpawnLocalResponses = {
+    /**
+     * Local run spawned successfully
+     */
+    200: LocalSpawnResponse;
+};
+
+export type PostApiOrchestrateSpawnLocalResponse = PostApiOrchestrateSpawnLocalResponses[keyof PostApiOrchestrateSpawnLocalResponses];
 
 export type GetApiProjectsData = {
     body?: never;
