@@ -89,6 +89,26 @@ const LocalSpawnErrorSchema = z
   })
   .openapi("LocalSpawnError");
 
+const LocalRunSchema = z
+  .object({
+    id: z.string(),
+    runId: z.string().optional(),
+    agent: z.string(),
+    status: z.enum(["running", "completed", "failed", "unknown"]),
+    prompt: z.string().optional(),
+    createdAt: z.string().optional(),
+    completedAt: z.string().optional(),
+    workspace: z.string().optional(),
+  })
+  .openapi("LocalRun");
+
+const LocalRunsListResponseSchema = z
+  .object({
+    runs: z.array(LocalRunSchema),
+    count: z.number(),
+  })
+  .openapi("LocalRunsListResponse");
+
 // ============================================================================
 // Route
 // ============================================================================
@@ -227,6 +247,118 @@ orchestrateLocalSpawnRouter.openapi(
       return c.json(
         {
           error: "Failed to spawn local run",
+          details: message,
+        },
+        500
+      );
+    }
+  }
+);
+
+/**
+ * GET /api/orchestrate/list-local
+ * List local agent runs via devsh orchestrate list-local.
+ */
+orchestrateLocalSpawnRouter.openapi(
+  createRoute({
+    method: "get" as const,
+    path: "/orchestrate/list-local",
+    tags: ["Orchestration"],
+    summary: "List local agent runs",
+    description:
+      "List local agent runs managed by devsh orchestrate list-local. " +
+      "These runs execute in the local workspace without a remote sandbox.",
+    request: {
+      query: z.object({
+        teamSlugOrId: z.string().openapi({
+          description: "Team slug or ID (for consistency with other endpoints)",
+          example: "my-team",
+        }),
+        limit: z.string().optional().openapi({
+          description: "Maximum number of runs to return",
+          example: "10",
+        }),
+        status: z.enum(["running", "completed", "failed"]).optional().openapi({
+          description: "Filter by status",
+          example: "running",
+        }),
+      }),
+    },
+    responses: {
+      200: {
+        description: "List of local runs",
+        content: {
+          "application/json": {
+            schema: LocalRunsListResponseSchema,
+          },
+        },
+      },
+      500: {
+        description: "Failed to list local runs",
+        content: {
+          "application/json": {
+            schema: LocalSpawnErrorSchema,
+          },
+        },
+      },
+    },
+  }),
+  async (c) => {
+    const query = c.req.valid("query");
+    const limit = query.limit ? parseInt(query.limit, 10) : 10;
+
+    const args = ["orchestrate", "list-local", "--json", "--limit", String(limit)];
+
+    if (query.status) {
+      args.push("--status", query.status);
+    }
+
+    try {
+      const devshPath = process.env.DEVSH_PATH || "devsh";
+      const result = await execa(devshPath, args, { timeout: 10000 });
+
+      let runs: Array<{
+        id?: string;
+        runId?: string;
+        agent?: string;
+        status?: string;
+        prompt?: string;
+        createdAt?: string;
+        completedAt?: string;
+        workspace?: string;
+      }> = [];
+
+      try {
+        const parsed = JSON.parse(result.stdout);
+        runs = Array.isArray(parsed) ? parsed : [];
+      } catch {
+        runs = [];
+      }
+
+      const normalizedRuns = runs.map((run) => ({
+        id: run.id || run.runId || "unknown",
+        runId: run.runId,
+        agent: run.agent || "unknown",
+        status: (run.status as "running" | "completed" | "failed") || "unknown",
+        prompt: run.prompt,
+        createdAt: run.createdAt,
+        completedAt: run.completedAt,
+        workspace: run.workspace,
+      }));
+
+      return c.json(
+        {
+          runs: normalizedRuns,
+          count: normalizedRuns.length,
+        },
+        200
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      return c.json(
+        {
+          error: "Failed to list local runs",
           details: message,
         },
         500

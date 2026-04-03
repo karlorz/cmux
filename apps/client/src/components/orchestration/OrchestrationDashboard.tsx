@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Users, Plus, List, GitBranch, Radio, Download, Columns3 } from "lucide-react";
+import { Users, Plus, List, GitBranch, Radio, Download, Columns3, Monitor } from "lucide-react";
 import { OrchestrationSummaryCards } from "./OrchestrationSummaryCards";
 import { OrchestrationTaskList } from "./OrchestrationTaskList";
 import { OrchestrationSpawnDialog } from "./OrchestrationSpawnDialog";
@@ -8,6 +8,7 @@ import { OrchestrationDependencyGraph } from "./OrchestrationDependencyGraph";
 import { OrchestrationEventStream } from "./OrchestrationEventStream";
 import { OrchestrationEventAnalytics } from "./OrchestrationEventAnalytics";
 import { ProjectKanbanView } from "../projects/ProjectKanbanView";
+import { LocalRunsList } from "./LocalRunsList";
 import { STATUS_CONFIG, type TaskStatus } from "./status-config";
 import type { Doc, Id } from "@cmux/convex/dataModel";
 
@@ -245,6 +246,18 @@ export function OrchestrationDashboard({
               </div>
             </div>
           )}
+
+          {/* Local Runs */}
+          <div className="rounded-lg border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+            <div className="flex items-center gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+              <Monitor className="size-4 text-neutral-500" />
+              <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                Local Runs
+              </h3>
+              <span className="text-xs text-neutral-400">(this machine)</span>
+            </div>
+            <LocalRunsList teamSlugOrId={teamSlugOrId} />
+          </div>
 
           {/* Task List / Graph */}
           <div className="rounded-lg border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">

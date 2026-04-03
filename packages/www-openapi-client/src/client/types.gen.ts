@@ -1142,6 +1142,22 @@ export type LocalSpawnRequest = {
     timeout?: string;
 };
 
+export type LocalRun = {
+    id: string;
+    runId?: string;
+    agent: string;
+    status: 'running' | 'completed' | 'failed' | 'unknown';
+    prompt?: string;
+    createdAt?: string;
+    completedAt?: string;
+    workspace?: string;
+};
+
+export type LocalRunsListResponse = {
+    runs: Array<LocalRun>;
+    count: number;
+};
+
 export type ProjectGoal = {
     /**
      * Goal ID
@@ -5305,6 +5321,44 @@ export type PostApiOrchestrateSpawnLocalResponses = {
 };
 
 export type PostApiOrchestrateSpawnLocalResponse = PostApiOrchestrateSpawnLocalResponses[keyof PostApiOrchestrateSpawnLocalResponses];
+
+export type GetApiOrchestrateListLocalData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Team slug or ID (for consistency with other endpoints)
+         */
+        teamSlugOrId: string;
+        /**
+         * Maximum number of runs to return
+         */
+        limit?: string;
+        /**
+         * Filter by status
+         */
+        status?: 'running' | 'completed' | 'failed';
+    };
+    url: '/api/orchestrate/list-local';
+};
+
+export type GetApiOrchestrateListLocalErrors = {
+    /**
+     * Failed to list local runs
+     */
+    500: LocalSpawnError;
+};
+
+export type GetApiOrchestrateListLocalError = GetApiOrchestrateListLocalErrors[keyof GetApiOrchestrateListLocalErrors];
+
+export type GetApiOrchestrateListLocalResponses = {
+    /**
+     * List of local runs
+     */
+    200: LocalRunsListResponse;
+};
+
+export type GetApiOrchestrateListLocalResponse = GetApiOrchestrateListLocalResponses[keyof GetApiOrchestrateListLocalResponses];
 
 export type GetApiProjectsData = {
     body?: never;
