@@ -32,7 +32,7 @@ describe("SpawnToolSchema", () => {
     };
     const result = SpawnToolSchema.parse(input);
     expect(result.agent).toBe("codex/gpt-5.4");
-    expect(result.provider).toBe("pve-lxc"); // default
+    expect(result.provider).toBeUndefined();
   });
 
   it("should reject invalid agent format", () => {

@@ -1332,7 +1332,7 @@ export const postApiSandboxesStart = <ThrowOnError extends boolean = false>(opti
 
 /**
  * Prewarm a sandbox instance for a repo
- * Creates a Morph instance in the background with the repo already cloned. Call this when the user starts typing a task description for faster startup.
+ * Creates a sandbox instance in the background with the repo already cloned. Supports both Morph and PVE-LXC providers. Call this when the user starts typing a task description for faster startup.
  */
 export const postApiSandboxesPrewarm = <ThrowOnError extends boolean = false>(options: Options<PostApiSandboxesPrewarmData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).post<PostApiSandboxesPrewarmResponses, PostApiSandboxesPrewarmErrors, ThrowOnError>({

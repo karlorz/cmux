@@ -8,19 +8,29 @@ export const SpawnToolSchema = z.object({
   agent: z
     .string()
     .regex(/^(claude|codex|gemini|amp|opencode)\/[\w.-]+$/)
-    .describe("Agent ID in format 'backend/model' (e.g., 'claude/opus-4.5', 'codex/gpt-5.4')"),
+    .describe(
+      "Agent ID in format 'backend/model' (e.g., 'claude/opus-4.5', 'codex/gpt-5.4')"
+    ),
   prompt: z.string().describe("The task prompt for the agent"),
   provider: z
     .enum(["pve-lxc", "morph", "e2b", "modal", "local"])
     .optional()
-    .default("pve-lxc")
-    .describe("Sandbox provider to use"),
+    .describe(
+      "Execution venue hint. Use 'local' for local execution, a remote provider for sandbox execution, or omit to let cmux choose."
+    ),
   repo: z.string().optional().describe("GitHub repository in owner/repo format"),
   branch: z.string().optional().describe("Git branch to checkout"),
   timeoutMs: z.number().optional().describe("Timeout in milliseconds"),
   // Claude Agent SDK specific options (only used for claude/* agents)
   permissionMode: z
-    .enum(["default", "acceptEdits", "bypassPermissions", "plan", "delegate", "dontAsk"])
+    .enum([
+      "default",
+      "acceptEdits",
+      "bypassPermissions",
+      "plan",
+      "delegate",
+      "dontAsk",
+    ])
     .optional()
     .describe("Claude permission mode for tool use"),
   settingSources: z
@@ -31,35 +41,62 @@ export const SpawnToolSchema = z.object({
     .enum(["claude_code", "minimal", "custom"])
     .optional()
     .describe("Claude system prompt preset"),
-  systemPrompt: z.string().optional().describe("Custom system prompt content for Claude agents"),
-  allowedTools: z.array(z.string()).optional().describe("List of allowed tools for Claude agents"),
-  disallowedTools: z.array(z.string()).optional().describe("List of disallowed tools for Claude agents"),
+  systemPrompt: z
+    .string()
+    .optional()
+    .describe("Custom system prompt content for Claude agents"),
+  allowedTools: z
+    .array(z.string())
+    .optional()
+    .describe("List of allowed tools for Claude agents"),
+  disallowedTools: z
+    .array(z.string())
+    .optional()
+    .describe("List of disallowed tools for Claude agents"),
 });
 
 export const StatusToolSchema = z.object({
-  taskId: z.string().describe("The task ID to check status for"),
+  taskId: z
+    .string()
+    .describe("The orchestration task ID or local run ID to check status for"),
 });
 
 export const WaitToolSchema = z.object({
-  taskId: z.string().describe("The task ID to wait for"),
-  timeoutMs: z.number().optional().default(300000).describe("Timeout in milliseconds (default: 5 minutes)"),
+  taskId: z
+    .string()
+    .describe("The orchestration task ID or local run ID to wait for"),
+  timeoutMs: z
+    .number()
+    .optional()
+    .default(300000)
+    .describe("Timeout in milliseconds (default: 5 minutes)"),
 });
 
 export const CancelToolSchema = z.object({
-  taskId: z.string().describe("The task ID to cancel"),
+  taskId: z
+    .string()
+    .describe("The orchestration task ID or local run ID to cancel"),
 });
 
 export const ResultsToolSchema = z.object({
-  taskId: z.string().describe("The task ID to get results for"),
+  taskId: z
+    .string()
+    .describe(
+      "The orchestration task ID, orchestration session ID, or local run ID to get results for"
+    ),
 });
 
 export const InjectToolSchema = z.object({
-  sessionId: z.string().describe("The session ID to inject message into"),
-  message: z.string().describe("The message to inject"),
+  sessionId: z
+    .string()
+    .describe("The task-run ID or local run ID to append an instruction to"),
+  message: z.string().describe("The instruction to send"),
   provider: z
     .enum(["pve-lxc", "morph", "e2b", "modal", "local"])
     .optional()
-    .describe("Optional: migrate to different provider"),
+    .describe(
+      "Optional execution venue hint. Use 'local' when the target ID is ambiguous."
+    ),
 });
 
 export const CheckpointToolSchema = z.object({
@@ -100,34 +137,36 @@ export const TOOL_DEFINITIONS = [
   {
     name: "cmux_spawn",
     description:
-      "Spawn a new agent task in a remote sandbox. Returns a task ID for tracking. Use this to delegate work to other AI agents (Claude, Codex, Gemini, etc.) running in isolated environments.",
+      "Spawn a new agent task in either the local workspace or a remote sandbox. Returns an ID you can use for follow-up status, wait, results, cancel, or instruction calls.",
     inputSchema: SpawnToolSchema,
   },
   {
     name: "cmux_status",
-    description: "Get the current status of a spawned agent task. Returns status, progress, and any available output.",
+    description:
+      "Get the current status of a spawned agent task or local run. Returns the latest known state and any available metadata.",
     inputSchema: StatusToolSchema,
   },
   {
     name: "cmux_wait",
     description:
-      "Wait for a task to complete. Blocks until the task finishes or timeout is reached. Returns the final result.",
+      "Wait for a spawned task or local run to complete. Blocks until the task finishes or timeout is reached.",
     inputSchema: WaitToolSchema,
   },
   {
     name: "cmux_cancel",
-    description: "Cancel a running task. The task will be stopped and marked as cancelled.",
+    description: "Cancel a running remote task or stop a running local run.",
     inputSchema: CancelToolSchema,
   },
   {
     name: "cmux_results",
-    description: "Get the full results of a completed task including stdout, stderr, exit code, and any artifacts.",
+    description:
+      "Get the best available result payload for a completed remote task, orchestration session, or local run.",
     inputSchema: ResultsToolSchema,
   },
   {
     name: "cmux_inject",
     description:
-      "Inject a message into a running or paused session. Use this to provide additional instructions or continue a conversation with an agent.",
+      "Append an instruction to a running remote task or local run. Use this for course corrections and follow-up guidance after launch.",
     inputSchema: InjectToolSchema,
   },
   {
@@ -144,7 +183,8 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: "cmux_list",
-    description: "List recent orchestration tasks with optional status filter.",
+    description:
+      "List recent orchestration tasks and local runs with an optional status filter.",
     inputSchema: ListToolSchema,
   },
 ] as const;
