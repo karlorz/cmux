@@ -1055,6 +1055,29 @@ export type ClearQueueResponse = {
     batchId: string;
 };
 
+export type CheckpointResponse = {
+    taskId: string;
+    checkpointRef: string;
+    checkpointGeneration: number;
+    label?: string;
+    createdAt: string;
+};
+
+export type CreateCheckpointRequest = {
+    /**
+     * Team slug or ID
+     */
+    teamSlugOrId: string;
+    /**
+     * Task ID to checkpoint
+     */
+    taskId: string;
+    /**
+     * Optional label for the checkpoint
+     */
+    label?: string;
+};
+
 export type ProjectGoal = {
     /**
      * Goal ID
@@ -5114,6 +5137,81 @@ export type GetApiV1CmuxOrchestrationContextHealthResponses = {
 };
 
 export type GetApiV1CmuxOrchestrationContextHealthResponse = GetApiV1CmuxOrchestrationContextHealthResponses[keyof GetApiV1CmuxOrchestrationContextHealthResponses];
+
+export type PostApiCheckpointData = {
+    body: CreateCheckpointRequest;
+    path?: never;
+    query?: never;
+    url: '/api/checkpoint';
+};
+
+export type PostApiCheckpointErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Task not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiCheckpointResponses = {
+    /**
+     * Checkpoint created successfully
+     */
+    200: CheckpointResponse;
+};
+
+export type PostApiCheckpointResponse = PostApiCheckpointResponses[keyof PostApiCheckpointResponses];
+
+export type GetApiCheckpointByTaskIdData = {
+    body?: never;
+    path: {
+        /**
+         * Task ID
+         */
+        taskId: string;
+    };
+    query?: never;
+    url: '/api/checkpoint/{taskId}';
+};
+
+export type GetApiCheckpointByTaskIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Task not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiCheckpointByTaskIdResponses = {
+    /**
+     * Checkpoints found
+     */
+    200: {
+        taskId: string;
+        checkpoints: Array<{
+            checkpointRef: string;
+            checkpointGeneration: number;
+            label?: string;
+            createdAt: number;
+        }>;
+    };
+};
+
+export type GetApiCheckpointByTaskIdResponse = GetApiCheckpointByTaskIdResponses[keyof GetApiCheckpointByTaskIdResponses];
 
 export type GetApiProjectsData = {
     body?: never;
