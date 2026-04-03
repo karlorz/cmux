@@ -31,20 +31,20 @@ get_repo_local_profile_dir() {
 
 get_dedicated_profile_dir() {
   if [[ "${OSTYPE:-}" == "darwin"* ]]; then
-    printf '%s\n' "$HOME/Library/Application Support/cmux/chrome-debug-profile"
+    printf '%s\n' "$HOME/Library/Application Support/Google/chrome-debug-profile"
     return 0
   fi
 
-  printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/cmux/chrome-debug-profile"
+  printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/Google/chrome-debug-profile"
 }
 
 get_default_user_clone_dir() {
   if [[ "${OSTYPE:-}" == "darwin"* ]]; then
-    printf '%s\n' "$HOME/Library/Application Support/cmux/chrome-debug-profile-from-default"
+    printf '%s\n' "$HOME/Library/Application Support/Google/chrome-debug-profile-from-default"
     return 0
   fi
 
-  printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/cmux/chrome-debug-profile-from-default"
+  printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/Google/chrome-debug-profile-from-default"
 }
 
 log_info() {
