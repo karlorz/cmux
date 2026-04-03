@@ -1,4 +1,4 @@
-import { execa } from "execa";
+import { execa as nodeExeca } from "execa";
 import type {
   SpawnOptions,
   TaskResult,
@@ -12,33 +12,44 @@ import type {
 } from "./types.js";
 import { SpawnOptionsSchema } from "./types.js";
 
+type ExecaFn = typeof nodeExeca;
+
 /**
- * Execute an agent via devsh orchestrate spawn
+ * Execute an agent via devsh orchestrate spawn (remote) or run-local (local).
+ * Pass execaFn to inject a test implementation without using mock frameworks.
  */
 export async function executeAgent(
-  options: SpawnOptions
+  options: SpawnOptions,
+  execaFn: ExecaFn = nodeExeca
 ): Promise<TaskResult> {
+  const isLocal = options.provider === "local";
 
-  // Build devsh orchestrate spawn command
-  const args = ["orchestrate", "spawn", "--json"];
+  // Build devsh orchestrate spawn or run-local command
+  const args = isLocal
+    ? ["orchestrate", "run-local", "--json", "--persist"]
+    : ["orchestrate", "spawn", "--json"];
 
-  if (options.sync) {
+  if (!isLocal && options.sync) {
     args.push("--sync");
   }
 
-  // Add provider
-  args.push("--provider", options.provider);
+  if (!isLocal) {
+    // Add provider for remote execution
+    args.push("--provider", options.provider);
+  }
 
-  // Add repo if specified
-  if (options.repo) {
+  // Add repo if specified (remote only)
+  if (!isLocal && options.repo) {
     args.push("--repo", options.repo);
   }
 
-  // Add branch
-  args.push("--branch", options.branch);
+  // Add branch (remote only)
+  if (!isLocal) {
+    args.push("--branch", options.branch);
+  }
 
-  // Add snapshot if specified
-  if (options.snapshotId) {
+  // Add snapshot if specified (remote only)
+  if (!isLocal && options.snapshotId) {
     args.push("--snapshot", options.snapshotId);
   }
 
@@ -94,7 +105,7 @@ export async function executeAgent(
   const startTime = Date.now();
 
   try {
-    const result = await execa(options.devshPath, args, {
+    const result = await execaFn(options.devshPath, args, {
       env,
       cwd: options.workDir,
       timeout: options.timeoutMs + 30000, // Add buffer for spawn overhead
@@ -142,25 +153,29 @@ export async function executeAgent(
 }
 
 /**
- * Execute a resume operation via devsh
+ * Execute a resume/inject operation via devsh
+ * Routes to inject-local for local run IDs and path references,
+ * or orchestrate message for remote task run IDs.
+ * Pass execaFn to inject a test implementation without using mock frameworks.
  */
 export async function executeResume(
-  options: ResumeOptions
+  options: ResumeOptions,
+  execaFn: ExecaFn = nodeExeca
 ): Promise<TaskResult> {
-  const args = ["orchestrate", "inject", "--json"];
+  const isLocal =
+    options.provider === "local" ||
+    options.sessionId.startsWith("local_") ||
+    options.sessionId.startsWith("/") ||
+    options.sessionId.startsWith("~/");
 
-  args.push("--session-id", options.sessionId);
-
-  if (options.provider) {
-    args.push("--provider", options.provider);
-  }
-
-  args.push("--", options.message);
+  const args = isLocal
+    ? ["orchestrate", "inject-local", "--json", options.sessionId, options.message]
+    : ["orchestrate", "message", options.sessionId, options.message, "--type", "request"];
 
   const startTime = Date.now();
 
   try {
-    const result = await execa(options.devshPath, args);
+    const result = await execaFn(options.devshPath, args);
     const durationMs = Date.now() - startTime;
 
     try {
@@ -204,10 +219,11 @@ export async function executeResume(
  * Check if devsh is available
  */
 export async function checkDevshAvailable(
-  devshPath = "devsh"
+  devshPath = "devsh",
+  execaFn: ExecaFn = nodeExeca
 ): Promise<{ available: boolean; version?: string; error?: string }> {
   try {
-    const result = await execa(devshPath, ["--version"], { timeout: 5000 });
+    const result = await execaFn(devshPath, ["--version"], { timeout: 5000 });
     return { available: true, version: result.stdout.trim() };
   } catch (error) {
     return { available: false, error: String(error) };
@@ -232,7 +248,8 @@ export function getSupportedBackends(): string[] {
  * Create a checkpoint for a running or completed task
  */
 export async function executeCheckpoint(
-  options: CheckpointOptions
+  options: CheckpointOptions,
+  execaFn: ExecaFn = nodeExeca
 ): Promise<CheckpointRef | null> {
   const args = ["orchestrate", "checkpoint", "--json"];
   args.push("--task-id", options.taskId);
@@ -242,7 +259,7 @@ export async function executeCheckpoint(
   }
 
   try {
-    const result = await execa(options.devshPath, args, { timeout: 30000 });
+    const result = await execaFn(options.devshPath, args, { timeout: 30000 });
 
     try {
       const output = JSON.parse(result.stdout);
@@ -268,7 +285,8 @@ export async function executeCheckpoint(
  * Migrate a session to a different provider
  */
 export async function executeMigrate(
-  options: MigrateOptions
+  options: MigrateOptions,
+  execaFn: ExecaFn = nodeExeca
 ): Promise<TaskResult> {
   const args = ["orchestrate", "migrate", "--json"];
 
@@ -304,7 +322,7 @@ export async function executeMigrate(
   const startTime = Date.now();
 
   try {
-    const result = await execa(options.devshPath, args, { env, timeout: 300000 });
+    const result = await execaFn(options.devshPath, args, { env, timeout: 300000 });
     const durationMs = Date.now() - startTime;
 
     try {
