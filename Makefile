@@ -11,7 +11,7 @@ ENV_FILE_PROD ?= .env.production
 # Cloudrouter dev version (distinct from prod npm version)
 CLOUDROUTER_DEV_VERSION ?= 0.1.0-dev
 
-.PHONY: convex-up convex-down convex-restart convex-clean convex-init convex-init-prod convex-clear convex-clear-prod convex-reset convex-reset-prod convex-fresh dev dev-electron dev-fast install-cloudrouter-dev install-devsh-dev install-devsh-prod sync-upstream-tags chrome-debug check check-simplify
+.PHONY: convex-up convex-down convex-restart convex-clean convex-init convex-init-prod convex-clear convex-clear-prod convex-reset convex-reset-prod convex-fresh dev dev-electron dev-fast install-cloudrouter-dev install-devsh-dev install-devsh-prod sync-upstream-tags chrome-debug chrome-debug-refresh check check-simplify
 .PHONY: clone-proxy-linux-amd64 clone-proxy-linux-arm64 screenshot-collector-upload screenshot-collector-upload-prod
 .PHONY: cloudrouter-npm-republish-prod cloudrouter-npm-republish-prod-dry
 .PHONY: devsh-npm-republish-prod devsh-npm-republish-prod-dry
@@ -207,10 +207,17 @@ install-devsh-prod:
 		CMUX_SERVER_URL="$$CMUX_SERVER_URL" \
 		VERSION="$$VERSION"
 
-# Start Chrome with remote debugging on port 9222 (for CDP/MCP)
+# Start Chrome with remote debugging on port 9222 (for CDP/MCP).
+# Reuses the last debug-safe clone of the selected Chrome profile.
 chrome-debug:
 	@chmod +x scripts/chrome-debug.sh
 	./scripts/chrome-debug.sh
+
+# Re-sync the debug-safe clone from the real Chrome profile before launch.
+# Chrome should be fully closed before running this target.
+chrome-debug-refresh:
+	@chmod +x scripts/chrome-debug.sh
+	./scripts/chrome-debug.sh --refresh-from-default
 
 sync-upstream-tags:
 	./scripts/sync-upstream-tags.sh
