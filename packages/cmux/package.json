@@ -1,7 +1,7 @@
 {
   "name": "cmux",
   "version": "0.2.39",
-  "description": "Open source Claude Code manager that supports Codex/Gemini/OpenCode/Amp CLI",
+  "description": "Open source terminal and control plane for Claude Code, Codex, Gemini CLI, Amp, and OpenCode",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -43,7 +43,7 @@
     "Rovo",
     "tmux"
   ],
-  "author": "Manaflow",
+  "author": "cmux",
   "license": "MIT",
   "dependencies": {
     "@cmux/server": "workspace:*",

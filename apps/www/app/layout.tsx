@@ -10,22 +10,20 @@ import clsx from "clsx";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Manaflow - Manage AI coding agents in parallel — 10x your 10x engineers",
+  title: "cmux - Open source terminal and control plane for AI coding agents",
   description:
-    "Manaflow spawns Claude Code, Codex, Gemini CLI, Amp, Opencode, and other coding agent CLIs in parallel across multiple tasks. For each run, Manaflow spawns an isolated VS Code instance via Docker with the git diff UI and terminal.",
+    "cmux is the open source terminal and control plane for Claude Code, Codex, Gemini CLI, Amp, Opencode, and other coding agent CLIs across isolated VS Code workspaces.",
   openGraph: {
-    title:
-      "Manaflow - Manage AI coding agents in parallel — 10x your 10x engineers",
+    title: "cmux - Open source terminal and control plane for AI coding agents",
     description:
-      "Run multiple AI coding agents simultaneously with isolated VS Code instances",
+      "Run and verify multiple AI coding agents with isolated VS Code workspaces",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title:
-      "Manaflow - Manage AI coding agents in parallel — 10x your 10x engineers",
+    title: "cmux - Open source terminal and control plane for AI coding agents",
     description:
-      "Run multiple AI coding agents simultaneously with isolated VS Code instances",
+      "Run and verify multiple AI coding agents with isolated VS Code workspaces",
   },
 };
 
