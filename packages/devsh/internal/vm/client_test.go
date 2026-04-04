@@ -288,6 +288,119 @@ func TestFormatAPIErrorIncludesEndpoint(t *testing.T) {
 	}
 }
 
+func TestRecordSandboxCreateRequiresTeamSlug(t *testing.T) {
+	client := &Client{}
+
+	err := client.RecordSandboxCreate(context.Background(), RecordSandboxCreateRequest{
+		InstanceID: "pvelxc-123",
+		Provider:   "pve-lxc",
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "team slug not set") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRecordSandboxCreateSuccess(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	if err := auth.CacheAccessToken("test-token", time.Now().Add(time.Hour).Unix()); err != nil {
+		t.Fatalf("CacheAccessToken failed: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("unexpected method: %s", r.Method)
+		}
+		if r.URL.Path != "/api/sandboxes/pvelxc-123/record-create" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Fatalf("unexpected authorization header: %s", got)
+		}
+
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if body["teamSlugOrId"] != "example-team" {
+			t.Fatalf("unexpected teamSlugOrId: %#v", body["teamSlugOrId"])
+		}
+		if body["provider"] != "pve-lxc" {
+			t.Fatalf("unexpected provider: %#v", body["provider"])
+		}
+		if body["hostname"] != "pvelxc-123" {
+			t.Fatalf("unexpected hostname: %#v", body["hostname"])
+		}
+		if body["snapshotId"] != "snapshot_6b744b32" {
+			t.Fatalf("unexpected snapshotId: %#v", body["snapshotId"])
+		}
+		if body["snapshotProvider"] != "pve-lxc" {
+			t.Fatalf("unexpected snapshotProvider: %#v", body["snapshotProvider"])
+		}
+		if body["vmid"] != float64(9027) {
+			t.Fatalf("unexpected vmid: %#v", body["vmid"])
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true}`))
+	}))
+	defer server.Close()
+	auth.SetConfigOverrides("", "", server.URL, "")
+	defer auth.SetConfigOverrides("", "", "", "")
+
+	client := &Client{
+		httpClient: server.Client(),
+		teamSlug:   "example-team",
+	}
+
+	err := client.RecordSandboxCreate(context.Background(), RecordSandboxCreateRequest{
+		InstanceID:       "pvelxc-123",
+		Provider:         "pve-lxc",
+		VMID:             9027,
+		Hostname:         "pvelxc-123",
+		SnapshotID:       "snapshot_6b744b32",
+		SnapshotProvider: "pve-lxc",
+	})
+	if err != nil {
+		t.Fatalf("RecordSandboxCreate failed: %v", err)
+	}
+}
+
+func TestRecordSandboxCreateServerError(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	if err := auth.CacheAccessToken("test-token", time.Now().Add(time.Hour).Unix()); err != nil {
+		t.Fatalf("CacheAccessToken failed: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte("Forbidden: No ownership record for this instance"))
+	}))
+	defer server.Close()
+	auth.SetConfigOverrides("", "", server.URL, "")
+	defer auth.SetConfigOverrides("", "", "", "")
+
+	client := &Client{
+		httpClient: server.Client(),
+		teamSlug:   "example-team",
+	}
+
+	err := client.RecordSandboxCreate(context.Background(), RecordSandboxCreateRequest{
+		InstanceID: "pvelxc-123",
+		Provider:   "pve-lxc",
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "record-create failed (403): Forbidden: No ownership record for this instance") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestGetRunControlSummaryRequiresTeamSlug(t *testing.T) {
 	client := &Client{}
 

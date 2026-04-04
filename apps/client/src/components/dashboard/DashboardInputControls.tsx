@@ -1,5 +1,6 @@
 import { env } from "@/client-env";
 import { AgentLogo } from "@/components/icons/agent-logos";
+import { useSocket } from "@/contexts/socket/use-socket";
 import { GitHubIcon } from "@/components/icons/github";
 import {
   buildAggregatedVendorStatuses,
@@ -21,6 +22,12 @@ import {
   consumeGitHubAppInstallIntent,
   setGitHubAppInstallIntent,
 } from "@/lib/github-oauth-flow";
+import {
+  buildLocalClaudePluginDevCommand,
+  type LocalClaudeLaunchStatus,
+  type LocalClaudePluginDevLaunchRequest,
+  type LocalTerminalTarget,
+} from "@/lib/local-claude-plugin-dev";
 import { getVendorDisplayName, sortModelsByVendor } from "@/lib/model-vendor-utils";
 import { WWW_ORIGIN } from "@/lib/wwwOrigin";
 import { api } from "@cmux/convex/api";
@@ -37,7 +44,7 @@ import { useUser } from "@stackframe/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
-import { useAction, useMutation } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import {
   AlertCircle,
   Check,
@@ -86,6 +93,7 @@ interface DashboardInputControlsProps {
   /** Ralph Mode: keep working until explicit completion signal */
   isRalphMode?: boolean;
   onRalphModeToggle?: () => void;
+  taskDescription?: string;
   /** Task class for automatic model routing */
   selectedTaskClass?: TaskClass | null;
   onTaskClassChange?: (taskClass: TaskClass | null) => void;
@@ -125,6 +133,37 @@ type AgentOption = SelectOptionObject & {
 type AgentSelectionInstance = {
   selection: SelectedAgentSelection;
   id: string;
+};
+
+type LocalClaudeLaunchRecord = {
+  id?: string;
+  launchId?: string;
+  command: string;
+  workspacePath: string;
+  terminal: LocalTerminalTarget;
+  status?: LocalClaudeLaunchStatus;
+  scriptPath?: string;
+  orchestrationId?: string;
+  runDir?: string;
+  sessionInfoPath?: string;
+  sessionId?: string;
+  error?: string;
+  exitCode?: number;
+  launchedAt: string;
+  exitedAt?: string;
+};
+
+type LocalClaudeProfile = {
+  id?: string;
+  name: string;
+  workspacePath: string;
+  terminal: "terminal" | "iterm" | "ghostty" | "alacritty";
+  pluginDirsInput: string;
+  settingsInput: string;
+  mcpConfigsInput: string;
+  allowedToolsInput: string;
+  disallowedToolsInput: string;
+  updatedAt: string;
 };
 
 const GITHUB_INSTALL_COMPLETE_MESSAGE_TYPES = new Set([
@@ -181,6 +220,13 @@ function getVariantDisplayLabel(
 
   return model.variants?.find((variant) => variant.id === selectedVariant)
     ?.displayName;
+}
+
+function parseMultilineList(value: string): string[] {
+  return value
+    .split("\n")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 }
 
 function watchPopupClosed(win: Window | null, onClose: () => void): void {
@@ -272,12 +318,14 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   convexModels,
   isRalphMode = false,
   onRalphModeToggle,
+  taskDescription = "",
   selectedTaskClass = null,
   onTaskClassChange,
 }: DashboardInputControlsProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const user = useUser({ or: "return-null" });
+  const { availableEditors } = useSocket();
   const agentSelectRef = useRef<SearchableSelectHandle | null>(null);
   const mintState = useMutation(api.github_app.mintInstallState);
   const addManualRepo = useAction(api.github_http.addManualRepo);
@@ -296,6 +344,254 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     () => selectedAgentSelections.map((selection) => selection.agentName),
     [selectedAgentSelections],
   );
+  const hasLocalClaudeSelection = useMemo(
+    () =>
+      !isCloudMode &&
+      selectedAgentSelections.some((selection) =>
+        selection.agentName.startsWith("claude/"),
+      ),
+    [isCloudMode, selectedAgentSelections],
+  );
+  const [localPluginDirsInput, setLocalPluginDirsInput] = useState("");
+  const [localWorkspaceInput, setLocalWorkspaceInput] = useState("");
+  const [localClaudeBinPathInput, setLocalClaudeBinPathInput] = useState("");
+  const [localTerminalTarget, setLocalTerminalTarget] =
+    useState<LocalTerminalTarget>("terminal");
+  const [localSettingsInput, setLocalSettingsInput] = useState(
+    "./.claude/settings.local.json",
+  );
+  const [localMcpConfigsInput, setLocalMcpConfigsInput] = useState(
+    "./.claude/mcp.local.json",
+  );
+  const [localAllowedToolsInput, setLocalAllowedToolsInput] = useState(
+    "Read,Write",
+  );
+  const [localDisallowedToolsInput, setLocalDisallowedToolsInput] = useState("");
+  const [localProfileNameInput, setLocalProfileNameInput] = useState("");
+  const [localSavedProfiles, setLocalSavedProfiles] = useState<LocalClaudeProfile[]>(
+    () => {
+      if (typeof window === "undefined") {
+        return [];
+      }
+      try {
+        const raw = localStorage.getItem(
+          `localClaudePluginDevProfiles-${teamSlugOrId}`,
+        );
+        if (!raw) {
+          return [];
+        }
+        const parsed = JSON.parse(raw) as LocalClaudeProfile[];
+        return Array.isArray(parsed) ? parsed.slice(0, 10) : [];
+      } catch {
+        return [];
+      }
+    },
+  );
+  const persistedLocalClaudeProfiles = useQuery(api.localClaudeProfiles.list, {
+    teamSlugOrId,
+  });
+  const upsertLocalClaudeProfile = useMutation(api.localClaudeProfiles.upsert);
+  const removeLocalClaudeProfile = useMutation(api.localClaudeProfiles.remove);
+  const [localLaunchHistory, setLocalLaunchHistory] = useState<
+    LocalClaudeLaunchRecord[]
+  >(() => {
+    if (typeof window === "undefined") {
+      return [];
+    }
+    try {
+      const raw = localStorage.getItem(
+        `localClaudePluginDevLaunches-${teamSlugOrId}`,
+      );
+      if (!raw) {
+        return [];
+      }
+      const parsed = JSON.parse(raw) as LocalClaudeLaunchRecord[];
+      return Array.isArray(parsed) ? parsed.slice(0, 5) : [];
+    } catch {
+      return [];
+    }
+  });
+  const persistedLocalClaudeLaunches = useQuery(api.localClaudeLaunches.list, {
+    teamSlugOrId,
+    limit: 5,
+  });
+  const recordLocalClaudeLaunch = useMutation(api.localClaudeLaunches.record);
+  const updateLocalClaudeLaunchOutcome = useMutation(
+    api.localClaudeLaunches.updateOutcome,
+  );
+  const updateLocalClaudeLaunchMetadata = useMutation(
+    api.localClaudeLaunches.updateMetadata,
+  );
+  const localTerminalOptions = useMemo(
+    () => [
+      {
+        value: "terminal" as const,
+        label: "Terminal.app",
+        available: availableEditors?.terminal ?? true,
+      },
+      {
+        value: "iterm" as const,
+        label: "iTerm",
+        available: availableEditors?.iterm ?? true,
+      },
+      {
+        value: "ghostty" as const,
+        label: "Ghostty",
+        available: availableEditors?.ghostty ?? true,
+      },
+      {
+        value: "alacritty" as const,
+        label: "Alacritty",
+        available: availableEditors?.alacritty ?? true,
+      },
+    ],
+    [availableEditors],
+  );
+  const localTerminalTargetAvailable = useMemo(
+    () =>
+      localTerminalOptions.find((option) => option.value === localTerminalTarget)
+        ?.available ?? true,
+    [localTerminalOptions, localTerminalTarget],
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    localStorage.setItem(
+      `localClaudePluginDevLaunches-${teamSlugOrId}`,
+      JSON.stringify(localLaunchHistory.slice(0, 5)),
+    );
+  }, [localLaunchHistory, teamSlugOrId]);
+
+  useEffect(() => {
+    if (!persistedLocalClaudeLaunches) {
+      return;
+    }
+    setLocalLaunchHistory(persistedLocalClaudeLaunches);
+  }, [persistedLocalClaudeLaunches]);
+
+  useEffect(() => {
+    const bridge = getElectronBridge();
+    if (!bridge) {
+      return;
+    }
+    const unsubscribeMetadata = bridge.on("local-command-metadata", (payload) => {
+      const event = payload as {
+        launchId?: string;
+        orchestrationId?: string;
+        runDir?: string;
+        sessionInfoPath?: string;
+        sessionId?: string;
+      };
+      if (!event.launchId) {
+        return;
+      }
+
+      setLocalLaunchHistory((prev) =>
+        prev.map((entry) =>
+          entry.launchId === event.launchId
+            ? {
+                ...entry,
+                ...(event.orchestrationId ? { orchestrationId: event.orchestrationId } : {}),
+                ...(event.runDir ? { runDir: event.runDir } : {}),
+                ...(event.sessionInfoPath ? { sessionInfoPath: event.sessionInfoPath } : {}),
+                ...(event.sessionId ? { sessionId: event.sessionId } : {}),
+              }
+            : entry,
+        ),
+      );
+
+      void updateLocalClaudeLaunchMetadata({
+        teamSlugOrId,
+        launchId: event.launchId,
+        ...(event.orchestrationId ? { orchestrationId: event.orchestrationId } : {}),
+        ...(event.runDir ? { runDir: event.runDir } : {}),
+        ...(event.sessionInfoPath ? { sessionInfoPath: event.sessionInfoPath } : {}),
+        ...(event.sessionId ? { sessionId: event.sessionId } : {}),
+      }).catch((error) => {
+        console.error(
+          "[DashboardInputControls] Failed to persist local Claude launch metadata",
+          error,
+        );
+      });
+    });
+    const unsubscribeFinished = bridge.on("local-command-finished", (payload) => {
+      const event = payload as {
+        launchId?: string;
+        status?: "completed" | "completed_failed";
+        exitCode?: number;
+        error?: string;
+      };
+      if (!event.launchId || !event.status) {
+        return;
+      }
+
+      setLocalLaunchHistory((prev) =>
+        prev.map((entry) =>
+          entry.launchId === event.launchId
+            ? {
+                ...entry,
+                status: event.status,
+                ...(event.exitCode !== undefined ? { exitCode: event.exitCode } : {}),
+                ...(event.error ? { error: event.error } : {}),
+                exitedAt: new Date().toISOString(),
+              }
+            : entry,
+        ),
+      );
+
+      void updateLocalClaudeLaunchOutcome({
+        teamSlugOrId,
+        launchId: event.launchId,
+        status: event.status,
+        ...(event.exitCode !== undefined ? { exitCode: event.exitCode } : {}),
+        ...(event.error ? { error: event.error } : {}),
+      }).catch((error) => {
+        console.error(
+          "[DashboardInputControls] Failed to persist local Claude launch outcome",
+          error,
+        );
+      });
+    });
+    return () => {
+      unsubscribeMetadata?.();
+      unsubscribeFinished?.();
+    };
+  }, [teamSlugOrId, updateLocalClaudeLaunchMetadata, updateLocalClaudeLaunchOutcome]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    localStorage.setItem(
+      `localClaudePluginDevProfiles-${teamSlugOrId}`,
+      JSON.stringify(localSavedProfiles.slice(0, 10)),
+    );
+  }, [localSavedProfiles, teamSlugOrId]);
+
+  useEffect(() => {
+    if (!persistedLocalClaudeProfiles) {
+      return;
+    }
+    setLocalSavedProfiles(persistedLocalClaudeProfiles);
+  }, [persistedLocalClaudeProfiles]);
+
+  useEffect(() => {
+    if (!isElectron) {
+      return;
+    }
+    const currentOption = localTerminalOptions.find(
+      (option) => option.value === localTerminalTarget,
+    );
+    if (currentOption?.available ?? true) {
+      return;
+    }
+    const fallbackOption = localTerminalOptions.find((option) => option.available);
+    if (fallbackOption) {
+      setLocalTerminalTarget(fallbackOption.value);
+    }
+  }, [localTerminalOptions, localTerminalTarget]);
   const hasProviderStatus = Boolean(providerStatus?.success);
   const providerHealthSummary = useMemo(() => {
     if (!providerStatus?.success) {
@@ -807,6 +1103,297 @@ export const DashboardInputControls = memo(function DashboardInputControls({
         {providerSettingsTooltip}
       </TooltipContent>
     </Tooltip>
+  );
+
+  const localClaudeLaunchRequest = useMemo<LocalClaudePluginDevLaunchRequest | null>(
+    () => {
+      if (!hasLocalClaudeSelection) {
+        return null;
+      }
+
+      const firstClaudeSelection = selectedAgentSelections.find((selection) =>
+        selection.agentName.startsWith("claude/"),
+      );
+      if (!firstClaudeSelection) {
+        return null;
+      }
+
+      const trimmedTaskDescription = taskDescription.trim();
+      if (!trimmedTaskDescription) {
+        return null;
+      }
+
+      const workspacePath = localWorkspaceInput.trim();
+      if (!workspacePath) {
+        return null;
+      }
+
+      return {
+        agentName: firstClaudeSelection.agentName,
+        ...(firstClaudeSelection.selectedVariant
+          ? { effort: firstClaudeSelection.selectedVariant }
+          : {}),
+        taskDescription: trimmedTaskDescription,
+        workspacePath,
+        terminal: localTerminalTarget,
+        ...(localClaudeBinPathInput.trim()
+          ? { claudeBinPath: localClaudeBinPathInput.trim() }
+          : {}),
+        pluginDirs: parseMultilineList(localPluginDirsInput),
+        ...(localSettingsInput.trim()
+          ? { settingsPath: localSettingsInput.trim() }
+          : {}),
+        settingSources: ["project", "local"],
+        mcpConfigs: parseMultilineList(localMcpConfigsInput),
+        ...(localAllowedToolsInput.trim()
+          ? { allowedTools: localAllowedToolsInput.trim() }
+          : {}),
+        ...(localDisallowedToolsInput.trim()
+          ? { disallowedTools: localDisallowedToolsInput.trim() }
+          : {}),
+      };
+    },
+    [
+      hasLocalClaudeSelection,
+      localAllowedToolsInput,
+      localClaudeBinPathInput,
+      localDisallowedToolsInput,
+      localMcpConfigsInput,
+      localPluginDirsInput,
+      localSettingsInput,
+      localTerminalTarget,
+      localWorkspaceInput,
+      selectedAgentSelections,
+      taskDescription,
+    ],
+  );
+
+  const localClaudeCommandPreview = useMemo(() => {
+    if (!localClaudeLaunchRequest) {
+      return null;
+    }
+
+    return buildLocalClaudePluginDevCommand(localClaudeLaunchRequest);
+  }, [localClaudeLaunchRequest]);
+
+  const localClaudeLaunchStatusLabel = useCallback(
+    (status: LocalClaudeLaunchStatus | undefined) => {
+      switch (status) {
+        case "launch_failed":
+        case "completed_failed":
+          return "failed";
+        case "completed":
+          return "completed";
+        case "launched":
+        default:
+          return "launched";
+      }
+    },
+    [],
+  );
+
+  const localClaudeLaunchStatusTone = useCallback(
+    (status: LocalClaudeLaunchStatus | undefined) => {
+      switch (status) {
+        case "launch_failed":
+        case "completed_failed":
+          return "text-red-700/80 dark:text-red-300/80";
+        case "completed":
+          return "text-green-700/80 dark:text-green-300/80";
+        case "launched":
+        default:
+          return "text-blue-800/80 dark:text-blue-200/80";
+      }
+    },
+    [],
+  );
+
+  const handleCopyLocalClaudeCommand = useCallback(async () => {
+    if (!localClaudeCommandPreview) return;
+    try {
+      await navigator.clipboard.writeText(localClaudeCommandPreview);
+      toast.success("Copied local Claude plugin-dev command");
+    } catch (error) {
+      console.error(
+        "[DashboardInputControls] Failed to copy local Claude command",
+        error,
+      );
+      toast.error("Failed to copy local Claude plugin-dev command");
+    }
+  }, [localClaudeCommandPreview]);
+
+  const handleRunLocalClaudeCommand = useCallback(async () => {
+    const bridge = getElectronBridge();
+    if (!bridge?.local?.launchClaudePluginDev) {
+      toast.error("Local terminal execution is only available in the Electron app");
+      return;
+    }
+    if (!localClaudeLaunchRequest) {
+      toast.error("Enter a task description and workspace path before running");
+      return;
+    }
+    if (!localTerminalTargetAvailable) {
+      toast.error(`Selected terminal target is not available: ${localTerminalTarget}`);
+      return;
+    }
+
+    const result = await bridge.local.launchClaudePluginDev(localClaudeLaunchRequest);
+
+    const launchRecord: LocalClaudeLaunchRecord = {
+      ...(result.ok ? { launchId: result.launchId } : {}),
+      command:
+        (result.ok ? result.command : localClaudeCommandPreview) ??
+        buildLocalClaudePluginDevCommand(localClaudeLaunchRequest),
+      workspacePath: localClaudeLaunchRequest.workspacePath,
+      terminal: localTerminalTarget,
+      launchedAt: new Date().toISOString(),
+      status: result.ok ? "launched" : "launch_failed",
+      ...(result.ok
+        ? {
+            scriptPath: result.scriptPath,
+            orchestrationId: result.orchestrationId,
+            runDir: result.runDir,
+            sessionInfoPath: result.sessionInfoPath,
+            sessionId: result.sessionId,
+          }
+        : { error: result.error }),
+    };
+    setLocalLaunchHistory((prev) => [launchRecord, ...prev].slice(0, 5));
+    void recordLocalClaudeLaunch({
+      teamSlugOrId,
+      launchId: result.ok ? result.launchId : `failed-${Date.now()}`,
+      command: launchRecord.command,
+      workspacePath: launchRecord.workspacePath,
+      terminal: launchRecord.terminal,
+      status: launchRecord.status ?? "launched",
+      ...(launchRecord.scriptPath ? { scriptPath: launchRecord.scriptPath } : {}),
+      ...(launchRecord.orchestrationId
+        ? { orchestrationId: launchRecord.orchestrationId }
+        : {}),
+      ...(launchRecord.runDir ? { runDir: launchRecord.runDir } : {}),
+      ...(launchRecord.sessionInfoPath
+        ? { sessionInfoPath: launchRecord.sessionInfoPath }
+        : {}),
+      ...(launchRecord.sessionId ? { sessionId: launchRecord.sessionId } : {}),
+      ...(launchRecord.error ? { error: launchRecord.error } : {}),
+    }).catch((error) => {
+      console.error(
+        "[DashboardInputControls] Failed to persist local Claude launch",
+        error,
+      );
+    });
+
+    if (result.ok) {
+      toast.success(`Opened local Claude plugin-dev run in ${localTerminalTarget}`);
+    } else {
+      toast.error(result.error);
+    }
+  }, [
+    localClaudeCommandPreview,
+    localClaudeLaunchRequest,
+    localTerminalTarget,
+    localTerminalTargetAvailable,
+    recordLocalClaudeLaunch,
+    teamSlugOrId,
+  ]);
+
+  const handleSaveLocalClaudeProfile = useCallback(async () => {
+    const name = localProfileNameInput.trim();
+    if (!name) {
+      toast.error("Enter a profile name before saving");
+      return;
+    }
+
+    const profile: LocalClaudeProfile = {
+      name,
+      workspacePath: localWorkspaceInput.trim(),
+      terminal: localTerminalTarget,
+      pluginDirsInput: localPluginDirsInput,
+      settingsInput: localSettingsInput,
+      mcpConfigsInput: localMcpConfigsInput,
+      allowedToolsInput: localAllowedToolsInput,
+      disallowedToolsInput: localDisallowedToolsInput,
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      const profileId = await upsertLocalClaudeProfile({
+        teamSlugOrId,
+        name,
+        workspacePath: profile.workspacePath,
+        terminal: profile.terminal,
+        pluginDirsInput: profile.pluginDirsInput,
+        settingsInput: profile.settingsInput,
+        mcpConfigsInput: profile.mcpConfigsInput,
+        allowedToolsInput: profile.allowedToolsInput,
+        disallowedToolsInput: profile.disallowedToolsInput,
+      });
+      setLocalSavedProfiles((prev) => {
+        const withoutExisting = prev.filter((entry) => entry.name !== name);
+        return [{ ...profile, id: String(profileId) }, ...withoutExisting].slice(0, 10);
+      });
+      toast.success(`Saved local Claude profile: ${name}`);
+    } catch (error) {
+      console.error(
+        "[DashboardInputControls] Failed to persist local Claude profile",
+        error,
+      );
+      setLocalSavedProfiles((prev) => {
+        const withoutExisting = prev.filter((entry) => entry.name !== name);
+        return [profile, ...withoutExisting].slice(0, 10);
+      });
+      toast.error("Failed to persist profile to team storage. Saved locally only.");
+    }
+  }, [
+    localAllowedToolsInput,
+    localDisallowedToolsInput,
+    localMcpConfigsInput,
+    localPluginDirsInput,
+    localProfileNameInput,
+    localSettingsInput,
+    localTerminalTarget,
+    localWorkspaceInput,
+    teamSlugOrId,
+    upsertLocalClaudeProfile,
+  ]);
+
+  const applyLocalClaudeProfile = useCallback((profile: LocalClaudeProfile) => {
+    setLocalProfileNameInput(profile.name);
+    setLocalWorkspaceInput(profile.workspacePath);
+    setLocalTerminalTarget(profile.terminal);
+    setLocalPluginDirsInput(profile.pluginDirsInput);
+    setLocalSettingsInput(profile.settingsInput);
+    setLocalMcpConfigsInput(profile.mcpConfigsInput);
+    setLocalAllowedToolsInput(profile.allowedToolsInput);
+    setLocalDisallowedToolsInput(profile.disallowedToolsInput);
+    toast.success(`Loaded local Claude profile: ${profile.name}`);
+  }, []);
+
+  const handleDeleteLocalClaudeProfile = useCallback(
+    async (profile: LocalClaudeProfile) => {
+      setLocalSavedProfiles((prev) =>
+        prev.filter((entry) => entry.name !== profile.name),
+      );
+
+      if (profile.id) {
+        try {
+          await removeLocalClaudeProfile({
+            teamSlugOrId,
+            profileId: profile.id as never,
+          });
+        } catch (error) {
+          console.error(
+            "[DashboardInputControls] Failed to delete local Claude profile",
+            error,
+          );
+          toast.error("Failed to delete profile from team storage");
+          return;
+        }
+      }
+
+      toast.success(`Deleted local Claude profile: ${profile.name}`);
+    },
+    [removeLocalClaudeProfile, teamSlugOrId],
   );
 
   const agentSelectionFooter = selectedAgents.length ? (
@@ -1368,6 +1955,317 @@ export const DashboardInputControls = memo(function DashboardInputControls({
           data-onboarding="effort-picker"
         >
           {visibleVariantControls}
+        </div>
+      ) : null}
+
+      {hasLocalClaudeSelection ? (
+        <div
+          className={clsx(
+            "space-y-3 rounded-2xl border px-3 py-2.5",
+            "border-blue-200/80 bg-blue-50/80 text-blue-900",
+            "dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100",
+          )}
+        >
+          <div className="flex items-start gap-2">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600 dark:text-blue-300" />
+            <div className="min-w-0 space-y-1">
+              <p className="text-[12px] font-medium">
+                Local Claude plugin-dev profile
+              </p>
+              <p className="text-[11px] leading-relaxed text-blue-800/90 dark:text-blue-200/85">
+                The CLI and SDK/MCP integration already support Claude local plugin-development, and this panel now uses the same structured launch inputs to run directly from Electron or generate the equivalent{" "}
+                <code className="rounded bg-blue-100 px-1 py-0.5 font-mono text-[10px] dark:bg-blue-900/60">
+                  devsh orchestrate run-local
+                </code>{" "}
+                preview for manual use.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-2 md:grid-cols-2">
+            <label className="space-y-1 md:col-span-2">
+              <span className="text-[11px] font-medium text-blue-900 dark:text-blue-100">
+                Profile name
+              </span>
+              <div className="flex gap-2">
+                <input
+                  value={localProfileNameInput}
+                  onChange={(e) => setLocalProfileNameInput(e.target.value)}
+                  placeholder="my-plugin-dev-profile"
+                  className="flex-1 rounded-xl border border-blue-200/80 bg-white/90 px-3 py-2 text-[11px] text-neutral-900 shadow-sm outline-none focus:border-blue-400 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-neutral-100"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveLocalClaudeProfile}
+                  className="rounded-full border border-blue-300/90 bg-blue-600 px-3 py-2 text-[10px] font-medium text-white transition-colors hover:bg-blue-700 dark:border-blue-700/90 dark:bg-blue-500 dark:hover:bg-blue-400"
+                >
+                  Save profile
+                </button>
+              </div>
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-[11px] font-medium text-blue-900 dark:text-blue-100">
+                Plugin dirs
+              </span>
+              <textarea
+                rows={2}
+                value={localPluginDirsInput}
+                onChange={(e) => setLocalPluginDirsInput(e.target.value)}
+                placeholder="./my-plugin"
+                className="w-full rounded-xl border border-blue-200/80 bg-white/90 px-3 py-2 text-[11px] text-neutral-900 shadow-sm outline-none focus:border-blue-400 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-neutral-100"
+              />
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-[11px] font-medium text-blue-900 dark:text-blue-100">
+                Workspace path
+              </span>
+              <input
+                value={localWorkspaceInput}
+                onChange={(e) => setLocalWorkspaceInput(e.target.value)}
+                placeholder="/path/to/local/repo"
+                className="w-full rounded-xl border border-blue-200/80 bg-white/90 px-3 py-2 text-[11px] text-neutral-900 shadow-sm outline-none focus:border-blue-400 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-neutral-100"
+              />
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-[11px] font-medium text-blue-900 dark:text-blue-100">
+                Claude binary path <span className="text-blue-700/70 dark:text-blue-200/70">(optional)</span>
+              </span>
+              <input
+                value={localClaudeBinPathInput}
+                onChange={(e) => setLocalClaudeBinPathInput(e.target.value)}
+                placeholder="/path/to/custom/claude"
+                className="w-full rounded-xl border border-blue-200/80 bg-white/90 px-3 py-2 text-[11px] text-neutral-900 shadow-sm outline-none focus:border-blue-400 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-neutral-100"
+              />
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-[11px] font-medium text-blue-900 dark:text-blue-100">
+                Terminal target
+              </span>
+              <select
+                value={localTerminalTarget}
+                onChange={(e) =>
+                  setLocalTerminalTarget(
+                    e.target.value as
+                      | "terminal"
+                      | "iterm"
+                      | "ghostty"
+                      | "alacritty",
+                  )
+                }
+                className="w-full rounded-xl border border-blue-200/80 bg-white/90 px-3 py-2 text-[11px] text-neutral-900 shadow-sm outline-none focus:border-blue-400 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-neutral-100"
+              >
+                {localTerminalOptions.map((option) => (
+                  <option
+                    key={option.value}
+                    value={option.value}
+                    disabled={isElectron && !option.available}
+                  >
+                    {option.label}
+                    {isElectron && !option.available ? " (Unavailable)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-[11px] font-medium text-blue-900 dark:text-blue-100">
+                Settings path
+              </span>
+              <input
+                value={localSettingsInput}
+                onChange={(e) => setLocalSettingsInput(e.target.value)}
+                placeholder="./.claude/settings.local.json"
+                className="w-full rounded-xl border border-blue-200/80 bg-white/90 px-3 py-2 text-[11px] text-neutral-900 shadow-sm outline-none focus:border-blue-400 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-neutral-100"
+              />
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-[11px] font-medium text-blue-900 dark:text-blue-100">
+                MCP configs
+              </span>
+              <textarea
+                rows={2}
+                value={localMcpConfigsInput}
+                onChange={(e) => setLocalMcpConfigsInput(e.target.value)}
+                placeholder="./.claude/mcp.local.json"
+                className="w-full rounded-xl border border-blue-200/80 bg-white/90 px-3 py-2 text-[11px] text-neutral-900 shadow-sm outline-none focus:border-blue-400 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-neutral-100"
+              />
+            </label>
+
+            <div className="grid gap-2">
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-blue-900 dark:text-blue-100">
+                  Allowed tools
+                </span>
+                <input
+                  value={localAllowedToolsInput}
+                  onChange={(e) => setLocalAllowedToolsInput(e.target.value)}
+                  placeholder="Read,Write"
+                  className="w-full rounded-xl border border-blue-200/80 bg-white/90 px-3 py-2 text-[11px] text-neutral-900 shadow-sm outline-none focus:border-blue-400 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-neutral-100"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-blue-900 dark:text-blue-100">
+                  Disallowed tools
+                </span>
+                <input
+                  value={localDisallowedToolsInput}
+                  onChange={(e) => setLocalDisallowedToolsInput(e.target.value)}
+                  placeholder="Bash"
+                  className="w-full rounded-xl border border-blue-200/80 bg-white/90 px-3 py-2 text-[11px] text-neutral-900 shadow-sm outline-none focus:border-blue-400 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-neutral-100"
+                />
+              </label>
+            </div>
+          </div>
+
+          {localSavedProfiles.length > 0 ? (
+            <div className="space-y-2">
+              <p className="text-[11px] font-medium text-blue-900 dark:text-blue-100">
+                Saved profiles
+              </p>
+              <div className="space-y-2">
+                {localSavedProfiles.map((profile) => (
+                  <div
+                    key={profile.name}
+                    className="rounded-xl border border-blue-200/80 bg-white/90 px-3 py-2 text-[10px] text-neutral-800 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-blue-100"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{profile.name}</p>
+                        <p className="truncate text-blue-800/80 dark:text-blue-200/80">
+                          {profile.workspacePath || "No workspace"} · {profile.terminal} · {new Date(profile.updatedAt).toLocaleString()}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => applyLocalClaudeProfile(profile)}
+                          className="rounded-full border border-blue-200/80 bg-blue-50 px-2 py-1 text-[10px] font-medium text-blue-700 transition-colors hover:bg-blue-100 dark:border-blue-800/80 dark:bg-blue-900/40 dark:text-blue-200 dark:hover:bg-blue-900/70"
+                        >
+                          Apply
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteLocalClaudeProfile(profile)}
+                          className="rounded-full border border-red-200/80 bg-red-50 px-2 py-1 text-[10px] font-medium text-red-700 transition-colors hover:bg-red-100 dark:border-red-800/80 dark:bg-red-900/30 dark:text-red-200 dark:hover:bg-red-900/60"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {localClaudeCommandPreview ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[11px] font-medium text-blue-900 dark:text-blue-100">
+                  Generated command preview
+                </p>
+                <div className="flex items-center gap-2">
+                  {isElectron ? (
+                    <button
+                      type="button"
+                      onClick={handleRunLocalClaudeCommand}
+                      disabled={!localClaudeLaunchRequest || !localTerminalTargetAvailable}
+                      className="rounded-full border border-blue-300/90 bg-blue-600 px-2.5 py-1 text-[10px] font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-blue-700/90 dark:bg-blue-500 dark:hover:bg-blue-400"
+                    >
+                      Run in Terminal
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={handleCopyLocalClaudeCommand}
+                    className="rounded-full border border-blue-200/80 bg-white/90 px-2.5 py-1 text-[10px] font-medium text-blue-700 transition-colors hover:bg-blue-100 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-blue-200 dark:hover:bg-blue-900/60"
+                  >
+                    Copy command
+                  </button>
+                </div>
+              </div>
+              <pre className="overflow-x-auto rounded-xl border border-blue-200/80 bg-white/90 px-3 py-2 text-[10px] leading-relaxed text-neutral-800 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-blue-100">
+                <code>{localClaudeCommandPreview}</code>
+              </pre>
+            </div>
+          ) : hasLocalClaudeSelection ? (
+            <div className="rounded-xl border border-dashed border-blue-200/80 bg-white/70 px-3 py-2 text-[10px] leading-relaxed text-blue-900/80 dark:border-blue-800/70 dark:bg-blue-950/30 dark:text-blue-100/80">
+              Add a workspace path and enter the real task description in the main dashboard input to enable the structured local Claude plugin-dev launch preview.
+            </div>
+          ) : null}
+
+          {localLaunchHistory.length > 0 ? (
+            <div className="space-y-2">
+              <p className="text-[11px] font-medium text-blue-900 dark:text-blue-100">
+                Recent launches
+              </p>
+              <div className="space-y-2">
+                {localLaunchHistory.map((entry, index) => (
+                  <div
+                    key={`${entry.launchedAt}-${index}`}
+                    className="rounded-xl border border-blue-200/80 bg-white/90 px-3 py-2 text-[10px] text-neutral-800 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-blue-100"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">
+                          {entry.workspacePath}
+                        </p>
+                        <p className={localClaudeLaunchStatusTone(entry.status)}>
+                          {entry.terminal} · {localClaudeLaunchStatusLabel(entry.status)} · {new Date(entry.launchedAt).toLocaleString()}
+                        </p>
+                        {entry.error ? (
+                          <p className="truncate text-red-700/80 dark:text-red-300/80">
+                            {entry.error}
+                          </p>
+                        ) : null}
+                        {entry.orchestrationId ? (
+                          <p className="truncate text-blue-800/70 dark:text-blue-200/70">
+                            Run: {entry.orchestrationId}
+                          </p>
+                        ) : null}
+                        {entry.sessionId ? (
+                          <p className="truncate text-blue-800/70 dark:text-blue-200/70">
+                            Local session: {entry.sessionId}
+                          </p>
+                        ) : null}
+                        {entry.runDir ? (
+                          <p className="truncate text-blue-800/70 dark:text-blue-200/70">
+                            Artifacts: {entry.runDir}
+                          </p>
+                        ) : null}
+                        {entry.scriptPath ? (
+                          <p className="truncate text-blue-800/70 dark:text-blue-200/70">
+                            Script: {entry.scriptPath}
+                          </p>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard
+                            .writeText(entry.command)
+                            .then(() =>
+                              toast.success("Copied previous local Claude command"),
+                            )
+                            .catch(() =>
+                              toast.error("Failed to copy previous local Claude command"),
+                            );
+                        }}
+                        className="rounded-full border border-blue-200/80 bg-blue-50 px-2 py-1 text-[10px] font-medium text-blue-700 transition-colors hover:bg-blue-100 dark:border-blue-800/80 dark:bg-blue-900/40 dark:text-blue-200 dark:hover:bg-blue-900/70"
+                      >
+                        Copy again
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

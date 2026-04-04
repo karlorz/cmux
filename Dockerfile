@@ -16,6 +16,7 @@ ARG GO_VERSION=1.25.2
 ARG GITHUB_TOKEN
 ARG IDE_PROVIDER=cmux-code
 ARG IDE_DEPS_CHANNEL=stable
+ARG IDE_DEPS_PACKAGE_OVERRIDES=""
 
 FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS rust-base
 
@@ -158,6 +159,7 @@ ARG NVM_VERSION
 ARG GO_VERSION
 ARG IDE_PROVIDER
 ARG IDE_DEPS_CHANNEL
+ARG IDE_DEPS_PACKAGE_OVERRIDES
 
 ENV NVM_DIR=/root/.nvm \
   PATH="/usr/local/bin:${PATH}"
@@ -362,11 +364,19 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
 # Keep IDE dependencies fresh with a configurable channel (stable by default).
 COPY configs/ide-deps.json ./configs/ide-deps.json
 COPY scripts/bump-ide-deps.ts ./scripts/bump-ide-deps.ts
+COPY scripts/apply-ide-deps-package-overrides.ts ./scripts/apply-ide-deps-package-overrides.ts
 COPY scripts/lib ./scripts/lib
 COPY scripts/snapshot.py ./scripts/snapshot.py
 COPY Dockerfile ./Dockerfile
 ARG IDE_DEPS_CHANNEL
+ARG IDE_DEPS_PACKAGE_OVERRIDES
 RUN bun run bump-ide-deps --channel "${IDE_DEPS_CHANNEL:-stable}"
+RUN if [ -n "${IDE_DEPS_PACKAGE_OVERRIDES:-}" ]; then \
+      IDE_DEPS_PACKAGE_OVERRIDES="${IDE_DEPS_PACKAGE_OVERRIDES}" \
+        bun run ./scripts/apply-ide-deps-package-overrides.ts; \
+    else \
+      echo "No IDE_DEPS_PACKAGE_OVERRIDES provided; skipping."; \
+    fi
 
 RUN mkdir -p /builtins && \
   echo '{"name":"builtins","type":"module","version":"1.0.0"}' > /builtins/package.json
@@ -878,14 +888,30 @@ packages="$(node - <<'NODE'
 const fs = require("node:fs");
 const deps = JSON.parse(fs.readFileSync("/tmp/ide-deps.json", "utf8"));
 const entries = Object.entries(deps.packages ?? {});
-process.stdout.write(entries.map(([name, version]) => `${name}@${version}`).join(" "));
+for (const [name, value] of entries) {
+  if (typeof name !== "string" || typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`Invalid package entry ${name}: ${value}`);
+  }
+  const trimmedValue = value.trim();
+  const installMode = /^https?:\/\//.test(trimmedValue) ? "remote" : "version";
+  process.stdout.write(`${name}|${installMode}|${trimmedValue}\n`);
+}
 NODE
 )"
 if [ -z "${packages}" ]; then
   echo "No packages found in /tmp/ide-deps.json" >&2
   exit 1
 fi
-bun add -g ${packages}
+while IFS='|' read -r package_name install_mode install_value; do
+  [ -z "${package_name}" ] && continue
+  if [ "${install_mode}" = "remote" ]; then
+    npm install -g "${install_value}"
+  else
+    bun add -g "${package_name}@${install_value}"
+  fi
+done <<EOF_PACKAGES
+${packages}
+EOF_PACKAGES
 EOF
 
 # Install cursor cli

@@ -60,7 +60,7 @@ func TestBuildLocalCommandArgs(t *testing.T) {
 			ClaudeModel:     "claude-opus-4-6",
 		}
 
-		args := buildLocalClaudeArgs(selection, "fix bug", "")
+		args := buildLocalClaudeArgs(selection, "fix bug", "", nil)
 		want := []string{
 			"-p",
 			"--dangerously-skip-permissions",
@@ -68,6 +68,49 @@ func TestBuildLocalCommandArgs(t *testing.T) {
 			"claude-opus-4-6",
 			"--effort",
 			"max",
+			"fix bug",
+		}
+		if !reflect.DeepEqual(args, want) {
+			t.Fatalf("got %#v, want %#v", args, want)
+		}
+	})
+
+	t.Run("builds Claude args with plugin development passthroughs", func(t *testing.T) {
+		selection := localAgentSelection{
+			AgentName:   "claude/opus-4.6",
+			Provider:    "claude",
+			ClaudeModel: "claude-opus-4-6",
+		}
+
+		options := &LocalClaudeCLIOptions{
+			PluginDirs:      []string{"./plugin-a", "./plugin-b"},
+			Settings:        "./settings.local.json",
+			SettingSources:  "project,local",
+			MCPConfigs:      []string{"./mcp.json"},
+			AllowedTools:    "Read,Write",
+			DisallowedTools: "Bash",
+		}
+
+		args := buildLocalClaudeArgs(selection, "fix bug", "", options)
+		want := []string{
+			"-p",
+			"--dangerously-skip-permissions",
+			"--model",
+			"claude-opus-4-6",
+			"--plugin-dir",
+			"./plugin-a",
+			"--plugin-dir",
+			"./plugin-b",
+			"--settings",
+			"./settings.local.json",
+			"--setting-sources",
+			"project,local",
+			"--mcp-config",
+			"./mcp.json",
+			"--allowed-tools",
+			"Read,Write",
+			"--disallowed-tools",
+			"Bash",
 			"fix bug",
 		}
 		if !reflect.DeepEqual(args, want) {

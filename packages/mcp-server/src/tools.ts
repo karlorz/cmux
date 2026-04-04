@@ -53,6 +53,22 @@ export const SpawnToolSchema = z.object({
     .array(z.string())
     .optional()
     .describe("List of disallowed tools for Claude agents"),
+  localClaudeProfile: z
+    .enum(["plugin-dev"])
+    .optional()
+    .describe("Optional preset for local Claude development workflows"),
+  pluginDirs: z
+    .array(z.string())
+    .optional()
+    .describe("Claude plugin directories to load for local runs"),
+  settings: z
+    .string()
+    .optional()
+    .describe("Claude settings file path or JSON string for local runs"),
+  mcpConfigs: z
+    .array(z.string())
+    .optional()
+    .describe("Claude MCP config file paths or JSON strings for local runs"),
 });
 
 export const StatusToolSchema = z.object({

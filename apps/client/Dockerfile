@@ -19,11 +19,14 @@ COPY apps/preview-proxy/package.json ./apps/preview-proxy/
 COPY apps/server/package.json ./apps/server/
 COPY apps/worker/package.json ./apps/worker/
 COPY apps/www/package.json ./apps/www/
+COPY packages/agent-sdk/package.json ./packages/agent-sdk/
+COPY packages/claude-agent/package.json ./packages/claude-agent/
 COPY packages/cmux/package.json ./packages/cmux/
 COPY packages/convex/package.json ./packages/convex/
 COPY packages/devsh-memory-mcp/package.json ./packages/devsh-memory-mcp/
 COPY packages/e2b-client/package.json ./packages/e2b-client/
 COPY packages/host-screenshot-collector/package.json ./packages/host-screenshot-collector/
+COPY packages/mcp-server/package.json ./packages/mcp-server/
 COPY packages/morphcloud-openapi-client/package.json ./packages/morphcloud-openapi-client/
 COPY packages/pr-heatmap/package.json ./packages/pr-heatmap/
 COPY packages/pve-lxc-client/package.json ./packages/pve-lxc-client/

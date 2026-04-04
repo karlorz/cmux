@@ -1,5 +1,10 @@
 import { ElectronAPI } from "@electron-toolkit/preload";
 
+import type {
+  LocalClaudePluginDevLaunchRequest,
+  LocalTerminalTarget,
+} from "../../src/lib/local-claude-plugin-dev";
+
 declare global {
   interface Window {
     electron: ElectronAPI;
@@ -53,6 +58,23 @@ declare global {
         readClaudeJson: () => Promise<import("../../src/types/electron").HostMcpFileResult>;
         readCodexToml: () => Promise<import("../../src/types/electron").HostMcpFileResult>;
         readOpencodeJson: () => Promise<import("../../src/types/electron").HostMcpFileResult>;
+      };
+      local: {
+        runCommandInTerminal: (options: {
+          command: string;
+          cwd?: string;
+          title?: string;
+          terminal?: LocalTerminalTarget;
+        }) => Promise<
+          | { ok: true; scriptPath?: string; launchId: string }
+          | { ok: false; error: string }
+        >;
+        launchClaudePluginDev: (
+          request: LocalClaudePluginDevLaunchRequest,
+        ) => Promise<
+          | { ok: true; scriptPath?: string; launchId: string; command: string }
+          | { ok: false; error: string }
+        >;
       };
     };
   }

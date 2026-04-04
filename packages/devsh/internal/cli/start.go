@@ -58,6 +58,16 @@ Examples:
 	},
 }
 
+func resolveSandboxTimezone() string {
+	if timezone := strings.TrimSpace(os.Getenv("TZ")); timezone != "" {
+		return timezone
+	}
+	if timezone := strings.TrimSpace(os.Getenv("DEFAULT_SANDBOX_TIMEZONE")); timezone != "" {
+		return timezone
+	}
+	return pvelxc.DefaultSandboxTimezone
+}
+
 // setupProviderAuthIfNeeded calls SetupProviders on the www API unless --no-auth is set.
 func setupProviderAuthIfNeeded(cmd *cobra.Command, ctx context.Context, client *vm.Client, instanceID string) {
 	noAuth, _ := cmd.Flags().GetBool("no-auth")
@@ -235,6 +245,18 @@ func runStartPveLxc(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Container created: %s\n", instance.ID)
 
+	timezone := resolveSandboxTimezone()
+	result, err := client.ApplyTimezone(ctx, instance.ID, timezone)
+	if err != nil {
+		fmt.Printf("Warning: failed to set container timezone to %s: %v\n", timezone, err)
+	} else if result.ExitCode != 0 {
+		combinedOutput := strings.TrimSpace(strings.Join([]string{result.Stderr, result.Stdout}, "\n"))
+		if combinedOutput == "" {
+			combinedOutput = "no output"
+		}
+		fmt.Printf("Warning: failed to set container timezone to %s: exit %d: %s\n", timezone, result.ExitCode, combinedOutput)
+	}
+
 	if syncPath != "" {
 		fmt.Printf("Warning: sync is not supported for pve-lxc yet (skipping sync of %s)\n", syncPath)
 	}
@@ -252,6 +274,16 @@ func runStartPveLxc(cmd *cobra.Command, args []string) error {
 				fmt.Printf("Warning: provider auth setup skipped: %v\n", wwwErr)
 			} else {
 				wwwClient.SetTeamSlug(teamSlug)
+				if err := wwwClient.RecordSandboxCreate(ctx, vm.RecordSandboxCreateRequest{
+					InstanceID:       instance.ID,
+					Provider:         provider.PveLxc,
+					VMID:             instance.VMID,
+					Hostname:         instance.Hostname,
+					SnapshotID:       snapshotID,
+					SnapshotProvider: provider.PveLxc,
+				}); err != nil {
+					fmt.Printf("Warning: failed to record sandbox ownership: %v\n", err)
+				}
 				setupProviderAuthIfNeeded(cmd, ctx, wwwClient, instance.ID)
 			}
 		}

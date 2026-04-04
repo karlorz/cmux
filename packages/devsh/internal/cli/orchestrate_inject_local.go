@@ -16,14 +16,15 @@ import (
 
 // LocalSessionInfo stores session identifiers for active instruction injection
 type LocalSessionInfo struct {
-	Agent           string `json:"agent"`
-	SessionID       string `json:"sessionId,omitempty"` // Claude session UUID
-	ThreadID        string `json:"threadId,omitempty"`  // Codex thread ID
-	CodexHome       string `json:"codexHome,omitempty"`
-	Workspace       string `json:"workspace"`
-	InjectionMode   string `json:"injectionMode"` // "active" or "passive"
-	LastInjectionAt string `json:"lastInjectionAt,omitempty"`
-	InjectionCount  int    `json:"injectionCount"`
+	Agent           string                 `json:"agent"`
+	SessionID       string                 `json:"sessionId,omitempty"` // Claude session UUID
+	ThreadID        string                 `json:"threadId,omitempty"`  // Codex thread ID
+	CodexHome       string                 `json:"codexHome,omitempty"`
+	Workspace       string                 `json:"workspace"`
+	ClaudeOptions   *LocalClaudeCLIOptions `json:"claudeOptions,omitempty"`
+	InjectionMode   string                 `json:"injectionMode"` // "active" or "passive"
+	LastInjectionAt string                 `json:"lastInjectionAt,omitempty"`
+	InjectionCount  int                    `json:"injectionCount"`
 }
 
 var (
@@ -214,7 +215,7 @@ func injectActive(runDir string, info *LocalSessionInfo, message string) error {
 
 func injectClaude(runDir string, info *LocalSessionInfo, message string) error {
 	// Use --continue --session-id to inject into the same session
-	claudePath, err := exec.LookPath("claude")
+	claudePath, err := resolveAgentCLIPath("claude")
 	if err != nil {
 		return fmt.Errorf("claude CLI not found: %w", err)
 	}
@@ -231,8 +232,32 @@ func injectClaude(runDir string, info *LocalSessionInfo, message string) error {
 		"-p",
 		"--continue",
 		"--session-id", info.SessionID,
-		message,
 	}
+	if info.ClaudeOptions != nil {
+		for _, pluginDir := range info.ClaudeOptions.PluginDirs {
+			if strings.TrimSpace(pluginDir) != "" {
+				args = append(args, "--plugin-dir", pluginDir)
+			}
+		}
+		if strings.TrimSpace(info.ClaudeOptions.Settings) != "" {
+			args = append(args, "--settings", info.ClaudeOptions.Settings)
+		}
+		if strings.TrimSpace(info.ClaudeOptions.SettingSources) != "" {
+			args = append(args, "--setting-sources", info.ClaudeOptions.SettingSources)
+		}
+		for _, mcpConfig := range info.ClaudeOptions.MCPConfigs {
+			if strings.TrimSpace(mcpConfig) != "" {
+				args = append(args, "--mcp-config", mcpConfig)
+			}
+		}
+		if strings.TrimSpace(info.ClaudeOptions.AllowedTools) != "" {
+			args = append(args, "--allowed-tools", info.ClaudeOptions.AllowedTools)
+		}
+		if strings.TrimSpace(info.ClaudeOptions.DisallowedTools) != "" {
+			args = append(args, "--disallowed-tools", info.ClaudeOptions.DisallowedTools)
+		}
+	}
+	args = append(args, message)
 
 	cmd := exec.Command(claudePath, args...)
 	cmd.Dir = info.Workspace
@@ -346,10 +371,11 @@ func logInjectionEvent(runDir, mode, message string) {
 
 // InitSessionForRun creates session.json when starting a new run
 // Call this from run-local after spawning the agent
-func InitSessionForRun(runDir, agent, workspace string) error {
+func InitSessionForRun(runDir, agent, workspace string, claudeOptions *LocalClaudeCLIOptions) error {
 	info := &LocalSessionInfo{
 		Agent:          agent,
 		Workspace:      workspace,
+		ClaudeOptions:  claudeOptions,
 		InjectionMode:  "passive", // Default to passive until we get a session ID
 		InjectionCount: 0,
 	}

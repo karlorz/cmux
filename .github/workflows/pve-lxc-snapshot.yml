@@ -18,6 +18,7 @@ env:
   BUN_VERSION: "1.2.21"
   GO_VERSION: "1.23"
   IDE_DEPS_CHANNEL: ${{ vars.IDE_DEPS_CHANNEL || 'stable' }}
+  IDE_DEPS_PACKAGE_OVERRIDES: ${{ vars.IDE_DEPS_PACKAGE_OVERRIDES || '' }}
 
 jobs:
   pve-lxc-snapshot:

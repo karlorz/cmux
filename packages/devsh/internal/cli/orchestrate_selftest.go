@@ -222,16 +222,16 @@ func checkAgentCLI(agent string) SelftestResult {
 	result := SelftestResult{Name: fmt.Sprintf("CLI: %s", agent)}
 
 	cliName := getAgentCLIName(agent)
-	path, err := exec.LookPath(cliName)
+	path, err := resolveAgentCLIPath(cliName)
 	if err != nil {
 		result.Status = "fail"
-		result.Message = fmt.Sprintf("'%s' not found in PATH", cliName)
+		result.Message = err.Error()
 		printResult(result)
 		return result
 	}
 
 	// Try to get version
-	version := getAgentVersion(cliName)
+	version := getAgentVersion(cliName, path)
 	if version != "" {
 		result.Message = fmt.Sprintf("%s (%s)", path, version)
 	} else {
@@ -317,7 +317,7 @@ func getAgentCLIName(agent string) string {
 	}
 }
 
-func getAgentVersion(cliName string) string {
+func getAgentVersion(cliName, cliPath string) string {
 	var versionFlag string
 	switch cliName {
 	case "claude":
@@ -334,7 +334,7 @@ func getAgentVersion(cliName string) string {
 		versionFlag = "--version"
 	}
 
-	cmd := exec.Command(cliName, versionFlag)
+	cmd := exec.Command(cliPath, versionFlag)
 	out, err := cmd.Output()
 	if err != nil {
 		return ""

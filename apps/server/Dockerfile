@@ -51,7 +51,7 @@ RUN jq -r '.dependencies | keys[] | select(startswith("@cmux") | not)' \
 # =============================================================================
 # Stage 2: Build native Rust module
 # =============================================================================
-FROM rust:1.85-slim-bookworm AS rust-builder
+FROM rust:1.86-slim-bookworm AS rust-builder
 
 WORKDIR /app
 
@@ -76,7 +76,7 @@ COPY apps/server/native/core/.cargo ./apps/server/native/core/.cargo
 # Build native module
 WORKDIR /app/apps/server/native/core
 RUN npm install @napi-rs/cli
-# Pin crates to versions compatible with stable Rust 1.85
+# Pin crates that still need older-compatible versions even with Rust 1.86
 # - home 0.5.12 requires Rust 1.88
 # - human_format 1.2.1 uses unstable let-chains feature
 # - unicode-segmentation 1.13.0 uses unstable unsigned_is_multiple_of feature
