@@ -176,6 +176,35 @@ def _iso_timestamp() -> str:
     )
 
 
+def is_remote_package_source(spec: str) -> bool:
+    parsed = urllib.parse.urlparse(spec)
+    return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+
+
+def maybe_apply_ide_package_overrides(repo_root: Path, console: Console) -> None:
+    raw_overrides = os.environ.get("IDE_DEPS_PACKAGE_OVERRIDES", "").strip()
+    if not raw_overrides:
+        return
+
+    bun_path = shutil.which("bun")
+    if bun_path is None:
+        raise RuntimeError(
+            "bun not found on host; install bun or unset IDE_DEPS_PACKAGE_OVERRIDES."
+        )
+
+    console.always("Applying IDE package overrides from IDE_DEPS_PACKAGE_OVERRIDES...")
+    override_result = subprocess.run(
+        [bun_path, "run", "./scripts/apply-ide-deps-package-overrides.ts"],
+        cwd=str(repo_root),
+        text=True,
+    )
+    if override_result.returncode != 0:
+        raise RuntimeError(
+            "bun run ./scripts/apply-ide-deps-package-overrides.ts "
+            f"failed with exit code {override_result.returncode}"
+        )
+
+
 def _coalesce_str(value: t.Any, default: str) -> str:
     if isinstance(value, str) and value:
         return value
@@ -1603,22 +1632,58 @@ async def task_install_global_cli(ctx: TaskContext) -> None:
     if not isinstance(packages, dict):
         raise RuntimeError("configs/ide-deps.json packages must be an object.")
 
-    package_args: list[str] = []
-    for name, version in packages.items():
-        if not isinstance(name, str) or not isinstance(version, str):
-            raise RuntimeError(f"Invalid package entry {name!r}: {version!r}")
-        package_args.append(f"{name}@{version}")
+    package_specs: list[tuple[str, str, str]] = []
+    for name, spec in packages.items():
+        if not isinstance(name, str) or not isinstance(spec, str):
+            raise RuntimeError(f"Invalid package entry {name!r}: {spec!r}")
+        install_spec = spec if is_remote_package_source(spec) else f"{name}@{spec}"
+        package_specs.append((name, spec, install_spec))
 
-    if not package_args:
+    if not package_specs:
         raise RuntimeError("No packages found in configs/ide-deps.json.")
 
-    bun_line = "bun add -g " + " ".join(package_args)
-    cmd = textwrap.dedent(
-        f"""
-        {bun_line}
-        """
-    )
-    await ctx.run("install-global-cli", cmd)
+    max_retries = 3
+    retry_delay = 5
+
+    for index, (name, spec, install_spec) in enumerate(package_specs, 1):
+        is_remote = is_remote_package_source(spec)
+        task_label = name.lstrip("@").replace("/", "-")
+        quoted_install_spec = shlex.quote(install_spec)
+        install_cmd = (
+            f"npm install -g {quoted_install_spec}"
+            if is_remote
+            else f"bun add -g {quoted_install_spec}"
+        )
+        install_label = spec if is_remote else install_spec
+        last_error: Exception | None = None
+
+        ctx.console.info(
+            f"Installing package {index}/{len(package_specs)}: {install_label}"
+        )
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                await ctx.run(f"install-pkg-{task_label}", install_cmd)
+                ctx.console.info(f"Successfully installed {install_label}")
+                last_error = None
+                break
+            except Exception as exc:
+                last_error = exc
+                if attempt < max_retries:
+                    ctx.console.info(
+                        f"Attempt {attempt}/{max_retries} failed for {install_label}, "
+                        f"retrying in {retry_delay}s..."
+                    )
+                    await asyncio.sleep(retry_delay)
+                else:
+                    ctx.console.info(
+                        f"All {max_retries} attempts failed for {install_label}"
+                    )
+
+        if last_error is not None:
+            raise RuntimeError(
+                f"Failed to install {install_label} after {max_retries} attempts"
+            ) from last_error
 
 
 @registry.task(
@@ -2851,6 +2916,7 @@ async def provision_and_snapshot(args: argparse.Namespace) -> None:
             raise RuntimeError(
                 f"bun run bump-ide-deps failed with exit code {bump_result.returncode}"
             )
+    maybe_apply_ide_package_overrides(repo_root, console)
     preset_plans = _build_preset_plans(args)
     _ensure_bootstrap_presets(console, args.snapshot_id, preset_plans)
 
