@@ -34,7 +34,7 @@ const DEFAULT_DOWNLOAD_URLS: MacDownloadUrls = {
   x64: null,
 };
 
-const DEFAULT_GITHUB_URL = "https://github.com/manaflow-ai/cmux";
+const DEFAULT_GITHUB_URL = "https://github.com/karlorz/cmux";
 
 const compactNumberFormatter = new Intl.NumberFormat("en-US", {
   notation: "compact",
@@ -99,9 +99,14 @@ export function SiteHeader({
           isScrolled ? "py-3" : "py-4"
         )}
       >
-        <Link aria-label="Manaflow" href="/">
+        <Link aria-label="cmux" href="/">
           <div className="flex items-center gap-3">
-            <CmuxLogo height={36} label="Manaflow" showWordmark />
+            <CmuxLogo
+              height={36}
+              label="cmux"
+              showWordmark
+              wordmarkText="cmux"
+            />
           </div>
         </Link>
         <nav className="hidden items-center gap-8 text-sm font-medium md:flex">

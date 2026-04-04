@@ -1,17 +1,17 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Manaflow - Open Source Applied AI Lab",
-  description: "We build open source coding software",
+  title: "Manaflow - Team behind cmux and open source coding tools",
+  description: "Manaflow is the team behind cmux and related open source coding tools.",
   openGraph: {
-    title: "Manaflow - Open Source Applied AI Lab",
-    description: "We build open source coding software",
+    title: "Manaflow - Team behind cmux and open source coding tools",
+    description: "Manaflow is the team behind cmux and related open source coding tools.",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Manaflow - Open Source Applied AI Lab",
-    description: "We build open source coding software",
+    title: "Manaflow - Team behind cmux and open source coding tools",
+    description: "Manaflow is the team behind cmux and related open source coding tools.",
   },
 };
 
@@ -21,7 +21,7 @@ export default function ManaflowPage() {
       <div className="mx-auto max-w-xl">
         <h1 className="mb-4 text-3xl font-bold">Manaflow</h1>
         <p className="mb-8 text-neutral-600">
-          Open source applied AI lab. We build open source coding software.
+          Manaflow is the team behind cmux and related open source coding tools.
         </p>
 
         <div className="flex flex-col gap-6">
@@ -43,8 +43,8 @@ export default function ManaflowPage() {
               </a>
             </div>
             <p className="text-neutral-600 text-sm mt-1">
-              Coding agent manager that supports Claude Code, Codex, Gemini CLI,
-              Amp, Opencode, and other coding CLIs.
+              The open source terminal and control plane for Claude Code, Codex, Gemini CLI,
+              Amp, Opencode, and other coding agent CLIs.
             </p>
           </div>
 
