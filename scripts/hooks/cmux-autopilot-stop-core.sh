@@ -400,7 +400,7 @@ elif [ "$RALPH_MODE" = "1" ] && [ -n "$RALPH_PROMPT" ]; then
 
 When you have completed the task, output <promise>${RALPH_COMPLETION_TAG}</promise> in your response to signal completion."
 elif [ "$REVIEW_ENABLED" = "1" ]; then
-  REASON="Code review is running. After review feedback, address any issues found. You have 2 turns remaining."
+  REASON="Official Codex review is running. After review feedback, address any issues found. You have 2 turns remaining."
   if [ -n "$WAIT_INSTRUCTION" ]; then
     REASON="${REASON}
 ${WAIT_INSTRUCTION}"

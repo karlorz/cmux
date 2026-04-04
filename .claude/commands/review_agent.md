@@ -12,18 +12,20 @@ User focus (optional): $ARGUMENTS
 
 ## Auto-collected context
 
-### Codex review (mandatory - run via Bash tool with background polling)
+### Official Codex review (mandatory)
 
-You MUST run these codex reviews. Do NOT skip this step.
+You MUST run the official `/codex:review` flow. Do NOT call `.claude/scripts/codex-review-extract.sh` directly.
 
 **Step 1 - Committed changes:**
-1. Run in background: `.claude/scripts/codex-review-extract.sh --base main` using Bash with `run_in_background: true`
-2. Use TaskOutput with `block: true, timeout: 300000` (5 minutes) to wait for completion
-3. If timeout occurs, use TaskStop to kill the task and report timeout
+1. Run `/codex:review --wait --scope branch --base main`
+2. Preserve the review output exactly.
+3. If the review command fails or returns no usable output, treat that as a blocker and stop.
 
 **Step 2 - Uncommitted changes:**
 1. First check `git status --porcelain`. If empty, skip this step.
-2. If non-empty, run `.claude/scripts/codex-review-extract.sh --uncommitted` same way as Step 1
+2. If non-empty, run `/codex:review --wait --scope working-tree`
+3. Preserve the review output exactly.
+4. If the review command fails or returns no usable output, treat that as a blocker and stop.
 
 ### Current branch changed files
 !`cd "$CLAUDE_PROJECT_DIR" && git diff --name-only main...HEAD`
@@ -40,14 +42,13 @@ You MUST run these codex reviews. Do NOT skip this step.
 - `Codex review executed: yes`
 - `Codex review executed: no`
 
-2. If Codex output is missing/empty or clearly failed (for example timeout, command-not-found, permission denied, Cloudflare blocking):
+2. If official Codex review is missing/empty or clearly failed (for example timeout, command-not-found, permission denied, auth/setup failure):
 - set first line to `Codex review executed: no`
 - output only a short `Blocker` section with the exact failed command and reason
-- if the extractor output contains `[codex-review-extract] incomplete review`, include the synthesized batch summary verbatim
 - stop; do not produce findings from manual review
 - partial/incomplete Codex coverage MUST be treated as a blocker, not a successful review
 
-3. If Codex output exists and the extractor exited successfully (exit 0):
+3. If official Codex review exists and completed successfully:
 - set first line to `Codex review executed: yes`
 - produce this report:
 
