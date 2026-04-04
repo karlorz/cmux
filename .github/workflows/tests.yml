@@ -120,3 +120,27 @@ jobs:
             unset CONVEX_DEPLOY_KEY
           fi
           bun run test
+
+  python-sdk:
+    name: Validate Python SDK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/agent-sdk-python
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run tests
+        run: uv run pytest
+
+      - name: Build package
+        run: uv build

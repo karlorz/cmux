@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cmux-agent-sdk"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Unified agent SDK for cmux - spawn Claude, Codex, Gemini, Amp, Opencode agents in remote sandboxes"
 readme = "README.md"
 license = "MIT"
@@ -51,6 +51,9 @@ Repository = "https://github.com/karlorz/cmux"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cmux_agent_sdk"]
+
+[tool.hatch.version]
+path = "src/cmux_agent_sdk/__init__.py"
 
 [tool.ruff]
 line-length = 100

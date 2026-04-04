@@ -1,4 +1,4 @@
-name: Publish Agent SDK
+name: Publish SDK Packages
 
 on:
   workflow_dispatch:
@@ -8,9 +8,10 @@ on:
         required: true
         type: choice
         options:
-          - typescript
+          - typescript-agent-sdk
+          - typescript-mcp-server
           - python
-          - both
+          - all
       dry_run:
         description: 'Dry run (no actual publish)'
         required: false
@@ -18,8 +19,8 @@ on:
         default: true
 
 jobs:
-  publish-typescript:
-    if: ${{ inputs.package == 'typescript' || inputs.package == 'both' }}
+  publish-typescript-agent-sdk:
+    if: ${{ inputs.package == 'typescript-agent-sdk' || inputs.package == 'all' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -29,10 +30,42 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.2.21
 
       - name: Install dependencies
-        run: bun install
+        run: cd ../.. && bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+
+      - name: Run tests
+        run: bun run test
+
+      - name: Publish to npm (dry run)
+        if: ${{ inputs.dry_run }}
+        run: npm publish --dry-run --access public
+
+      - name: Publish to npm
+        if: ${{ !inputs.dry_run }}
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  publish-typescript-mcp-server:
+    if: ${{ inputs.package == 'typescript-mcp-server' || inputs.package == 'all' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/mcp-server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.21
+
+      - name: Install dependencies
+        run: cd ../.. && bun install --frozen-lockfile
 
       - name: Build
         run: bun run build
@@ -51,7 +84,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-python:
-    if: ${{ inputs.package == 'python' || inputs.package == 'both' }}
+    if: ${{ inputs.package == 'python' || inputs.package == 'all' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -66,7 +99,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --frozen
 
       - name: Run tests
         run: uv run pytest

@@ -1,6 +1,6 @@
 # cmux-agent-sdk
 
-Unified Agent SDK for cmux - spawn Claude, Codex, Gemini, Amp, and Opencode agents in remote sandboxes.
+Unified Agent SDK for cmux - spawn Claude, Codex, Gemini, Amp, and Opencode agents in remote sandboxes or local execution lanes.
 
 ## Features
 
@@ -143,11 +143,10 @@ from cmux_agent_sdk import calculate_cost, get_model_pricing, MODEL_PRICING
 pricing = get_model_pricing("claude/opus-4.5")
 # ModelPricing(input_per_million=15, output_per_million=75, ...)
 
-# Usage is available in TaskResult.usage (when returned by devsh)
+# TaskHandle contains task/session metadata. Use stream(), resume(), or direct helpers for result details.
 task = await client.spawn(agent="claude/opus-4.5", prompt="...")
-if task.usage:
-    print(f"Tokens: {task.usage.tokens.total_tokens}")
-    print(f"Cost: ${task.usage.cost.total_cost:.4f}")
+print(task.id)
+print(task.status)
 ```
 
 ## Supported Agents
@@ -186,7 +185,7 @@ client = create_client(
 
 ### `client.spawn()`
 
-Spawn an agent in a sandbox.
+Spawn an agent in a sandbox and return a `TaskHandle` with task/session metadata.
 
 ```python
 task = await client.spawn(
@@ -267,6 +266,7 @@ migrated = await migrate(source="...", target_provider="morph")
 
 - Python 3.10+
 - `devsh` CLI installed and in PATH
+- Valid cmux authentication (`devsh whoami` should succeed)
 
 ## License
 

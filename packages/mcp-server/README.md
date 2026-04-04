@@ -197,7 +197,7 @@ const result = await executor.spawn({
 
 ## Requirements
 
-- Node.js 18+
+- Node.js 20+
 - `devsh` CLI installed and in PATH (or specified via `CMUX_DEVSH_PATH`)
 - Valid cmux authentication (`devsh whoami` should succeed)
 
