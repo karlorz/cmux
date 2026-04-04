@@ -24,17 +24,23 @@ COPY apps/client/package.json ./apps/client/
 COPY apps/server/package.json ./apps/server/
 COPY apps/worker/package.json ./apps/worker/
 COPY apps/edge-router/package.json ./apps/edge-router/
+COPY apps/edge-router-pvelxc/package.json ./apps/edge-router-pvelxc/
 COPY apps/preview-proxy/package.json ./apps/preview-proxy/
+COPY packages/agent-sdk/package.json ./packages/agent-sdk/
+COPY packages/claude-agent/package.json ./packages/claude-agent/
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/convex/package.json ./packages/convex/
 COPY packages/www-openapi-client/package.json ./packages/www-openapi-client/
 COPY packages/morphcloud-openapi-client/package.json ./packages/morphcloud-openapi-client/
 COPY packages/cmux/package.json ./packages/cmux/
+COPY packages/devsh-memory-mcp/package.json ./packages/devsh-memory-mcp/
 COPY packages/vscode-extension/package.json ./packages/vscode-extension/
 COPY packages/host-screenshot-collector/package.json ./packages/host-screenshot-collector/
 COPY packages/e2b-client/package.json ./packages/e2b-client/
+COPY packages/mcp-server/package.json ./packages/mcp-server/
 COPY packages/pve-lxc-client/package.json ./packages/pve-lxc-client/
 COPY packages/pve-vm-client/package.json ./packages/pve-vm-client/
+COPY packages/pr-heatmap/package.json ./packages/pr-heatmap/
 COPY scripts/package.json ./scripts/
 
 # Install all dependencies (need devDependencies for build)
@@ -75,9 +81,12 @@ COPY apps/edge-router-pvelxc/package.json ./apps/edge-router-pvelxc/
 COPY apps/preview-proxy/package.json ./apps/preview-proxy/
 COPY apps/server/package.json ./apps/server/
 COPY apps/worker/package.json ./apps/worker/
+COPY packages/agent-sdk/package.json ./packages/agent-sdk/
+COPY packages/claude-agent/package.json ./packages/claude-agent/
 COPY packages/cmux/package.json ./packages/cmux/
 COPY packages/devsh-memory-mcp/package.json ./packages/devsh-memory-mcp/
 COPY packages/host-screenshot-collector/package.json ./packages/host-screenshot-collector/
+COPY packages/mcp-server/package.json ./packages/mcp-server/
 COPY packages/pr-heatmap/package.json ./packages/pr-heatmap/
 COPY packages/vscode-extension/package.json ./packages/vscode-extension/
 
