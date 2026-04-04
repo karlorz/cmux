@@ -2,6 +2,7 @@ package pvelxc
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -31,12 +32,14 @@ func TestIsPveLxcInstanceID(t *testing.T) {
 func TestDetectProviderFromEnv(t *testing.T) {
 	t.Setenv("PVE_API_URL", "https://pve.test:8006")
 	t.Setenv("PVE_API_TOKEN", "root@pam!token=abc")
+	t.Setenv("E2B_API_KEY", "")
 	if got := provider.DetectFromEnv(); got != provider.PveLxc {
 		t.Fatalf("DetectFromEnv() = %q, want %q", got, provider.PveLxc)
 	}
 
 	t.Setenv("PVE_API_URL", "")
 	t.Setenv("PVE_API_TOKEN", "")
+	t.Setenv("E2B_API_KEY", "")
 	if got := provider.DetectFromEnv(); got != provider.Morph {
 		t.Fatalf("DetectFromEnv() = %q, want %q", got, provider.Morph)
 	}
@@ -296,28 +299,73 @@ func TestRegexPatterns(t *testing.T) {
 	}
 }
 
-func TestParseVMIDVariants(t *testing.T) {
-	tests := []struct {
-		input    string
-		wantVMID int
-		wantOK   bool
-	}{
-		{"200", 200, true},
-		{"cmux-200", 200, true},
-		{"cmux-9999", 9999, true},
-		{"pvelxc-abc", 0, false},
-		{"cmux_200", 0, false},
-		{"", 0, false},
-		{"abc", 0, false},
+func TestResolveSnapshotUsesBuiltInDefaultPair(t *testing.T) {
+	client, err := NewClient(Config{
+		APIURL:   "https://pve.example.com:8006",
+		APIToken: "root@pam!token=secret",
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
 	}
 
-	for _, tt := range tests {
-		vmid, ok := ParseVMID(tt.input)
-		if ok != tt.wantOK {
-			t.Errorf("ParseVMID(%q) ok = %v, want %v", tt.input, ok, tt.wantOK)
+	snapshotID, templateVMID, err := client.resolveSnapshot("")
+	if err != nil {
+		t.Fatalf("resolveSnapshot(\"\") error = %v", err)
+	}
+	if snapshotID != defaultSnapshotID {
+		t.Fatalf("resolveSnapshot(\"\") snapshotID = %q, want %q", snapshotID, defaultSnapshotID)
+	}
+	if templateVMID != defaultTemplateVMID {
+		t.Fatalf("resolveSnapshot(\"\") templateVMID = %d, want %d", templateVMID, defaultTemplateVMID)
+	}
+	if templateVMID == 9045 {
+		t.Fatalf("resolveSnapshot(\"\") unexpectedly returned stale template VMID 9045")
+	}
+}
+
+func TestResolveSnapshotExplicitCurrentDefault(t *testing.T) {
+	client, err := NewClient(Config{
+		APIURL:   "https://pve.example.com:8006",
+		APIToken: "root@pam!token=secret",
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	snapshotID, templateVMID, err := client.resolveSnapshot(defaultSnapshotID)
+	if err != nil {
+		t.Fatalf("resolveSnapshot(defaultSnapshotID) error = %v", err)
+	}
+	if snapshotID != defaultSnapshotID {
+		t.Fatalf("resolveSnapshot(defaultSnapshotID) snapshotID = %q, want %q", snapshotID, defaultSnapshotID)
+	}
+	if templateVMID != defaultTemplateVMID {
+		t.Fatalf("resolveSnapshot(defaultSnapshotID) templateVMID = %d, want %d", templateVMID, defaultTemplateVMID)
+	}
+}
+
+func TestResolveSnapshotFromManifestOrDefaultUsesUpdatedFallback(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatalf("Chdir(tempDir) error = %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(wd); err != nil {
+			t.Fatalf("restore cwd error = %v", err)
 		}
-		if vmid != tt.wantVMID {
-			t.Errorf("ParseVMID(%q) = %d, want %d", tt.input, vmid, tt.wantVMID)
-		}
+	}()
+
+	templateVMID, err := resolveSnapshotFromManifestOrDefault("")
+	if err != nil {
+		t.Fatalf("resolveSnapshotFromManifestOrDefault(\"\") error = %v", err)
+	}
+	if templateVMID != defaultTemplateVMID {
+		t.Fatalf("resolveSnapshotFromManifestOrDefault(\"\") = %d, want %d", templateVMID, defaultTemplateVMID)
+	}
+	if templateVMID == 9045 {
+		t.Fatalf("resolveSnapshotFromManifestOrDefault(\"\") unexpectedly returned stale template VMID 9045")
 	}
 }

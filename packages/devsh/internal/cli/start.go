@@ -252,6 +252,16 @@ func runStartPveLxc(cmd *cobra.Command, args []string) error {
 				fmt.Printf("Warning: provider auth setup skipped: %v\n", wwwErr)
 			} else {
 				wwwClient.SetTeamSlug(teamSlug)
+				if err := wwwClient.RecordSandboxCreate(ctx, vm.RecordSandboxCreateRequest{
+					InstanceID:       instance.ID,
+					Provider:         provider.PveLxc,
+					VMID:             instance.VMID,
+					Hostname:         instance.Hostname,
+					SnapshotID:       snapshotID,
+					SnapshotProvider: provider.PveLxc,
+				}); err != nil {
+					fmt.Printf("Warning: failed to record sandbox ownership: %v\n", err)
+				}
 				setupProviderAuthIfNeeded(cmd, ctx, wwwClient, instance.ID)
 			}
 		}

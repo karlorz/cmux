@@ -1821,6 +1821,21 @@ export type SandboxSshResponse = {
     status: 'running' | 'paused';
 };
 
+export type RecordSandboxCreateResponse = {
+    success: true;
+};
+
+export type RecordSandboxCreateBody = {
+    teamSlugOrId: string;
+    provider: 'docker' | 'morph' | 'e2b' | 'daytona' | 'pve-lxc' | 'other';
+    vmid?: number;
+    hostname?: string;
+    snapshotId?: string;
+    snapshotProvider?: 'docker' | 'morph' | 'e2b' | 'daytona' | 'pve-lxc' | 'other' | 'pve-vm';
+    templateVmid?: number;
+    isCloudWorkspace?: boolean;
+};
+
 export type SetupProvidersResponse = {
     success: boolean;
     providers: Array<string>;
@@ -7159,6 +7174,42 @@ export type GetApiSandboxesByIdSshResponses = {
 };
 
 export type GetApiSandboxesByIdSshResponse = GetApiSandboxesByIdSshResponses[keyof GetApiSandboxesByIdSshResponses];
+
+export type PostApiSandboxesByIdRecordCreateData = {
+    body: RecordSandboxCreateBody;
+    path: {
+        /**
+         * Sandbox instance ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/sandboxes/{id}/record-create';
+};
+
+export type PostApiSandboxesByIdRecordCreateErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Instance not found
+     */
+    404: unknown;
+};
+
+export type PostApiSandboxesByIdRecordCreateResponses = {
+    /**
+     * Sandbox ownership recorded
+     */
+    200: RecordSandboxCreateResponse;
+};
+
+export type PostApiSandboxesByIdRecordCreateResponse = PostApiSandboxesByIdRecordCreateResponses[keyof PostApiSandboxesByIdRecordCreateResponses];
 
 export type PostApiSandboxesByIdSetupProvidersData = {
     body: SetupProvidersBody;

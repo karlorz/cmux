@@ -13,6 +13,7 @@ import {
   deleteApiPveLxcPreviewInstancesByInstanceId,
   postApiPveLxcPreviewInstancesByInstanceIdReadFile,
   postApiPveLxcTaskRunsByTaskRunIdIsStopped,
+  postApiSandboxesByIdRecordCreate,
 } from "@cmux/www-openapi-client";
 import { describe, expect, it } from "vitest";
 
@@ -149,6 +150,21 @@ describe("pveLxcRouter", () => {
 
       // Auth may fail, instance not found, or PVE not configured
       expect([200, 401, 403, 404, 500, 503]).toContain(res.response.status);
+    });
+  });
+
+  describe("POST /api/sandboxes/:id/record-create", () => {
+    it("requires authentication", async () => {
+      const res = await postApiSandboxesByIdRecordCreate({
+        client: testApiClient,
+        path: { id: "pvelxc-test123" },
+        body: {
+          teamSlugOrId: TEST_TEAM,
+          provider: "pve-lxc",
+        },
+      });
+
+      expect(res.response.status).toBe(401);
     });
   });
 

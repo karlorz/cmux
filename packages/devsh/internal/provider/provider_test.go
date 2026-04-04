@@ -61,6 +61,7 @@ func TestHasPveEnv(t *testing.T) {
 func TestDetectFromEnv(t *testing.T) {
 	origURL := os.Getenv("PVE_API_URL")
 	origToken := os.Getenv("PVE_API_TOKEN")
+	origE2BAPIKey := os.Getenv("E2B_API_KEY")
 	defer func() {
 		if origURL != "" {
 			os.Setenv("PVE_API_URL", origURL)
@@ -72,11 +73,17 @@ func TestDetectFromEnv(t *testing.T) {
 		} else {
 			os.Unsetenv("PVE_API_TOKEN")
 		}
+		if origE2BAPIKey != "" {
+			os.Setenv("E2B_API_KEY", origE2BAPIKey)
+		} else {
+			os.Unsetenv("E2B_API_KEY")
+		}
 	}()
 
 	// With PVE env
 	os.Setenv("PVE_API_URL", "http://test")
 	os.Setenv("PVE_API_TOKEN", "test-token")
+	os.Unsetenv("E2B_API_KEY")
 	if p := DetectFromEnv(); p != PveLxc {
 		t.Errorf("expected pve-lxc with PVE env, got '%s'", p)
 	}
@@ -84,6 +91,7 @@ func TestDetectFromEnv(t *testing.T) {
 	// Without PVE env
 	os.Unsetenv("PVE_API_URL")
 	os.Unsetenv("PVE_API_TOKEN")
+	os.Unsetenv("E2B_API_KEY")
 	if p := DetectFromEnv(); p != Morph {
 		t.Errorf("expected morph without PVE env, got '%s'", p)
 	}
@@ -176,6 +184,7 @@ func TestIsMorphInstanceID(t *testing.T) {
 func TestProviderForInstanceID(t *testing.T) {
 	origURL := os.Getenv("PVE_API_URL")
 	origToken := os.Getenv("PVE_API_TOKEN")
+	origE2BAPIKey := os.Getenv("E2B_API_KEY")
 	defer func() {
 		if origURL != "" {
 			os.Setenv("PVE_API_URL", origURL)
@@ -187,11 +196,17 @@ func TestProviderForInstanceID(t *testing.T) {
 		} else {
 			os.Unsetenv("PVE_API_TOKEN")
 		}
+		if origE2BAPIKey != "" {
+			os.Setenv("E2B_API_KEY", origE2BAPIKey)
+		} else {
+			os.Unsetenv("E2B_API_KEY")
+		}
 	}()
 
-	// Clear PVE env for consistent fallback
+	// Clear provider env for consistent fallback
 	os.Unsetenv("PVE_API_URL")
 	os.Unsetenv("PVE_API_TOKEN")
+	os.Unsetenv("E2B_API_KEY")
 
 	tests := []struct {
 		input    string
