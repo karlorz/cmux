@@ -64,8 +64,14 @@ export async function executeAgent(
     if (options.permissionMode) {
       args.push("--permission-mode", options.permissionMode);
     }
-    if (options.settingSources && options.settingSources.length > 0) {
-      args.push("--setting-sources", options.settingSources.join(","));
+    const effectiveSettingSources =
+      options.settingSources && options.settingSources.length > 0
+        ? options.settingSources
+        : isLocal && options.localClaudeProfile === "plugin-dev"
+          ? ["project", "local"]
+          : undefined;
+    if (effectiveSettingSources && effectiveSettingSources.length > 0) {
+      args.push("--setting-sources", effectiveSettingSources.join(","));
     }
     if (options.systemPrompt) {
       if (options.systemPrompt.type === "preset") {
@@ -79,6 +85,21 @@ export async function executeAgent(
     }
     if (options.disallowedTools && options.disallowedTools.length > 0) {
       args.push("--disallowed-tools", options.disallowedTools.join(","));
+    }
+    if (isLocal) {
+      if (options.pluginDirs && options.pluginDirs.length > 0) {
+        for (const pluginDir of options.pluginDirs) {
+          args.push("--plugin-dir", pluginDir);
+        }
+      }
+      if (options.settings) {
+        args.push("--settings", options.settings);
+      }
+      if (options.mcpConfigs && options.mcpConfigs.length > 0) {
+        for (const mcpConfig of options.mcpConfigs) {
+          args.push("--mcp-config", mcpConfig);
+        }
+      }
     }
   }
 

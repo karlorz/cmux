@@ -104,6 +104,23 @@ describe("SpawnOptionsSchema", () => {
     expect(result.snapshotId).toBe("snap-123");
     expect(result.env).toEqual({ KEY: "value" });
   });
+
+  it("should accept local Claude plugin development fields", () => {
+    const result = SpawnOptionsSchema.parse({
+      agent: "claude/opus-4.6",
+      prompt: "Plugin dev",
+      provider: "local",
+      localClaudeProfile: "plugin-dev",
+      pluginDirs: ["./plugin-a"],
+      settings: "./settings.local.json",
+      mcpConfigs: ["./mcp.local.json"],
+    });
+
+    expect(result.localClaudeProfile).toBe("plugin-dev");
+    expect(result.pluginDirs).toEqual(["./plugin-a"]);
+    expect(result.settings).toBe("./settings.local.json");
+    expect(result.mcpConfigs).toEqual(["./mcp.local.json"]);
+  });
 });
 
 describe("CheckpointOptionsSchema", () => {

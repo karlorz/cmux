@@ -110,6 +110,14 @@ export const SystemPromptConfigSchema = z.union([
 export type SystemPromptConfig = z.infer<typeof SystemPromptConfigSchema>;
 
 /**
+ * Local Claude development profile presets
+ */
+export const LocalClaudeProfileSchema = z.enum([
+  "plugin-dev",
+]);
+export type LocalClaudeProfile = z.infer<typeof LocalClaudeProfileSchema>;
+
+/**
  * Options for spawning an agent
  */
 export const SpawnOptionsSchema = z.object({
@@ -151,6 +159,16 @@ export const SpawnOptionsSchema = z.object({
   allowedTools: z.array(z.string()).optional(),
   /** Disallowed tools (Claude agents only) */
   disallowedTools: z.array(z.string()).optional(),
+
+  // Local Claude development options (local claude/* runs only)
+  /** Optional local Claude development preset */
+  localClaudeProfile: LocalClaudeProfileSchema.optional(),
+  /** Claude plugin directories to load for local runs */
+  pluginDirs: z.array(z.string()).optional(),
+  /** Claude settings file path or JSON string for local runs */
+  settings: z.string().optional(),
+  /** Claude MCP config file paths or JSON strings for local runs */
+  mcpConfigs: z.array(z.string()).optional(),
 });
 export type SpawnOptions = z.infer<typeof SpawnOptionsSchema>;
 export type SpawnOptionsInput = z.input<typeof SpawnOptionsSchema>;

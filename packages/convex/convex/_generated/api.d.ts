@@ -68,6 +68,8 @@ import type * as hostScreenshotCollectorActions from "../hostScreenshotCollector
 import type * as hostScreenshotCollector_http from "../hostScreenshotCollector_http.js";
 import type * as http from "../http.js";
 import type * as localWorkspaces from "../localWorkspaces.js";
+import type * as localClaudeProfiles from "../localClaudeProfiles.js";
+import type * as localClaudeLaunches from "../localClaudeLaunches.js";
 import type * as mcpRuntimeCapabilities from "../mcpRuntimeCapabilities.js";
 import type * as mcpServerConfigs from "../mcpServerConfigs.js";
 import type * as mcpTools from "../mcpTools.js";
@@ -230,6 +232,8 @@ declare const fullApi: ApiFromModules<{
   hostScreenshotCollector_http: typeof hostScreenshotCollector_http;
   http: typeof http;
   localWorkspaces: typeof localWorkspaces;
+  localClaudeProfiles: typeof localClaudeProfiles;
+  localClaudeLaunches: typeof localClaudeLaunches;
   mcpRuntimeCapabilities: typeof mcpRuntimeCapabilities;
   mcpServerConfigs: typeof mcpServerConfigs;
   mcpTools: typeof mcpTools;

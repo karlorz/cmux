@@ -272,11 +272,11 @@ func runAgentWithTUI(ctx context.Context, state *LocalState, prompt, workspace s
 
 	switch selection.Provider {
 	case "claude":
-		claudePath, err := exec.LookPath("claude")
+		claudePath, err := resolveAgentCLIPath("claude")
 		if err != nil {
 			return fmt.Errorf("claude CLI not found: %w", err)
 		}
-		args := buildLocalClaudeArgs(selection, prompt, localModel)
+		args := buildLocalClaudeArgs(selection, prompt, localModel, currentLocalClaudeCLIOptions())
 		cmd = exec.CommandContext(ctx, claudePath, args...)
 		cliName = "Claude"
 

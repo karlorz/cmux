@@ -13,7 +13,7 @@ func TestInitSessionForRun(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Test Claude agent gets session ID
-	err := InitSessionForRun(tmpDir, "claude/opus-4.6", "/workspace")
+	err := InitSessionForRun(tmpDir, "claude/opus-4.6", "/workspace", nil)
 	if err != nil {
 		t.Fatalf("InitSessionForRun failed: %v", err)
 	}
@@ -36,11 +36,55 @@ func TestInitSessionForRun(t *testing.T) {
 	}
 }
 
+func TestInitSessionForRunStoresClaudeOptions(t *testing.T) {
+	tmpDir := t.TempDir()
+	options := &LocalClaudeCLIOptions{
+		PluginDirs:      []string{"./plugin-dev"},
+		Settings:        "./settings.local.json",
+		SettingSources:  "project,local",
+		MCPConfigs:      []string{"./mcp.json"},
+		AllowedTools:    "Read,Write",
+		DisallowedTools: "Bash",
+	}
+
+	err := InitSessionForRun(tmpDir, "claude/opus-4.6", "/workspace", options)
+	if err != nil {
+		t.Fatalf("InitSessionForRun failed: %v", err)
+	}
+
+	info, err := loadSessionInfo(tmpDir)
+	if err != nil {
+		t.Fatalf("loadSessionInfo failed: %v", err)
+	}
+
+	if info.ClaudeOptions == nil {
+		t.Fatal("expected ClaudeOptions to be stored")
+	}
+	if len(info.ClaudeOptions.PluginDirs) != 1 || info.ClaudeOptions.PluginDirs[0] != "./plugin-dev" {
+		t.Fatalf("unexpected PluginDirs: %#v", info.ClaudeOptions.PluginDirs)
+	}
+	if info.ClaudeOptions.Settings != "./settings.local.json" {
+		t.Fatalf("unexpected Settings: %q", info.ClaudeOptions.Settings)
+	}
+	if info.ClaudeOptions.SettingSources != "project,local" {
+		t.Fatalf("unexpected SettingSources: %q", info.ClaudeOptions.SettingSources)
+	}
+	if len(info.ClaudeOptions.MCPConfigs) != 1 || info.ClaudeOptions.MCPConfigs[0] != "./mcp.json" {
+		t.Fatalf("unexpected MCPConfigs: %#v", info.ClaudeOptions.MCPConfigs)
+	}
+	if info.ClaudeOptions.AllowedTools != "Read,Write" {
+		t.Fatalf("unexpected AllowedTools: %q", info.ClaudeOptions.AllowedTools)
+	}
+	if info.ClaudeOptions.DisallowedTools != "Bash" {
+		t.Fatalf("unexpected DisallowedTools: %q", info.ClaudeOptions.DisallowedTools)
+	}
+}
+
 func TestInitSessionForRunCodex(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Test Codex agent (no pre-generated session ID)
-	err := InitSessionForRun(tmpDir, "codex/gpt-5.1-codex-mini", "/workspace")
+	err := InitSessionForRun(tmpDir, "codex/gpt-5.1-codex-mini", "/workspace", nil)
 	if err != nil {
 		t.Fatalf("InitSessionForRun failed: %v", err)
 	}
@@ -206,7 +250,7 @@ func TestUpdateSessionID(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Init session without ID
-	err := InitSessionForRun(tmpDir, "codex/gpt-5.1-codex-mini", "/workspace")
+	err := InitSessionForRun(tmpDir, "codex/gpt-5.1-codex-mini", "/workspace", nil)
 	if err != nil {
 		t.Fatalf("InitSessionForRun failed: %v", err)
 	}
@@ -235,7 +279,7 @@ func TestUpdateThreadID(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Init session
-	err := InitSessionForRun(tmpDir, "codex/gpt-5.4-xhigh", "/workspace")
+	err := InitSessionForRun(tmpDir, "codex/gpt-5.4-xhigh", "/workspace", nil)
 	if err != nil {
 		t.Fatalf("InitSessionForRun failed: %v", err)
 	}
@@ -390,7 +434,7 @@ func TestSaveAndLoadSessionInfo(t *testing.T) {
 func TestUpdateCodexHome(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	if err := InitSessionForRun(tmpDir, "codex/gpt-5.4-xhigh", "/workspace"); err != nil {
+	if err := InitSessionForRun(tmpDir, "codex/gpt-5.4-xhigh", "/workspace", nil); err != nil {
 		t.Fatalf("InitSessionForRun failed: %v", err)
 	}
 

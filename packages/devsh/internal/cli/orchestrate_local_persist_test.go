@@ -228,6 +228,14 @@ func TestLocalRunConfigSerialization(t *testing.T) {
 		Model:           "claude-opus-4-6-20250514",
 		CreatedAt:       "2026-03-18T12:00:00Z",
 		DevshVersion:    "0.1.22",
+		ClaudeOptions: &LocalClaudeCLIOptions{
+			PluginDirs:      []string{"./plugin-dev"},
+			Settings:        "./settings.local.json",
+			SettingSources:  "project,local",
+			MCPConfigs:      []string{"./mcp.json"},
+			AllowedTools:    "Read,Write",
+			DisallowedTools: "Bash",
+		},
 	}
 
 	data, err := json.MarshalIndent(config, "", "  ")
@@ -245,6 +253,15 @@ func TestLocalRunConfigSerialization(t *testing.T) {
 	}
 	if loaded.DevshVersion != "0.1.22" {
 		t.Errorf("expected devsh version to be preserved, got %s", loaded.DevshVersion)
+	}
+	if loaded.ClaudeOptions == nil {
+		t.Fatal("expected Claude options to be preserved")
+	}
+	if len(loaded.ClaudeOptions.PluginDirs) != 1 || loaded.ClaudeOptions.PluginDirs[0] != "./plugin-dev" {
+		t.Fatalf("unexpected PluginDirs: %#v", loaded.ClaudeOptions.PluginDirs)
+	}
+	if loaded.ClaudeOptions.AllowedTools != "Read,Write" {
+		t.Fatalf("unexpected AllowedTools: %q", loaded.ClaudeOptions.AllowedTools)
 	}
 }
 

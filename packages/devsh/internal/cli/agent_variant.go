@@ -6,6 +6,15 @@ import (
 	"strings"
 )
 
+type LocalClaudeCLIOptions struct {
+	PluginDirs      []string `json:"pluginDirs,omitempty"`
+	Settings        string   `json:"settings,omitempty"`
+	SettingSources  string   `json:"settingSources,omitempty"`
+	MCPConfigs      []string `json:"mcpConfigs,omitempty"`
+	AllowedTools    string   `json:"allowedTools,omitempty"`
+	DisallowedTools string   `json:"disallowedTools,omitempty"`
+}
+
 type localAgentSelection struct {
 	RequestedAgentName string
 	AgentName          string
@@ -164,7 +173,7 @@ func resolveLocalAgentSelection(
 	}
 }
 
-func buildLocalClaudeArgs(selection localAgentSelection, prompt string, modelOverride string) []string {
+func buildLocalClaudeArgs(selection localAgentSelection, prompt string, modelOverride string, options *LocalClaudeCLIOptions) []string {
 	args := []string{"-p", "--dangerously-skip-permissions"}
 	model := strings.TrimSpace(modelOverride)
 	if model == "" {
@@ -175,6 +184,30 @@ func buildLocalClaudeArgs(selection localAgentSelection, prompt string, modelOve
 	}
 	if selection.SelectedVariant != "" {
 		args = append(args, "--effort", selection.SelectedVariant)
+	}
+	if options != nil {
+		for _, pluginDir := range options.PluginDirs {
+			if strings.TrimSpace(pluginDir) != "" {
+				args = append(args, "--plugin-dir", pluginDir)
+			}
+		}
+		if strings.TrimSpace(options.Settings) != "" {
+			args = append(args, "--settings", options.Settings)
+		}
+		if strings.TrimSpace(options.SettingSources) != "" {
+			args = append(args, "--setting-sources", options.SettingSources)
+		}
+		for _, mcpConfig := range options.MCPConfigs {
+			if strings.TrimSpace(mcpConfig) != "" {
+				args = append(args, "--mcp-config", mcpConfig)
+			}
+		}
+		if strings.TrimSpace(options.AllowedTools) != "" {
+			args = append(args, "--allowed-tools", options.AllowedTools)
+		}
+		if strings.TrimSpace(options.DisallowedTools) != "" {
+			args = append(args, "--disallowed-tools", options.DisallowedTools)
+		}
 	}
 	return append(args, prompt)
 }

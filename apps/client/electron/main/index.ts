@@ -1,5 +1,8 @@
 import path, { join } from "node:path";
+import { mkdtemp, writeFile, chmod, stat } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 
 import { is } from "@electron-toolkit/utils";
 import {
@@ -69,6 +72,11 @@ import {
   type HostMcpFileResult,
 } from "./mcp-host-config";
 import { getMobileMachineInfo } from "./mobile-machine-info";
+import {
+  buildLocalClaudePluginDevCommand,
+  type LocalClaudePluginDevLaunchRequest,
+  type LocalTerminalTarget,
+} from "../../src/lib/local-claude-plugin-dev";
 
 // Use a cookieable HTTPS origin intercepted locally instead of a custom scheme.
 const PARTITION = "persist:cmux";
@@ -361,6 +369,168 @@ function sendShortcutToFocusedWindow(
   }
 }
 
+function shellEscapeSingleQuotes(value: string): string {
+  return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
+function emitCmuxEventToAllWindows(event: string, payload: unknown): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed()) continue;
+    try {
+      window.webContents.send(`cmux:event:${event}`, payload);
+    } catch (error) {
+      mainWarn("Failed to emit cmux event to renderer", { event, error });
+    }
+  }
+}
+
+async function monitorLocalCommandOutcome(
+  launchId: string,
+  outcomePath: string,
+): Promise<void> {
+  const fs = await import("node:fs/promises");
+  const startedAt = Date.now();
+  const timeoutMs = 6 * 60 * 60 * 1000; // 6h
+
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const raw = await fs.readFile(outcomePath, "utf8");
+      const payload = JSON.parse(raw) as {
+        launchId: string;
+        status: "completed" | "completed_failed";
+        exitCode?: number;
+        error?: string;
+      };
+      emitCmuxEventToAllWindows("local-command-finished", payload);
+      return;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  }
+
+  emitCmuxEventToAllWindows("local-command-finished", {
+    launchId,
+    status: "completed_failed",
+    error: "Timed out waiting for local command outcome",
+  });
+}
+
+async function launchCommandInTerminal(options: {
+  command?: string;
+  cwd?: string;
+  title?: string;
+  terminal?: LocalTerminalTarget;
+}): Promise<
+  | { ok: true; scriptPath?: string; launchId: string }
+  | { ok: false; error: string }
+> {
+  const command =
+    typeof options.command === "string" ? options.command.trim() : "";
+  const cwd = typeof options.cwd === "string" ? options.cwd.trim() : "";
+  const title =
+    typeof options.title === "string" ? options.title.trim() : "cmux local run";
+  const terminal = options.terminal ?? "terminal";
+
+  if (!command) {
+    return { ok: false as const, error: "Command is required" };
+  }
+
+  if (process.platform !== "darwin" && terminal !== "alacritty") {
+    return {
+      ok: false as const,
+      error:
+        "Local terminal execution currently supports macOS native terminals or Alacritty",
+    };
+  }
+
+  if (cwd) {
+    try {
+      const cwdStats = await stat(cwd);
+      if (!cwdStats.isDirectory()) {
+        return { ok: false as const, error: `Workspace path is not a directory: ${cwd}` };
+      }
+    } catch {
+      return { ok: false as const, error: `Workspace path does not exist: ${cwd}` };
+    }
+  }
+
+  try {
+    const tempDir = await mkdtemp(join(app.getPath("temp"), "cmux-local-run-"));
+    const scriptPath = join(tempDir, "run-local-command.command");
+    const outcomePath = join(tempDir, "run-local-command.outcome.json");
+    const launchId = randomUUID();
+    const lines = ["#!/usr/bin/env bash", "set +e"];
+    if (cwd) {
+      lines.push(`cd ${shellEscapeSingleQuotes(cwd)} || exit 1`);
+    }
+    lines.push(`printf '\\033]0;%s\\007' ${shellEscapeSingleQuotes(title)}`);
+    lines.push(command);
+    lines.push("status=$?");
+    lines.push("echo");
+    lines.push('echo "[cmux] Command exited with status ${status}"');
+    lines.push(`cat > ${shellEscapeSingleQuotes(outcomePath)} <<'CMUX_OUTCOME_EOF'`);
+    lines.push(
+      JSON.stringify({
+        launchId,
+        status: "completed",
+      }),
+    );
+    lines.push("CMUX_OUTCOME_EOF");
+    lines.push(
+      `node -e "const fs=require('fs'); const p=${JSON.stringify(
+        outcomePath,
+      )}; const data=JSON.parse(fs.readFileSync(p,'utf8')); data.status=process.argv[1]==='0'?'completed':'completed_failed'; data.exitCode=Number(process.argv[1]); if(data.exitCode!==0){data.error='Command exited with non-zero status';} fs.writeFileSync(p, JSON.stringify(data));" "$status"`,
+    );
+    lines.push('exec "${SHELL:-/bin/zsh}" -l');
+
+    await writeFile(scriptPath, `${lines.join("\n")}\n`, "utf8");
+    await chmod(scriptPath, 0o755);
+
+    let launchCommand: string;
+    let launchArgs: string[];
+    switch (terminal) {
+      case "iterm":
+        launchCommand = "open";
+        launchArgs = ["-a", "iTerm", scriptPath];
+        break;
+      case "ghostty":
+        launchCommand = "open";
+        launchArgs = ["-a", "Ghostty", scriptPath];
+        break;
+      case "alacritty":
+        launchCommand = "alacritty";
+        launchArgs = [
+          ...(cwd ? ["--working-directory", cwd] : []),
+          "-e",
+          "/bin/bash",
+          scriptPath,
+        ];
+        break;
+      case "terminal":
+      default:
+        launchCommand = "open";
+        launchArgs = ["-a", "Terminal", scriptPath];
+        break;
+    }
+
+    const child = spawn(launchCommand, launchArgs, {
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+
+    void monitorLocalCommandOutcome(launchId, outcomePath);
+
+    return { ok: true as const, scriptPath, launchId };
+  } catch (error) {
+    mainWarn("Failed to launch local command in Terminal", error);
+    return {
+      ok: false as const,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 function setPreviewReloadMenuVisibility(visible: boolean): void {
   previewReloadMenuVisible = visible;
   const applyVisibility = (item: MenuItem | null) => {
@@ -384,6 +554,64 @@ ipcMain.handle(
     setPreviewReloadMenuVisibility(Boolean(visible));
     return { ok: true };
   }
+);
+
+ipcMain.handle(
+  "cmux:local:run-command-in-terminal",
+  async (
+    _event,
+    options: {
+      command?: string;
+      cwd?: string;
+      title?: string;
+      terminal?: "terminal" | "iterm" | "ghostty" | "alacritty";
+    }
+  ) =>
+    launchCommandInTerminal(options),
+);
+
+ipcMain.handle(
+  "cmux:local:launch-claude-plugin-dev",
+  async (_event, request: LocalClaudePluginDevLaunchRequest) => {
+    const workspacePath =
+      typeof request?.workspacePath === "string" ? request.workspacePath.trim() : "";
+    const taskDescription =
+      typeof request?.taskDescription === "string"
+        ? request.taskDescription.trim()
+        : "";
+
+    if (!request?.agentName?.trim()) {
+      return { ok: false as const, error: "Claude agent is required" };
+    }
+
+    if (!workspacePath) {
+      return { ok: false as const, error: "Workspace path is required" };
+    }
+
+    if (!taskDescription) {
+      return { ok: false as const, error: "Task description is required" };
+    }
+
+    const normalizedRequest: LocalClaudePluginDevLaunchRequest = {
+      ...request,
+      workspacePath,
+      taskDescription,
+    };
+    const command = buildLocalClaudePluginDevCommand(normalizedRequest);
+    const result = await launchCommandInTerminal({
+      command,
+      cwd: workspacePath,
+      title: "cmux local Claude plugin-dev",
+      terminal: normalizedRequest.terminal,
+    });
+    if (!result.ok) {
+      return result;
+    }
+    return {
+      ...result,
+      command,
+    };
+  },
 );
 
 function emitAutoUpdateToastIfPossible(): void {

@@ -16,19 +16,25 @@ import (
 )
 
 var (
-	localAgent       string
-	localWorkspace   string
-	localTimeout     string
-	localExport      string
-	localTUI         bool
-	localDryRun      bool
-	localModel       string
-	localVariant     string
-	localEffort      string
-	localPersist     bool
-	localRunDir      string
-	localIncludeLogs bool
-	localSelftest    bool
+	localAgent           string
+	localWorkspace       string
+	localTimeout         string
+	localExport          string
+	localTUI             bool
+	localDryRun          bool
+	localModel           string
+	localVariant         string
+	localEffort          string
+	localPersist         bool
+	localRunDir          string
+	localIncludeLogs     bool
+	localSelftest        bool
+	localPluginDirs      []string
+	localSettings        string
+	localSettingSources  string
+	localMCPConfigs      []string
+	localAllowedTools    string
+	localDisallowedTools string
 )
 
 // LocalState represents the state of a local orchestration run
@@ -50,17 +56,18 @@ type LocalState struct {
 
 // LocalRunConfig stores the initial configuration for a local run
 type LocalRunConfig struct {
-	OrchestrationID string `json:"orchestrationId"`
-	Agent           string `json:"agent"`
-	SelectedVariant string `json:"selectedVariant,omitempty"`
-	Prompt          string `json:"prompt"`
-	Workspace       string `json:"workspace"`
-	Timeout         string `json:"timeout"`
-	Model           string `json:"model,omitempty"`
-	CreatedAt       string `json:"createdAt"`
-	DevshVersion    string `json:"devshVersion"`
-	GitBranch       string `json:"gitBranch,omitempty"`
-	GitCommit       string `json:"gitCommit,omitempty"`
+	OrchestrationID string                 `json:"orchestrationId"`
+	Agent           string                 `json:"agent"`
+	SelectedVariant string                 `json:"selectedVariant,omitempty"`
+	Prompt          string                 `json:"prompt"`
+	Workspace       string                 `json:"workspace"`
+	Timeout         string                 `json:"timeout"`
+	Model           string                 `json:"model,omitempty"`
+	CreatedAt       string                 `json:"createdAt"`
+	DevshVersion    string                 `json:"devshVersion"`
+	GitBranch       string                 `json:"gitBranch,omitempty"`
+	GitCommit       string                 `json:"gitCommit,omitempty"`
+	ClaudeOptions   *LocalClaudeCLIOptions `json:"claudeOptions,omitempty"`
 }
 
 // LocalEvent represents an event in the local orchestration
@@ -214,7 +221,7 @@ Examples:
 			}
 			switch resolvedSelection.Provider {
 			case "claude":
-				args := buildLocalClaudeArgs(resolvedSelection, prompt, localModel)
+				args := buildLocalClaudeArgs(resolvedSelection, prompt, localModel, currentLocalClaudeCLIOptions())
 				fmt.Printf("  claude %s\n", formatCommandArgs(args))
 			case "codex":
 				args := buildLocalCodexArgs(resolvedSelection, prompt)
@@ -251,6 +258,7 @@ Examples:
 				DevshVersion:    GetVersion(),
 				GitBranch:       getGitBranch(absWorkspace),
 				GitCommit:       getGitCommit(absWorkspace),
+				ClaudeOptions:   localClaudeOptionsForProvider(resolvedSelection.Provider),
 			}
 			var err error
 			runDir, err = createRunDirectory(orchID, config)
@@ -270,7 +278,7 @@ Examples:
 			defer removePidFile(runDir)
 
 			// Initialize session info for active instruction injection (D5.6)
-			if err := InitSessionForRun(runDir, resolvedSelection.AgentName, absWorkspace); err != nil {
+			if err := InitSessionForRun(runDir, resolvedSelection.AgentName, absWorkspace, localClaudeOptionsForProvider(resolvedSelection.Provider)); err != nil {
 				if !flagJSON && flagVerbose {
 					fmt.Printf("Warning: failed to init session info: %v\n", err)
 				}
@@ -292,6 +300,26 @@ Examples:
 				fmt.Printf("Timeout: %s\n", localTimeout)
 				if localModel != "" {
 					fmt.Printf("Model Override: %s\n", localModel)
+				}
+				if options := currentLocalClaudeCLIOptions(); options != nil {
+					if len(options.PluginDirs) > 0 {
+						fmt.Printf("Plugin Dirs: %s\n", strings.Join(options.PluginDirs, ", "))
+					}
+					if options.Settings != "" {
+						fmt.Printf("Settings: %s\n", options.Settings)
+					}
+					if options.SettingSources != "" {
+						fmt.Printf("Setting Sources: %s\n", options.SettingSources)
+					}
+					if len(options.MCPConfigs) > 0 {
+						fmt.Printf("MCP Configs: %s\n", strings.Join(options.MCPConfigs, ", "))
+					}
+					if options.AllowedTools != "" {
+						fmt.Printf("Allowed Tools: %s\n", options.AllowedTools)
+					}
+					if options.DisallowedTools != "" {
+						fmt.Printf("Disallowed Tools: %s\n", options.DisallowedTools)
+					}
 				}
 			}
 		}
@@ -431,6 +459,35 @@ func getLocalRunsDir() string {
 	return filepath.Join(home, ".devsh", "orchestrations")
 }
 
+func currentLocalClaudeCLIOptions() *LocalClaudeCLIOptions {
+	options := &LocalClaudeCLIOptions{
+		PluginDirs:      append([]string(nil), localPluginDirs...),
+		Settings:        strings.TrimSpace(localSettings),
+		SettingSources:  strings.TrimSpace(localSettingSources),
+		MCPConfigs:      append([]string(nil), localMCPConfigs...),
+		AllowedTools:    strings.TrimSpace(localAllowedTools),
+		DisallowedTools: strings.TrimSpace(localDisallowedTools),
+	}
+
+	if len(options.PluginDirs) == 0 &&
+		options.Settings == "" &&
+		options.SettingSources == "" &&
+		len(options.MCPConfigs) == 0 &&
+		options.AllowedTools == "" &&
+		options.DisallowedTools == "" {
+		return nil
+	}
+
+	return options
+}
+
+func localClaudeOptionsForProvider(provider string) *LocalClaudeCLIOptions {
+	if provider != "claude" {
+		return nil
+	}
+	return currentLocalClaudeCLIOptions()
+}
+
 // createRunDirectory creates a persistent run directory with initial config
 func createRunDirectory(orchID string, config *LocalRunConfig) (string, error) {
 	baseDir := getLocalRunsDir()
@@ -515,7 +572,7 @@ func runClaudeLocal(ctx context.Context, state *LocalState, prompt, workspace st
 	state.addEvent("agent_invoked", "Spawning claude CLI")
 
 	// Check if claude CLI is available
-	claudePath, err := exec.LookPath("claude")
+	claudePath, err := resolveAgentCLIPath("claude")
 	if err != nil {
 		return fmt.Errorf("claude CLI not found in PATH: %w", err)
 	}
@@ -525,7 +582,7 @@ func runClaudeLocal(ctx context.Context, state *LocalState, prompt, workspace st
 	if err != nil {
 		return err
 	}
-	args := buildLocalClaudeArgs(selection, prompt, localModel)
+	args := buildLocalClaudeArgs(selection, prompt, localModel, currentLocalClaudeCLIOptions())
 	if localModel != "" {
 		state.addEvent("model_override", fmt.Sprintf("Using model: %s", localModel))
 	}
@@ -677,7 +734,7 @@ func runAmpLocal(ctx context.Context, state *LocalState, prompt, workspace strin
 func runClaudeLocalWithAgent(ctx context.Context, state *LocalState, agent, prompt, workspace string) error {
 	state.addEvent("agent_invoked", fmt.Sprintf("Spawning claude CLI (%s)", agent))
 
-	claudePath, err := exec.LookPath("claude")
+	claudePath, err := resolveAgentCLIPath("claude")
 	if err != nil {
 		return fmt.Errorf("claude CLI not found in PATH: %w", err)
 	}
@@ -686,7 +743,7 @@ func runClaudeLocalWithAgent(ctx context.Context, state *LocalState, agent, prom
 	if err != nil {
 		return err
 	}
-	args := buildLocalClaudeArgs(selection, prompt, localModel)
+	args := buildLocalClaudeArgs(selection, prompt, localModel, currentLocalClaudeCLIOptions())
 
 	cmd := exec.CommandContext(ctx, claudePath, args...)
 	cmd.Dir = workspace
@@ -907,5 +964,11 @@ func init() {
 	orchestrateLocalCmd.Flags().StringVar(&localRunDir, "run-dir", "", "Custom base directory for run artifacts (default: ~/.devsh/orchestrations)")
 	orchestrateLocalCmd.Flags().BoolVar(&localIncludeLogs, "include-logs", false, "Include stdout/stderr logs in --export bundle (always included with --persist)")
 	orchestrateLocalCmd.Flags().BoolVar(&localSelftest, "selftest", false, "Run preflight checks before starting (validates CLI, credentials, workspace)")
+	orchestrateLocalCmd.Flags().StringArrayVar(&localPluginDirs, "plugin-dir", nil, "Claude plugin directory to load for this local run (repeatable)")
+	orchestrateLocalCmd.Flags().StringVar(&localSettings, "settings", "", "Additional Claude settings file or JSON string for this local run")
+	orchestrateLocalCmd.Flags().StringVar(&localSettingSources, "setting-sources", "", "Comma-separated Claude setting sources (user, project, local)")
+	orchestrateLocalCmd.Flags().StringArrayVar(&localMCPConfigs, "mcp-config", nil, "Claude MCP config file or JSON string to load for this local run (repeatable)")
+	orchestrateLocalCmd.Flags().StringVar(&localAllowedTools, "allowed-tools", "", "Comma-separated list of allowed Claude tools for this local run")
+	orchestrateLocalCmd.Flags().StringVar(&localDisallowedTools, "disallowed-tools", "", "Comma-separated list of denied Claude tools for this local run")
 	orchestrateCmd.AddCommand(orchestrateLocalCmd)
 }

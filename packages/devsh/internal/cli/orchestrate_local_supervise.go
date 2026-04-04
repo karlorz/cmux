@@ -347,7 +347,7 @@ func runAgentCaptureOutput(ctx context.Context, agent, prompt, workspace string)
 
 	switch {
 	case strings.HasPrefix(agent, "claude/"):
-		claudePath, err := exec.LookPath("claude")
+		claudePath, err := resolveAgentCLIPath("claude")
 		if err != nil {
 			return "", fmt.Errorf("claude CLI not found: %w", err)
 		}

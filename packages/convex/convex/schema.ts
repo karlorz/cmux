@@ -2735,6 +2735,60 @@ const convexSchema = defineSchema({
     .index("by_team_user", ["teamId", "userId"])
     .index("by_team_name", ["teamId", "name"]),
 
+  // Local Claude plugin-dev profiles - reusable per-team local execution presets
+  localClaudeProfiles: defineTable({
+    teamId: v.string(),
+    userId: v.string(), // creator / last editor
+    name: v.string(),
+    workspacePath: v.optional(v.string()),
+    terminal: v.union(
+      v.literal("terminal"),
+      v.literal("iterm"),
+      v.literal("ghostty"),
+      v.literal("alacritty")
+    ),
+    pluginDirsInput: v.optional(v.string()),
+    settingsInput: v.optional(v.string()),
+    mcpConfigsInput: v.optional(v.string()),
+    allowedToolsInput: v.optional(v.string()),
+    disallowedToolsInput: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_team", ["teamId"])
+    .index("by_team_user", ["teamId", "userId"])
+    .index("by_team_name", ["teamId", "name"]),
+
+  // Recent local Claude plugin-dev launches for lightweight cross-device observability
+  localClaudeLaunches: defineTable({
+    teamId: v.string(),
+    userId: v.string(),
+    launchId: v.string(),
+    command: v.string(),
+    workspacePath: v.string(),
+    terminal: v.union(
+      v.literal("terminal"),
+      v.literal("iterm"),
+      v.literal("ghostty"),
+      v.literal("alacritty")
+    ),
+    status: v.union(
+      v.literal("launched"),
+      v.literal("launch_failed"),
+      v.literal("completed"),
+      v.literal("completed_failed")
+    ),
+    scriptPath: v.optional(v.string()),
+    error: v.optional(v.string()),
+    exitCode: v.optional(v.number()),
+    launchedAt: v.number(),
+    exitedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_team", ["teamId", "createdAt"])
+    .index("by_team_user", ["teamId", "userId", "createdAt"])
+    .index("by_team_launch", ["teamId", "launchId"]),
+
   // Session activity tracking for visual change dashboards
   sessionActivity: defineTable({
     // Link to task run
