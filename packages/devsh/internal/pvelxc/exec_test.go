@@ -61,6 +61,28 @@ func newExecReadyTestClient(t *testing.T, execHandler http.HandlerFunc) *Client 
 	}
 }
 
+func TestVerifyTimezoneCommand(t *testing.T) {
+	command := VerifyTimezoneCommand("Asia/Hong_Kong")
+
+	if command != "TZ='Asia/Hong_Kong'; date +%Z" {
+		t.Fatalf("VerifyTimezoneCommand() = %q", command)
+	}
+}
+
+func TestApplyTimezoneCommand(t *testing.T) {
+	command := ApplyTimezoneCommand("Asia/Hong_Kong")
+
+	if !strings.Contains(command, "timedatectl set-timezone 'Asia/Hong_Kong'") {
+		t.Fatalf("expected timedatectl command, got %q", command)
+	}
+	if !strings.Contains(command, "ln -snf '/usr/share/zoneinfo/Asia/Hong_Kong' /etc/localtime") {
+		t.Fatalf("expected /etc/localtime fallback, got %q", command)
+	}
+	if !strings.Contains(command, "printf '%s\\n' 'Asia/Hong_Kong' > /etc/timezone;") {
+		t.Fatalf("expected /etc/timezone update, got %q", command)
+	}
+}
+
 func TestWaitForExecReadyImmediateSuccess(t *testing.T) {
 	client := newExecReadyTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

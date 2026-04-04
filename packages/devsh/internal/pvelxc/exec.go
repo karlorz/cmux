@@ -20,6 +20,8 @@ type ExecResult struct {
 	Stderr   string
 }
 
+const DefaultSandboxTimezone = "Asia/Hong_Kong"
+
 type execEvent struct {
 	Type    string `json:"type"`
 	Data    string `json:"data,omitempty"`
@@ -51,6 +53,46 @@ func buildExecURL(host string) (string, error) {
 		Path:   "/exec",
 	}
 	return u.String(), nil
+}
+
+func shellSingleQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+}
+
+func VerifyTimezoneCommand(timezone string) string {
+	return fmt.Sprintf("TZ=%s; date +%%Z", shellSingleQuote(timezone))
+}
+
+func ApplyTimezoneCommand(timezone string) string {
+	quotedTimezone := shellSingleQuote(timezone)
+	zoneInfoPath := shellSingleQuote("/usr/share/zoneinfo/" + timezone)
+	return strings.Join([]string{
+		"if [ -e " + zoneInfoPath + " ]; then",
+		"timedatectl set-timezone " + quotedTimezone + " 2>/dev/null || {",
+		"ln -snf " + zoneInfoPath + " /etc/localtime && printf '%s\\n' " + quotedTimezone + " > /etc/timezone;",
+		"} || {",
+		"printf 'devsh: failed to set system timezone to %s\\n' " + quotedTimezone + " >&2; exit 1;",
+		"};",
+		"else",
+		"printf 'devsh: timezone %s not found, skipping system timezone update\\n' " + quotedTimezone + " >&2; exit 1;",
+		"fi",
+	}, " ")
+}
+
+func (c *Client) ApplyTimezone(ctx context.Context, instanceID string, timezone string) (*ExecResult, error) {
+	stdout, stderr, exitCode, err := c.ExecCommand(ctx, instanceID, ApplyTimezoneCommand(timezone))
+	if err != nil {
+		return nil, err
+	}
+	return &ExecResult{ExitCode: exitCode, Stdout: stdout, Stderr: stderr}, nil
+}
+
+func (c *Client) VerifyTimezone(ctx context.Context, instanceID string, timezone string) (*ExecResult, error) {
+	stdout, stderr, exitCode, err := c.ExecCommand(ctx, instanceID, VerifyTimezoneCommand(timezone))
+	if err != nil {
+		return nil, err
+	}
+	return &ExecResult{ExitCode: exitCode, Stdout: stdout, Stderr: stderr}, nil
 }
 
 func (c *Client) tryHTTPExec(ctx context.Context, host string, command string, timeout time.Duration) (*ExecResult, error) {
@@ -87,7 +129,6 @@ func (c *Client) tryHTTPExec(ctx context.Context, host string, command string, t
 
 	resp, err := c.execHTTP.Do(req)
 	if err != nil {
-		// Propagate context errors immediately (don't retry on cancellation/timeout)
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
@@ -152,7 +193,6 @@ func (c *Client) resolveExecCandidates(ctx context.Context, instanceID string) (
 		if h, err := c.getContainerHostname(ctx, vmid); err == nil && h != "" {
 			hostname = normalizeHostID(h)
 		}
-		// Always fallback to cmux-<vmid> for numeric-only hostnames
 		if hostname == "" || reDigits.MatchString(hostname) {
 			hostname = fmt.Sprintf("cmux-%d", vmid)
 		}
@@ -282,14 +322,12 @@ func (c *Client) ExecCommand(ctx context.Context, instanceID string, command str
 
 	for _, host := range candidates {
 		for attempt := 1; attempt <= maxRetries; attempt++ {
-			// Check context before each attempt
 			if ctx.Err() != nil {
 				return "", "", -1, ctx.Err()
 			}
 
 			result, err := c.tryHTTPExec(ctx, host, command, 0)
 			if err != nil {
-				// Propagate context errors immediately
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 					return "", "", -1, err
 				}
@@ -299,7 +337,6 @@ func (c *Client) ExecCommand(ctx context.Context, instanceID string, command str
 			}
 
 			if attempt < maxRetries {
-				// Use select to respect context cancellation during sleep
 				select {
 				case <-ctx.Done():
 					return "", "", -1, ctx.Err()
@@ -327,8 +364,6 @@ func ExecHostFromPublicDomain(publicDomain string, port int, instanceID string) 
 }
 
 func ParsePortFromPublicHost(host string) (int, bool) {
-	// Best-effort helper for tests/logging only.
-	// Expected: https://port-39375-<id>.<domain>
 	u, err := url.Parse(host)
 	if err != nil || u.Host == "" {
 		return 0, false
