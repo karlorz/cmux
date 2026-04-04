@@ -1610,6 +1610,66 @@ type SetupProvidersResult struct {
 	Providers []string `json:"providers"`
 }
 
+// RecordSandboxCreateRequest captures the data needed to register sandbox ownership.
+type RecordSandboxCreateRequest struct {
+	InstanceID       string
+	Provider         string
+	VMID             int
+	Hostname         string
+	SnapshotID       string
+	SnapshotProvider string
+	TemplateVMID     int
+	IsCloudWorkspace bool
+}
+
+// RecordSandboxCreate registers a sandbox instance ownership/activity record on the www API.
+func (c *Client) RecordSandboxCreate(ctx context.Context, req RecordSandboxCreateRequest) error {
+	if c.teamSlug == "" {
+		return fmt.Errorf("team slug not set")
+	}
+	if strings.TrimSpace(req.InstanceID) == "" {
+		return fmt.Errorf("instance ID is required")
+	}
+	if strings.TrimSpace(req.Provider) == "" {
+		return fmt.Errorf("provider is required")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+		"provider":     req.Provider,
+	}
+	if req.VMID > 0 {
+		body["vmid"] = req.VMID
+	}
+	if req.Hostname != "" {
+		body["hostname"] = req.Hostname
+	}
+	if req.SnapshotID != "" {
+		body["snapshotId"] = req.SnapshotID
+	}
+	if req.SnapshotProvider != "" {
+		body["snapshotProvider"] = req.SnapshotProvider
+	}
+	if req.TemplateVMID > 0 {
+		body["templateVmid"] = req.TemplateVMID
+	}
+	if req.IsCloudWorkspace {
+		body["isCloudWorkspace"] = true
+	}
+
+	resp, err := c.doWwwRequest(ctx, "POST", fmt.Sprintf("/api/sandboxes/%s/record-create", req.InstanceID), body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("record-create failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	return nil
+}
+
 // SetupProviders configures Claude + Codex provider auth on an existing sandbox.
 // Calls POST /api/sandboxes/{id}/setup-providers on the www API.
 func (c *Client) SetupProviders(ctx context.Context, instanceID string) (*SetupProvidersResult, error) {
@@ -3071,4 +3131,3 @@ func (c *Client) CreateCheckpoint(ctx context.Context, opts CreateCheckpointOpti
 
 	return &checkpointResult, nil
 }
-

@@ -21,8 +21,8 @@ import (
 )
 
 const (
-	defaultSnapshotID   = "snapshot_5141774e"
-	defaultTemplateVMID = 9045
+	defaultSnapshotID   = "snapshot_6b744b32"
+	defaultTemplateVMID = 9027
 )
 
 type SnapshotResolver func(snapshotID string) (templateVMID int, err error)
@@ -532,10 +532,66 @@ func (c *Client) findVMIDByHostname(ctx context.Context, hostname string) (int, 
 	return 0, fmt.Errorf("unable to resolve VMID for instance %s", hostname)
 }
 
+func readPveSnapshotManifest() (struct {
+	Presets []struct {
+		Versions []struct {
+			Version      int    `json:"version"`
+			SnapshotID   string `json:"snapshotId"`
+			TemplateVMID int    `json:"templateVmid"`
+		} `json:"versions"`
+	} `json:"presets"`
+}, error) {
+	var manifest struct {
+		Presets []struct {
+			Versions []struct {
+				Version      int    `json:"version"`
+				SnapshotID   string `json:"snapshotId"`
+				TemplateVMID int    `json:"templateVmid"`
+			} `json:"versions"`
+		} `json:"presets"`
+	}
+
+	root, ok := findRepoRootForPveManifest()
+	if !ok {
+		return manifest, fmt.Errorf("snapshot manifest not found")
+	}
+
+	path := filepath.Join(root, "packages", "shared", "src", "pve-lxc-snapshots.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return manifest, err
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return manifest, err
+	}
+	return manifest, nil
+}
+
+func resolveDefaultSnapshotIDFromManifestOrDefault() string {
+	manifest, err := readPveSnapshotManifest()
+	if err != nil {
+		return defaultSnapshotID
+	}
+	if len(manifest.Presets) == 0 || len(manifest.Presets[0].Versions) == 0 {
+		return defaultSnapshotID
+	}
+
+	latest := manifest.Presets[0].Versions[0]
+	for _, version := range manifest.Presets[0].Versions[1:] {
+		if version.Version > latest.Version {
+			latest = version
+		}
+	}
+	if latest.TemplateVMID <= 0 || !reSnapshotID.MatchString(strings.ToLower(latest.SnapshotID)) {
+		return defaultSnapshotID
+	}
+	return strings.ToLower(latest.SnapshotID)
+}
+
 func (c *Client) resolveSnapshot(snapshotID string) (string, int, error) {
 	id := strings.TrimSpace(strings.ToLower(snapshotID))
 	if id == "" {
-		id = defaultSnapshotID
+		id = resolveDefaultSnapshotIDFromManifestOrDefault()
 	}
 	if !reSnapshotID.MatchString(id) {
 		return "", 0, fmt.Errorf("invalid PVE LXC snapshot ID: %s (expected snapshot_*)", id)
@@ -806,34 +862,15 @@ func findRepoRootForPveManifest() (string, bool) {
 func resolveSnapshotFromManifestOrDefault(snapshotID string) (int, error) {
 	id := strings.TrimSpace(strings.ToLower(snapshotID))
 	if id == "" {
-		id = defaultSnapshotID
+		id = resolveDefaultSnapshotIDFromManifestOrDefault()
 	}
 
-	root, ok := findRepoRootForPveManifest()
-	if !ok {
+	manifest, err := readPveSnapshotManifest()
+	if err != nil {
 		if id == defaultSnapshotID {
 			return defaultTemplateVMID, nil
 		}
 		return 0, fmt.Errorf("snapshot manifest not found (run from repo root to resolve %s)", id)
-	}
-
-	path := filepath.Join(root, "packages", "shared", "src", "pve-lxc-snapshots.json")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return 0, err
-	}
-
-	var manifest struct {
-		Presets []struct {
-			Versions []struct {
-				Version      int    `json:"version"`
-				SnapshotID   string `json:"snapshotId"`
-				TemplateVMID int    `json:"templateVmid"`
-			} `json:"versions"`
-		} `json:"presets"`
-	}
-	if err := json.Unmarshal(raw, &manifest); err != nil {
-		return 0, err
 	}
 
 	for _, preset := range manifest.Presets {

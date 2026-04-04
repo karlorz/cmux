@@ -8,8 +8,11 @@
  * - POST /sandboxes/{id}/run-scripts - Run maintenance and dev scripts
  */
 
-import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
+import {
+  createRoute, OpenAPIHono
+} from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
+import { RUNTIME_PROVIDERS, SNAPSHOT_PROVIDERS } from "@cmux/shared/provider-types";
 import {
   z,
   api,
@@ -60,6 +63,25 @@ const SetupProvidersResponse = z
   })
   .openapi("SetupProvidersResponse");
 
+const RecordSandboxCreateBody = z
+  .object({
+    teamSlugOrId: z.string(),
+    provider: z.enum(RUNTIME_PROVIDERS),
+    vmid: z.number().optional(),
+    hostname: z.string().optional(),
+    snapshotId: z.string().optional(),
+    snapshotProvider: z.enum(SNAPSHOT_PROVIDERS).optional(),
+    templateVmid: z.number().optional(),
+    isCloudWorkspace: z.boolean().optional(),
+  })
+  .openapi("RecordSandboxCreateBody");
+
+const RecordSandboxCreateResponse = z
+  .object({
+    success: z.literal(true),
+  })
+  .openapi("RecordSandboxCreateResponse");
+
 const SandboxRefreshGitHubAuthBody = z
   .object({
     teamSlugOrId: z.string(),
@@ -86,9 +108,125 @@ const RunScriptsResponse = z
   })
   .openapi("RunScriptsResponse");
 
+async function getAuthorizedSandboxContext(
+  request: Request,
+  instanceId: string,
+  teamSlugOrId: string,
+  purpose: string,
+) {
+  const user = await getUserFromRequest(request);
+  if (!user) {
+    return {
+      ok: false as const,
+      response: new Response("Unauthorized", { status: 401 }),
+    };
+  }
+
+  const { accessToken } = await user.getAuthJson();
+  if (!accessToken) {
+    return {
+      ok: false as const,
+      response: new Response("Unauthorized", { status: 401 }),
+    };
+  }
+
+  const convex = getConvex({ accessToken });
+  const team = await verifyTeamAccess({ req: request, teamSlugOrId });
+  const morphClient = getMorphClientOrNull();
+  const instance = await tryGetInstanceById(instanceId, morphClient, purpose);
+  if (!instance) {
+    return {
+      ok: false as const,
+      response: new Response("Instance not found", { status: 404 }),
+    };
+  }
+
+  return {
+    ok: true as const,
+    convex,
+    team,
+    instance,
+  };
+}
+
 // ============================================================================
 // Routes
 // ============================================================================
+
+/**
+ * POST /sandboxes/{id}/record-create
+ * Record sandbox ownership/activity for instances created outside the normal start route.
+ */
+sandboxesConfigRouter.openapi(
+  createRoute({
+    method: "post" as const,
+    path: "/sandboxes/{id}/record-create",
+    tags: ["Sandboxes"],
+    summary: "Record sandbox ownership metadata",
+    request: {
+      params: z.object({
+        id: z.string().openapi({ description: "Sandbox instance ID" }),
+      }),
+      body: {
+        content: {
+          "application/json": {
+            schema: RecordSandboxCreateBody,
+          },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: RecordSandboxCreateResponse,
+          },
+        },
+        description: "Sandbox ownership recorded",
+      },
+      401: { description: "Unauthorized" },
+      403: { description: "Forbidden" },
+      404: { description: "Instance not found" },
+    },
+  }),
+  async (c) => {
+    try {
+      const instanceId = c.req.param("id");
+      const body = c.req.valid("json");
+      const authContext = await getAuthorizedSandboxContext(
+        c.req.raw,
+        instanceId,
+        body.teamSlugOrId,
+        "record-create",
+      );
+      if (!authContext.ok) {
+        return c.body(await authContext.response.text(), authContext.response.status as 401 | 404);
+      }
+      const { convex } = authContext;
+
+      await convex.mutation(api.sandboxInstances.recordCreate, {
+        instanceId,
+        provider: body.provider,
+        vmid: body.vmid,
+        hostname: body.hostname,
+        snapshotId: body.snapshotId,
+        snapshotProvider: body.snapshotProvider,
+        templateVmid: body.templateVmid,
+        teamSlugOrId: body.teamSlugOrId,
+        isCloudWorkspace: body.isCloudWorkspace,
+      });
+
+      return c.json({ success: true as const });
+    } catch (error) {
+      if (error instanceof HTTPException) {
+        throw error;
+      }
+      console.error("[record-create] Failed:", error);
+      return c.text("Failed to record sandbox ownership", 500);
+    }
+  },
+);
 
 /**
  * POST /sandboxes/{id}/setup-providers
@@ -131,37 +269,20 @@ sandboxesConfigRouter.openapi(
     },
   }),
   async (c) => {
-    const user = await getUserFromRequest(c.req.raw);
-    if (!user) {
-      return c.text("Unauthorized", 401);
-    }
-    const { accessToken } = await user.getAuthJson();
-    if (!accessToken) {
-      return c.text("Unauthorized", 401);
-    }
-
     const { id: instanceId } = c.req.valid("param");
     const body = c.req.valid("json");
 
     try {
-      const convex = getConvex({ accessToken });
-
-      // Verify team access
-      const team = await verifyTeamAccess({
-        req: c.req.raw,
-        teamSlugOrId: body.teamSlugOrId,
-      });
-
-      // Get the instance via provider dispatch
-      const morphClient = getMorphClientOrNull();
-      const instance = await tryGetInstanceById(
+      const authContext = await getAuthorizedSandboxContext(
+        c.req.raw,
         instanceId,
-        morphClient,
+        body.teamSlugOrId,
         "setup-providers",
       );
-      if (!instance) {
-        return c.text("Instance not found", 404);
+      if (!authContext.ok) {
+        return c.body(await authContext.response.text(), authContext.response.status as 401 | 404);
       }
+      const { convex, team, instance } = authContext;
 
       // Verify sandbox ownership - check activity record first, fall back to instance metadata
       if (isPveLxcInstanceId(instanceId)) {
