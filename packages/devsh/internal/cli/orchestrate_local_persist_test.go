@@ -218,6 +218,21 @@ func TestLoadRunSummary(t *testing.T) {
 	if summary.Agent != "gemini/gemini-2.5-pro" {
 		t.Errorf("expected agent gemini/gemini-2.5-pro, got %s", summary.Agent)
 	}
+	if summary.StartedAt != "2026-03-18T10:00:00Z" {
+		t.Errorf("expected startedAt 2026-03-18T10:00:00Z, got %s", summary.StartedAt)
+	}
+	if summary.CompletedAt != "2026-03-18T10:05:00Z" {
+		t.Errorf("expected completedAt 2026-03-18T10:05:00Z, got %s", summary.CompletedAt)
+	}
+	if summary.DurationMs != 300000 {
+		t.Errorf("expected durationMs 300000, got %d", summary.DurationMs)
+	}
+	if summary.RunDir != tmpDir {
+		t.Errorf("expected runDir %s, got %s", tmpDir, summary.RunDir)
+	}
+	if summary.Workspace != "/tmp/workspace" {
+		t.Errorf("expected workspace /tmp/workspace, got %s", summary.Workspace)
+	}
 }
 
 func TestLoadRunSummaryFromConfig(t *testing.T) {
@@ -248,6 +263,15 @@ func TestLoadRunSummaryFromConfig(t *testing.T) {
 	// Without state.json, should default to running
 	if summary.Status != "running" {
 		t.Errorf("expected status running for in-progress task, got %s", summary.Status)
+	}
+	if summary.StartedAt != "2026-03-18T10:00:00Z" {
+		t.Errorf("expected startedAt 2026-03-18T10:00:00Z, got %s", summary.StartedAt)
+	}
+	if summary.RunDir != tmpDir {
+		t.Errorf("expected runDir %s, got %s", tmpDir, summary.RunDir)
+	}
+	if summary.Workspace != "/tmp/workspace" {
+		t.Errorf("expected workspace /tmp/workspace, got %s", summary.Workspace)
 	}
 }
 

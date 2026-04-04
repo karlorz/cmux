@@ -1084,13 +1084,21 @@ export type LocalSpawnResponse = {
      */
     venue: 'local';
     /**
-     * Local run ID
+     * Canonical local orchestration ID
+     */
+    orchestrationId: string;
+    /**
+     * Local run ID alias for the orchestration ID
      */
     runId: string;
     /**
+     * Persistent local artifact directory
+     */
+    runDir: string;
+    /**
      * Run status
      */
-    status: string;
+    status: 'running' | 'completed' | 'failed' | 'unknown';
     /**
      * Why this venue was selected
      */
@@ -1143,12 +1151,12 @@ export type LocalSpawnRequest = {
 };
 
 export type LocalRun = {
-    id: string;
-    runId?: string;
+    orchestrationId: string;
+    runDir?: string;
     agent: string;
     status: 'running' | 'completed' | 'failed' | 'unknown';
     prompt?: string;
-    createdAt?: string;
+    startedAt?: string;
     completedAt?: string;
     workspace?: string;
 };

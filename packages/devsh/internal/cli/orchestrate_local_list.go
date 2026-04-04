@@ -27,6 +27,7 @@ type LocalRunSummary struct {
 	DurationMs      int64  `json:"durationMs,omitempty"`
 	RunDir          string `json:"runDir"`
 	Prompt          string `json:"prompt,omitempty"`
+	Workspace       string `json:"workspace,omitempty"`
 }
 
 var orchestrateListLocalCmd = &cobra.Command{
@@ -139,6 +140,7 @@ func loadRunSummary(runDir string) (*LocalRunSummary, error) {
 				DurationMs:      state.DurationMs,
 				RunDir:          runDir,
 				Prompt:          state.Prompt,
+				Workspace:       state.Workspace,
 			}, nil
 		}
 	}
@@ -162,6 +164,7 @@ func loadRunSummary(runDir string) (*LocalRunSummary, error) {
 		StartedAt:       config.CreatedAt,
 		RunDir:          runDir,
 		Prompt:          config.Prompt,
+		Workspace:       config.Workspace,
 	}, nil
 }
 
