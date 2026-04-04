@@ -28,6 +28,14 @@ vi.mock("@/components/dashboard/provider-status-meta", () => ({
   getProviderStatusMeta: () => ({}),
 }));
 
+vi.mock("@/contexts/socket/use-socket", () => ({
+  useSocket: () => ({
+    socket: null,
+    isConnected: false,
+    availableEditors: null,
+  }),
+}));
+
 vi.mock("@/components/ui/mode-toggle-tooltip", () => ({
   ModeToggleTooltip: ({ children }: { children: React.ReactNode }) => (
     <>{children}</>
@@ -129,6 +137,17 @@ vi.mock("@cmux/convex/api", () => ({
     github_http: {
       addManualRepo: "github_http.addManualRepo",
     },
+    localClaudeProfiles: {
+      list: "localClaudeProfiles.list",
+      upsert: "localClaudeProfiles.upsert",
+      remove: "localClaudeProfiles.remove",
+    },
+    localClaudeLaunches: {
+      list: "localClaudeLaunches.list",
+      record: "localClaudeLaunches.record",
+      updateOutcome: "localClaudeLaunches.updateOutcome",
+      updateMetadata: "localClaudeLaunches.updateMetadata",
+    },
   },
 }));
 
@@ -148,6 +167,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("convex/react", () => ({
+  useQuery: () => undefined,
   useAction: () => vi.fn(),
   useMutation: () => vi.fn(),
 }));

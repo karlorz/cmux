@@ -69,7 +69,10 @@ from snapshot import (
     Console,
     TimingsCollector,
     Command,
+    format_package_task_label,
     format_dependency_graph,
+    is_remote_package_source,
+    maybe_apply_ide_package_overrides,
 )
 
 # ---------------------------------------------------------------------------
@@ -119,23 +122,6 @@ def set_ide_provider(provider: str) -> None:
 
 def get_ide_provider() -> str:
     return _ide_provider
-
-
-def format_package_task_label(pkg: str) -> str:
-    """Extract a task-friendly label from an npm package specifier.
-
-    Handles scoped packages (@org/pkg@version) and regular packages (pkg@version).
-    Returns the package name with @ stripped and / replaced with -.
-    """
-    # Strip version suffix if present (handles both @scope/pkg@ver and pkg@ver)
-    if pkg.startswith("@"):
-        # For scoped packages, find the version @ (after the scope @)
-        version_idx = pkg.rfind("@")
-        package_name = pkg[:version_idx] if version_idx > 0 else pkg
-    else:
-        package_name = pkg.split("@", 1)[0]
-    return package_name.lstrip("@").replace("/", "-")
-
 
 def is_transient_http_exec_error(exc: Exception) -> bool:
     """Check if an exception indicates a transient HTTP error worth retrying.
@@ -3145,43 +3131,57 @@ async def task_install_global_cli(ctx: PveTaskContext) -> None:
     if not isinstance(packages, dict):
         raise RuntimeError("configs/ide-deps.json packages must be an object.")
 
-    package_args: list[str] = []
-    for name, version in packages.items():
-        if not isinstance(name, str) or not isinstance(version, str):
-            raise RuntimeError(f"Invalid package entry {name!r}: {version!r}")
-        package_args.append(f"{name}@{version}")
+    package_specs: list[tuple[str, str, str]] = []
+    for name, spec in packages.items():
+        if not isinstance(name, str) or not isinstance(spec, str):
+            raise RuntimeError(f"Invalid package entry {name!r}: {spec!r}")
+        install_spec = spec if is_remote_package_source(spec) else f"{name}@{spec}"
+        package_specs.append((name, spec, install_spec))
 
-    if not package_args:
+    if not package_specs:
         raise RuntimeError("No packages found in configs/ide-deps.json.")
 
     # Install each package individually with retries for resilience
     max_retries = 3
     retry_delay = 5  # seconds
 
-    for i, pkg in enumerate(package_args, 1):
-        ctx.console.info(f"Installing package {i}/{len(package_args)}: {pkg}")
+    for index, (name, spec, install_spec) in enumerate(package_specs, 1):
+        is_remote = is_remote_package_source(spec)
+        install_label = spec if is_remote else install_spec
+        ctx.console.info(
+            f"Installing package {index}/{len(package_specs)}: {install_label}"
+        )
         last_error: Exception | None = None
-        task_label = format_package_task_label(pkg)
+        task_label = format_package_task_label(name)
+        quoted_install_spec = shlex.quote(install_spec)
 
         for attempt in range(1, max_retries + 1):
             try:
-                cmd = f"bun add -g {pkg}"
+                cmd = (
+                    f"npm install -g {quoted_install_spec}"
+                    if is_remote
+                    else f"bun add -g {quoted_install_spec}"
+                )
                 await ctx.run(f"install-pkg-{task_label}", cmd)
-                ctx.console.info(f"Successfully installed {pkg}")
+                ctx.console.info(f"Successfully installed {install_label}")
                 break
             except Exception as e:
                 last_error = e
                 if attempt < max_retries:
                     ctx.console.info(
-                        f"Attempt {attempt}/{max_retries} failed for {pkg}, "
+                        f"Attempt {attempt}/{max_retries} failed for {install_label}, "
                         f"retrying in {retry_delay}s..."
                     )
                     await asyncio.sleep(retry_delay)
                 else:
-                    ctx.console.info(f"All {max_retries} attempts failed for {pkg}")
+                    ctx.console.info(
+                        f"All {max_retries} attempts failed for {install_label}"
+                    )
 
         if last_error is not None:
-            raise RuntimeError(f"Failed to install {pkg} after {max_retries} attempts") from last_error
+            raise RuntimeError(
+                f"Failed to install {install_label} after {max_retries} attempts"
+            ) from last_error
 
     # Verify critical binaries are installed
     verify_cmd = textwrap.dedent(
@@ -5084,10 +5084,11 @@ async def provision_and_snapshot(args: argparse.Namespace) -> None:
             raise RuntimeError(
                 f"bun run bump-ide-deps failed with exit code {bump_result.returncode}"
             )
+    repo_root = Path(args.repo_root).resolve()
+    maybe_apply_ide_package_overrides(repo_root, console)
 
     manifest = _load_manifest()
     manifest["baseTemplateVmid"] = args.template_vmid
-    repo_root = Path(args.repo_root).resolve()
     preset_plans = _build_preset_plans(args)
     created_containers: list[int] = []
     results: list[TemplateRunResult] = []

@@ -50,6 +50,7 @@
     "test": "bun run scripts/test.ts",
     "sync-ide-deps": "bun run scripts/sync-ide-deps.ts",
     "bump-ide-deps": "bun run scripts/bump-ide-deps.ts",
+    "apply-ide-deps-package-overrides": "bun run scripts/apply-ide-deps-package-overrides.ts",
     "typecheck": "run-p typecheck:*",
     "typecheck:client": "cd apps/client && bun run typecheck",
     "typecheck:scripts": "cd scripts && bun run typecheck",
