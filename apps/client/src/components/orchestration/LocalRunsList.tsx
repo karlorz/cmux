@@ -3,13 +3,13 @@ import { Monitor, Play, CheckCircle2, XCircle, Clock, RefreshCw } from "lucide-r
 import { WWW_ORIGIN } from "@/lib/wwwOrigin";
 
 interface LocalRun {
-  id: string;
-  runId?: string;
+  orchestrationId: string;
   agent: string;
   status: "running" | "completed" | "failed" | "unknown";
   prompt?: string;
-  createdAt?: string;
+  startedAt?: string;
   completedAt?: string;
+  runDir?: string;
   workspace?: string;
 }
 
@@ -41,13 +41,32 @@ const STATUS_CONFIG = {
   },
 } as const;
 
+function formatRunTimestamp(timestamp?: string) {
+  if (!timestamp) {
+    return null;
+  }
+
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return timestamp;
+  }
+
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 function LocalRunRow({ run }: { run: LocalRun }) {
-  const statusConfig = STATUS_CONFIG[run.status] || STATUS_CONFIG.unknown;
+  const statusConfig = STATUS_CONFIG[run.status];
   const StatusIcon = statusConfig.icon;
+  const startedAtLabel = formatRunTimestamp(run.startedAt);
 
   return (
-    <div className="flex items-center gap-4 border-b border-neutral-100 px-4 py-3 last:border-b-0 dark:border-neutral-800">
-      <div className="flex items-center gap-2">
+    <div className="flex items-start gap-4 border-b border-neutral-100 px-4 py-3 last:border-b-0 dark:border-neutral-800">
+      <div className="flex items-center gap-2 pt-0.5">
         <Monitor className="size-4 text-neutral-400" />
         <span
           className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${statusConfig.className}`}
@@ -59,21 +78,40 @@ function LocalRunRow({ run }: { run: LocalRun }) {
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-            {run.id}
+          <span
+            className="truncate font-mono text-xs font-medium text-neutral-900 dark:text-neutral-100"
+            title={run.orchestrationId}
+          >
+            {run.orchestrationId}
           </span>
           <span className="text-xs text-neutral-500">{run.agent}</span>
         </div>
+        {run.workspace && (
+          <p
+            className="truncate font-mono text-xs text-neutral-500 dark:text-neutral-400"
+            title={run.workspace}
+          >
+            {run.workspace}
+          </p>
+        )}
         {run.prompt && (
-          <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+          <p className="truncate text-xs text-neutral-500 dark:text-neutral-400" title={run.prompt}>
             {run.prompt}
+          </p>
+        )}
+        {run.runDir && (
+          <p
+            className="truncate font-mono text-[11px] text-neutral-400 dark:text-neutral-500"
+            title={run.runDir}
+          >
+            {run.runDir}
           </p>
         )}
       </div>
 
-      {run.createdAt && (
+      {startedAtLabel && (
         <span className="text-xs text-neutral-400">
-          {new Date(run.createdAt).toLocaleTimeString()}
+          {startedAtLabel}
         </span>
       )}
     </div>
@@ -158,7 +196,7 @@ export function LocalRunsList({ teamSlugOrId }: LocalRunsListProps) {
         </button>
       </div>
       {runs.map((run) => (
-        <LocalRunRow key={run.id || run.runId} run={run} />
+        <LocalRunRow key={run.orchestrationId} run={run} />
       ))}
     </div>
   );
