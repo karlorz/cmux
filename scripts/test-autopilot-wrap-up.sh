@@ -37,7 +37,7 @@ run_hook() {
   echo "$input_json" | \
     env \
       CLAUDE_AUTOPILOT=1 \
-      AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+      CMUX_AUTOPILOT_ENABLED=1 \
       CLAUDE_AUTOPILOT_DELAY=0 \
       CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
       "$@" \
@@ -150,7 +150,7 @@ assert_file_not_exists "review turn: blocked flag removed for codex-review" "/tm
 
 # Verify reason starts with review guidance
 REASON=$(echo "$OUTPUT" | jq -r '.reason' 2>/dev/null || echo "")
-assert_contains "review turn: reason has review guidance" "$REASON" "Code review is running"
+assert_contains "review turn: reason has review guidance" "$REASON" "Official Codex review is running"
 
 cleanup_session "$SID"
 
@@ -214,6 +214,7 @@ echo "3" > "/tmp/claude-autopilot-blocked-${SID}"
 INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":false}'
 OUTPUT=$(echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
+  CMUX_AUTOPILOT_ENABLED=1 \
   AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_AUTOPILOT_STOP_FILE="$EXT_STOP_FILE" \

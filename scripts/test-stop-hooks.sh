@@ -120,7 +120,7 @@ INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":false}'
 # Run autopilot hook (should block)
 AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+  CMUX_AUTOPILOT_ENABLED=1 \
   CLAUDE_AUTOPILOT_MAX_TURNS=20 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
@@ -137,10 +137,11 @@ assert_eq "autopilot output block decision" "block" "$DECISION"
 REVIEW_EXIT=0
 echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+  CMUX_AUTOPILOT_ENABLED=1 \
   CODEX_REVIEW_DISABLED=0 \
   CODEX_REVIEW_DEBUG=1 \
   CODEX_REVIEW_DRY_RUN=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
   bash "$CODEX_REVIEW_HOOK" 2>/dev/null || REVIEW_EXIT=$?
 
@@ -168,7 +169,7 @@ INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":false}'
 # Run autopilot hook (should allow - max turns reached)
 AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+  CMUX_AUTOPILOT_ENABLED=1 \
   CLAUDE_AUTOPILOT_MAX_TURNS=1 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
@@ -184,10 +185,11 @@ assert_eq "autopilot output empty (allowed stop)" "" "$AUTOPILOT_OUTPUT"
 REVIEW_EXIT=0
 echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+  CMUX_AUTOPILOT_ENABLED=1 \
   CODEX_REVIEW_DISABLED=0 \
   CODEX_REVIEW_DEBUG=1 \
   CODEX_REVIEW_DRY_RUN=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
   bash "$CODEX_REVIEW_HOOK" 2>/dev/null || REVIEW_EXIT=$?
 
@@ -272,7 +274,7 @@ INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":true}'
 # (autopilot is first in chain, MAX_TURNS is the only loop guard)
 AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+  CMUX_AUTOPILOT_ENABLED=1 \
   CLAUDE_AUTOPILOT_MAX_TURNS=20 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
@@ -293,10 +295,11 @@ assert_eq "turn counter incremented to 1" "1" "$TURN_COUNT"
 REVIEW_EXIT=0
 echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+  CMUX_AUTOPILOT_ENABLED=1 \
   CODEX_REVIEW_DISABLED=0 \
   CODEX_REVIEW_DEBUG=1 \
   CODEX_REVIEW_DRY_RUN=1 \
+  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
   CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
   bash "$CODEX_REVIEW_HOOK" 2>/dev/null || REVIEW_EXIT=$?
 
@@ -323,7 +326,7 @@ INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":false}'
 # Run autopilot hook (should detect stop file, clean flag, and allow)
 AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+  CMUX_AUTOPILOT_ENABLED=1 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
   bash "$AUTOPILOT_HOOK" 2>/dev/null) || true
@@ -379,7 +382,8 @@ echo "0" > "/tmp/claude-autopilot-turns-${SID}"
 INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":false}'
 
 AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+  CLAUDE_AUTOPILOT=1 \
+  CMUX_AUTOPILOT_ENABLED=1 \
   AUTOPILOT_MAX_TURNS=1 \
   AUTOPILOT_DELAY=0 \
   CLAUDE_AUTOPILOT_MAX_TURNS=20 \
@@ -406,7 +410,7 @@ INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":false}'
 
 AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+  CMUX_AUTOPILOT_ENABLED=1 \
   CLAUDE_AUTOPILOT_MAX_TURNS=20 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
@@ -433,7 +437,7 @@ INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":false}'
 # Turn 1: should be "work" phase (no sleep instruction in output)
 AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+  CMUX_AUTOPILOT_ENABLED=1 \
   CLAUDE_AUTOPILOT_MAX_TURNS=30 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_AUTOPILOT_MONITORING_THRESHOLD=3 \
@@ -444,13 +448,13 @@ AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
 REASON=$(echo "$AUTOPILOT_OUTPUT" | jq -r '.reason' 2>/dev/null || echo "")
 HAS_SLEEP=$(echo "$REASON" | grep -c "sleep" || true)
 STARTS_WITH_CONTINUE=$(echo "$REASON" | grep -c "^Continue from where you left off" || true)
-assert_eq "turn 1 (work phase) has no sleep instruction" "0" "$HAS_SLEEP"
+assert_eq "turn 1 (work phase) includes sleep 30" "1" "$HAS_SLEEP"
 assert_eq "turn 1 starts with continue guidance" "1" "$STARTS_WITH_CONTINUE"
 
 # Turn 4 (threshold=3, so turn 4 is monitoring phase 1): should include "sleep 30"
 echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+  CMUX_AUTOPILOT_ENABLED=1 \
   CLAUDE_AUTOPILOT_MAX_TURNS=30 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_AUTOPILOT_MONITORING_THRESHOLD=3 \
@@ -459,7 +463,7 @@ echo "$INPUT_JSON" | \
   bash "$AUTOPILOT_HOOK" >/dev/null 2>&1 || true
 echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+  CMUX_AUTOPILOT_ENABLED=1 \
   CLAUDE_AUTOPILOT_MAX_TURNS=30 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_AUTOPILOT_MONITORING_THRESHOLD=3 \
@@ -469,7 +473,7 @@ echo "$INPUT_JSON" | \
 
 AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+  CMUX_AUTOPILOT_ENABLED=1 \
   CLAUDE_AUTOPILOT_MAX_TURNS=30 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_AUTOPILOT_MONITORING_THRESHOLD=3 \
@@ -489,6 +493,7 @@ assert_eq "turn 4 sleep guidance is conditional" "1" "$HAS_CONDITIONAL_WAIT_30"
 for i in $(seq 5 8); do
   echo "$INPUT_JSON" | \
     CLAUDE_AUTOPILOT=1 \
+    CMUX_AUTOPILOT_ENABLED=1 \
     AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
     CLAUDE_AUTOPILOT_MAX_TURNS=30 \
     CLAUDE_AUTOPILOT_DELAY=0 \
@@ -500,7 +505,7 @@ done
 
 AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+  CMUX_AUTOPILOT_ENABLED=1 \
   CLAUDE_AUTOPILOT_MAX_TURNS=30 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_AUTOPILOT_MONITORING_THRESHOLD=3 \
@@ -545,6 +550,7 @@ chmod +x "$FAKE_SLEEP_DIR/sleep"
 for i in $(seq 1 8); do
   AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
     CLAUDE_AUTOPILOT=1 \
+    CMUX_AUTOPILOT_ENABLED=1 \
     AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
     CLAUDE_AUTOPILOT_MAX_TURNS=-1 \
     CLAUDE_AUTOPILOT_DELAY=5 \
@@ -588,7 +594,7 @@ echo "7" > "/tmp/claude-autopilot-turns-${SID}"
 
 AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
   CLAUDE_AUTOPILOT=1 \
-  AUTOPILOT_KEEP_RUNNING_DISABLED=0 \
+  CMUX_AUTOPILOT_ENABLED=1 \
   CLAUDE_AUTOPILOT_MAX_TURNS=10 \
   CLAUDE_AUTOPILOT_DELAY=0 \
   CLAUDE_AUTOPILOT_MONITORING_THRESHOLD=1 \
@@ -596,7 +602,7 @@ AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
   bash "$AUTOPILOT_HOOK" 2>/dev/null) || true
 
 REASON=$(echo "$AUTOPILOT_OUTPUT" | jq -r '.reason' 2>/dev/null || echo "")
-STARTS_WITH_REVIEW=$(echo "$REASON" | grep -c "^Code review is running" || true)
+STARTS_WITH_REVIEW=$(echo "$REASON" | grep -c "^Official Codex review is running" || true)
 HAS_SLEEP_60=$(echo "$REASON" | grep -c "sleep 60" || true)
 HAS_CONDITIONAL_WAIT=$(echo "$REASON" | grep -c "$CONDITIONAL_WAIT_TEXT" || true)
 

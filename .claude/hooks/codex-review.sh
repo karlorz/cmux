@@ -1,10 +1,7 @@
 #!/bin/bash
-# Runs codex code review in background and shows results on next stop.
-# This avoids blocking the stop hook while codex runs (which can take 5+ minutes).
-#
-# Transport failures (Cloudflare/timeout/exec) are tracked separately from
-# code review findings. Repeated transport failures trigger a cooldown to
-# avoid wasting resources.
+# Runs official Codex review in the background and shows results on the next stop.
+# This keeps the stop hook non-blocking while still enforcing review before the
+# session can finish when findings or review failures are present.
 
 set -euo pipefail
 
