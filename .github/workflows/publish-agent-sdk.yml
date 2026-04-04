@@ -1,5 +1,9 @@
 name: Publish SDK Packages
 
+permissions:
+  contents: read
+  id-token: write
+
 on:
   workflow_dispatch:
     inputs:

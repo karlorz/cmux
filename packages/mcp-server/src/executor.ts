@@ -266,7 +266,7 @@ export class DevshExecutor {
     if (this.isLocalReference(input.taskId)) {
       const status = await this.statusLocal(input.taskId);
       return {
-        ...status,
+        ...(status as Record<string, unknown>),
         resultType: "local_run",
       };
     }
