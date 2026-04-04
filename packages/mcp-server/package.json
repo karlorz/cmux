@@ -12,6 +12,12 @@
     "dist",
     "README.md"
   ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "scripts": {
     "build": "tsup src/index.ts src/cli.ts --format esm --dts",
     "dev": "tsup src/index.ts src/cli.ts --format esm --dts --watch",
@@ -35,6 +41,13 @@
     "type": "git",
     "url": "https://github.com/karlorz/cmux.git",
     "directory": "packages/mcp-server"
+  },
+  "homepage": "https://github.com/karlorz/cmux/tree/main/packages/mcp-server",
+  "bugs": {
+    "url": "https://github.com/karlorz/cmux/issues"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "keywords": [
     "cmux",

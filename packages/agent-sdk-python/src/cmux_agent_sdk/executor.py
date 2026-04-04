@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import time
+from datetime import datetime, timezone
 from typing import NamedTuple
 
 from cmux_agent_sdk.types import (
@@ -292,8 +293,6 @@ async def execute_checkpoint(options: CheckpointOptions) -> CheckpointRef | None
         stdout_str = stdout.decode("utf-8", errors="replace")
 
         try:
-            from datetime import timezone
-
             output = json.loads(stdout_str)
             created_at_str = output.get("createdAt")
             created_at = (
