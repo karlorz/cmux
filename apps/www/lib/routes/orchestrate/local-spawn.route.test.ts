@@ -23,6 +23,12 @@ vi.mock("node:os", () => ({
 
 import { orchestrateLocalSpawnRouter } from "./local-spawn.route";
 
+function createApp() {
+  const app = new OpenAPIHono();
+  app.route("/", orchestrateLocalSpawnRouter);
+  return app;
+}
+
 describe("orchestrateLocalSpawnRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -43,10 +49,7 @@ describe("orchestrateLocalSpawnRouter", () => {
       catch: catchMock,
     });
 
-    const app = new OpenAPIHono();
-    app.route("/", orchestrateLocalSpawnRouter);
-
-    const response = await app.request("/orchestrate/spawn-local", {
+    const response = await createApp().request("/orchestrate/spawn-local", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -124,10 +127,7 @@ describe("orchestrateLocalSpawnRouter", () => {
       ]),
     });
 
-    const app = new OpenAPIHono();
-    app.route("/", orchestrateLocalSpawnRouter);
-
-    const response = await app.request(
+    const response = await createApp().request(
       "/orchestrate/list-local?teamSlugOrId=example-team&limit=5&status=running",
       {
         method: "GET",

@@ -14,26 +14,35 @@ import path from "node:path";
 export const orchestrateLocalSpawnRouter = new OpenAPIHono();
 
 type LocalRunStatus = "running" | "completed" | "failed" | "unknown";
+type RawLocalRun = {
+  orchestrationId?: string;
+  runDir?: string;
+  agent?: string;
+  status?: string;
+  prompt?: string;
+  startedAt?: string;
+  completedAt?: string;
+  workspace?: string;
+};
+
+const LOCAL_RUN_ARTIFACTS_PATH = [".devsh", "orchestrations"] as const;
 
 function buildLocalRouteOrchestrationId(): string {
   return `local_www_${Date.now()}_${randomUUID().slice(0, 8)}`;
 }
 
 function buildLocalRunArtifactsDir(orchestrationId: string): string {
-  return path.join(os.homedir(), ".devsh", "orchestrations", orchestrationId);
+  return path.join(os.homedir(), ...LOCAL_RUN_ARTIFACTS_PATH, orchestrationId);
+}
+
+function normalizeLocalRunStatus(status?: string): LocalRunStatus {
+  return status === "running" || status === "completed" || status === "failed"
+    ? status
+    : "unknown";
 }
 
 function normalizeLocalRun(
-  run: {
-    orchestrationId?: string;
-    runDir?: string;
-    agent?: string;
-    status?: string;
-    prompt?: string;
-    startedAt?: string;
-    completedAt?: string;
-    workspace?: string;
-  },
+  run: RawLocalRun,
 ) : {
   orchestrationId: string;
   runDir?: string;
@@ -44,19 +53,11 @@ function normalizeLocalRun(
   completedAt?: string;
   workspace?: string;
 } {
-  const orchestrationId = run.orchestrationId || "unknown";
-  const status: LocalRunStatus =
-    run.status === "running" ||
-    run.status === "completed" ||
-    run.status === "failed"
-      ? run.status
-      : "unknown";
-
   return {
-    orchestrationId,
+    orchestrationId: run.orchestrationId || "unknown",
     runDir: run.runDir,
     agent: run.agent || "unknown",
-    status,
+    status: normalizeLocalRunStatus(run.status),
     prompt: run.prompt,
     startedAt: run.startedAt,
     completedAt: run.completedAt,
@@ -267,12 +268,8 @@ orchestrateLocalSpawnRouter.openapi(
         },
       });
 
-      if ("catch" in child && typeof child.catch === "function") {
-        void child.catch(() => undefined);
-      }
-      if ("unref" in child && typeof child.unref === "function") {
-        child.unref();
-      }
+      void child.catch(() => undefined);
+      child.unref();
 
       const response: LocalSpawnResponse = {
         venue: "local",
@@ -369,16 +366,7 @@ orchestrateLocalSpawnRouter.openapi(
       const devshPath = process.env.DEVSH_PATH || "devsh";
       const result = await execa(devshPath, args, { timeout: 10000 });
 
-      let runs: Array<{
-        orchestrationId?: string;
-        runDir?: string;
-        agent?: string;
-        status?: string;
-        prompt?: string;
-        startedAt?: string;
-        completedAt?: string;
-        workspace?: string;
-      }> = [];
+      let runs: RawLocalRun[] = [];
 
       try {
         const parsed = JSON.parse(result.stdout);

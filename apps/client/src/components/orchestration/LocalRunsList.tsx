@@ -60,7 +60,7 @@ function formatRunTimestamp(timestamp?: string) {
 }
 
 function LocalRunRow({ run }: { run: LocalRun }) {
-  const statusConfig = STATUS_CONFIG[run.status] || STATUS_CONFIG.unknown;
+  const statusConfig = STATUS_CONFIG[run.status];
   const StatusIcon = statusConfig.icon;
   const startedAtLabel = formatRunTimestamp(run.startedAt);
 
