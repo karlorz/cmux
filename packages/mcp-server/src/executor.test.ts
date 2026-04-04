@@ -102,6 +102,95 @@ describe("DevshExecutor", () => {
     });
   });
 
+  it("routes Claude plugin-dev requests to local run-local with local defaults", async () => {
+    let unrefCalled = false;
+    const execaCalls: unknown[] = [];
+
+    const execaFn = (_bin: string, args: string[], opts: unknown) => {
+      execaCalls.push({ args: [...args], opts });
+      if ((opts as { detached?: boolean }).detached) {
+        return {
+          unref() {
+            unrefCalled = true;
+          },
+          catch() {
+            return undefined;
+          },
+        };
+      }
+      return Promise.resolve({ stdout: "", stderr: "" });
+    };
+
+    let readdirCallCount = 0;
+    const readdirFn = async () => {
+      readdirCallCount++;
+      if (readdirCallCount === 1) return [];
+      return [localDir("local_456")];
+    };
+
+    const readFileFn = async (filePath: string, _enc: "utf8") => {
+      if (filePath.endsWith("config.json")) {
+        return JSON.stringify({
+          orchestrationId: "local_456",
+          agent: "claude/opus-4.6",
+          prompt: "Exercise plugin workflow",
+          workspace: "/root/workspace",
+          timeout: "30m",
+          createdAt: "2026-04-04T00:00:00Z",
+        });
+      }
+      return JSON.stringify({
+        sessionId: "session_456",
+        injectionMode: "active",
+      });
+    };
+
+    const executor = new DevshExecutor({
+      devshPath: "devsh",
+      execa: execaFn as never,
+      readFile: readFileFn,
+      readdir: readdirFn as never,
+      stat: (async () => ({ mtimeMs: 1 })) as never,
+    });
+
+    const result = await executor.spawn({
+      agent: "claude/opus-4.6",
+      prompt: "Exercise plugin workflow",
+      localClaudeProfile: "plugin-dev",
+      pluginDirs: ["./plugin-a"],
+      settings: "./settings.local.json",
+      mcpConfigs: ["./mcp.local.json"],
+      allowedTools: ["Read", "Write"],
+    });
+
+    const call = execaCalls[0] as { args: string[] };
+    expect(call.args).toEqual([
+      "orchestrate",
+      "run-local",
+      "--json",
+      "--persist",
+      "--agent",
+      "claude/opus-4.6",
+      "--setting-sources",
+      "project,local",
+      "--allowed-tools",
+      "Read,Write",
+      "--plugin-dir",
+      "./plugin-a",
+      "--settings",
+      "./settings.local.json",
+      "--mcp-config",
+      "./mcp.local.json",
+      "Exercise plugin workflow",
+    ]);
+    expect(unrefCalled).toBe(true);
+    expect(result).toMatchObject({
+      venue: "local",
+      runId: "local_456",
+      routingReason: "Claude local plugin-development options favor the local execution lane.",
+    });
+  });
+
   it("routes repo-scoped requests to remote spawn", async () => {
     const execaCalls: { args: string[] }[] = [];
     const execaFn = (_bin: string, args: string[]) => {

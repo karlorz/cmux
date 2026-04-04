@@ -518,6 +518,15 @@ export class DevshExecutor {
       };
     }
 
+    if (input.localClaudeProfile === "plugin-dev" || input.pluginDirs?.length || input.settings || input.mcpConfigs?.length) {
+      return {
+        venue: "local",
+        requestedVenue,
+        remoteProvider: null,
+        routingReason: "Claude local plugin-development options favor the local execution lane.",
+      };
+    }
+
     const prompt = input.prompt.toLowerCase();
 
     if (this.isTestHeavyPrompt(prompt)) {
@@ -553,11 +562,8 @@ export class DevshExecutor {
 
     if (
       input.permissionMode ||
-      input.settingSources?.length ||
       input.systemPromptPreset ||
-      input.systemPrompt ||
-      input.allowedTools?.length ||
-      input.disallowedTools?.length
+      input.systemPrompt
     ) {
       return "Claude Agent SDK launch options require the remote orchestration lane.";
     }
@@ -651,6 +657,37 @@ export class DevshExecutor {
 
     if (input.timeoutMs) {
       args.push("--timeout", `${Math.ceil(input.timeoutMs / 1000)}s`);
+    }
+
+    if (input.agent.startsWith("claude/")) {
+      const effectiveSettingSources =
+        input.settingSources && input.settingSources.length > 0
+          ? input.settingSources
+          : input.localClaudeProfile === "plugin-dev"
+            ? ["project", "local"]
+            : undefined;
+      if (effectiveSettingSources && effectiveSettingSources.length > 0) {
+        args.push("--setting-sources", effectiveSettingSources.join(","));
+      }
+      if (input.allowedTools && input.allowedTools.length > 0) {
+        args.push("--allowed-tools", input.allowedTools.join(","));
+      }
+      if (input.disallowedTools && input.disallowedTools.length > 0) {
+        args.push("--disallowed-tools", input.disallowedTools.join(","));
+      }
+      if (input.pluginDirs && input.pluginDirs.length > 0) {
+        for (const pluginDir of input.pluginDirs) {
+          args.push("--plugin-dir", pluginDir);
+        }
+      }
+      if (input.settings) {
+        args.push("--settings", input.settings);
+      }
+      if (input.mcpConfigs && input.mcpConfigs.length > 0) {
+        for (const mcpConfig of input.mcpConfigs) {
+          args.push("--mcp-config", mcpConfig);
+        }
+      }
     }
 
     args.push(input.prompt);

@@ -8,6 +8,10 @@ import type {
   ElectronWebContentsSnapshot,
   ElectronWebContentsState,
 } from "./electron-webcontents";
+import type {
+  LocalClaudePluginDevLaunchRequest,
+  LocalTerminalTarget,
+} from "../lib/local-claude-plugin-dev";
 
 interface CmuxSocketAPI {
   connect: (
@@ -99,6 +103,33 @@ interface CmuxMcpHostConfigAPI {
   readOpencodeJson: () => Promise<HostMcpFileResult>;
 }
 
+interface CmuxLocalExecutionAPI {
+  runCommandInTerminal: (options: {
+    command: string;
+    cwd?: string;
+    title?: string;
+    terminal?: LocalTerminalTarget;
+  }) => Promise<
+    | { ok: true; scriptPath?: string; launchId: string }
+    | { ok: false; error: string }
+  >;
+  launchClaudePluginDev: (
+    request: LocalClaudePluginDevLaunchRequest,
+  ) => Promise<
+    | {
+        ok: true;
+        scriptPath?: string;
+        launchId: string;
+        command: string;
+        orchestrationId?: string;
+        runDir?: string;
+        sessionInfoPath?: string;
+        sessionId?: string;
+      }
+    | { ok: false; error: string }
+  >;
+}
+
 export interface CmuxAPI {
   getCurrentWebContentsId?: () => number | undefined;
   register: (meta: {
@@ -152,6 +183,7 @@ export interface CmuxAPI {
     install: () => Promise<{ ok: boolean; reason?: string }>;
   };
   mcpHostConfig?: CmuxMcpHostConfigAPI;
+  local?: CmuxLocalExecutionAPI;
 }
 
 declare global {

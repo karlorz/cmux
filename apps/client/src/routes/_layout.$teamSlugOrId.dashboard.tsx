@@ -1836,6 +1836,7 @@ function DashboardMainCard({
           convexModels={convexModels}
           isRalphMode={isRalphMode}
           onRalphModeToggle={onRalphModeToggle}
+          taskDescription={taskDescription}
         />
         <DashboardStartTaskButton
           canSubmit={canSubmit}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -77,6 +78,38 @@ func TestCreateRunDirectory(t *testing.T) {
 	eventsPath := filepath.Join(runDir, "events.jsonl")
 	if _, err := os.Stat(eventsPath); os.IsNotExist(err) {
 		t.Error("events.jsonl was not created")
+	}
+}
+
+func TestCreateRunDirectoryRejectsExistingNonEmptyRunDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	localRunDir = tmpDir
+	defer func() { localRunDir = "" }()
+
+	runDir := filepath.Join(tmpDir, "test_existing")
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("failed to create existing run directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "config.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("failed to seed existing run directory: %v", err)
+	}
+
+	config := &LocalRunConfig{
+		OrchestrationID: "test_existing",
+		Agent:           "claude/haiku-4.5",
+		Prompt:          "Test prompt",
+		Workspace:       "/tmp/workspace",
+		Timeout:         "30m",
+		CreatedAt:       time.Now().UTC().Format(time.RFC3339),
+		DevshVersion:    "0.1.22-test",
+	}
+
+	_, err := createRunDirectory("test_existing", config)
+	if err == nil {
+		t.Fatalf("expected createRunDirectory to reject a non-empty existing run directory")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected already exists error, got %v", err)
 	}
 }
 
@@ -185,6 +218,21 @@ func TestLoadRunSummary(t *testing.T) {
 	if summary.Agent != "gemini/gemini-2.5-pro" {
 		t.Errorf("expected agent gemini/gemini-2.5-pro, got %s", summary.Agent)
 	}
+	if summary.StartedAt != "2026-03-18T10:00:00Z" {
+		t.Errorf("expected startedAt 2026-03-18T10:00:00Z, got %s", summary.StartedAt)
+	}
+	if summary.CompletedAt != "2026-03-18T10:05:00Z" {
+		t.Errorf("expected completedAt 2026-03-18T10:05:00Z, got %s", summary.CompletedAt)
+	}
+	if summary.DurationMs != 300000 {
+		t.Errorf("expected durationMs 300000, got %d", summary.DurationMs)
+	}
+	if summary.RunDir != tmpDir {
+		t.Errorf("expected runDir %s, got %s", tmpDir, summary.RunDir)
+	}
+	if summary.Workspace != "/tmp/workspace" {
+		t.Errorf("expected workspace /tmp/workspace, got %s", summary.Workspace)
+	}
 }
 
 func TestLoadRunSummaryFromConfig(t *testing.T) {
@@ -216,6 +264,15 @@ func TestLoadRunSummaryFromConfig(t *testing.T) {
 	if summary.Status != "running" {
 		t.Errorf("expected status running for in-progress task, got %s", summary.Status)
 	}
+	if summary.StartedAt != "2026-03-18T10:00:00Z" {
+		t.Errorf("expected startedAt 2026-03-18T10:00:00Z, got %s", summary.StartedAt)
+	}
+	if summary.RunDir != tmpDir {
+		t.Errorf("expected runDir %s, got %s", tmpDir, summary.RunDir)
+	}
+	if summary.Workspace != "/tmp/workspace" {
+		t.Errorf("expected workspace /tmp/workspace, got %s", summary.Workspace)
+	}
 }
 
 func TestLocalRunConfigSerialization(t *testing.T) {
@@ -228,6 +285,14 @@ func TestLocalRunConfigSerialization(t *testing.T) {
 		Model:           "claude-opus-4-6-20250514",
 		CreatedAt:       "2026-03-18T12:00:00Z",
 		DevshVersion:    "0.1.22",
+		ClaudeOptions: &LocalClaudeCLIOptions{
+			PluginDirs:      []string{"./plugin-dev"},
+			Settings:        "./settings.local.json",
+			SettingSources:  "project,local",
+			MCPConfigs:      []string{"./mcp.json"},
+			AllowedTools:    "Read,Write",
+			DisallowedTools: "Bash",
+		},
 	}
 
 	data, err := json.MarshalIndent(config, "", "  ")
@@ -245,6 +310,15 @@ func TestLocalRunConfigSerialization(t *testing.T) {
 	}
 	if loaded.DevshVersion != "0.1.22" {
 		t.Errorf("expected devsh version to be preserved, got %s", loaded.DevshVersion)
+	}
+	if loaded.ClaudeOptions == nil {
+		t.Fatal("expected Claude options to be preserved")
+	}
+	if len(loaded.ClaudeOptions.PluginDirs) != 1 || loaded.ClaudeOptions.PluginDirs[0] != "./plugin-dev" {
+		t.Fatalf("unexpected PluginDirs: %#v", loaded.ClaudeOptions.PluginDirs)
+	}
+	if loaded.ClaudeOptions.AllowedTools != "Read,Write" {
+		t.Fatalf("unexpected AllowedTools: %q", loaded.ClaudeOptions.AllowedTools)
 	}
 }
 

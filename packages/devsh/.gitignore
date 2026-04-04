@@ -1,5 +1,5 @@
 # Binaries
-devsh
+/devsh
 bin/
 
 # But include npm wrapper scripts (not actual binaries)

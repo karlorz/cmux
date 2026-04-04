@@ -1,6 +1,6 @@
 # @cmux/agent-sdk
 
-Unified Agent SDK for cmux - spawn Claude, Codex, Gemini, Amp, and Opencode agents in remote sandboxes.
+Unified Agent SDK for cmux - spawn Claude, Codex, Gemini, Amp, and Opencode agents in remote sandboxes or local execution lanes.
 
 ## Features
 
@@ -13,6 +13,7 @@ Unified Agent SDK for cmux - spawn Claude, Codex, Gemini, Amp, and Opencode agen
 - **Checkpointing**: Save and restore session state
 - **Cost tracking**: Token usage and cost estimation
 - **Streaming events**: Real-time progress updates
+- **Local Claude plugin-dev profile**: Reusable local workflow for Claude plugin, settings, and MCP experimentation
 
 ## Installation
 
@@ -224,6 +225,33 @@ These options only apply to `claude/*` agents:
 | `systemPrompt` | `{ type: "preset", preset: "claude_code" \| "minimal" \| "custom" }` or `{ type: "custom", content: string }` | System prompt configuration |
 | `allowedTools` | `string[]` | Tools the agent can use |
 | `disallowedTools` | `string[]` | Tools the agent cannot use |
+
+#### Local Claude plugin-development profile
+
+For local Claude experimentation, the SDK also supports a reusable profile plus local-only passthroughs:
+
+```typescript
+const task = await client.spawn({
+  agent: "claude/opus-4.6",
+  provider: "local",
+  prompt: "Validate the plugin command flow",
+  localClaudeProfile: "plugin-dev",
+  pluginDirs: ["./my-plugin"],
+  settings: "./.claude/settings.local.json",
+  mcpConfigs: ["./.claude/mcp.local.json"],
+  allowedTools: ["Read", "Write"],
+});
+```
+
+When `localClaudeProfile: "plugin-dev"` is used for a local Claude run:
+
+- `pluginDirs` map to repeated `devsh orchestrate run-local --plugin-dir ...`
+- `settings` maps to `--settings`
+- `mcpConfigs` map to repeated `--mcp-config ...`
+- `allowedTools` / `disallowedTools` map to the equivalent local Claude flags
+- if `settingSources` is omitted, the local plugin-dev profile defaults to `["project", "local"]`
+
+Use this profile when you want to iterate on a Claude plugin or `.claude/`-scoped local workflow while still going through cmux/devsh as the orchestration surface.
 
 ### `client.stream(options)`
 

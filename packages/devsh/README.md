@@ -146,6 +146,17 @@ devsh orchestrate run-local --agent claude/haiku-4.5 "Fix the bug in auth.ts"
 # Run with preflight checks (validates CLI, credentials, workspace before starting)
 devsh orchestrate run-local --agent claude/haiku-4.5 --selftest "Fix the bug"
 
+# Local Claude plugin development with a self-compiled Claude binary
+DEVSH_CLAUDE_BIN=/path/to/custom/claude \
+devsh orchestrate run-local \
+  --agent claude/opus-4.6 \
+  --plugin-dir ./my-plugin \
+  --settings ./.claude/settings.local.json \
+  --setting-sources project,local \
+  --mcp-config ./.claude/mcp.local.json \
+  --allowed-tools Read,Write \
+  "Validate the plugin command flow"
+
 # View results in browser
 devsh orchestrate view ~/.devsh/orchestrations/local_abc123 --live
 
@@ -166,6 +177,13 @@ devsh orchestrate run-plan tasks.yaml --parallel
 | `--mode auto` | Auto-detect provider capabilities (default) |
 | `--mode active` | Use `--continue --session-id` (Claude) or `--thread-id` (Codex) |
 | `--mode passive` | Append to instruction file (fallback for other CLIs) |
+
+**Local Claude plugin-dev notes:**
+
+- `DEVSH_CLAUDE_BIN` or `CMUX_CLAUDE_BIN` can point local runs at a self-compiled Claude binary.
+- `run-local` forwards Claude-local flags including `--plugin-dir`, `--settings`, `--setting-sources`, `--mcp-config`, `--allowed-tools`, and `--disallowed-tools`.
+- For persisted runs, the Claude-local plugin/settings/MCP context is stored in run metadata so `inject-local` can continue with the same context.
+- `scripts/smoke-local-claude-plugin-dev.sh` provides a lightweight smoke path using `selftest-local` plus `run-local --dry-run` to validate this workflow without requiring a real Claude session.
 
 **Context pack options:**
 

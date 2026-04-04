@@ -109,6 +109,37 @@ describe("executeAgent", () => {
     expect(args).toContain("Read,Write");
   });
 
+  it("passes local Claude plugin-dev options to run-local", async () => {
+    const { calls, execaFn } = makeExecaCapture();
+    const options = SpawnOptionsSchema.parse({
+      agent: "claude/opus-4.6",
+      prompt: "Exercise plugin workflow",
+      provider: "local",
+      localClaudeProfile: "plugin-dev",
+      pluginDirs: ["./plugin-a", "./plugin-b"],
+      settings: "./settings.local.json",
+      mcpConfigs: ["./mcp.local.json"],
+      allowedTools: ["Read", "Write"],
+    });
+
+    await executeAgent(options, execaFn);
+
+    expect(calls).toHaveLength(1);
+    const args = calls[0]?.args ?? [];
+    expect(args).toContain("run-local");
+    expect(args).toContain("--setting-sources");
+    expect(args).toContain("project,local");
+    expect(args).toContain("--plugin-dir");
+    expect(args).toContain("./plugin-a");
+    expect(args).toContain("./plugin-b");
+    expect(args).toContain("--settings");
+    expect(args).toContain("./settings.local.json");
+    expect(args).toContain("--mcp-config");
+    expect(args).toContain("./mcp.local.json");
+    expect(args).toContain("--allowed-tools");
+    expect(args).toContain("Read,Write");
+  });
+
   it("does not include Claude SDK options for non-claude agents", async () => {
     const { calls, execaFn } = makeExecaCapture();
     const options = SpawnOptionsSchema.parse({

@@ -24,6 +24,7 @@ import type {
   ElectronLogsPayload,
   ElectronMainLogMessage,
 } from "../../src/lib/electron-logs/types";
+import type { LocalClaudePluginDevLaunchRequest } from "../../src/lib/local-claude-plugin-dev";
 
 const api = {};
 
@@ -241,6 +242,32 @@ const cmuxAPI = {
       ipcRenderer.invoke(MCP_HOST_CONFIG_IPC_CHANNELS.readCodexToml) as Promise<HostMcpFileResult>,
     readOpencodeJson: () =>
       ipcRenderer.invoke(MCP_HOST_CONFIG_IPC_CHANNELS.readOpencodeJson) as Promise<HostMcpFileResult>,
+  },
+  local: {
+    runCommandInTerminal: (options: {
+      command: string;
+      cwd?: string;
+      title?: string;
+      terminal?: "terminal" | "iterm" | "ghostty" | "alacritty";
+    }) =>
+      ipcRenderer.invoke("cmux:local:run-command-in-terminal", options) as Promise<
+        | { ok: true; scriptPath?: string; launchId: string }
+        | { ok: false; error: string }
+      >,
+    launchClaudePluginDev: (request: LocalClaudePluginDevLaunchRequest) =>
+      ipcRenderer.invoke("cmux:local:launch-claude-plugin-dev", request) as Promise<
+        | {
+            ok: true;
+            scriptPath?: string;
+            launchId: string;
+            command: string;
+            orchestrationId?: string;
+            runDir?: string;
+            sessionInfoPath?: string;
+            sessionId?: string;
+          }
+        | { ok: false; error: string }
+      >,
   },
   webContentsView: {
     create: (options: {

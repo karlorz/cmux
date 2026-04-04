@@ -7,8 +7,63 @@
 
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { execa } from "execa";
+import { randomUUID } from "node:crypto";
+import os from "node:os";
+import path from "node:path";
 
 export const orchestrateLocalSpawnRouter = new OpenAPIHono();
+
+type LocalRunStatus = "running" | "completed" | "failed" | "unknown";
+type RawLocalRun = {
+  orchestrationId?: string;
+  runDir?: string;
+  agent?: string;
+  status?: string;
+  prompt?: string;
+  startedAt?: string;
+  completedAt?: string;
+  workspace?: string;
+};
+
+const LOCAL_RUN_ARTIFACTS_PATH = [".devsh", "orchestrations"] as const;
+
+function buildLocalRouteOrchestrationId(): string {
+  return `local_www_${Date.now()}_${randomUUID().slice(0, 8)}`;
+}
+
+function buildLocalRunArtifactsDir(orchestrationId: string): string {
+  return path.join(os.homedir(), ...LOCAL_RUN_ARTIFACTS_PATH, orchestrationId);
+}
+
+function normalizeLocalRunStatus(status?: string): LocalRunStatus {
+  return status === "running" || status === "completed" || status === "failed"
+    ? status
+    : "unknown";
+}
+
+function normalizeLocalRun(
+  run: RawLocalRun,
+) : {
+  orchestrationId: string;
+  runDir?: string;
+  agent: string;
+  status: LocalRunStatus;
+  prompt?: string;
+  startedAt?: string;
+  completedAt?: string;
+  workspace?: string;
+} {
+  return {
+    orchestrationId: run.orchestrationId || "unknown",
+    runDir: run.runDir,
+    agent: run.agent || "unknown",
+    status: normalizeLocalRunStatus(run.status),
+    prompt: run.prompt,
+    startedAt: run.startedAt,
+    completedAt: run.completedAt,
+    workspace: run.workspace,
+  };
+}
 
 // ============================================================================
 // Schemas
@@ -45,11 +100,19 @@ const LocalSpawnResponseSchema = z
       description: "Execution venue",
       example: "local",
     }),
-    runId: z.string().openapi({
-      description: "Local run ID",
-      example: "local_abc123",
+    orchestrationId: z.string().openapi({
+      description: "Canonical local orchestration ID",
+      example: "local_www_1712345678901_abcd1234",
     }),
-    status: z.string().openapi({
+    runId: z.string().openapi({
+      description: "Local run ID alias for the orchestration ID",
+      example: "local_www_1712345678901_abcd1234",
+    }),
+    runDir: z.string().openapi({
+      description: "Persistent local artifact directory",
+      example: "/Users/example/.devsh/orchestrations/local_www_1712345678901_abcd1234",
+    }),
+    status: z.enum(["running", "completed", "failed", "unknown"]).openapi({
       description: "Run status",
       example: "running",
     }),
@@ -91,12 +154,12 @@ const LocalSpawnErrorSchema = z
 
 const LocalRunSchema = z
   .object({
-    id: z.string(),
-    runId: z.string().optional(),
+    orchestrationId: z.string(),
+    runDir: z.string().optional(),
     agent: z.string(),
     status: z.enum(["running", "completed", "failed", "unknown"]),
     prompt: z.string().optional(),
-    createdAt: z.string().optional(),
+    startedAt: z.string().optional(),
     completedAt: z.string().optional(),
     workspace: z.string().optional(),
   })
@@ -108,6 +171,10 @@ const LocalRunsListResponseSchema = z
     count: z.number(),
   })
   .openapi("LocalRunsListResponse");
+
+type LocalSpawnResponse = z.infer<typeof LocalSpawnResponseSchema>;
+type LocalRun = z.infer<typeof LocalRunSchema>;
+type LocalRunsListResponse = z.infer<typeof LocalRunsListResponseSchema>;
 
 // ============================================================================
 // Route
@@ -165,6 +232,8 @@ orchestrateLocalSpawnRouter.openapi(
   }),
   async (c) => {
     const body = c.req.valid("json");
+    const orchestrationId = buildLocalRouteOrchestrationId();
+    const runDir = buildLocalRunArtifactsDir(orchestrationId);
 
     const args = [
       "orchestrate",
@@ -173,6 +242,8 @@ orchestrateLocalSpawnRouter.openapi(
       "--persist",
       "--agent",
       body.agent,
+      "--orchestration-id",
+      orchestrationId,
     ];
 
     if (body.workspace) {
@@ -186,7 +257,6 @@ orchestrateLocalSpawnRouter.openapi(
     args.push(body.prompt);
 
     try {
-      // Spawn detached process
       const devshPath = process.env.DEVSH_PATH || "devsh";
       const child = execa(devshPath, args, {
         detached: true,
@@ -198,49 +268,28 @@ orchestrateLocalSpawnRouter.openapi(
         },
       });
 
-      // Unref to allow parent to exit
+      void child.catch(() => undefined);
       child.unref();
 
-      // Wait briefly for the process to start and create the run directory
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      // List local runs to find the new one
-      const listResult = await execa(devshPath, [
-        "orchestrate",
-        "list-local",
-        "--json",
-        "--limit",
-        "1",
-      ]);
-
-      let runId = "local_unknown";
-      try {
-        const runs = JSON.parse(listResult.stdout);
-        if (Array.isArray(runs) && runs.length > 0) {
-          runId = runs[0].id || runs[0].runId || `local_${Date.now()}`;
-        }
-      } catch {
-        runId = `local_${Date.now()}`;
-      }
-
-      return c.json(
-        {
-          venue: "local" as const,
-          runId,
-          status: "running",
-          routingReason: "Explicit local venue requested via UI.",
-          capabilities: {
-            continueSession: true,
-            appendInstruction: true,
-            createCheckpoint: true,
-          },
-          followUp: {
-            statusId: runId,
-            injectId: runId,
-          },
+      const response: LocalSpawnResponse = {
+        venue: "local",
+        orchestrationId,
+        runId: orchestrationId,
+        runDir,
+        status: "running",
+        routingReason: "Explicit local venue requested via UI.",
+        capabilities: {
+          continueSession: true,
+          appendInstruction: true,
+          createCheckpoint: true,
         },
-        200
-      );
+        followUp: {
+          statusId: orchestrationId,
+          injectId: orchestrationId,
+        },
+      };
+
+      return c.json(response, 200);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unknown error occurred";
@@ -317,16 +366,7 @@ orchestrateLocalSpawnRouter.openapi(
       const devshPath = process.env.DEVSH_PATH || "devsh";
       const result = await execa(devshPath, args, { timeout: 10000 });
 
-      let runs: Array<{
-        id?: string;
-        runId?: string;
-        agent?: string;
-        status?: string;
-        prompt?: string;
-        createdAt?: string;
-        completedAt?: string;
-        workspace?: string;
-      }> = [];
+      let runs: RawLocalRun[] = [];
 
       try {
         const parsed = JSON.parse(result.stdout);
@@ -335,24 +375,13 @@ orchestrateLocalSpawnRouter.openapi(
         runs = [];
       }
 
-      const normalizedRuns = runs.map((run) => ({
-        id: run.id || run.runId || "unknown",
-        runId: run.runId,
-        agent: run.agent || "unknown",
-        status: (run.status as "running" | "completed" | "failed") || "unknown",
-        prompt: run.prompt,
-        createdAt: run.createdAt,
-        completedAt: run.completedAt,
-        workspace: run.workspace,
-      }));
+      const normalizedRuns: LocalRun[] = runs.map(normalizeLocalRun);
+      const response: LocalRunsListResponse = {
+        runs: normalizedRuns,
+        count: normalizedRuns.length,
+      };
 
-      return c.json(
-        {
-          runs: normalizedRuns,
-          count: normalizedRuns.length,
-        },
-        200
-      );
+      return c.json(response, 200);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unknown error occurred";

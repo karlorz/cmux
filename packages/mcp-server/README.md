@@ -57,7 +57,7 @@ Or if devsh is installed locally:
 
 | Tool | Description |
 |------|-------------|
-| `cmux_spawn` | Spawn a new agent task in a remote sandbox |
+| `cmux_spawn` | Spawn a new agent task in a local workspace or remote sandbox |
 | `cmux_status` | Get the current status of a task |
 | `cmux_wait` | Wait for a task to complete |
 | `cmux_cancel` | Cancel a running task |
@@ -106,6 +106,29 @@ These options only apply to `claude/*` agents:
 | `allowedTools` | string[] | List of tools the agent can use |
 | `disallowedTools` | string[] | List of tools the agent cannot use |
 
+#### Local Claude plugin-development options
+
+These options are intended for `claude/*` agents when running through the local venue:
+
+| Option | Values | Description |
+|--------|--------|-------------|
+| `localClaudeProfile` | `plugin-dev` | Reusable preset for local Claude plugin-development workflows |
+| `pluginDirs` | `string[]` | Claude plugin directories to load via repeated `--plugin-dir` |
+| `settings` | `string` | Claude settings file path or JSON string for the local run |
+| `mcpConfigs` | `string[]` | Claude MCP config file paths or JSON strings for the local run |
+
+Example:
+
+```
+Use cmux_spawn for local Claude plugin development:
+- agent: "claude/opus-4.6"
+- localClaudeProfile: "plugin-dev"
+- pluginDirs: ["./my-plugin"]
+- settings: "./.claude/settings.local.json"
+- mcpConfigs: ["./.claude/mcp.local.json"]
+- allowedTools: ["Read", "Write"]
+```
+
 ### Wait for completion
 
 ```
@@ -142,14 +165,17 @@ When no explicit `provider` is specified, the executor automatically routes task
 
 **Remote execution** (cloud sandbox) is used when:
 - A `repo` or `branch` is specified (needs git clone)
-- Claude SDK options are specified (`permissionMode`, `settingSources`, etc.)
+- Claude remote-only SDK options are specified (`permissionMode`, `systemPromptPreset`, `systemPrompt`)
 - The prompt suggests test/CI work or resource-intensive tasks
 
 **Local execution** is used for:
 - Simple, quick tasks without repo requirements
 - When explicitly set via `provider: "local"`
+- Claude plugin-development requests using `localClaudeProfile`, `pluginDirs`, `settings`, or `mcpConfigs`
 
 Local runs use `devsh orchestrate run-local` and persist state for later inspection. Remote runs use `devsh orchestrate spawn` with the selected cloud provider.
+
+For local Claude plugin development, `localClaudeProfile: "plugin-dev"` defaults `settingSources` to `project,local` if you do not provide them explicitly.
 
 ## Programmatic Usage
 

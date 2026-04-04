@@ -35,6 +35,7 @@ env:
   REGISTRY: docker.io
   IMAGE_NAME: karl8080/cmux
   IDE_DEPS_CHANNEL: ${{ vars.IDE_DEPS_CHANNEL || 'stable' }}
+  IDE_DEPS_PACKAGE_OVERRIDES: ${{ vars.IDE_DEPS_PACKAGE_OVERRIDES || '' }}
 
 jobs:
   docker-build:
@@ -99,6 +100,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             IDE_DEPS_CHANNEL=${{ env.IDE_DEPS_CHANNEL }}
+            IDE_DEPS_PACKAGE_OVERRIDES=${{ env.IDE_DEPS_PACKAGE_OVERRIDES }}
           cache-from: type=gha,scope=worker-${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=worker-${{ matrix.platform }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true

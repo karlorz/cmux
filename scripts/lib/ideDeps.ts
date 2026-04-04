@@ -13,8 +13,11 @@ const ideDepsSchema = z.object({
   packages: z.record(z.string(), z.string().min(1)),
 });
 
+const packageOverridesSchema = z.record(z.string().min(1), z.string().min(1));
+
 export type IdeDeps = z.infer<typeof ideDepsSchema>;
 export type IdeExtension = z.infer<typeof extensionSchema>;
+export type IdePackageOverrides = z.infer<typeof packageOverridesSchema>;
 
 export async function readIdeDeps(repoRoot: string): Promise<IdeDeps> {
   const depsPath = join(repoRoot, "configs/ide-deps.json");
@@ -36,6 +39,60 @@ export function formatExtensions(extensions: IdeExtension[]): string[] {
   return extensions.map(
     (ext) => `${ext.publisher}|${ext.name}|${ext.version}`,
   );
+}
+
+export function isRemotePackageSource(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+export function formatPackageInstallSpec(
+  packageName: string,
+  value: string,
+): string {
+  return isRemotePackageSource(value) ? value : `${packageName}@${value}`;
+}
+
+export function parsePackageOverrides(raw: string): IdePackageOverrides {
+  const parsed = packageOverridesSchema.parse(JSON.parse(raw));
+  const normalizedEntries = Object.entries(parsed).map(([packageName, value]) => {
+    const normalizedPackageName = packageName.trim();
+    const normalizedValue = value.trim();
+
+    if (normalizedPackageName.length === 0) {
+      throw new Error("Package override names must not be empty.");
+    }
+
+    if (normalizedValue.length === 0) {
+      throw new Error(
+        `Package override for ${normalizedPackageName} must not be empty.`,
+      );
+    }
+
+    return [normalizedPackageName, normalizedValue] as const;
+  });
+
+  return Object.fromEntries(normalizedEntries);
+}
+
+export function applyPackageOverrides(
+  deps: IdeDeps,
+  overrides: IdePackageOverrides,
+): boolean {
+  let changed = false;
+
+  for (const [packageName, value] of Object.entries(overrides)) {
+    if (deps.packages[packageName] !== value) {
+      deps.packages[packageName] = value;
+      changed = true;
+    }
+  }
+
+  return changed;
 }
 
 function replaceExtensionsBlock(

@@ -86,6 +86,22 @@ describe("SpawnToolSchema", () => {
     expect(result.disallowedTools).toEqual(["Bash"]);
   });
 
+  it("should accept local Claude plugin development options", () => {
+    const input = {
+      agent: "claude/opus-4.6",
+      prompt: "Plugin dev",
+      localClaudeProfile: "plugin-dev" as const,
+      pluginDirs: ["./plugin-a"],
+      settings: "./settings.local.json",
+      mcpConfigs: ["./mcp.local.json"],
+    };
+    const result = SpawnToolSchema.parse(input);
+    expect(result.localClaudeProfile).toBe("plugin-dev");
+    expect(result.pluginDirs).toEqual(["./plugin-a"]);
+    expect(result.settings).toBe("./settings.local.json");
+    expect(result.mcpConfigs).toEqual(["./mcp.local.json"]);
+  });
+
   it("should accept custom system prompt", () => {
     const input = {
       agent: "claude/opus-4.5",
