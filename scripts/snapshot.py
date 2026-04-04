@@ -101,6 +101,16 @@ def set_ide_provider(provider: str) -> None:
 def get_ide_provider() -> str:
     return _ide_provider
 
+
+def format_package_task_label(pkg: str) -> str:
+    """Create a task-friendly label from an npm package name/specifier."""
+    if pkg.startswith("@"):
+        version_idx = pkg.rfind("@")
+        package_name = pkg[:version_idx] if version_idx > 0 else pkg
+    else:
+        package_name = pkg.split("@", 1)[0]
+    return package_name.lstrip("@").replace("/", "-")
+
 # ---------------------------------------------------------------------------
 # Manifest types and helpers
 # ---------------------------------------------------------------------------
@@ -1647,7 +1657,7 @@ async def task_install_global_cli(ctx: TaskContext) -> None:
 
     for index, (name, spec, install_spec) in enumerate(package_specs, 1):
         is_remote = is_remote_package_source(spec)
-        task_label = name.lstrip("@").replace("/", "-")
+        task_label = format_package_task_label(name)
         quoted_install_spec = shlex.quote(install_spec)
         install_cmd = (
             f"npm install -g {quoted_install_spec}"

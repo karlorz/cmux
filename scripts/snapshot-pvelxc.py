@@ -69,7 +69,10 @@ from snapshot import (
     Console,
     TimingsCollector,
     Command,
+    format_package_task_label,
     format_dependency_graph,
+    is_remote_package_source,
+    maybe_apply_ide_package_overrides,
 )
 
 # ---------------------------------------------------------------------------
@@ -119,52 +122,6 @@ def set_ide_provider(provider: str) -> None:
 
 def get_ide_provider() -> str:
     return _ide_provider
-
-
-def format_package_task_label(pkg: str) -> str:
-    """Extract a task-friendly label from an npm package specifier.
-
-    Handles scoped packages (@org/pkg@version) and regular packages (pkg@version).
-    Returns the package name with @ stripped and / replaced with -.
-    """
-    # Strip version suffix if present (handles both @scope/pkg@ver and pkg@ver)
-    if pkg.startswith("@"):
-        # For scoped packages, find the version @ (after the scope @)
-        version_idx = pkg.rfind("@")
-        package_name = pkg[:version_idx] if version_idx > 0 else pkg
-    else:
-        package_name = pkg.split("@", 1)[0]
-    return package_name.lstrip("@").replace("/", "-")
-
-
-def is_remote_package_source(spec: str) -> bool:
-    parsed = urllib.parse.urlparse(spec)
-    return parsed.scheme in ("http", "https") and bool(parsed.netloc)
-
-
-def maybe_apply_ide_package_overrides(repo_root: Path, console: Console) -> None:
-    raw_overrides = os.environ.get("IDE_DEPS_PACKAGE_OVERRIDES", "").strip()
-    if not raw_overrides:
-        return
-
-    bun_path = shutil.which("bun")
-    if bun_path is None:
-        raise RuntimeError(
-            "bun not found on host; install bun or unset IDE_DEPS_PACKAGE_OVERRIDES."
-        )
-
-    console.always("Applying IDE package overrides from IDE_DEPS_PACKAGE_OVERRIDES...")
-    override_result = subprocess.run(
-        [bun_path, "run", "./scripts/apply-ide-deps-package-overrides.ts"],
-        cwd=str(repo_root),
-        text=True,
-    )
-    if override_result.returncode != 0:
-        raise RuntimeError(
-            "bun run ./scripts/apply-ide-deps-package-overrides.ts "
-            f"failed with exit code {override_result.returncode}"
-        )
-
 
 def is_transient_http_exec_error(exc: Exception) -> bool:
     """Check if an exception indicates a transient HTTP error worth retrying.
