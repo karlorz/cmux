@@ -2779,6 +2779,10 @@ const convexSchema = defineSchema({
       v.literal("completed_failed")
     ),
     scriptPath: v.optional(v.string()),
+    orchestrationId: v.optional(v.string()),
+    runDir: v.optional(v.string()),
+    sessionInfoPath: v.optional(v.string()),
+    sessionId: v.optional(v.string()),
     error: v.optional(v.string()),
     exitCode: v.optional(v.number()),
     launchedAt: v.number(),

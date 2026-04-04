@@ -1,5 +1,5 @@
 import path, { join } from "node:path";
-import { mkdtemp, writeFile, chmod, stat } from "node:fs/promises";
+import { mkdtemp, writeFile, chmod, stat, readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
@@ -384,6 +384,13 @@ function emitCmuxEventToAllWindows(event: string, payload: unknown): void {
   }
 }
 
+type LocalClaudeRunMetadata = {
+  orchestrationId?: string;
+  runDir?: string;
+  sessionInfoPath?: string;
+  sessionId?: string;
+};
+
 async function monitorLocalCommandOutcome(
   launchId: string,
   outcomePath: string,
@@ -413,6 +420,90 @@ async function monitorLocalCommandOutcome(
     status: "completed_failed",
     error: "Timed out waiting for local command outcome",
   });
+}
+
+function getDefaultLocalRunArtifactsBaseDir(): string {
+  return join(app.getPath("home"), ".devsh", "orchestrations");
+}
+
+function buildElectronManagedLocalOrchestrationId(): string {
+  return `local_cmux_${Date.now()}_${randomUUID().slice(0, 8)}`;
+}
+
+async function readLocalClaudeRunMetadata(
+  orchestrationId: string,
+): Promise<LocalClaudeRunMetadata | null> {
+  const runDir = join(getDefaultLocalRunArtifactsBaseDir(), orchestrationId);
+
+  try {
+    const runDirStats = await stat(runDir);
+    if (!runDirStats.isDirectory()) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  const metadata: LocalClaudeRunMetadata = {
+    orchestrationId,
+    runDir,
+  };
+
+  const sessionInfoPath = join(runDir, "session.json");
+  try {
+    const sessionInfoStats = await stat(sessionInfoPath);
+    if (sessionInfoStats.isFile()) {
+      metadata.sessionInfoPath = sessionInfoPath;
+      const raw = await readFile(sessionInfoPath, "utf8");
+      const parsed = JSON.parse(raw) as {
+        sessionId?: string;
+      };
+      if (typeof parsed.sessionId === "string" && parsed.sessionId.trim()) {
+        metadata.sessionId = parsed.sessionId.trim();
+      }
+    }
+  } catch {
+    // Session info is created asynchronously; tolerate it being absent briefly.
+  }
+
+  return metadata;
+}
+
+async function waitForLocalClaudeRunMetadata(
+  orchestrationId: string,
+  timeoutMs: number,
+): Promise<LocalClaudeRunMetadata | null> {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const metadata = await readLocalClaudeRunMetadata(orchestrationId);
+    if (metadata) {
+      return metadata;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  return null;
+}
+
+async function waitForLocalClaudeSessionMetadata(
+  launchId: string,
+  orchestrationId: string,
+  timeoutMs: number,
+): Promise<void> {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const metadata = await readLocalClaudeRunMetadata(orchestrationId);
+    if (metadata?.sessionId) {
+      emitCmuxEventToAllWindows("local-command-metadata", {
+        launchId,
+        ...metadata,
+      });
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
 }
 
 async function launchCommandInTerminal(options: {
@@ -597,9 +688,13 @@ ipcMain.handle(
       workspacePath,
       taskDescription,
     };
+    const orchestrationId = buildElectronManagedLocalOrchestrationId();
     const command = buildLocalClaudePluginDevCommand(normalizedRequest);
+    const launchedCommand = buildLocalClaudePluginDevCommand(normalizedRequest, {
+      orchestrationId,
+    });
     const result = await launchCommandInTerminal({
-      command,
+      command: launchedCommand,
       cwd: workspacePath,
       title: "cmux local Claude plugin-dev",
       terminal: normalizedRequest.terminal,
@@ -607,9 +702,23 @@ ipcMain.handle(
     if (!result.ok) {
       return result;
     }
+    const initialMetadata =
+      (await waitForLocalClaudeRunMetadata(orchestrationId, 4000)) ?? {
+        orchestrationId,
+        runDir: join(getDefaultLocalRunArtifactsBaseDir(), orchestrationId),
+        sessionInfoPath: join(
+          getDefaultLocalRunArtifactsBaseDir(),
+          orchestrationId,
+          "session.json",
+        ),
+      };
+    if (!initialMetadata.sessionId) {
+      void waitForLocalClaudeSessionMetadata(result.launchId, orchestrationId, 120000);
+    }
     return {
       ...result,
       command,
+      ...initialMetadata,
     };
   },
 );

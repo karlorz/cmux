@@ -143,6 +143,10 @@ type LocalClaudeLaunchRecord = {
   terminal: LocalTerminalTarget;
   status?: LocalClaudeLaunchStatus;
   scriptPath?: string;
+  orchestrationId?: string;
+  runDir?: string;
+  sessionInfoPath?: string;
+  sessionId?: string;
   error?: string;
   exitCode?: number;
   launchedAt: string;
@@ -415,6 +419,9 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   const updateLocalClaudeLaunchOutcome = useMutation(
     api.localClaudeLaunches.updateOutcome,
   );
+  const updateLocalClaudeLaunchMetadata = useMutation(
+    api.localClaudeLaunches.updateMetadata,
+  );
   const localTerminalOptions = useMemo(
     () => [
       {
@@ -469,7 +476,47 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     if (!bridge) {
       return;
     }
-    return bridge.on("local-command-finished", (payload) => {
+    const unsubscribeMetadata = bridge.on("local-command-metadata", (payload) => {
+      const event = payload as {
+        launchId?: string;
+        orchestrationId?: string;
+        runDir?: string;
+        sessionInfoPath?: string;
+        sessionId?: string;
+      };
+      if (!event.launchId) {
+        return;
+      }
+
+      setLocalLaunchHistory((prev) =>
+        prev.map((entry) =>
+          entry.launchId === event.launchId
+            ? {
+                ...entry,
+                ...(event.orchestrationId ? { orchestrationId: event.orchestrationId } : {}),
+                ...(event.runDir ? { runDir: event.runDir } : {}),
+                ...(event.sessionInfoPath ? { sessionInfoPath: event.sessionInfoPath } : {}),
+                ...(event.sessionId ? { sessionId: event.sessionId } : {}),
+              }
+            : entry,
+        ),
+      );
+
+      void updateLocalClaudeLaunchMetadata({
+        teamSlugOrId,
+        launchId: event.launchId,
+        ...(event.orchestrationId ? { orchestrationId: event.orchestrationId } : {}),
+        ...(event.runDir ? { runDir: event.runDir } : {}),
+        ...(event.sessionInfoPath ? { sessionInfoPath: event.sessionInfoPath } : {}),
+        ...(event.sessionId ? { sessionId: event.sessionId } : {}),
+      }).catch((error) => {
+        console.error(
+          "[DashboardInputControls] Failed to persist local Claude launch metadata",
+          error,
+        );
+      });
+    });
+    const unsubscribeFinished = bridge.on("local-command-finished", (payload) => {
       const event = payload as {
         launchId?: string;
         status?: "completed" | "completed_failed";
@@ -507,7 +554,11 @@ export const DashboardInputControls = memo(function DashboardInputControls({
         );
       });
     });
-  }, [teamSlugOrId, updateLocalClaudeLaunchOutcome]);
+    return () => {
+      unsubscribeMetadata?.();
+      unsubscribeFinished?.();
+    };
+  }, [teamSlugOrId, updateLocalClaudeLaunchMetadata, updateLocalClaudeLaunchOutcome]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1197,17 +1248,33 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       terminal: localTerminalTarget,
       launchedAt: new Date().toISOString(),
       status: result.ok ? "launched" : "launch_failed",
-      ...(result.ok ? { scriptPath: result.scriptPath } : { error: result.error }),
+      ...(result.ok
+        ? {
+            scriptPath: result.scriptPath,
+            orchestrationId: result.orchestrationId,
+            runDir: result.runDir,
+            sessionInfoPath: result.sessionInfoPath,
+            sessionId: result.sessionId,
+          }
+        : { error: result.error }),
     };
     setLocalLaunchHistory((prev) => [launchRecord, ...prev].slice(0, 5));
-      void recordLocalClaudeLaunch({
-        teamSlugOrId,
-        launchId: result.ok ? result.launchId : `failed-${Date.now()}`,
-        command: launchRecord.command,
-        workspacePath: launchRecord.workspacePath,
-        terminal: launchRecord.terminal,
+    void recordLocalClaudeLaunch({
+      teamSlugOrId,
+      launchId: result.ok ? result.launchId : `failed-${Date.now()}`,
+      command: launchRecord.command,
+      workspacePath: launchRecord.workspacePath,
+      terminal: launchRecord.terminal,
       status: launchRecord.status ?? "launched",
       ...(launchRecord.scriptPath ? { scriptPath: launchRecord.scriptPath } : {}),
+      ...(launchRecord.orchestrationId
+        ? { orchestrationId: launchRecord.orchestrationId }
+        : {}),
+      ...(launchRecord.runDir ? { runDir: launchRecord.runDir } : {}),
+      ...(launchRecord.sessionInfoPath
+        ? { sessionInfoPath: launchRecord.sessionInfoPath }
+        : {}),
+      ...(launchRecord.sessionId ? { sessionId: launchRecord.sessionId } : {}),
       ...(launchRecord.error ? { error: launchRecord.error } : {}),
     }).catch((error) => {
       console.error(
@@ -2154,6 +2221,21 @@ export const DashboardInputControls = memo(function DashboardInputControls({
                         {entry.error ? (
                           <p className="truncate text-red-700/80 dark:text-red-300/80">
                             {entry.error}
+                          </p>
+                        ) : null}
+                        {entry.orchestrationId ? (
+                          <p className="truncate text-blue-800/70 dark:text-blue-200/70">
+                            Run: {entry.orchestrationId}
+                          </p>
+                        ) : null}
+                        {entry.sessionId ? (
+                          <p className="truncate text-blue-800/70 dark:text-blue-200/70">
+                            Local session: {entry.sessionId}
+                          </p>
+                        ) : null}
+                        {entry.runDir ? (
+                          <p className="truncate text-blue-800/70 dark:text-blue-200/70">
+                            Artifacts: {entry.runDir}
                           </p>
                         ) : null}
                         {entry.scriptPath ? (

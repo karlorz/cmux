@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -77,6 +78,38 @@ func TestCreateRunDirectory(t *testing.T) {
 	eventsPath := filepath.Join(runDir, "events.jsonl")
 	if _, err := os.Stat(eventsPath); os.IsNotExist(err) {
 		t.Error("events.jsonl was not created")
+	}
+}
+
+func TestCreateRunDirectoryRejectsExistingNonEmptyRunDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	localRunDir = tmpDir
+	defer func() { localRunDir = "" }()
+
+	runDir := filepath.Join(tmpDir, "test_existing")
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("failed to create existing run directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "config.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("failed to seed existing run directory: %v", err)
+	}
+
+	config := &LocalRunConfig{
+		OrchestrationID: "test_existing",
+		Agent:           "claude/haiku-4.5",
+		Prompt:          "Test prompt",
+		Workspace:       "/tmp/workspace",
+		Timeout:         "30m",
+		CreatedAt:       time.Now().UTC().Format(time.RFC3339),
+		DevshVersion:    "0.1.22-test",
+	}
+
+	_, err := createRunDirectory("test_existing", config)
+	if err == nil {
+		t.Fatalf("expected createRunDirectory to reject a non-empty existing run directory")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected already exists error, got %v", err)
 	}
 }
 

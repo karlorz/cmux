@@ -256,7 +256,16 @@ const cmuxAPI = {
       >,
     launchClaudePluginDev: (request: LocalClaudePluginDevLaunchRequest) =>
       ipcRenderer.invoke("cmux:local:launch-claude-plugin-dev", request) as Promise<
-        | { ok: true; scriptPath?: string; launchId: string; command: string }
+        | {
+            ok: true;
+            scriptPath?: string;
+            launchId: string;
+            command: string;
+            orchestrationId?: string;
+            runDir?: string;
+            sessionInfoPath?: string;
+            sessionId?: string;
+          }
         | { ok: false; error: string }
       >,
   },

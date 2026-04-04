@@ -116,7 +116,16 @@ interface CmuxLocalExecutionAPI {
   launchClaudePluginDev: (
     request: LocalClaudePluginDevLaunchRequest,
   ) => Promise<
-    | { ok: true; scriptPath?: string; launchId: string; command: string }
+    | {
+        ok: true;
+        scriptPath?: string;
+        launchId: string;
+        command: string;
+        orchestrationId?: string;
+        runDir?: string;
+        sessionInfoPath?: string;
+        sessionId?: string;
+      }
     | { ok: false; error: string }
   >;
 }

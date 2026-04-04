@@ -27,6 +27,7 @@ var (
 	localEffort          string
 	localPersist         bool
 	localRunDir          string
+	localOrchestrationID string
 	localIncludeLogs     bool
 	localSelftest        bool
 	localPluginDirs      []string
@@ -174,7 +175,10 @@ Examples:
 		}
 
 		// Generate orchestration ID
-		orchID := fmt.Sprintf("local_%d", time.Now().UnixNano())
+		orchID := strings.TrimSpace(localOrchestrationID)
+		if orchID == "" {
+			orchID = fmt.Sprintf("local_%d", time.Now().UnixNano())
+		}
 		startTime := time.Now()
 		resolvedModelForConfig := localModel
 		if resolvedModelForConfig == "" {
@@ -492,6 +496,10 @@ func localClaudeOptionsForProvider(provider string) *LocalClaudeCLIOptions {
 func createRunDirectory(orchID string, config *LocalRunConfig) (string, error) {
 	baseDir := getLocalRunsDir()
 	runDir := filepath.Join(baseDir, orchID)
+
+	if entries, err := os.ReadDir(runDir); err == nil && len(entries) > 0 {
+		return "", fmt.Errorf("run directory already exists: %s", runDir)
+	}
 
 	if err := os.MkdirAll(runDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create run directory: %w", err)
@@ -962,6 +970,7 @@ func init() {
 	orchestrateLocalCmd.Flags().StringVar(&localEffort, "effort", "", "Alias for --variant")
 	orchestrateLocalCmd.Flags().BoolVar(&localPersist, "persist", true, "Save run artifacts to ~/.devsh/orchestrations/<run-id>/ (default: true, use --persist=false to disable)")
 	orchestrateLocalCmd.Flags().StringVar(&localRunDir, "run-dir", "", "Custom base directory for run artifacts (default: ~/.devsh/orchestrations)")
+	orchestrateLocalCmd.Flags().StringVar(&localOrchestrationID, "orchestration-id", "", "Explicit orchestration ID / run directory name for persisted local runs")
 	orchestrateLocalCmd.Flags().BoolVar(&localIncludeLogs, "include-logs", false, "Include stdout/stderr logs in --export bundle (always included with --persist)")
 	orchestrateLocalCmd.Flags().BoolVar(&localSelftest, "selftest", false, "Run preflight checks before starting (validates CLI, credentials, workspace)")
 	orchestrateLocalCmd.Flags().StringArrayVar(&localPluginDirs, "plugin-dir", nil, "Claude plugin directory to load for this local run (repeatable)")

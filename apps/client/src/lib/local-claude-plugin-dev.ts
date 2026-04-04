@@ -25,12 +25,17 @@ export type LocalClaudePluginDevLaunchRequest = {
   disallowedTools?: string;
 };
 
+export type LocalClaudePluginDevCommandOptions = {
+  orchestrationId?: string;
+};
+
 function shellEscapeSingleQuotes(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
 
 export function buildLocalClaudePluginDevCommand(
   request: LocalClaudePluginDevLaunchRequest,
+  options?: LocalClaudePluginDevCommandOptions,
 ): string {
   const parts: string[] = [];
 
@@ -42,6 +47,12 @@ export function buildLocalClaudePluginDevCommand(
 
   parts.push("devsh orchestrate run-local");
   parts.push(`--agent ${request.agentName}`);
+
+  if (options?.orchestrationId?.trim()) {
+    parts.push(
+      `--orchestration-id ${shellEscapeSingleQuotes(options.orchestrationId.trim())}`,
+    );
+  }
 
   if (request.effort?.trim()) {
     parts.push(`--effort ${request.effort.trim()}`);

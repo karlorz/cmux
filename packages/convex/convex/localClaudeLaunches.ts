@@ -31,6 +31,10 @@ export const list = authQuery({
       terminal: launch.terminal,
       status: launch.status,
       scriptPath: launch.scriptPath,
+      orchestrationId: launch.orchestrationId,
+      runDir: launch.runDir,
+      sessionInfoPath: launch.sessionInfoPath,
+      sessionId: launch.sessionId,
       error: launch.error,
       exitCode: launch.exitCode,
       launchedAt: new Date(launch.launchedAt).toISOString(),
@@ -53,6 +57,10 @@ export const record = authMutation({
       v.literal("completed_failed")
     ),
     scriptPath: v.optional(v.string()),
+    orchestrationId: v.optional(v.string()),
+    runDir: v.optional(v.string()),
+    sessionInfoPath: v.optional(v.string()),
+    sessionId: v.optional(v.string()),
     error: v.optional(v.string()),
     exitCode: v.optional(v.number()),
   },
@@ -70,11 +78,46 @@ export const record = authMutation({
       terminal: args.terminal,
       status: args.status,
       scriptPath: args.scriptPath,
+      orchestrationId: args.orchestrationId,
+      runDir: args.runDir,
+      sessionInfoPath: args.sessionInfoPath,
+      sessionId: args.sessionId,
       error: args.error,
       exitCode: args.exitCode,
       launchedAt: now,
       createdAt: now,
     });
+  },
+});
+
+export const updateMetadata = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    launchId: v.string(),
+    orchestrationId: v.optional(v.string()),
+    runDir: v.optional(v.string()),
+    sessionInfoPath: v.optional(v.string()),
+    sessionId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const existing = await ctx.db
+      .query("localClaudeLaunches")
+      .withIndex("by_team_launch", (q) => q.eq("teamId", teamId).eq("launchId", args.launchId))
+      .first();
+
+    if (!existing) {
+      throw new Error("Launch record not found");
+    }
+
+    await ctx.db.patch(existing._id, {
+      ...(args.orchestrationId ? { orchestrationId: args.orchestrationId } : {}),
+      ...(args.runDir ? { runDir: args.runDir } : {}),
+      ...(args.sessionInfoPath ? { sessionInfoPath: args.sessionInfoPath } : {}),
+      ...(args.sessionId ? { sessionId: args.sessionId } : {}),
+    });
+
+    return existing._id;
   },
 });
 
