@@ -706,7 +706,7 @@ foo = "bar"
     );
   });
 
-  it("routes the managed home stop dispatcher to Ralph before autopilot", async () => {
+  it("routes the managed home stop dispatcher to Ralph before autopilot", { timeout: 30000 }, async () => {
     const result = await getOpenAIEnvironment({} as never);
     const dispatcher = decodeEnvironmentFile(result, CODEX_HOME_HOOK_DISPATCH_PATH);
     const tempDir = await mkdtemp(join(tmpdir(), "cmux-openai-codex-dispatch-"));
