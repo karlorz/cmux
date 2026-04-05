@@ -627,14 +627,14 @@ function getActivitySearchText(activity: ActivityLike): string {
 }
 
 interface ActivityStreamProps {
-  taskRunId: Id<"taskRuns">;
+  runId: string;
   /** Provider name for event coverage indicators (e.g., "claude", "codex") */
   provider?: string;
 }
 
-export function ActivityStream({ taskRunId, provider }: ActivityStreamProps) {
+export function ActivityStream({ runId, provider }: ActivityStreamProps) {
   const activities = useQuery(api.taskRunActivity.getByTaskRunAsc, {
-    taskRunId,
+    taskRunId: runId as Id<"taskRuns">,
     limit: 200,
   });
   const [pinToBottom, setPinToBottom] = useState(true);
@@ -708,10 +708,10 @@ export function ActivityStream({ taskRunId, provider }: ActivityStreamProps) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `activity-${taskRunId}-${Date.now()}.json`;
+    link.download = `activity-${runId}-${Date.now()}.json`;
     link.click();
     URL.revokeObjectURL(url);
-  }, [filteredActivities, taskRunId]);
+  }, [filteredActivities, runId]);
 
   // Export as CSV
   const exportAsCsv = useCallback(() => {
@@ -730,10 +730,10 @@ export function ActivityStream({ taskRunId, provider }: ActivityStreamProps) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `activity-${taskRunId}-${Date.now()}.csv`;
+    link.download = `activity-${runId}-${Date.now()}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-  }, [filteredActivities, taskRunId]);
+  }, [filteredActivities, runId]);
 
   // Loading state
   if (!activities) {

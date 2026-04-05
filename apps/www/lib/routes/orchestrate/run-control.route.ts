@@ -9,6 +9,33 @@ import { mapDomainError } from "./_helpers";
 
 export const orchestrateRunControlRouter = new OpenAPIHono();
 
+async function resolveTaskRunIdFromRunIdentifier(input: {
+  convex: ReturnType<typeof getConvex>;
+  teamSlugOrId: string;
+  runIdentifier: string;
+}) {
+  const directSummary = await input.convex.query(api.taskRuns.getRunControlSummary, {
+    teamSlugOrId: input.teamSlugOrId,
+    taskRunId: input.runIdentifier as Id<"taskRuns">,
+  });
+  if (directSummary) {
+    return directSummary;
+  }
+
+  const localLaunch = await input.convex.query(api.localClaudeLaunches.getByOrchestrationId, {
+    teamSlugOrId: input.teamSlugOrId,
+    orchestrationId: input.runIdentifier,
+  });
+  if (!localLaunch?.taskRunId) {
+    return null;
+  }
+
+  return input.convex.query(api.taskRuns.getRunControlSummary, {
+    teamSlugOrId: input.teamSlugOrId,
+    taskRunId: localLaunch.taskRunId as Id<"taskRuns">,
+  });
+}
+
 orchestrateRunControlRouter.openapi(
   createRoute({
     method: "get" as const,
@@ -19,7 +46,7 @@ orchestrateRunControlRouter.openapi(
       "Return the shared run-control summary for a task run, combining interruption state, approvals, continuation capability, and checkpoint metadata.",
     request: {
       params: z.object({
-        taskRunId: z.string().openapi({ description: "Task run ID" }),
+        taskRunId: z.string().openapi({ description: "Task run ID or local orchestration ID" }),
       }),
       query: z.object({
         teamSlugOrId: z.string().openapi({ description: "Team slug or ID" }),
@@ -57,9 +84,10 @@ orchestrateRunControlRouter.openapi(
       });
 
       const convex = getConvex({ accessToken });
-      const summary = await convex.query(api.taskRuns.getRunControlSummary, {
+      const summary = await resolveTaskRunIdFromRunIdentifier({
+        convex,
         teamSlugOrId,
-        taskRunId: taskRunId as Id<"taskRuns">,
+        runIdentifier: taskRunId,
       });
 
       if (!summary) {

@@ -1,4 +1,3 @@
-import type { Id } from "@cmux/convex/dataModel";
 import type { RunControlSummary } from "@cmux/shared";
 import { getApiV1CmuxOrchestrationRunControlByTaskRunIdOptions } from "@cmux/www-openapi-client/react-query";
 import { useQuery } from "@tanstack/react-query";
@@ -15,7 +14,7 @@ import {
 import type { ReactNode } from "react";
 
 interface RuntimeLifecycleCardProps {
-  taskRunId: Id<"taskRuns">;
+  runId: string;
   teamSlugOrId: string;
 }
 
@@ -53,7 +52,7 @@ const DEFAULT_BADGE_TONE: ToneConfig = {
  * Issue #902: align run-detail controls with shared run-control contract
  */
 export function RuntimeLifecycleCard({
-  taskRunId,
+  runId,
   teamSlugOrId,
 }: RuntimeLifecycleCardProps) {
   const {
@@ -62,10 +61,10 @@ export function RuntimeLifecycleCard({
     isLoading,
   } = useQuery({
     ...getApiV1CmuxOrchestrationRunControlByTaskRunIdOptions({
-      path: { taskRunId },
+      path: { taskRunId: runId },
       query: { teamSlugOrId },
     }),
-    enabled: Boolean(teamSlugOrId && taskRunId),
+    enabled: Boolean(teamSlugOrId && runId),
   });
 
   if (error) {

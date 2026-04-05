@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 
-import type { Id } from "@cmux/convex/dataModel";
 import type { RunControlSummary } from "@cmux/shared";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -38,7 +37,7 @@ vi.mock("@cmux/www-openapi-client/react-query", () => ({
     runControlOptionsMock(...args),
 }));
 
-const taskRunId = "tskrun_test_123" as Id<"taskRuns">;
+const runId = "tskrun_test_123";
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -47,7 +46,7 @@ let reactActEnvironmentDescriptor: PropertyDescriptor | undefined;
 
 function createSummary(overrides: SummaryOverrides = {}): RunControlSummary {
   const base: RunControlSummary = {
-    taskRunId,
+    taskRunId: runId,
     taskId: "task_123",
     orchestrationId: "orch_123",
     agentName: "codex/gpt-5.4-xhigh",
@@ -158,12 +157,12 @@ describe("RuntimeLifecycleCard", () => {
 
     await act(async () => {
       root.render(
-        <RuntimeLifecycleCard taskRunId={taskRunId} teamSlugOrId="team-dev" />
+        <RuntimeLifecycleCard runId={runId} teamSlugOrId="team-dev" />
       );
     });
 
     expect(runControlOptionsMock).toHaveBeenCalledWith({
-      path: { taskRunId },
+      path: { taskRunId: runId },
       query: { teamSlugOrId: "team-dev" },
     });
     expect(container.textContent).toContain("Run Control");
@@ -211,7 +210,7 @@ describe("RuntimeLifecycleCard", () => {
 
     await act(async () => {
       root.render(
-        <RuntimeLifecycleCard taskRunId={taskRunId} teamSlugOrId="team-dev" />
+        <RuntimeLifecycleCard runId={runId} teamSlugOrId="team-dev" />
       );
     });
 
@@ -240,7 +239,7 @@ describe("RuntimeLifecycleCard", () => {
 
     await act(async () => {
       root.render(
-        <RuntimeLifecycleCard taskRunId={taskRunId} teamSlugOrId="team-dev" />
+        <RuntimeLifecycleCard runId={runId} teamSlugOrId="team-dev" />
       );
     });
 

@@ -1103,17 +1103,11 @@ export type LocalSpawnResponse = {
      * Why this venue was selected
      */
     routingReason: string;
-    /**
-     * Available post-launch control capabilities
-     */
     capabilities: {
         continueSession: boolean;
         appendInstruction: boolean;
         createCheckpoint: boolean;
     };
-    /**
-     * IDs to use for follow-up operations
-     */
     followUp: {
         statusId: string;
         injectId: string;
@@ -1132,6 +1126,10 @@ export type LocalSpawnError = {
 };
 
 export type LocalSpawnRequest = {
+    /**
+     * Team slug or ID
+     */
+    teamSlugOrId: string;
     /**
      * Agent ID in format 'backend/model' (e.g., 'claude/opus-4.5')
      */
@@ -1159,11 +1157,69 @@ export type LocalRun = {
     startedAt?: string;
     completedAt?: string;
     workspace?: string;
+    bridgedTaskRunId?: string;
 };
 
 export type LocalRunsListResponse = {
     runs: Array<LocalRun>;
     count: number;
+};
+
+export type LocalRunDetail = LocalRun & {
+    timeout?: string;
+    durationMs?: number;
+    result?: string;
+    error?: string;
+    stdout?: string;
+    stderr?: string;
+    events?: Array<{
+        timestamp: string;
+        type: string;
+        message: string;
+    }>;
+};
+
+export type LocalRunInjectResponse = {
+    runId: string;
+    mode: string;
+    message: string;
+    injectionCount: number;
+    controlLane: string;
+    continuationMode: string;
+    availableActions: Array<string>;
+    sessionId?: string;
+    threadId?: string;
+};
+
+export type LocalRunInjectRequest = {
+    /**
+     * Team slug or ID
+     */
+    teamSlugOrId: string;
+    /**
+     * Instruction to inject
+     */
+    message: string;
+};
+
+export type LocalRunStopResponse = {
+    runId: string;
+    runDir: string;
+    pid: number;
+    signal: string;
+    status: string;
+    message: string;
+};
+
+export type LocalRunStopRequest = {
+    /**
+     * Team slug or ID
+     */
+    teamSlugOrId: string;
+    /**
+     * Use SIGKILL instead of SIGTERM
+     */
+    force?: boolean;
 };
 
 export type ProjectGoal = {
@@ -5329,6 +5385,14 @@ export type PostApiOrchestrateSpawnLocalErrors = {
      */
     400: LocalSpawnError;
     /**
+     * Unauthorized
+     */
+    401: LocalSpawnError;
+    /**
+     * Forbidden
+     */
+    403: LocalSpawnError;
+    /**
      * Failed to spawn local run
      */
     500: LocalSpawnError;
@@ -5350,13 +5414,13 @@ export type GetApiOrchestrateListLocalData = {
     path?: never;
     query: {
         /**
-         * Team slug or ID (for consistency with other endpoints)
+         * Team slug or ID
          */
         teamSlugOrId: string;
         /**
          * Maximum number of runs to return
          */
-        limit?: string;
+        limit?: number;
         /**
          * Filter by status
          */
@@ -5366,6 +5430,14 @@ export type GetApiOrchestrateListLocalData = {
 };
 
 export type GetApiOrchestrateListLocalErrors = {
+    /**
+     * Unauthorized
+     */
+    401: LocalSpawnError;
+    /**
+     * Forbidden
+     */
+    403: LocalSpawnError;
     /**
      * Failed to list local runs
      */
@@ -5382,6 +5454,153 @@ export type GetApiOrchestrateListLocalResponses = {
 };
 
 export type GetApiOrchestrateListLocalResponse = GetApiOrchestrateListLocalResponses[keyof GetApiOrchestrateListLocalResponses];
+
+export type GetApiOrchestrateLocalRunsByRunIdData = {
+    body?: never;
+    path: {
+        /**
+         * Local run ID
+         */
+        runId: string;
+    };
+    query: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId: string;
+        /**
+         * Include stdout and stderr snapshots
+         */
+        logs?: boolean | null;
+        /**
+         * Include event timeline
+         */
+        events?: boolean | null;
+    };
+    url: '/api/orchestrate/local-runs/{runId}';
+};
+
+export type GetApiOrchestrateLocalRunsByRunIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: LocalSpawnError;
+    /**
+     * Forbidden
+     */
+    403: LocalSpawnError;
+    /**
+     * Run not found
+     */
+    404: LocalSpawnError;
+    /**
+     * Failed to load local run detail
+     */
+    500: LocalSpawnError;
+};
+
+export type GetApiOrchestrateLocalRunsByRunIdError = GetApiOrchestrateLocalRunsByRunIdErrors[keyof GetApiOrchestrateLocalRunsByRunIdErrors];
+
+export type GetApiOrchestrateLocalRunsByRunIdResponses = {
+    /**
+     * Local run detail
+     */
+    200: LocalRunDetail;
+};
+
+export type GetApiOrchestrateLocalRunsByRunIdResponse = GetApiOrchestrateLocalRunsByRunIdResponses[keyof GetApiOrchestrateLocalRunsByRunIdResponses];
+
+export type PostApiOrchestrateLocalRunsByRunIdInjectData = {
+    body: LocalRunInjectRequest;
+    path: {
+        /**
+         * Local run ID
+         */
+        runId: string;
+    };
+    query?: never;
+    url: '/api/orchestrate/local-runs/{runId}/inject';
+};
+
+export type PostApiOrchestrateLocalRunsByRunIdInjectErrors = {
+    /**
+     * Unauthorized
+     */
+    401: LocalSpawnError;
+    /**
+     * Forbidden
+     */
+    403: LocalSpawnError;
+    /**
+     * Run not found
+     */
+    404: LocalSpawnError;
+    /**
+     * Run cannot accept instructions
+     */
+    409: LocalSpawnError;
+    /**
+     * Failed to inject instruction
+     */
+    500: LocalSpawnError;
+};
+
+export type PostApiOrchestrateLocalRunsByRunIdInjectError = PostApiOrchestrateLocalRunsByRunIdInjectErrors[keyof PostApiOrchestrateLocalRunsByRunIdInjectErrors];
+
+export type PostApiOrchestrateLocalRunsByRunIdInjectResponses = {
+    /**
+     * Instruction queued successfully
+     */
+    200: LocalRunInjectResponse;
+};
+
+export type PostApiOrchestrateLocalRunsByRunIdInjectResponse = PostApiOrchestrateLocalRunsByRunIdInjectResponses[keyof PostApiOrchestrateLocalRunsByRunIdInjectResponses];
+
+export type PostApiOrchestrateLocalRunsByRunIdStopData = {
+    body: LocalRunStopRequest;
+    path: {
+        /**
+         * Local run ID
+         */
+        runId: string;
+    };
+    query?: never;
+    url: '/api/orchestrate/local-runs/{runId}/stop';
+};
+
+export type PostApiOrchestrateLocalRunsByRunIdStopErrors = {
+    /**
+     * Unauthorized
+     */
+    401: LocalSpawnError;
+    /**
+     * Forbidden
+     */
+    403: LocalSpawnError;
+    /**
+     * Run not found
+     */
+    404: LocalSpawnError;
+    /**
+     * Run cannot be stopped
+     */
+    409: LocalSpawnError;
+    /**
+     * Failed to stop local run
+     */
+    500: LocalSpawnError;
+};
+
+export type PostApiOrchestrateLocalRunsByRunIdStopError = PostApiOrchestrateLocalRunsByRunIdStopErrors[keyof PostApiOrchestrateLocalRunsByRunIdStopErrors];
+
+export type PostApiOrchestrateLocalRunsByRunIdStopResponses = {
+    /**
+     * Local run stopped successfully
+     */
+    200: LocalRunStopResponse;
+};
+
+export type PostApiOrchestrateLocalRunsByRunIdStopResponse = PostApiOrchestrateLocalRunsByRunIdStopResponses[keyof PostApiOrchestrateLocalRunsByRunIdStopResponses];
 
 export type GetApiProjectsData = {
     body?: never;

@@ -45,13 +45,14 @@ import { useState } from "react";
 import { TaskRunMemoryPanel } from "@/components/TaskRunMemoryPanel";
 
 interface RunInspectorPanelProps {
-  taskRunId: Id<"taskRuns">;
+  runId: string;
   teamSlugOrId: string;
+  taskRunContextId?: Id<"taskRuns">;
 }
 
 type InspectorTab = "continuation" | "session" | "memory";
 
-export function RunInspectorPanel({ taskRunId, teamSlugOrId }: RunInspectorPanelProps) {
+export function RunInspectorPanel({ runId, teamSlugOrId, taskRunContextId }: RunInspectorPanelProps) {
   const [activeTab, setActiveTab] = useState<InspectorTab>("continuation");
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(["continuation-lane"])
@@ -60,19 +61,19 @@ export function RunInspectorPanel({ taskRunId, teamSlugOrId }: RunInspectorPanel
   // Run control data for continuation and lifecycle
   const runControlQuery = useQuery({
     ...getApiV1CmuxOrchestrationRunControlByTaskRunIdOptions({
-      path: { taskRunId },
+      path: { taskRunId: runId },
       query: { teamSlugOrId },
     }),
-    enabled: Boolean(teamSlugOrId && taskRunId),
+    enabled: Boolean(teamSlugOrId && runId),
   });
 
   // Session ancestry data
   const ancestryQuery = useQuery({
     ...convexQuery(api.providerSessions.getResumeAncestry, {
       teamSlugOrId,
-      taskRunId,
+      taskRunId: taskRunContextId ?? (runId as Id<"taskRuns">),
     }),
-    enabled: Boolean(teamSlugOrId && taskRunId),
+    enabled: Boolean(teamSlugOrId && taskRunContextId),
   });
 
   const summary = runControlQuery.data;
@@ -141,8 +142,8 @@ export function RunInspectorPanel({ taskRunId, teamSlugOrId }: RunInspectorPanel
           />
         )}
 
-        {activeTab === "memory" && (
-          <TaskRunMemoryPanel taskRunId={taskRunId} teamSlugOrId={teamSlugOrId} />
+        {activeTab === "memory" && taskRunContextId && (
+          <TaskRunMemoryPanel taskRunId={taskRunContextId} teamSlugOrId={teamSlugOrId} />
         )}
       </div>
     </div>

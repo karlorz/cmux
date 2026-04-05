@@ -16,6 +16,77 @@ var (
 	stopLocalForce bool
 )
 
+type localStopResult struct {
+	RunID   string `json:"runId"`
+	RunDir  string `json:"runDir"`
+	PID     int    `json:"pid"`
+	Signal  string `json:"signal"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
+func stopLocalRun(runID string, force bool) (*localStopResult, error) {
+	runDir, err := resolveLocalRunDir(runID)
+	if err != nil {
+		return nil, err
+	}
+
+	pidPath := filepath.Join(runDir, "pid.txt")
+	pidData, err := os.ReadFile(pidPath)
+	if err != nil {
+		statePath := filepath.Join(runDir, "state.json")
+		if stateData, stateErr := os.ReadFile(statePath); stateErr == nil {
+			var state LocalState
+			if json.Unmarshal(stateData, &state) == nil {
+				if state.Status == "completed" || state.Status == "failed" {
+					return nil, fmt.Errorf("run %s is already %s", runID, state.Status)
+				}
+			}
+		}
+		return nil, fmt.Errorf("no pid.txt found - run may not be active or was not started with --persist")
+	}
+
+	pid, err := strconv.Atoi(string(pidData))
+	if err != nil {
+		return nil, fmt.Errorf("invalid pid in pid.txt: %w", err)
+	}
+
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find process %d: %w", pid, err)
+	}
+
+	if err := process.Signal(syscall.Signal(0)); err != nil {
+		os.Remove(pidPath)
+		return nil, fmt.Errorf("process %d is not running (pid file was stale)", pid)
+	}
+
+	var sig syscall.Signal
+	var sigName string
+	if force {
+		sig = syscall.SIGKILL
+		sigName = "SIGKILL"
+	} else {
+		sig = syscall.SIGTERM
+		sigName = "SIGTERM"
+	}
+
+	if err := process.Signal(sig); err != nil {
+		return nil, fmt.Errorf("failed to send %s to process %d: %w", sigName, pid, err)
+	}
+
+	os.Remove(pidPath)
+
+	return &localStopResult{
+		RunID:   runID,
+		RunDir:  runDir,
+		PID:     pid,
+		Signal:  sigName,
+		Status:  "stopped",
+		Message: fmt.Sprintf("Sent %s to process %d", sigName, pid),
+	}, nil
+}
+
 var orchestrateStopLocalCmd = &cobra.Command{
 	Use:   "stop-local <run-id>",
 	Short: "Stop a running local orchestration task",
@@ -34,68 +105,19 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		runID := args[0]
 
-		// Resolve run directory
-		runDir, err := resolveLocalRunDir(runID)
+		result, err := stopLocalRun(runID, stopLocalForce)
 		if err != nil {
 			return err
 		}
 
-		// Check for pid.txt
-		pidPath := filepath.Join(runDir, "pid.txt")
-		pidData, err := os.ReadFile(pidPath)
-		if err != nil {
-			// Check if run is already completed
-			statePath := filepath.Join(runDir, "state.json")
-			if stateData, stateErr := os.ReadFile(statePath); stateErr == nil {
-				var state LocalState
-				if json.Unmarshal(stateData, &state) == nil {
-					if state.Status == "completed" || state.Status == "failed" {
-						return fmt.Errorf("run %s is already %s", runID, state.Status)
-					}
-				}
-			}
-			return fmt.Errorf("no pid.txt found - run may not be active or was not started with --persist")
+		if flagJSON {
+			data, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Println(string(data))
+			return nil
 		}
 
-		pid, err := strconv.Atoi(string(pidData))
-		if err != nil {
-			return fmt.Errorf("invalid pid in pid.txt: %w", err)
-		}
-
-		// Check if process exists
-		process, err := os.FindProcess(pid)
-		if err != nil {
-			return fmt.Errorf("failed to find process %d: %w", pid, err)
-		}
-
-		// Check if process is actually running by sending signal 0
-		if err := process.Signal(syscall.Signal(0)); err != nil {
-			// Process doesn't exist, clean up pid file
-			os.Remove(pidPath)
-			return fmt.Errorf("process %d is not running (pid file was stale)", pid)
-		}
-
-		// Send appropriate signal
-		var sig syscall.Signal
-		var sigName string
-		if stopLocalForce {
-			sig = syscall.SIGKILL
-			sigName = "SIGKILL"
-		} else {
-			sig = syscall.SIGTERM
-			sigName = "SIGTERM"
-		}
-
-		if err := process.Signal(sig); err != nil {
-			return fmt.Errorf("failed to send %s to process %d: %w", sigName, pid, err)
-		}
-
-		fmt.Printf("Sent %s to process %d\n", sigName, pid)
-		fmt.Printf("Run directory: %s\n", runDir)
-
-		// Clean up pid file
-		os.Remove(pidPath)
-
+		fmt.Println(result.Message)
+		fmt.Printf("Run directory: %s\n", result.RunDir)
 		return nil
 	},
 }

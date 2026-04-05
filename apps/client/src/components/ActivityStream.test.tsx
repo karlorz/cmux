@@ -28,7 +28,7 @@ const hasDomEnvironment =
 let reactActEnvironmentDescriptor: PropertyDescriptor | undefined;
 let activityCounter = 0;
 
-const taskRunId = "taskRuns:test-run" as Id<"taskRuns">;
+const runId = "taskRuns:test-run" as Id<"taskRuns">;
 
 function setReactActEnvironmentForTest() {
   Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
@@ -60,7 +60,7 @@ function createActivity(
   return {
     _id: `taskRunActivity:${activityCounter}` as Id<"taskRunActivity">,
     _creationTime: overrides.createdAt ?? 1_700_000_000_000,
-    taskRunId,
+    taskRunId: runId,
     teamId: "team-1",
     createdAt: 1_700_000_000_000 - activityCounter * 1000,
     type,
@@ -161,7 +161,7 @@ describe("ActivityStream", () => {
     const { container, root } = renderActivityStream(activities);
 
     await act(async () => {
-      root.render(<ActivityStream taskRunId={taskRunId} />);
+      root.render(<ActivityStream runId={runId} />);
     });
 
     const text = container.textContent ?? "";
@@ -199,7 +199,7 @@ describe("ActivityStream", () => {
     const { container, root } = renderActivityStream(activities);
 
     await act(async () => {
-      root.render(<ActivityStream taskRunId={taskRunId} />);
+      root.render(<ActivityStream runId={runId} />);
     });
 
     const filterToggle = container.querySelector(

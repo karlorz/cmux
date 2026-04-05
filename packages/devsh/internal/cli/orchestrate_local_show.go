@@ -16,6 +16,24 @@ var (
 	showLocalEvents bool
 )
 
+type localRunDetail struct {
+	OrchestrationID string       `json:"orchestrationId"`
+	RunDir          string       `json:"runDir"`
+	Agent           string       `json:"agent"`
+	Status          string       `json:"status"`
+	Prompt          string       `json:"prompt"`
+	Workspace       string       `json:"workspace"`
+	Timeout         string       `json:"timeout,omitempty"`
+	StartedAt       string       `json:"startedAt,omitempty"`
+	CompletedAt     string       `json:"completedAt,omitempty"`
+	DurationMs      int64        `json:"durationMs,omitempty"`
+	Events          []LocalEvent `json:"events,omitempty"`
+	Result          *string      `json:"result,omitempty"`
+	Error           *string      `json:"error,omitempty"`
+	Stdout          string       `json:"stdout,omitempty"`
+	Stderr          string       `json:"stderr,omitempty"`
+}
+
 var orchestrateShowLocalCmd = &cobra.Command{
 	Use:   "show-local <run-id>",
 	Short: "Show run control summary for a local run",
@@ -38,97 +56,54 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		runID := args[0]
 
-		// Resolve run directory
 		runDir, err := resolveLocalRunDir(runID)
 		if err != nil {
 			return err
 		}
 
-		// Load state
-		statePath := filepath.Join(runDir, "state.json")
-		stateData, err := os.ReadFile(statePath)
+		detail, err := loadLocalRunDetail(runDir, showLocalLogs, showLocalEvents)
 		if err != nil {
-			// Try config.json for in-progress runs
-			configPath := filepath.Join(runDir, "config.json")
-			configData, configErr := os.ReadFile(configPath)
-			if configErr != nil {
-				return fmt.Errorf("could not load run state or config: %w", err)
-			}
-
-			var config LocalRunConfig
-			if err := json.Unmarshal(configData, &config); err != nil {
-				return fmt.Errorf("invalid config.json: %w", err)
-			}
-
-			if flagJSON {
-				output, _ := json.MarshalIndent(config, "", "  ")
-				fmt.Println(string(output))
-			} else {
-				fmt.Printf("Run: %s (in progress or crashed)\n", config.OrchestrationID)
-				fmt.Printf("Agent: %s\n", config.Agent)
-				fmt.Printf("Workspace: %s\n", config.Workspace)
-				fmt.Printf("Started: %s\n", config.CreatedAt)
-				fmt.Printf("Timeout: %s\n", config.Timeout)
-				fmt.Printf("Prompt: %s\n", config.Prompt)
-				fmt.Printf("\nRun directory: %s\n", runDir)
-			}
-			return nil
-		}
-
-		var state LocalState
-		if err := json.Unmarshal(stateData, &state); err != nil {
-			return fmt.Errorf("invalid state.json: %w", err)
+			return err
 		}
 
 		if flagJSON {
-			// Include logs if requested
-			output := map[string]any{
-				"state":  state,
-				"runDir": runDir,
-			}
-			if showLocalLogs {
-				if stdout, err := os.ReadFile(filepath.Join(runDir, "stdout.log")); err == nil {
-					output["stdout"] = string(stdout)
-				}
-				if stderr, err := os.ReadFile(filepath.Join(runDir, "stderr.log")); err == nil {
-					output["stderr"] = string(stderr)
-				}
-			}
-			jsonOutput, _ := json.MarshalIndent(output, "", "  ")
+			jsonOutput, _ := json.MarshalIndent(detail, "", "  ")
 			fmt.Println(string(jsonOutput))
 			return nil
 		}
 
-		// Text output
-		fmt.Printf("Run: %s\n", state.OrchestrationID)
-		fmt.Printf("Status: %s\n", state.Status)
-		fmt.Printf("Agent: %s\n", state.Agent)
-		fmt.Printf("Workspace: %s\n", state.Workspace)
-		fmt.Printf("Started: %s\n", state.StartedAt)
-		if state.CompletedAt != "" {
-			fmt.Printf("Completed: %s\n", state.CompletedAt)
+		fmt.Printf("Run: %s\n", detail.OrchestrationID)
+		fmt.Printf("Status: %s\n", detail.Status)
+		fmt.Printf("Agent: %s\n", detail.Agent)
+		fmt.Printf("Workspace: %s\n", detail.Workspace)
+		if detail.StartedAt != "" {
+			fmt.Printf("Started: %s\n", detail.StartedAt)
 		}
-		if state.DurationMs > 0 {
-			fmt.Printf("Duration: %s\n", formatDuration(state.DurationMs))
+		if detail.CompletedAt != "" {
+			fmt.Printf("Completed: %s\n", detail.CompletedAt)
 		}
-		fmt.Printf("\nPrompt:\n%s\n", state.Prompt)
+		if detail.DurationMs > 0 {
+			fmt.Printf("Duration: %s\n", formatDuration(detail.DurationMs))
+		}
+		if detail.Timeout != "" {
+			fmt.Printf("Timeout: %s\n", detail.Timeout)
+		}
+		fmt.Printf("\nPrompt:\n%s\n", detail.Prompt)
 
-		if state.Result != nil {
-			fmt.Printf("\nResult:\n%s\n", *state.Result)
+		if detail.Result != nil {
+			fmt.Printf("\nResult:\n%s\n", *detail.Result)
 		}
-		if state.Error != nil {
-			fmt.Printf("\nError:\n%s\n", *state.Error)
+		if detail.Error != nil {
+			fmt.Printf("\nError:\n%s\n", *detail.Error)
 		}
 
-		// Show events if requested
-		if showLocalEvents && len(state.Events) > 0 {
-			fmt.Printf("\nEvents (%d):\n", len(state.Events))
-			for _, e := range state.Events {
+		if showLocalEvents && len(detail.Events) > 0 {
+			fmt.Printf("\nEvents (%d):\n", len(detail.Events))
+			for _, e := range detail.Events {
 				fmt.Printf("  [%s] %s: %s\n", e.Timestamp, e.Type, e.Message)
 			}
 		}
 
-		// Show logs if requested
 		if showLocalLogs {
 			fmt.Println("\n--- stdout.log ---")
 			if stdout, err := os.ReadFile(filepath.Join(runDir, "stdout.log")); err == nil {
@@ -158,6 +133,102 @@ Examples:
 
 		return nil
 	},
+}
+
+func loadLocalRunDetail(runDir string, includeLogs bool, includeEvents bool) (*localRunDetail, error) {
+	statePath := filepath.Join(runDir, "state.json")
+	if stateData, err := os.ReadFile(statePath); err == nil {
+		var state LocalState
+		if err := json.Unmarshal(stateData, &state); err != nil {
+			return nil, fmt.Errorf("invalid state.json: %w", err)
+		}
+
+		detail := &localRunDetail{
+			OrchestrationID: state.OrchestrationID,
+			RunDir:          runDir,
+			Agent:           state.Agent,
+			Status:          state.Status,
+			Prompt:          state.Prompt,
+			Workspace:       state.Workspace,
+			StartedAt:       state.StartedAt,
+			CompletedAt:     state.CompletedAt,
+			DurationMs:      state.DurationMs,
+			Result:          state.Result,
+			Error:           state.Error,
+		}
+		if includeEvents {
+			if len(state.Events) > 0 {
+				detail.Events = state.Events
+			} else {
+				detail.Events = loadLocalRunEvents(runDir)
+			}
+		}
+		if includeLogs {
+			detail.Stdout = loadLocalRunLog(runDir, "stdout.log")
+			detail.Stderr = loadLocalRunLog(runDir, "stderr.log")
+		}
+		return detail, nil
+	}
+
+	configPath := filepath.Join(runDir, "config.json")
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("could not load run state or config: %w", err)
+	}
+
+	var config LocalRunConfig
+	if err := json.Unmarshal(configData, &config); err != nil {
+		return nil, fmt.Errorf("invalid config.json: %w", err)
+	}
+
+	detail := &localRunDetail{
+		OrchestrationID: config.OrchestrationID,
+		RunDir:          runDir,
+		Agent:           config.Agent,
+		Status:          "running",
+		Prompt:          config.Prompt,
+		Workspace:       config.Workspace,
+		Timeout:         config.Timeout,
+		StartedAt:       config.CreatedAt,
+	}
+	if includeEvents {
+		detail.Events = loadLocalRunEvents(runDir)
+	}
+	if includeLogs {
+		detail.Stdout = loadLocalRunLog(runDir, "stdout.log")
+		detail.Stderr = loadLocalRunLog(runDir, "stderr.log")
+	}
+	return detail, nil
+}
+
+func loadLocalRunEvents(runDir string) []LocalEvent {
+	data, err := os.ReadFile(filepath.Join(runDir, "events.jsonl"))
+	if err != nil {
+		return nil
+	}
+
+	var events []LocalEvent
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		var event LocalEvent
+		if err := json.Unmarshal([]byte(line), &event); err == nil {
+			events = append(events, event)
+		}
+	}
+
+	return events
+}
+
+func loadLocalRunLog(runDir, fileName string) string {
+	data, err := os.ReadFile(filepath.Join(runDir, fileName))
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 // resolveLocalRunDir resolves a run ID or path to the run directory

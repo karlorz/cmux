@@ -2,7 +2,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -17,14 +16,12 @@ func TestWritePidFile(t *testing.T) {
 		t.Fatalf("writePidFile failed: %v", err)
 	}
 
-	// Verify pid.txt was created
 	pidPath := filepath.Join(tmpDir, "pid.txt")
 	data, err := os.ReadFile(pidPath)
 	if err != nil {
 		t.Fatalf("failed to read pid.txt: %v", err)
 	}
 
-	// Verify content is a valid PID
 	pid, err := strconv.Atoi(string(data))
 	if err != nil {
 		t.Fatalf("invalid PID in pid.txt: %v", err)
@@ -38,19 +35,15 @@ func TestWritePidFile(t *testing.T) {
 func TestRemovePidFile(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Create pid file
 	pidPath := filepath.Join(tmpDir, "pid.txt")
 	os.WriteFile(pidPath, []byte("12345"), 0644)
 
-	// Verify it exists
 	if _, err := os.Stat(pidPath); os.IsNotExist(err) {
 		t.Fatal("pid.txt should exist before removal")
 	}
 
-	// Remove it
 	removePidFile(tmpDir)
 
-	// Verify it's gone
 	if _, err := os.Stat(pidPath); !os.IsNotExist(err) {
 		t.Error("pid.txt should be removed")
 	}
@@ -58,8 +51,6 @@ func TestRemovePidFile(t *testing.T) {
 
 func TestRemovePidFileNonexistent(t *testing.T) {
 	tmpDir := t.TempDir()
-
-	// Should not panic when file doesn't exist
 	removePidFile(tmpDir)
 }
 
@@ -79,38 +70,41 @@ func TestStopLocalFlagsExist(t *testing.T) {
 }
 
 func TestStopLocalCompletedRun(t *testing.T) {
-	// This tests the error path when trying to stop a completed run
 	tmpDir := t.TempDir()
 	runDir := filepath.Join(tmpDir, "local_completed")
 	os.MkdirAll(runDir, 0755)
 
-	// Create state.json showing completed
 	stateJSON := `{"orchestrationId":"local_completed","status":"completed"}`
 	os.WriteFile(filepath.Join(runDir, "state.json"), []byte(stateJSON), 0644)
 
-	// Override localRunDir for testing
 	origRunDir := localRunDir
 	localRunDir = tmpDir
 	defer func() { localRunDir = origRunDir }()
 
-	// The command should error because run is completed
-	// We can't easily test the full command, but we can verify the logic
-	statePath := filepath.Join(runDir, "state.json")
-	stateData, err := os.ReadFile(statePath)
-	if err != nil {
-		t.Fatalf("failed to read state: %v", err)
+	_, err := stopLocalRun("local_completed", false)
+	if err == nil {
+		t.Fatal("expected completed run to fail")
 	}
-
-	var state LocalState
-	if err := unmarshalJSON(stateData, &state); err != nil {
-		t.Fatalf("failed to parse state: %v", err)
-	}
-
-	if state.Status != "completed" {
-		t.Errorf("expected status completed, got %s", state.Status)
+	if err.Error() != "run local_completed is already completed" {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func unmarshalJSON(data []byte, v any) error {
-	return json.Unmarshal(data, v)
+func TestStopLocalStalePid(t *testing.T) {
+	tmpDir := t.TempDir()
+	runDir := filepath.Join(tmpDir, "local_stale")
+	os.MkdirAll(runDir, 0755)
+	os.WriteFile(filepath.Join(runDir, "pid.txt"), []byte("999999"), 0644)
+
+	origRunDir := localRunDir
+	localRunDir = tmpDir
+	defer func() { localRunDir = origRunDir }()
+
+	_, err := stopLocalRun("local_stale", false)
+	if err == nil {
+		t.Fatal("expected stale pid to fail")
+	}
+	if _, statErr := os.Stat(filepath.Join(runDir, "pid.txt")); !os.IsNotExist(statErr) {
+		t.Fatal("expected stale pid file to be removed")
+	}
 }

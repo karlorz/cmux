@@ -42,6 +42,94 @@ describe("orchestrateRunControlRouter GET /v1/cmux/orchestration/run-control/:ta
     expect(getConvex).not.toHaveBeenCalled();
   });
 
+  it("falls back from local orchestration ID to bridged task run summary", async () => {
+    getAccessTokenFromRequest.mockResolvedValue("token_123");
+    verifyTeamAccess.mockResolvedValue({
+      uuid: "team_uuid",
+      slug: "example-team",
+      displayName: "Example Team",
+      name: "Example Team",
+    });
+
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        taskRunId: "run_123",
+      })
+      .mockResolvedValueOnce({
+        taskRunId: "run_123",
+        taskId: "task_123",
+        orchestrationId: "local_www_123",
+        agentName: "claude/opus-4.6",
+        provider: "claude",
+        runStatus: "running",
+        lifecycle: {
+          status: "active",
+          interrupted: false,
+          interruptionStatus: "none",
+        },
+        approvals: {
+          pendingCount: 0,
+          pendingRequestIds: [],
+        },
+        actions: {
+          availableActions: ["continue_session"],
+          canResolveApproval: false,
+          canContinueSession: true,
+          canResumeCheckpoint: false,
+          canAppendInstruction: false,
+        },
+        continuation: {
+          mode: "session_continuation",
+          providerSessionId: "session_123",
+          hasActiveBinding: true,
+        },
+        timeout: {
+          inactivityTimeoutMinutes: 45,
+          status: "active",
+          lastActivityAt: 100,
+          lastActivitySource: "spawn",
+          nextTimeoutAt: 200,
+        },
+      });
+    getConvex.mockReturnValue({
+      query,
+    });
+
+    const app = new OpenAPIHono();
+    app.route("/", orchestrateRunControlRouter);
+
+    const response = await app.request(
+      "/v1/cmux/orchestration/run-control/local_www_123?teamSlugOrId=example-team",
+      {
+        method: "GET",
+        headers: {
+          authorization: "Bearer token_123",
+        },
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(query).toHaveBeenNthCalledWith(1, expect.anything(), {
+      teamSlugOrId: "example-team",
+      taskRunId: "local_www_123",
+    });
+    expect(query).toHaveBeenNthCalledWith(2, expect.anything(), {
+      teamSlugOrId: "example-team",
+      orchestrationId: "local_www_123",
+    });
+    expect(query).toHaveBeenNthCalledWith(3, expect.anything(), {
+      teamSlugOrId: "example-team",
+      taskRunId: "run_123",
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      taskRunId: "run_123",
+      orchestrationId: "local_www_123",
+      provider: "claude",
+    });
+  });
+
   it("returns the shared run-control summary for authorized requests", async () => {
     getAccessTokenFromRequest.mockResolvedValue("token_123");
     verifyTeamAccess.mockResolvedValue({
