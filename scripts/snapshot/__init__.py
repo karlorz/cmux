@@ -26,6 +26,11 @@ from .exec import (
     shell_command,
     wrap_command_with_cgroup,
 )
+from .helpers import (
+    format_package_task_label,
+    is_remote_package_source,
+    maybe_apply_ide_package_overrides,
+)
 
 __all__ = [
     # Engine
@@ -45,4 +50,8 @@ __all__ = [
     "HttpExecClient",
     "shell_command",
     "wrap_command_with_cgroup",
+    # Helpers
+    "format_package_task_label",
+    "is_remote_package_source",
+    "maybe_apply_ide_package_overrides",
 ]
