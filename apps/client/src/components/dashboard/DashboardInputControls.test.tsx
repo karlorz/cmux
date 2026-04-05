@@ -577,6 +577,7 @@ describe("DashboardInputControls", () => {
     await waitForAssertion(() => {
       expect(container.textContent).toContain("Shared runtime: tskrun_123");
       expect(container.textContent).toContain("Open shared run page");
+      expect(container.textContent).toContain("Open shared activity page");
       expect(container.textContent).toContain("Open shared logs page");
     });
 

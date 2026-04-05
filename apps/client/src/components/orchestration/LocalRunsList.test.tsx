@@ -277,6 +277,7 @@ describe("LocalRunsList", () => {
     expect(container.textContent).toContain("LineageChainCard:tskrun_bridge_123");
     expect(container.textContent).toContain("RunApprovalLane:tskrun_bridge_123");
     expect(container.textContent).toContain("Open shared run page");
+    expect(container.textContent).toContain("Open shared activity page");
     expect(container.textContent).toContain("Open shared logs page");
   });
 

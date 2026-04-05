@@ -2403,6 +2403,17 @@ export const DashboardInputControls = memo(function DashboardInputControls({
                               Open shared run page
                             </Link>
                             <Link
+                              to="/$teamSlugOrId/task/$taskId/run/$runId/activity"
+                              params={{
+                                teamSlugOrId,
+                                taskId: entry.taskId as never,
+                                runId: entry.taskRunId as never,
+                              }}
+                              className="inline-flex items-center gap-1 text-blue-700 transition-colors hover:text-blue-800 hover:underline dark:text-blue-300 dark:hover:text-blue-200"
+                            >
+                              Open shared activity page
+                            </Link>
+                            <Link
                               to="/$teamSlugOrId/task/$taskId/run/$runId/logs"
                               params={{
                                 teamSlugOrId,

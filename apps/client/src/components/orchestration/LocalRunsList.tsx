@@ -517,6 +517,17 @@ function LocalRunRow({
                             Open shared run page
                           </Link>
                           <Link
+                            to="/$teamSlugOrId/task/$taskId/run/$runId/activity"
+                            params={{
+                              teamSlugOrId,
+                              taskId: detail.bridgedTaskId as never,
+                              runId: detail.bridgedTaskRunId as never,
+                            }}
+                            className="inline-flex items-center gap-1 rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-blue-600 transition-colors hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-blue-400 dark:hover:bg-neutral-800"
+                          >
+                            Open shared activity page
+                          </Link>
+                          <Link
                             to="/$teamSlugOrId/task/$taskId/run/$runId/logs"
                             params={{
                               teamSlugOrId,
