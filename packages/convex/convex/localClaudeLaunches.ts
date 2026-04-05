@@ -48,6 +48,13 @@ export const list = authQuery({
       runDir: launch.runDir,
       sessionInfoPath: launch.sessionInfoPath,
       sessionId: launch.sessionId,
+      injectionMode: launch.injectionMode,
+      lastInjectionAt: launch.lastInjectionAt,
+      injectionCount: launch.injectionCount,
+      checkpointRef: launch.checkpointRef,
+      checkpointGeneration: launch.checkpointGeneration,
+      checkpointLabel: launch.checkpointLabel,
+      checkpointCreatedAt: launch.checkpointCreatedAt,
       error: launch.error,
       exitCode: launch.exitCode,
       launchedAt: new Date(launch.launchedAt).toISOString(),
@@ -83,6 +90,9 @@ export const getByOrchestrationId = authQuery({
       taskRunId: launch.taskRunId ? String(launch.taskRunId) : undefined,
       agentName: launch.agentName,
       sessionId: launch.sessionId,
+      injectionMode: launch.injectionMode,
+      lastInjectionAt: launch.lastInjectionAt,
+      injectionCount: launch.injectionCount,
       status: launch.status,
       workspacePath: launch.workspacePath,
       runDir: launch.runDir,
@@ -111,6 +121,13 @@ export const record = authMutation({
     runDir: v.optional(v.string()),
     sessionInfoPath: v.optional(v.string()),
     sessionId: v.optional(v.string()),
+    injectionMode: v.optional(v.string()),
+    lastInjectionAt: v.optional(v.string()),
+    injectionCount: v.optional(v.number()),
+    checkpointRef: v.optional(v.string()),
+    checkpointGeneration: v.optional(v.number()),
+    checkpointLabel: v.optional(v.string()),
+    checkpointCreatedAt: v.optional(v.number()),
     error: v.optional(v.string()),
     exitCode: v.optional(v.number()),
   },
@@ -135,6 +152,13 @@ export const record = authMutation({
       runDir: args.runDir,
       sessionInfoPath: args.sessionInfoPath,
       sessionId: args.sessionId,
+      injectionMode: args.injectionMode,
+      lastInjectionAt: args.lastInjectionAt,
+      injectionCount: args.injectionCount,
+      checkpointRef: args.checkpointRef,
+      checkpointGeneration: args.checkpointGeneration,
+      checkpointLabel: args.checkpointLabel,
+      checkpointCreatedAt: args.checkpointCreatedAt,
       error: args.error,
       exitCode: args.exitCode,
       launchedAt: now,
@@ -142,6 +166,50 @@ export const record = authMutation({
     });
   },
 });
+
+function buildLocalLaunchMetadataPatch(input: {
+  orchestrationId?: string;
+  taskId?: unknown;
+  taskRunId?: unknown;
+  agentName?: string;
+  runDir?: string;
+  sessionInfoPath?: string;
+  sessionId?: string;
+  injectionMode?: string;
+  lastInjectionAt?: string;
+  injectionCount?: number;
+  checkpointRef?: string;
+  checkpointGeneration?: number;
+  checkpointLabel?: string;
+  checkpointCreatedAt?: number;
+}) {
+  return {
+    ...(input.orchestrationId ? { orchestrationId: input.orchestrationId } : {}),
+    ...(input.taskId ? { taskId: input.taskId } : {}),
+    ...(input.taskRunId ? { taskRunId: input.taskRunId } : {}),
+    ...(input.agentName ? { agentName: input.agentName } : {}),
+    ...(input.runDir ? { runDir: input.runDir } : {}),
+    ...(input.sessionInfoPath ? { sessionInfoPath: input.sessionInfoPath } : {}),
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    ...(input.injectionMode ? { injectionMode: input.injectionMode } : {}),
+    ...(input.lastInjectionAt ? { lastInjectionAt: input.lastInjectionAt } : {}),
+    ...(typeof input.injectionCount === "number"
+      ? { injectionCount: input.injectionCount }
+      : {}),
+    ...(input.checkpointRef ? { checkpointRef: input.checkpointRef } : {}),
+    ...(typeof input.checkpointGeneration === "number"
+      ? { checkpointGeneration: input.checkpointGeneration }
+      : {}),
+    ...(input.checkpointLabel ? { checkpointLabel: input.checkpointLabel } : {}),
+    ...(typeof input.checkpointCreatedAt === "number"
+      ? { checkpointCreatedAt: input.checkpointCreatedAt }
+      : {}),
+  };
+}
+
+function hasPatchEntries(patch: Record<string, unknown>) {
+  return Object.keys(patch).length > 0;
+}
 
 export const updateMetadata = authMutation({
   args: {
@@ -154,6 +222,13 @@ export const updateMetadata = authMutation({
     runDir: v.optional(v.string()),
     sessionInfoPath: v.optional(v.string()),
     sessionId: v.optional(v.string()),
+    injectionMode: v.optional(v.string()),
+    lastInjectionAt: v.optional(v.string()),
+    injectionCount: v.optional(v.number()),
+    checkpointRef: v.optional(v.string()),
+    checkpointGeneration: v.optional(v.number()),
+    checkpointLabel: v.optional(v.string()),
+    checkpointCreatedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
@@ -166,15 +241,72 @@ export const updateMetadata = authMutation({
       throw new Error("Launch record not found");
     }
 
-    await ctx.db.patch(existing._id, {
-      ...(args.orchestrationId ? { orchestrationId: args.orchestrationId } : {}),
-      ...(args.taskId ? { taskId: args.taskId } : {}),
-      ...(args.taskRunId ? { taskRunId: args.taskRunId } : {}),
-      ...(args.agentName ? { agentName: args.agentName } : {}),
-      ...(args.runDir ? { runDir: args.runDir } : {}),
-      ...(args.sessionInfoPath ? { sessionInfoPath: args.sessionInfoPath } : {}),
-      ...(args.sessionId ? { sessionId: args.sessionId } : {}),
+    const patch = buildLocalLaunchMetadataPatch({
+      orchestrationId: args.orchestrationId,
+      taskId: args.taskId,
+      taskRunId: args.taskRunId,
+      agentName: args.agentName,
+      runDir: args.runDir,
+      sessionInfoPath: args.sessionInfoPath,
+      sessionId: args.sessionId,
+      injectionMode: args.injectionMode,
+      lastInjectionAt: args.lastInjectionAt,
+      injectionCount: args.injectionCount,
+      checkpointRef: args.checkpointRef,
+      checkpointGeneration: args.checkpointGeneration,
+      checkpointLabel: args.checkpointLabel,
+      checkpointCreatedAt: args.checkpointCreatedAt,
     });
+
+    if (hasPatchEntries(patch)) {
+      await ctx.db.patch(existing._id, patch);
+    }
+
+    return existing._id;
+  },
+});
+
+export const updateMetadataByOrchestrationId = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    orchestrationId: v.string(),
+    sessionId: v.optional(v.string()),
+    injectionMode: v.optional(v.string()),
+    lastInjectionAt: v.optional(v.string()),
+    injectionCount: v.optional(v.number()),
+    checkpointRef: v.optional(v.string()),
+    checkpointGeneration: v.optional(v.number()),
+    checkpointLabel: v.optional(v.string()),
+    checkpointCreatedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const existing = await ctx.db
+      .query("localClaudeLaunches")
+      .withIndex("by_team_orchestration", (q) =>
+        q.eq("teamId", teamId).eq("orchestrationId", args.orchestrationId),
+      )
+      .order("desc")
+      .first();
+
+    if (!existing) {
+      return null;
+    }
+
+    const patch = buildLocalLaunchMetadataPatch({
+      sessionId: args.sessionId,
+      injectionMode: args.injectionMode,
+      lastInjectionAt: args.lastInjectionAt,
+      injectionCount: args.injectionCount,
+      checkpointRef: args.checkpointRef,
+      checkpointGeneration: args.checkpointGeneration,
+      checkpointLabel: args.checkpointLabel,
+      checkpointCreatedAt: args.checkpointCreatedAt,
+    });
+
+    if (hasPatchEntries(patch)) {
+      await ctx.db.patch(existing._id, patch);
+    }
 
     return existing._id;
   },

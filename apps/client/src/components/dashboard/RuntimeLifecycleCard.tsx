@@ -1,4 +1,4 @@
-import type { RunControlSummary } from "@cmux/shared";
+import { RUN_CONTROL_ACTION_LABELS, type RunControlSummary } from "@cmux/shared";
 import { getApiV1CmuxOrchestrationRunControlByTaskRunIdOptions } from "@cmux/www-openapi-client/react-query";
 import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
@@ -363,7 +363,7 @@ function getOperatorGuidance(summary: RunControlSummary): Guidance {
   if (summary.actions.canResolveApproval) {
     const pendingCount = summary.approvals.pendingCount;
     return {
-      label: "Resolve approval",
+      label: RUN_CONTROL_ACTION_LABELS.resolve_approval,
       description:
         pendingCount === 1
           ? "Resolve the pending approval before continuing the run."
@@ -374,7 +374,7 @@ function getOperatorGuidance(summary: RunControlSummary): Guidance {
   if (summary.lifecycle.status === "interrupted") {
     if (summary.actions.canResumeCheckpoint) {
       return {
-        label: "Resume checkpoint",
+        label: RUN_CONTROL_ACTION_LABELS.resume_checkpoint,
         description:
           "Resume from the stored checkpoint for this run. This path restores state instead of reconnecting an existing provider session.",
       };
@@ -382,7 +382,7 @@ function getOperatorGuidance(summary: RunControlSummary): Guidance {
 
     if (summary.actions.canContinueSession) {
       return {
-        label: "Continue session",
+        label: RUN_CONTROL_ACTION_LABELS.continue_session,
         description:
           "Continue the existing provider session for this run. This is provider-session continuation, not checkpoint recovery.",
       };
@@ -390,7 +390,7 @@ function getOperatorGuidance(summary: RunControlSummary): Guidance {
 
     if (summary.actions.canAppendInstruction) {
       return {
-        label: "Append instruction",
+        label: RUN_CONTROL_ACTION_LABELS.append_instruction,
         description:
           "No resumable session or checkpoint is advertised. Continue by appending a new operator instruction to the run.",
       };
@@ -479,19 +479,19 @@ function getContinuationPresentation(mode: ContinuationMode): StatusPresentation
       className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
       icon: Play,
       iconClassName: "text-blue-600 dark:text-blue-400",
-      label: "Continue session",
+      label: RUN_CONTROL_ACTION_LABELS.continue_session,
     },
     checkpoint_restore: {
       className: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
       icon: RotateCcw,
       iconClassName: "text-amber-600 dark:text-amber-400",
-      label: "Resume checkpoint",
+      label: RUN_CONTROL_ACTION_LABELS.resume_checkpoint,
     },
     append_instruction: {
       className: DEFAULT_BADGE_TONE.className,
       icon: RefreshCw,
       iconClassName: DEFAULT_BADGE_TONE.iconClassName,
-      label: "Append instruction",
+      label: RUN_CONTROL_ACTION_LABELS.append_instruction,
     },
     none: {
       className: DEFAULT_BADGE_TONE.className,
@@ -546,14 +546,7 @@ function getInterruptionLabel(status: InterruptionStatus): string {
 }
 
 function getActionLabel(action: RunControlAction): string {
-  const labels: Record<RunControlAction, string> = {
-    resolve_approval: "Resolve approval",
-    continue_session: "Continue session",
-    resume_checkpoint: "Resume checkpoint",
-    append_instruction: "Append instruction",
-  };
-
-  return labels[action];
+  return RUN_CONTROL_ACTION_LABELS[action];
 }
 
 function getApprovalTone(hasPendingApprovals: boolean): ToneConfig {
