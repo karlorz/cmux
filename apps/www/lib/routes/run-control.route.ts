@@ -21,6 +21,22 @@ const RunControlPathParamsSchema = z.object({
 
 export const runControlRouter = new OpenAPIHono();
 
+async function resolveTaskRunId(access: NonNullable<Awaited<ReturnType<typeof requireRunControlAccess>>>, input: {
+  runId: string;
+  teamSlugOrId: string;
+}) {
+  if (!input.runId.startsWith("local_")) {
+    return input.runId;
+  }
+
+  const localLaunch = await access.convex.query(api.localClaudeLaunches.getByOrchestrationId, {
+    teamSlugOrId: input.teamSlugOrId,
+    orchestrationId: input.runId,
+  });
+
+  return localLaunch?.taskRunId ?? null;
+}
+
 async function requireRunControlAccess(
   request: Request,
   teamSlugOrId: string,
@@ -84,9 +100,17 @@ runControlRouter.openapi(
         return c.text("Unauthorized", 401);
       }
 
+      const resolvedRunId = await resolveTaskRunId(access, {
+        runId,
+        teamSlugOrId,
+      });
+      if (!resolvedRunId) {
+        return c.text("Run control summary not found", 404);
+      }
+
       const summary = await access.convex.query(api.taskRuns.getRunControlSummary, {
         teamSlugOrId,
-        taskRunId: runId as Id<"taskRuns">,
+        taskRunId: resolvedRunId as Id<"taskRuns">,
       });
 
       if (!summary) {
@@ -151,9 +175,17 @@ runControlRouter.openapi(
         return c.text("Unauthorized", 401);
       }
 
+      const resolvedRunId = await resolveTaskRunId(access, {
+        runId,
+        teamSlugOrId: body.teamSlugOrId,
+      });
+      if (!resolvedRunId) {
+        return c.text("Task run not found", 404);
+      }
+
       const response = await access.convex.mutation(api.taskRuns.approveRunControl, {
         teamSlugOrId: body.teamSlugOrId,
-        taskRunId: runId as Id<"taskRuns">,
+        taskRunId: resolvedRunId as Id<"taskRuns">,
         requestId: body.requestId,
         resolution: body.resolution,
         note: body.note,
@@ -213,9 +245,17 @@ runControlRouter.openapi(
         return c.text("Unauthorized", 401);
       }
 
+      const resolvedRunId = await resolveTaskRunId(access, {
+        runId,
+        teamSlugOrId: body.teamSlugOrId,
+      });
+      if (!resolvedRunId) {
+        return c.text("Task run not found", 404);
+      }
+
       const response = await access.convex.mutation(api.taskRuns.continueRunControl, {
         teamSlugOrId: body.teamSlugOrId,
-        taskRunId: runId as Id<"taskRuns">,
+        taskRunId: resolvedRunId as Id<"taskRuns">,
         instruction: body.instruction,
         priority: body.priority,
       });
@@ -274,9 +314,17 @@ runControlRouter.openapi(
         return c.text("Unauthorized", 401);
       }
 
+      const resolvedRunId = await resolveTaskRunId(access, {
+        runId,
+        teamSlugOrId: body.teamSlugOrId,
+      });
+      if (!resolvedRunId) {
+        return c.text("Task run not found", 404);
+      }
+
       const response = await access.convex.mutation(api.taskRuns.resumeRunControl, {
         teamSlugOrId: body.teamSlugOrId,
-        taskRunId: runId as Id<"taskRuns">,
+        taskRunId: resolvedRunId as Id<"taskRuns">,
         instruction: body.instruction,
         priority: body.priority,
       });
@@ -335,11 +383,19 @@ runControlRouter.openapi(
         return c.text("Unauthorized", 401);
       }
 
+      const resolvedRunId = await resolveTaskRunId(access, {
+        runId,
+        teamSlugOrId: body.teamSlugOrId,
+      });
+      if (!resolvedRunId) {
+        return c.text("Task run not found", 404);
+      }
+
       const response = await access.convex.mutation(
         api.taskRuns.appendInstructionRunControl,
         {
           teamSlugOrId: body.teamSlugOrId,
-          taskRunId: runId as Id<"taskRuns">,
+          taskRunId: resolvedRunId as Id<"taskRuns">,
           instruction: body.instruction,
           priority: body.priority,
         },

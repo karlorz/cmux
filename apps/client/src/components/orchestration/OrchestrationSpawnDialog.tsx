@@ -116,8 +116,10 @@ export function OrchestrationSpawnDialog({
       if (selectedVenue === "local") {
         const response = await fetch(`${WWW_ORIGIN}/api/orchestrate/spawn-local`, {
           method: "POST",
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            teamSlugOrId,
             agent: selectedModel || "claude/haiku-4.5",
             prompt,
           }),

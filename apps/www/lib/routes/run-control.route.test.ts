@@ -125,6 +125,59 @@ describe("runControlRouter", () => {
     });
   });
 
+  it("resolves local orchestration IDs before continuing a bridged run", async () => {
+    getAccessTokenFromRequest.mockResolvedValue("token_123");
+    verifyTeamAccess.mockResolvedValue({
+      uuid: "team_uuid",
+      slug: "example-team",
+      displayName: "Example Team",
+      name: "Example Team",
+    });
+
+    const query = vi.fn(async (_ref, args) => {
+      if (args?.orchestrationId === "local_www_123") {
+        return { taskRunId: "run_123" };
+      }
+      throw new Error(`Unexpected query args: ${JSON.stringify(args)}`);
+    });
+    const mutation = vi.fn(async () => ({
+      success: true,
+      action: "continue",
+      queuedInputId: "input_123",
+      queueDepth: 1,
+      summary: baseSummary,
+    }));
+    getConvex.mockReturnValue({ query, mutation });
+
+    const app = new OpenAPIHono();
+    app.route("/", runControlRouter);
+
+    const response = await app.request("/run-control/continue/local_www_123", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer token_123",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        teamSlugOrId: "example-team",
+        instruction: "Continue with the bridged local run.",
+        priority: "high",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(query).toHaveBeenCalledWith(expect.anything(), {
+      teamSlugOrId: "example-team",
+      orchestrationId: "local_www_123",
+    });
+    expect(mutation).toHaveBeenCalledWith(expect.anything(), {
+      teamSlugOrId: "example-team",
+      taskRunId: "run_123",
+      instruction: "Continue with the bridged local run.",
+      priority: "high",
+    });
+  });
+
   it("passes continue commands through to Convex", async () => {
     getAccessTokenFromRequest.mockResolvedValue("token_123");
     verifyTeamAccess.mockResolvedValue({

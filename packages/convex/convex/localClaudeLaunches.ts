@@ -1,5 +1,7 @@
+import { RUN_CONTROL_DEFAULT_TIMEOUT_MINUTES } from "@cmux/shared/convex-safe";
 import { v } from "convex/values";
 import { resolveTeamIdLoose } from "../_shared/team";
+import { internal } from "./_generated/api";
 import { authMutation, authQuery } from "./users/utils";
 
 const terminalValidator = v.union(
@@ -8,6 +10,14 @@ const terminalValidator = v.union(
   v.literal("ghostty"),
   v.literal("alacritty"),
 );
+
+function createInitialRunControlState(now: number) {
+  return {
+    inactivityTimeoutMinutes: RUN_CONTROL_DEFAULT_TIMEOUT_MINUTES,
+    lastActivityAt: now,
+    lastActivitySource: "spawn" as const,
+  };
+}
 
 export const list = authQuery({
   args: {
@@ -32,6 +42,9 @@ export const list = authQuery({
       status: launch.status,
       scriptPath: launch.scriptPath,
       orchestrationId: launch.orchestrationId,
+      taskId: launch.taskId ? String(launch.taskId) : undefined,
+      taskRunId: launch.taskRunId ? String(launch.taskRunId) : undefined,
+      agentName: launch.agentName,
       runDir: launch.runDir,
       sessionInfoPath: launch.sessionInfoPath,
       sessionId: launch.sessionId,
@@ -40,6 +53,40 @@ export const list = authQuery({
       launchedAt: new Date(launch.launchedAt).toISOString(),
       exitedAt: launch.exitedAt ? new Date(launch.exitedAt).toISOString() : undefined,
     }));
+  },
+});
+
+export const getByOrchestrationId = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    orchestrationId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const launch = await ctx.db
+      .query("localClaudeLaunches")
+      .withIndex("by_team_orchestration", (q) =>
+        q.eq("teamId", teamId).eq("orchestrationId", args.orchestrationId),
+      )
+      .order("desc")
+      .first();
+
+    if (!launch) {
+      return null;
+    }
+
+    return {
+      id: launch._id,
+      launchId: launch.launchId,
+      orchestrationId: launch.orchestrationId,
+      taskId: launch.taskId ? String(launch.taskId) : undefined,
+      taskRunId: launch.taskRunId ? String(launch.taskRunId) : undefined,
+      agentName: launch.agentName,
+      sessionId: launch.sessionId,
+      status: launch.status,
+      workspacePath: launch.workspacePath,
+      runDir: launch.runDir,
+    };
   },
 });
 
@@ -58,6 +105,9 @@ export const record = authMutation({
     ),
     scriptPath: v.optional(v.string()),
     orchestrationId: v.optional(v.string()),
+    taskId: v.optional(v.id("tasks")),
+    taskRunId: v.optional(v.id("taskRuns")),
+    agentName: v.optional(v.string()),
     runDir: v.optional(v.string()),
     sessionInfoPath: v.optional(v.string()),
     sessionId: v.optional(v.string()),
@@ -79,6 +129,9 @@ export const record = authMutation({
       status: args.status,
       scriptPath: args.scriptPath,
       orchestrationId: args.orchestrationId,
+      taskId: args.taskId,
+      taskRunId: args.taskRunId,
+      agentName: args.agentName,
       runDir: args.runDir,
       sessionInfoPath: args.sessionInfoPath,
       sessionId: args.sessionId,
@@ -95,6 +148,9 @@ export const updateMetadata = authMutation({
     teamSlugOrId: v.string(),
     launchId: v.string(),
     orchestrationId: v.optional(v.string()),
+    taskId: v.optional(v.id("tasks")),
+    taskRunId: v.optional(v.id("taskRuns")),
+    agentName: v.optional(v.string()),
     runDir: v.optional(v.string()),
     sessionInfoPath: v.optional(v.string()),
     sessionId: v.optional(v.string()),
@@ -112,12 +168,149 @@ export const updateMetadata = authMutation({
 
     await ctx.db.patch(existing._id, {
       ...(args.orchestrationId ? { orchestrationId: args.orchestrationId } : {}),
+      ...(args.taskId ? { taskId: args.taskId } : {}),
+      ...(args.taskRunId ? { taskRunId: args.taskRunId } : {}),
+      ...(args.agentName ? { agentName: args.agentName } : {}),
       ...(args.runDir ? { runDir: args.runDir } : {}),
       ...(args.sessionInfoPath ? { sessionInfoPath: args.sessionInfoPath } : {}),
       ...(args.sessionId ? { sessionId: args.sessionId } : {}),
     });
 
     return existing._id;
+  },
+});
+
+export const ensureTaskRunBridge = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    launchId: v.string(),
+    prompt: v.string(),
+    workspacePath: v.string(),
+    agentName: v.string(),
+    orchestrationId: v.string(),
+    sessionId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const userId = ctx.identity.subject;
+    const now = Date.now();
+
+    const launch = await ctx.db
+      .query("localClaudeLaunches")
+      .withIndex("by_team_launch", (q) => q.eq("teamId", teamId).eq("launchId", args.launchId))
+      .first();
+
+    if (!launch) {
+      throw new Error("Launch record not found");
+    }
+
+    if (launch.taskId && launch.taskRunId) {
+      return {
+        taskId: launch.taskId,
+        taskRunId: launch.taskRunId,
+      };
+    }
+
+    const taskId = await ctx.db.insert("tasks", {
+      text: args.prompt,
+      description: args.prompt,
+      projectFullName: undefined,
+      worktreePath: args.workspacePath,
+      isCompleted: false,
+      isArchived: false,
+      isPreview: false,
+      isLocalWorkspace: true,
+      createdAt: now,
+      updatedAt: now,
+      lastActivityAt: now,
+      userId,
+      teamId,
+    });
+
+    const taskRunId = await ctx.db.insert("taskRuns", {
+      taskId,
+      prompt: args.prompt,
+      agentName: args.agentName,
+      status: "running",
+      isLocalWorkspace: true,
+      createdAt: now,
+      updatedAt: now,
+      userId,
+      teamId,
+      orchestrationId: args.orchestrationId,
+      runControlState: createInitialRunControlState(now),
+    });
+
+    await ctx.scheduler.runAfter(0, internal.runtimeLineage.recordLineage, {
+      teamId,
+      taskRunId,
+      continuationMode: "initial",
+      agentName: args.agentName,
+      orchestrationId: args.orchestrationId,
+      actor: "user",
+    });
+
+    await ctx.db.patch(launch._id, {
+      taskId,
+      taskRunId,
+      agentName: args.agentName,
+      orchestrationId: args.orchestrationId,
+    });
+
+    if (args.sessionId) {
+      await ctx.runMutation(internal.providerSessions.bindSessionInternal, {
+        teamId,
+        orchestrationId: args.orchestrationId,
+        taskId: String(taskId),
+        taskRunId,
+        agentName: args.agentName,
+        provider: "claude",
+        mode: "worker",
+        providerSessionId: args.sessionId,
+      });
+    }
+
+    return { taskId, taskRunId };
+  },
+});
+
+export const bindSessionToBridge = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    launchId: v.string(),
+    sessionId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const launch = await ctx.db
+      .query("localClaudeLaunches")
+      .withIndex("by_team_launch", (q) => q.eq("teamId", teamId).eq("launchId", args.launchId))
+      .first();
+
+    if (!launch) {
+      throw new Error("Launch record not found");
+    }
+
+    await ctx.db.patch(launch._id, {
+      sessionId: args.sessionId,
+    });
+
+    if (!launch.taskId || !launch.taskRunId || !launch.orchestrationId || !launch.agentName) {
+      return { success: false };
+    }
+
+    await ctx.runMutation(internal.providerSessions.bindSessionInternal, {
+      teamId,
+      orchestrationId: launch.orchestrationId,
+      taskId: String(launch.taskId),
+      taskRunId: launch.taskRunId,
+      agentName: launch.agentName,
+      provider: "claude",
+      mode: "worker",
+      providerSessionId: args.sessionId,
+    });
+
+    return { success: true };
   },
 });
 
@@ -140,12 +333,41 @@ export const updateOutcome = authMutation({
       throw new Error("Launch record not found");
     }
 
+    const now = Date.now();
+
     await ctx.db.patch(existing._id, {
       status: args.status,
       exitCode: args.exitCode,
       error: args.error,
-      exitedAt: Date.now(),
+      exitedAt: now,
     });
+
+    if (existing.taskRunId) {
+      await ctx.db.patch(existing.taskRunId, {
+        status: args.status === "completed" ? "completed" : "failed",
+        exitCode: args.exitCode,
+        errorMessage: args.error,
+        completedAt: now,
+        updatedAt: now,
+        runControlState: {
+          ...createInitialRunControlState(now),
+          lastActivityAt: now,
+          lastActivitySource: "manual",
+        },
+      });
+
+      if (existing.taskId) {
+        await ctx.db.patch(existing.taskId, {
+          isCompleted: args.status === "completed",
+          updatedAt: now,
+          lastActivityAt: now,
+        });
+      }
+
+      await ctx.runMutation(internal.providerSessions.terminateSessionInternal, {
+        taskId: String(existing.taskId ?? ""),
+      });
+    }
 
     return existing._id;
   },

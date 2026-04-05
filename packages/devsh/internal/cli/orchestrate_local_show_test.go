@@ -63,7 +63,6 @@ func TestShowLocalWithState(t *testing.T) {
 	runDir := filepath.Join(tmpDir, "local_test123")
 	os.MkdirAll(runDir, 0755)
 
-	// Create state.json
 	state := LocalState{
 		OrchestrationID: "local_test123",
 		StartedAt:       "2026-03-18T10:00:00Z",
@@ -73,21 +72,37 @@ func TestShowLocalWithState(t *testing.T) {
 		Agent:           "claude/haiku-4.5",
 		Prompt:          "Test prompt",
 		Workspace:       "/test/workspace",
+		Events: []LocalEvent{{
+			Timestamp: "2026-03-18T10:00:01Z",
+			Type:      "task_started",
+			Message:   "started",
+		}},
 	}
 	stateData, _ := json.MarshalIndent(state, "", "  ")
 	os.WriteFile(filepath.Join(runDir, "state.json"), stateData, 0644)
-
-	// Create logs
 	os.WriteFile(filepath.Join(runDir, "stdout.log"), []byte("stdout content"), 0644)
 	os.WriteFile(filepath.Join(runDir, "stderr.log"), []byte("stderr content"), 0644)
 
-	// Test resolving with absolute path
 	resolved, err := resolveLocalRunDir(runDir)
 	if err != nil {
 		t.Errorf("absolute path resolution failed: %v", err)
 	}
 	if resolved != runDir {
 		t.Errorf("expected %s, got %s", runDir, resolved)
+	}
+
+	detail, err := loadLocalRunDetail(runDir, true, true)
+	if err != nil {
+		t.Fatalf("loadLocalRunDetail failed: %v", err)
+	}
+	if detail.Status != "completed" {
+		t.Fatalf("expected completed status, got %s", detail.Status)
+	}
+	if detail.Stdout != "stdout content" {
+		t.Fatalf("expected stdout content, got %q", detail.Stdout)
+	}
+	if len(detail.Events) != 1 || detail.Events[0].Type != "task_started" {
+		t.Fatalf("expected event timeline from state, got %+v", detail.Events)
 	}
 }
 
@@ -96,7 +111,6 @@ func TestShowLocalWithConfigOnly(t *testing.T) {
 	runDir := filepath.Join(tmpDir, "local_inprogress")
 	os.MkdirAll(runDir, 0755)
 
-	// Create only config.json (simulates in-progress run)
 	config := LocalRunConfig{
 		OrchestrationID: "local_inprogress",
 		Agent:           "claude/haiku-4.5",
@@ -107,13 +121,32 @@ func TestShowLocalWithConfigOnly(t *testing.T) {
 	}
 	configData, _ := json.MarshalIndent(config, "", "  ")
 	os.WriteFile(filepath.Join(runDir, "config.json"), configData, 0644)
+	os.WriteFile(filepath.Join(runDir, "stdout.log"), []byte("still running"), 0644)
+	eventsPath := filepath.Join(runDir, "events.jsonl")
+	os.WriteFile(eventsPath, []byte("{\"timestamp\":\"2026-03-18T10:00:01Z\",\"type\":\"task_started\",\"message\":\"started\"}\n"), 0644)
 
-	// Test resolving with absolute path
 	resolved, err := resolveLocalRunDir(runDir)
 	if err != nil {
 		t.Errorf("absolute path resolution failed: %v", err)
 	}
 	if resolved != runDir {
 		t.Errorf("expected %s, got %s", runDir, resolved)
+	}
+
+	detail, err := loadLocalRunDetail(runDir, true, true)
+	if err != nil {
+		t.Fatalf("loadLocalRunDetail failed: %v", err)
+	}
+	if detail.Status != "running" {
+		t.Fatalf("expected running status, got %s", detail.Status)
+	}
+	if detail.Timeout != "30m" {
+		t.Fatalf("expected timeout 30m, got %s", detail.Timeout)
+	}
+	if detail.Stdout != "still running" {
+		t.Fatalf("expected stdout log, got %q", detail.Stdout)
+	}
+	if len(detail.Events) != 1 || detail.Events[0].Message != "started" {
+		t.Fatalf("expected event timeline from events.jsonl, got %+v", detail.Events)
 	}
 }

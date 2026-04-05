@@ -24,7 +24,6 @@ import {
   ExternalLink,
   GitCompare,
   Image,
-  Shield,
   Terminal,
   TestTube2,
 } from "lucide-react";
@@ -36,7 +35,7 @@ import { LiveDiffStats } from "@/components/LiveDiffStats";
 import { LiveDiffPanel } from "@/components/LiveDiffPanel";
 import { RuntimeLifecycleCard } from "@/components/dashboard/RuntimeLifecycleCard";
 import { StatusStrip } from "@/components/dashboard/StatusStrip";
-import { ApprovalRequestCard } from "@/components/orchestration/ApprovalRequestCard";
+import { RunApprovalLane } from "@/components/dashboard/RunApprovalLane";
 import { RunInspectorPanel } from "@/components/dashboard/RunInspectorPanel";
 import { TestResultsPanel } from "@/components/TestResultsPanel";
 import type { TaskRunWithChildren } from "@/types/task";
@@ -93,9 +92,10 @@ export function RunDashboard({
         fallback={<CompactErrorFallback name="Status Strip" />}
       >
         <StatusStrip
-          taskRunId={taskRunId}
+          runId={taskRunId}
           teamSlugOrId={teamSlugOrId}
           branch={headBranch}
+          contextTaskRunId={taskRunId}
         />
       </ErrorBoundary>
 
@@ -108,7 +108,7 @@ export function RunDashboard({
               name="Run Control"
               fallback={<CompactErrorFallback name="Run Control" />}
             >
-              <RuntimeLifecycleCard taskRunId={taskRunId} teamSlugOrId={teamSlugOrId} />
+              <RuntimeLifecycleCard runId={taskRunId} teamSlugOrId={teamSlugOrId} />
             </ErrorBoundary>
 
             {/* Deep-dive workspace access - positioned as escalation, not default */}
@@ -150,7 +150,7 @@ export function RunDashboard({
               name="Activity Stream"
               fallback={<CompactErrorFallback name="Activity Stream" />}
             >
-              <ActivityStream taskRunId={taskRunId} provider={provider} />
+              <ActivityStream runId={taskRunId} provider={provider} />
             </ErrorBoundary>
           </div>
         </div>
@@ -164,7 +164,7 @@ export function RunDashboard({
               name="Approval Lane"
               fallback={<CompactErrorFallback name="Approval Lane" />}
             >
-              <ApprovalLane taskRunId={taskRunId} teamSlugOrId={teamSlugOrId} />
+              <RunApprovalLane taskRunId={taskRunId} teamSlugOrId={teamSlugOrId} />
             </ErrorBoundary>
           </div>
 
@@ -216,7 +216,11 @@ export function RunDashboard({
                     name="Inspector"
                     fallback={<CompactErrorFallback name="Inspector" />}
                   >
-                    <RunInspectorPanel taskRunId={taskRunId} teamSlugOrId={teamSlugOrId} />
+                    <RunInspectorPanel
+                      runId={taskRunId}
+                      teamSlugOrId={teamSlugOrId}
+                      taskRunContextId={taskRunId}
+                    />
                   </ErrorBoundary>
                 </div>
               )}
@@ -237,152 +241,6 @@ export function RunDashboard({
  * - Recent approval history
  * - Next valid operator action after resolution
  */
-function ApprovalLane({
-  taskRunId,
-  teamSlugOrId,
-}: {
-  taskRunId: Id<"taskRuns">;
-  teamSlugOrId: string;
-}) {
-  const [showHistory, setShowHistory] = useState(false);
-
-  const approvalsQuery = useRQ({
-    ...convexQuery(api.approvalBroker.getByTaskRun, {
-      teamSlugOrId,
-      taskRunId,
-    }),
-    enabled: Boolean(teamSlugOrId && taskRunId),
-  });
-
-  const { pendingApprovals, resolvedApprovals, pendingCount } = useMemo(() => {
-    if (!approvalsQuery.data) {
-      return { pendingApprovals: [], resolvedApprovals: [], pendingCount: 0 };
-    }
-    const sorted = [...approvalsQuery.data].sort(
-      (left, right) => right.createdAt - left.createdAt
-    );
-    const pending = sorted.filter((a) => a.status === "pending");
-    const resolved = sorted.filter((a) => a.status !== "pending");
-    return {
-      pendingApprovals: pending,
-      resolvedApprovals: resolved,
-      pendingCount: pending.length,
-    };
-  }, [approvalsQuery.data]);
-
-  if (approvalsQuery.error) {
-    throw approvalsQuery.error;
-  }
-
-  const isBlocking = pendingCount > 0;
-
-  return (
-    <div className="px-4 py-3">
-      {/* Header with status indicator */}
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <Shield
-            className={clsx(
-              "size-4",
-              isBlocking
-                ? "text-amber-600 dark:text-amber-400"
-                : "text-neutral-400 dark:text-neutral-500"
-            )}
-          />
-          <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-            Approval Lane
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          {resolvedApprovals.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowHistory(!showHistory)}
-              className="text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
-            >
-              {showHistory ? "Hide" : "Show"} history ({resolvedApprovals.length})
-            </button>
-          )}
-          <span
-            className={clsx(
-              "px-2 py-0.5 text-xs font-medium rounded-full",
-              isBlocking
-                ? "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
-                : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
-            )}
-          >
-            {isBlocking ? `${pendingCount} blocking` : "Clear"}
-          </span>
-        </div>
-      </div>
-
-      {/* Blocking indicator and next action guidance */}
-      {isBlocking && (
-        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-2 dark:border-amber-800 dark:bg-amber-900/20">
-          <div className="flex items-center gap-2 text-sm font-medium text-amber-800 dark:text-amber-200">
-            <Shield className="size-4" />
-            Run is blocked on approval
-          </div>
-          <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
-            Resolve pending approval{pendingCount > 1 ? "s" : ""} to continue. After resolution,
-            the run will resume via its continuation path.
-          </p>
-        </div>
-      )}
-
-      {approvalsQuery.isLoading ? (
-        <div className="h-12 animate-pulse rounded bg-neutral-200 dark:bg-neutral-700" />
-      ) : pendingApprovals.length === 0 && resolvedApprovals.length === 0 ? (
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          No approval requests for this run.
-        </p>
-      ) : (
-        <div className="space-y-2">
-          {/* Pending approvals - always shown */}
-          {pendingApprovals.length > 0 && (
-            <div className="space-y-2">
-              <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">
-                Pending ({pendingApprovals.length})
-              </div>
-              {pendingApprovals.map((approval) => (
-                <ApprovalRequestCard
-                  key={approval._id}
-                  request={approval}
-                  teamSlugOrId={teamSlugOrId}
-                  onResolved={() => void approvalsQuery.refetch()}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Resolved approvals - shown when history expanded */}
-          {showHistory && resolvedApprovals.length > 0 && (
-            <div className="space-y-2 pt-2 border-t border-neutral-200 dark:border-neutral-700">
-              <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">
-                History ({resolvedApprovals.length})
-              </div>
-              <div className="max-h-40 overflow-y-auto space-y-2">
-                {resolvedApprovals.slice(0, 5).map((approval) => (
-                  <ApprovalRequestCard
-                    key={approval._id}
-                    request={approval}
-                    teamSlugOrId={teamSlugOrId}
-                  />
-                ))}
-                {resolvedApprovals.length > 5 && (
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400 text-center">
-                    +{resolvedApprovals.length - 5} more in history
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 /**
  * DiffArtifactsPanel - Unified review region for diff, tests, and screenshots
  *

@@ -38,9 +38,10 @@ import {
 import { useMemo } from "react";
 
 interface StatusStripProps {
-  taskRunId: Id<"taskRuns">;
+  runId: string;
   teamSlugOrId: string;
   branch?: string;
+  contextTaskRunId?: Id<"taskRuns">;
 }
 
 type ContextHealthData = {
@@ -49,14 +50,14 @@ type ContextHealthData = {
   warningCount: number;
 };
 
-export function StatusStrip({ taskRunId, teamSlugOrId, branch }: StatusStripProps) {
+export function StatusStrip({ runId, teamSlugOrId, branch, contextTaskRunId }: StatusStripProps) {
   // Run control data for lifecycle, provider, trust mode
   const runControlQuery = useQuery({
     ...getApiV1CmuxOrchestrationRunControlByTaskRunIdOptions({
-      path: { taskRunId },
+      path: { taskRunId: runId },
       query: { teamSlugOrId },
     }),
-    enabled: Boolean(teamSlugOrId && taskRunId),
+    enabled: Boolean(teamSlugOrId && runId),
     refetchInterval: 10000, // Refresh every 10s for freshness
   });
 
@@ -64,9 +65,9 @@ export function StatusStrip({ taskRunId, teamSlugOrId, branch }: StatusStripProp
   const contextHealthQuery = useQuery({
     ...convexQuery(api.taskRuns.getContextHealth, {
       teamSlugOrId,
-      id: taskRunId,
+      id: contextTaskRunId ?? (runId as Id<"taskRuns">),
     }),
-    enabled: Boolean(teamSlugOrId && taskRunId),
+    enabled: Boolean(teamSlugOrId && contextTaskRunId),
     refetchInterval: 15000, // Refresh every 15s
   });
 

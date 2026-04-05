@@ -5,8 +5,39 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DashboardInputControls } from "./DashboardInputControls";
 
+const {
+  addManualRepoMock,
+  bindSessionToBridgeMock,
+  electronEventHandlers,
+  ensureTaskRunBridgeMock,
+  launchClaudePluginDevMock,
+  mintInstallStateMock,
+  recordLocalClaudeLaunchMock,
+  removeLocalClaudeProfileMock,
+  updateLocalClaudeLaunchMetadataMock,
+  updateLocalClaudeLaunchOutcomeMock,
+  upsertLocalClaudeProfileMock,
+} = vi.hoisted(() => ({
+  addManualRepoMock: vi.fn(),
+  bindSessionToBridgeMock: vi.fn(),
+  electronEventHandlers: new Map<string, Set<(payload: unknown) => void>>(),
+  ensureTaskRunBridgeMock: vi.fn(),
+  launchClaudePluginDevMock: vi.fn(),
+  mintInstallStateMock: vi.fn(),
+  recordLocalClaudeLaunchMock: vi.fn(),
+  removeLocalClaudeProfileMock: vi.fn(),
+  updateLocalClaudeLaunchMetadataMock: vi.fn(),
+  updateLocalClaudeLaunchOutcomeMock: vi.fn(),
+  upsertLocalClaudeProfileMock: vi.fn(),
+}));
+
 const navigateMock = vi.fn();
 const invalidateQueriesMock = vi.fn();
+
+function emitElectronEvent(eventName: string, payload: unknown) {
+  const handlers = electronEventHandlers.get(eventName);
+  handlers?.forEach((handler) => handler(payload));
+}
 
 vi.mock("@/client-env", () => ({
   env: {
@@ -111,8 +142,23 @@ vi.mock("@/components/ui/tooltip", () => ({
 }));
 
 vi.mock("@/lib/electron", () => ({
-  getElectronBridge: () => null,
-  isElectron: false,
+  getElectronBridge: () => ({
+    local: {
+      launchClaudePluginDev: launchClaudePluginDevMock,
+    },
+    on: (eventName: string, handler: (payload: unknown) => void) => {
+      const handlers = electronEventHandlers.get(eventName) ?? new Set();
+      handlers.add(handler);
+      electronEventHandlers.set(eventName, handlers);
+      return () => {
+        handlers.delete(handler);
+        if (handlers.size === 0) {
+          electronEventHandlers.delete(eventName);
+        }
+      };
+    },
+  }),
+  isElectron: true,
 }));
 
 vi.mock("@/lib/github-oauth-flow", () => ({
@@ -145,6 +191,8 @@ vi.mock("@cmux/convex/api", () => ({
     localClaudeLaunches: {
       list: "localClaudeLaunches.list",
       record: "localClaudeLaunches.record",
+      ensureTaskRunBridge: "localClaudeLaunches.ensureTaskRunBridge",
+      bindSessionToBridge: "localClaudeLaunches.bindSessionToBridge",
       updateOutcome: "localClaudeLaunches.updateOutcome",
       updateMetadata: "localClaudeLaunches.updateMetadata",
     },
@@ -167,9 +215,40 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("convex/react", () => ({
-  useQuery: () => undefined,
-  useAction: () => vi.fn(),
-  useMutation: () => vi.fn(),
+  useQuery: (name: string) => {
+    if (name === "localClaudeProfiles.list" || name === "localClaudeLaunches.list") {
+      return undefined;
+    }
+    return undefined;
+  },
+  useAction: (name: string) => {
+    if (name === "github_http.addManualRepo") {
+      return addManualRepoMock;
+    }
+    return vi.fn();
+  },
+  useMutation: (name: string) => {
+    switch (name) {
+      case "github_app.mintInstallState":
+        return mintInstallStateMock;
+      case "localClaudeProfiles.upsert":
+        return upsertLocalClaudeProfileMock;
+      case "localClaudeProfiles.remove":
+        return removeLocalClaudeProfileMock;
+      case "localClaudeLaunches.record":
+        return recordLocalClaudeLaunchMock;
+      case "localClaudeLaunches.updateOutcome":
+        return updateLocalClaudeLaunchOutcomeMock;
+      case "localClaudeLaunches.updateMetadata":
+        return updateLocalClaudeLaunchMetadataMock;
+      case "localClaudeLaunches.bindSessionToBridge":
+        return bindSessionToBridgeMock;
+      case "localClaudeLaunches.ensureTaskRunBridge":
+        return ensureTaskRunBridgeMock;
+      default:
+        return vi.fn();
+    }
+  },
 }));
 
 vi.mock("sonner", () => ({
@@ -204,6 +283,46 @@ let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 let reactActEnvironmentDescriptor: PropertyDescriptor | undefined;
 
+async function waitForAssertion(assertion: () => void, timeoutMs = 1000) {
+  const start = Date.now();
+
+  while (true) {
+    try {
+      assertion();
+      return;
+    } catch (error) {
+      if (Date.now() - start > timeoutMs) {
+        throw error;
+      }
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+    }
+  }
+}
+
+async function setInputValue(input: HTMLInputElement, value: string) {
+  const prototype = Object.getPrototypeOf(input) as HTMLInputElement;
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
+  descriptor?.set?.call(input, value);
+
+  await act(async () => {
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+function mockCallsContainObject(
+  mockFn: { mock: { calls: unknown[][] } },
+  matcher: (arg: Record<string, unknown>) => boolean,
+) {
+  return mockFn.mock.calls.some(([arg]) => {
+    if (!arg || typeof arg !== "object") {
+      return false;
+    }
+    return matcher(arg as Record<string, unknown>);
+  });
+}
+
 beforeEach(() => {
   reactActEnvironmentDescriptor = Object.getOwnPropertyDescriptor(
     globalThis,
@@ -224,6 +343,20 @@ beforeEach(() => {
   root = createRoot(container);
   invalidateQueriesMock.mockReset();
   navigateMock.mockReset();
+  addManualRepoMock.mockReset();
+  bindSessionToBridgeMock.mockReset();
+  ensureTaskRunBridgeMock.mockReset();
+  launchClaudePluginDevMock.mockReset();
+  mintInstallStateMock.mockReset();
+  recordLocalClaudeLaunchMock.mockReset();
+  removeLocalClaudeProfileMock.mockReset();
+  updateLocalClaudeLaunchMetadataMock.mockReset();
+  updateLocalClaudeLaunchOutcomeMock.mockReset();
+  upsertLocalClaudeProfileMock.mockReset();
+  electronEventHandlers.clear();
+  vi.stubGlobal("crypto", {
+    randomUUID: vi.fn(() => "test-random-uuid"),
+  });
 });
 
 afterEach(async () => {
@@ -232,6 +365,7 @@ afterEach(async () => {
   });
   document.body.innerHTML = "";
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 
   if (reactActEnvironmentDescriptor) {
     Object.defineProperty(
@@ -327,6 +461,158 @@ describe("DashboardInputControls", () => {
         selectedVariant: "high",
       },
     ]);
+  });
+
+  it("bridges local Electron launches into shared runtime metadata and binds later sessions", async () => {
+    launchClaudePluginDevMock.mockResolvedValue({
+      ok: true,
+      launchId: "launch-123",
+      command: "devsh orchestrate run-local --json",
+      orchestrationId: "local_www_123",
+      runDir: "/tmp/local_www_123",
+      sessionInfoPath: "/tmp/local_www_123/session.json",
+    });
+    recordLocalClaudeLaunchMock.mockResolvedValue("launch_record_1");
+    ensureTaskRunBridgeMock.mockResolvedValue({
+      taskId: "task_123",
+      taskRunId: "tskrun_123",
+    });
+    updateLocalClaudeLaunchMetadataMock.mockResolvedValue("launch_record_1");
+    bindSessionToBridgeMock.mockResolvedValue({ success: true });
+
+    await act(async () => {
+      root.render(
+        <DashboardInputControls
+          projectOptions={[{ label: "karlorz/cmux", value: "karlorz/cmux" }]}
+          selectedProject={["karlorz/cmux"]}
+          onProjectChange={vi.fn()}
+          branchOptions={["main"]}
+          selectedBranch={["main"]}
+          onBranchChange={vi.fn()}
+          selectedAgentSelections={[
+            {
+              agentName: "claude/opus-4.6",
+            },
+          ]}
+          onAgentSelectionsChange={vi.fn()}
+          isCloudMode={false}
+          onCloudModeToggle={vi.fn()}
+          isLoadingProjects={false}
+          isLoadingBranches={false}
+          teamSlugOrId="dev"
+          taskDescription="Investigate Local Runs bridge"
+          convexModels={[
+            {
+              _id: "model-1",
+              name: "claude/opus-4.6",
+              displayName: "Claude Opus 4.6",
+              vendor: "anthropic",
+              tier: "paid",
+              enabled: true,
+              requiredApiKeys: [],
+              sortOrder: 1,
+            },
+          ]}
+        />,
+      );
+    });
+
+    const workspaceInput = container.querySelector<HTMLInputElement>(
+      'input[placeholder="/path/to/local/repo"]',
+    );
+    expect(workspaceInput).not.toBeNull();
+    if (!workspaceInput) {
+      throw new Error("Workspace input missing");
+    }
+
+    await setInputValue(workspaceInput, "/root/workspace");
+
+    let runButton: HTMLButtonElement | undefined;
+    await waitForAssertion(() => {
+      runButton = Array.from(container.querySelectorAll("button")).find((button) =>
+        button.textContent?.includes("Run in Terminal"),
+      ) as HTMLButtonElement | undefined;
+      expect(runButton).toBeDefined();
+    });
+
+    await act(async () => {
+      runButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitForAssertion(() => {
+      expect(recordLocalClaudeLaunchMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          teamSlugOrId: "dev",
+          launchId: "launch-123",
+          orchestrationId: "local_www_123",
+          agentName: "claude/opus-4.6",
+          runDir: "/tmp/local_www_123",
+        }),
+      );
+    });
+
+    await waitForAssertion(() => {
+      expect(ensureTaskRunBridgeMock).toHaveBeenCalledWith({
+        teamSlugOrId: "dev",
+        launchId: "launch-123",
+        prompt: "Investigate Local Runs bridge",
+        workspacePath: "/root/workspace",
+        agentName: "claude/opus-4.6",
+        orchestrationId: "local_www_123",
+      });
+    });
+
+    await waitForAssertion(() => {
+      expect(
+        mockCallsContainObject(updateLocalClaudeLaunchMetadataMock, (arg) =>
+          arg.teamSlugOrId === "dev" &&
+          arg.launchId === "launch-123" &&
+          arg.orchestrationId === "local_www_123" &&
+          arg.runDir === "/tmp/local_www_123" &&
+          arg.sessionInfoPath === "/tmp/local_www_123/session.json",
+        ),
+      ).toBe(true);
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("Shared runtime: tskrun_123");
+      expect(container.textContent).toContain("Open shared run page");
+      expect(container.textContent).toContain("Open shared activity page");
+      expect(container.textContent).toContain("Open shared logs page");
+    });
+
+
+    await act(async () => {
+      emitElectronEvent("local-command-metadata", {
+        launchId: "launch-123",
+        orchestrationId: "local_www_123",
+        runDir: "/tmp/local_www_123",
+        sessionInfoPath: "/tmp/local_www_123/session.json",
+        sessionId: "session_123",
+      });
+    });
+
+    await waitForAssertion(() => {
+      expect(bindSessionToBridgeMock).toHaveBeenCalledWith({
+        teamSlugOrId: "dev",
+        launchId: "launch-123",
+        sessionId: "session_123",
+      });
+      expect(
+        mockCallsContainObject(updateLocalClaudeLaunchMetadataMock, (arg) =>
+          arg.teamSlugOrId === "dev" &&
+          arg.launchId === "launch-123" &&
+          arg.orchestrationId === "local_www_123" &&
+          arg.runDir === "/tmp/local_www_123" &&
+          arg.sessionInfoPath === "/tmp/local_www_123/session.json" &&
+          arg.sessionId === "session_123",
+        ),
+      ).toBe(true);
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("Local session: session_123");
+    });
   });
 
   it("routes provider settings access through the agent picker controls", async () => {

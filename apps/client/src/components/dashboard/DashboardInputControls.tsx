@@ -144,6 +144,9 @@ type LocalClaudeLaunchRecord = {
   status?: LocalClaudeLaunchStatus;
   scriptPath?: string;
   orchestrationId?: string;
+  taskId?: string;
+  taskRunId?: string;
+  agentName?: string;
   runDir?: string;
   sessionInfoPath?: string;
   sessionId?: string;
@@ -227,6 +230,20 @@ function parseMultilineList(value: string): string[] {
     .split("\n")
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+function buildLocalLaunchMetadataPatch(input: {
+  orchestrationId?: string;
+  runDir?: string;
+  sessionInfoPath?: string;
+  sessionId?: string;
+}) {
+  return {
+    ...(input.orchestrationId ? { orchestrationId: input.orchestrationId } : {}),
+    ...(input.runDir ? { runDir: input.runDir } : {}),
+    ...(input.sessionInfoPath ? { sessionInfoPath: input.sessionInfoPath } : {}),
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+  };
 }
 
 function watchPopupClosed(win: Window | null, onClose: () => void): void {
@@ -422,6 +439,12 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   const updateLocalClaudeLaunchMetadata = useMutation(
     api.localClaudeLaunches.updateMetadata,
   );
+  const bindLocalClaudeLaunchSession = useMutation(
+    api.localClaudeLaunches.bindSessionToBridge,
+  );
+  const ensureLocalClaudeLaunchBridge = useMutation(
+    api.localClaudeLaunches.ensureTaskRunBridge,
+  );
   const localTerminalOptions = useMemo(
     () => [
       {
@@ -493,10 +516,12 @@ export const DashboardInputControls = memo(function DashboardInputControls({
           entry.launchId === event.launchId
             ? {
                 ...entry,
-                ...(event.orchestrationId ? { orchestrationId: event.orchestrationId } : {}),
-                ...(event.runDir ? { runDir: event.runDir } : {}),
-                ...(event.sessionInfoPath ? { sessionInfoPath: event.sessionInfoPath } : {}),
-                ...(event.sessionId ? { sessionId: event.sessionId } : {}),
+                ...buildLocalLaunchMetadataPatch({
+                  orchestrationId: event.orchestrationId,
+                  runDir: event.runDir,
+                  sessionInfoPath: event.sessionInfoPath,
+                  sessionId: event.sessionId,
+                }),
               }
             : entry,
         ),
@@ -505,16 +530,89 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       void updateLocalClaudeLaunchMetadata({
         teamSlugOrId,
         launchId: event.launchId,
-        ...(event.orchestrationId ? { orchestrationId: event.orchestrationId } : {}),
-        ...(event.runDir ? { runDir: event.runDir } : {}),
-        ...(event.sessionInfoPath ? { sessionInfoPath: event.sessionInfoPath } : {}),
-        ...(event.sessionId ? { sessionId: event.sessionId } : {}),
-      }).catch((error) => {
-        console.error(
-          "[DashboardInputControls] Failed to persist local Claude launch metadata",
-          error,
-        );
-      });
+        ...buildLocalLaunchMetadataPatch({
+          orchestrationId: event.orchestrationId,
+          runDir: event.runDir,
+          sessionInfoPath: event.sessionInfoPath,
+          sessionId: event.sessionId,
+        }),
+      })
+        .then(async () => {
+          const launchEntry = localLaunchHistory.find((entry) => entry.launchId === event.launchId);
+          if (!launchEntry || !event.orchestrationId || !launchEntry.agentName) {
+            return;
+          }
+
+          try {
+            if (!event.launchId) {
+              return;
+            }
+            const launchId = event.launchId;
+            const bridgeResult = await ensureLocalClaudeLaunchBridge({
+              teamSlugOrId,
+              launchId,
+              prompt: taskDescription.trim(),
+              workspacePath: launchEntry.workspacePath,
+              agentName: launchEntry.agentName,
+              orchestrationId: event.orchestrationId,
+              ...(event.sessionId ? { sessionId: event.sessionId } : {}),
+            });
+
+            const nextTaskId = String(bridgeResult.taskId);
+            const nextTaskRunId = String(bridgeResult.taskRunId);
+            setLocalLaunchHistory((prev) =>
+              prev.map((entry) =>
+                entry.launchId === event.launchId
+                  ? {
+                      ...entry,
+                      taskId: nextTaskId,
+                      taskRunId: nextTaskRunId,
+                      ...buildLocalLaunchMetadataPatch({
+                        orchestrationId: event.orchestrationId,
+                        runDir: event.runDir,
+                        sessionInfoPath: event.sessionInfoPath,
+                        sessionId: event.sessionId,
+                      }),
+                    }
+                  : entry,
+              ),
+            );
+
+            if (event.sessionId) {
+              await bindLocalClaudeLaunchSession({
+                teamSlugOrId,
+                launchId,
+                sessionId: event.sessionId,
+              });
+            }
+
+            await updateLocalClaudeLaunchMetadata({
+              teamSlugOrId,
+              launchId,
+              orchestrationId: event.orchestrationId,
+              taskId: bridgeResult.taskId,
+              taskRunId: bridgeResult.taskRunId,
+              agentName: launchEntry.agentName,
+              ...buildLocalLaunchMetadataPatch({
+                orchestrationId: event.orchestrationId,
+                runDir: event.runDir,
+                sessionInfoPath: event.sessionInfoPath,
+                sessionId: event.sessionId,
+              }),
+            });
+          } catch (error) {
+            console.error(
+              "[DashboardInputControls] Failed to bridge local Claude launch from metadata event",
+              error,
+            );
+          }
+        })
+        .catch((error) => {
+          console.error(
+            "[DashboardInputControls] Failed to persist local Claude launch metadata",
+            error,
+          );
+        });
     });
     const unsubscribeFinished = bridge.on("local-command-finished", (payload) => {
       const event = payload as {
@@ -558,7 +656,15 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       unsubscribeMetadata?.();
       unsubscribeFinished?.();
     };
-  }, [teamSlugOrId, updateLocalClaudeLaunchMetadata, updateLocalClaudeLaunchOutcome]);
+  }, [
+    bindLocalClaudeLaunchSession,
+    ensureLocalClaudeLaunchBridge,
+    localLaunchHistory,
+    taskDescription,
+    teamSlugOrId,
+    updateLocalClaudeLaunchMetadata,
+    updateLocalClaudeLaunchOutcome,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1248,6 +1354,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       terminal: localTerminalTarget,
       launchedAt: new Date().toISOString(),
       status: result.ok ? "launched" : "launch_failed",
+      agentName: localClaudeLaunchRequest.agentName,
       ...(result.ok
         ? {
             scriptPath: result.scriptPath,
@@ -1267,21 +1374,68 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       terminal: launchRecord.terminal,
       status: launchRecord.status ?? "launched",
       ...(launchRecord.scriptPath ? { scriptPath: launchRecord.scriptPath } : {}),
-      ...(launchRecord.orchestrationId
-        ? { orchestrationId: launchRecord.orchestrationId }
-        : {}),
-      ...(launchRecord.runDir ? { runDir: launchRecord.runDir } : {}),
-      ...(launchRecord.sessionInfoPath
-        ? { sessionInfoPath: launchRecord.sessionInfoPath }
-        : {}),
-      ...(launchRecord.sessionId ? { sessionId: launchRecord.sessionId } : {}),
+      ...buildLocalLaunchMetadataPatch({
+        orchestrationId: launchRecord.orchestrationId,
+        runDir: launchRecord.runDir,
+        sessionInfoPath: launchRecord.sessionInfoPath,
+        sessionId: launchRecord.sessionId,
+      }),
+      ...(launchRecord.agentName ? { agentName: launchRecord.agentName } : {}),
       ...(launchRecord.error ? { error: launchRecord.error } : {}),
-    }).catch((error) => {
-      console.error(
-        "[DashboardInputControls] Failed to persist local Claude launch",
-        error,
-      );
-    });
+    })
+      .then(async () => {
+        if (!result.ok || !launchRecord.orchestrationId || !launchRecord.agentName) {
+          return;
+        }
+
+        try {
+          const bridgeResult = await ensureLocalClaudeLaunchBridge({
+            teamSlugOrId,
+            launchId: result.launchId,
+            prompt: localClaudeLaunchRequest.taskDescription,
+            workspacePath: launchRecord.workspacePath,
+            agentName: launchRecord.agentName,
+            orchestrationId: launchRecord.orchestrationId,
+            ...(launchRecord.sessionId ? { sessionId: launchRecord.sessionId } : {}),
+          });
+
+          const nextTaskId = String(bridgeResult.taskId);
+          const nextTaskRunId = String(bridgeResult.taskRunId);
+          setLocalLaunchHistory((prev) =>
+            prev.map((entry) =>
+              entry.launchId === result.launchId
+                ? {
+                    ...entry,
+                    taskId: nextTaskId,
+                    taskRunId: nextTaskRunId,
+                  }
+                : entry,
+            ),
+          );
+
+          await updateLocalClaudeLaunchMetadata({
+            teamSlugOrId,
+            launchId: result.launchId,
+            ...buildLocalLaunchMetadataPatch({
+              orchestrationId: launchRecord.orchestrationId,
+              runDir: launchRecord.runDir,
+              sessionInfoPath: launchRecord.sessionInfoPath,
+              sessionId: launchRecord.sessionId,
+            }),
+          });
+        } catch (error) {
+          console.error(
+            "[DashboardInputControls] Failed to bridge local Claude launch into shared runtime",
+            error,
+          );
+        }
+      })
+      .catch((error) => {
+        console.error(
+          "[DashboardInputControls] Failed to persist local Claude launch",
+          error,
+        );
+      });
 
     if (result.ok) {
       toast.success(`Opened local Claude plugin-dev run in ${localTerminalTarget}`);
@@ -1289,12 +1443,14 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       toast.error(result.error);
     }
   }, [
+    ensureLocalClaudeLaunchBridge,
     localClaudeCommandPreview,
     localClaudeLaunchRequest,
     localTerminalTarget,
     localTerminalTargetAvailable,
     recordLocalClaudeLaunch,
     teamSlugOrId,
+    updateLocalClaudeLaunchMetadata,
   ]);
 
   const handleSaveLocalClaudeProfile = useCallback(async () => {
@@ -2227,6 +2383,48 @@ export const DashboardInputControls = memo(function DashboardInputControls({
                           <p className="truncate text-blue-800/70 dark:text-blue-200/70">
                             Run: {entry.orchestrationId}
                           </p>
+                        ) : null}
+                        {entry.taskRunId ? (
+                          <p className="truncate text-blue-800/70 dark:text-blue-200/70">
+                            Shared runtime: {entry.taskRunId}
+                          </p>
+                        ) : null}
+                        {entry.taskId && entry.taskRunId ? (
+                          <div className="flex flex-wrap gap-2">
+                            <Link
+                              to="/$teamSlugOrId/task/$taskId/run/$runId"
+                              params={{
+                                teamSlugOrId,
+                                taskId: entry.taskId as never,
+                                runId: entry.taskRunId as never,
+                              }}
+                              className="inline-flex items-center gap-1 text-blue-700 transition-colors hover:text-blue-800 hover:underline dark:text-blue-300 dark:hover:text-blue-200"
+                            >
+                              Open shared run page
+                            </Link>
+                            <Link
+                              to="/$teamSlugOrId/task/$taskId/run/$runId/activity"
+                              params={{
+                                teamSlugOrId,
+                                taskId: entry.taskId as never,
+                                runId: entry.taskRunId as never,
+                              }}
+                              className="inline-flex items-center gap-1 text-blue-700 transition-colors hover:text-blue-800 hover:underline dark:text-blue-300 dark:hover:text-blue-200"
+                            >
+                              Open shared activity page
+                            </Link>
+                            <Link
+                              to="/$teamSlugOrId/task/$taskId/run/$runId/logs"
+                              params={{
+                                teamSlugOrId,
+                                taskId: entry.taskId as never,
+                                runId: entry.taskRunId as never,
+                              }}
+                              className="inline-flex items-center gap-1 text-blue-700 transition-colors hover:text-blue-800 hover:underline dark:text-blue-300 dark:hover:text-blue-200"
+                            >
+                              Open shared logs page
+                            </Link>
+                          </div>
                         ) : null}
                         {entry.sessionId ? (
                           <p className="truncate text-blue-800/70 dark:text-blue-200/70">

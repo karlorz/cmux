@@ -2780,6 +2780,9 @@ const convexSchema = defineSchema({
     ),
     scriptPath: v.optional(v.string()),
     orchestrationId: v.optional(v.string()),
+    taskId: v.optional(v.id("tasks")),
+    taskRunId: v.optional(v.id("taskRuns")),
+    agentName: v.optional(v.string()),
     runDir: v.optional(v.string()),
     sessionInfoPath: v.optional(v.string()),
     sessionId: v.optional(v.string()),
@@ -2791,7 +2794,8 @@ const convexSchema = defineSchema({
   })
     .index("by_team", ["teamId", "createdAt"])
     .index("by_team_user", ["teamId", "userId", "createdAt"])
-    .index("by_team_launch", ["teamId", "launchId"]),
+    .index("by_team_launch", ["teamId", "launchId"])
+    .index("by_team_orchestration", ["teamId", "orchestrationId"]),
 
   // Session activity tracking for visual change dashboards
   sessionActivity: defineTable({
