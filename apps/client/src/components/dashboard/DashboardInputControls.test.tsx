@@ -11,6 +11,7 @@ const {
   electronEventHandlers,
   ensureTaskRunBridgeMock,
   launchClaudePluginDevMock,
+  localClaudeLaunchesListMock,
   mintInstallStateMock,
   recordLocalClaudeLaunchMock,
   removeLocalClaudeProfileMock,
@@ -23,6 +24,7 @@ const {
   electronEventHandlers: new Map<string, Set<(payload: unknown) => void>>(),
   ensureTaskRunBridgeMock: vi.fn(),
   launchClaudePluginDevMock: vi.fn(),
+  localClaudeLaunchesListMock: vi.fn(),
   mintInstallStateMock: vi.fn(),
   recordLocalClaudeLaunchMock: vi.fn(),
   removeLocalClaudeProfileMock: vi.fn(),
@@ -216,8 +218,11 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("convex/react", () => ({
   useQuery: (name: string) => {
-    if (name === "localClaudeProfiles.list" || name === "localClaudeLaunches.list") {
+    if (name === "localClaudeProfiles.list") {
       return undefined;
+    }
+    if (name === "localClaudeLaunches.list") {
+      return localClaudeLaunchesListMock();
     }
     return undefined;
   },
@@ -353,6 +358,8 @@ beforeEach(() => {
   updateLocalClaudeLaunchMetadataMock.mockReset();
   updateLocalClaudeLaunchOutcomeMock.mockReset();
   upsertLocalClaudeProfileMock.mockReset();
+  localClaudeLaunchesListMock.mockReset();
+  localClaudeLaunchesListMock.mockReturnValue(undefined);
   electronEventHandlers.clear();
   vi.stubGlobal("crypto", {
     randomUUID: vi.fn(() => "test-random-uuid"),
@@ -551,6 +558,12 @@ describe("DashboardInputControls", () => {
       );
     });
 
+    expect(recordLocalClaudeLaunchMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        injectionMode: expect.anything(),
+      }),
+    );
+
     await waitForAssertion(() => {
       expect(ensureTaskRunBridgeMock).toHaveBeenCalledWith({
         teamSlugOrId: "dev",
@@ -589,6 +602,9 @@ describe("DashboardInputControls", () => {
         runDir: "/tmp/local_www_123",
         sessionInfoPath: "/tmp/local_www_123/session.json",
         sessionId: "session_123",
+        injectionMode: "active",
+        lastInjectionAt: "2026-04-05T09:03:00Z",
+        injectionCount: 2,
       });
     });
 
@@ -605,14 +621,83 @@ describe("DashboardInputControls", () => {
           arg.orchestrationId === "local_www_123" &&
           arg.runDir === "/tmp/local_www_123" &&
           arg.sessionInfoPath === "/tmp/local_www_123/session.json" &&
-          arg.sessionId === "session_123",
+          arg.sessionId === "session_123" &&
+          arg.injectionMode === "active" &&
+          arg.lastInjectionAt === "2026-04-05T09:03:00Z" &&
+          arg.injectionCount === 2,
         ),
       ).toBe(true);
     });
 
     await waitForAssertion(() => {
-      expect(container.textContent).toContain("Local session: session_123");
+      expect(container.textContent).toContain("Local session: session_123 · active · 2 injections");
+      expect(container.textContent).toContain("Last local injection:");
     });
+  });
+
+  it("skips no-op local metadata events", async () => {
+    const initialEntry = {
+      command: "claude --print",
+      workspacePath: "/root/workspace",
+      terminal: "terminal" as const,
+      launchedAt: "2026-04-05T09:00:00Z",
+      launchId: "launch-noop",
+      orchestrationId: "local_www_noop",
+      runDir: "/tmp/local_www_noop",
+      sessionInfoPath: "/tmp/local_www_noop/session.json",
+      sessionId: "session_noop",
+      injectionMode: "active",
+      lastInjectionAt: "2026-04-05T09:03:00Z",
+      injectionCount: 2,
+      agentName: "claude/opus-4.6",
+      taskId: "task_noop",
+      taskRunId: "tskrun_noop",
+    };
+
+    localClaudeLaunchesListMock.mockReturnValue([initialEntry]);
+
+    await act(async () => {
+      root.render(
+        <DashboardInputControls
+          projectOptions={[{ label: "karlorz/cmux", value: "karlorz/cmux" }]}
+          selectedProject={["karlorz/cmux"]}
+          onProjectChange={vi.fn()}
+          branchOptions={["main"]}
+          selectedBranch={["main"]}
+          onBranchChange={vi.fn()}
+          selectedAgentSelections={[]}
+          onAgentSelectionsChange={vi.fn()}
+          isCloudMode
+          onCloudModeToggle={vi.fn()}
+          isLoadingProjects={false}
+          isLoadingBranches={false}
+          teamSlugOrId="dev"
+          convexModels={[]}
+          taskDescription="Investigate Local Runs bridge"
+        />,
+      );
+    });
+
+    updateLocalClaudeLaunchMetadataMock.mockClear();
+    bindSessionToBridgeMock.mockClear();
+    ensureTaskRunBridgeMock.mockClear();
+
+    await act(async () => {
+      emitElectronEvent("local-command-metadata", {
+        launchId: "launch-noop",
+        orchestrationId: "local_www_noop",
+        runDir: "/tmp/local_www_noop",
+        sessionInfoPath: "/tmp/local_www_noop/session.json",
+        sessionId: "session_noop",
+        injectionMode: "active",
+        lastInjectionAt: "2026-04-05T09:03:00Z",
+        injectionCount: 2,
+      });
+    });
+
+    expect(updateLocalClaudeLaunchMetadataMock).not.toHaveBeenCalled();
+    expect(bindSessionToBridgeMock).not.toHaveBeenCalled();
+    expect(ensureTaskRunBridgeMock).not.toHaveBeenCalled();
   });
 
   it("routes provider settings access through the agent picker controls", async () => {

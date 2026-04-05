@@ -389,6 +389,9 @@ type LocalClaudeRunMetadata = {
   runDir?: string;
   sessionInfoPath?: string;
   sessionId?: string;
+  injectionMode?: string;
+  lastInjectionAt?: string;
+  injectionCount?: number;
 };
 
 async function monitorLocalCommandOutcome(
@@ -457,9 +460,24 @@ async function readLocalClaudeRunMetadata(
       const raw = await readFile(sessionInfoPath, "utf8");
       const parsed = JSON.parse(raw) as {
         sessionId?: string;
+        injectionMode?: string;
+        lastInjectionAt?: string;
+        injectionCount?: number;
       };
       if (typeof parsed.sessionId === "string" && parsed.sessionId.trim()) {
         metadata.sessionId = parsed.sessionId.trim();
+      }
+      if (typeof parsed.injectionMode === "string" && parsed.injectionMode.trim()) {
+        metadata.injectionMode = parsed.injectionMode.trim();
+      }
+      if (
+        typeof parsed.lastInjectionAt === "string" &&
+        parsed.lastInjectionAt.trim()
+      ) {
+        metadata.lastInjectionAt = parsed.lastInjectionAt.trim();
+      }
+      if (typeof parsed.injectionCount === "number") {
+        metadata.injectionCount = parsed.injectionCount;
       }
     }
   } catch {
