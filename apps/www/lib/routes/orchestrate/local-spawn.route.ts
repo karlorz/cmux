@@ -9,7 +9,9 @@ import { getConvex } from "@/lib/utils/get-convex";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { api } from "@cmux/convex/api";
 import {
+  buildLocalRunArtifactCard,
   LocalRunArtifactArtifactsSchema,
+  LocalRunArtifactCardSchema,
   LocalRunArtifactMetadataSchema,
 } from "@cmux/shared";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
@@ -76,6 +78,7 @@ const LocalRunSchema = z
 const LocalRunDetailSchema = LocalRunSchema.extend({
   ...LocalRunArtifactMetadataSchema.shape,
   ...LocalRunArtifactArtifactsSchema.shape,
+  artifactCard: LocalRunArtifactCardSchema.optional(),
 }).openapi("LocalRunDetail");
 
 const LocalRunsListResponseSchema = z
@@ -718,11 +721,17 @@ orchestrateLocalSpawnRouter.openapi(
         runDevshJson<unknown>(args).then((result) => LocalRunDetailSchema.parse(result)),
         getLocalLaunchBridgeRecord(access.accessToken, query.teamSlugOrId, runId),
       ]);
+      const artifactCard = buildLocalRunArtifactCard({
+        ...detail,
+        ...(bridgeRecord?.taskId ? { bridgedTaskId: bridgeRecord.taskId } : {}),
+        ...(bridgeRecord?.taskRunId ? { bridgedTaskRunId: bridgeRecord.taskRunId } : {}),
+      });
       return c.json(
         {
           ...detail,
           ...(bridgeRecord?.taskId ? { bridgedTaskId: bridgeRecord.taskId } : {}),
           ...(bridgeRecord?.taskRunId ? { bridgedTaskRunId: bridgeRecord.taskRunId } : {}),
+          artifactCard,
         },
         200,
       );

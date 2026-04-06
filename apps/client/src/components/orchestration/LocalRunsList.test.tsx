@@ -10,6 +10,14 @@ const invalidateQueriesMock = vi.fn();
 const toastSuccessMock = vi.fn();
 const toastErrorMock = vi.fn();
 
+vi.mock("./localRunArtifacts", async () => {
+  const actual = await vi.importActual<typeof import("./localRunArtifacts")>("./localRunArtifacts");
+  return {
+    ...actual,
+    formatLocalRunTimestamp: (timestamp?: string) => timestamp ?? null,
+  };
+});
+
 vi.mock("@/lib/wwwOrigin", () => ({
   WWW_ORIGIN: "http://localhost:9779",
 }));

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  LocalRunArtifactCardSchema,
   LocalRunArtifactDisplaySchema,
   LocalRunArtifactEventsSchema,
   LocalRunArtifactFeedEntrySchema,
@@ -81,6 +82,40 @@ describe("local-run-artifacts", () => {
     ).toMatchObject({
       countLabel: "2 events",
       showRawEvents: false,
+    });
+  });
+
+  it("parses the shared Local Runs artifact card contract", () => {
+    expect(
+      LocalRunArtifactCardSchema.parse({
+        result: "Applied local update",
+        error: "Last retry failed before recovery",
+        summaryItems: [
+          {
+            label: "Model",
+            value: "claude-sonnet-4-6",
+            priority: "primary",
+          },
+        ],
+        diagnosticGroups: [
+          {
+            key: "continuation",
+            label: "Continuation",
+            items: [
+              {
+                label: "Session ID",
+                value: "session_123",
+                priority: "secondary",
+                section: "continuation",
+              },
+            ],
+          },
+        ],
+      }),
+    ).toMatchObject({
+      result: "Applied local update",
+      error: "Last retry failed before recovery",
+      summaryItems: [expect.objectContaining({ label: "Model" })],
     });
   });
 

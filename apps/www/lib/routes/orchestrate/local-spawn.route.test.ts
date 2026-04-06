@@ -57,11 +57,11 @@ describe("orchestrateLocalSpawnRouter", () => {
     vi.spyOn(Date, "now").mockReturnValue(1_712_345_678_901);
     randomUUIDMock.mockReturnValue("abcd1234-0000-0000-0000-000000000000");
     homedirMock.mockReturnValue("/Users/tester");
-    getAccessTokenFromRequest.mockResolvedValue("token_123");
     getConvex.mockReturnValue({
       query: vi.fn(async () => []),
       mutation: vi.fn(async () => "launch_record_1"),
     });
+    getAccessTokenFromRequest.mockResolvedValue("token_123");
     verifyTeamAccess.mockResolvedValue({
       uuid: "team_uuid",
       slug: "example-team",
@@ -192,6 +192,10 @@ describe("orchestrateLocalSpawnRouter", () => {
       }
     );
 
+    if (response.status !== 200) {
+      throw new Error(JSON.stringify(await response.json()));
+    }
+
     expect(response.status).toBe(200);
     expect(verifyTeamAccess).toHaveBeenCalledWith({
       req: expect.any(Request),
@@ -318,6 +322,10 @@ describe("orchestrateLocalSpawnRouter", () => {
       { method: "GET" }
     );
 
+    if (response.status !== 200) {
+      throw new Error(JSON.stringify(await response.json()));
+    }
+
     expect(response.status).toBe(200);
     expect(execaMock).toHaveBeenCalledWith(
       "devsh",
@@ -335,6 +343,17 @@ describe("orchestrateLocalSpawnRouter", () => {
       orchestrationId: "local_www_1712345678901_abcd1234",
       bridgedTaskId: "task_123",
       bridgedTaskRunId: "tskrun_bridge_123",
+      artifactCard: {
+        summaryItems: expect.arrayContaining([
+          expect.objectContaining({ label: "Workspace", value: "/Users/tester/Desktop/code/cmux" }),
+          expect.objectContaining({ label: "Model", value: "claude-sonnet-4-6" }),
+        ]),
+        diagnosticGroups: expect.arrayContaining([
+          expect.objectContaining({ label: "Git" }),
+          expect.objectContaining({ label: "Continuation" }),
+          expect.objectContaining({ label: "Bridge" }),
+        ]),
+      },
       selectedVariant: "high",
       model: "claude-sonnet-4-6",
       gitBranch: "feat/local-runs",
