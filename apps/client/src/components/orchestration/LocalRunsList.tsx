@@ -32,10 +32,10 @@ import { WebLogsPage } from "@/components/log-viewer/WebLogsPage";
 import { WWW_ORIGIN } from "@/lib/wwwOrigin";
 import {
   buildLocalArtifactDisplay,
-  formatLocalRunTimestamp,
 } from "./localRunArtifacts";
 import {
   deriveLocalRunControlState,
+  formatLocalRunTimestamp,
   RUN_CONTROL_ACTION_LABELS,
   RUN_CONTROL_DEFAULT_INSTRUCTIONS,
   type LocalRunArtifactDisplay,

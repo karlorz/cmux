@@ -8,7 +8,6 @@ import type {
 import {
   buildLocalRunArtifactCard as buildSharedLocalRunArtifactCard,
   formatLocalEventCount,
-  formatLocalRunTimestamp,
 } from "@cmux/shared";
 import type { LocalRunDetail } from "@cmux/www-openapi-client";
 

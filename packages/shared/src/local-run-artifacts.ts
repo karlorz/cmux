@@ -159,7 +159,7 @@ type LocalRunArtifactCardSummaryItemInput = Omit<
 
 function hasValue(
   item: LocalRunArtifactCardInputItem,
-): item is LocalRunArtifactMetadataItem {
+): item is LocalRunArtifactMetadataItem & { section: LocalRunArtifactMetadataSection } {
   return typeof item.value === "string";
 }
 
@@ -211,7 +211,7 @@ function formatLocalCheckpointCreatedAt(epochMs?: number) {
 export function buildLocalRunArtifactCard(
   input: LocalRunArtifactCardInput,
 ): LocalRunArtifactCard {
-  const summaryItems = [
+  const summaryItemInputs: LocalRunArtifactCardSummaryItemInput[] = [
     { label: "Workspace", value: input.workspace, priority: "primary" },
     { label: "Run directory", value: input.runDir, priority: "primary" },
     { label: "Agent", value: input.agent, priority: "primary" },
@@ -242,51 +242,52 @@ export function buildLocalRunArtifactCard(
     },
     { label: "Variant", value: input.selectedVariant, priority: "primary" },
     { label: "Git branch", value: input.gitBranch, priority: "primary" },
-  ].filter(hasSummaryValue);
+  ];
+  const summaryItems = summaryItemInputs.filter(hasSummaryValue);
 
-  const diagnosticItems = [
+  const diagnosticItemInputs: LocalRunArtifactCardInputItem[] = [
     {
       label: "Git commit",
       value: input.gitCommit,
-      priority: "secondary" as const,
-      section: "git" as const,
+      priority: "secondary",
+      section: "git",
     },
     {
       label: "devsh version",
       value: input.devshVersion,
-      priority: "secondary" as const,
-      section: "runtime" as const,
+      priority: "secondary",
+      section: "runtime",
     },
     {
       label: "Session ID",
       value: input.sessionId,
-      priority: "secondary" as const,
-      section: "continuation" as const,
+      priority: "secondary",
+      section: "continuation",
     },
     {
       label: "Thread ID",
       value: input.threadId,
-      priority: "secondary" as const,
-      section: "continuation" as const,
+      priority: "secondary",
+      section: "continuation",
     },
     {
       label: "Codex home",
       value: input.codexHome,
-      priority: "secondary" as const,
-      section: "runtime" as const,
+      priority: "secondary",
+      section: "runtime",
     },
     {
       label: "Injection mode",
       value: input.injectionMode,
-      priority: "secondary" as const,
-      section: "continuation" as const,
+      priority: "secondary",
+      section: "continuation",
     },
     {
       label: "Last injection",
       value:
         formatLocalRunTimestamp(input.lastInjectionAt) ?? input.lastInjectionAt,
-      priority: "secondary" as const,
-      section: "continuation" as const,
+      priority: "secondary",
+      section: "continuation",
     },
     {
       label: "Injection count",
@@ -294,14 +295,14 @@ export function buildLocalRunArtifactCard(
         typeof input.injectionCount === "number"
           ? String(input.injectionCount)
           : undefined,
-      priority: "secondary" as const,
-      section: "continuation" as const,
+      priority: "secondary",
+      section: "continuation",
     },
     {
       label: "Checkpoint ref",
       value: input.checkpointRef,
-      priority: "secondary" as const,
-      section: "continuation" as const,
+      priority: "secondary",
+      section: "continuation",
     },
     {
       label: "Checkpoint generation",
@@ -309,34 +310,35 @@ export function buildLocalRunArtifactCard(
         typeof input.checkpointGeneration === "number"
           ? String(input.checkpointGeneration)
           : undefined,
-      priority: "secondary" as const,
-      section: "continuation" as const,
+      priority: "secondary",
+      section: "continuation",
     },
     {
       label: "Checkpoint label",
       value: input.checkpointLabel,
-      priority: "secondary" as const,
-      section: "continuation" as const,
+      priority: "secondary",
+      section: "continuation",
     },
     {
       label: "Checkpoint created",
       value: formatLocalCheckpointCreatedAt(input.checkpointCreatedAt),
-      priority: "secondary" as const,
-      section: "continuation" as const,
+      priority: "secondary",
+      section: "continuation",
     },
     {
       label: "Bridge task",
       value: input.bridgedTaskId,
-      priority: "secondary" as const,
-      section: "bridge" as const,
+      priority: "secondary",
+      section: "bridge",
     },
     {
       label: "Bridge run",
       value: input.bridgedTaskRunId,
-      priority: "secondary" as const,
-      section: "bridge" as const,
+      priority: "secondary",
+      section: "bridge",
     },
-  ].filter(hasValue);
+  ];
+  const diagnosticItems = diagnosticItemInputs.filter(hasValue);
 
   return {
     result: input.result,
