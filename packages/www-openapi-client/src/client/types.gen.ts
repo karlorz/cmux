@@ -1193,6 +1193,28 @@ export type LocalRunDetail = LocalRun & {
         type: string;
         message: string;
     }>;
+    artifactCard?: {
+        result?: string;
+        error?: string;
+        summaryItems: Array<{
+            label: string;
+            value: string;
+            monospace?: boolean;
+            priority: 'primary' | 'secondary';
+            section?: 'git' | 'runtime' | 'continuation' | 'bridge';
+        }>;
+        diagnosticGroups: Array<{
+            key: 'git' | 'runtime' | 'continuation' | 'bridge';
+            label: string;
+            items: Array<{
+                label: string;
+                value: string;
+                monospace?: boolean;
+                priority: 'primary' | 'secondary';
+                section?: 'git' | 'runtime' | 'continuation' | 'bridge';
+            }>;
+        }>;
+    };
 };
 
 export type LocalRunInjectResponse = {
