@@ -10,6 +10,14 @@ const invalidateQueriesMock = vi.fn();
 const toastSuccessMock = vi.fn();
 const toastErrorMock = vi.fn();
 
+vi.mock("./localRunArtifacts", async () => {
+  const actual = await vi.importActual<typeof import("./localRunArtifacts")>("./localRunArtifacts");
+  return {
+    ...actual,
+    formatLocalRunTimestamp: (timestamp?: string) => timestamp ?? null,
+  };
+});
+
 vi.mock("@/lib/wwwOrigin", () => ({
   WWW_ORIGIN: "http://localhost:9779",
 }));
@@ -26,8 +34,11 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("@/components/log-viewer/WebLogsPage", () => ({
-  WebLogsPage: ({ taskRunId }: { taskRunId: string }) => (
-    <div data-testid="web-logs-page">WebLogsPage:{taskRunId}</div>
+  WebLogsPage: ({ taskRunId, entries }: { taskRunId?: string; entries?: Array<{ type: string; summary: string }> }) => (
+    <div data-testid="web-logs-page">
+      WebLogsPage:{taskRunId ?? "local"}
+      {entries?.map((entry) => `${entry.type}:${entry.summary}`).join("|")}
+    </div>
   ),
 }));
 
@@ -44,8 +55,11 @@ vi.mock("@/components/dashboard/LineageChainCard", () => ({
 }));
 
 vi.mock("@/components/ActivityStream", () => ({
-  ActivityStream: ({ runId }: { runId: string }) => (
-    <div data-testid="activity-stream">ActivityStream:{runId}</div>
+  ActivityStream: ({ runId, entries }: { runId?: string; entries?: Array<{ type: string; summary: string }> }) => (
+    <div data-testid="activity-stream">
+      ActivityStream:{runId ?? "local"}
+      {entries?.map((entry) => `${entry.type}:${entry.summary}`).join("|")}
+    </div>
   ),
 }));
 
@@ -281,7 +295,19 @@ describe("LocalRunsList", () => {
     });
 
     expect(container.textContent).toContain("stdout line");
-    expect(container.textContent).toContain("Starting task");
+
+    await act(async () => {
+      const stderrTab = Array.from(container.querySelectorAll("button")).find((button) =>
+        button.textContent?.trim() === "stderr"
+      );
+      stderrTab?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("stderr line");
+    });
+
+    expect(container.textContent).toContain("stderr line");
     expect(container.textContent).toContain("StatusStrip:local_www_123");
     expect(container.textContent).toContain("Continue session");
     expect(container.textContent).toContain("RuntimeLifecycleCard:local_www_123");
@@ -293,7 +319,27 @@ describe("LocalRunsList", () => {
     expect(container.textContent).toContain("Open shared run page");
     expect(container.textContent).toContain("Open shared activity page");
     expect(container.textContent).toContain("Open shared logs page");
-    expect(container.textContent).toContain("Local artifact metadata");
+    expect(container.textContent).toContain("high");
+    expect(container.textContent).toContain("claude-sonnet-4-6");
+    expect(container.textContent).toContain("feat/local-runs");
+    expect(container.textContent).toContain("before-apply");
+    expect(container.textContent).toContain("Show details (12)");
+
+    await act(async () => {
+      const showDiagnosticsButton = Array.from(container.querySelectorAll("button")).find((button) =>
+        button.textContent?.includes("Show details")
+      );
+      showDiagnosticsButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("Diagnostic metadata");
+      expect(container.textContent).toContain("Git");
+      expect(container.textContent).toContain("Runtime");
+      expect(container.textContent).toContain("Continuation");
+      expect(container.textContent).toContain("Bridge");
+    });
+
     expect(container.textContent).toContain("/tmp/local_www_123");
     expect(container.textContent).toContain("task_123");
     expect(container.textContent).toContain("tskrun_bridge_123");
@@ -308,6 +354,204 @@ describe("LocalRunsList", () => {
     expect(container.textContent).toContain("cp_local_www_123_1");
     expect(container.textContent).toContain("before-apply");
     expect(container.textContent).toContain("1 event");
+  });
+
+  it("renders local-derived activity and logs for unbridged runs", async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes("/api/orchestrate/list-local")) {
+        return createJsonResponse({
+          runs: [
+            {
+              orchestrationId: "local_www_unbridged",
+              agent: "claude/haiku-4.5",
+              status: "running",
+              prompt: "Inspect local flow",
+            },
+          ],
+          count: 1,
+        });
+      }
+
+      if (url.includes("/api/orchestrate/local-runs/local_www_unbridged?")) {
+        return createJsonResponse({
+          orchestrationId: "local_www_unbridged",
+          agent: "claude/haiku-4.5",
+          status: "running",
+          prompt: "Inspect local flow",
+          stdout: "stdout line",
+          stderr: "stderr line",
+          result: "Applied local update",
+          error: "Last retry failed before recovery",
+          model: "claude-sonnet-4-6",
+          events: [
+            {
+              timestamp: "2026-04-05T09:00:01Z",
+              type: "task_started",
+              message: "Starting task",
+            },
+            {
+              timestamp: "2026-04-05T09:00:03Z",
+              type: "error",
+              message: "Something happened",
+            },
+          ],
+        });
+      }
+
+      if (url.includes("/api/v1/cmux/orchestration/run-control/local_www_unbridged")) {
+        return createJsonResponse({
+          taskRunId: "local_www_unbridged",
+          taskId: "local_www_unbridged",
+          orchestrationId: "local_www_unbridged",
+          provider: "claude",
+          runStatus: "running",
+          lifecycle: {
+            status: "active",
+            interrupted: false,
+            interruptionStatus: "none",
+          },
+          approvals: {
+            pendingCount: 0,
+            pendingRequestIds: [],
+          },
+          actions: {
+            availableActions: ["append_instruction"],
+            canResolveApproval: false,
+            canContinueSession: false,
+            canResumeCheckpoint: false,
+            canAppendInstruction: true,
+          },
+          continuation: {
+            mode: "append_instruction",
+            hasActiveBinding: false,
+          },
+          timeout: {
+            inactivityTimeoutMinutes: 30,
+            status: "active",
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <LocalRunsList teamSlugOrId="team-dev" />
+        </QueryClientProvider>
+      );
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("local_www_unbridged");
+    });
+
+    const showDetailsButton = container.querySelector('button[title="Show details"]') as HTMLButtonElement | null;
+    await act(async () => {
+      showDetailsButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("ActivityStream:local");
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("stdout line");
+    });
+
+    expect(container.textContent).toContain("stdout line");
+
+    await act(async () => {
+      const stderrTab = Array.from(container.querySelectorAll("button")).find((button) =>
+        button.textContent?.trim() === "stderr"
+      );
+      stderrTab?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("stderr line");
+    });
+
+    expect(container.textContent).toContain("Artifact summary");
+    expect(container.textContent).toContain("claude-sonnet-4-6");
+    expect(container.textContent).not.toContain("Show details (");
+    expect(container.textContent).toContain("Applied local update");
+    expect(container.textContent).toContain("Last retry failed before recovery");
+    expect(container.textContent).toContain("task_started:Starting task");
+    expect(container.textContent).toContain("error:Something happened");
+    expect(container.textContent).toContain("WebLogsPage:local");
+    expect(container.textContent).toContain("stderr line");
+    expect(container.textContent).not.toContain("Local raw events");
+    expect(container.textContent).not.toContain("No events recorded yet.");
+    expect(container.textContent).not.toContain("LineageChainCard:");
+    expect(container.textContent).not.toContain("RunApprovalLane:");
+    expect(container.textContent).not.toContain("Open shared run page");
+  });
+
+  it("auto-selects stderr snapshots when stdout is empty", async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes("/api/orchestrate/list-local")) {
+        return createJsonResponse({
+          runs: [
+            {
+              orchestrationId: "local_www_stderr_only",
+              agent: "claude/haiku-4.5",
+              status: "running",
+              prompt: "Inspect stderr only",
+            },
+          ],
+          count: 1,
+        });
+      }
+
+      if (url.includes("/api/orchestrate/local-runs/local_www_stderr_only?")) {
+        return createJsonResponse({
+          orchestrationId: "local_www_stderr_only",
+          agent: "claude/haiku-4.5",
+          status: "running",
+          prompt: "Inspect stderr only",
+          stdout: "",
+          stderr: "stderr only output",
+          events: [],
+        });
+      }
+
+      if (url.includes("/api/v1/cmux/orchestration/run-control/local_www_stderr_only")) {
+        return createJsonResponse({ error: "Not found" }, 404);
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <LocalRunsList teamSlugOrId="team-dev" />
+        </QueryClientProvider>
+      );
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("local_www_stderr_only");
+    });
+
+    const showDetailsButton = container.querySelector('button[title="Show details"]') as HTMLButtonElement | null;
+    await act(async () => {
+      showDetailsButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("stderr only output");
+    });
+
+    expect(container.textContent).not.toContain("(empty)");
+    expect(container.textContent).not.toContain("stdoutstderr");
+    expect(container.textContent).toContain("stderr");
   });
 
   it("uses shared run-control actions before falling back to local inject and still stops runs", async () => {
@@ -447,6 +691,8 @@ describe("LocalRunsList", () => {
 
     await setTextareaValue(textarea, "Please add tests");
 
+    expect(container.textContent).toContain("Uses the default instruction when left blank.");
+
     const continueButton = Array.from(container.querySelectorAll("button")).find((button) =>
       button.textContent?.includes("Continue session"),
     ) as HTMLButtonElement | undefined;
@@ -487,6 +733,94 @@ describe("LocalRunsList", () => {
     });
     expect(confirmMock).toHaveBeenCalledWith("Stop local run local_www_456?");
     expect(toastSuccessMock).toHaveBeenCalledWith("Stop requested with SIGTERM");
+  });
+
+  it("shows default-instruction helper text for shared follow-up controls", async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes("/api/orchestrate/list-local")) {
+        return createJsonResponse({
+          runs: [
+            {
+              orchestrationId: "local_www_default_helper",
+              agent: "claude/haiku-4.5",
+              status: "running",
+              prompt: "Do the thing",
+            },
+          ],
+          count: 1,
+        });
+      }
+
+      if (url.includes("/api/orchestrate/local-runs/local_www_default_helper?")) {
+        return createJsonResponse({
+          orchestrationId: "local_www_default_helper",
+          agent: "claude/haiku-4.5",
+          status: "running",
+          prompt: "Do the thing",
+          stdout: "working",
+          events: [],
+        });
+      }
+
+      if (url.includes("/api/v1/cmux/orchestration/run-control/local_www_default_helper")) {
+        return createJsonResponse({
+          taskRunId: "tskrun_bridge_helper",
+          taskId: "task_helper",
+          orchestrationId: "local_www_default_helper",
+          provider: "claude",
+          runStatus: "running",
+          lifecycle: {
+            status: "active",
+            interrupted: false,
+            interruptionStatus: "none",
+          },
+          approvals: {
+            pendingCount: 0,
+            pendingRequestIds: [],
+          },
+          actions: {
+            availableActions: ["continue_session"],
+            canResolveApproval: false,
+            canContinueSession: true,
+            canResumeCheckpoint: false,
+            canAppendInstruction: false,
+          },
+          continuation: {
+            mode: "session_continuation",
+            hasActiveBinding: true,
+          },
+          timeout: {
+            inactivityTimeoutMinutes: 30,
+            status: "active",
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <LocalRunsList teamSlugOrId="team-dev" />
+        </QueryClientProvider>
+      );
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("local_www_default_helper");
+    });
+
+    const expandButton = container.querySelector('button[title="Show details"]') as HTMLButtonElement | null;
+    await act(async () => {
+      expandButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("Uses the default instruction when left blank.");
+    });
   });
 
   it("uses local session metadata to label fallback continuation controls", async () => {
@@ -710,7 +1044,20 @@ describe("LocalRunsList", () => {
 
     expect(container.textContent).toContain("Resume checkpoint");
     expect(container.textContent).toContain("RunInspectorPanel:local_www_999");
-    expect(container.textContent).toContain("cp_local_www_999_3");
+    expect(container.textContent).toContain("pre-fix");
+    expect(container.textContent).toContain("Show details (3)");
+
+    await act(async () => {
+      const showDiagnosticsButton = Array.from(container.querySelectorAll("button")).find((button) =>
+        button.textContent?.includes("Show details")
+      );
+      showDiagnosticsButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("cp_local_www_999_3");
+    });
+
     expect(container.textContent).toContain("pre-fix");
 
     const resumeButton = Array.from(container.querySelectorAll("button")).find((button) =>
@@ -833,6 +1180,17 @@ describe("LocalRunsList", () => {
     await waitForAssertion(() => {
       expect(container.textContent).toContain("RunInspectorPanel:local_www_cp");
       expect(container.textContent).toContain("Resume checkpoint");
+      expect(container.textContent).toContain("Show details (2)");
+    });
+
+    await act(async () => {
+      const showDiagnosticsButton = Array.from(container.querySelectorAll("button")).find((button) =>
+        button.textContent?.includes("Show details")
+      );
+      showDiagnosticsButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitForAssertion(() => {
       expect(container.textContent).toContain("cp_local_www_cp_1");
     });
   });

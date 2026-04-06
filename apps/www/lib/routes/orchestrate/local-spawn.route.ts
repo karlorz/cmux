@@ -8,6 +8,12 @@ import { getAccessTokenFromRequest } from "@/lib/utils/auth";
 import { getConvex } from "@/lib/utils/get-convex";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { api } from "@cmux/convex/api";
+import {
+  buildLocalRunArtifactCard,
+  LocalRunArtifactArtifactsSchema,
+  LocalRunArtifactCardSchema,
+  LocalRunArtifactMetadataSchema,
+} from "@cmux/shared";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { execa } from "execa";
 import { randomUUID } from "node:crypto";
@@ -70,34 +76,9 @@ const LocalRunSchema = z
   .openapi("LocalRun");
 
 const LocalRunDetailSchema = LocalRunSchema.extend({
-  timeout: z.string().optional(),
-  durationMs: z.number().optional(),
-  selectedVariant: z.string().optional(),
-  model: z.string().optional(),
-  gitBranch: z.string().optional(),
-  gitCommit: z.string().optional(),
-  devshVersion: z.string().optional(),
-  sessionId: z.string().optional(),
-  threadId: z.string().optional(),
-  codexHome: z.string().optional(),
-  injectionMode: z.string().optional(),
-  lastInjectionAt: z.string().optional(),
-  injectionCount: z.number().optional(),
-  checkpointRef: z.string().optional(),
-  checkpointGeneration: z.number().optional(),
-  checkpointLabel: z.string().optional(),
-  checkpointCreatedAt: z.number().optional(),
-  result: z.string().optional(),
-  error: z.string().optional(),
-  stdout: z.string().optional(),
-  stderr: z.string().optional(),
-  events: z.array(
-    z.object({
-      timestamp: z.string(),
-      type: z.string(),
-      message: z.string(),
-    })
-  ).optional(),
+  ...LocalRunArtifactMetadataSchema.shape,
+  ...LocalRunArtifactArtifactsSchema.shape,
+  artifactCard: LocalRunArtifactCardSchema.optional(),
 }).openapi("LocalRunDetail");
 
 const LocalRunsListResponseSchema = z
@@ -306,11 +287,12 @@ async function runDevshJson<T>(args: string[]): Promise<T> {
 async function getLocalLaunchBridgeMap(
   accessToken: string,
   teamSlugOrId: string,
+  limit: number,
 ): Promise<Map<string, LocalClaudeLaunchRecord>> {
   const convex = getConvex({ accessToken });
   const launches = (await convex.query(api.localClaudeLaunches.list, {
     teamSlugOrId,
-    limit: 20,
+    limit,
   })) as LocalClaudeLaunchRecord[];
 
   return buildLocalRunBridgeMap(launches);
@@ -627,7 +609,7 @@ orchestrateLocalSpawnRouter.openapi(
     try {
       const [parsed, bridgeMap] = await Promise.all([
         z.array(RawLocalRunSchema).parse(await runDevshJson<unknown>(args)),
-        getLocalLaunchBridgeMap(access.accessToken, query.teamSlugOrId),
+        getLocalLaunchBridgeMap(access.accessToken, query.teamSlugOrId, query.limit),
       ]);
       const normalizedRuns = parsed.map((run) =>
         normalizeLocalRun(
@@ -735,17 +717,21 @@ orchestrateLocalSpawnRouter.openapi(
     }
 
     try {
-      const detail = LocalRunDetailSchema.parse(await runDevshJson<unknown>(args));
-      const bridgeRecord = await getLocalLaunchBridgeRecord(
-        access.accessToken,
-        query.teamSlugOrId,
-        runId,
-      );
+      const [detail, bridgeRecord] = await Promise.all([
+        runDevshJson<unknown>(args).then((result) => LocalRunDetailSchema.parse(result)),
+        getLocalLaunchBridgeRecord(access.accessToken, query.teamSlugOrId, runId),
+      ]);
+      const artifactCard = buildLocalRunArtifactCard({
+        ...detail,
+        ...(bridgeRecord?.taskId ? { bridgedTaskId: bridgeRecord.taskId } : {}),
+        ...(bridgeRecord?.taskRunId ? { bridgedTaskRunId: bridgeRecord.taskRunId } : {}),
+      });
       return c.json(
         {
           ...detail,
           ...(bridgeRecord?.taskId ? { bridgedTaskId: bridgeRecord.taskId } : {}),
           ...(bridgeRecord?.taskRunId ? { bridgedTaskRunId: bridgeRecord.taskRunId } : {}),
+          artifactCard,
         },
         200,
       );
