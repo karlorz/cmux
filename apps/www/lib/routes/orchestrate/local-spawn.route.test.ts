@@ -257,7 +257,7 @@ describe("orchestrateLocalSpawnRouter", () => {
     expect(bridgeArgs?.length).toBe(2);
     expect(bridgeArgs?.[1]).toEqual({
       teamSlugOrId: "example-team",
-      limit: 20,
+      limit: 5,
     });
     await expect(response.json()).resolves.toEqual({
       runs: [
