@@ -2,6 +2,88 @@ import { z } from "zod";
 
 export const RUN_CONTROL_DEFAULT_TIMEOUT_MINUTES = 45;
 
+export const RUN_CONTROL_ACTION_LABELS = {
+  resolve_approval: "Resolve approval",
+  continue_session: "Continue session",
+  resume_checkpoint: "Resume checkpoint",
+  append_instruction: "Append instruction",
+} as const;
+
+export const RUN_CONTROL_DEFAULT_INSTRUCTIONS = {
+  continue_session: "Continue with the current task.",
+  resume_checkpoint: "Resume the interrupted task.",
+} as const;
+
+export type LocalRunControlStateInput = {
+  status?: "running" | "completed" | "failed" | "unknown";
+  sessionId?: string;
+  threadId?: string;
+  checkpointRef?: string;
+};
+
+export function deriveLocalRunControlState(input: LocalRunControlStateInput) {
+  const normalizedStatus = input.status ?? "running";
+  const canResumeCheckpoint =
+    Boolean(input.checkpointRef) && normalizedStatus === "running";
+  const canContinueSession =
+    !canResumeCheckpoint &&
+    normalizedStatus === "running" &&
+    Boolean(input.sessionId || input.threadId);
+  const canAppendInstruction =
+    normalizedStatus === "running" &&
+    !canResumeCheckpoint &&
+    !canContinueSession;
+
+  const availableActions: Array<
+    Extract<RunControlAction, "continue_session" | "resume_checkpoint" | "append_instruction">
+  > = [];
+  if (canContinueSession) {
+    availableActions.push("continue_session");
+  }
+  if (canResumeCheckpoint) {
+    availableActions.push("resume_checkpoint");
+  }
+  if (canAppendInstruction) {
+    availableActions.push("append_instruction");
+  }
+
+  const continuationMode: RunControlContinuationMode = canResumeCheckpoint
+    ? "checkpoint_restore"
+    : canContinueSession
+      ? "session_continuation"
+      : canAppendInstruction
+        ? "append_instruction"
+        : "none";
+
+  const interruptionStatus: RunControlInterruptionStatus = canResumeCheckpoint
+    ? "checkpoint_pending"
+    : "none";
+
+  const lifecycleStatus: RunControlLifecycleStatus =
+    normalizedStatus === "completed"
+      ? "completed"
+      : normalizedStatus === "failed"
+        ? "failed"
+        : "active";
+
+  const runStatus: RunControlSummary["runStatus"] =
+    normalizedStatus === "completed" || normalizedStatus === "failed"
+      ? normalizedStatus
+      : "running";
+
+  return {
+    normalizedStatus,
+    runStatus,
+    lifecycleStatus,
+    interruptionStatus,
+    continuationMode,
+    availableActions,
+    canContinueSession,
+    canResumeCheckpoint,
+    canAppendInstruction,
+  };
+}
+
 export const RunControlActionSchema = z.enum([
   "resolve_approval",
   "continue_session",

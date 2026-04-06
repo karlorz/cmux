@@ -17,21 +17,36 @@ var (
 )
 
 type localRunDetail struct {
-	OrchestrationID string       `json:"orchestrationId"`
-	RunDir          string       `json:"runDir"`
-	Agent           string       `json:"agent"`
-	Status          string       `json:"status"`
-	Prompt          string       `json:"prompt"`
-	Workspace       string       `json:"workspace"`
-	Timeout         string       `json:"timeout,omitempty"`
-	StartedAt       string       `json:"startedAt,omitempty"`
-	CompletedAt     string       `json:"completedAt,omitempty"`
-	DurationMs      int64        `json:"durationMs,omitempty"`
-	Events          []LocalEvent `json:"events,omitempty"`
-	Result          *string      `json:"result,omitempty"`
-	Error           *string      `json:"error,omitempty"`
-	Stdout          string       `json:"stdout,omitempty"`
-	Stderr          string       `json:"stderr,omitempty"`
+	OrchestrationID      string       `json:"orchestrationId"`
+	RunDir               string       `json:"runDir"`
+	Agent                string       `json:"agent"`
+	SelectedVariant      string       `json:"selectedVariant,omitempty"`
+	Model                string       `json:"model,omitempty"`
+	GitBranch            string       `json:"gitBranch,omitempty"`
+	GitCommit            string       `json:"gitCommit,omitempty"`
+	DevshVersion         string       `json:"devshVersion,omitempty"`
+	SessionID            string       `json:"sessionId,omitempty"`
+	ThreadID             string       `json:"threadId,omitempty"`
+	CodexHome            string       `json:"codexHome,omitempty"`
+	InjectionMode        string       `json:"injectionMode,omitempty"`
+	LastInjectionAt      string       `json:"lastInjectionAt,omitempty"`
+	InjectionCount       int          `json:"injectionCount,omitempty"`
+	CheckpointRef        string       `json:"checkpointRef,omitempty"`
+	CheckpointGeneration int          `json:"checkpointGeneration,omitempty"`
+	CheckpointLabel      string       `json:"checkpointLabel,omitempty"`
+	CheckpointCreatedAt  int64        `json:"checkpointCreatedAt,omitempty"`
+	Status               string       `json:"status"`
+	Prompt               string       `json:"prompt"`
+	Workspace            string       `json:"workspace"`
+	Timeout              string       `json:"timeout,omitempty"`
+	StartedAt            string       `json:"startedAt,omitempty"`
+	CompletedAt          string       `json:"completedAt,omitempty"`
+	DurationMs           int64        `json:"durationMs,omitempty"`
+	Events               []LocalEvent `json:"events,omitempty"`
+	Result               *string      `json:"result,omitempty"`
+	Error                *string      `json:"error,omitempty"`
+	Stdout               string       `json:"stdout,omitempty"`
+	Stderr               string       `json:"stderr,omitempty"`
 }
 
 var orchestrateShowLocalCmd = &cobra.Command{
@@ -135,7 +150,39 @@ Examples:
 	},
 }
 
+func applyLocalRunConfig(detail *localRunDetail, config *LocalRunConfig) {
+	if detail == nil || config == nil {
+		return
+	}
+
+	detail.Timeout = config.Timeout
+	detail.SelectedVariant = config.SelectedVariant
+	detail.Model = config.Model
+	detail.GitBranch = config.GitBranch
+	detail.GitCommit = config.GitCommit
+	detail.DevshVersion = config.DevshVersion
+}
+
+func applyLocalSessionInfo(detail *localRunDetail, sessionInfo *LocalSessionInfo) {
+	if detail == nil || sessionInfo == nil {
+		return
+	}
+
+	detail.SessionID = sessionInfo.SessionID
+	detail.ThreadID = sessionInfo.ThreadID
+	detail.CodexHome = sessionInfo.CodexHome
+	detail.InjectionMode = sessionInfo.InjectionMode
+	detail.LastInjectionAt = sessionInfo.LastInjectionAt
+	detail.InjectionCount = sessionInfo.InjectionCount
+	detail.CheckpointRef = sessionInfo.CheckpointRef
+	detail.CheckpointGeneration = sessionInfo.CheckpointGeneration
+	detail.CheckpointLabel = sessionInfo.CheckpointLabel
+	detail.CheckpointCreatedAt = sessionInfo.CheckpointCreatedAt
+}
+
 func loadLocalRunDetail(runDir string, includeLogs bool, includeEvents bool) (*localRunDetail, error) {
+	config, _ := loadLocalRunConfig(runDir)
+	sessionInfo, _ := loadSessionInfo(runDir)
 	statePath := filepath.Join(runDir, "state.json")
 	if stateData, err := os.ReadFile(statePath); err == nil {
 		var state LocalState
@@ -156,6 +203,8 @@ func loadLocalRunDetail(runDir string, includeLogs bool, includeEvents bool) (*l
 			Result:          state.Result,
 			Error:           state.Error,
 		}
+		applyLocalRunConfig(detail, config)
+		applyLocalSessionInfo(detail, sessionInfo)
 		if includeEvents {
 			if len(state.Events) > 0 {
 				detail.Events = state.Events
@@ -170,15 +219,8 @@ func loadLocalRunDetail(runDir string, includeLogs bool, includeEvents bool) (*l
 		return detail, nil
 	}
 
-	configPath := filepath.Join(runDir, "config.json")
-	configData, err := os.ReadFile(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("could not load run state or config: %w", err)
-	}
-
-	var config LocalRunConfig
-	if err := json.Unmarshal(configData, &config); err != nil {
-		return nil, fmt.Errorf("invalid config.json: %w", err)
+	if config == nil {
+		return nil, fmt.Errorf("could not load run state or config: %w", os.ErrNotExist)
 	}
 
 	detail := &localRunDetail{
@@ -188,9 +230,10 @@ func loadLocalRunDetail(runDir string, includeLogs bool, includeEvents bool) (*l
 		Status:          "running",
 		Prompt:          config.Prompt,
 		Workspace:       config.Workspace,
-		Timeout:         config.Timeout,
 		StartedAt:       config.CreatedAt,
 	}
+	applyLocalRunConfig(detail, config)
+	applyLocalSessionInfo(detail, sessionInfo)
 	if includeEvents {
 		detail.Events = loadLocalRunEvents(runDir)
 	}
@@ -199,6 +242,21 @@ func loadLocalRunDetail(runDir string, includeLogs bool, includeEvents bool) (*l
 		detail.Stderr = loadLocalRunLog(runDir, "stderr.log")
 	}
 	return detail, nil
+}
+
+func loadLocalRunConfig(runDir string) (*LocalRunConfig, error) {
+	configPath := filepath.Join(runDir, "config.json")
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var config LocalRunConfig
+	if err := json.Unmarshal(configData, &config); err != nil {
+		return nil, fmt.Errorf("invalid config.json: %w", err)
+	}
+
+	return &config, nil
 }
 
 func loadLocalRunEvents(runDir string) []LocalEvent {

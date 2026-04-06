@@ -16,20 +16,79 @@ import (
 
 // LocalSessionInfo stores session identifiers for active instruction injection
 type LocalSessionInfo struct {
-	Agent           string                 `json:"agent"`
-	SessionID       string                 `json:"sessionId,omitempty"` // Claude session UUID
-	ThreadID        string                 `json:"threadId,omitempty"`  // Codex thread ID
-	CodexHome       string                 `json:"codexHome,omitempty"`
-	Workspace       string                 `json:"workspace"`
-	ClaudeOptions   *LocalClaudeCLIOptions `json:"claudeOptions,omitempty"`
-	InjectionMode   string                 `json:"injectionMode"` // "active" or "passive"
-	LastInjectionAt string                 `json:"lastInjectionAt,omitempty"`
-	InjectionCount  int                    `json:"injectionCount"`
+	Agent                string                 `json:"agent"`
+	SessionID            string                 `json:"sessionId,omitempty"` // Claude session UUID
+	ThreadID             string                 `json:"threadId,omitempty"`  // Codex thread ID
+	CodexHome            string                 `json:"codexHome,omitempty"`
+	Workspace            string                 `json:"workspace"`
+	ClaudeOptions        *LocalClaudeCLIOptions `json:"claudeOptions,omitempty"`
+	InjectionMode        string                 `json:"injectionMode"` // "active" or "passive"
+	LastInjectionAt      string                 `json:"lastInjectionAt,omitempty"`
+	InjectionCount       int                    `json:"injectionCount"`
+	CheckpointRef        string                 `json:"checkpointRef,omitempty"`
+	CheckpointGeneration int                    `json:"checkpointGeneration,omitempty"`
+	CheckpointLabel      string                 `json:"checkpointLabel,omitempty"`
+	CheckpointCreatedAt  int64                  `json:"checkpointCreatedAt,omitempty"`
 }
 
 var (
 	injectLocalMode string // "active" or "passive" or "auto"
 )
+
+var orchestrateResumeLocalCmd = &cobra.Command{
+	Use:   "resume-local <run-id> [message]",
+	Short: "Resume a checkpoint-backed local task",
+	Long: `Resume a checkpoint-backed local orchestration task.
+
+This command is the local checkpoint-restore lane. It records an explicit
+checkpoint resume request and appends the resume instruction for the local run.
+
+Examples:
+  devsh orchestrate resume-local local_abc123
+  devsh orchestrate resume-local local_abc123 "Resume from the saved checkpoint and continue"`,
+	Args: cobra.RangeArgs(1, 2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		runID := args[0]
+		message := ""
+		if len(args) > 1 {
+			message = args[1]
+		}
+
+		runDir, err := resolveLocalRunDir(runID)
+		if err != nil {
+			return err
+		}
+
+		sessionInfo, err := loadSessionInfo(runDir)
+		if err != nil {
+			return fmt.Errorf("failed to load session info: %w", err)
+		}
+
+		result, err := resumeLocalCheckpoint(runID, runDir, sessionInfo, message)
+		if err != nil {
+			return err
+		}
+
+		if flagJSON {
+			data, marshalErr := json.MarshalIndent(result, "", "  ")
+			if marshalErr != nil {
+				return fmt.Errorf("failed to marshal resume result: %w", marshalErr)
+			}
+			fmt.Println(string(data))
+			return nil
+		}
+
+		fmt.Printf("Resumed local run %s from checkpoint\n", runID)
+		fmt.Printf("Control lane: %s\n", formatRunControlActionLabel("resume_checkpoint"))
+		fmt.Printf("Continuation mode: checkpoint_restore\n")
+		fmt.Printf("Checkpoint ref: %s\n", sessionInfo.CheckpointRef)
+		if sessionInfo.CheckpointLabel != "" {
+			fmt.Printf("Checkpoint label: %s\n", sessionInfo.CheckpointLabel)
+		}
+		fmt.Printf("Message: %s\n", result["message"])
+		return nil
+	},
+}
 
 var orchestrateInjectLocalCmd = &cobra.Command{
 	Use:   "inject-local <run-id> <message>",
@@ -424,9 +483,41 @@ func UpdateCodexHome(runDir, codexHome string) error {
 	return saveSessionInfo(runDir, info)
 }
 
+func resumeLocalCheckpoint(runID, runDir string, sessionInfo *LocalSessionInfo, message string) (map[string]any, error) {
+	if sessionInfo == nil || sessionInfo.CheckpointRef == "" {
+		return nil, fmt.Errorf("run %s does not have a checkpoint to resume", runID)
+	}
+	if strings.TrimSpace(message) == "" {
+		message = "Resume the interrupted task."
+	}
+	if err := injectPassive(runDir, message); err != nil {
+		return nil, err
+	}
+	sessionInfo.LastInjectionAt = time.Now().UTC().Format(time.RFC3339)
+	sessionInfo.InjectionCount++
+	if err := saveSessionInfo(runDir, sessionInfo); err != nil {
+		return nil, err
+	}
+	logInjectionEvent(runDir, "checkpoint_restore", message)
+
+	return map[string]any{
+		"runId":                runID,
+		"mode":                 "checkpoint_restore",
+		"message":              message,
+		"injectionCount":       sessionInfo.InjectionCount,
+		"controlLane":          "resume_checkpoint",
+		"continuationMode":     "checkpoint_restore",
+		"availableActions":     []string{"resume_checkpoint"},
+		"checkpointRef":        sessionInfo.CheckpointRef,
+		"checkpointGeneration": sessionInfo.CheckpointGeneration,
+		"checkpointLabel":      sessionInfo.CheckpointLabel,
+	}, nil
+}
+
 func init() {
 	orchestrateInjectLocalCmd.Flags().StringVar(&injectLocalMode, "mode", "auto", "Injection mode: 'active' (continue session), 'passive' (append instruction), or 'auto'")
 	orchestrateCmd.AddCommand(orchestrateInjectLocalCmd)
+	orchestrateCmd.AddCommand(orchestrateResumeLocalCmd)
 }
 
 func controlLaneForInjectionMode(mode string) string {

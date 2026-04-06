@@ -35,10 +35,8 @@ jobs:
 
       - name: Validate TypeScript SDK packages
         run: |
-          bun --cwd packages/agent-sdk run build
-          bun --cwd packages/agent-sdk run test
-          bun --cwd packages/mcp-server run build
-          bun --cwd packages/mcp-server run test
+          (cd packages/agent-sdk && bun run build && bun run test)
+          (cd packages/mcp-server && bun run build && bun run test)
 
       - name: Checks and tests (parallel on one runner)
         shell: bash

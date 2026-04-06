@@ -150,6 +150,9 @@ type LocalClaudeLaunchRecord = {
   runDir?: string;
   sessionInfoPath?: string;
   sessionId?: string;
+  injectionMode?: string;
+  lastInjectionAt?: string;
+  injectionCount?: number;
   error?: string;
   exitCode?: number;
   launchedAt: string;
@@ -237,12 +240,40 @@ function buildLocalLaunchMetadataPatch(input: {
   runDir?: string;
   sessionInfoPath?: string;
   sessionId?: string;
+  injectionMode?: string;
+  lastInjectionAt?: string;
+  injectionCount?: number;
 }) {
   return {
     ...(input.orchestrationId ? { orchestrationId: input.orchestrationId } : {}),
     ...(input.runDir ? { runDir: input.runDir } : {}),
     ...(input.sessionInfoPath ? { sessionInfoPath: input.sessionInfoPath } : {}),
     ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    ...(input.injectionMode ? { injectionMode: input.injectionMode } : {}),
+    ...(input.lastInjectionAt ? { lastInjectionAt: input.lastInjectionAt } : {}),
+    ...(typeof input.injectionCount === "number"
+      ? { injectionCount: input.injectionCount }
+      : {}),
+  };
+}
+
+function hasLocalLaunchMetadataChanges(
+  entry: LocalClaudeLaunchRecord,
+  patch: Partial<LocalClaudeLaunchRecord>,
+) {
+  return Object.entries(patch).some(([key, value]) => entry[key as keyof LocalClaudeLaunchRecord] !== value);
+}
+
+function applyLocalLaunchMetadataPatch(
+  entry: LocalClaudeLaunchRecord,
+  patch: Partial<LocalClaudeLaunchRecord>,
+): LocalClaudeLaunchRecord {
+  if (!hasLocalLaunchMetadataChanges(entry, patch)) {
+    return entry;
+  }
+  return {
+    ...entry,
+    ...patch,
   };
 }
 
@@ -506,36 +537,48 @@ export const DashboardInputControls = memo(function DashboardInputControls({
         runDir?: string;
         sessionInfoPath?: string;
         sessionId?: string;
+        injectionMode?: string;
+        lastInjectionAt?: string;
+        injectionCount?: number;
       };
       if (!event.launchId) {
         return;
       }
 
-      setLocalLaunchHistory((prev) =>
-        prev.map((entry) =>
-          entry.launchId === event.launchId
-            ? {
-                ...entry,
-                ...buildLocalLaunchMetadataPatch({
-                  orchestrationId: event.orchestrationId,
-                  runDir: event.runDir,
-                  sessionInfoPath: event.sessionInfoPath,
-                  sessionId: event.sessionId,
-                }),
-              }
-            : entry,
-        ),
-      );
+      const metadataPatch = buildLocalLaunchMetadataPatch({
+        orchestrationId: event.orchestrationId,
+        runDir: event.runDir,
+        sessionInfoPath: event.sessionInfoPath,
+        sessionId: event.sessionId,
+        injectionMode: event.injectionMode,
+        lastInjectionAt: event.lastInjectionAt,
+        injectionCount: event.injectionCount,
+      });
+      const currentEntry = localLaunchHistory.find((entry) => entry.launchId === event.launchId);
+
+      setLocalLaunchHistory((prev) => {
+        let changed = false;
+        const next = prev.map((entry) => {
+          if (entry.launchId !== event.launchId) {
+            return entry;
+          }
+          const patched = applyLocalLaunchMetadataPatch(entry, metadataPatch);
+          if (patched !== entry) {
+            changed = true;
+          }
+          return patched;
+        });
+        return changed ? next : prev;
+      });
+
+      if (!currentEntry || !hasLocalLaunchMetadataChanges(currentEntry, metadataPatch)) {
+        return;
+      }
 
       void updateLocalClaudeLaunchMetadata({
         teamSlugOrId,
         launchId: event.launchId,
-        ...buildLocalLaunchMetadataPatch({
-          orchestrationId: event.orchestrationId,
-          runDir: event.runDir,
-          sessionInfoPath: event.sessionInfoPath,
-          sessionId: event.sessionId,
-        }),
+        ...metadataPatch,
       })
         .then(async () => {
           const launchEntry = localLaunchHistory.find((entry) => entry.launchId === event.launchId);
@@ -560,23 +603,32 @@ export const DashboardInputControls = memo(function DashboardInputControls({
 
             const nextTaskId = String(bridgeResult.taskId);
             const nextTaskRunId = String(bridgeResult.taskRunId);
-            setLocalLaunchHistory((prev) =>
-              prev.map((entry) =>
-                entry.launchId === event.launchId
-                  ? {
-                      ...entry,
-                      taskId: nextTaskId,
-                      taskRunId: nextTaskRunId,
-                      ...buildLocalLaunchMetadataPatch({
-                        orchestrationId: event.orchestrationId,
-                        runDir: event.runDir,
-                        sessionInfoPath: event.sessionInfoPath,
-                        sessionId: event.sessionId,
-                      }),
-                    }
-                  : entry,
-              ),
-            );
+            setLocalLaunchHistory((prev) => {
+              let changed = false;
+              const next = prev.map((entry) => {
+                if (entry.launchId !== event.launchId) {
+                  return entry;
+                }
+                const patched = applyLocalLaunchMetadataPatch(
+                  {
+                    ...entry,
+                    taskId: nextTaskId,
+                    taskRunId: nextTaskRunId,
+                  },
+                  metadataPatch,
+                );
+                if (patched !== entry || entry.taskId !== nextTaskId || entry.taskRunId !== nextTaskRunId) {
+                  changed = true;
+                  return {
+                    ...patched,
+                    taskId: nextTaskId,
+                    taskRunId: nextTaskRunId,
+                  };
+                }
+                return entry;
+              });
+              return changed ? next : prev;
+            });
 
             if (event.sessionId) {
               await bindLocalClaudeLaunchSession({
@@ -598,6 +650,9 @@ export const DashboardInputControls = memo(function DashboardInputControls({
                 runDir: event.runDir,
                 sessionInfoPath: event.sessionInfoPath,
                 sessionId: event.sessionId,
+                injectionMode: event.injectionMode,
+                lastInjectionAt: event.lastInjectionAt,
+                injectionCount: event.injectionCount,
               }),
             });
           } catch (error) {
@@ -2429,6 +2484,15 @@ export const DashboardInputControls = memo(function DashboardInputControls({
                         {entry.sessionId ? (
                           <p className="truncate text-blue-800/70 dark:text-blue-200/70">
                             Local session: {entry.sessionId}
+                            {entry.injectionMode ? ` · ${entry.injectionMode}` : ""}
+                            {typeof entry.injectionCount === "number"
+                              ? ` · ${entry.injectionCount} injections`
+                              : ""}
+                          </p>
+                        ) : null}
+                        {entry.lastInjectionAt ? (
+                          <p className="truncate text-blue-800/70 dark:text-blue-200/70">
+                            Last local injection: {new Date(entry.lastInjectionAt).toLocaleString()}
                           </p>
                         ) : null}
                         {entry.runDir ? (

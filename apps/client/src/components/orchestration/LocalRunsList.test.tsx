@@ -190,9 +190,23 @@ describe("LocalRunsList", () => {
           status: "running",
           prompt: "Inspect auth flow",
           startedAt: "2026-04-05T09:00:00Z",
+          completedAt: "2026-04-05T09:05:00Z",
+          selectedVariant: "high",
+          model: "claude-sonnet-4-6",
+          gitBranch: "feat/local-runs",
+          gitCommit: "abc123def456",
+          devshVersion: "1.2.3",
           runDir: "/tmp/local_www_123",
           workspace: "/root/workspace",
           timeout: "30m",
+          sessionId: "session_123",
+          injectionMode: "active",
+          lastInjectionAt: "2026-04-05T09:03:00Z",
+          injectionCount: 2,
+          checkpointRef: "cp_local_www_123_1",
+          checkpointGeneration: 1,
+          checkpointLabel: "before-apply",
+          checkpointCreatedAt: 1712307780000,
           bridgedTaskId: "task_123",
           bridgedTaskRunId: "tskrun_bridge_123",
           stdout: "stdout line",
@@ -279,6 +293,21 @@ describe("LocalRunsList", () => {
     expect(container.textContent).toContain("Open shared run page");
     expect(container.textContent).toContain("Open shared activity page");
     expect(container.textContent).toContain("Open shared logs page");
+    expect(container.textContent).toContain("Local artifact metadata");
+    expect(container.textContent).toContain("/tmp/local_www_123");
+    expect(container.textContent).toContain("task_123");
+    expect(container.textContent).toContain("tskrun_bridge_123");
+    expect(container.textContent).toContain("high");
+    expect(container.textContent).toContain("claude-sonnet-4-6");
+    expect(container.textContent).toContain("feat/local-runs");
+    expect(container.textContent).toContain("abc123def456");
+    expect(container.textContent).toContain("1.2.3");
+    expect(container.textContent).toContain("session_123");
+    expect(container.textContent).toContain("active");
+    expect(container.textContent).toContain("2");
+    expect(container.textContent).toContain("cp_local_www_123_1");
+    expect(container.textContent).toContain("before-apply");
+    expect(container.textContent).toContain("1 event");
   });
 
   it("uses shared run-control actions before falling back to local inject and still stops runs", async () => {
@@ -456,8 +485,355 @@ describe("LocalRunsList", () => {
         })
       );
     });
-
     expect(confirmMock).toHaveBeenCalledWith("Stop local run local_www_456?");
     expect(toastSuccessMock).toHaveBeenCalledWith("Stop requested with SIGTERM");
+  });
+
+  it("uses local session metadata to label fallback continuation controls", async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes("/api/orchestrate/list-local")) {
+        return createJsonResponse({
+          runs: [
+            {
+              orchestrationId: "local_www_789",
+              agent: "claude/haiku-4.5",
+              status: "running",
+              prompt: "Keep going",
+            },
+          ],
+          count: 1,
+        });
+      }
+
+      if (url.includes("/api/orchestrate/local-runs/local_www_789?")) {
+        return createJsonResponse({
+          orchestrationId: "local_www_789",
+          agent: "claude/haiku-4.5",
+          status: "running",
+          prompt: "Keep going",
+          sessionId: "session_local_789",
+          injectionMode: "active",
+          stdout: "working",
+          events: [],
+        });
+      }
+
+      if (url.includes("/api/v1/cmux/orchestration/run-control/local_www_789")) {
+        return createJsonResponse({ error: "Not found" }, 404);
+      }
+
+      if (url.includes("/api/orchestrate/local-runs/local_www_789/inject")) {
+        return createJsonResponse({
+          runId: "local_www_789",
+          mode: "active",
+          message: "Continue with the current task.",
+          injectionCount: 1,
+          controlLane: "continue_session",
+          continuationMode: "session_continuation",
+          availableActions: ["continue_session"],
+          sessionId: "session_local_789",
+        });
+      }
+
+      if (url.includes("/api/run-control/resume/local_www_789")) {
+        return createJsonResponse({
+          action: "resume",
+          summary: {
+            taskRunId: "tskrun_local_789",
+            taskId: "task_local_789",
+            orchestrationId: "local_www_789",
+            provider: "claude",
+            runStatus: "running",
+            lifecycle: {
+              status: "active",
+              interrupted: false,
+              interruptionStatus: "checkpoint_pending",
+            },
+            approvals: {
+              pendingCount: 0,
+              pendingRequestIds: [],
+            },
+            actions: {
+              availableActions: ["resume_checkpoint"],
+              canResolveApproval: false,
+              canContinueSession: false,
+              canResumeCheckpoint: true,
+              canAppendInstruction: false,
+            },
+            continuation: {
+              mode: "checkpoint_restore",
+              hasActiveBinding: false,
+              checkpointRef: "cp_local_www_789_2",
+              checkpointGeneration: 2,
+            },
+            timeout: {
+              inactivityTimeoutMinutes: 30,
+              status: "active",
+            },
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <LocalRunsList teamSlugOrId="team-dev" />
+        </QueryClientProvider>
+      );
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("local_www_789");
+    });
+
+    const expandButton = container.querySelector('button[title="Show details"]') as HTMLButtonElement | null;
+    await act(async () => {
+      expandButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitForAssertion(() => {
+      expect(container.querySelector("textarea")).not.toBeNull();
+    });
+
+    expect(container.textContent).toContain("Continue session");
+    expect(container.textContent).toContain("RunInspectorPanel:local_www_789");
+
+    const continueButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Continue session"),
+    ) as HTMLButtonElement | undefined;
+    expect(continueButton).toBeDefined();
+    expect(continueButton?.disabled).toBe(false);
+
+    await act(async () => {
+      continueButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitForAssertion(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://localhost:9779/api/orchestrate/local-runs/local_www_789/inject",
+        expect.objectContaining({
+          method: "POST",
+          credentials: "include",
+          body: JSON.stringify({
+            teamSlugOrId: "team-dev",
+            message: "Continue with the current task.",
+          }),
+        })
+      );
+    });
+
+    expect(toastSuccessMock).toHaveBeenCalledWith("Continue session queued");
+  });
+
+  it("prefers checkpoint-backed resume for local artifact continuation controls", async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes("/api/orchestrate/list-local")) {
+        return createJsonResponse({
+          runs: [
+            {
+              orchestrationId: "local_www_999",
+              agent: "claude/haiku-4.5",
+              status: "running",
+              prompt: "Resume me",
+            },
+          ],
+          count: 1,
+        });
+      }
+
+      if (url.includes("/api/orchestrate/local-runs/local_www_999?")) {
+        return createJsonResponse({
+          orchestrationId: "local_www_999",
+          agent: "claude/haiku-4.5",
+          status: "running",
+          prompt: "Resume me",
+          checkpointRef: "cp_local_www_999_3",
+          checkpointGeneration: 3,
+          checkpointLabel: "pre-fix",
+          stdout: "working",
+          events: [],
+        });
+      }
+
+      if (url.includes("/api/v1/cmux/orchestration/run-control/local_www_999")) {
+        return createJsonResponse({ error: "Not found" }, 404);
+      }
+
+      if (url.includes("/api/orchestrate/local-runs/local_www_999/resume")) {
+        return createJsonResponse({
+          runId: "local_www_999",
+          mode: "checkpoint_restore",
+          message: "Resume the interrupted task.",
+          controlLane: "resume_checkpoint",
+          continuationMode: "checkpoint_restore",
+          availableActions: ["resume_checkpoint"],
+          checkpointRef: "cp_local_www_999_3",
+          checkpointGeneration: 3,
+          checkpointLabel: "pre-fix",
+        });
+      }
+
+      if (url.includes("/api/orchestrate/local-runs/local_www_999/inject")) {
+        throw new Error("Unexpected local inject call for checkpoint resume");
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <LocalRunsList teamSlugOrId="team-dev" />
+        </QueryClientProvider>
+      );
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("local_www_999");
+    });
+
+    const expandButton = container.querySelector('button[title="Show details"]') as HTMLButtonElement | null;
+    await act(async () => {
+      expandButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitForAssertion(() => {
+      expect(container.querySelector("textarea")).not.toBeNull();
+    });
+
+    expect(container.textContent).toContain("Resume checkpoint");
+    expect(container.textContent).toContain("RunInspectorPanel:local_www_999");
+    expect(container.textContent).toContain("cp_local_www_999_3");
+    expect(container.textContent).toContain("pre-fix");
+
+    const resumeButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Resume checkpoint"),
+    ) as HTMLButtonElement | undefined;
+    expect(resumeButton).toBeDefined();
+
+    await act(async () => {
+      resumeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitForAssertion(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://localhost:9779/api/orchestrate/local-runs/local_www_999/resume",
+        expect.objectContaining({
+          method: "POST",
+          credentials: "include",
+          body: JSON.stringify({
+            teamSlugOrId: "team-dev",
+            message: "Resume the interrupted task.",
+          }),
+        })
+      );
+    });
+
+    expect(toastSuccessMock).toHaveBeenCalledWith("Resume checkpoint queued");
+  });
+
+  it("creates a local checkpoint and refreshes local metadata", async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes("/api/orchestrate/list-local")) {
+        return createJsonResponse({
+          runs: [
+            {
+              orchestrationId: "local_www_cp",
+              agent: "claude/haiku-4.5",
+              status: "running",
+              prompt: "Checkpoint me",
+            },
+          ],
+          count: 1,
+        });
+      }
+
+      if (url.includes("/api/orchestrate/local-runs/local_www_cp?")) {
+        return createJsonResponse({
+          orchestrationId: "local_www_cp",
+          agent: "claude/haiku-4.5",
+          status: "running",
+          prompt: "Checkpoint me",
+          checkpointRef: "cp_local_www_cp_1",
+          checkpointGeneration: 1,
+          stdout: "working",
+          events: [],
+        });
+      }
+
+      if (url.includes("/api/v1/cmux/orchestration/run-control/local_www_cp")) {
+        return createJsonResponse({ error: "Not found" }, 404);
+      }
+
+      if (url.includes("/api/orchestrate/local-runs/local_www_cp/checkpoint")) {
+        return createJsonResponse({
+          runId: "local_www_cp",
+          runDir: "/tmp/local_www_cp",
+          checkpointRef: "cp_local_www_cp_1",
+          checkpointGeneration: 1,
+          label: undefined,
+          createdAt: "2026-04-05T09:04:00Z",
+        });
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <LocalRunsList teamSlugOrId="team-dev" />
+        </QueryClientProvider>
+      );
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("local_www_cp");
+    });
+
+    const expandButton = container.querySelector('button[title="Show details"]') as HTMLButtonElement | null;
+    await act(async () => {
+      expandButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitForAssertion(() => {
+      expect(container.querySelector('button[title="Create checkpoint"]')).not.toBeNull();
+    });
+
+    const checkpointButton = container.querySelector('button[title="Create checkpoint"]') as HTMLButtonElement | null;
+    expect(checkpointButton).not.toBeNull();
+
+    await act(async () => {
+      checkpointButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitForAssertion(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://localhost:9779/api/orchestrate/local-runs/local_www_cp/checkpoint",
+        expect.objectContaining({
+          method: "POST",
+          credentials: "include",
+          body: JSON.stringify({
+            teamSlugOrId: "team-dev",
+          }),
+        })
+      );
+    });
+
+    expect(toastSuccessMock).toHaveBeenCalledWith("Checkpoint created: cp_local_www_cp_1");
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("RunInspectorPanel:local_www_cp");
+      expect(container.textContent).toContain("Resume checkpoint");
+      expect(container.textContent).toContain("cp_local_www_cp_1");
+    });
   });
 });

@@ -25,7 +25,12 @@ import { RunApprovalLane } from "@/components/dashboard/RunApprovalLane";
 import { ActivityStream } from "@/components/ActivityStream";
 import { WebLogsPage } from "@/components/log-viewer/WebLogsPage";
 import { WWW_ORIGIN } from "@/lib/wwwOrigin";
-import type { RunControlSummary } from "@cmux/shared";
+import {
+  deriveLocalRunControlState,
+  RUN_CONTROL_ACTION_LABELS,
+  RUN_CONTROL_DEFAULT_INSTRUCTIONS,
+  type RunControlSummary,
+} from "@cmux/shared";
 
 interface LocalRun {
   orchestrationId: string;
@@ -49,6 +54,21 @@ interface LocalRunEvent {
 interface LocalRunDetail extends LocalRun {
   timeout?: string;
   durationMs?: number;
+  selectedVariant?: string;
+  model?: string;
+  gitBranch?: string;
+  gitCommit?: string;
+  devshVersion?: string;
+  sessionId?: string;
+  threadId?: string;
+  codexHome?: string;
+  injectionMode?: string;
+  lastInjectionAt?: string;
+  injectionCount?: number;
+  checkpointRef?: string;
+  checkpointGeneration?: number;
+  checkpointLabel?: string;
+  checkpointCreatedAt?: number;
   result?: string;
   error?: string;
   stdout?: string;
@@ -70,14 +90,6 @@ interface RunControlActionResponse {
   action: RunControlSummary["actions"]["availableActions"][number] | "continue" | "resume" | "append_instruction";
   summary: RunControlSummary;
 }
-
-const RUN_CONTROL_ACTION_LABELS: Record<string, string> = {
-  continue_session: "Continue session",
-  continue: "Continue session",
-  resume_checkpoint: "Resume checkpoint",
-  resume: "Resume checkpoint",
-  append_instruction: "Append instruction",
-};
 
 const STATUS_CONFIG = {
   running: {
@@ -134,6 +146,11 @@ function formatDuration(durationMs?: number) {
   return `${minutes}m ${seconds}s`;
 }
 
+function formatEventCount(events?: LocalRunEvent[]) {
+  const count = events?.length ?? 0;
+  return count === 1 ? "1 event" : `${count} events`;
+}
+
 async function parseActionError(response: Response) {
   const fallback = `Request failed: ${response.status}`;
   try {
@@ -178,17 +195,55 @@ function getRunControlFollowUpTarget(
     return {
       path: "continue",
       label: RUN_CONTROL_ACTION_LABELS.continue_session,
-      defaultInstruction: "Continue with the current task.",
+      defaultInstruction: RUN_CONTROL_DEFAULT_INSTRUCTIONS.continue_session,
     };
   }
   if (available.includes("resume_checkpoint")) {
     return {
       path: "resume",
       label: RUN_CONTROL_ACTION_LABELS.resume_checkpoint,
-      defaultInstruction: "Resume the interrupted task.",
+      defaultInstruction: RUN_CONTROL_DEFAULT_INSTRUCTIONS.resume_checkpoint,
     };
   }
   if (available.includes("append_instruction")) {
+    return {
+      path: "append-instruction",
+      label: RUN_CONTROL_ACTION_LABELS.append_instruction,
+      defaultInstruction: undefined,
+    };
+  }
+  return null;
+}
+
+function getLocalArtifactFollowUpTarget(
+  detail: LocalRunDetail | undefined,
+): RunControlFollowUpTarget | null {
+  if (!detail) {
+    return null;
+  }
+
+  const localState = deriveLocalRunControlState({
+    status: detail.status,
+    sessionId: detail.sessionId,
+    threadId: detail.threadId,
+    checkpointRef: detail.checkpointRef,
+  });
+
+  if (localState.canResumeCheckpoint) {
+    return {
+      path: "resume",
+      label: RUN_CONTROL_ACTION_LABELS.resume_checkpoint,
+      defaultInstruction: RUN_CONTROL_DEFAULT_INSTRUCTIONS.resume_checkpoint,
+    };
+  }
+  if (localState.canContinueSession) {
+    return {
+      path: "continue",
+      label: RUN_CONTROL_ACTION_LABELS.continue_session,
+      defaultInstruction: RUN_CONTROL_DEFAULT_INSTRUCTIONS.continue_session,
+    };
+  }
+  if (localState.canAppendInstruction) {
     return {
       path: "append-instruction",
       label: RUN_CONTROL_ACTION_LABELS.append_instruction,
@@ -224,6 +279,54 @@ async function postRunControlFollowUp(input: {
   return response.json() as Promise<RunControlActionResponse>;
 }
 
+async function createLocalCheckpoint(input: {
+  runId: string;
+  teamSlugOrId: string;
+  label?: string;
+}) {
+  const response = await fetch(
+    `${WWW_ORIGIN}/api/orchestrate/local-runs/${encodeURIComponent(input.runId)}/checkpoint`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        teamSlugOrId: input.teamSlugOrId,
+        ...(input.label?.trim() ? { label: input.label.trim() } : {}),
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseActionError(response));
+  }
+
+  return response.json() as Promise<{
+    checkpointRef: string;
+    checkpointGeneration: number;
+    label?: string;
+  }>;
+}
+
+function getActionLabelForResponse(result: {
+  action?: string;
+  controlLane?: string;
+  mode?: string;
+}) {
+  const actionKey =
+    result.controlLane ??
+    (result.action === "continue"
+      ? "continue_session"
+      : result.action === "resume"
+        ? "resume_checkpoint"
+        : result.action);
+
+  return (
+    (actionKey ? RUN_CONTROL_ACTION_LABELS[actionKey as keyof typeof RUN_CONTROL_ACTION_LABELS] : undefined) ??
+    ("mode" in result && result.mode ? `Instruction sent via ${result.mode} mode` : "Instruction sent")
+  );
+}
+
 function LocalRunRow({
   run,
   teamSlugOrId,
@@ -240,6 +343,7 @@ function LocalRunRow({
   const startedAtLabel = formatRunTimestamp(run.startedAt);
   const canInject = run.status === "running";
   const canStop = run.status === "running";
+  const canCheckpoint = run.status === "running";
 
   const detailQuery = useQuery<LocalRunDetail>({
     queryKey: ["local-run-detail", teamSlugOrId, run.orchestrationId],
@@ -267,17 +371,40 @@ function LocalRunRow({
     staleTime: 5000,
   });
 
-  const runControlTarget = getRunControlFollowUpTarget(runControlSummaryQuery.data ?? undefined);
+  const sharedRunControlTarget = getRunControlFollowUpTarget(runControlSummaryQuery.data ?? undefined);
+  const localArtifactTarget = getLocalArtifactFollowUpTarget(detailQuery.data);
+  const runControlTarget = sharedRunControlTarget ?? localArtifactTarget;
 
   const injectMutation = useMutation({
     mutationFn: async () => {
-      if (runControlTarget) {
+      if (sharedRunControlTarget) {
         return postRunControlFollowUp({
           runId: run.orchestrationId,
           teamSlugOrId,
-          instruction: getDefaultRunControlInstruction(runControlTarget, instruction),
-          targetPath: runControlTarget.path,
+          instruction: getDefaultRunControlInstruction(sharedRunControlTarget, instruction),
+          targetPath: sharedRunControlTarget.path,
         });
+      }
+
+      if (localArtifactTarget?.path === "resume") {
+        const response = await fetch(
+          `${WWW_ORIGIN}/api/orchestrate/local-runs/${encodeURIComponent(run.orchestrationId)}/resume`,
+          {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              teamSlugOrId,
+              message: getDefaultRunControlInstruction(localArtifactTarget, instruction),
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(await parseActionError(response));
+        }
+
+        return response.json() as Promise<{ mode?: string; action?: string; controlLane?: string }>;
       }
 
       const response = await fetch(
@@ -288,7 +415,7 @@ function LocalRunRow({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             teamSlugOrId,
-            message: instruction,
+            message: getDefaultRunControlInstruction(runControlTarget, instruction),
           }),
         }
       );
@@ -297,12 +424,10 @@ function LocalRunRow({
         throw new Error(await parseActionError(response));
       }
 
-      return response.json() as Promise<{ mode?: string; action?: string }>;
+      return response.json() as Promise<{ mode?: string; action?: string; controlLane?: string }>;
     },
     onSuccess: (result) => {
-      const actionLabel =
-        RUN_CONTROL_ACTION_LABELS[result.action ?? ""] ??
-        ("mode" in result && result.mode ? `Instruction sent via ${result.mode} mode` : "Instruction sent");
+      const actionLabel = getActionLabelForResponse(result);
       toast.success(
         actionLabel.startsWith("Instruction sent") ? actionLabel : `${actionLabel} queued`,
       );
@@ -317,6 +442,24 @@ function LocalRunRow({
     },
     onError: (error) => {
       toast.error(`Failed to send instruction: ${error.message}`);
+    },
+  });
+
+  const checkpointMutation = useMutation({
+    mutationFn: async () =>
+      createLocalCheckpoint({
+        runId: run.orchestrationId,
+        teamSlugOrId,
+      }),
+    onSuccess: (result) => {
+      toast.success(`Checkpoint created: ${result.checkpointRef}`);
+      void queryClient.invalidateQueries({ queryKey: ["local-runs", teamSlugOrId] });
+      void queryClient.invalidateQueries({
+        queryKey: ["local-run-detail", teamSlugOrId, run.orchestrationId],
+      });
+    },
+    onError: (error) => {
+      toast.error(`Failed to create checkpoint: ${error.message}`);
     },
   });
 
@@ -354,6 +497,9 @@ function LocalRunRow({
   });
 
   const detail = detailQuery.data;
+  const shouldRenderInspectorPanel = Boolean(
+    detail?.bridgedTaskRunId || detail?.sessionId || detail?.threadId || detail?.checkpointRef,
+  );
 
   return (
     <div className="border-b border-neutral-100 last:border-b-0 dark:border-neutral-800">
@@ -412,6 +558,21 @@ function LocalRunRow({
                 title="Send follow-up instruction"
               >
                 <Send className="size-3.5" />
+              </button>
+            )}
+            {canCheckpoint && (
+              <button
+                type="button"
+                onClick={() => checkpointMutation.mutate()}
+                disabled={checkpointMutation.isPending}
+                className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 disabled:opacity-50 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+                title="Create checkpoint"
+              >
+                {checkpointMutation.isPending ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-3.5" />
+                )}
               </button>
             )}
             {canStop && (
@@ -475,15 +636,17 @@ function LocalRunRow({
                     runId={run.orchestrationId}
                     teamSlugOrId={teamSlugOrId}
                   />
+                  {shouldRenderInspectorPanel ? (
+                    <div className="rounded-lg border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+                      <RunInspectorPanel
+                        runId={run.orchestrationId}
+                        teamSlugOrId={teamSlugOrId}
+                        taskRunContextId={detail.bridgedTaskRunId as never}
+                      />
+                    </div>
+                  ) : null}
                   {detail?.bridgedTaskRunId ? (
                     <>
-                      <div className="rounded-lg border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
-                        <RunInspectorPanel
-                          runId={run.orchestrationId}
-                          teamSlugOrId={teamSlugOrId}
-                          taskRunContextId={detail.bridgedTaskRunId as never}
-                        />
-                      </div>
                       <div className="rounded-lg border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
                         <ActivityStream runId={detail.bridgedTaskRunId} provider={run.agent.split("/")[0]} />
                       </div>
@@ -614,6 +777,48 @@ function LocalArtifactsPanel({
   onLogTabChange: (tab: "stdout" | "stderr") => void;
 }) {
   const activeLog = logTab === "stdout" ? detail.stdout : detail.stderr;
+  const metadataItems = [
+    { label: "Workspace", value: detail.workspace },
+    { label: "Run directory", value: detail.runDir },
+    { label: "Agent", value: detail.agent },
+    { label: "Variant", value: detail.selectedVariant },
+    { label: "Model", value: detail.model },
+    { label: "Git branch", value: detail.gitBranch },
+    { label: "Git commit", value: detail.gitCommit },
+    { label: "devsh version", value: detail.devshVersion },
+    { label: "Session ID", value: detail.sessionId },
+    { label: "Thread ID", value: detail.threadId },
+    { label: "Codex home", value: detail.codexHome },
+    { label: "Injection mode", value: detail.injectionMode },
+    {
+      label: "Last injection",
+      value: formatRunTimestamp(detail.lastInjectionAt) ?? detail.lastInjectionAt,
+    },
+    { label: "Injection count", value:
+        typeof detail.injectionCount === "number" ? String(detail.injectionCount) : undefined,
+    },
+    { label: "Checkpoint ref", value: detail.checkpointRef },
+    {
+      label: "Checkpoint generation",
+      value:
+        typeof detail.checkpointGeneration === "number"
+          ? String(detail.checkpointGeneration)
+          : undefined,
+    },
+    { label: "Checkpoint label", value: detail.checkpointLabel },
+    {
+      label: "Checkpoint created",
+      value:
+        typeof detail.checkpointCreatedAt === "number"
+          ? formatRunTimestamp(new Date(detail.checkpointCreatedAt).toISOString())
+          : undefined,
+    },
+    { label: "Prompt", value: detail.prompt },
+    { label: "Bridge task", value: detail.bridgedTaskId },
+    { label: "Bridge run", value: detail.bridgedTaskRunId },
+    { label: "Completed", value: formatRunTimestamp(detail.completedAt) },
+    { label: "Event count", value: formatEventCount(detail.events) },
+  ].filter((item) => Boolean(item.value));
 
   return (
     <div className="space-y-4 rounded-lg border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-950/40">
@@ -634,6 +839,37 @@ function LocalArtifactsPanel({
         <InfoCard label="Duration" value={formatDuration(detail.durationMs) ?? "—"} />
         <InfoCard label="Timeout" value={detail.timeout ?? "—"} />
       </div>
+
+      {metadataItems.length > 0 ? (
+        <div>
+          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+            Local artifact metadata
+          </div>
+          <dl className="grid gap-3 md:grid-cols-2">
+            {metadataItems.map((item) => (
+              <div
+                key={item.label}
+                className="rounded-lg border border-neutral-200 bg-white px-3 py-2 dark:border-neutral-800 dark:bg-neutral-950"
+              >
+                <dt className="text-[11px] font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                  {item.label}
+                </dt>
+                <dd
+                  className={clsx(
+                    "mt-1 text-sm text-neutral-800 dark:text-neutral-200",
+                    item.label === "Prompt" || item.label === "Event count"
+                      ? undefined
+                      : "font-mono text-xs",
+                  )}
+                  title={item.value ?? undefined}
+                >
+                  {item.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      ) : null}
 
       {(detail.result || detail.error) && (
         <div className="grid gap-3 lg:grid-cols-2">

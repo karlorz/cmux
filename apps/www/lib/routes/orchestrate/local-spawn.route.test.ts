@@ -60,6 +60,7 @@ describe("orchestrateLocalSpawnRouter", () => {
     getAccessTokenFromRequest.mockResolvedValue("token_123");
     getConvex.mockReturnValue({
       query: vi.fn(async () => []),
+      mutation: vi.fn(async () => "launch_record_1"),
     });
     verifyTeamAccess.mockResolvedValue({
       uuid: "team_uuid",
@@ -281,6 +282,19 @@ describe("orchestrateLocalSpawnRouter", () => {
         prompt: "Normalize the local run contract",
         workspace: "/Users/tester/Desktop/code/cmux",
         startedAt: "2026-04-04T08:00:00Z",
+        selectedVariant: "high",
+        model: "claude-sonnet-4-6",
+        gitBranch: "feat/local-runs",
+        gitCommit: "abc123def456",
+        devshVersion: "1.2.3",
+        sessionId: "session_123",
+        injectionMode: "active",
+        lastInjectionAt: "2026-04-04T08:04:00Z",
+        injectionCount: 2,
+        checkpointRef: "cp_local_www_1712345678901_abcd1234_1",
+        checkpointGeneration: 1,
+        checkpointLabel: "before-apply",
+        checkpointCreatedAt: 1712217840000,
         stdout: "working...",
         stderr: "",
         events: [
@@ -321,6 +335,19 @@ describe("orchestrateLocalSpawnRouter", () => {
       orchestrationId: "local_www_1712345678901_abcd1234",
       bridgedTaskId: "task_123",
       bridgedTaskRunId: "tskrun_bridge_123",
+      selectedVariant: "high",
+      model: "claude-sonnet-4-6",
+      gitBranch: "feat/local-runs",
+      gitCommit: "abc123def456",
+      devshVersion: "1.2.3",
+      sessionId: "session_123",
+      injectionMode: "active",
+      lastInjectionAt: "2026-04-04T08:04:00Z",
+      injectionCount: 2,
+      checkpointRef: "cp_local_www_1712345678901_abcd1234_1",
+      checkpointGeneration: 1,
+      checkpointLabel: "before-apply",
+      checkpointCreatedAt: 1712217840000,
       stdout: "working...",
       events: [
         expect.objectContaining({
@@ -343,6 +370,9 @@ describe("orchestrateLocalSpawnRouter", () => {
         sessionId: "session_123",
       }),
     });
+
+    const mutation = vi.fn(async () => "launch_record_1");
+    getConvex.mockReturnValue({ query: vi.fn(async () => []), mutation });
 
     const response = await createApp().request(
       "/orchestrate/local-runs/local_www_1712345678901_abcd1234/inject",
@@ -370,9 +400,136 @@ describe("orchestrateLocalSpawnRouter", () => {
       ],
       { timeout: 10000 }
     );
+    expect(mutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        teamSlugOrId: "example-team",
+        orchestrationId: "local_www_1712345678901_abcd1234",
+        sessionId: "session_123",
+        injectionMode: "active",
+        injectionCount: 2,
+      }),
+    );
     await expect(response.json()).resolves.toMatchObject({
       mode: "active",
       sessionId: "session_123",
+    });
+  });
+
+  it("POST /orchestrate/local-runs/:runId/resume delegates to resume-local", async () => {
+    execaMock.mockResolvedValue({
+      stdout: JSON.stringify({
+        runId: "local_www_1712345678901_abcd1234",
+        mode: "checkpoint_restore",
+        message: "Resume the interrupted task.",
+        controlLane: "resume_checkpoint",
+        continuationMode: "checkpoint_restore",
+        availableActions: ["resume_checkpoint"],
+        checkpointRef: "cp_local_www_1712345678901_abcd1234_2",
+        checkpointGeneration: 2,
+        checkpointLabel: "before-refactor",
+      }),
+    });
+    const mutation = vi.fn(async () => "launch_record_1");
+    getConvex.mockReturnValue({ query: vi.fn(async () => []), mutation });
+
+    const response = await createApp().request(
+      "/orchestrate/local-runs/local_www_1712345678901_abcd1234/resume",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          teamSlugOrId: "example-team",
+          message: "Resume the interrupted task.",
+        }),
+      }
+    );
+
+    expect(response.status).toBe(200);
+    expect(execaMock).toHaveBeenCalledWith(
+      "devsh",
+      [
+        "orchestrate",
+        "resume-local",
+        "local_www_1712345678901_abcd1234",
+        "Resume the interrupted task.",
+        "--json",
+      ],
+      { timeout: 10000 }
+    );
+    expect(mutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        teamSlugOrId: "example-team",
+        orchestrationId: "local_www_1712345678901_abcd1234",
+        checkpointRef: "cp_local_www_1712345678901_abcd1234_2",
+        checkpointGeneration: 2,
+      }),
+    );
+    await expect(response.json()).resolves.toMatchObject({
+      controlLane: "resume_checkpoint",
+      continuationMode: "checkpoint_restore",
+    });
+  });
+
+  it("POST /orchestrate/local-runs/:runId/checkpoint creates a local checkpoint", async () => {
+    execaMock.mockResolvedValue({
+      stdout: JSON.stringify({
+        runId: "local_www_1712345678901_abcd1234",
+        runDir: "/Users/tester/.devsh/orchestrations/local_www_1712345678901_abcd1234",
+        checkpointRef: "cp_local_www_1712345678901_abcd1234_2",
+        checkpointGeneration: 2,
+        label: "before-refactor",
+        createdAt: "2026-04-04T08:05:00Z",
+      }),
+    });
+    const mutation = vi.fn(async () => "launch_record_1");
+    getConvex.mockReturnValue({ query: vi.fn(async () => []), mutation });
+
+    const response = await createApp().request(
+      "/orchestrate/local-runs/local_www_1712345678901_abcd1234/checkpoint",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          teamSlugOrId: "example-team",
+          label: "before-refactor",
+        }),
+      }
+    );
+
+    expect(response.status).toBe(200);
+    expect(execaMock).toHaveBeenCalledWith(
+      "devsh",
+      [
+        "orchestrate",
+        "checkpoint",
+        "--json",
+        "--local-run",
+        "local_www_1712345678901_abcd1234",
+        "--label",
+        "before-refactor",
+      ],
+      { timeout: 10000 }
+    );
+    expect(mutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        teamSlugOrId: "example-team",
+        orchestrationId: "local_www_1712345678901_abcd1234",
+        checkpointRef: "cp_local_www_1712345678901_abcd1234_2",
+        checkpointGeneration: 2,
+        checkpointLabel: "before-refactor",
+      }),
+    );
+    await expect(response.json()).resolves.toMatchObject({
+      checkpointRef: "cp_local_www_1712345678901_abcd1234_2",
+      checkpointGeneration: 2,
+      label: "before-refactor",
     });
   });
 

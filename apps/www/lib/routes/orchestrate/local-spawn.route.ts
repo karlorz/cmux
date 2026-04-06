@@ -72,6 +72,21 @@ const LocalRunSchema = z
 const LocalRunDetailSchema = LocalRunSchema.extend({
   timeout: z.string().optional(),
   durationMs: z.number().optional(),
+  selectedVariant: z.string().optional(),
+  model: z.string().optional(),
+  gitBranch: z.string().optional(),
+  gitCommit: z.string().optional(),
+  devshVersion: z.string().optional(),
+  sessionId: z.string().optional(),
+  threadId: z.string().optional(),
+  codexHome: z.string().optional(),
+  injectionMode: z.string().optional(),
+  lastInjectionAt: z.string().optional(),
+  injectionCount: z.number().optional(),
+  checkpointRef: z.string().optional(),
+  checkpointGeneration: z.number().optional(),
+  checkpointLabel: z.string().optional(),
+  checkpointCreatedAt: z.number().optional(),
   result: z.string().optional(),
   error: z.string().optional(),
   stdout: z.string().optional(),
@@ -104,14 +119,35 @@ const LocalRunInjectResponseSchema = z
     runId: z.string(),
     mode: z.string(),
     message: z.string(),
-    injectionCount: z.number(),
+    injectionCount: z.number().optional(),
     controlLane: z.string(),
     continuationMode: z.string(),
     availableActions: z.array(z.string()),
     sessionId: z.string().optional(),
     threadId: z.string().optional(),
+    checkpointRef: z.string().optional(),
+    checkpointGeneration: z.number().optional(),
+    checkpointLabel: z.string().optional(),
   })
   .openapi("LocalRunInjectResponse");
+
+const LocalRunCheckpointRequestSchema = z
+  .object({
+    teamSlugOrId: z.string().openapi({ description: "Team slug or ID" }),
+    label: z.string().optional().openapi({ description: "Optional checkpoint label" }),
+  })
+  .openapi("LocalRunCheckpointRequest");
+
+const LocalRunCheckpointResponseSchema = z
+  .object({
+    runId: z.string(),
+    runDir: z.string(),
+    checkpointRef: z.string(),
+    checkpointGeneration: z.number(),
+    label: z.string().optional(),
+    createdAt: z.string(),
+  })
+  .openapi("LocalRunCheckpointResponse");
 
 const LocalRunStopRequestSchema = z
   .object({
@@ -299,6 +335,80 @@ function isRunUnavailableError(message: string) {
   );
 }
 
+async function updateLocalLaunchContinuationMetadata(input: {
+  accessToken: string;
+  teamSlugOrId: string;
+  orchestrationId: string;
+  sessionId?: string;
+  injectionMode?: string;
+  injectionCount?: number;
+  checkpointRef?: string;
+  checkpointGeneration?: number;
+  checkpointLabel?: string;
+  checkpointCreatedAt?: number;
+}) {
+  const convex = getConvex({ accessToken: input.accessToken });
+  await convex.mutation(api.localClaudeLaunches.updateMetadataByOrchestrationId, {
+    teamSlugOrId: input.teamSlugOrId,
+    orchestrationId: input.orchestrationId,
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    ...(input.injectionMode ? { injectionMode: input.injectionMode } : {}),
+    ...(typeof input.injectionCount === "number"
+      ? { injectionCount: input.injectionCount }
+      : {}),
+    ...(input.checkpointRef ? { checkpointRef: input.checkpointRef } : {}),
+    ...(typeof input.checkpointGeneration === "number"
+      ? { checkpointGeneration: input.checkpointGeneration }
+      : {}),
+    ...(input.checkpointLabel ? { checkpointLabel: input.checkpointLabel } : {}),
+    ...(typeof input.checkpointCreatedAt === "number"
+      ? { checkpointCreatedAt: input.checkpointCreatedAt }
+      : {}),
+  });
+}
+
+const LOCAL_ROUTE_ACCESS_ERROR_STATUSES = new Set([401, 403, 500] as const);
+
+async function requireLocalRouteAccess(request: Request, teamSlugOrId: string): Promise<
+  | { accessToken: string }
+  | { error: { status: 401 | 403 | 500; body: { error: string; details?: string } } }
+> {
+  const accessToken = await getAccessTokenFromRequest(request);
+  if (!accessToken) {
+    return { error: { status: 401 as const, body: { error: "Unauthorized" } } };
+  }
+
+  try {
+    await verifyTeamAccess({
+      req: request,
+      accessToken,
+      teamSlugOrId,
+    });
+  } catch (error) {
+    const mapped = mapDomainError(error);
+    if (mapped?.status === 403) {
+      return { error: { status: 403 as const, body: { error: mapped.message } } };
+    }
+    return {
+      error: {
+        status: 500 as const,
+        body: {
+          error: "Failed to verify team access",
+          details: error instanceof Error ? error.message : String(error),
+        },
+      },
+    };
+  }
+
+  return { accessToken };
+}
+
+function isLocalRouteAccessError(
+  access: Awaited<ReturnType<typeof requireLocalRouteAccess>>,
+): access is { error: { status: 401 | 403 | 500; body: { error: string; details?: string } } } {
+  return "error" in access && LOCAL_ROUTE_ACCESS_ERROR_STATUSES.has(access.error.status);
+}
+
 /**
  * POST /api/orchestrate/spawn-local
  */
@@ -366,23 +476,9 @@ orchestrateLocalSpawnRouter.openapi(
   }),
   async (c) => {
     const body = c.req.valid("json");
-    const accessToken = await getAccessTokenFromRequest(c.req.raw);
-    if (!accessToken) {
-      return c.json({ error: "Unauthorized" }, 401);
-    }
-
-    try {
-      await verifyTeamAccess({
-        req: c.req.raw,
-        accessToken,
-        teamSlugOrId: body.teamSlugOrId,
-      });
-    } catch (error) {
-      const mapped = mapDomainError(error);
-      if (mapped?.status === 403) {
-        return c.json({ error: mapped.message }, 403);
-      }
-      return c.json({ error: "Failed to verify team access", details: error instanceof Error ? error.message : String(error) }, 500);
+    const access = await requireLocalRouteAccess(c.req.raw, body.teamSlugOrId);
+    if (isLocalRouteAccessError(access)) {
+      return c.json(access.error.body, access.error.status);
     }
 
     const orchestrationId = buildLocalRouteOrchestrationId();
@@ -518,23 +614,9 @@ orchestrateLocalSpawnRouter.openapi(
   }),
   async (c) => {
     const query = c.req.valid("query");
-    const accessToken = await getAccessTokenFromRequest(c.req.raw);
-    if (!accessToken) {
-      return c.json({ error: "Unauthorized" }, 401);
-    }
-
-    try {
-      await verifyTeamAccess({
-        req: c.req.raw,
-        accessToken,
-        teamSlugOrId: query.teamSlugOrId,
-      });
-    } catch (error) {
-      const mapped = mapDomainError(error);
-      if (mapped?.status === 403) {
-        return c.json({ error: mapped.message }, 403);
-      }
-      return c.json({ error: "Failed to verify team access", details: error instanceof Error ? error.message : String(error) }, 500);
+    const access = await requireLocalRouteAccess(c.req.raw, query.teamSlugOrId);
+    if (isLocalRouteAccessError(access)) {
+      return c.json(access.error.body, access.error.status);
     }
 
     const args = ["orchestrate", "list-local", "--json", "--limit", String(query.limit)];
@@ -545,7 +627,7 @@ orchestrateLocalSpawnRouter.openapi(
     try {
       const [parsed, bridgeMap] = await Promise.all([
         z.array(RawLocalRunSchema).parse(await runDevshJson<unknown>(args)),
-        getLocalLaunchBridgeMap(accessToken, query.teamSlugOrId),
+        getLocalLaunchBridgeMap(access.accessToken, query.teamSlugOrId),
       ]);
       const normalizedRuns = parsed.map((run) =>
         normalizeLocalRun(
@@ -639,23 +721,9 @@ orchestrateLocalSpawnRouter.openapi(
   async (c) => {
     const { runId } = c.req.valid("param");
     const query = c.req.valid("query");
-    const accessToken = await getAccessTokenFromRequest(c.req.raw);
-    if (!accessToken) {
-      return c.json({ error: "Unauthorized" }, 401);
-    }
-
-    try {
-      await verifyTeamAccess({
-        req: c.req.raw,
-        accessToken,
-        teamSlugOrId: query.teamSlugOrId,
-      });
-    } catch (error) {
-      const mapped = mapDomainError(error);
-      if (mapped?.status === 403) {
-        return c.json({ error: mapped.message }, 403);
-      }
-      return c.json({ error: "Failed to verify team access", details: error instanceof Error ? error.message : String(error) }, 500);
+    const access = await requireLocalRouteAccess(c.req.raw, query.teamSlugOrId);
+    if (isLocalRouteAccessError(access)) {
+      return c.json(access.error.body, access.error.status);
     }
 
     const args = ["orchestrate", "show-local", runId, "--json"];
@@ -669,7 +737,7 @@ orchestrateLocalSpawnRouter.openapi(
     try {
       const detail = LocalRunDetailSchema.parse(await runDevshJson<unknown>(args));
       const bridgeRecord = await getLocalLaunchBridgeRecord(
-        accessToken,
+        access.accessToken,
         query.teamSlugOrId,
         runId,
       );
@@ -767,29 +835,23 @@ orchestrateLocalSpawnRouter.openapi(
   async (c) => {
     const { runId } = c.req.valid("param");
     const body = c.req.valid("json");
-    const accessToken = await getAccessTokenFromRequest(c.req.raw);
-    if (!accessToken) {
-      return c.json({ error: "Unauthorized" }, 401);
-    }
-
-    try {
-      await verifyTeamAccess({
-        req: c.req.raw,
-        accessToken,
-        teamSlugOrId: body.teamSlugOrId,
-      });
-    } catch (error) {
-      const mapped = mapDomainError(error);
-      if (mapped?.status === 403) {
-        return c.json({ error: mapped.message }, 403);
-      }
-      return c.json({ error: "Failed to verify team access", details: error instanceof Error ? error.message : String(error) }, 500);
+    const access = await requireLocalRouteAccess(c.req.raw, body.teamSlugOrId);
+    if (isLocalRouteAccessError(access)) {
+      return c.json(access.error.body, access.error.status);
     }
 
     try {
       const result = LocalRunInjectResponseSchema.parse(
         await runDevshJson<unknown>(["orchestrate", "inject-local", runId, body.message, "--json"]),
       );
+      await updateLocalLaunchContinuationMetadata({
+        accessToken: access.accessToken,
+        teamSlugOrId: body.teamSlugOrId,
+        orchestrationId: runId,
+        sessionId: result.sessionId,
+        injectionMode: result.mode,
+        injectionCount: result.injectionCount,
+      });
       return c.json(result, 200);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -800,6 +862,223 @@ orchestrateLocalSpawnRouter.openapi(
         return c.json({ error: "Local run inject is unavailable", details: message }, 409);
       }
       return c.json({ error: "Failed to inject instruction", details: message }, 500);
+    }
+  },
+);
+
+/**
+ * POST /api/orchestrate/local-runs/:runId/resume
+ */
+orchestrateLocalSpawnRouter.openapi(
+  createRoute({
+    method: "post" as const,
+    path: "/orchestrate/local-runs/{runId}/resume",
+    tags: ["Orchestration"],
+    summary: "Resume a checkpoint-backed local run",
+    request: {
+      params: z.object({
+        runId: z.string().openapi({ description: "Local run ID" }),
+      }),
+      body: {
+        content: {
+          "application/json": {
+            schema: LocalRunInjectRequestSchema,
+          },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        description: "Local run resume queued successfully",
+        content: {
+          "application/json": {
+            schema: LocalRunInjectResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Unauthorized",
+        content: {
+          "application/json": {
+            schema: LocalSpawnErrorSchema,
+          },
+        },
+      },
+      403: {
+        description: "Forbidden",
+        content: {
+          "application/json": {
+            schema: LocalSpawnErrorSchema,
+          },
+        },
+      },
+      404: {
+        description: "Run not found",
+        content: {
+          "application/json": {
+            schema: LocalSpawnErrorSchema,
+          },
+        },
+      },
+      409: {
+        description: "Run cannot be resumed",
+        content: {
+          "application/json": {
+            schema: LocalSpawnErrorSchema,
+          },
+        },
+      },
+      500: {
+        description: "Failed to resume local run",
+        content: {
+          "application/json": {
+            schema: LocalSpawnErrorSchema,
+          },
+        },
+      },
+    },
+  }),
+  async (c) => {
+    const { runId } = c.req.valid("param");
+    const body = c.req.valid("json");
+    const access = await requireLocalRouteAccess(c.req.raw, body.teamSlugOrId);
+    if (isLocalRouteAccessError(access)) {
+      return c.json(access.error.body, access.error.status);
+    }
+
+    try {
+      const result = LocalRunInjectResponseSchema.parse(
+        await runDevshJson<unknown>([
+          "orchestrate",
+          "resume-local",
+          runId,
+          ...(body.message ? [body.message] : []),
+          "--json",
+        ]),
+      );
+      await updateLocalLaunchContinuationMetadata({
+        accessToken: access.accessToken,
+        teamSlugOrId: body.teamSlugOrId,
+        orchestrationId: runId,
+        sessionId: result.sessionId,
+        checkpointRef: result.checkpointRef,
+        checkpointGeneration: result.checkpointGeneration,
+      });
+      return c.json(result, 200);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (isRunNotFoundError(message)) {
+        return c.json({ error: "Local run not found", details: message }, 404);
+      }
+      if (isRunUnavailableError(message)) {
+        return c.json({ error: "Local run resume is unavailable", details: message }, 409);
+      }
+      return c.json({ error: "Failed to resume local run", details: message }, 500);
+    }
+  },
+);
+
+/**
+ * POST /api/orchestrate/local-runs/:runId/checkpoint
+ */
+orchestrateLocalSpawnRouter.openapi(
+  createRoute({
+    method: "post" as const,
+    path: "/orchestrate/local-runs/{runId}/checkpoint",
+    tags: ["Orchestration"],
+    summary: "Create a checkpoint for a local run",
+    request: {
+      params: z.object({
+        runId: z.string().openapi({ description: "Local run ID" }),
+      }),
+      body: {
+        content: {
+          "application/json": {
+            schema: LocalRunCheckpointRequestSchema,
+          },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        description: "Checkpoint created successfully",
+        content: {
+          "application/json": {
+            schema: LocalRunCheckpointResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Unauthorized",
+        content: {
+          "application/json": {
+            schema: LocalSpawnErrorSchema,
+          },
+        },
+      },
+      403: {
+        description: "Forbidden",
+        content: {
+          "application/json": {
+            schema: LocalSpawnErrorSchema,
+          },
+        },
+      },
+      404: {
+        description: "Run not found",
+        content: {
+          "application/json": {
+            schema: LocalSpawnErrorSchema,
+          },
+        },
+      },
+      500: {
+        description: "Failed to create checkpoint",
+        content: {
+          "application/json": {
+            schema: LocalSpawnErrorSchema,
+          },
+        },
+      },
+    },
+  }),
+  async (c) => {
+    const { runId } = c.req.valid("param");
+    const body = c.req.valid("json");
+    const access = await requireLocalRouteAccess(c.req.raw, body.teamSlugOrId);
+    if (isLocalRouteAccessError(access)) {
+      return c.json(access.error.body, access.error.status);
+    }
+
+    try {
+      const result = LocalRunCheckpointResponseSchema.parse(
+        await runDevshJson<unknown>([
+          "orchestrate",
+          "checkpoint",
+          "--json",
+          "--local-run",
+          runId,
+          ...(body.label ? ["--label", body.label] : []),
+        ]),
+      );
+      await updateLocalLaunchContinuationMetadata({
+        accessToken: access.accessToken,
+        teamSlugOrId: body.teamSlugOrId,
+        orchestrationId: runId,
+        checkpointRef: result.checkpointRef,
+        checkpointGeneration: result.checkpointGeneration,
+        checkpointLabel: result.label,
+        checkpointCreatedAt: Date.parse(result.createdAt),
+      });
+      return c.json(result, 200);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (isRunNotFoundError(message)) {
+        return c.json({ error: "Local run not found", details: message }, 404);
+      }
+      return c.json({ error: "Failed to create checkpoint", details: message }, 500);
     }
   },
 );
@@ -880,23 +1159,9 @@ orchestrateLocalSpawnRouter.openapi(
   async (c) => {
     const { runId } = c.req.valid("param");
     const body = c.req.valid("json");
-    const accessToken = await getAccessTokenFromRequest(c.req.raw);
-    if (!accessToken) {
-      return c.json({ error: "Unauthorized" }, 401);
-    }
-
-    try {
-      await verifyTeamAccess({
-        req: c.req.raw,
-        accessToken,
-        teamSlugOrId: body.teamSlugOrId,
-      });
-    } catch (error) {
-      const mapped = mapDomainError(error);
-      if (mapped?.status === 403) {
-        return c.json({ error: mapped.message }, 403);
-      }
-      return c.json({ error: "Failed to verify team access", details: error instanceof Error ? error.message : String(error) }, 500);
+    const access = await requireLocalRouteAccess(c.req.raw, body.teamSlugOrId);
+    if (isLocalRouteAccessError(access)) {
+      return c.json(access.error.body, access.error.status);
     }
 
     const args = ["orchestrate", "stop-local", runId, "--json"];

@@ -16,7 +16,10 @@
 
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
-import type { RunControlSummary } from "@cmux/shared";
+import {
+  RUN_CONTROL_ACTION_LABELS,
+  type RunControlSummary,
+} from "@cmux/shared";
 import { getApiV1CmuxOrchestrationRunControlByTaskRunIdOptions } from "@cmux/www-openapi-client/react-query";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
@@ -44,6 +47,78 @@ import { useState } from "react";
 
 import { TaskRunMemoryPanel } from "@/components/TaskRunMemoryPanel";
 
+interface SessionPanelData {
+  hasBoundSession: boolean;
+  provider: string | null;
+  status: string | null;
+  mode: string | null;
+  replyChannel: string | null;
+  providerSessionId: string | null;
+  providerThreadId: string | null;
+  isResumedSession: boolean;
+  createdAt: number | null;
+  lastActiveAt: number | null;
+  source: "ancestry" | "summary";
+}
+
+function deriveSessionPanelData(
+  ancestry:
+    | {
+        hasBoundSession: boolean;
+        provider: string | null;
+        status: string | null;
+        mode: string | null;
+        replyChannel: string | null;
+        providerSessionId: string | null;
+        providerThreadId: string | null;
+        isResumedSession: boolean;
+        createdAt: number | null;
+        lastActiveAt: number | null;
+      }
+    | undefined,
+  summary: RunControlSummary | undefined,
+): SessionPanelData | undefined {
+  if (ancestry?.hasBoundSession) {
+    return {
+      ...ancestry,
+      source: "ancestry",
+    };
+  }
+
+  if (!summary) {
+    return undefined;
+  }
+
+  const hasDerivedSession = Boolean(
+    summary.continuation.providerSessionId ||
+      summary.continuation.providerThreadId ||
+      summary.continuation.hasActiveBinding,
+  );
+  if (!hasDerivedSession) {
+    return undefined;
+  }
+
+  return {
+    hasBoundSession: true,
+    provider: summary.provider || null,
+    status:
+      summary.continuation.sessionStatus ??
+      (summary.continuation.hasActiveBinding ? "active" : null),
+    mode:
+      summary.continuation.sessionMode ??
+      (summary.continuation.mode === "session_continuation"
+        ? "session_continuation"
+        : null),
+    replyChannel: summary.continuation.replyChannel ?? null,
+    providerSessionId: summary.continuation.providerSessionId ?? null,
+    providerThreadId: summary.continuation.providerThreadId ?? null,
+    isResumedSession: false,
+    createdAt: null,
+    lastActiveAt: summary.continuation.lastActiveAt ?? null,
+    source: "summary",
+  };
+}
+
 interface RunInspectorPanelProps {
   runId: string;
   teamSlugOrId: string;
@@ -55,7 +130,7 @@ type InspectorTab = "continuation" | "session" | "memory";
 export function RunInspectorPanel({ runId, teamSlugOrId, taskRunContextId }: RunInspectorPanelProps) {
   const [activeTab, setActiveTab] = useState<InspectorTab>("continuation");
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(["continuation-lane"])
+    new Set(["continuation-lane", "session-binding"])
   );
 
   // Run control data for continuation and lifecycle
@@ -78,6 +153,7 @@ export function RunInspectorPanel({ runId, teamSlugOrId, taskRunContextId }: Run
 
   const summary = runControlQuery.data;
   const ancestry = ancestryQuery.data;
+  const sessionPanelData = deriveSessionPanelData(ancestry, summary);
 
   const toggleSection = (section: string) => {
     setExpandedSections((prev) => {
@@ -114,7 +190,7 @@ export function RunInspectorPanel({ runId, teamSlugOrId, taskRunContextId }: Run
           onClick={() => setActiveTab("session")}
           icon={Link2}
           label="Session"
-          badge={ancestry?.hasBoundSession ? "bound" : undefined}
+          badge={sessionPanelData?.hasBoundSession ? "bound" : undefined}
         />
         <TabButton
           active={activeTab === "memory"}
@@ -136,7 +212,7 @@ export function RunInspectorPanel({ runId, teamSlugOrId, taskRunContextId }: Run
 
         {activeTab === "session" && (
           <SessionPanel
-            ancestry={ancestry}
+            session={sessionPanelData}
             expandedSections={expandedSections}
             toggleSection={toggleSection}
           />
@@ -436,26 +512,13 @@ function ContinuationPanel({
 }
 
 interface SessionPanelProps {
-  ancestry:
-    | {
-        hasBoundSession: boolean;
-        provider: string | null;
-        status: string | null;
-        mode: string | null;
-        replyChannel: string | null;
-        providerSessionId: string | null;
-        providerThreadId: string | null;
-        isResumedSession: boolean;
-        createdAt: number | null;
-        lastActiveAt: number | null;
-      }
-    | undefined;
+  session: SessionPanelData | undefined;
   expandedSections: Set<string>;
   toggleSection: (section: string) => void;
 }
 
-function SessionPanel({ ancestry, expandedSections, toggleSection }: SessionPanelProps) {
-  if (!ancestry?.hasBoundSession) {
+function SessionPanel({ session, expandedSections, toggleSection }: SessionPanelProps) {
+  if (!session?.hasBoundSession) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-neutral-500 dark:text-neutral-400">
         <Link2 className="size-8 text-neutral-400 dark:text-neutral-500" />
@@ -469,7 +532,7 @@ function SessionPanel({ ancestry, expandedSections, toggleSection }: SessionPane
     );
   }
 
-  const statusBadge = getSessionStatusBadge(ancestry.status);
+  const statusBadge = getSessionStatusBadge(session.status);
 
   return (
     <div>
@@ -481,73 +544,76 @@ function SessionPanel({ ancestry, expandedSections, toggleSection }: SessionPane
         badge={statusBadge}
       >
         <div className="space-y-3">
-          {/* Provider and status */}
           <div className="flex items-center gap-2">
-            <ProviderIcon provider={ancestry.provider} />
+            <ProviderIcon provider={session.provider} />
             <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-              {ancestry.provider ? capitalizeFirst(ancestry.provider) : "Unknown"} Session
+              {session.provider ? capitalizeFirst(session.provider) : "Unknown"} Session
             </span>
-            {ancestry.isResumedSession && (
+            {session.isResumedSession && (
               <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
                 <RotateCcw className="size-3" />
                 Resumed
               </span>
             )}
+            {session.source === "summary" && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+                Derived from run control
+              </span>
+            )}
           </div>
 
-          {/* Details grid */}
           <div className="grid grid-cols-2 gap-3 text-xs">
-            {ancestry.mode && (
+            {session.mode && (
               <div className="flex items-center gap-2 text-neutral-600 dark:text-neutral-400">
                 <User className="size-3.5" />
                 <span>Mode:</span>
                 <span className="font-medium text-neutral-800 dark:text-neutral-200">
-                  {ancestry.mode}
+                  {session.mode}
                 </span>
               </div>
             )}
 
-            {ancestry.replyChannel && (
+            {session.replyChannel && (
               <div className="flex items-center gap-2 text-neutral-600 dark:text-neutral-400">
                 <MessageSquare className="size-3.5" />
                 <span>Channel:</span>
                 <span className="font-medium text-neutral-800 dark:text-neutral-200">
-                  {ancestry.replyChannel}
+                  {session.replyChannel}
                 </span>
               </div>
             )}
 
-            {ancestry.providerSessionId && (
+            {session.providerSessionId && (
               <div className="col-span-2 flex items-center gap-2 text-neutral-600 dark:text-neutral-400">
                 <Terminal className="size-3.5" />
                 <span>Session:</span>
                 <code className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
-                  {truncateId(ancestry.providerSessionId)}
+                  {truncateId(session.providerSessionId)}
                 </code>
               </div>
             )}
 
-            {ancestry.providerThreadId && (
+            {session.providerThreadId && (
               <div className="col-span-2 flex items-center gap-2 text-neutral-600 dark:text-neutral-400">
                 <Activity className="size-3.5" />
                 <span>Thread:</span>
                 <code className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
-                  {truncateId(ancestry.providerThreadId)}
+                  {truncateId(session.providerThreadId)}
                 </code>
               </div>
             )}
 
-            {ancestry.createdAt && (
+            {session.createdAt && (
               <div className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400">
                 <Clock className="size-3.5" />
-                <span>Bound: {formatTimestamp(ancestry.createdAt)}</span>
+                <span>Bound: {formatTimestamp(session.createdAt)}</span>
               </div>
             )}
 
-            {ancestry.lastActiveAt && (
+            {session.lastActiveAt && (
               <div className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400">
                 <Clock className="size-3.5" />
-                <span>Active: {formatTimestamp(ancestry.lastActiveAt)}</span>
+                <span>Active: {formatTimestamp(session.lastActiveAt)}</span>
               </div>
             )}
           </div>
@@ -655,11 +721,11 @@ function getSessionStatusBadge(
 function getContinuationLabel(mode: RunControlSummary["continuation"]["mode"]): string {
   switch (mode) {
     case "session_continuation":
-      return "Continue Session";
+      return RUN_CONTROL_ACTION_LABELS.continue_session;
     case "checkpoint_restore":
-      return "Resume Checkpoint";
+      return RUN_CONTROL_ACTION_LABELS.resume_checkpoint;
     case "append_instruction":
-      return "Append Instruction";
+      return RUN_CONTROL_ACTION_LABELS.append_instruction;
     default:
       return "No Continuation Path";
   }
