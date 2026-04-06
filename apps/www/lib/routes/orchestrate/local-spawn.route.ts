@@ -367,7 +367,12 @@ async function updateLocalLaunchContinuationMetadata(input: {
   });
 }
 
-async function requireLocalRouteAccess(request: Request, teamSlugOrId: string) {
+const LOCAL_ROUTE_ACCESS_ERROR_STATUSES = new Set([401, 403, 500] as const);
+
+async function requireLocalRouteAccess(request: Request, teamSlugOrId: string): Promise<
+  | { accessToken: string }
+  | { error: { status: 401 | 403 | 500; body: { error: string; details?: string } } }
+> {
   const accessToken = await getAccessTokenFromRequest(request);
   if (!accessToken) {
     return { error: { status: 401 as const, body: { error: "Unauthorized" } } };
@@ -396,6 +401,12 @@ async function requireLocalRouteAccess(request: Request, teamSlugOrId: string) {
   }
 
   return { accessToken };
+}
+
+function isLocalRouteAccessError(
+  access: Awaited<ReturnType<typeof requireLocalRouteAccess>>,
+): access is { error: { status: 401 | 403 | 500; body: { error: string; details?: string } } } {
+  return "error" in access && LOCAL_ROUTE_ACCESS_ERROR_STATUSES.has(access.error.status);
 }
 
 /**
@@ -466,7 +477,7 @@ orchestrateLocalSpawnRouter.openapi(
   async (c) => {
     const body = c.req.valid("json");
     const access = await requireLocalRouteAccess(c.req.raw, body.teamSlugOrId);
-    if ("error" in access) {
+    if (isLocalRouteAccessError(access)) {
       return c.json(access.error.body, access.error.status);
     }
 
@@ -604,7 +615,7 @@ orchestrateLocalSpawnRouter.openapi(
   async (c) => {
     const query = c.req.valid("query");
     const access = await requireLocalRouteAccess(c.req.raw, query.teamSlugOrId);
-    if ("error" in access) {
+    if (isLocalRouteAccessError(access)) {
       return c.json(access.error.body, access.error.status);
     }
 
@@ -711,7 +722,7 @@ orchestrateLocalSpawnRouter.openapi(
     const { runId } = c.req.valid("param");
     const query = c.req.valid("query");
     const access = await requireLocalRouteAccess(c.req.raw, query.teamSlugOrId);
-    if ("error" in access) {
+    if (isLocalRouteAccessError(access)) {
       return c.json(access.error.body, access.error.status);
     }
 
@@ -825,7 +836,7 @@ orchestrateLocalSpawnRouter.openapi(
     const { runId } = c.req.valid("param");
     const body = c.req.valid("json");
     const access = await requireLocalRouteAccess(c.req.raw, body.teamSlugOrId);
-    if ("error" in access) {
+    if (isLocalRouteAccessError(access)) {
       return c.json(access.error.body, access.error.status);
     }
 
@@ -932,7 +943,7 @@ orchestrateLocalSpawnRouter.openapi(
     const { runId } = c.req.valid("param");
     const body = c.req.valid("json");
     const access = await requireLocalRouteAccess(c.req.raw, body.teamSlugOrId);
-    if ("error" in access) {
+    if (isLocalRouteAccessError(access)) {
       return c.json(access.error.body, access.error.status);
     }
 
@@ -1037,7 +1048,7 @@ orchestrateLocalSpawnRouter.openapi(
     const { runId } = c.req.valid("param");
     const body = c.req.valid("json");
     const access = await requireLocalRouteAccess(c.req.raw, body.teamSlugOrId);
-    if ("error" in access) {
+    if (isLocalRouteAccessError(access)) {
       return c.json(access.error.body, access.error.status);
     }
 
@@ -1149,7 +1160,7 @@ orchestrateLocalSpawnRouter.openapi(
     const { runId } = c.req.valid("param");
     const body = c.req.valid("json");
     const access = await requireLocalRouteAccess(c.req.raw, body.teamSlugOrId);
-    if ("error" in access) {
+    if (isLocalRouteAccessError(access)) {
       return c.json(access.error.body, access.error.status);
     }
 

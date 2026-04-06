@@ -1,6 +1,7 @@
 import { RUN_CONTROL_DEFAULT_TIMEOUT_MINUTES } from "@cmux/shared/convex-safe";
 import { v } from "convex/values";
 import { resolveTeamIdLoose } from "../_shared/team";
+import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { authMutation, authQuery } from "./users/utils";
 
@@ -169,8 +170,8 @@ export const record = authMutation({
 
 function buildLocalLaunchMetadataPatch(input: {
   orchestrationId?: string;
-  taskId?: unknown;
-  taskRunId?: unknown;
+  taskId?: Id<"tasks">;
+  taskRunId?: Id<"taskRuns">;
   agentName?: string;
   runDir?: string;
   sessionInfoPath?: string;

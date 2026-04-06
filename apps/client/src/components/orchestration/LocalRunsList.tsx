@@ -861,7 +861,7 @@ function LocalArtifactsPanel({
                       ? undefined
                       : "font-mono text-xs",
                   )}
-                  title={item.value}
+                  title={item.value ?? undefined}
                 >
                   {item.value}
                 </dd>
