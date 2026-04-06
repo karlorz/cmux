@@ -152,8 +152,19 @@ type LocalRunArtifactCardInputItem = {
   section?: LocalRunArtifactMetadataSection;
 };
 
+type LocalRunArtifactCardSummaryItemInput = Omit<
+  LocalRunArtifactCardInputItem,
+  "section"
+>;
+
 function hasValue(
   item: LocalRunArtifactCardInputItem,
+): item is LocalRunArtifactMetadataItem {
+  return typeof item.value === "string";
+}
+
+function hasSummaryValue(
+  item: LocalRunArtifactCardSummaryItemInput,
 ): item is LocalRunArtifactMetadataItem {
   return typeof item.value === "string";
 }
@@ -231,7 +242,7 @@ export function buildLocalRunArtifactCard(
     },
     { label: "Variant", value: input.selectedVariant, priority: "primary" },
     { label: "Git branch", value: input.gitBranch, priority: "primary" },
-  ].filter(hasValue);
+  ].filter(hasSummaryValue);
 
   const diagnosticItems = [
     {
