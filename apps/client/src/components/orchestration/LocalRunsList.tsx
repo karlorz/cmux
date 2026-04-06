@@ -794,8 +794,12 @@ function LocalArtifactsPanel({
       label: "Last injection",
       value: formatRunTimestamp(detail.lastInjectionAt) ?? detail.lastInjectionAt,
     },
-    { label: "Injection count", value:
-        typeof detail.injectionCount === "number" ? String(detail.injectionCount) : undefined,
+    {
+      label: "Injection count",
+      value:
+        typeof detail.injectionCount === "number"
+          ? String(detail.injectionCount)
+          : undefined,
     },
     { label: "Checkpoint ref", value: detail.checkpointRef },
     {
@@ -813,11 +817,11 @@ function LocalArtifactsPanel({
           ? formatRunTimestamp(new Date(detail.checkpointCreatedAt).toISOString())
           : undefined,
     },
-    { label: "Prompt", value: detail.prompt },
+    { label: "Prompt", value: detail.prompt, monospace: false },
     { label: "Bridge task", value: detail.bridgedTaskId },
     { label: "Bridge run", value: detail.bridgedTaskRunId },
     { label: "Completed", value: formatRunTimestamp(detail.completedAt) },
-    { label: "Event count", value: formatEventCount(detail.events) },
+    { label: "Event count", value: formatEventCount(detail.events), monospace: false },
   ].filter((item) => Boolean(item.value));
 
   return (
@@ -857,9 +861,7 @@ function LocalArtifactsPanel({
                 <dd
                   className={clsx(
                     "mt-1 text-sm text-neutral-800 dark:text-neutral-200",
-                    item.label === "Prompt" || item.label === "Event count"
-                      ? undefined
-                      : "font-mono text-xs",
+                    item.monospace === false ? undefined : "font-mono text-xs",
                   )}
                   title={item.value ?? undefined}
                 >
