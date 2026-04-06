@@ -62,15 +62,13 @@ function getActivityColor(type: ActivityType): string {
   return ACTIVITY_TYPE_CONFIG_META[type]?.color ?? "text-neutral-500";
 }
 
-type WebLogsPageEntry = LocalRunArtifactFeedEntry;
+type LogEntry = LocalRunArtifactFeedEntry;
 
 interface WebLogsPageProps {
   taskRunId?: Id<"taskRuns">;
   teamId?: string;
-  entries?: WebLogsPageEntry[];
+  entries?: LogEntry[];
 }
-
-interface LogEntry extends WebLogsPageEntry {}
 
 function LogSkeleton() {
   return (

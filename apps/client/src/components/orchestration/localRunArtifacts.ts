@@ -1,14 +1,37 @@
 import type {
-  LocalRunArtifactArtifacts,
   LocalRunArtifactDisplay,
   LocalRunArtifactEvent,
   LocalRunArtifactFeedEntry,
   LocalRunArtifactMetadata,
   LocalRunArtifactMetadataGroup,
   LocalRunArtifactMetadataItem,
+  LocalRunArtifactMetadataPriority,
+  LocalRunArtifactMetadataSection,
   LocalRunArtifactStreamTab,
 } from "@cmux/shared";
 import type { LocalRunDetail } from "@cmux/www-openapi-client";
+
+type LocalMetadataItemInput = {
+  label: string;
+  value?: string | null;
+  monospace?: boolean;
+  priority: LocalRunArtifactMetadataPriority;
+  section?: LocalRunArtifactMetadataSection;
+};
+
+function hasValue(
+  item: LocalMetadataItemInput,
+): item is LocalRunArtifactMetadataItem {
+  return typeof item.value === "string";
+}
+
+function createDiagnosticGroup(
+  key: LocalRunArtifactMetadataSection,
+  label: string,
+  items: LocalRunArtifactMetadataItem[],
+): LocalRunArtifactMetadataGroup {
+  return { key, label, items };
+}
 
 function getLocalArtifactMetadata(
   detail: LocalRunDetail,
@@ -39,7 +62,7 @@ export function buildLocalMetadataItems(
 ): LocalRunArtifactMetadataItem[] {
   const metadata = getLocalArtifactMetadata(detail);
 
-  return [
+  const items: LocalMetadataItemInput[] = [
     { label: "Workspace", value: detail.workspace, priority: "primary" },
     { label: "Run directory", value: detail.runDir, priority: "primary" },
     { label: "Agent", value: detail.agent, priority: "primary" },
@@ -171,7 +194,9 @@ export function buildLocalMetadataItems(
       priority: "secondary",
       section: "bridge",
     },
-  ].filter((item): item is LocalRunArtifactMetadataItem => Boolean(item.value));
+  ];
+
+  return items.filter(hasValue);
 }
 
 export function formatLocalRunTimestamp(timestamp?: string) {
@@ -242,29 +267,27 @@ export function buildLocalArtifactDisplay(
   const secondaryMetadataItems = metadataItems.filter(
     (item) => item.priority === "secondary",
   );
-  const diagnosticGroups: LocalRunArtifactMetadataGroup[] = [
-    {
-      key: "git",
-      label: "Git",
-      items: secondaryMetadataItems.filter((item) => item.section === "git"),
-    },
-    {
-      key: "runtime",
-      label: "Runtime",
-      items: secondaryMetadataItems.filter((item) => item.section === "runtime"),
-    },
-    {
-      key: "continuation",
-      label: "Continuation",
-      items: secondaryMetadataItems.filter(
-        (item) => item.section === "continuation",
-      ),
-    },
-    {
-      key: "bridge",
-      label: "Bridge",
-      items: secondaryMetadataItems.filter((item) => item.section === "bridge"),
-    },
+  const diagnosticGroups = [
+    createDiagnosticGroup(
+      "git",
+      "Git",
+      secondaryMetadataItems.filter((item) => item.section === "git"),
+    ),
+    createDiagnosticGroup(
+      "runtime",
+      "Runtime",
+      secondaryMetadataItems.filter((item) => item.section === "runtime"),
+    ),
+    createDiagnosticGroup(
+      "continuation",
+      "Continuation",
+      secondaryMetadataItems.filter((item) => item.section === "continuation"),
+    ),
+    createDiagnosticGroup(
+      "bridge",
+      "Bridge",
+      secondaryMetadataItems.filter((item) => item.section === "bridge"),
+    ),
   ].filter((group) => group.items.length > 0);
 
   const hasStdout = Boolean(detail.stdout?.trim().length);
