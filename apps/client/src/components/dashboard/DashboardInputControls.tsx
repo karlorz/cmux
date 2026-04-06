@@ -463,6 +463,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     teamSlugOrId,
     limit: 5,
   });
+  const localLaunchHistoryRef = useRef(localLaunchHistory);
   const recordLocalClaudeLaunch = useMutation(api.localClaudeLaunches.record);
   const updateLocalClaudeLaunchOutcome = useMutation(
     api.localClaudeLaunches.updateOutcome,
@@ -509,14 +510,8 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   );
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    localStorage.setItem(
-      `localClaudePluginDevLaunches-${teamSlugOrId}`,
-      JSON.stringify(localLaunchHistory.slice(0, 5)),
-    );
-  }, [localLaunchHistory, teamSlugOrId]);
+    localLaunchHistoryRef.current = localLaunchHistory;
+  }, [localLaunchHistory]);
 
   useEffect(() => {
     if (!persistedLocalClaudeLaunches) {
@@ -554,7 +549,9 @@ export const DashboardInputControls = memo(function DashboardInputControls({
         lastInjectionAt: event.lastInjectionAt,
         injectionCount: event.injectionCount,
       });
-      const currentEntry = localLaunchHistory.find((entry) => entry.launchId === event.launchId);
+      const currentEntry = localLaunchHistoryRef.current.find(
+        (entry) => entry.launchId === event.launchId,
+      );
 
       setLocalLaunchHistory((prev) => {
         let changed = false;
@@ -581,7 +578,9 @@ export const DashboardInputControls = memo(function DashboardInputControls({
         ...metadataPatch,
       })
         .then(async () => {
-          const launchEntry = localLaunchHistory.find((entry) => entry.launchId === event.launchId);
+          const launchEntry = localLaunchHistoryRef.current.find(
+            (entry) => entry.launchId === event.launchId,
+          );
           if (!launchEntry || !event.orchestrationId || !launchEntry.agentName) {
             return;
           }
@@ -714,7 +713,6 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   }, [
     bindLocalClaudeLaunchSession,
     ensureLocalClaudeLaunchBridge,
-    localLaunchHistory,
     taskDescription,
     teamSlugOrId,
     updateLocalClaudeLaunchMetadata,

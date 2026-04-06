@@ -1157,6 +1157,7 @@ export type LocalRun = {
     startedAt?: string;
     completedAt?: string;
     workspace?: string;
+    bridgedTaskId?: string;
     bridgedTaskRunId?: string;
 };
 
@@ -1168,6 +1169,21 @@ export type LocalRunsListResponse = {
 export type LocalRunDetail = LocalRun & {
     timeout?: string;
     durationMs?: number;
+    selectedVariant?: string;
+    model?: string;
+    gitBranch?: string;
+    gitCommit?: string;
+    devshVersion?: string;
+    sessionId?: string;
+    threadId?: string;
+    codexHome?: string;
+    injectionMode?: string;
+    lastInjectionAt?: string;
+    injectionCount?: number;
+    checkpointRef?: string;
+    checkpointGeneration?: number;
+    checkpointLabel?: string;
+    checkpointCreatedAt?: number;
     result?: string;
     error?: string;
     stdout?: string;
@@ -1183,12 +1199,15 @@ export type LocalRunInjectResponse = {
     runId: string;
     mode: string;
     message: string;
-    injectionCount: number;
+    injectionCount?: number;
     controlLane: string;
     continuationMode: string;
     availableActions: Array<string>;
     sessionId?: string;
     threadId?: string;
+    checkpointRef?: string;
+    checkpointGeneration?: number;
+    checkpointLabel?: string;
 };
 
 export type LocalRunInjectRequest = {
@@ -1200,6 +1219,26 @@ export type LocalRunInjectRequest = {
      * Instruction to inject
      */
     message: string;
+};
+
+export type LocalRunCheckpointResponse = {
+    runId: string;
+    runDir: string;
+    checkpointRef: string;
+    checkpointGeneration: number;
+    label?: string;
+    createdAt: string;
+};
+
+export type LocalRunCheckpointRequest = {
+    /**
+     * Team slug or ID
+     */
+    teamSlugOrId: string;
+    /**
+     * Optional checkpoint label
+     */
+    label?: string;
 };
 
 export type LocalRunStopResponse = {
@@ -4591,7 +4630,7 @@ export type GetApiV1CmuxOrchestrationRunControlByTaskRunIdData = {
     body?: never;
     path: {
         /**
-         * Task run ID
+         * Task run ID or local orchestration ID
          */
         taskRunId: string;
     };
@@ -5555,6 +5594,94 @@ export type PostApiOrchestrateLocalRunsByRunIdInjectResponses = {
 };
 
 export type PostApiOrchestrateLocalRunsByRunIdInjectResponse = PostApiOrchestrateLocalRunsByRunIdInjectResponses[keyof PostApiOrchestrateLocalRunsByRunIdInjectResponses];
+
+export type PostApiOrchestrateLocalRunsByRunIdResumeData = {
+    body: LocalRunInjectRequest;
+    path: {
+        /**
+         * Local run ID
+         */
+        runId: string;
+    };
+    query?: never;
+    url: '/api/orchestrate/local-runs/{runId}/resume';
+};
+
+export type PostApiOrchestrateLocalRunsByRunIdResumeErrors = {
+    /**
+     * Unauthorized
+     */
+    401: LocalSpawnError;
+    /**
+     * Forbidden
+     */
+    403: LocalSpawnError;
+    /**
+     * Run not found
+     */
+    404: LocalSpawnError;
+    /**
+     * Run cannot be resumed
+     */
+    409: LocalSpawnError;
+    /**
+     * Failed to resume local run
+     */
+    500: LocalSpawnError;
+};
+
+export type PostApiOrchestrateLocalRunsByRunIdResumeError = PostApiOrchestrateLocalRunsByRunIdResumeErrors[keyof PostApiOrchestrateLocalRunsByRunIdResumeErrors];
+
+export type PostApiOrchestrateLocalRunsByRunIdResumeResponses = {
+    /**
+     * Local run resume queued successfully
+     */
+    200: LocalRunInjectResponse;
+};
+
+export type PostApiOrchestrateLocalRunsByRunIdResumeResponse = PostApiOrchestrateLocalRunsByRunIdResumeResponses[keyof PostApiOrchestrateLocalRunsByRunIdResumeResponses];
+
+export type PostApiOrchestrateLocalRunsByRunIdCheckpointData = {
+    body: LocalRunCheckpointRequest;
+    path: {
+        /**
+         * Local run ID
+         */
+        runId: string;
+    };
+    query?: never;
+    url: '/api/orchestrate/local-runs/{runId}/checkpoint';
+};
+
+export type PostApiOrchestrateLocalRunsByRunIdCheckpointErrors = {
+    /**
+     * Unauthorized
+     */
+    401: LocalSpawnError;
+    /**
+     * Forbidden
+     */
+    403: LocalSpawnError;
+    /**
+     * Run not found
+     */
+    404: LocalSpawnError;
+    /**
+     * Failed to create checkpoint
+     */
+    500: LocalSpawnError;
+};
+
+export type PostApiOrchestrateLocalRunsByRunIdCheckpointError = PostApiOrchestrateLocalRunsByRunIdCheckpointErrors[keyof PostApiOrchestrateLocalRunsByRunIdCheckpointErrors];
+
+export type PostApiOrchestrateLocalRunsByRunIdCheckpointResponses = {
+    /**
+     * Checkpoint created successfully
+     */
+    200: LocalRunCheckpointResponse;
+};
+
+export type PostApiOrchestrateLocalRunsByRunIdCheckpointResponse = PostApiOrchestrateLocalRunsByRunIdCheckpointResponses[keyof PostApiOrchestrateLocalRunsByRunIdCheckpointResponses];
 
 export type PostApiOrchestrateLocalRunsByRunIdStopData = {
     body: LocalRunStopRequest;
