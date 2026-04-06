@@ -8,6 +8,7 @@ export * from "./crown";
 export * from "./diff-types";
 export * from "./getShortId";
 export * from "./run-control-types";
+export * from "./local-run-artifacts";
 export * from "./codeReview/callback-schemas";
 export * from "./socket-schemas";
 export * from "./terminal-config";

@@ -1,5 +1,8 @@
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
+import {
+  type LocalRunArtifactFeedEntry,
+} from "@cmux/shared";
 import { isActivityTypeSupported } from "@cmux/shared/hook-registry";
 import { useQuery } from "convex/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -626,17 +629,21 @@ function getActivitySearchText(activity: ActivityLike): string {
     .toLowerCase();
 }
 
+type ActivityStreamEntry = ActivityLike & LocalRunArtifactFeedEntry;
+
 interface ActivityStreamProps {
-  runId: string;
+  runId?: string;
   /** Provider name for event coverage indicators (e.g., "claude", "codex") */
   provider?: string;
+  entries?: ActivityStreamEntry[];
 }
 
-export function ActivityStream({ runId, provider }: ActivityStreamProps) {
-  const activities = useQuery(api.taskRunActivity.getByTaskRunAsc, {
-    taskRunId: runId as Id<"taskRuns">,
-    limit: 200,
-  });
+export function ActivityStream({ runId, provider, entries }: ActivityStreamProps) {
+  const queriedActivities = useQuery(
+    api.taskRunActivity.getByTaskRunAsc,
+    entries ? "skip" : runId ? { taskRunId: runId as Id<"taskRuns">, limit: 200 } : "skip"
+  );
+  const activities = entries ?? queriedActivities;
   const [pinToBottom, setPinToBottom] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilters, setActiveFilters] = useState<Set<ActivityType>>(new Set());
@@ -708,7 +715,7 @@ export function ActivityStream({ runId, provider }: ActivityStreamProps) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `activity-${runId}-${Date.now()}.json`;
+    link.download = `activity-${runId ?? "local-run"}-${Date.now()}.json`;
     link.click();
     URL.revokeObjectURL(url);
   }, [filteredActivities, runId]);
@@ -730,7 +737,7 @@ export function ActivityStream({ runId, provider }: ActivityStreamProps) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `activity-${runId}-${Date.now()}.csv`;
+    link.download = `activity-${runId ?? "local-run"}-${Date.now()}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   }, [filteredActivities, runId]);

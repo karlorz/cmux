@@ -14,6 +14,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
+import type { LocalRunArtifactFeedEntry } from "@cmux/shared";
 import {
   Download,
   RefreshCw,
@@ -61,20 +62,15 @@ function getActivityColor(type: ActivityType): string {
   return ACTIVITY_TYPE_CONFIG_META[type]?.color ?? "text-neutral-500";
 }
 
+type WebLogsPageEntry = LocalRunArtifactFeedEntry;
+
 interface WebLogsPageProps {
-  taskRunId: Id<"taskRuns">;
-  teamId: string;
+  taskRunId?: Id<"taskRuns">;
+  teamId?: string;
+  entries?: WebLogsPageEntry[];
 }
 
-interface LogEntry {
-  _id: string;
-  type: string;
-  summary: string;
-  toolName?: string;
-  detail?: string;
-  durationMs?: number;
-  createdAt: number;
-}
+interface LogEntry extends WebLogsPageEntry {}
 
 function LogSkeleton() {
   return (
@@ -215,17 +211,18 @@ function LogEntryRow({
   );
 }
 
-export function WebLogsPage({ taskRunId }: WebLogsPageProps) {
+export function WebLogsPage({ taskRunId, entries }: WebLogsPageProps) {
   const [filterState, setFilterState] = useState<LogFilterState>(INITIAL_FILTER_STATE);
   const [pinToBottom, setPinToBottom] = useState(true);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Fetch logs via Convex subscription
-  const logs = useQuery(api.taskRunActivity.getByTaskRunAsc, {
-    taskRunId,
-    limit: 1000,
-  });
+  const queriedLogs = useQuery(
+    api.taskRunActivity.getByTaskRunAsc,
+    entries ? "skip" : taskRunId ? { taskRunId, limit: 1000 } : "skip"
+  );
+  const logs = entries ?? queriedLogs;
 
   // Filter logs
   const filteredLogs = useMemo(() => {
@@ -313,7 +310,7 @@ export function WebLogsPage({ taskRunId }: WebLogsPageProps) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `logs-${taskRunId}-${Date.now()}.json`;
+    link.download = `logs-${taskRunId ?? "local-run"}-${Date.now()}.json`;
     link.click();
     URL.revokeObjectURL(url);
   }, [filteredLogs, taskRunId]);
@@ -337,7 +334,7 @@ export function WebLogsPage({ taskRunId }: WebLogsPageProps) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `logs-${taskRunId}-${Date.now()}.csv`;
+    link.download = `logs-${taskRunId ?? "local-run"}-${Date.now()}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   }, [filteredLogs, taskRunId]);
