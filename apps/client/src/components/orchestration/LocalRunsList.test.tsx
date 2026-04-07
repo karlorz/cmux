@@ -223,6 +223,41 @@ describe("LocalRunsList", () => {
           checkpointCreatedAt: 1712307780000,
           bridgedTaskId: "task_123",
           bridgedTaskRunId: "tskrun_bridge_123",
+          artifactDisplay: {
+            result: "Shared display result",
+            summaryItems: [
+              {
+                label: "Model",
+                value: "server-display-model",
+                priority: "primary",
+              },
+            ],
+            diagnosticGroups: [],
+            events: {
+              countLabel: "1 event",
+              feedEntries: [
+                {
+                  _id: "local-event-0-2026-04-05T09:00:01Z",
+                  type: "task_started",
+                  summary: "Shared event summary",
+                  createdAt: 1743843601000,
+                },
+              ],
+              rawEvents: [
+                {
+                  timestamp: "2026-04-05T09:00:01Z",
+                  type: "task_started",
+                  message: "Shared raw event",
+                },
+              ],
+              showRawEvents: false,
+            },
+            snapshots: {
+              availableTabs: ["stderr"],
+              preferredTab: "stderr",
+              stderr: "shared stderr line",
+            },
+          },
           stdout: "stdout line",
           stderr: "stderr line",
           events: [
@@ -291,10 +326,10 @@ describe("LocalRunsList", () => {
     });
 
     await waitForAssertion(() => {
-      expect(container.textContent).toContain("stdout line");
+      expect(container.textContent).toContain("shared stderr line");
     });
 
-    expect(container.textContent).toContain("stdout line");
+    expect(container.textContent).not.toContain("stdout line");
 
     await act(async () => {
       const stderrTab = Array.from(container.querySelectorAll("button")).find((button) =>
@@ -304,10 +339,9 @@ describe("LocalRunsList", () => {
     });
 
     await waitForAssertion(() => {
-      expect(container.textContent).toContain("stderr line");
+      expect(container.textContent).toContain("shared stderr line");
     });
 
-    expect(container.textContent).toContain("stderr line");
     expect(container.textContent).toContain("StatusStrip:local_www_123");
     expect(container.textContent).toContain("Continue session");
     expect(container.textContent).toContain("RuntimeLifecycleCard:local_www_123");
@@ -319,41 +353,12 @@ describe("LocalRunsList", () => {
     expect(container.textContent).toContain("Open shared run page");
     expect(container.textContent).toContain("Open shared activity page");
     expect(container.textContent).toContain("Open shared logs page");
-    expect(container.textContent).toContain("high");
-    expect(container.textContent).toContain("claude-sonnet-4-6");
-    expect(container.textContent).toContain("feat/local-runs");
-    expect(container.textContent).toContain("before-apply");
-    expect(container.textContent).toContain("Show details (12)");
-
-    await act(async () => {
-      const showDiagnosticsButton = Array.from(container.querySelectorAll("button")).find((button) =>
-        button.textContent?.includes("Show details")
-      );
-      showDiagnosticsButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-
-    await waitForAssertion(() => {
-      expect(container.textContent).toContain("Diagnostic metadata");
-      expect(container.textContent).toContain("Git");
-      expect(container.textContent).toContain("Runtime");
-      expect(container.textContent).toContain("Continuation");
-      expect(container.textContent).toContain("Bridge");
-    });
-
-    expect(container.textContent).toContain("/tmp/local_www_123");
-    expect(container.textContent).toContain("task_123");
-    expect(container.textContent).toContain("tskrun_bridge_123");
-    expect(container.textContent).toContain("high");
-    expect(container.textContent).toContain("claude-sonnet-4-6");
-    expect(container.textContent).toContain("feat/local-runs");
-    expect(container.textContent).toContain("abc123def456");
-    expect(container.textContent).toContain("1.2.3");
-    expect(container.textContent).toContain("session_123");
-    expect(container.textContent).toContain("active");
-    expect(container.textContent).toContain("2");
-    expect(container.textContent).toContain("cp_local_www_123_1");
-    expect(container.textContent).toContain("before-apply");
-    expect(container.textContent).toContain("1 event");
+    expect(container.textContent).not.toContain("high");
+    expect(container.textContent).toContain("server-display-model");
+    expect(container.textContent).not.toContain("feat/local-runs");
+    expect(container.textContent).not.toContain("before-apply");
+    expect(container.textContent).not.toContain("Show details (");
+    expect(container.textContent).toContain("Shared display result");
   });
 
   it("renders local-derived activity and logs for unbridged runs", async () => {
@@ -579,6 +584,12 @@ describe("LocalRunsList", () => {
           status: "running",
           prompt: "Do the thing",
           stdout: "working",
+          stop: {
+            status: "stopped",
+            signal: "SIGTERM",
+            pid: 4242,
+            message: "Sent SIGTERM to process 4242",
+          },
           events: [],
         });
       }

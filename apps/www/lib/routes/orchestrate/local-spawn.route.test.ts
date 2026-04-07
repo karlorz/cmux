@@ -299,6 +299,12 @@ describe("orchestrateLocalSpawnRouter", () => {
         checkpointGeneration: 1,
         checkpointLabel: "before-apply",
         checkpointCreatedAt: 1712217840000,
+        stop: {
+          status: "stopped",
+          signal: "SIGTERM",
+          pid: 4242,
+          message: "Sent SIGTERM to process 4242",
+        },
         stdout: "working...",
         stderr: "",
         events: [
@@ -353,6 +359,39 @@ describe("orchestrateLocalSpawnRouter", () => {
           expect.objectContaining({ label: "Continuation" }),
           expect.objectContaining({ label: "Bridge" }),
         ]),
+      },
+      artifactDisplay: {
+        summaryItems: expect.arrayContaining([
+          expect.objectContaining({ label: "Workspace", value: "/Users/tester/Desktop/code/cmux" }),
+          expect.objectContaining({ label: "Model", value: "claude-sonnet-4-6" }),
+        ]),
+        events: {
+          countLabel: "1 event",
+          feedEntries: [
+            expect.objectContaining({
+              type: "task_started",
+              summary: "Starting task",
+            }),
+          ],
+          rawEvents: [
+            expect.objectContaining({
+              type: "task_started",
+            }),
+          ],
+          showRawEvents: false,
+        },
+        snapshots: {
+          availableTabs: ["stdout"],
+          preferredTab: "stdout",
+          stdout: "working...",
+          stderr: "",
+        },
+        stop: {
+          status: "stopped",
+          signal: "SIGTERM",
+          pid: 4242,
+          message: "Sent SIGTERM to process 4242",
+        },
       },
       selectedVariant: "high",
       model: "claude-sonnet-4-6",

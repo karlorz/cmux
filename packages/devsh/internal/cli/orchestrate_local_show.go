@@ -33,20 +33,21 @@ type localRunDetail struct {
 	InjectionCount       int          `json:"injectionCount,omitempty"`
 	CheckpointRef        string       `json:"checkpointRef,omitempty"`
 	CheckpointGeneration int          `json:"checkpointGeneration,omitempty"`
-	CheckpointLabel      string       `json:"checkpointLabel,omitempty"`
-	CheckpointCreatedAt  int64        `json:"checkpointCreatedAt,omitempty"`
-	Status               string       `json:"status"`
-	Prompt               string       `json:"prompt"`
-	Workspace            string       `json:"workspace"`
-	Timeout              string       `json:"timeout,omitempty"`
-	StartedAt            string       `json:"startedAt,omitempty"`
-	CompletedAt          string       `json:"completedAt,omitempty"`
-	DurationMs           int64        `json:"durationMs,omitempty"`
-	Events               []LocalEvent `json:"events,omitempty"`
-	Result               *string      `json:"result,omitempty"`
-	Error                *string      `json:"error,omitempty"`
-	Stdout               string       `json:"stdout,omitempty"`
-	Stderr               string       `json:"stderr,omitempty"`
+	CheckpointLabel      string         `json:"checkpointLabel,omitempty"`
+	CheckpointCreatedAt  int64          `json:"checkpointCreatedAt,omitempty"`
+	Stop                 *LocalStopInfo `json:"stop,omitempty"`
+	Status               string         `json:"status"`
+	Prompt               string         `json:"prompt"`
+	Workspace            string         `json:"workspace"`
+	Timeout              string         `json:"timeout,omitempty"`
+	StartedAt            string         `json:"startedAt,omitempty"`
+	CompletedAt          string         `json:"completedAt,omitempty"`
+	DurationMs           int64          `json:"durationMs,omitempty"`
+	Events               []LocalEvent   `json:"events,omitempty"`
+	Result               *string        `json:"result,omitempty"`
+	Error                *string        `json:"error,omitempty"`
+	Stdout               string         `json:"stdout,omitempty"`
+	Stderr               string         `json:"stderr,omitempty"`
 }
 
 var orchestrateShowLocalCmd = &cobra.Command{
@@ -178,6 +179,7 @@ func applyLocalSessionInfo(detail *localRunDetail, sessionInfo *LocalSessionInfo
 	detail.CheckpointGeneration = sessionInfo.CheckpointGeneration
 	detail.CheckpointLabel = sessionInfo.CheckpointLabel
 	detail.CheckpointCreatedAt = sessionInfo.CheckpointCreatedAt
+	detail.Stop = sessionInfo.Stop
 }
 
 func loadLocalRunDetail(runDir string, includeLogs bool, includeEvents bool) (*localRunDetail, error) {

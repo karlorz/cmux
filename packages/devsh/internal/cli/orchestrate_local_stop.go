@@ -25,6 +25,19 @@ type localStopResult struct {
 	Message string `json:"message"`
 }
 
+func buildLocalStopInfo(result *localStopResult) *LocalStopInfo {
+	if result == nil {
+		return nil
+	}
+
+	return &LocalStopInfo{
+		PID:     result.PID,
+		Signal:  result.Signal,
+		Status:  result.Status,
+		Message: result.Message,
+	}
+}
+
 func stopLocalRun(runID string, force bool) (*localStopResult, error) {
 	runDir, err := resolveLocalRunDir(runID)
 	if err != nil {
@@ -77,14 +90,23 @@ func stopLocalRun(runID string, force bool) (*localStopResult, error) {
 
 	os.Remove(pidPath)
 
-	return &localStopResult{
+	result := &localStopResult{
 		RunID:   runID,
 		RunDir:  runDir,
 		PID:     pid,
 		Signal:  sigName,
 		Status:  "stopped",
 		Message: fmt.Sprintf("Sent %s to process %d", sigName, pid),
-	}, nil
+	}
+
+	if sessionInfo, err := loadSessionInfo(runDir); err == nil {
+		sessionInfo.Stop = buildLocalStopInfo(result)
+		if saveErr := saveSessionInfo(runDir, sessionInfo); saveErr != nil {
+			return nil, fmt.Errorf("failed to persist stop metadata: %w", saveErr)
+		}
+	}
+
+	return result, nil
 }
 
 var orchestrateStopLocalCmd = &cobra.Command{

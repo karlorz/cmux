@@ -15,6 +15,13 @@ import (
 )
 
 // LocalSessionInfo stores session identifiers for active instruction injection
+type LocalStopInfo struct {
+	PID     int    `json:"pid,omitempty"`
+	Signal  string `json:"signal,omitempty"`
+	Status  string `json:"status,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
 type LocalSessionInfo struct {
 	Agent                string                 `json:"agent"`
 	SessionID            string                 `json:"sessionId,omitempty"` // Claude session UUID
@@ -29,6 +36,7 @@ type LocalSessionInfo struct {
 	CheckpointGeneration int                    `json:"checkpointGeneration,omitempty"`
 	CheckpointLabel      string                 `json:"checkpointLabel,omitempty"`
 	CheckpointCreatedAt  int64                  `json:"checkpointCreatedAt,omitempty"`
+	Stop                 *LocalStopInfo         `json:"stop,omitempty"`
 }
 
 var (

@@ -2,11 +2,73 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 )
+
+func TestStopLocalPersistsStopMetadata(t *testing.T) {
+	tmpDir := t.TempDir()
+	runDir := filepath.Join(tmpDir, "local_stopmeta")
+	os.MkdirAll(runDir, 0755)
+
+	sleeper := exec.Command("sh", "-c", "sleep 5")
+	if err := sleeper.Start(); err != nil {
+		t.Fatalf("failed to start sleeper: %v", err)
+	}
+	defer func() {
+		_ = sleeper.Process.Kill()
+		_, _ = sleeper.Process.Wait()
+	}()
+	os.WriteFile(filepath.Join(runDir, "pid.txt"), []byte(strconv.Itoa(sleeper.Process.Pid)), 0644)
+
+	session := LocalSessionInfo{
+		Agent:          "claude/haiku-4.5",
+		Workspace:      "/test/workspace",
+		InjectionMode:  "active",
+		InjectionCount: 1,
+	}
+	sessionData, _ := json.MarshalIndent(session, "", "  ")
+	os.WriteFile(filepath.Join(runDir, "session.json"), sessionData, 0644)
+
+	origRunDir := localRunDir
+	localRunDir = tmpDir
+	defer func() { localRunDir = origRunDir }()
+
+	result, err := stopLocalRun("local_stopmeta", false)
+	if err != nil {
+		t.Fatalf("expected stop to succeed: %v", err)
+	}
+	if result.Status != "stopped" {
+		t.Fatalf("expected stopped status, got %q", result.Status)
+	}
+	if result.PID != sleeper.Process.Pid {
+		t.Fatalf("expected stopped pid %d, got %d", sleeper.Process.Pid, result.PID)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	updated, err := loadSessionInfo(runDir)
+	if err != nil {
+		t.Fatalf("expected persisted session info: %v", err)
+	}
+	if updated.Stop == nil {
+		t.Fatal("expected stop metadata to be persisted")
+	}
+	if updated.Stop.Status != "stopped" {
+		t.Fatalf("expected persisted stop status, got %q", updated.Stop.Status)
+	}
+	if updated.Stop.Signal != "SIGTERM" {
+		t.Fatalf("expected persisted stop signal, got %q", updated.Stop.Signal)
+	}
+	if updated.Stop.PID != sleeper.Process.Pid {
+		t.Fatalf("expected persisted stop pid %d, got %d", sleeper.Process.Pid, updated.Stop.PID)
+	}
+}
 
 func TestWritePidFile(t *testing.T) {
 	tmpDir := t.TempDir()
