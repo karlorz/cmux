@@ -1184,6 +1184,12 @@ export type LocalRunDetail = LocalRun & {
     checkpointGeneration?: number;
     checkpointLabel?: string;
     checkpointCreatedAt?: number;
+    stop?: {
+        status: string;
+        signal?: string;
+        pid?: number;
+        message: string;
+    };
     result?: string;
     error?: string;
     stdout?: string;
@@ -1214,6 +1220,58 @@ export type LocalRunDetail = LocalRun & {
                 section?: 'git' | 'runtime' | 'continuation' | 'bridge';
             }>;
         }>;
+    };
+    artifactDisplay?: {
+        result?: string;
+        error?: string;
+        summaryItems: Array<{
+            label: string;
+            value: string;
+            monospace?: boolean;
+            priority: 'primary' | 'secondary';
+            section?: 'git' | 'runtime' | 'continuation' | 'bridge';
+        }>;
+        diagnosticGroups: Array<{
+            key: 'git' | 'runtime' | 'continuation' | 'bridge';
+            label: string;
+            items: Array<{
+                label: string;
+                value: string;
+                monospace?: boolean;
+                priority: 'primary' | 'secondary';
+                section?: 'git' | 'runtime' | 'continuation' | 'bridge';
+            }>;
+        }>;
+        events: {
+            countLabel: string;
+            feedEntries: Array<{
+                _id: string;
+                type: string;
+                summary: string;
+                toolName?: string;
+                detail?: string;
+                durationMs?: number;
+                createdAt: number;
+            }>;
+            rawEvents: Array<{
+                timestamp: string;
+                type: string;
+                message: string;
+            }>;
+            showRawEvents: boolean;
+        };
+        snapshots: {
+            availableTabs: Array<'stdout' | 'stderr'>;
+            preferredTab: 'stdout' | 'stderr';
+            stdout?: string;
+            stderr?: string;
+        };
+        stop?: {
+            status: string;
+            signal?: string;
+            pid?: number;
+            message: string;
+        };
     };
 };
 

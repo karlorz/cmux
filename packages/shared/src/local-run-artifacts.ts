@@ -18,6 +18,14 @@ export type LocalRunArtifactArtifacts = z.infer<
   typeof LocalRunArtifactArtifactsSchema
 >;
 
+export const LocalRunArtifactStopSchema = z.object({
+  status: z.string(),
+  signal: z.string().optional(),
+  pid: z.number().optional(),
+  message: z.string(),
+});
+export type LocalRunArtifactStop = z.infer<typeof LocalRunArtifactStopSchema>;
+
 export const LocalRunArtifactMetadataSchema = z.object({
   timeout: z.string().optional(),
   durationMs: z.number().optional(),
@@ -36,6 +44,7 @@ export const LocalRunArtifactMetadataSchema = z.object({
   checkpointGeneration: z.number().optional(),
   checkpointLabel: z.string().optional(),
   checkpointCreatedAt: z.number().optional(),
+  stop: LocalRunArtifactStopSchema.optional(),
 });
 export type LocalRunArtifactMetadata = z.infer<
   typeof LocalRunArtifactMetadataSchema
@@ -128,6 +137,7 @@ export type LocalRunArtifactCard = z.infer<typeof LocalRunArtifactCardSchema>;
 export const LocalRunArtifactDisplaySchema = LocalRunArtifactCardSchema.extend({
   events: LocalRunArtifactEventsSchema,
   snapshots: LocalRunArtifactSnapshotsSchema,
+  stop: LocalRunArtifactStopSchema.optional(),
 });
 export type LocalRunArtifactDisplay = z.infer<
   typeof LocalRunArtifactDisplaySchema
@@ -143,6 +153,11 @@ export type LocalRunArtifactCardInput = LocalRunArtifactMetadata &
     bridgedTaskId?: string;
     bridgedTaskRunId?: string;
   };
+
+export type LocalRunArtifactDisplayInput = LocalRunArtifactCardInput & {
+  artifactCard?: LocalRunArtifactCard;
+  stop?: LocalRunArtifactStop;
+};
 
 type LocalRunArtifactCardInputItem = {
   label: string;
@@ -177,6 +192,24 @@ function createDiagnosticGroup(
   return { key, label, items };
 }
 
+function getLocalEventCreatedAt(timestamp: string, fallbackIndex: number) {
+  const parsed = Date.parse(timestamp);
+  if (!Number.isNaN(parsed)) {
+    return parsed;
+  }
+
+  return fallbackIndex;
+}
+
+function getLocalEventSummary(event: LocalRunArtifactEvent) {
+  const message = event.message.trim();
+  if (message.length > 0) {
+    return message;
+  }
+
+  return event.type.replaceAll("_", " ");
+}
+
 export function formatLocalRunTimestamp(timestamp?: string) {
   if (!timestamp) {
     return null;
@@ -206,6 +239,50 @@ function formatLocalCheckpointCreatedAt(epochMs?: number) {
   }
 
   return formatLocalRunTimestamp(new Date(epochMs).toISOString()) ?? undefined;
+}
+
+export function buildLocalRunArtifactFeedEntries(
+  events?: LocalRunArtifactEvent[],
+): LocalRunArtifactFeedEntry[] {
+  return (
+    events?.map((event, index) => {
+      const createdAt = getLocalEventCreatedAt(event.timestamp, index);
+      const summary = getLocalEventSummary(event);
+      const detail = event.message.trim();
+      return {
+        _id: `local-event-${index}-${event.timestamp}`,
+        type: event.type,
+        summary,
+        detail: detail && detail !== summary ? detail : undefined,
+        createdAt,
+      };
+    }) ?? []
+  );
+}
+
+export function buildLocalRunArtifactSnapshots(input: Pick<LocalRunArtifactArtifacts, "stdout" | "stderr">): LocalRunArtifactSnapshots {
+  const hasStdout = Boolean(input.stdout?.trim().length);
+  const hasStderr = Boolean(input.stderr?.trim().length);
+  const availableTabs: LocalRunArtifactStreamTab[] =
+    hasStdout && hasStderr
+      ? ["stdout", "stderr"]
+      : hasStdout
+        ? ["stdout"]
+        : hasStderr
+          ? ["stderr"]
+          : ["stdout", "stderr"];
+  const preferredTab: LocalRunArtifactStreamTab = hasStdout
+    ? "stdout"
+    : hasStderr
+      ? "stderr"
+      : "stdout";
+
+  return {
+    availableTabs,
+    preferredTab,
+    stdout: input.stdout,
+    stderr: input.stderr,
+  };
 }
 
 export function buildLocalRunArtifactCard(
@@ -366,5 +443,27 @@ export function buildLocalRunArtifactCard(
         diagnosticItems.filter((item) => item.section === "bridge"),
       ),
     ].filter((group) => group.items.length > 0),
+  };
+}
+
+export function buildLocalRunArtifactDisplay(
+  input: LocalRunArtifactDisplayInput,
+): LocalRunArtifactDisplay {
+  const artifactCard = input.artifactCard ?? buildLocalRunArtifactCard(input);
+  const feedEntries = buildLocalRunArtifactFeedEntries(input.events);
+
+  return {
+    result: artifactCard.result,
+    error: artifactCard.error,
+    summaryItems: artifactCard.summaryItems,
+    diagnosticGroups: artifactCard.diagnosticGroups,
+    events: {
+      countLabel: formatLocalEventCount(input.events),
+      feedEntries,
+      rawEvents: input.events ?? [],
+      showRawEvents: !input.bridgedTaskRunId && feedEntries.length === 0,
+    },
+    snapshots: buildLocalRunArtifactSnapshots(input),
+    stop: input.stop,
   };
 }

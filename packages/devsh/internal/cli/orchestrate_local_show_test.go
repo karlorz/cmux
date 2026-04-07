@@ -106,6 +106,12 @@ func TestShowLocalWithState(t *testing.T) {
 		CheckpointGeneration: 1,
 		CheckpointLabel:      "before-refactor",
 		CheckpointCreatedAt:  1710757380000,
+		Stop: &LocalStopInfo{
+			PID:     4242,
+			Signal:  "SIGTERM",
+			Status:  "stopped",
+			Message: "Sent SIGTERM to process 4242",
+		},
 	}
 	sessionData, _ := json.MarshalIndent(session, "", "  ")
 	os.WriteFile(filepath.Join(runDir, "session.json"), sessionData, 0644)
@@ -171,6 +177,21 @@ func TestShowLocalWithState(t *testing.T) {
 	}
 	if detail.CheckpointCreatedAt != 1710757380000 {
 		t.Fatalf("expected checkpoint created at, got %d", detail.CheckpointCreatedAt)
+	}
+	if detail.Stop == nil {
+		t.Fatal("expected stop info from session")
+	}
+	if detail.Stop.Status != "stopped" {
+		t.Fatalf("expected stop status, got %q", detail.Stop.Status)
+	}
+	if detail.Stop.Signal != "SIGTERM" {
+		t.Fatalf("expected stop signal, got %q", detail.Stop.Signal)
+	}
+	if detail.Stop.PID != 4242 {
+		t.Fatalf("expected stop pid, got %d", detail.Stop.PID)
+	}
+	if detail.Stop.Message != "Sent SIGTERM to process 4242" {
+		t.Fatalf("expected stop message, got %q", detail.Stop.Message)
 	}
 	if len(detail.Events) != 1 || detail.Events[0].Type != "task_started" {
 		t.Fatalf("expected event timeline from state, got %+v", detail.Events)
