@@ -13,7 +13,6 @@ import (
 
 	"github.com/karlorz/devsh/internal/auth"
 	"github.com/karlorz/devsh/internal/provider"
-	"github.com/karlorz/devsh/internal/pvelxc"
 	"github.com/karlorz/devsh/internal/vm"
 	"github.com/spf13/cobra"
 )
@@ -61,13 +60,9 @@ Examples:
 
 		switch selected {
 		case provider.PveLxc:
-			client, err := pvelxc.NewClientFromEnv()
+			instance, err := getPveLxcInstance(ctx, instanceID)
 			if err != nil {
-				return fmt.Errorf("failed to create PVE LXC client: %w\nSet PVE_API_URL and PVE_API_TOKEN", err)
-			}
-			instance, err := client.GetInstance(ctx, instanceID)
-			if err != nil {
-				return fmt.Errorf("failed to get instance: %w", err)
+				return err
 			}
 			if instance.VSCodeURL == "" {
 				return fmt.Errorf("VS Code URL not available")
@@ -136,13 +131,9 @@ Examples:
 
 		switch selected {
 		case provider.PveLxc:
-			client, err := pvelxc.NewClientFromEnv()
+			instance, err := getPveLxcInstance(ctx, instanceID)
 			if err != nil {
-				return fmt.Errorf("failed to create PVE LXC client: %w\nSet PVE_API_URL and PVE_API_TOKEN", err)
-			}
-			instance, err := client.GetInstance(ctx, instanceID)
-			if err != nil {
-				return fmt.Errorf("failed to get instance: %w", err)
+				return err
 			}
 			if instance.VNCURL == "" {
 				return fmt.Errorf("VNC URL not available")
@@ -274,13 +265,9 @@ Examples:
 
 		switch selected {
 		case provider.PveLxc:
-			client, err := pvelxc.NewClientFromEnv()
+			instance, err := getPveLxcInstance(ctx, instanceID)
 			if err != nil {
-				return fmt.Errorf("failed to create PVE LXC client: %w\nSet PVE_API_URL and PVE_API_TOKEN", err)
-			}
-			instance, err := client.GetInstance(ctx, instanceID)
-			if err != nil {
-				return fmt.Errorf("failed to get instance: %w", err)
+				return err
 			}
 
 			fmt.Printf("ID:       %s\n", instance.ID)

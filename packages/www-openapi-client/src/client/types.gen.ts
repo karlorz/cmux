@@ -1778,6 +1778,30 @@ export type ListPveLxcInstancesResponse = {
     instances: Array<PveLxcInstanceInfo>;
 };
 
+export type PveLxcInstanceExecResponse = {
+    stdout: string;
+    stderr: string;
+    exit_code: number;
+};
+
+export type PveLxcInstanceExecBody = {
+    teamSlugOrId: string;
+    command: string;
+    timeoutSeconds?: number;
+};
+
+export type PveLxcPauseResponse = {
+    paused: true;
+};
+
+export type PveLxcInstanceActionBody = {
+    teamSlugOrId: string;
+};
+
+export type PveLxcStopResponse = {
+    stopped: true;
+};
+
 export type PveLxcPreviewInstanceStartResponse = {
     instanceId: string;
     vmid: number;
@@ -6558,6 +6582,213 @@ export type GetApiPveLxcInstancesResponses = {
 };
 
 export type GetApiPveLxcInstancesResponse = GetApiPveLxcInstancesResponses[keyof GetApiPveLxcInstancesResponses];
+
+export type GetApiPveLxcInstancesByInstanceIdData = {
+    body?: never;
+    path: {
+        instanceId: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/pve-lxc/instances/{instanceId}';
+};
+
+export type GetApiPveLxcInstancesByInstanceIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Instance not found
+     */
+    404: unknown;
+    /**
+     * Failed to get instance
+     */
+    500: unknown;
+    /**
+     * PVE LXC provider not configured
+     */
+    503: unknown;
+};
+
+export type GetApiPveLxcInstancesByInstanceIdResponses = {
+    /**
+     * PVE LXC instance details
+     */
+    200: PveLxcInstanceInfo;
+};
+
+export type GetApiPveLxcInstancesByInstanceIdResponse = GetApiPveLxcInstancesByInstanceIdResponses[keyof GetApiPveLxcInstancesByInstanceIdResponses];
+
+export type PostApiPveLxcInstancesByInstanceIdExecData = {
+    body: PveLxcInstanceExecBody;
+    path: {
+        instanceId: string;
+    };
+    query?: never;
+    url: '/api/pve-lxc/instances/{instanceId}/exec';
+};
+
+export type PostApiPveLxcInstancesByInstanceIdExecErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Instance not found
+     */
+    404: unknown;
+    /**
+     * Failed to execute command
+     */
+    500: unknown;
+    /**
+     * PVE LXC provider not configured
+     */
+    503: unknown;
+};
+
+export type PostApiPveLxcInstancesByInstanceIdExecResponses = {
+    /**
+     * Command executed
+     */
+    200: PveLxcInstanceExecResponse;
+};
+
+export type PostApiPveLxcInstancesByInstanceIdExecResponse = PostApiPveLxcInstancesByInstanceIdExecResponses[keyof PostApiPveLxcInstancesByInstanceIdExecResponses];
+
+export type PostApiPveLxcInstancesByInstanceIdPauseData = {
+    body: PveLxcInstanceActionBody;
+    path: {
+        instanceId: string;
+    };
+    query?: never;
+    url: '/api/pve-lxc/instances/{instanceId}/pause';
+};
+
+export type PostApiPveLxcInstancesByInstanceIdPauseErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Instance not found
+     */
+    404: unknown;
+    /**
+     * Failed to pause instance
+     */
+    500: unknown;
+    /**
+     * PVE LXC provider not configured
+     */
+    503: unknown;
+};
+
+export type PostApiPveLxcInstancesByInstanceIdPauseResponses = {
+    /**
+     * PVE LXC instance paused
+     */
+    200: PveLxcPauseResponse;
+};
+
+export type PostApiPveLxcInstancesByInstanceIdPauseResponse = PostApiPveLxcInstancesByInstanceIdPauseResponses[keyof PostApiPveLxcInstancesByInstanceIdPauseResponses];
+
+export type PostApiPveLxcInstancesByInstanceIdResumeData = {
+    body: PveLxcInstanceActionBody;
+    path: {
+        instanceId: string;
+    };
+    query?: never;
+    url: '/api/pve-lxc/instances/{instanceId}/resume';
+};
+
+export type PostApiPveLxcInstancesByInstanceIdResumeErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Instance not found
+     */
+    404: unknown;
+    /**
+     * Failed to resume instance
+     */
+    500: unknown;
+    /**
+     * PVE LXC provider not configured
+     */
+    503: unknown;
+};
+
+export type PostApiPveLxcInstancesByInstanceIdResumeResponses = {
+    /**
+     * PVE LXC instance resumed
+     */
+    200: PveLxcInstanceInfo;
+};
+
+export type PostApiPveLxcInstancesByInstanceIdResumeResponse = PostApiPveLxcInstancesByInstanceIdResumeResponses[keyof PostApiPveLxcInstancesByInstanceIdResumeResponses];
+
+export type PostApiPveLxcInstancesByInstanceIdStopData = {
+    body: PveLxcInstanceActionBody;
+    path: {
+        instanceId: string;
+    };
+    query?: never;
+    url: '/api/pve-lxc/instances/{instanceId}/stop';
+};
+
+export type PostApiPveLxcInstancesByInstanceIdStopErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Instance not found
+     */
+    404: unknown;
+    /**
+     * Failed to delete instance
+     */
+    500: unknown;
+    /**
+     * PVE LXC provider not configured
+     */
+    503: unknown;
+};
+
+export type PostApiPveLxcInstancesByInstanceIdStopResponses = {
+    /**
+     * PVE LXC instance deleted
+     */
+    200: PveLxcStopResponse;
+};
+
+export type PostApiPveLxcInstancesByInstanceIdStopResponse = PostApiPveLxcInstancesByInstanceIdStopResponses[keyof PostApiPveLxcInstancesByInstanceIdStopResponses];
 
 export type PostApiPveLxcPreviewInstancesStartData = {
     body: PveLxcPreviewInstanceStartBody;

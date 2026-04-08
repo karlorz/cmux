@@ -9,7 +9,6 @@ import (
 	"github.com/karlorz/devsh/internal/auth"
 	"github.com/karlorz/devsh/internal/e2b"
 	"github.com/karlorz/devsh/internal/provider"
-	"github.com/karlorz/devsh/internal/pvelxc"
 	"github.com/karlorz/devsh/internal/state"
 	"github.com/karlorz/devsh/internal/vm"
 	"github.com/spf13/cobra"
@@ -41,23 +40,9 @@ Examples:
 
 		switch selected {
 		case provider.PveLxc:
-			client, err := pvelxc.NewClientFromEnv()
+			instance, err := resumePveLxcInstance(ctx, instanceID)
 			if err != nil {
-				return fmt.Errorf("failed to create PVE LXC client: %w\nSet PVE_API_URL and PVE_API_TOKEN", err)
-			}
-
-			if err := client.ResumeInstance(ctx, instanceID); err != nil {
-				return fmt.Errorf("failed to resume VM: %w", err)
-			}
-
-			fmt.Println("Waiting for exec endpoint to be ready...")
-			if err := client.WaitForExecReady(ctx, instanceID, 2*time.Minute); err != nil {
-				return fmt.Errorf("VM failed to resume: %w", err)
-			}
-
-			instance, err := client.GetInstance(ctx, instanceID)
-			if err != nil {
-				return fmt.Errorf("VM failed to resume: %w", err)
+				return err
 			}
 
 			_ = state.SetLastInstance(instance.ID, "")

@@ -65,6 +65,7 @@ type Instance struct {
 	Status          string `json:"status"`
 	VSCodeURL       string `json:"vscodeUrl"`
 	VNCURL          string `json:"vncUrl"`
+	XTermURL        string `json:"xtermUrl"`
 	WorkerURL       string `json:"workerUrl"`
 	ChromeURL       string `json:"chromeUrl"` // Chrome DevTools proxy URL
 }
@@ -454,6 +455,167 @@ func (c *Client) ListPveLxcInstances(ctx context.Context) ([]Instance, error) {
 	}
 
 	return result.Instances, nil
+}
+
+// GetPveLxcInstance gets a PVE LXC instance via the www API.
+func (c *Client) GetPveLxcInstance(ctx context.Context, instanceID string) (*Instance, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	path := fmt.Sprintf(
+		"/api/pve-lxc/instances/%s?teamSlugOrId=%s",
+		url.PathEscape(instanceID),
+		url.QueryEscape(c.teamSlug),
+	)
+	resp, err := c.doWwwRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result Instance
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// ExecPveLxcInstance executes a command in a PVE LXC instance via the www API.
+func (c *Client) ExecPveLxcInstance(
+	ctx context.Context,
+	instanceID string,
+	command string,
+	timeoutSeconds int,
+) (string, string, int, error) {
+	if c.teamSlug == "" {
+		return "", "", -1, fmt.Errorf("team slug not set")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+		"command":      command,
+	}
+	if timeoutSeconds > 0 {
+		body["timeoutSeconds"] = timeoutSeconds
+	}
+
+	resp, err := c.doWwwRequest(
+		ctx,
+		http.MethodPost,
+		fmt.Sprintf("/api/pve-lxc/instances/%s/exec", url.PathEscape(instanceID)),
+		body,
+	)
+	if err != nil {
+		return "", "", -1, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", "", -1, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result struct {
+		Stdout   string `json:"stdout"`
+		Stderr   string `json:"stderr"`
+		ExitCode int    `json:"exit_code"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", "", -1, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result.Stdout, result.Stderr, result.ExitCode, nil
+}
+
+// PausePveLxcInstance pauses a PVE LXC instance via the www API.
+func (c *Client) PausePveLxcInstance(ctx context.Context, instanceID string) error {
+	if c.teamSlug == "" {
+		return fmt.Errorf("team slug not set")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+	}
+	resp, err := c.doWwwRequest(
+		ctx,
+		http.MethodPost,
+		fmt.Sprintf("/api/pve-lxc/instances/%s/pause", url.PathEscape(instanceID)),
+		body,
+	)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	return nil
+}
+
+// ResumePveLxcInstance resumes a PVE LXC instance via the www API.
+func (c *Client) ResumePveLxcInstance(ctx context.Context, instanceID string) (*Instance, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+	}
+	resp, err := c.doWwwRequest(
+		ctx,
+		http.MethodPost,
+		fmt.Sprintf("/api/pve-lxc/instances/%s/resume", url.PathEscape(instanceID)),
+		body,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result Instance
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// StopPveLxcInstance deletes a PVE LXC instance via the www API.
+func (c *Client) StopPveLxcInstance(ctx context.Context, instanceID string) error {
+	if c.teamSlug == "" {
+		return fmt.Errorf("team slug not set")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+	}
+	resp, err := c.doWwwRequest(
+		ctx,
+		http.MethodPost,
+		fmt.Sprintf("/api/pve-lxc/instances/%s/stop", url.PathEscape(instanceID)),
+		body,
+	)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	return nil
 }
 
 // WaitForReady waits for an instance to be ready
