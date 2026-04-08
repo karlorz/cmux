@@ -3115,77 +3115,117 @@ async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
     )
     await ctx.run("install-cmux-ext", install_cmd)
 
-    # Step 2: Download and install marketplace extensions one at a time
+    # Step 2: Download and install marketplace extensions one at a time.
+    # The per-extension download/install commands are small enough for HTTP exec,
+    # but on some runs the transport still drops. Rather than falling back to SSH
+    # for each tiny command, run the whole extension phase once via one larger
+    # in-container script, following the proven pattern from scripts/snapshot.py.
+    extension_lines: list[str] = []
     for ext in extensions:
         publisher = ext.get("publisher")
         name = ext.get("name")
         version = ext.get("version")
         ext_id = f"{publisher}.{name}"
-        vsix_path = f"/tmp/{ext_id}.vsix"
-        url = f"https://marketplace.visualstudio.com/_apis/public/gallery/publishers/{publisher}/vsextensions/{name}/{version}/vspackage"
+        if (
+            not isinstance(publisher, str)
+            or not isinstance(name, str)
+            or not isinstance(version, str)
+        ):
+            raise RuntimeError(f"Invalid extension entry {ext!r}")
+        extension_lines.append(f"{publisher}|{name}|{version}|{ext_id}")
 
-        download_cmd = textwrap.dedent(
-            f"""
-            set -eux
-            export HOME=/root
-            TMP_HOST_PATH="/tmp/{ext_id}.vsix.tmp"
-            REMOTE_PATH={vsix_path}
-            URL="{url}"
-            echo "[install-ide-extensions] downloading {ext_id}@{version}"
-            curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 300 -o "$TMP_HOST_PATH" "$URL"
-            if gzip -t "$TMP_HOST_PATH" 2>/dev/null; then
-                gunzip -c "$TMP_HOST_PATH" > "$REMOTE_PATH"
-                rm -f "$TMP_HOST_PATH"
-            else
-                mv "$TMP_HOST_PATH" "$REMOTE_PATH"
-            fi
-            echo "[install-ide-extensions] downloaded {ext_id}"
-            """
-        )
-        for attempt in range(1, 4):
-            try:
-                await ctx.run(f"download-{ext_id}", download_cmd)
-                break
-            except Exception as exc:
-                if attempt >= 3 or not is_transient_http_exec_error(exc):
-                    raise
-                delay = float(attempt * 5)
-                ctx.console.info(
-                    f"[download-{ext_id}] retrying after transient exec error "
-                    f"(attempt {attempt}/3) in {delay:.1f}s"
-                )
-                await asyncio.sleep(delay)
+    extensions_blob = "\n".join(extension_lines)
 
-        install_ext_cmd = textwrap.dedent(
-            f"""
-            set -eux
-            export HOME=/root
-            echo "[install-ide-extensions] installing {ext_id}"
-            {bin_path} --install-extension {vsix_path} --force --extensions-dir {extensions_dir} --user-data-dir {user_data_dir} </dev/null
-            if ! ls -d {extensions_dir}/{ext_id}-* >/dev/null 2>&1; then
-                echo "[install-ide-extensions] ERROR: {ext_id} not found in {extensions_dir}" >&2
-                exit 1
+    bulk_extensions_cmd = textwrap.dedent(
+        f"""
+        set -eux
+        export HOME=/root
+        server_root="{server_root}"
+        bin_path="{bin_path}"
+        extensions_dir="{extensions_dir}"
+        user_data_dir="{user_data_dir}"
+        mkdir -p "${{extensions_dir}}" "${{user_data_dir}}"
+        install_from_file() {{
+          local package_path="$1"
+          echo "[install-ide-extensions] installing ${{package_path}}"
+          "${{bin_path}}" \
+            --install-extension "${{package_path}}" \
+            --force \
+            --extensions-dir "${{extensions_dir}}" \
+            --user-data-dir "${{user_data_dir}}"
+        }}
+        download_dir="$(mktemp -d)"
+        cleanup() {{
+          rm -rf "${{download_dir}}"
+        }}
+        trap cleanup EXIT
+        download_extension() {{
+          local publisher="$1"
+          local name="$2"
+          local version="$3"
+          local ext_id="$4"
+          local destination="${{download_dir}}/${{ext_id}}.vsix"
+          local tmpfile="${{destination}}.download"
+          local curl_stderr="${{tmpfile}}.stderr"
+          local url="https://marketplace.visualstudio.com/_apis/public/gallery/publishers/${{publisher}}/vsextensions/${{name}}/${{version}}/vspackage"
+          local attempt=1
+          local max_attempts=3
+          while [ "${{attempt}}" -le "${{max_attempts}}" ]; do
+            echo "[install-ide-extensions] fetch ${{ext_id}}@${{version}} attempt ${{attempt}}"
+            if curl -fSL --retry 6 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 600 -o "${{tmpfile}}" "${{url}}" 2>"${{curl_stderr}}"; then
+              rm -f "${{curl_stderr}}"
+              break
             fi
-            echo "[install-ide-extensions] installed {ext_id}"
-            rm -f {vsix_path}
-            """
-        )
-        for attempt in range(1, 4):
-            try:
-                await ctx.run(f"install-{ext_id}", install_ext_cmd)
-                break
-            except Exception as exc:
-                if attempt >= 3 or not (
-                    is_transient_http_exec_error(exc)
-                    or is_http_exec_transport_failure(exc)
-                ):
-                    raise
-                delay = float(attempt * 5)
-                ctx.console.info(
-                    f"[install-{ext_id}] retrying after transient exec error "
-                    f"(attempt {attempt}/3) in {delay:.1f}s"
-                )
-                await asyncio.sleep(delay)
+            echo "Download attempt ${{attempt}}/${{max_attempts}} failed for ${{ext_id}}; retrying..." >&2
+            if [ -s "${{curl_stderr}}" ]; then
+              cat "${{curl_stderr}}" >&2
+            fi
+            rm -f "${{tmpfile}}"
+            attempt=$((attempt + 1))
+            sleep $((attempt * 2))
+          done
+          if [ "${{attempt}}" -gt "${{max_attempts}}" ]; then
+            echo "Failed to download ${{ext_id}} after ${{max_attempts}} attempts" >&2
+            if [ -s "${{curl_stderr}}" ]; then
+              cat "${{curl_stderr}}" >&2
+            fi
+            rm -f "${{curl_stderr}}"
+            return 1
+          fi
+          if gzip -t "${{tmpfile}}" >/dev/null 2>&1; then
+            gunzip -c "${{tmpfile}}" > "${{destination}}"
+            rm -f "${{tmpfile}}"
+          else
+            mv "${{tmpfile}}" "${{destination}}"
+          fi
+          install_from_file "${{destination}}"
+          rm -f "${{destination}}"
+        }}
+        while IFS='|' read -r publisher name version ext_id; do
+          [ -z "${{publisher}}" ] && continue
+          download_extension "${{publisher}}" "${{name}}" "${{version}}" "${{ext_id}}"
+        done <<'EXTENSIONS'
+{extensions_blob}
+EXTENSIONS
+        echo "[install-ide-extensions] completed installs"
+        """
+    )
+    for attempt in range(1, 4):
+        try:
+            await ctx.run("install-marketplace-exts", bulk_extensions_cmd)
+            break
+        except Exception as exc:
+            if attempt >= 3 or not (
+                is_transient_http_exec_error(exc)
+                or is_http_exec_transport_failure(exc)
+            ):
+                raise
+            delay = float(attempt * 5)
+            ctx.console.info(
+                f"[install-marketplace-exts] retrying after transient exec error "
+                f"(attempt {attempt}/3) in {delay:.1f}s"
+            )
+            await asyncio.sleep(delay)
 
 
 @registry.task(
