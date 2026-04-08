@@ -6,12 +6,14 @@
  */
 
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { pveLxcInstancesRouter } from "./pve-lxc.instances.route";
 import { pveLxcPreviewRouter } from "./pve-lxc.preview.route";
 import { pveLxcResumeRouter } from "./pve-lxc.resume.route";
 import { pveLxcStoppedRouter } from "./pve-lxc.stopped.route";
 
 export const pveLxcRouter = new OpenAPIHono();
 
+pveLxcRouter.route("/", pveLxcInstancesRouter);
 pveLxcRouter.route("/", pveLxcPreviewRouter);
 pveLxcRouter.route("/", pveLxcResumeRouter);
 pveLxcRouter.route("/", pveLxcStoppedRouter);

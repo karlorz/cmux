@@ -469,6 +469,68 @@ func TestRecordSandboxCreateServerError(t *testing.T) {
 	}
 }
 
+func TestListPveLxcInstancesUsesWwwRoute(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	if err := auth.CacheAccessToken("test-token", time.Now().Add(time.Hour).Unix()); err != nil {
+		t.Fatalf("CacheAccessToken failed: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("unexpected method: %s", r.Method)
+		}
+		if r.URL.Path != "/api/pve-lxc/instances" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("teamSlugOrId"); got != "example-team" {
+			t.Fatalf("unexpected teamSlugOrId: %s", got)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Fatalf("unexpected authorization header: %s", got)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"instances":[
+				{
+					"id":"pvelxc-123",
+					"status":"running",
+					"vscodeUrl":"https://code",
+					"vncUrl":"https://vnc",
+					"xtermUrl":"https://xterm"
+				}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	auth.SetConfigOverrides("", "", server.URL, "")
+	defer auth.SetConfigOverrides("", "", "", "")
+
+	client := &Client{
+		httpClient: server.Client(),
+		teamSlug:   "example-team",
+	}
+
+	instances, err := client.ListPveLxcInstances(context.Background())
+	if err != nil {
+		t.Fatalf("ListPveLxcInstances failed: %v", err)
+	}
+	if len(instances) != 1 {
+		t.Fatalf("unexpected instance count: %d", len(instances))
+	}
+	if instances[0].ID != "pvelxc-123" {
+		t.Fatalf("unexpected instance id: %s", instances[0].ID)
+	}
+	if instances[0].VSCodeURL != "https://code" {
+		t.Fatalf("unexpected vscode URL: %s", instances[0].VSCodeURL)
+	}
+	if instances[0].VNCURL != "https://vnc" {
+		t.Fatalf("unexpected vnc URL: %s", instances[0].VNCURL)
+	}
+}
+
 func TestGetRunControlSummaryRequiresTeamSlug(t *testing.T) {
 	client := &Client{}
 

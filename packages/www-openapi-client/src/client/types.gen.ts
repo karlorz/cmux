@@ -1766,6 +1766,18 @@ export type ObsidianNote = {
     tags: Array<string>;
 };
 
+export type PveLxcInstanceInfo = {
+    id: string;
+    status: string;
+    vscodeUrl?: string;
+    vncUrl?: string;
+    xtermUrl?: string;
+};
+
+export type ListPveLxcInstancesResponse = {
+    instances: Array<PveLxcInstanceInfo>;
+};
+
 export type PveLxcPreviewInstanceStartResponse = {
     instanceId: string;
     vmid: number;
@@ -6513,6 +6525,39 @@ export type GetApiVaultRecommendationsResponses = {
 };
 
 export type GetApiVaultRecommendationsResponse = GetApiVaultRecommendationsResponses[keyof GetApiVaultRecommendationsResponses];
+
+export type GetApiPveLxcInstancesData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/pve-lxc/instances';
+};
+
+export type GetApiPveLxcInstancesErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Failed to list instances
+     */
+    500: unknown;
+    /**
+     * PVE LXC provider not configured
+     */
+    503: unknown;
+};
+
+export type GetApiPveLxcInstancesResponses = {
+    /**
+     * List of PVE LXC instances
+     */
+    200: ListPveLxcInstancesResponse;
+};
+
+export type GetApiPveLxcInstancesResponse = GetApiPveLxcInstancesResponses[keyof GetApiPveLxcInstancesResponses];
 
 export type PostApiPveLxcPreviewInstancesStartData = {
     body: PveLxcPreviewInstanceStartBody;
