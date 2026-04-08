@@ -36,16 +36,15 @@ Examples:
   devsh start --no-auth          # Skip automatic provider auth setup`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		normalized, err := provider.NormalizeProvider(flagProvider)
+		mode, err := resolveStartMode(flagProvider)
 		if err != nil {
 			return err
 		}
-		selected := normalized
-		if selected == "" {
-			selected = provider.DetectFromEnv()
+		if mode.serverManaged {
+			return runStartServerManaged(cmd, args)
 		}
 
-		switch selected {
+		switch mode.provider {
 		case provider.PveLxc:
 			return runStartPveLxc(cmd, args)
 		case provider.Morph:
@@ -53,7 +52,7 @@ Examples:
 		case provider.E2B:
 			return runStartE2B(cmd, args)
 		default:
-			return fmt.Errorf("unsupported provider: %s", selected)
+			return fmt.Errorf("unsupported provider: %s", mode.provider)
 		}
 	},
 }
@@ -86,6 +85,76 @@ func setupProviderAuthIfNeeded(cmd *cobra.Command, ctx context.Context, client *
 	} else {
 		fmt.Println("  No provider keys configured (add API keys in web UI)")
 	}
+}
+
+func runStartServerManaged(cmd *cobra.Command, args []string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	teamSlug, err := auth.GetTeamSlug()
+	if err != nil {
+		return fmt.Errorf("failed to get team: %w\nRun 'devsh auth login' to authenticate", err)
+	}
+
+	client, err := vm.NewClient()
+	if err != nil {
+		return fmt.Errorf("failed to create client: %w", err)
+	}
+	client.SetTeamSlug(teamSlug)
+
+	snapshotID, _ := cmd.Flags().GetString("snapshot")
+	_, syncPath, err := resolveOptionalStartPath(args)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Starting sandbox...")
+	result, err := client.StartWorkspace(ctx, vm.StartWorkspaceOptions{
+		SnapshotID: snapshotID,
+		TTLSeconds: 3600,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to start sandbox: %w", err)
+	}
+
+	fmt.Printf("Sandbox started: %s (%s)\n", result.InstanceID, result.Provider)
+
+	if syncPath != "" {
+		if result.Provider == provider.PveLxc {
+			fmt.Printf("Warning: sync is not supported for pve-lxc yet (skipping sync of %s)\n", syncPath)
+		} else {
+			fmt.Printf("Syncing %s to sandbox...\n", syncPath)
+			if err := client.SyncToVM(ctx, result.InstanceID, syncPath); err != nil {
+				fmt.Printf("Warning: failed to sync files: %v\n", err)
+			} else {
+				fmt.Println("Files synced successfully")
+			}
+		}
+	}
+
+	state.SetLastInstance(result.InstanceID, teamSlug)
+
+	fmt.Println("\nSandbox is ready!")
+	fmt.Printf("  ID:       %s\n", result.InstanceID)
+	if result.VSCodeURL != "" {
+		fmt.Printf("  VS Code:  %s\n", result.VSCodeURL)
+	}
+	if result.VncURL != "" {
+		fmt.Printf("  VNC:      %s\n", result.VncURL)
+	}
+	if result.XtermURL != "" {
+		fmt.Printf("  XTerm:    %s\n", result.XtermURL)
+	}
+
+	interactive, _ := cmd.Flags().GetBool("interactive")
+	if interactive && result.VSCodeURL != "" {
+		fmt.Println("\nOpening VS Code in browser...")
+		if err := openBrowser(result.VSCodeURL); err != nil {
+			fmt.Printf("Warning: could not open browser: %v\n", err)
+		}
+	}
+
+	return nil
 }
 
 func runStartMorph(cmd *cobra.Command, args []string) error {

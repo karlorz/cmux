@@ -300,6 +300,19 @@ func TestRegexPatterns(t *testing.T) {
 }
 
 func TestResolveSnapshotUsesBuiltInDefaultPair(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatalf("Chdir(tempDir) error = %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(wd); err != nil {
+			t.Fatalf("restore cwd error = %v", err)
+		}
+	}()
+
 	client, err := NewClient(Config{
 		APIURL:   "https://pve.example.com:8006",
 		APIToken: "root@pam!token=secret",
