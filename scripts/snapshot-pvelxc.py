@@ -213,18 +213,13 @@ class PveLxcClient:
         self.token_id = token_parts[0]
         self.token_secret = token_parts[1]
 
-        # SSH host for pct commands. If not explicitly provided, derive a
-        # sensible fallback from the PVE API hostname so long-running HTTP exec
-        # transport failures can still fall back to SSH.
-        parsed_api_url = urllib.parse.urlparse(self.api_url)
-        derived_ssh_host = (
-            f"root@{parsed_api_url.hostname}"
-            if ssh_host is None and parsed_api_url.hostname
-            else None
-        )
-        self.ssh_host = ssh_host or derived_ssh_host
+        # SSH host for pct commands.
+        # Only use SSH when explicitly configured via PVE_SSH_HOST; GitHub Actions
+        # runners often cannot reach the PVE host over port 22, so implicit SSH
+        # fallback from the API hostname is not safe here.
+        self.ssh_host = ssh_host
         self._ssh_host_explicit = ssh_host is not None
-        self._ssh_host_derived = ssh_host is None and derived_ssh_host is not None
+        self._ssh_host_derived = False
 
         # SSH ControlMaster socket path for connection multiplexing
         # This allows multiple SSH sessions to share a single TCP connection
@@ -3215,10 +3210,7 @@ EXTENSIONS
             await ctx.run("install-marketplace-exts", bulk_extensions_cmd)
             break
         except Exception as exc:
-            if attempt >= 3 or not (
-                is_transient_http_exec_error(exc)
-                or is_http_exec_transport_failure(exc)
-            ):
+            if attempt >= 3 or not is_transient_http_exec_error(exc):
                 raise
             delay = float(attempt * 5)
             ctx.console.info(
