@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -178,25 +177,9 @@ func runStartMorph(cmd *cobra.Command, args []string) error {
 	snapshotID, _ := cmd.Flags().GetString("snapshot")
 
 	// Determine name from path if provided
-	name := ""
-	var syncPath string
-	if len(args) > 0 {
-		syncPath = args[0]
-		absPath, err := filepath.Abs(syncPath)
-		if err != nil {
-			return fmt.Errorf("invalid path: %w", err)
-		}
-		syncPath = absPath
-
-		// Check path exists and is a directory
-		info, err := os.Stat(syncPath)
-		if err != nil {
-			return fmt.Errorf("path not found: %w", err)
-		}
-		if !info.IsDir() {
-			return fmt.Errorf("path must be a directory")
-		}
-		name = filepath.Base(syncPath)
+	name, syncPath, err := resolveOptionalStartPath(args)
+	if err != nil {
+		return err
 	}
 
 	fmt.Println("Creating VM...")
@@ -281,22 +264,9 @@ func runStartPveLxc(cmd *cobra.Command, args []string) error {
 	snapshotID, _ := cmd.Flags().GetString("snapshot")
 
 	// Optional: accept a path argument for consistency, but sync is not yet implemented for PVE LXC.
-	var syncPath string
-	if len(args) > 0 {
-		syncPath = args[0]
-		absPath, err := filepath.Abs(syncPath)
-		if err != nil {
-			return fmt.Errorf("invalid path: %w", err)
-		}
-		syncPath = absPath
-
-		info, err := os.Stat(syncPath)
-		if err != nil {
-			return fmt.Errorf("path not found: %w", err)
-		}
-		if !info.IsDir() {
-			return fmt.Errorf("path must be a directory")
-		}
+	_, syncPath, err := resolveOptionalStartPath(args)
+	if err != nil {
+		return err
 	}
 
 	client, err := pvelxc.NewClientFromEnv()
@@ -405,25 +375,9 @@ func runStartE2B(cmd *cobra.Command, args []string) error {
 	templateID, _ := cmd.Flags().GetString("snapshot")
 
 	// Determine name from path if provided
-	name := ""
-	var syncPath string
-	if len(args) > 0 {
-		syncPath = args[0]
-		absPath, err := filepath.Abs(syncPath)
-		if err != nil {
-			return fmt.Errorf("invalid path: %w", err)
-		}
-		syncPath = absPath
-
-		// Check path exists and is a directory
-		info, err := os.Stat(syncPath)
-		if err != nil {
-			return fmt.Errorf("path not found: %w", err)
-		}
-		if !info.IsDir() {
-			return fmt.Errorf("path must be a directory")
-		}
-		name = filepath.Base(syncPath)
+	name, syncPath, err := resolveOptionalStartPath(args)
+	if err != nil {
+		return err
 	}
 
 	fmt.Println("Creating E2B sandbox...")
