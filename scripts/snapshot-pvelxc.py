@@ -3089,18 +3089,33 @@ async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
             f"""
             set -eux
             export HOME=/root
+            TMP_HOST_PATH="/tmp/{ext_id}.vsix.tmp"
+            REMOTE_PATH={vsix_path}
+            URL="{url}"
             echo "[install-ide-extensions] downloading {ext_id}@{version}"
-            curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 300 -o {vsix_path}.tmp "{url}"
-            if gzip -t {vsix_path}.tmp 2>/dev/null; then
-                gunzip -c {vsix_path}.tmp > {vsix_path}
-                rm -f {vsix_path}.tmp
+            curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 300 -o "$TMP_HOST_PATH" "$URL"
+            if gzip -t "$TMP_HOST_PATH" 2>/dev/null; then
+                gunzip -c "$TMP_HOST_PATH" > "$REMOTE_PATH"
+                rm -f "$TMP_HOST_PATH"
             else
-                mv {vsix_path}.tmp {vsix_path}
+                mv "$TMP_HOST_PATH" "$REMOTE_PATH"
             fi
             echo "[install-ide-extensions] downloaded {ext_id}"
             """
         )
-        await ctx.run(f"download-{ext_id}", download_cmd)
+        for attempt in range(1, 4):
+            try:
+                await ctx.run(f"download-{ext_id}", download_cmd)
+                break
+            except Exception as exc:
+                if attempt >= 3 or not is_transient_http_exec_error(exc):
+                    raise
+                delay = float(attempt * 5)
+                ctx.console.info(
+                    f"[download-{ext_id}] retrying after transient exec error "
+                    f"(attempt {attempt}/3) in {delay:.1f}s"
+                )
+                await asyncio.sleep(delay)
 
         install_ext_cmd = textwrap.dedent(
             f"""
