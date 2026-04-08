@@ -447,28 +447,13 @@ func (c *Client) ListPveLxcInstances(ctx context.Context) ([]Instance, error) {
 	}
 
 	var result struct {
-		Instances []struct {
-			ID        string `json:"id"`
-			Status    string `json:"status"`
-			VSCodeURL string `json:"vscodeUrl"`
-			VNCURL    string `json:"vncUrl"`
-		} `json:"instances"`
+		Instances []Instance `json:"instances"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	instances := make([]Instance, 0, len(result.Instances))
-	for _, instance := range result.Instances {
-		instances = append(instances, Instance{
-			ID:        instance.ID,
-			Status:    instance.Status,
-			VSCodeURL: instance.VSCodeURL,
-			VNCURL:    instance.VNCURL,
-		})
-	}
-
-	return instances, nil
+	return result.Instances, nil
 }
 
 // WaitForReady waits for an instance to be ready
