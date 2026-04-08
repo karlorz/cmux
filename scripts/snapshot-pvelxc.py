@@ -2475,8 +2475,23 @@ async def task_install_nvm(ctx: PveTaskContext) -> None:
         """
         set -eux
         export NVM_DIR="/root/.nvm"
+        NVM_VERSION="v0.39.7"
         mkdir -p "${NVM_DIR}"
-        curl -fsSL "https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh" | bash
+        tmp_dir="$(mktemp -d)"
+        trap 'rm -rf "${tmp_dir}"' EXIT
+        cd "${tmp_dir}"
+        curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 300 \
+          "https://github.com/nvm-sh/nvm/archive/refs/tags/${NVM_VERSION}.tar.gz" \
+          -o nvm.tar.gz
+        tar -xzf nvm.tar.gz
+        extracted_dir="$(find . -maxdepth 1 -type d -name 'nvm-*' | head -1)"
+        if [ -z "${extracted_dir}" ] || [ ! -f "${extracted_dir}/nvm.sh" ]; then
+          echo "[install-nvm] ERROR: extracted nvm archive is missing nvm.sh" >&2
+          ls -la
+          exit 1
+        fi
+        rm -rf "${NVM_DIR}"/*
+        cp -r "${extracted_dir}"/. "${NVM_DIR}/"
         cat <<'PROFILE' > /etc/profile.d/nvm.sh
         export NVM_DIR="$HOME/.nvm"
         [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
