@@ -429,6 +429,33 @@ func (c *Client) ListInstances(ctx context.Context) ([]Instance, error) {
 	return result.Instances, nil
 }
 
+// ListPveLxcInstances lists PVE LXC instances via the www API.
+func (c *Client) ListPveLxcInstances(ctx context.Context) ([]Instance, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	path := fmt.Sprintf("/api/pve-lxc/instances?teamSlugOrId=%s", url.QueryEscape(c.teamSlug))
+	resp, err := c.doWwwRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result struct {
+		Instances []Instance `json:"instances"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result.Instances, nil
+}
+
 // WaitForReady waits for an instance to be ready
 func (c *Client) WaitForReady(ctx context.Context, instanceID string, timeout time.Duration) (*Instance, error) {
 	deadline := time.Now().Add(timeout)
@@ -1021,6 +1048,14 @@ type StartSandboxOptions struct {
 	TTLSeconds      int
 }
 
+// StartWorkspaceOptions represents options for starting a personal workspace.
+type StartWorkspaceOptions struct {
+	SnapshotID string
+	TTLSeconds int
+	RepoURL    string
+	Branch     string
+}
+
 // StartSandboxResult represents the result of starting a sandbox
 type StartSandboxResult struct {
 	InstanceID string `json:"instanceId"`
@@ -1030,6 +1065,9 @@ type StartSandboxResult struct {
 	XtermURL   string `json:"xtermUrl"`
 	WorkerURL  string `json:"workerUrl"`
 }
+
+// StartWorkspaceResult represents the result of starting a personal workspace.
+type StartWorkspaceResult = StartSandboxResult
 
 // ListTasks lists all tasks for the team
 func (c *Client) ListTasks(ctx context.Context, archived bool) (*ListTasksResult, error) {
@@ -1270,12 +1308,54 @@ func (c *Client) UploadFileToStorage(ctx context.Context, filePath string) (stri
 	return result.StorageID, nil
 }
 
-// StartSandbox starts a sandbox for a task run via the www API
-func (c *Client) StartSandbox(ctx context.Context, opts StartSandboxOptions) (*StartSandboxResult, error) {
+func (c *Client) postSandboxStart(ctx context.Context, body map[string]interface{}) (*StartSandboxResult, error) {
 	if c.teamSlug == "" {
 		return nil, fmt.Errorf("team slug not set")
 	}
 
+	resp, err := c.doWwwRequest(ctx, "POST", "/api/sandboxes/start", body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("sandbox start failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result StartSandboxResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// StartWorkspace starts a personal workspace via the www API.
+func (c *Client) StartWorkspace(ctx context.Context, opts StartWorkspaceOptions) (*StartWorkspaceResult, error) {
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+	}
+	if opts.TTLSeconds > 0 {
+		body["ttlSeconds"] = opts.TTLSeconds
+	} else {
+		body["ttlSeconds"] = 3600
+	}
+	if opts.SnapshotID != "" {
+		body["snapshotId"] = opts.SnapshotID
+	}
+	if opts.RepoURL != "" {
+		body["repoUrl"] = opts.RepoURL
+	}
+	if opts.Branch != "" {
+		body["branch"] = opts.Branch
+	}
+
+	return c.postSandboxStart(ctx, body)
+}
+
+// StartSandbox starts a sandbox for a task run via the www API.
+func (c *Client) StartSandbox(ctx context.Context, opts StartSandboxOptions) (*StartSandboxResult, error) {
 	body := map[string]interface{}{
 		"teamSlugOrId": c.teamSlug,
 		"taskRunId":    opts.TaskRunID,
@@ -1299,26 +1379,10 @@ func (c *Client) StartSandbox(ctx context.Context, opts StartSandboxOptions) (*S
 	if opts.TTLSeconds > 0 {
 		body["ttlSeconds"] = opts.TTLSeconds
 	} else {
-		body["ttlSeconds"] = 3600 // Default 1 hour
+		body["ttlSeconds"] = 3600
 	}
 
-	// Call the www API /api/sandboxes/start endpoint
-	resp, err := c.doWwwRequest(ctx, "POST", "/api/sandboxes/start", body)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("sandbox start failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
-	}
-
-	var result StartSandboxResult
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &result, nil
+	return c.postSandboxStart(ctx, body)
 }
 
 // ProjectNode represents a GitHub Projects v2 project.

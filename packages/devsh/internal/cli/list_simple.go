@@ -36,21 +36,41 @@ Examples:
 
 		switch selected {
 		case provider.PveLxc:
-			client, err := pvelxc.NewClientFromEnv()
-			if err != nil {
-				return fmt.Errorf("failed to create PVE LXC client: %w\nSet PVE_API_URL and PVE_API_TOKEN", err)
+			if provider.HasPveEnv() {
+				client, err := pvelxc.NewClientFromEnv()
+				if err != nil {
+					return fmt.Errorf("failed to create PVE LXC client: %w\nSet PVE_API_URL and PVE_API_TOKEN", err)
+				}
+				pveInstances, err := client.ListInstances(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to list instances: %w", err)
+				}
+				for _, inst := range pveInstances {
+					instances = append(instances, vm.Instance{
+						ID:        inst.ID,
+						Status:    inst.Status,
+						VSCodeURL: inst.VSCodeURL,
+					})
+				}
+				break
 			}
-			pveInstances, err := client.ListInstances(ctx)
+
+			teamSlug, err := auth.GetTeamSlug()
+			if err != nil {
+				return fmt.Errorf("failed to get team: %w", err)
+			}
+
+			client, err := vm.NewClient()
+			if err != nil {
+				return fmt.Errorf("failed to create client: %w", err)
+			}
+			client.SetTeamSlug(teamSlug)
+
+			pveInstances, err := client.ListPveLxcInstances(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to list instances: %w", err)
 			}
-			for _, inst := range pveInstances {
-				instances = append(instances, vm.Instance{
-					ID:        inst.ID,
-					Status:    inst.Status,
-					VSCodeURL: inst.VSCodeURL,
-				})
-			}
+			instances = append(instances, pveInstances...)
 		case provider.Morph:
 			teamSlug, err := auth.GetTeamSlug()
 			if err != nil {

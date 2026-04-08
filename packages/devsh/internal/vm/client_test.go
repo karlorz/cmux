@@ -303,6 +303,74 @@ func TestRecordSandboxCreateRequiresTeamSlug(t *testing.T) {
 	}
 }
 
+func TestStartWorkspaceRequiresTeamSlug(t *testing.T) {
+	client := &Client{}
+
+	_, err := client.StartWorkspace(context.Background(), StartWorkspaceOptions{})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "team slug not set") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestStartWorkspaceUsesWwwSandboxesStart(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	if err := auth.CacheAccessToken("test-token", time.Now().Add(time.Hour).Unix()); err != nil {
+		t.Fatalf("CacheAccessToken failed: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("unexpected method: %s", r.Method)
+		}
+		if r.URL.Path != "/api/sandboxes/start" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Fatalf("unexpected authorization header: %s", got)
+		}
+
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if body["teamSlugOrId"] != "example-team" {
+			t.Fatalf("unexpected teamSlugOrId: %#v", body["teamSlugOrId"])
+		}
+		if body["ttlSeconds"] != float64(3600) {
+			t.Fatalf("unexpected ttlSeconds: %#v", body["ttlSeconds"])
+		}
+		if _, ok := body["taskRunId"]; ok {
+			t.Fatalf("unexpected taskRunId in personal workspace start: %#v", body["taskRunId"])
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"instanceId":"pvelxc-123","provider":"pve-lxc","vscodeUrl":"https://code","workerUrl":"https://worker","vncUrl":"https://vnc"}`))
+	}))
+	defer server.Close()
+
+	auth.SetConfigOverrides("", "", server.URL, "")
+	defer auth.SetConfigOverrides("", "", "", "")
+
+	client := &Client{
+		httpClient: server.Client(),
+		teamSlug:   "example-team",
+	}
+
+	result, err := client.StartWorkspace(context.Background(), StartWorkspaceOptions{
+		TTLSeconds: 3600,
+	})
+	if err != nil {
+		t.Fatalf("StartWorkspace failed: %v", err)
+	}
+	if result.Provider != "pve-lxc" {
+		t.Fatalf("unexpected provider: %s", result.Provider)
+	}
+}
+
 func TestRecordSandboxCreateSuccess(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
@@ -398,6 +466,68 @@ func TestRecordSandboxCreateServerError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "record-create failed (403): Forbidden: No ownership record for this instance") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestListPveLxcInstancesUsesWwwRoute(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	if err := auth.CacheAccessToken("test-token", time.Now().Add(time.Hour).Unix()); err != nil {
+		t.Fatalf("CacheAccessToken failed: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("unexpected method: %s", r.Method)
+		}
+		if r.URL.Path != "/api/pve-lxc/instances" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("teamSlugOrId"); got != "example-team" {
+			t.Fatalf("unexpected teamSlugOrId: %s", got)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Fatalf("unexpected authorization header: %s", got)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"instances":[
+				{
+					"id":"pvelxc-123",
+					"status":"running",
+					"vscodeUrl":"https://code",
+					"vncUrl":"https://vnc",
+					"xtermUrl":"https://xterm"
+				}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	auth.SetConfigOverrides("", "", server.URL, "")
+	defer auth.SetConfigOverrides("", "", "", "")
+
+	client := &Client{
+		httpClient: server.Client(),
+		teamSlug:   "example-team",
+	}
+
+	instances, err := client.ListPveLxcInstances(context.Background())
+	if err != nil {
+		t.Fatalf("ListPveLxcInstances failed: %v", err)
+	}
+	if len(instances) != 1 {
+		t.Fatalf("unexpected instance count: %d", len(instances))
+	}
+	if instances[0].ID != "pvelxc-123" {
+		t.Fatalf("unexpected instance id: %s", instances[0].ID)
+	}
+	if instances[0].VSCodeURL != "https://code" {
+		t.Fatalf("unexpected vscode URL: %s", instances[0].VSCodeURL)
+	}
+	if instances[0].VNCURL != "https://vnc" {
+		t.Fatalf("unexpected vnc URL: %s", instances[0].VNCURL)
 	}
 }
 
