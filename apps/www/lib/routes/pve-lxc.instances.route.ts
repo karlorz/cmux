@@ -88,6 +88,10 @@ type AuthorizedPveLxcInstanceContext = {
   instance: Awaited<ReturnType<ReturnType<typeof getPveLxcClient>["instances"]["get"]>>;
 };
 
+type ListedPveLxcInstance = Awaited<
+  ReturnType<ReturnType<typeof getPveLxcClient>["instances"]["list"]>
+>[number];
+
 function getServiceURL(
   instance: AuthorizedPveLxcInstanceContext["instance"],
   port: number,
@@ -130,7 +134,7 @@ async function getAuthorizedPveLxcInstanceContext(
   }
 
   const convex = getConvex({ accessToken });
-  const team = await verifyTeamAccess({ req, teamSlugOrId });
+  const team = await verifyTeamAccess({ accessToken, teamSlugOrId });
   const activity = await convex.query(api.sandboxInstances.getActivity, {
     instanceId,
   });
@@ -190,6 +194,23 @@ async function recordPveInstanceActivity(
   }
 }
 
+async function filterInstancesForTeam(
+  convex: ReturnType<typeof getConvex>,
+  teamId: string,
+  instances: ListedPveLxcInstance[],
+): Promise<ListedPveLxcInstance[]> {
+  const ownershipChecks = await Promise.all(
+    instances.map(async (instance) => {
+      const activity = await convex.query(api.sandboxInstances.getActivity, {
+        instanceId: instance.id,
+      });
+      return activity?.teamId === teamId;
+    }),
+  );
+
+  return instances.filter((_, index) => ownershipChecks[index]);
+}
+
 pveLxcInstancesRouter.openapi(
   createRoute({
     method: "get" as const,
@@ -226,12 +247,18 @@ pveLxcInstancesRouter.openapi(
     const { teamSlugOrId } = c.req.valid("query");
 
     try {
-      await verifyTeamAccess({ req: c.req.raw, teamSlugOrId });
+      const team = await verifyTeamAccess({ accessToken, teamSlugOrId });
+      const convex = getConvex({ accessToken });
 
       const client = getPveLxcClient();
       const listedInstances = await client.instances.list();
+      const authorizedInstances = await filterInstancesForTeam(
+        convex,
+        team.uuid,
+        listedInstances,
+      );
       const hydratedInstances = await Promise.all(
-        listedInstances.map((instance) =>
+        authorizedInstances.map((instance) =>
           client.instances.get({
             instanceId: instance.id,
             vmid: instance.vmid,
