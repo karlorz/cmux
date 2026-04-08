@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildSandboxInstanceActivityMetadata,
   buildSandboxInstanceActivityInsert,
+  canRecordResumeForOwnership,
 } from "./sandboxInstances.helpers";
 import { detectProviderFromInstanceId } from "./sandboxInstances";
 
@@ -264,6 +265,46 @@ describe("sandboxInstances.helpers", () => {
         createdAt: 1000,
       });
       expect("vmid" in result).toBe(false);
+    });
+  });
+
+  describe("canRecordResumeForOwnership", () => {
+    it("allows resume recording when a matching task run exists", () => {
+      expect(
+        canRecordResumeForOwnership({
+          teamId: "team-1",
+          hasMatchingTaskRun: true,
+        }),
+      ).toBe(true);
+    });
+
+    it("allows resume recording for local-workspace sandboxes with matching activity ownership", () => {
+      expect(
+        canRecordResumeForOwnership({
+          teamId: "team-1",
+          activityTeamId: "team-1",
+          hasMatchingTaskRun: false,
+        }),
+      ).toBe(true);
+    });
+
+    it("rejects resume recording when neither task run nor activity ownership matches", () => {
+      expect(
+        canRecordResumeForOwnership({
+          teamId: "team-1",
+          activityTeamId: "team-2",
+          hasMatchingTaskRun: false,
+        }),
+      ).toBe(false);
+    });
+
+    it("rejects resume recording when no ownership evidence exists", () => {
+      expect(
+        canRecordResumeForOwnership({
+          teamId: "team-1",
+          hasMatchingTaskRun: false,
+        }),
+      ).toBe(false);
     });
   });
 });

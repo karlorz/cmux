@@ -16,6 +16,18 @@ export type SandboxInstanceActivityCreateArgs = {
   provider: RuntimeProvider;
 } & SandboxInstanceActivityMetadata;
 
+export function canRecordResumeForOwnership(args: {
+  teamId: string;
+  activityTeamId?: string;
+  hasMatchingTaskRun: boolean;
+}): boolean {
+  if (args.hasMatchingTaskRun) {
+    return true;
+  }
+
+  return args.activityTeamId === args.teamId;
+}
+
 export function buildSandboxInstanceActivityMetadata(
   args: SandboxInstanceActivityMetadata,
 ): SandboxInstanceActivityMetadata {
