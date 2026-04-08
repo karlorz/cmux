@@ -5023,6 +5023,35 @@ async def provision_and_create_template(
     )
 
 
+def _write_failure_artifacts(
+    *,
+    repo_root: Path,
+    error: Exception,
+    created_containers: list[int],
+) -> tuple[Path, Path]:
+    """Persist failure diagnostics so GitHub Actions can upload them reliably."""
+    snapshot_dir = (repo_root / "logs" / "pve-lxc-snapshot").resolve()
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+    error_path = snapshot_dir / "failure.txt"
+    traceback_path = snapshot_dir / "failure-traceback.txt"
+
+    error_lines = [
+        f"error_type: {type(error).__name__}",
+        f"error_message: {error}",
+    ]
+    if created_containers:
+        error_lines.append(
+            "created_containers: " + ", ".join(str(vmid) for vmid in created_containers)
+        )
+    else:
+        error_lines.append("created_containers: none")
+    error_path.write_text("\n".join(error_lines) + "\n", encoding="utf-8")
+
+    traceback_path.write_text(traceback.format_exc(), encoding="utf-8")
+    return error_path, traceback_path
+
+
 async def provision_and_snapshot(args: argparse.Namespace) -> None:
     """Main provisioning flow."""
     # Set IDE provider before running tasks
@@ -5058,10 +5087,12 @@ async def provision_and_snapshot(args: argparse.Namespace) -> None:
         )
         if client._ssh_host_explicit:
             console.info(f"SSH fallback enabled: {client.ssh_host}")
+        elif client._ssh_host_derived:
+            console.info(f"SSH fallback derived from PVE_API_URL: {client.ssh_host}")
         else:
             console.info("SSH fallback disabled (set PVE_SSH_HOST to enable)")
     else:
-        if client._ssh_host_explicit:
+        if client.ssh_host:
             console.info(f"Using SSH host: {client.ssh_host}")
         else:
             console.always("ERROR: No exec method configured. Set PVE_PUBLIC_DOMAIN or PVE_SSH_HOST")
@@ -5129,8 +5160,11 @@ async def provision_and_snapshot(args: argparse.Namespace) -> None:
     )
 
     # Start SSH ControlMaster if SSH is configured
-    if client._ssh_host_explicit:
-        console.info("Starting SSH ControlMaster for connection multiplexing...")
+    if client.ssh_host:
+        mode = "explicit" if client._ssh_host_explicit else "derived"
+        console.info(
+            f"Starting SSH ControlMaster for connection multiplexing ({mode}: {client.ssh_host})..."
+        )
         client.start_ssh_control_master()
 
     last_template_vmid: int | None = None
@@ -5174,6 +5208,13 @@ async def provision_and_snapshot(args: argparse.Namespace) -> None:
     except Exception as e:
         console.always(f"\nERROR: Provisioning failed: {e}")
         traceback.print_exc()
+        error_path, traceback_path = _write_failure_artifacts(
+            repo_root=repo_root,
+            error=e,
+            created_containers=created_containers,
+        )
+        console.always(f"Failure details: {error_path}")
+        console.always(f"Failure traceback: {traceback_path}")
 
         # Cleanup on failure
         if args.cleanup_on_failure:
@@ -5192,7 +5233,7 @@ async def provision_and_snapshot(args: argparse.Namespace) -> None:
         raise
     finally:
         # Clean up SSH ControlMaster if we started one
-        if client._ssh_host_explicit:
+        if client.ssh_host:
             client.stop_ssh_control_master()
 
     # Update manifest
@@ -5449,10 +5490,12 @@ async def run_update_mode(args: argparse.Namespace) -> None:
         )
         if client._ssh_host_explicit:
             console.info(f"SSH fallback enabled: {client.ssh_host}")
+        elif client._ssh_host_derived:
+            console.info(f"SSH fallback derived from PVE_API_URL: {client.ssh_host}")
         else:
             console.info("SSH fallback disabled (set PVE_SSH_HOST to enable)")
     else:
-        if client._ssh_host_explicit:
+        if client.ssh_host:
             console.info(f"Using SSH host: {client.ssh_host}")
         else:
             console.always("ERROR: No exec method configured. Set PVE_PUBLIC_DOMAIN or PVE_SSH_HOST")
@@ -5469,8 +5512,11 @@ async def run_update_mode(args: argparse.Namespace) -> None:
     repo_root = Path(args.repo_root).resolve()
 
     # Start SSH ControlMaster if SSH is configured
-    if client._ssh_host_explicit:
-        console.info("Starting SSH ControlMaster for connection multiplexing...")
+    if client.ssh_host:
+        mode = "explicit" if client._ssh_host_explicit else "derived"
+        console.info(
+            f"Starting SSH ControlMaster for connection multiplexing ({mode}: {client.ssh_host})..."
+        )
         client.start_ssh_control_master()
 
     try:
@@ -5492,7 +5538,7 @@ async def run_update_mode(args: argparse.Namespace) -> None:
             )
             console.always(f"Results JSON written: {out_path}")
     finally:
-        if client._ssh_host_explicit:
+        if client.ssh_host:
             client.stop_ssh_control_master()
 
 
