@@ -138,6 +138,15 @@ def is_transient_http_exec_error(exc: Exception) -> bool:
     )
 
 
+def is_http_exec_transport_failure(exc: Exception) -> bool:
+    """Check whether an exception came from an HTTP exec transport failure."""
+    message = str(exc)
+    return (
+        "HTTP exec timed out after" in message
+        or "HTTP exec connection error:" in message
+    )
+
+
 def is_http_exec_transport_failure_result(result: subprocess.CompletedProcess[str]) -> bool:
     """Check whether an HTTP exec result failed because the transport dropped.
 
@@ -3151,7 +3160,10 @@ async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
                 await ctx.run(f"install-{ext_id}", install_ext_cmd)
                 break
             except Exception as exc:
-                if attempt >= 3 or not is_transient_http_exec_error(exc):
+                if attempt >= 3 or not (
+                    is_transient_http_exec_error(exc)
+                    or is_http_exec_transport_failure(exc)
+                ):
                     raise
                 delay = float(attempt * 5)
                 ctx.console.info(
