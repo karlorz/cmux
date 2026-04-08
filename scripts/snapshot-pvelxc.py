@@ -2304,7 +2304,22 @@ async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
         fi
         """
     )
-    await ctx.run("upgrade-novnc", cmd)
+    for attempt in range(1, 4):
+        try:
+            await ctx.run("upgrade-novnc", cmd)
+            break
+        except Exception as exc:
+            if attempt >= 3 or not (
+                is_transient_http_exec_error(exc)
+                or is_http_exec_transport_failure(exc)
+            ):
+                raise
+            delay = float(attempt * 5)
+            ctx.console.info(
+                f"[upgrade-novnc] retrying after transient exec error "
+                f"(attempt {attempt}/3) in {delay:.1f}s"
+            )
+            await asyncio.sleep(delay)
 
 
 @registry.task(
