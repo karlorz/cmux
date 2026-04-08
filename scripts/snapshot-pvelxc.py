@@ -2270,6 +2270,10 @@ async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
         # Write version marker
         echo "$NOVNC_VERSION" > "$MARKER_FILE"
 
+        # Some later tasks can replace noVNC files; keep a second marker outside
+        # the noVNC tree so we can restore the in-tree marker if needed.
+        install -Dm0644 "$MARKER_FILE" /etc/cmux/novnc-version
+
         # Cleanup
         rm -rf /tmp/noVNC-* /tmp/novnc.tar.gz
 
@@ -4103,10 +4107,15 @@ async def task_verify_novnc_installation(ctx: PveTaskContext) -> None:
 
         # Check marker file
         if [ ! -f "$MARKER_FILE" ]; then
-            echo "[verify-novnc] ERROR: Version marker file not found: $MARKER_FILE" >&2
-            echo "[verify-novnc] noVNC upgrade task may not have run" >&2
-            ls -la "$NOVNC_DIR/" 2>/dev/null || true
-            exit 1
+            if [ -f /etc/cmux/novnc-version ]; then
+                echo "[verify-novnc] Restoring missing marker from /etc/cmux/novnc-version"
+                install -Dm0644 /etc/cmux/novnc-version "$MARKER_FILE"
+            else
+                echo "[verify-novnc] ERROR: Version marker file not found: $MARKER_FILE" >&2
+                echo "[verify-novnc] noVNC upgrade task may not have run" >&2
+                ls -la "$NOVNC_DIR/" 2>/dev/null || true
+                exit 1
+            fi
         fi
 
         INSTALLED_VERSION="$(cat "$MARKER_FILE")"
