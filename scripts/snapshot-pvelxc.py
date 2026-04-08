@@ -5159,14 +5159,6 @@ async def provision_and_snapshot(args: argparse.Namespace) -> None:
         f"(IDE provider: {args.ide_provider})"
     )
 
-    # Start SSH ControlMaster if SSH is configured
-    if client.ssh_host:
-        mode = "explicit" if client._ssh_host_explicit else "derived"
-        console.info(
-            f"Starting SSH ControlMaster for connection multiplexing ({mode}: {client.ssh_host})..."
-        )
-        client.start_ssh_control_master()
-
     last_template_vmid: int | None = None
     last_template_disk_mib: int = 0
 
@@ -5231,10 +5223,6 @@ async def provision_and_snapshot(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
         raise
-    finally:
-        # Clean up SSH ControlMaster if we started one
-        if client.ssh_host:
-            client.stop_ssh_control_master()
 
     # Update manifest
     for result in results:
@@ -5511,14 +5499,6 @@ async def run_update_mode(args: argparse.Namespace) -> None:
 
     repo_root = Path(args.repo_root).resolve()
 
-    # Start SSH ControlMaster if SSH is configured
-    if client.ssh_host:
-        mode = "explicit" if client._ssh_host_explicit else "derived"
-        console.info(
-            f"Starting SSH ControlMaster for connection multiplexing ({mode}: {client.ssh_host})..."
-        )
-        client.start_ssh_control_master()
-
     try:
         result = await update_existing_template(
             args,
@@ -5538,7 +5518,7 @@ async def run_update_mode(args: argparse.Namespace) -> None:
             )
             console.always(f"Results JSON written: {out_path}")
     finally:
-        if client.ssh_host:
+        if client._ssh_control_path:
             client.stop_ssh_control_master()
 
 
