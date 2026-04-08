@@ -138,6 +138,19 @@ def is_transient_http_exec_error(exc: Exception) -> bool:
     )
 
 
+def is_http_exec_transport_failure_result(result: subprocess.CompletedProcess[str]) -> bool:
+    """Check whether an HTTP exec result failed because the transport dropped.
+
+    These failures should fall back to SSH/pct exec when SSH is available.
+    """
+    stderr = result.stderr or ""
+    if result.returncode == 124 and "HTTP exec timed out after" in stderr:
+        return True
+    if result.returncode == 125 and "HTTP exec connection error:" in stderr:
+        return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Git Diff Mode Configuration
 # ---------------------------------------------------------------------------
@@ -191,10 +204,18 @@ class PveLxcClient:
         self.token_id = token_parts[0]
         self.token_secret = token_parts[1]
 
-        # SSH host for pct commands - only set if explicitly provided
-        # When None, SSH fallback is disabled and HTTP exec is required
-        self.ssh_host = ssh_host
+        # SSH host for pct commands. If not explicitly provided, derive a
+        # sensible fallback from the PVE API hostname so long-running HTTP exec
+        # transport failures can still fall back to SSH.
+        parsed_api_url = urllib.parse.urlparse(self.api_url)
+        derived_ssh_host = (
+            f"root@{parsed_api_url.hostname}"
+            if ssh_host is None and parsed_api_url.hostname
+            else None
+        )
+        self.ssh_host = ssh_host or derived_ssh_host
         self._ssh_host_explicit = ssh_host is not None
+        self._ssh_host_derived = ssh_host is None and derived_ssh_host is not None
 
         # SSH ControlMaster socket path for connection multiplexing
         # This allows multiple SSH sessions to share a single TCP connection
@@ -991,6 +1012,8 @@ class PveLxcClient:
         # Try HTTP exec first if available
         result = self.http_exec(vmid, command, timeout=timeout, check=False)
         if result is not None:
+            if self.ssh_host and is_http_exec_transport_failure_result(result):
+                return self.pct_exec(vmid, command, timeout=timeout, check=check)
             if check and result.returncode != 0:
                 raise RuntimeError(
                     f"Command failed (exit {result.returncode}):\n"
@@ -1001,7 +1024,7 @@ class PveLxcClient:
             return result
 
         # HTTP exec not available - check if SSH fallback is configured
-        if not self._ssh_host_explicit:
+        if not self.ssh_host:
             raise RuntimeError(
                 f"HTTP exec (cmux-execd) not available for container {vmid} and "
                 f"SSH fallback not configured.\n"
@@ -1119,11 +1142,16 @@ class PveLxcClient:
         Raises RuntimeError if HTTP push is not available and SSH is not configured.
         """
         # Try HTTP push first if available
-        if self.http_push_file(vmid, local_path, remote_path, timeout=timeout):
-            return
+        try:
+            if self.http_push_file(vmid, local_path, remote_path, timeout=timeout):
+                return
+        except RuntimeError as exc:
+            transport_failure = "HTTP exec timed out after" in str(exc) or "HTTP exec connection error:" in str(exc)
+            if not transport_failure:
+                raise
 
         # HTTP push not available - check if SSH fallback is configured
-        if not self._ssh_host_explicit:
+        if not self.ssh_host:
             raise RuntimeError(
                 f"HTTP exec (cmux-execd) not available for container {vmid} and "
                 f"SSH fallback not configured.\n"
