@@ -3262,13 +3262,19 @@ async def task_setup_claude_oauth_wrappers(ctx: PveTaskContext) -> None:
     description="Install devsh Claude Code skill from GitHub",
 )
 async def task_install_devsh_skill(ctx: PveTaskContext) -> None:
-    skill_url = "https://raw.githubusercontent.com/karlorz/devsh/main/.agents/skills/devsh/SKILL.md"
+    repo = shlex.quote(ctx.remote_repo_root)
     cmd = textwrap.dedent(f"""\
         set -e
         SKILL_DIR="/root/.claude/skills/devsh"
+        LOCAL_SKILL_PATH={repo}/.agents/skills/devsh/SKILL.md
         mkdir -p "$SKILL_DIR"
-        curl -fsSL "{skill_url}" -o "$SKILL_DIR/SKILL.md"
-        echo "Installed devsh skill to $SKILL_DIR/SKILL.md"
+        if [ -f "$LOCAL_SKILL_PATH" ]; then
+            cp "$LOCAL_SKILL_PATH" "$SKILL_DIR/SKILL.md"
+            echo "Installed devsh skill from local repo to $SKILL_DIR/SKILL.md"
+        else
+            curl -fsSL "https://raw.githubusercontent.com/karlorz/devsh/main/.agents/skills/devsh/SKILL.md" -o "$SKILL_DIR/SKILL.md"
+            echo "Installed devsh skill from GitHub to $SKILL_DIR/SKILL.md"
+        fi
         head -5 "$SKILL_DIR/SKILL.md"
     """)
     await ctx.run("install-devsh-skill", cmd)
