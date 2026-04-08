@@ -33,6 +33,11 @@ jobs:
         with:
           node-version: 24
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -73,6 +78,11 @@ jobs:
       - name: Build native-core addon
         run: bun run build
         working-directory: apps/server/native/core
+
+      - name: Run devsh Go tests
+        run: |
+          cd packages/devsh
+          go test ./...
 
       - name: Run tests
         env:
