@@ -3438,6 +3438,15 @@ async def task_install_vnc_clipboard_bridge(ctx: PveTaskContext) -> None:
         NOVNC_DIR="/usr/share/novnc"
         VNC_HTML="$NOVNC_DIR/vnc.html"
         BRIDGE_SCRIPT="{repo}/packages/sandbox/scripts/vnc-clipboard-bridge.js"
+        MARKER_FILE="$NOVNC_DIR/.cmux-novnc-version"
+        DURABLE_MARKER="/etc/cmux/novnc-version"
+        EXPECTED_VERSION="v1.7.0-beta"
+
+        ensure_markers() {{
+            install -d /etc/cmux
+            printf '%s\n' "$EXPECTED_VERSION" > "$MARKER_FILE"
+            install -Dm0644 "$MARKER_FILE" "$DURABLE_MARKER"
+        }}
 
         if [ ! -f "$VNC_HTML" ]; then
             echo "[vnc-clipboard-bridge] vnc.html not found at $VNC_HTML, skipping"
@@ -3451,7 +3460,8 @@ async def task_install_vnc_clipboard_bridge(ctx: PveTaskContext) -> None:
 
         # Check if already injected
         if grep -q "vnc-clipboard-bridge" "$VNC_HTML" 2>/dev/null; then
-            echo "[vnc-clipboard-bridge] Already installed, skipping"
+            ensure_markers
+            echo "[vnc-clipboard-bridge] Already installed, marker synchronized"
             exit 0
         fi
 
@@ -3494,6 +3504,9 @@ with open(vnc_html_path, "w") as f:
 
 print("[vnc-clipboard-bridge] Successfully installed into " + vnc_html_path)
 INJECT_SCRIPT
+
+        ensure_markers
+        echo "[vnc-clipboard-bridge] Marker synchronized to $MARKER_FILE and $DURABLE_MARKER"
         """
     )
     await ctx.run("install-vnc-clipboard-bridge", cmd)
