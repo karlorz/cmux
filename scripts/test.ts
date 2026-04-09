@@ -375,7 +375,69 @@ async function runTests() {
   // Build native Node-API addons for cargo crates (if they define a build script)
   await buildNativeAddons(cargoCratesToRun);
 
-  // Stage 3 — run @cmux/server tests (after cargo)
+  const goModules = [
+    // Do not auto-run every go.mod in the repo here.
+    // We only need devsh coverage for this regression, and several script modules
+    // are utility binaries rather than product-facing test gates.
+    { name: "go:packages/devsh", dir: join(__dirname, "..", "packages", "devsh") },
+  ];
+
+  let goResults: Result[] = [];
+  const hasGo = await commandExists("go");
+  if (!hasGo) {
+    console.log("🚫 Skipping go:packages/devsh (Go toolchain not installed)");
+  } else {
+    console.log(
+      `🧵 Stage 2 — Go modules (${goModules.length}): ${goModules.map((m) => m.name).join(", ")}`
+    );
+    goResults = await Promise.all(
+      goModules.map(
+        ({ name, dir }) =>
+          new Promise<Result>((resolve) => {
+            console.log(`▶️  ${name}: starting tests`);
+            const start = performance.now();
+            const child = spawn("go", ["test", "./..."], {
+              cwd: dir,
+              shell: true,
+              env: process.env,
+            });
+            let combined = "";
+            child.stdout?.on("data", (d) => (combined += d.toString()));
+            child.stderr?.on("data", (d) => (combined += d.toString()));
+            child.on("close", (code) => {
+              const durationMs = performance.now() - start;
+              console.log(
+                `${code === 0 ? "✅" : "❌"} ${name}: finished in ${(durationMs / 1000).toFixed(2)}s`
+              );
+              resolve({
+                name,
+                dir,
+                success: code === 0,
+                output: combined,
+                durationMs,
+                usedJsonReporter: false,
+              });
+            });
+            child.on("error", (err) => {
+              const durationMs = performance.now() - start;
+              console.log(
+                `❌ ${name}: errored after ${(durationMs / 1000).toFixed(2)}s`
+              );
+              resolve({
+                name,
+                dir,
+                success: false,
+                output: String(err),
+                durationMs,
+                usedJsonReporter: false,
+              });
+            });
+          })
+      )
+    );
+  }
+
+  // Stage 3 — run @cmux/server tests (after cargo and Go modules)
   let serverResults: Result[] = [];
   if (serverPkg) {
     console.log(`🧵 Stage 3 — @cmux/server tests`);
@@ -464,7 +526,7 @@ async function runTests() {
     serverResults = [r];
   }
 
-  const results = [...resultsStage1, ...serverResults];
+  const results = [...resultsStage1, ...goResults, ...serverResults];
 
   // Sort by duration ascending so the longest running are at the bottom
   results.sort((a, b) => a.durationMs - b.durationMs);
@@ -552,6 +614,16 @@ runTests().catch((err) => {
   console.error("Fatal error:", err);
   process.exit(1);
 });
+
+function commandExists(command: string): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const child = spawn("sh", ["-lc", `command -v ${command}`], {
+      env: process.env,
+    });
+    child.on("close", (code) => resolve(code === 0));
+    child.on("error", () => resolve(false));
+  });
+}
 
 // Recursively find Rust crates (Cargo.toml) under apps/, packages/, and crates/
 function findCargoCrates(): { name: string; dir: string }[] {

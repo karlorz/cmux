@@ -24,6 +24,7 @@ import {
 import {
   buildSandboxInstanceActivityInsert,
   buildSandboxInstanceActivityMetadata,
+  canRecordResumeForOwnership,
 } from "./sandboxInstances.helpers";
 
 /**
@@ -111,7 +112,8 @@ export const recordResume = authMutation({
     // Verify user belongs to this team
     const teamId = await getTeamId(ctx, args.teamSlugOrId);
 
-    // Find the taskRun that uses this instance to verify ownership
+    // Task-bound workspaces store ownership on taskRuns, while plain local
+    // workspaces rely on sandboxInstanceActivity metadata.
     const taskRun = await ctx.db
       .query("taskRuns")
       .withIndex("by_vscode_container_name", (q) =>
@@ -120,16 +122,22 @@ export const recordResume = authMutation({
       .filter((q) => q.eq(q.field("teamId"), teamId))
       .first();
 
-    if (!taskRun) {
-      throw new Error("Instance not found or not authorized");
-    }
-
     const provider = detectProviderFromInstanceId(args.instanceId);
 
     const existing = await ctx.db
       .query("sandboxInstanceActivity")
       .withIndex("by_instanceId", (q) => q.eq("instanceId", args.instanceId))
       .first();
+
+    if (
+      !canRecordResumeForOwnership({
+        teamId,
+        activityTeamId: existing?.teamId,
+        hasMatchingTaskRun: taskRun !== null,
+      })
+    ) {
+      throw new Error("Instance not found or not authorized");
+    }
 
     if (existing) {
       await ctx.db.patch(existing._id, {

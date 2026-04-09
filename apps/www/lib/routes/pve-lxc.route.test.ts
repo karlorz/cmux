@@ -4,6 +4,7 @@
  * Tests for Proxmox VE LXC container management endpoints.
  */
 
+import { app } from "@/lib/hono-app";
 import { __TEST_INTERNAL_ONLY_GET_STACK_TOKENS } from "@/lib/test-utils/__TEST_INTERNAL_ONLY_GET_STACK_TOKENS";
 import { testApiClient } from "@/lib/test-utils/openapi-client";
 import {
@@ -20,6 +21,81 @@ import { describe, expect, it } from "vitest";
 const TEST_TEAM = process.env.CMUX_TEST_TEAM_SLUG || "example-team";
 
 describe("pveLxcRouter", () => {
+  describe("GET /api/pve-lxc/instances/:instanceId", () => {
+    it("requires authentication", async () => {
+      const response = await app.request(
+        `/api/pve-lxc/instances/pvelxc-test123?teamSlugOrId=${encodeURIComponent(TEST_TEAM)}`
+      );
+
+      expect(response.status).toBe(401);
+    });
+  });
+
+  describe("POST /api/pve-lxc/instances/:instanceId/exec", () => {
+    it("requires authentication", async () => {
+      const response = await app.request("/api/pve-lxc/instances/pvelxc-test123/exec", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          teamSlugOrId: TEST_TEAM,
+          command: "echo test",
+        }),
+      });
+
+      expect(response.status).toBe(401);
+    });
+  });
+
+  describe("POST /api/pve-lxc/instances/:instanceId/pause", () => {
+    it("requires authentication", async () => {
+      const response = await app.request("/api/pve-lxc/instances/pvelxc-test123/pause", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          teamSlugOrId: TEST_TEAM,
+        }),
+      });
+
+      expect(response.status).toBe(401);
+    });
+  });
+
+  describe("POST /api/pve-lxc/instances/:instanceId/resume", () => {
+    it("requires authentication", async () => {
+      const response = await app.request("/api/pve-lxc/instances/pvelxc-test123/resume", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          teamSlugOrId: TEST_TEAM,
+        }),
+      });
+
+      expect(response.status).toBe(401);
+    });
+  });
+
+  describe("POST /api/pve-lxc/instances/:instanceId/stop", () => {
+    it("requires authentication", async () => {
+      const response = await app.request("/api/pve-lxc/instances/pvelxc-test123/stop", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          teamSlugOrId: TEST_TEAM,
+        }),
+      });
+
+      expect(response.status).toBe(401);
+    });
+  });
+
   describe("POST /api/pve-lxc/task-runs/:taskRunId/resume", () => {
     it("requires authentication", async () => {
       const res = await postApiPveLxcTaskRunsByTaskRunIdResume({

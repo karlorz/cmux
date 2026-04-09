@@ -9,7 +9,6 @@ import (
 	"github.com/karlorz/devsh/internal/auth"
 	"github.com/karlorz/devsh/internal/e2b"
 	"github.com/karlorz/devsh/internal/provider"
-	"github.com/karlorz/devsh/internal/pvelxc"
 	"github.com/karlorz/devsh/internal/vm"
 	"github.com/spf13/cobra"
 )
@@ -41,12 +40,8 @@ Examples:
 
 		switch selected {
 		case provider.PveLxc:
-			client, err := pvelxc.NewClientFromEnv()
-			if err != nil {
-				return fmt.Errorf("failed to create PVE LXC client: %w\nSet PVE_API_URL and PVE_API_TOKEN", err)
-			}
-			if err := client.PauseInstance(ctx, instanceID); err != nil {
-				return fmt.Errorf("failed to pause VM: %w", err)
+			if err := pausePveLxcInstance(ctx, instanceID); err != nil {
+				return err
 			}
 		case provider.Morph:
 			teamSlug, err := auth.GetTeamSlug()
