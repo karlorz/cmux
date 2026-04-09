@@ -122,6 +122,8 @@ jobs:
           name: pve-lxc-networkd-diag
           path: |
             logs/pve-lxc-snapshot/results.json
+            logs/pve-lxc-snapshot/failure.txt
+            logs/pve-lxc-snapshot/failure-traceback.txt
             logs/pve-lxc-networkd/*.txt
           if-no-files-found: warn
 

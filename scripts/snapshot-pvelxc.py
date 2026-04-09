@@ -138,6 +138,28 @@ def is_transient_http_exec_error(exc: Exception) -> bool:
     )
 
 
+def is_http_exec_transport_failure(exc: Exception) -> bool:
+    """Check whether an exception came from an HTTP exec transport failure."""
+    message = str(exc)
+    return (
+        "HTTP exec timed out after" in message
+        or "HTTP exec connection error:" in message
+    )
+
+
+def is_http_exec_transport_failure_result(result: subprocess.CompletedProcess[str]) -> bool:
+    """Check whether an HTTP exec result failed because the transport dropped.
+
+    These failures should fall back to SSH/pct exec when SSH is available.
+    """
+    stderr = result.stderr or ""
+    if result.returncode == 124 and "HTTP exec timed out after" in stderr:
+        return True
+    if result.returncode == 125 and "HTTP exec connection error:" in stderr:
+        return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Git Diff Mode Configuration
 # ---------------------------------------------------------------------------
@@ -191,10 +213,13 @@ class PveLxcClient:
         self.token_id = token_parts[0]
         self.token_secret = token_parts[1]
 
-        # SSH host for pct commands - only set if explicitly provided
-        # When None, SSH fallback is disabled and HTTP exec is required
+        # SSH host for pct commands.
+        # Only use SSH when explicitly configured via PVE_SSH_HOST; GitHub Actions
+        # runners often cannot reach the PVE host over port 22, so implicit SSH
+        # fallback from the API hostname is not safe here.
         self.ssh_host = ssh_host
         self._ssh_host_explicit = ssh_host is not None
+        self._ssh_host_derived = False
 
         # SSH ControlMaster socket path for connection multiplexing
         # This allows multiple SSH sessions to share a single TCP connection
@@ -991,6 +1016,8 @@ class PveLxcClient:
         # Try HTTP exec first if available
         result = self.http_exec(vmid, command, timeout=timeout, check=False)
         if result is not None:
+            if self.ssh_host and is_http_exec_transport_failure_result(result):
+                return self.pct_exec(vmid, command, timeout=timeout, check=check)
             if check and result.returncode != 0:
                 raise RuntimeError(
                     f"Command failed (exit {result.returncode}):\n"
@@ -1001,7 +1028,7 @@ class PveLxcClient:
             return result
 
         # HTTP exec not available - check if SSH fallback is configured
-        if not self._ssh_host_explicit:
+        if not self.ssh_host:
             raise RuntimeError(
                 f"HTTP exec (cmux-execd) not available for container {vmid} and "
                 f"SSH fallback not configured.\n"
@@ -1119,11 +1146,16 @@ class PveLxcClient:
         Raises RuntimeError if HTTP push is not available and SSH is not configured.
         """
         # Try HTTP push first if available
-        if self.http_push_file(vmid, local_path, remote_path, timeout=timeout):
-            return
+        try:
+            if self.http_push_file(vmid, local_path, remote_path, timeout=timeout):
+                return
+        except RuntimeError as exc:
+            transport_failure = "HTTP exec timed out after" in str(exc) or "HTTP exec connection error:" in str(exc)
+            if not transport_failure:
+                raise
 
         # HTTP push not available - check if SSH fallback is configured
-        if not self._ssh_host_explicit:
+        if not self.ssh_host:
             raise RuntimeError(
                 f"HTTP exec (cmux-execd) not available for container {vmid} and "
                 f"SSH fallback not configured.\n"
@@ -2242,6 +2274,10 @@ async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
         # Write version marker
         echo "$NOVNC_VERSION" > "$MARKER_FILE"
 
+        # Some later tasks can replace noVNC files; keep a second marker outside
+        # the noVNC tree so we can restore the in-tree marker if needed.
+        install -Dm0644 "$MARKER_FILE" /etc/cmux/novnc-version
+
         # Cleanup
         rm -rf /tmp/noVNC-* /tmp/novnc.tar.gz
 
@@ -2263,7 +2299,22 @@ async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
         fi
         """
     )
-    await ctx.run("upgrade-novnc", cmd)
+    for attempt in range(1, 4):
+        try:
+            await ctx.run("upgrade-novnc", cmd)
+            break
+        except Exception as exc:
+            if attempt >= 3 or not (
+                is_transient_http_exec_error(exc)
+                or is_http_exec_transport_failure(exc)
+            ):
+                raise
+            delay = float(attempt * 5)
+            ctx.console.info(
+                f"[upgrade-novnc] retrying after transient exec error "
+                f"(attempt {attempt}/3) in {delay:.1f}s"
+            )
+            await asyncio.sleep(delay)
 
 
 @registry.task(
@@ -2443,8 +2494,23 @@ async def task_install_nvm(ctx: PveTaskContext) -> None:
         """
         set -eux
         export NVM_DIR="/root/.nvm"
+        NVM_VERSION="v0.39.7"
         mkdir -p "${NVM_DIR}"
-        curl -fsSL "https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh" | bash
+        tmp_dir="$(mktemp -d)"
+        trap 'rm -rf "${tmp_dir}"' EXIT
+        cd "${tmp_dir}"
+        curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 300 \
+          "https://github.com/nvm-sh/nvm/archive/refs/tags/${NVM_VERSION}.tar.gz" \
+          -o nvm.tar.gz
+        tar -xzf nvm.tar.gz
+        extracted_dir="$(find . -maxdepth 1 -type d -name 'nvm-*' | head -1)"
+        if [ -z "${extracted_dir}" ] || [ ! -f "${extracted_dir}/nvm.sh" ]; then
+          echo "[install-nvm] ERROR: extracted nvm archive is missing nvm.sh" >&2
+          ls -la
+          exit 1
+        fi
+        rm -rf "${NVM_DIR}"/*
+        cp -r "${extracted_dir}"/. "${NVM_DIR}/"
         cat <<'PROFILE' > /etc/profile.d/nvm.sh
         export NVM_DIR="$HOME/.nvm"
         [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
@@ -3044,59 +3110,114 @@ async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
     )
     await ctx.run("install-cmux-ext", install_cmd)
 
-    # Step 2: Download and install marketplace extensions one at a time
+    # Step 2: Download and install marketplace extensions one at a time.
+    # The per-extension download/install commands are small enough for HTTP exec,
+    # but on some runs the transport still drops. Rather than falling back to SSH
+    # for each tiny command, run the whole extension phase once via one larger
+    # in-container script, following the proven pattern from scripts/snapshot.py.
+    extension_lines: list[str] = []
     for ext in extensions:
         publisher = ext.get("publisher")
         name = ext.get("name")
         version = ext.get("version")
         ext_id = f"{publisher}.{name}"
-        vsix_path = f"/tmp/{ext_id}.vsix"
-        url = f"https://marketplace.visualstudio.com/_apis/public/gallery/publishers/{publisher}/vsextensions/{name}/{version}/vspackage"
+        if (
+            not isinstance(publisher, str)
+            or not isinstance(name, str)
+            or not isinstance(version, str)
+        ):
+            raise RuntimeError(f"Invalid extension entry {ext!r}")
+        extension_lines.append(f"{publisher}|{name}|{version}|{ext_id}")
 
-        download_cmd = textwrap.dedent(
-            f"""
-            set -eux
-            export HOME=/root
-            echo "[install-ide-extensions] downloading {ext_id}@{version}"
-            curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 300 -o {vsix_path}.tmp "{url}"
-            if gzip -t {vsix_path}.tmp 2>/dev/null; then
-                gunzip -c {vsix_path}.tmp > {vsix_path}
-                rm -f {vsix_path}.tmp
-            else
-                mv {vsix_path}.tmp {vsix_path}
-            fi
-            echo "[install-ide-extensions] downloaded {ext_id}"
-            """
-        )
-        await ctx.run(f"download-{ext_id}", download_cmd)
+    extensions_blob = "\n".join(extension_lines)
 
-        install_ext_cmd = textwrap.dedent(
-            f"""
-            set -eux
-            export HOME=/root
-            echo "[install-ide-extensions] installing {ext_id}"
-            {bin_path} --install-extension {vsix_path} --force --extensions-dir {extensions_dir} --user-data-dir {user_data_dir} </dev/null
-            if ! ls -d {extensions_dir}/{ext_id}-* >/dev/null 2>&1; then
-                echo "[install-ide-extensions] ERROR: {ext_id} not found in {extensions_dir}" >&2
-                exit 1
+    bulk_extensions_cmd = textwrap.dedent(
+        f"""
+        set -eux
+        export HOME=/root
+        server_root="{server_root}"
+        bin_path="{bin_path}"
+        extensions_dir="{extensions_dir}"
+        user_data_dir="{user_data_dir}"
+        mkdir -p "${{extensions_dir}}" "${{user_data_dir}}"
+        install_from_file() {{
+          local package_path="$1"
+          echo "[install-ide-extensions] installing ${{package_path}}"
+          "${{bin_path}}" \
+            --install-extension "${{package_path}}" \
+            --force \
+            --extensions-dir "${{extensions_dir}}" \
+            --user-data-dir "${{user_data_dir}}"
+        }}
+        download_dir="$(mktemp -d)"
+        cleanup() {{
+          rm -rf "${{download_dir}}"
+        }}
+        trap cleanup EXIT
+        download_extension() {{
+          local publisher="$1"
+          local name="$2"
+          local version="$3"
+          local ext_id="$4"
+          local destination="${{download_dir}}/${{ext_id}}.vsix"
+          local tmpfile="${{destination}}.download"
+          local curl_stderr="${{tmpfile}}.stderr"
+          local url="https://marketplace.visualstudio.com/_apis/public/gallery/publishers/${{publisher}}/vsextensions/${{name}}/${{version}}/vspackage"
+          local attempt=1
+          local max_attempts=3
+          while [ "${{attempt}}" -le "${{max_attempts}}" ]; do
+            echo "[install-ide-extensions] fetch ${{ext_id}}@${{version}} attempt ${{attempt}}"
+            if curl -fSL --retry 6 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 600 -o "${{tmpfile}}" "${{url}}" 2>"${{curl_stderr}}"; then
+              rm -f "${{curl_stderr}}"
+              break
             fi
-            echo "[install-ide-extensions] installed {ext_id}"
-            rm -f {vsix_path}
-            """
-        )
-        for attempt in range(1, 4):
-            try:
-                await ctx.run(f"install-{ext_id}", install_ext_cmd)
-                break
-            except Exception as exc:
-                if attempt >= 3 or not is_transient_http_exec_error(exc):
-                    raise
-                delay = float(attempt * 5)
-                ctx.console.info(
-                    f"[install-{ext_id}] retrying after transient exec error "
-                    f"(attempt {attempt}/3) in {delay:.1f}s"
-                )
-                await asyncio.sleep(delay)
+            echo "Download attempt ${{attempt}}/${{max_attempts}} failed for ${{ext_id}}; retrying..." >&2
+            if [ -s "${{curl_stderr}}" ]; then
+              cat "${{curl_stderr}}" >&2
+            fi
+            rm -f "${{tmpfile}}"
+            attempt=$((attempt + 1))
+            sleep $((attempt * 2))
+          done
+          if [ "${{attempt}}" -gt "${{max_attempts}}" ]; then
+            echo "Failed to download ${{ext_id}} after ${{max_attempts}} attempts" >&2
+            if [ -s "${{curl_stderr}}" ]; then
+              cat "${{curl_stderr}}" >&2
+            fi
+            rm -f "${{curl_stderr}}"
+            return 1
+          fi
+          if gzip -t "${{tmpfile}}" >/dev/null 2>&1; then
+            gunzip -c "${{tmpfile}}" > "${{destination}}"
+            rm -f "${{tmpfile}}"
+          else
+            mv "${{tmpfile}}" "${{destination}}"
+          fi
+          install_from_file "${{destination}}"
+          rm -f "${{destination}}"
+        }}
+        while IFS='|' read -r publisher name version ext_id; do
+          [ -z "${{publisher}}" ] && continue
+          download_extension "${{publisher}}" "${{name}}" "${{version}}" "${{ext_id}}"
+        done <<'EXTENSIONS'
+{extensions_blob}
+EXTENSIONS
+        echo "[install-ide-extensions] completed installs"
+        """
+    )
+    for attempt in range(1, 4):
+        try:
+            await ctx.run("install-marketplace-exts", bulk_extensions_cmd)
+            break
+        except Exception as exc:
+            if attempt >= 3 or not is_transient_http_exec_error(exc):
+                raise
+            delay = float(attempt * 5)
+            ctx.console.info(
+                f"[install-marketplace-exts] retrying after transient exec error "
+                f"(attempt {attempt}/3) in {delay:.1f}s"
+            )
+            await asyncio.sleep(delay)
 
 
 @registry.task(
@@ -3230,13 +3351,19 @@ async def task_setup_claude_oauth_wrappers(ctx: PveTaskContext) -> None:
     description="Install devsh Claude Code skill from GitHub",
 )
 async def task_install_devsh_skill(ctx: PveTaskContext) -> None:
-    skill_url = "https://raw.githubusercontent.com/karlorz/devsh/main/.agents/skills/devsh/SKILL.md"
+    repo = shlex.quote(ctx.remote_repo_root)
     cmd = textwrap.dedent(f"""\
         set -e
         SKILL_DIR="/root/.claude/skills/devsh"
+        LOCAL_SKILL_PATH={repo}/.agents/skills/devsh/SKILL.md
         mkdir -p "$SKILL_DIR"
-        curl -fsSL "{skill_url}" -o "$SKILL_DIR/SKILL.md"
-        echo "Installed devsh skill to $SKILL_DIR/SKILL.md"
+        if [ -f "$LOCAL_SKILL_PATH" ]; then
+            cp "$LOCAL_SKILL_PATH" "$SKILL_DIR/SKILL.md"
+            echo "Installed devsh skill from local repo to $SKILL_DIR/SKILL.md"
+        else
+            curl -fsSL "https://raw.githubusercontent.com/karlorz/devsh/main/.agents/skills/devsh/SKILL.md" -o "$SKILL_DIR/SKILL.md"
+            echo "Installed devsh skill from GitHub to $SKILL_DIR/SKILL.md"
+        fi
         head -5 "$SKILL_DIR/SKILL.md"
     """)
     await ctx.run("install-devsh-skill", cmd)
@@ -3370,6 +3497,15 @@ async def task_install_vnc_clipboard_bridge(ctx: PveTaskContext) -> None:
         NOVNC_DIR="/usr/share/novnc"
         VNC_HTML="$NOVNC_DIR/vnc.html"
         BRIDGE_SCRIPT="{repo}/packages/sandbox/scripts/vnc-clipboard-bridge.js"
+        MARKER_FILE="$NOVNC_DIR/.cmux-novnc-version"
+        DURABLE_MARKER="/etc/cmux/novnc-version"
+        EXPECTED_VERSION="v1.7.0-beta"
+
+        ensure_markers() {{
+            install -d /etc/cmux
+            printf '%s\n' "$EXPECTED_VERSION" > "$MARKER_FILE"
+            install -Dm0644 "$MARKER_FILE" "$DURABLE_MARKER"
+        }}
 
         if [ ! -f "$VNC_HTML" ]; then
             echo "[vnc-clipboard-bridge] vnc.html not found at $VNC_HTML, skipping"
@@ -3383,7 +3519,8 @@ async def task_install_vnc_clipboard_bridge(ctx: PveTaskContext) -> None:
 
         # Check if already injected
         if grep -q "vnc-clipboard-bridge" "$VNC_HTML" 2>/dev/null; then
-            echo "[vnc-clipboard-bridge] Already installed, skipping"
+            ensure_markers
+            echo "[vnc-clipboard-bridge] Already installed, marker synchronized"
             exit 0
         fi
 
@@ -3426,6 +3563,9 @@ with open(vnc_html_path, "w") as f:
 
 print("[vnc-clipboard-bridge] Successfully installed into " + vnc_html_path)
 INJECT_SCRIPT
+
+        ensure_markers
+        echo "[vnc-clipboard-bridge] Marker synchronized to $MARKER_FILE and $DURABLE_MARKER"
         """
     )
     await ctx.run("install-vnc-clipboard-bridge", cmd)
@@ -4075,10 +4215,15 @@ async def task_verify_novnc_installation(ctx: PveTaskContext) -> None:
 
         # Check marker file
         if [ ! -f "$MARKER_FILE" ]; then
-            echo "[verify-novnc] ERROR: Version marker file not found: $MARKER_FILE" >&2
-            echo "[verify-novnc] noVNC upgrade task may not have run" >&2
-            ls -la "$NOVNC_DIR/" 2>/dev/null || true
-            exit 1
+            if [ -f /etc/cmux/novnc-version ]; then
+                echo "[verify-novnc] Restoring missing marker from /etc/cmux/novnc-version"
+                install -Dm0644 /etc/cmux/novnc-version "$MARKER_FILE"
+            else
+                echo "[verify-novnc] ERROR: Version marker file not found: $MARKER_FILE" >&2
+                echo "[verify-novnc] noVNC upgrade task may not have run" >&2
+                ls -la "$NOVNC_DIR/" 2>/dev/null || true
+                exit 1
+            fi
         fi
 
         INSTALLED_VERSION="$(cat "$MARKER_FILE")"
@@ -4995,6 +5140,35 @@ async def provision_and_create_template(
     )
 
 
+def _write_failure_artifacts(
+    *,
+    repo_root: Path,
+    error: Exception,
+    created_containers: list[int],
+) -> tuple[Path, Path]:
+    """Persist failure diagnostics so GitHub Actions can upload them reliably."""
+    snapshot_dir = (repo_root / "logs" / "pve-lxc-snapshot").resolve()
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+    error_path = snapshot_dir / "failure.txt"
+    traceback_path = snapshot_dir / "failure-traceback.txt"
+
+    error_lines = [
+        f"error_type: {type(error).__name__}",
+        f"error_message: {error}",
+    ]
+    if created_containers:
+        error_lines.append(
+            "created_containers: " + ", ".join(str(vmid) for vmid in created_containers)
+        )
+    else:
+        error_lines.append("created_containers: none")
+    error_path.write_text("\n".join(error_lines) + "\n", encoding="utf-8")
+
+    traceback_path.write_text(traceback.format_exc(), encoding="utf-8")
+    return error_path, traceback_path
+
+
 async def provision_and_snapshot(args: argparse.Namespace) -> None:
     """Main provisioning flow."""
     # Set IDE provider before running tasks
@@ -5030,10 +5204,12 @@ async def provision_and_snapshot(args: argparse.Namespace) -> None:
         )
         if client._ssh_host_explicit:
             console.info(f"SSH fallback enabled: {client.ssh_host}")
+        elif client._ssh_host_derived:
+            console.info(f"SSH fallback derived from PVE_API_URL: {client.ssh_host}")
         else:
             console.info("SSH fallback disabled (set PVE_SSH_HOST to enable)")
     else:
-        if client._ssh_host_explicit:
+        if client.ssh_host:
             console.info(f"Using SSH host: {client.ssh_host}")
         else:
             console.always("ERROR: No exec method configured. Set PVE_PUBLIC_DOMAIN or PVE_SSH_HOST")
@@ -5100,11 +5276,6 @@ async def provision_and_snapshot(args: argparse.Namespace) -> None:
         f"(IDE provider: {args.ide_provider})"
     )
 
-    # Start SSH ControlMaster if SSH is configured
-    if client._ssh_host_explicit:
-        console.info("Starting SSH ControlMaster for connection multiplexing...")
-        client.start_ssh_control_master()
-
     last_template_vmid: int | None = None
     last_template_disk_mib: int = 0
 
@@ -5146,6 +5317,13 @@ async def provision_and_snapshot(args: argparse.Namespace) -> None:
     except Exception as e:
         console.always(f"\nERROR: Provisioning failed: {e}")
         traceback.print_exc()
+        error_path, traceback_path = _write_failure_artifacts(
+            repo_root=repo_root,
+            error=e,
+            created_containers=created_containers,
+        )
+        console.always(f"Failure details: {error_path}")
+        console.always(f"Failure traceback: {traceback_path}")
 
         # Cleanup on failure
         if args.cleanup_on_failure:
@@ -5162,10 +5340,6 @@ async def provision_and_snapshot(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
         raise
-    finally:
-        # Clean up SSH ControlMaster if we started one
-        if client._ssh_host_explicit:
-            client.stop_ssh_control_master()
 
     # Update manifest
     for result in results:
@@ -5421,10 +5595,12 @@ async def run_update_mode(args: argparse.Namespace) -> None:
         )
         if client._ssh_host_explicit:
             console.info(f"SSH fallback enabled: {client.ssh_host}")
+        elif client._ssh_host_derived:
+            console.info(f"SSH fallback derived from PVE_API_URL: {client.ssh_host}")
         else:
             console.info("SSH fallback disabled (set PVE_SSH_HOST to enable)")
     else:
-        if client._ssh_host_explicit:
+        if client.ssh_host:
             console.info(f"Using SSH host: {client.ssh_host}")
         else:
             console.always("ERROR: No exec method configured. Set PVE_PUBLIC_DOMAIN or PVE_SSH_HOST")
@@ -5439,11 +5615,6 @@ async def run_update_mode(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     repo_root = Path(args.repo_root).resolve()
-
-    # Start SSH ControlMaster if SSH is configured
-    if client._ssh_host_explicit:
-        console.info("Starting SSH ControlMaster for connection multiplexing...")
-        client.start_ssh_control_master()
 
     try:
         result = await update_existing_template(
@@ -5464,7 +5635,7 @@ async def run_update_mode(args: argparse.Namespace) -> None:
             )
             console.always(f"Results JSON written: {out_path}")
     finally:
-        if client._ssh_host_explicit:
+        if client._ssh_control_path:
             client.stop_ssh_control_master()
 
 
