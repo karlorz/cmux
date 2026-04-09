@@ -599,11 +599,14 @@ describe("sandboxes-routes helpers", () => {
       });
     });
 
-    it("skips deny rules for orchestration heads", async () => {
-      let called = false;
+    it("loads cloud workspace deny rules for orchestration heads", async () => {
+      const calls: Array<{
+        queryRef: unknown;
+        args: Record<string, unknown>;
+      }> = [];
       const convexAdmin = {
-        query: async () => {
-          called = true;
+        query: async (queryRef: unknown, args: Record<string, unknown>) => {
+          calls.push({ queryRef, args });
           return ["WebFetch"];
         },
       };
@@ -614,8 +617,13 @@ describe("sandboxes-routes helpers", () => {
         isOrchestrationHead: true,
       });
 
-      expect(rules).toEqual([]);
-      expect(called).toBe(false);
+      expect(rules).toEqual(["WebFetch"]);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.args).toEqual({
+        teamId: "team-123",
+        context: "cloud_workspace",
+        projectFullName: undefined,
+      });
     });
   });
 });

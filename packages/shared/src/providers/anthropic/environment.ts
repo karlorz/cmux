@@ -568,17 +568,18 @@ exit 0`;
   // When only API key is present, we route through cmux proxy for tracking/rate limiting
 
   // Determine deny rules to apply:
-  // 1. Head agents (isOrchestrationHead) get NO deny rules - they need full capabilities
-  // 2. Task sandboxes use permissionDenyRules from Convex when provided
+  // 1. Deny rules only apply for task-backed runs (JWT present)
+  // 2. The caller is responsible for fetching the correct context
+  //    (task_sandbox vs cloud_workspace)
   // 3. If no rules are provided, omit permissions.deny entirely
-  const shouldApplyDenyRules = hasTaskRunJwt && !ctx.isOrchestrationHead;
+  const shouldApplyDenyRules = hasTaskRunJwt;
   const denyRules = shouldApplyDenyRules ? ctx.permissionDenyRules : undefined;
 
   const settingsConfig: Record<string, unknown> = {
     alwaysThinkingEnabled: true,
     // Always use apiKeyHelper when not using OAuth (helper outputs correct key based on user config)
     ...(hasOAuthToken ? {} : { apiKeyHelper: claudeApiKeyHelperPath }),
-    // Always set bypassPermissions mode for task sandboxes to skip interactive confirmation
+    // Always set bypassPermissions mode for task-backed Claude runs to skip interactive confirmation
     // The --dangerously-skip-permissions flag enables bypass, but defaultMode ensures it's active
     permissions: {
       defaultMode: "bypassPermissions",
