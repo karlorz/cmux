@@ -574,10 +574,6 @@ export async function getSandboxPermissionDenyRules(
     isOrchestrationHead?: boolean;
   },
 ): Promise<string[]> {
-  if (options.isOrchestrationHead) {
-    return [];
-  }
-
   if (!convexAdmin) {
     console.error(
       `[${options.logPrefix}] Permission deny rules unavailable: admin client not configured`,
@@ -590,11 +586,14 @@ export async function getSandboxPermissionDenyRules(
   }
 
   try {
+    const context = options.isOrchestrationHead
+      ? "cloud_workspace"
+      : "task_sandbox";
     const rules = await convexAdmin.query(
       internal.permissionDenyRules.getForSandboxInternal,
       {
         teamId: options.teamId,
-        context: "task_sandbox",
+        context,
         projectFullName: options.projectFullName,
       },
     );
@@ -602,6 +601,7 @@ export async function getSandboxPermissionDenyRules(
     console.log(`[${options.logPrefix}] Loaded permission deny rules`, {
       teamId: options.teamId,
       projectFullName: options.projectFullName,
+      context,
       count: rules.length,
     });
 
@@ -791,7 +791,7 @@ export async function setupProviderAuth(
     previousKnowledge?: string | null;
     previousMailbox?: string | null;
     agentName?: string;
-    /** When true, this is a head agent (cloud workspace) - skip deny rules */
+    /** When true, fetch cloud_workspace-scoped deny rules for the head agent */
     isOrchestrationHead?: boolean;
   },
 ): Promise<{ providers: string[] }> {
@@ -896,7 +896,7 @@ export async function setupProviderAuth(
             }
           : undefined,
         agentConfigs,
-        // Permission deny rules from Convex - head agents skip these
+        // Permission deny rules from Convex for the current sandbox context
         isOrchestrationHead: options.isOrchestrationHead,
         permissionDenyRules,
         enableShellWrappers,

@@ -282,6 +282,16 @@ describe("getClaudeEnvironment", () => {
     expect(deny).toEqual(["WebFetch", "WebSearch"]);
   });
 
+  it("includes provided permission deny rules for orchestration heads when cloud workspace rules are configured", async () => {
+    const settings = await decodeClaudeSettings({
+      isOrchestrationHead: true,
+      permissionDenyRules: ["WebFetch", "WebSearch"],
+    });
+
+    const deny = settings.permissions?.deny;
+    expect(deny).toEqual(["WebFetch", "WebSearch"]);
+  });
+
   it("omits deny rules when task-backed sandbox rules are unavailable", async () => {
     const settings = await decodeClaudeSettings();
 

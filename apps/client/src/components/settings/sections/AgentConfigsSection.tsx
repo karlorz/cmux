@@ -32,7 +32,6 @@ const SCOPE_OPTIONS = [
 const DEFAULT_CLAUDE_CONFIG = JSON.stringify(
   {
     mcpServers: {},
-    permissions: { allow: [], deny: [] },
     settings: {},
   },
   null,
@@ -228,7 +227,7 @@ export function AgentConfigsSection({ teamSlugOrId }: AgentConfigsSectionProps) 
               Agent Configs
             </h2>
             <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-              Edit raw configuration files for Claude Code and Codex CLI. Custom configs are merged with cmux defaults at sandbox startup.
+              Edit raw host configuration files for Claude Code and Codex CLI. Custom configs are merged with cmux defaults at sandbox startup. Claude permission deny rules are managed separately in Settings &gt; Permission Rules.
             </p>
           </div>
         </div>
@@ -355,7 +354,7 @@ export function AgentConfigsSection({ teamSlugOrId }: AgentConfigsSectionProps) 
         <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-950">
           <p className="text-sm text-neutral-500 dark:text-neutral-400">
             {activeAgent === "claude"
-              ? "Claude Code config is merged with MCP servers and policy rules."
+              ? "Claude host config is merged with MCP servers. Permission deny rules are written separately to ~/.claude/settings.json."
               : "Codex config is merged with default settings including workspace trust."}
           </p>
           <Button
