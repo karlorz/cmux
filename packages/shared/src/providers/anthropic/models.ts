@@ -1,5 +1,40 @@
 export type ClaudeModelFamily = "opus" | "sonnet" | "haiku";
 
+export const CLAUDE_DEFAULT_MODEL_ENV_VARS = {
+  opus: {
+    model: "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    name: "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME",
+    description: "ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION",
+    supportedCapabilities: "ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES",
+  },
+  sonnet: {
+    model: "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    name: "ANTHROPIC_DEFAULT_SONNET_MODEL_NAME",
+    description: "ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION",
+    supportedCapabilities: "ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES",
+  },
+  haiku: {
+    model: "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    name: "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME",
+    description: "ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION",
+    supportedCapabilities: "ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES",
+  },
+} as const;
+
+export const CLAUDE_ROUTING_ENV_VARS = [
+  ...Object.values(CLAUDE_DEFAULT_MODEL_ENV_VARS).flatMap((envVars) => [
+    envVars.model,
+    envVars.name,
+    envVars.description,
+    envVars.supportedCapabilities,
+  ]),
+  "ANTHROPIC_CUSTOM_MODEL_OPTION",
+  "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME",
+  "ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION",
+  "ANTHROPIC_CUSTOM_MODEL_OPTION_SUPPORTED_CAPABILITIES",
+  "CLAUDE_CODE_SUBAGENT_MODEL",
+] as const;
+
 export interface ClaudeModelSpec {
   nameSuffix: string;
   family: ClaudeModelFamily;

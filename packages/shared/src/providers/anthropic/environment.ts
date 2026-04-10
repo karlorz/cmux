@@ -3,7 +3,12 @@ import type {
   EnvironmentResult,
 } from "../common/environment-result";
 import type { ClaudeAliasRoute } from "../../provider-registry";
-import { getClaudeModelSpecByAgentName } from "./models";
+import {
+  CLAUDE_DEFAULT_MODEL_ENV_VARS,
+  CLAUDE_ROUTING_ENV_VARS,
+  type ClaudeModelFamily,
+  getClaudeModelSpecByAgentName,
+} from "./models";
 import {
   CMUX_ANTHROPIC_PROXY_PLACEHOLDER_API_KEY,
   normalizeAnthropicBaseUrl,
@@ -22,23 +27,7 @@ export const CLAUDE_KEY_ENV_VARS_TO_UNSET = [
   "ANTHROPIC_API_KEY",
   "ANTHROPIC_AUTH_TOKEN",
   "ANTHROPIC_CUSTOM_HEADERS",
-  "ANTHROPIC_DEFAULT_OPUS_MODEL",
-  "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME",
-  "ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION",
-  "ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES",
-  "ANTHROPIC_DEFAULT_SONNET_MODEL",
-  "ANTHROPIC_DEFAULT_SONNET_MODEL_NAME",
-  "ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION",
-  "ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES",
-  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-  "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME",
-  "ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION",
-  "ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES",
-  "ANTHROPIC_CUSTOM_MODEL_OPTION",
-  "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME",
-  "ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION",
-  "ANTHROPIC_CUSTOM_MODEL_OPTION_SUPPORTED_CAPABILITIES",
-  "CLAUDE_CODE_SUBAGENT_MODEL",
+  ...CLAUDE_ROUTING_ENV_VARS,
   "CLAUDE_CODE_EFFORT_LEVEL",
   "CLAUDE_API_KEY",
 ];
@@ -48,7 +37,7 @@ const CLAUDE_NATIVE_EFFORT_MODELS = new Set(["claude-opus-4-6"]);
 
 function resolveClaudeDefaultModelMetadata(
   env: Record<string, string | number>,
-  prefix: string,
+  envVars: (typeof CLAUDE_DEFAULT_MODEL_ENV_VARS)[ClaudeModelFamily],
   route: ClaudeAliasRoute | undefined,
 ): void {
   if (!route) {
@@ -60,15 +49,15 @@ function resolveClaudeDefaultModelMetadata(
     return;
   }
 
-  env[prefix] = model;
+  env[envVars.model] = model;
   if (route.name?.trim()) {
-    env[`${prefix}_NAME`] = route.name.trim();
+    env[envVars.name] = route.name.trim();
   }
   if (route.description?.trim()) {
-    env[`${prefix}_DESCRIPTION`] = route.description.trim();
+    env[envVars.description] = route.description.trim();
   }
   if (route.supportedCapabilities?.length) {
-    env[`${prefix}_SUPPORTED_CAPABILITIES`] = route.supportedCapabilities.join(",");
+    env[envVars.supportedCapabilities] = route.supportedCapabilities.join(",");
   }
 }
 
@@ -861,17 +850,17 @@ exit 0`;
         if (shouldApplyClaudeRouting && routingConfig) {
           resolveClaudeDefaultModelMetadata(
             result,
-            "ANTHROPIC_DEFAULT_OPUS_MODEL",
+            CLAUDE_DEFAULT_MODEL_ENV_VARS.opus,
             routingConfig.opus,
           );
           resolveClaudeDefaultModelMetadata(
             result,
-            "ANTHROPIC_DEFAULT_SONNET_MODEL",
+            CLAUDE_DEFAULT_MODEL_ENV_VARS.sonnet,
             routingConfig.sonnet,
           );
           resolveClaudeDefaultModelMetadata(
             result,
-            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+            CLAUDE_DEFAULT_MODEL_ENV_VARS.haiku,
             routingConfig.haiku,
           );
           if (routingConfig.subagentModel?.trim()) {
