@@ -79,6 +79,13 @@ async function decodeClaudeSettings(
   };
 }
 
+async function getClaudeEnvVars(
+  overrides?: Partial<Parameters<typeof getClaudeEnvironment>[0]>,
+) {
+  const settings = await decodeClaudeSettings(overrides);
+  return settings.env ?? {};
+}
+
 describe("getClaudeEnvironment", () => {
   it("includes --agent in devsh-memory MCP args when agentName is provided", async () => {
     const homeDir = await mkdtemp(join(tmpdir(), "cmux-claude-home-"));
@@ -350,21 +357,93 @@ describe("getClaudeEnvironment", () => {
     expect(script).toContain("riskLevel: $risk");
   });
 
-  it("injects CLAUDE_CODE_EFFORT_LEVEL for claude/opus-4.6 when a supported variant is selected", async () => {
-    const settings = await decodeClaudeSettings({
+  it("injects routed alias env vars for anthropic-compatible gateways", async () => {
+    const env = await getClaudeEnvVars({
       agentName: "claude/opus-4.6",
-      selectedVariant: "max",
+      providerConfig: {
+        baseUrl: "https://gateway.example.com",
+        apiFormat: "anthropic",
+        claudeRouting: {
+          mode: "anthropic_compatible_gateway",
+          opus: {
+            model: "gpt-5.4",
+            name: "GPT 5.4",
+            description: "Gateway-routed opus target",
+            supportedCapabilities: ["interleaved_thinking", "tool_use"],
+          },
+          sonnet: { model: "gpt-5.4-mini" },
+          subagentModel: "gpt-5.4-nano",
+        },
+        isOverridden: true,
+      },
     });
 
-    expect(settings.env?.CLAUDE_CODE_EFFORT_LEVEL).toBe("max");
+    expect(env.ANTHROPIC_BASE_URL).toBe("https://gateway.example.com");
+    expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("gpt-5.4");
+    expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME).toBe("GPT 5.4");
+    expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION).toBe(
+      "Gateway-routed opus target",
+    );
+    expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES).toBe(
+      "interleaved_thinking,tool_use",
+    );
+    expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("gpt-5.4-mini");
+    expect(env.CLAUDE_CODE_SUBAGENT_MODEL).toBe("gpt-5.4-nano");
   });
 
-  it("rejects unsupported Claude effort variants for other models", async () => {
+  it("does not inject routed alias env vars for OAuth sessions", async () => {
+    const env = await getClaudeEnvVars({
+      agentName: "claude/opus-4.6",
+      apiKeys: {
+        CLAUDE_CODE_OAUTH_TOKEN: "oauth-token",
+      },
+      providerConfig: {
+        baseUrl: "https://gateway.example.com",
+        apiFormat: "anthropic",
+        claudeRouting: {
+          mode: "anthropic_compatible_gateway",
+          opus: { model: "gpt-5.4" },
+        },
+        isOverridden: true,
+      },
+    });
+
+    expect(env.ANTHROPIC_BASE_URL).toBeUndefined();
+    expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBeUndefined();
+  });
+
+  it("does not inject routed alias env vars for non-anthropic formats", async () => {
+    const env = await getClaudeEnvVars({
+      agentName: "claude/opus-4.6",
+      providerConfig: {
+        baseUrl: "https://gateway.example.com",
+        apiFormat: "openai",
+        claudeRouting: {
+          mode: "anthropic_compatible_gateway",
+          opus: { model: "gpt-5.4" },
+        },
+        isOverridden: true,
+      },
+    });
+
+    expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBeUndefined();
+  });
+
+  it("rejects effort selection for routed third-party targets", async () => {
     await expect(
       getClaudeEnvironment({
         ...BASE_CONTEXT,
-        agentName: "claude/opus-4.5",
+        agentName: "claude/opus-4.6",
         selectedVariant: "max",
+        providerConfig: {
+          baseUrl: "https://gateway.example.com",
+          apiFormat: "anthropic",
+          claudeRouting: {
+            mode: "anthropic_compatible_gateway",
+            opus: { model: "gpt-5.4" },
+          },
+          isOverridden: true,
+        },
       }),
     ).rejects.toThrow(/does not support effort selection/);
   });

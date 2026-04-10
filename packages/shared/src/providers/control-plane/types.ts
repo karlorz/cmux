@@ -6,7 +6,20 @@
  */
 
 import type { AgentConfigApiKey } from "../../agentConfig";
+import type { ClaudeRoutingConfig } from "../../provider-registry";
 import type { ApiFormat } from "../base-providers";
+
+export type ProviderOverrideShape = {
+  baseUrl?: string;
+  apiFormat?: ApiFormat;
+  apiKeyEnvVar?: string;
+  customHeaders?: Record<string, string>;
+  fallbacks?: Array<{
+    modelName: string;
+    priority: number;
+  }>;
+  claudeRouting?: ClaudeRoutingConfig;
+};
 
 /**
  * Source of provider connection/authentication.
@@ -147,6 +160,8 @@ export interface ProviderControlPlaneProvider {
   isOverridden: boolean;
   /** Custom headers if overridden */
   customHeaders?: Record<string, string>;
+  /** Claude-specific routing when configured on Anthropic-compatible gateways */
+  claudeRouting?: ClaudeRoutingConfig;
 }
 
 /**

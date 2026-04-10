@@ -304,6 +304,7 @@ export function resolveControlPlaneProvider(
     defaultModel: connectionState.isConnected ? defaultModel : undefined,
     isOverridden: hasOverride,
     customHeaders: override?.customHeaders,
+    ...(override?.claudeRouting ? { claudeRouting: override.claudeRouting } : {}),
   };
 }
 

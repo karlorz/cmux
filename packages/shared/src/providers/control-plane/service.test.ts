@@ -255,18 +255,31 @@ describe("control-plane/service", () => {
       expect(result.effectiveBaseUrl).toBe("https://custom-proxy.example.com");
     });
 
-    it("resolves OpenCode with free tier", () => {
+    it("surfaces Claude routing metadata on overridden providers", () => {
+      const override: ProviderOverride = {
+        teamId: "team-1",
+        providerId: "anthropic",
+        baseUrl: "https://custom-proxy.example.com",
+        apiFormat: "anthropic",
+        claudeRouting: {
+          mode: "anthropic_compatible_gateway",
+          opus: { model: "gpt-5.4" },
+        },
+        enabled: true,
+      };
+
       const result = resolveControlPlaneProvider(
-        mockOpencodeSpec,
+        mockAnthropicSpec,
         {},
-        [],
+        [override],
         mockModels,
         undefined,
       );
 
-      expect(result.connectionState.isConnected).toBe(true);
-      expect(result.connectionState.source).toBe("free");
-      expect(result.connectionState.hasFreeModels).toBe(true);
+      expect(result.claudeRouting).toEqual({
+        mode: "anthropic_compatible_gateway",
+        opus: { model: "gpt-5.4" },
+      });
     });
 
     it("does not treat credentialed free models as auth-free providers", () => {

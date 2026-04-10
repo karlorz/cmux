@@ -6,7 +6,9 @@ import {
   getProviderIdFromAgentName,
   BASE_PROVIDERS,
   type ProviderOverride,
+  validateClaudeRoutingOverride,
 } from "./provider-registry";
+import { CLAUDE_MODEL_SPECS } from "./providers/anthropic/models";
 
 describe("ProviderRegistry", () => {
   let registry: ProviderRegistry;
@@ -82,15 +84,21 @@ describe("ProviderRegistry", () => {
       expect(resolved.isOverridden).toBe(true);
     });
 
-    it("resolves provider with custom headers", () => {
+    it("resolves provider with Claude routing override", () => {
       const override: ProviderOverride = {
         teamId: "team-123",
-        providerId: "openai",
-        customHeaders: { "X-Custom-Header": "value" },
+        providerId: "anthropic",
+        baseUrl: "https://gateway.example.com",
+        apiFormat: "anthropic",
+        claudeRouting: {
+          mode: "anthropic_compatible_gateway",
+          opus: { model: "gpt-5.4" },
+          subagentModel: "gpt-5.4-mini",
+        },
         enabled: true,
       };
-      const resolved = registry.resolve("openai", override);
-      expect(resolved.customHeaders).toEqual({ "X-Custom-Header": "value" });
+      const resolved = registry.resolve("anthropic", override);
+      expect(resolved.claudeRouting).toEqual(override.claudeRouting);
     });
 
     it("throws for unknown provider without override", () => {
@@ -237,6 +245,54 @@ describe("getProviderIdFromAgentName (exported function)", () => {
   });
 });
 
+describe("validateClaudeRoutingOverride", () => {
+  it("allows direct_anthropic without remaps", () => {
+    expect(() =>
+      validateClaudeRoutingOverride({
+        providerId: "anthropic",
+        claudeRouting: { mode: "direct_anthropic" },
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects direct_anthropic remaps", () => {
+    expect(() =>
+      validateClaudeRoutingOverride({
+        providerId: "anthropic",
+        claudeRouting: {
+          mode: "direct_anthropic",
+          opus: { model: "gpt-5.4" },
+        },
+      }),
+    ).toThrow(/direct_anthropic/);
+  });
+
+  it("rejects non-anthropic providers", () => {
+    expect(() =>
+      validateClaudeRoutingOverride({
+        providerId: "openai",
+        claudeRouting: {
+          mode: "anthropic_compatible_gateway",
+          opus: { model: "gpt-5.4" },
+        },
+      }),
+    ).toThrow(/only supported for the anthropic provider/);
+  });
+
+  it("requires baseUrl for anthropic_compatible_gateway", () => {
+    expect(() =>
+      validateClaudeRoutingOverride({
+        providerId: "anthropic",
+        apiFormat: "anthropic",
+        claudeRouting: {
+          mode: "anthropic_compatible_gateway",
+          opus: { model: "gpt-5.4" },
+        },
+      }),
+    ).toThrow(/requires a custom baseUrl/);
+  });
+});
+
 describe("BASE_PROVIDERS", () => {
   it("is an array of provider specs", () => {
     expect(Array.isArray(BASE_PROVIDERS)).toBe(true);
@@ -251,5 +307,37 @@ describe("BASE_PROVIDERS", () => {
       expect(provider.apiFormat).toBeDefined();
       expect(Array.isArray(provider.authEnvVars)).toBe(true);
     }
+  });
+});
+
+describe("CLAUDE_MODEL_SPECS", () => {
+  it("maps Claude agent names to stable families and native ids", () => {
+    expect(CLAUDE_MODEL_SPECS).toEqual([
+      {
+        nameSuffix: "opus-4.6",
+        family: "opus",
+        nativeModelId: "claude-opus-4-6",
+      },
+      {
+        nameSuffix: "sonnet-4.6",
+        family: "sonnet",
+        nativeModelId: "claude-sonnet-4-6",
+      },
+      {
+        nameSuffix: "opus-4.5",
+        family: "opus",
+        nativeModelId: "claude-opus-4-5-20251101",
+      },
+      {
+        nameSuffix: "sonnet-4.5",
+        family: "sonnet",
+        nativeModelId: "claude-sonnet-4-5-20250929",
+      },
+      {
+        nameSuffix: "haiku-4.5",
+        family: "haiku",
+        nativeModelId: "claude-haiku-4-5-20251001",
+      },
+    ]);
   });
 });

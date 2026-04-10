@@ -167,6 +167,7 @@ providersOverridesRouter.openapi(
       apiKeyEnvVar: body.apiKeyEnvVar,
       customHeaders: body.customHeaders,
       fallbacks: body.fallbacks,
+      claudeRouting: body.claudeRouting,
       enabled: body.enabled,
     });
 

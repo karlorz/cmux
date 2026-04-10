@@ -6,6 +6,29 @@ import {
   snapshotProviderValidator,
 } from "../_shared/provider-validators";
 
+const fallbackValidator = v.object({
+  modelName: v.string(),
+  priority: v.number(),
+});
+
+const claudeAliasRouteValidator = v.object({
+  model: v.string(),
+  name: v.optional(v.string()),
+  description: v.optional(v.string()),
+  supportedCapabilities: v.optional(v.array(v.string())),
+});
+
+const claudeRoutingValidator = v.object({
+  mode: v.union(
+    v.literal("direct_anthropic"),
+    v.literal("anthropic_compatible_gateway"),
+  ),
+  opus: v.optional(claudeAliasRouteValidator),
+  sonnet: v.optional(claudeAliasRouteValidator),
+  haiku: v.optional(claudeAliasRouteValidator),
+  subagentModel: v.optional(v.string()),
+});
+
 const convexSchema = defineSchema({
   teams: defineTable({
     teamId: v.string(),
@@ -1744,14 +1767,8 @@ const convexSchema = defineSchema({
     ),
     apiKeyEnvVar: v.optional(v.string()),
     customHeaders: v.optional(v.record(v.string(), v.string())),
-    fallbacks: v.optional(
-      v.array(
-        v.object({
-          modelName: v.string(),
-          priority: v.number(),
-        })
-      )
-    ),
+    fallbacks: v.optional(v.array(fallbackValidator)),
+    claudeRouting: v.optional(claudeRoutingValidator),
     enabled: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
