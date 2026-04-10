@@ -9,7 +9,6 @@
  */
 
 import { v } from "convex/values";
-import type { ProviderOverrideShape } from "@cmux/shared/providers/control-plane/types";
 import { validateClaudeRoutingOverride } from "@cmux/shared/provider-registry";
 import { resolveTeamIdLoose } from "../_shared/team";
 import { internalMutation, internalQuery } from "./_generated/server";
@@ -56,19 +55,6 @@ function providerOverrideArgsValidator() {
     customHeaders: v.optional(v.record(v.string(), v.string())),
     fallbacks: v.optional(v.array(fallbackValidator)),
     claudeRouting: v.optional(claudeRoutingValidator),
-  };
-}
-
-function toProviderOverrideShape(
-  value: ProviderOverrideShape,
-): ProviderOverrideShape {
-  return {
-    baseUrl: value.baseUrl,
-    apiFormat: value.apiFormat,
-    apiKeyEnvVar: value.apiKeyEnvVar,
-    customHeaders: value.customHeaders,
-    fallbacks: value.fallbacks,
-    claudeRouting: value.claudeRouting,
   };
 }
 
@@ -119,10 +105,11 @@ export const upsert = authMutation({
     enabled: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const overrideShape = toProviderOverrideShape(args);
     validateClaudeRoutingOverride({
       providerId: args.providerId,
-      ...overrideShape,
+      baseUrl: args.baseUrl,
+      apiFormat: args.apiFormat,
+      claudeRouting: args.claudeRouting,
     });
 
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
@@ -139,7 +126,12 @@ export const upsert = authMutation({
     if (existing) {
       // Update existing override
       await ctx.db.patch(existing._id, {
-        ...overrideShape,
+        baseUrl: args.baseUrl,
+        apiFormat: args.apiFormat,
+        apiKeyEnvVar: args.apiKeyEnvVar,
+        customHeaders: args.customHeaders,
+        fallbacks: args.fallbacks,
+        claudeRouting: args.claudeRouting,
         enabled: args.enabled,
         updatedAt: now,
       });
@@ -149,7 +141,12 @@ export const upsert = authMutation({
       const id = await ctx.db.insert("providerOverrides", {
         teamId,
         providerId: args.providerId,
-        ...overrideShape,
+        baseUrl: args.baseUrl,
+        apiFormat: args.apiFormat,
+        apiKeyEnvVar: args.apiKeyEnvVar,
+        customHeaders: args.customHeaders,
+        fallbacks: args.fallbacks,
+        claudeRouting: args.claudeRouting,
         enabled: args.enabled,
         createdAt: now,
         updatedAt: now,
@@ -243,7 +240,14 @@ export const resolveProviderConfig = internalQuery({
       return null;
     }
 
-    return toProviderOverrideShape(override);
+    return {
+      baseUrl: override.baseUrl,
+      apiFormat: override.apiFormat,
+      apiKeyEnvVar: override.apiKeyEnvVar,
+      customHeaders: override.customHeaders,
+      fallbacks: override.fallbacks,
+      claudeRouting: override.claudeRouting,
+    };
   },
 });
 

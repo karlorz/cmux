@@ -51,7 +51,11 @@ function resolveClaudeDefaultModelMetadata(
   prefix: string,
   route: ClaudeAliasRoute | undefined,
 ): void {
-  const model = route?.model.trim();
+  if (!route) {
+    return;
+  }
+
+  const model = route.model.trim();
   if (!model) {
     return;
   }
@@ -69,7 +73,7 @@ function resolveClaudeDefaultModelMetadata(
 }
 
 function resolveClaudeEffectiveTarget(
-  ctx: EnvironmentContext,
+  ctx: Pick<EnvironmentContext, "agentName" | "providerConfig">,
 ): string | undefined {
   const routing = ctx.providerConfig?.claudeRouting;
   if (routing?.mode === "anthropic_compatible_gateway") {
