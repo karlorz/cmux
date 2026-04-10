@@ -123,6 +123,290 @@ def set_ide_provider(provider: str) -> None:
 def get_ide_provider() -> str:
     return _ide_provider
 
+
+def get_ide_paths(ide_provider: str) -> tuple[str, str, str, str]:
+    if ide_provider == IDE_PROVIDER_CODER:
+        server_root = "/app/code-server"
+        bin_path = f"{server_root}/bin/code-server"
+        extensions_dir = "/root/.code-server/extensions"
+        user_data_dir = "/root/.code-server"
+    elif ide_provider == IDE_PROVIDER_CMUX_CODE:
+        server_root = "/app/cmux-code"
+        bin_path = f"{server_root}/bin/code-server-oss"
+        extensions_dir = "/root/.vscode-server-oss/extensions"
+        user_data_dir = "/root/.vscode-server-oss/data"
+    else:
+        server_root = "/app/openvscode-server"
+        bin_path = f"{server_root}/bin/openvscode-server"
+        extensions_dir = "/root/.openvscode-server/extensions"
+        user_data_dir = "/root/.openvscode-server/data"
+    return server_root, bin_path, extensions_dir, user_data_dir
+
+
+def load_ide_deps() -> dict[str, t.Any]:
+    ide_deps_path = Path(__file__).resolve().parent.parent / "configs/ide-deps.json"
+    try:
+        return json.loads(ide_deps_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise RuntimeError(f"Failed to read {ide_deps_path}") from exc
+
+
+def get_expected_extension_specs(ide_deps: dict[str, t.Any]) -> list[str]:
+    extensions = ide_deps.get("extensions")
+    if not isinstance(extensions, list):
+        raise RuntimeError("configs/ide-deps.json extensions must be an array.")
+
+    expected_specs: list[str] = []
+    for ext in extensions:
+        if not isinstance(ext, dict):
+            raise RuntimeError(f"Invalid extension entry {ext!r}")
+        publisher = ext.get("publisher")
+        name = ext.get("name")
+        version = ext.get("version")
+        if (
+            not isinstance(publisher, str)
+            or not isinstance(name, str)
+            or not isinstance(version, str)
+        ):
+            raise RuntimeError(f"Invalid extension entry {ext!r}")
+        expected_specs.append(f"{publisher}.{name}@{version}")
+
+    if not expected_specs:
+        raise RuntimeError("No extensions found in configs/ide-deps.json.")
+
+    return expected_specs
+
+
+MARKETPLACE_QUERY_URL = (
+    "https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery"
+)
+MARKETPLACE_QUERY_ACCEPT = "application/json;api-version=3.0-preview.1"
+MARKETPLACE_QUERY_FLAGS = 2359
+MARKETPLACE_VSIX_ASSET_TYPE = "Microsoft.VisualStudio.Services.VSIXPackage"
+_marketplace_versions_cache: dict[tuple[str, str], list[dict[str, t.Any]]] = {}
+
+
+def build_generic_marketplace_vspackage_url(
+    publisher: str,
+    name: str,
+    version: str,
+) -> str:
+    return (
+        "https://marketplace.visualstudio.com/_apis/public/gallery/"
+        f"publishers/{publisher}/vsextensions/{name}/{version}/vspackage"
+    )
+
+
+def detect_vscode_target_platform(
+    system_name: str,
+    machine_name: str,
+) -> str | None:
+    normalized_system = system_name.strip().lower()
+    normalized_machine = machine_name.strip().lower()
+    if normalized_system != "linux":
+        return None
+
+    if normalized_machine in {"x86_64", "amd64"}:
+        return "linux-x64"
+    if normalized_machine in {"aarch64", "arm64"}:
+        return "linux-arm64"
+    if normalized_machine in {"armv7l", "armv6l"}:
+        return "linux-armhf"
+    return None
+
+
+def query_marketplace_extension_versions(
+    publisher: str,
+    name: str,
+) -> list[dict[str, t.Any]]:
+    cache_key = (publisher, name)
+    cached_versions = _marketplace_versions_cache.get(cache_key)
+    if cached_versions is not None:
+        return cached_versions
+
+    body = {
+        "filters": [
+            {
+                "criteria": [
+                    {
+                        "filterType": 7,
+                        "value": f"{publisher}.{name}",
+                    }
+                ],
+                "pageSize": 200,
+            }
+        ],
+        "flags": MARKETPLACE_QUERY_FLAGS,
+    }
+    request = urllib.request.Request(
+        MARKETPLACE_QUERY_URL,
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Accept": MARKETPLACE_QUERY_ACCEPT,
+            "User-Agent": "cmux-snapshot-pvelxc/1.0",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        raise RuntimeError(
+            f"Failed to query marketplace metadata for {publisher}.{name}"
+        ) from exc
+
+    results = payload.get("results")
+    if not isinstance(results, list) or not results:
+        raise RuntimeError(
+            f"Marketplace response missing results for {publisher}.{name}"
+        )
+    first_result = results[0]
+    if not isinstance(first_result, dict):
+        raise RuntimeError(
+            f"Marketplace response malformed for {publisher}.{name}"
+        )
+    extensions = first_result.get("extensions")
+    if not isinstance(extensions, list) or not extensions:
+        raise RuntimeError(
+            f"Marketplace returned no extension data for {publisher}.{name}"
+        )
+    extension_entry = extensions[0]
+    if not isinstance(extension_entry, dict):
+        raise RuntimeError(
+            f"Marketplace extension payload malformed for {publisher}.{name}"
+        )
+    versions = extension_entry.get("versions")
+    if not isinstance(versions, list) or not versions:
+        raise RuntimeError(
+            f"Marketplace returned no versions for {publisher}.{name}"
+        )
+
+    normalized_versions = [
+        version_entry
+        for version_entry in versions
+        if isinstance(version_entry, dict)
+    ]
+    if not normalized_versions:
+        raise RuntimeError(
+            f"Marketplace version payload malformed for {publisher}.{name}"
+        )
+
+    _marketplace_versions_cache[cache_key] = normalized_versions
+    return normalized_versions
+
+
+def resolve_marketplace_extension_source(
+    publisher: str,
+    name: str,
+    version: str,
+    *,
+    target_platform: str | None,
+) -> tuple[str, str | None]:
+    versions = query_marketplace_extension_versions(publisher, name)
+    matching_versions = [
+        version_entry
+        for version_entry in versions
+        if version_entry.get("version") == version
+    ]
+    if not matching_versions:
+        raise RuntimeError(
+            f"Marketplace returned no asset for {publisher}.{name}@{version}"
+        )
+
+    selected_version: dict[str, t.Any] | None = None
+    preferred_platforms: list[str | None] = []
+    if target_platform:
+        preferred_platforms.append(target_platform)
+    preferred_platforms.append(None)
+
+    for preferred_platform in preferred_platforms:
+        for version_entry in matching_versions:
+            if version_entry.get("targetPlatform") == preferred_platform:
+                selected_version = version_entry
+                break
+        if selected_version is not None:
+            break
+
+    if selected_version is None:
+        selected_version = matching_versions[0]
+
+    selected_target_platform = selected_version.get("targetPlatform")
+    if not isinstance(selected_target_platform, str):
+        selected_target_platform = None
+
+    files = selected_version.get("files")
+    if isinstance(files, list):
+        for file_entry in files:
+            if not isinstance(file_entry, dict):
+                continue
+            if file_entry.get("assetType") != MARKETPLACE_VSIX_ASSET_TYPE:
+                continue
+            source = file_entry.get("source")
+            if isinstance(source, str) and source.strip():
+                return source, selected_target_platform
+
+    asset_uri = selected_version.get("assetUri")
+    if isinstance(asset_uri, str) and asset_uri.strip():
+        return (
+            f"{asset_uri.rstrip('/')}/{MARKETPLACE_VSIX_ASSET_TYPE}",
+            selected_target_platform,
+        )
+
+    raise RuntimeError(
+        f"Marketplace asset source missing for {publisher}.{name}@{version}"
+    )
+
+
+def parse_extension_registry_specs(raw_registry: str) -> set[str]:
+    """Extract installed extension specs from VS Code's extensions.json registry."""
+    try:
+        parsed = json.loads(raw_registry)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Failed to parse extensions registry JSON") from exc
+
+    if not isinstance(parsed, list):
+        raise RuntimeError("VS Code extension registry must be a JSON array.")
+
+    installed_specs: set[str] = set()
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        identifier = item.get("identifier")
+        version = item.get("version")
+        if not isinstance(identifier, dict) or not isinstance(version, str):
+            continue
+        extension_id = identifier.get("id")
+        if isinstance(extension_id, str) and extension_id.strip():
+            installed_specs.add(f"{extension_id}@{version}")
+
+    return installed_specs
+
+
+def parse_cli_extension_specs(
+    raw_output: str,
+    *,
+    expected_specs: list[str] | None = None,
+) -> set[str]:
+    """Extract installed extension specs from CLI output.
+
+    HTTP exec can collapse newlines, so fall back to substring matching when the
+    output arrives as a single concatenated line.
+    """
+    stripped = raw_output.strip()
+    if not stripped:
+        return set()
+
+    if "\n" in stripped or "\r" in stripped:
+        return {line.strip() for line in stripped.splitlines() if line.strip()}
+
+    if expected_specs is None:
+        return {stripped}
+
+    return {spec for spec in expected_specs if spec in stripped}
+
+
 def is_transient_http_exec_error(exc: Exception) -> bool:
     """Check if an exception indicates a transient HTTP error worth retrying.
 
@@ -3039,52 +3323,13 @@ async def task_package_vscode_extension(ctx: PveTaskContext) -> None:
     description="Preinstall language extensions for the IDE",
 )
 async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
-    # Note: restart-execd-early has already restarted execd with the streaming fix,
-    # so we don't need to restart it again here.
     ide_provider = get_ide_provider()
-    if ide_provider == IDE_PROVIDER_CODER:
-        server_root = "/app/code-server"
-        bin_path = f"{server_root}/bin/code-server"
-        extensions_dir = "/root/.code-server/extensions"
-        user_data_dir = "/root/.code-server"
-    elif ide_provider == IDE_PROVIDER_CMUX_CODE:
-        server_root = "/app/cmux-code"
-        bin_path = f"{server_root}/bin/code-server-oss"
-        extensions_dir = "/root/.vscode-server-oss/extensions"
-        user_data_dir = "/root/.vscode-server-oss/data"
-    else:
-        server_root = "/app/openvscode-server"
-        bin_path = f"{server_root}/bin/openvscode-server"
-        extensions_dir = "/root/.openvscode-server/extensions"
-        user_data_dir = "/root/.openvscode-server/data"
-
-    ide_deps_path = Path(__file__).resolve().parent.parent / "configs/ide-deps.json"
-    try:
-        ide_deps_raw = ide_deps_path.read_text(encoding="utf-8")
-        ide_deps = json.loads(ide_deps_raw)
-    except Exception as exc:
-        raise RuntimeError(f"Failed to read {ide_deps_path}") from exc
-
-    extensions = ide_deps.get("extensions")
-    if not isinstance(extensions, list):
-        raise RuntimeError("configs/ide-deps.json extensions must be an array.")
-
-    # Validate extensions
-    for ext in extensions:
-        if not isinstance(ext, dict):
-            raise RuntimeError(f"Invalid extension entry {ext!r}")
-        publisher = ext.get("publisher")
-        name = ext.get("name")
-        version = ext.get("version")
-        if (
-            not isinstance(publisher, str)
-            or not isinstance(name, str)
-            or not isinstance(version, str)
-        ):
-            raise RuntimeError(f"Invalid extension entry {ext!r}")
-
-    if not extensions:
-        raise RuntimeError("No extensions found in configs/ide-deps.json.")
+    server_root, bin_path, extensions_dir, user_data_dir = get_ide_paths(
+        ide_provider
+    )
+    ide_deps = load_ide_deps()
+    expected_specs = get_expected_extension_specs(ide_deps)
+    extensions = ide_deps["extensions"]
 
     # Install extensions using smaller inline commands instead of a large script file.
     # This works around HTTP exec streaming issues where large scripts get truncated.
@@ -3110,12 +3355,25 @@ async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
     )
     await ctx.run("install-cmux-ext", install_cmd)
 
-    # Step 2: Download and install marketplace extensions one at a time.
-    # The per-extension download/install commands are small enough for HTTP exec,
-    # but on some runs the transport still drops. Rather than falling back to SSH
-    # for each tiny command, run the whole extension phase once via one larger
-    # in-container script, following the proven pattern from scripts/snapshot.py.
-    extension_lines: list[str] = []
+    # Step 2: Install marketplace extensions one at a time through a small
+    # helper script. Long multi-extension runs can terminate early over HTTP
+    # exec, so keep each remote invocation short and retryable.
+    target_platform_result = await ctx.run(
+        "detect-extension-target-platform",
+        'printf "%s|%s" "$(uname -s)" "$(uname -m)"',
+        timeout=30,
+    )
+    system_name, machine_name = ("", "")
+    if "|" in target_platform_result.stdout:
+        system_name, machine_name = target_platform_result.stdout.strip().split("|", 1)
+    detected_target_platform = detect_vscode_target_platform(system_name, machine_name)
+    ctx.console.info(
+        "[install-marketplace-exts] "
+        f"detected target platform {detected_target_platform or 'universal-fallback'} "
+        f"from {system_name or 'unknown'} {machine_name or 'unknown'}"
+    )
+
+    extension_specs: list[tuple[str, str, str, str, str, str | None]] = []
     for ext in extensions:
         publisher = ext.get("publisher")
         name = ext.get("name")
@@ -3127,19 +3385,50 @@ async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
             or not isinstance(version, str)
         ):
             raise RuntimeError(f"Invalid extension entry {ext!r}")
-        extension_lines.append(f"{publisher}|{name}|{version}|{ext_id}")
+        source_url = build_generic_marketplace_vspackage_url(
+            publisher,
+            name,
+            version,
+        )
+        resolved_target_platform: str | None = None
+        try:
+            source_url, resolved_target_platform = resolve_marketplace_extension_source(
+                publisher,
+                name,
+                version,
+                target_platform=detected_target_platform,
+            )
+        except Exception as exc:
+            ctx.console.info(
+                "[install-marketplace-exts] "
+                f"WARN: failed to resolve targeted asset for {ext_id}@{version}: {exc}; "
+                "falling back to generic vspackage URL"
+            )
+        extension_specs.append(
+            (
+                publisher,
+                name,
+                version,
+                ext_id,
+                source_url,
+                resolved_target_platform,
+            )
+        )
 
-    extensions_blob = "\n".join(extension_lines)
-
-    bulk_extensions_cmd = textwrap.dedent(
+    expected_specs_blob = "\n".join(expected_specs)
+    install_extension_cmd = textwrap.dedent(
         f"""
         set -eux
         export HOME=/root
-        server_root="{server_root}"
         bin_path="{bin_path}"
         extensions_dir="{extensions_dir}"
         user_data_dir="{user_data_dir}"
         mkdir -p "${{extensions_dir}}" "${{user_data_dir}}"
+        publisher="$1"
+        name="$2"
+        version="$3"
+        source_url="$4"
+        ext_id="${{publisher}}.${{name}}"
         install_from_file() {{
           local package_path="$1"
           echo "[install-ide-extensions] installing ${{package_path}}"
@@ -3154,70 +3443,125 @@ async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
           rm -rf "${{download_dir}}"
         }}
         trap cleanup EXIT
-        download_extension() {{
-          local publisher="$1"
-          local name="$2"
-          local version="$3"
-          local ext_id="$4"
-          local destination="${{download_dir}}/${{ext_id}}.vsix"
-          local tmpfile="${{destination}}.download"
-          local curl_stderr="${{tmpfile}}.stderr"
-          local url="https://marketplace.visualstudio.com/_apis/public/gallery/publishers/${{publisher}}/vsextensions/${{name}}/${{version}}/vspackage"
-          local attempt=1
-          local max_attempts=3
-          while [ "${{attempt}}" -le "${{max_attempts}}" ]; do
-            echo "[install-ide-extensions] fetch ${{ext_id}}@${{version}} attempt ${{attempt}}"
-            if curl -fSL --retry 6 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 600 -o "${{tmpfile}}" "${{url}}" 2>"${{curl_stderr}}"; then
-              rm -f "${{curl_stderr}}"
-              break
-            fi
-            echo "Download attempt ${{attempt}}/${{max_attempts}} failed for ${{ext_id}}; retrying..." >&2
-            if [ -s "${{curl_stderr}}" ]; then
-              cat "${{curl_stderr}}" >&2
-            fi
-            rm -f "${{tmpfile}}"
-            attempt=$((attempt + 1))
-            sleep $((attempt * 2))
-          done
-          if [ "${{attempt}}" -gt "${{max_attempts}}" ]; then
-            echo "Failed to download ${{ext_id}} after ${{max_attempts}} attempts" >&2
-            if [ -s "${{curl_stderr}}" ]; then
-              cat "${{curl_stderr}}" >&2
-            fi
-            rm -f "${{curl_stderr}}"
-            return 1
+        destination="${{download_dir}}/${{ext_id}}.vsix"
+        tmpfile="${{destination}}.download"
+        curl_stderr="${{tmpfile}}.stderr"
+        echo "[install-ide-extensions] fetch ${{ext_id}}@${{version}} from ${{source_url}}"
+        if ! curl -fSL --retry 6 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 600 -o "${{tmpfile}}" "${{source_url}}" 2>"${{curl_stderr}}"; then
+          if [ -s "${{curl_stderr}}" ]; then
+            cat "${{curl_stderr}}" >&2
           fi
-          if gzip -t "${{tmpfile}}" >/dev/null 2>&1; then
-            gunzip -c "${{tmpfile}}" > "${{destination}}"
-            rm -f "${{tmpfile}}"
-          else
-            mv "${{tmpfile}}" "${{destination}}"
+          exit 1
+        fi
+        rm -f "${{curl_stderr}}"
+        if gzip -t "${{tmpfile}}" >/dev/null 2>&1; then
+          gunzip -c "${{tmpfile}}" > "${{destination}}"
+          rm -f "${{tmpfile}}"
+        else
+          mv "${{tmpfile}}" "${{destination}}"
+        fi
+        install_from_file "${{destination}}"
+        if ! "${{bin_path}}" --list-extensions --show-versions \
+          --extensions-dir "${{extensions_dir}}" \
+          --user-data-dir "${{user_data_dir}}" \
+          | grep -Fqx "${{ext_id}}@${{version}}"; then
+          echo "[install-ide-extensions] ERROR: expected ${{ext_id}}@${{version}} after install" >&2
+          "${{bin_path}}" --list-extensions --show-versions \
+            --extensions-dir "${{extensions_dir}}" \
+            --user-data-dir "${{user_data_dir}}" >&2 || true
+          exit 1
+        fi
+        rm -f "${{destination}}"
+        echo "[install-ide-extensions] installed ${{ext_id}}@${{version}}"
+        """
+    )
+    verify_extensions_cmd = textwrap.dedent(
+        f"""
+        set -eux
+        export HOME=/root
+        bin_path="{bin_path}"
+        extensions_dir="{extensions_dir}"
+        user_data_dir="{user_data_dir}"
+        installed="$("${{bin_path}}" --list-extensions --show-versions --extensions-dir "${{extensions_dir}}" --user-data-dir "${{user_data_dir}}" || true)"
+        while IFS= read -r expected; do
+          [ -z "${{expected}}" ] && continue
+          if ! printf '%s\n' "${{installed}}" | grep -Fqx "${{expected}}"; then
+            echo "[install-ide-extensions] ERROR: missing expected extension ${{expected}}" >&2
+            printf '%s\n' "${{installed}}" >&2
+            exit 1
           fi
-          install_from_file "${{destination}}"
-          rm -f "${{destination}}"
-        }}
-        while IFS='|' read -r publisher name version ext_id; do
-          [ -z "${{publisher}}" ] && continue
-          download_extension "${{publisher}}" "${{name}}" "${{version}}" "${{ext_id}}"
-        done <<'EXTENSIONS'
-{extensions_blob}
-EXTENSIONS
+        done <<'EXPECTED_EXTENSIONS'
+{expected_specs_blob}
+EXPECTED_EXTENSIONS
         echo "[install-ide-extensions] completed installs"
         """
     )
-    for attempt in range(1, 4):
-        try:
-            await ctx.run("install-marketplace-exts", bulk_extensions_cmd)
-            break
-        except Exception as exc:
-            if attempt >= 3 or not is_transient_http_exec_error(exc):
-                raise
-            delay = float(attempt * 5)
-            ctx.console.info(
-                f"[install-marketplace-exts] retrying after transient exec error "
-                f"(attempt {attempt}/3) in {delay:.1f}s"
+    import tempfile
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".sh", delete=False
+    ) as script_file:
+        script_file.write(install_extension_cmd)
+        script_file.flush()
+        local_script_path = script_file.name
+
+    try:
+        remote_script_path = "/tmp/install-marketplace-ext.sh"
+        chmod_remote_script = shlex.quote(remote_script_path)
+        await ctx.push_file(local_script_path, remote_script_path)
+        await ctx.run(
+            "install-marketplace-exts-setup",
+            f"chmod +x {chmod_remote_script}",
+            timeout=60,
+        )
+        ctx.console.info(
+            f"[install-marketplace-exts] preparing {len(extension_specs)} marketplace extensions"
+        )
+        for (
+            publisher,
+            name,
+            version,
+            ext_id,
+            source_url,
+            resolved_target_platform,
+        ) in extension_specs:
+            task_label = ext_id.replace(".", "-")
+            if resolved_target_platform:
+                ctx.console.info(
+                    f"[install-marketplace-exts] using {resolved_target_platform} asset "
+                    f"for {ext_id}@{version}"
+                )
+            run_cmd = (
+                f"{chmod_remote_script} "
+                f"{shlex.quote(publisher)} "
+                f"{shlex.quote(name)} "
+                f"{shlex.quote(version)} "
+                f"{shlex.quote(source_url)}"
             )
-            await asyncio.sleep(delay)
+            for attempt in range(1, 4):
+                try:
+                    await ctx.run(
+                        f"install-ext-{task_label}",
+                        run_cmd,
+                        timeout=60 * 15,
+                    )
+                    break
+                except Exception as exc:
+                    if attempt >= 3 or not is_transient_http_exec_error(exc):
+                        raise
+                    delay = float(attempt * 5)
+                    ctx.console.info(
+                        f"[install-ext-{task_label}] retrying after transient exec error "
+                        f"(attempt {attempt}/3) in {delay:.1f}s"
+                    )
+                    await asyncio.sleep(delay)
+        await ctx.run(
+            "verify-marketplace-exts",
+            verify_extensions_cmd,
+            timeout=60 * 5,
+        )
+    finally:
+        import os
+        os.unlink(local_script_path)
 
 
 @registry.task(
@@ -3241,12 +3585,7 @@ async def task_install_cursor(ctx: PveTaskContext) -> None:
     description="Install global agent CLIs with bun",
 )
 async def task_install_global_cli(ctx: PveTaskContext) -> None:
-    ide_deps_path = Path(__file__).resolve().parent.parent / "configs/ide-deps.json"
-    try:
-        ide_deps_raw = ide_deps_path.read_text(encoding="utf-8")
-        ide_deps = json.loads(ide_deps_raw)
-    except Exception as exc:
-        raise RuntimeError(f"Failed to read {ide_deps_path}") from exc
+    ide_deps = load_ide_deps()
 
     packages = ide_deps.get("packages")
     if not isinstance(packages, dict):
@@ -3284,6 +3623,7 @@ async def task_install_global_cli(ctx: PveTaskContext) -> None:
                     else f"bun add -g {quoted_install_spec}"
                 )
                 await ctx.run(f"install-pkg-{task_label}", cmd)
+                last_error = None
                 ctx.console.info(f"Successfully installed {install_label}")
                 break
             except Exception as e:
@@ -4117,6 +4457,16 @@ async def task_cleanup_build_artifacts(ctx: PveTaskContext) -> None:
     cleanup_script = textwrap.dedent(
         f"""
         set -euo pipefail
+        if [ ! -f /builtins/build/index.js ] && [ -f {repo}/apps/worker/build/index.js ]; then
+            echo "[cleanup-build-artifacts] Restoring missing /builtins/build from repo build output"
+            install -d /builtins
+            rm -rf /builtins/build
+            cp -r {repo}/apps/worker/build /builtins/build
+        fi
+        if [ ! -f /builtins/build/index.js ]; then
+            echo "[cleanup-build-artifacts] ERROR: missing /builtins/build/index.js before repo cleanup" >&2
+            exit 1
+        fi
         rm -rf {repo}
         rm -f {tar_path}
         if [ -d /usr/local/cargo ]; then
@@ -4779,6 +5129,7 @@ async def _verify_template_artifacts(
     Raises RuntimeError if critical artifacts are missing to prevent creating broken templates.
     """
     ide_provider = get_ide_provider()
+    _, bin_path, _, user_data_dir = get_ide_paths(ide_provider)
 
     # Define critical artifacts that must exist based on IDE provider
     artifacts: list[tuple[str, str]] = []
@@ -4826,11 +5177,7 @@ async def _verify_template_artifacts(
             console.info(f"[verify] ERROR checking {description}: {e}")
 
     # Check for cmux extension specifically (critical for IDE functionality)
-    ext_dir = (
-        "/root/.code-server/extensions" if ide_provider == IDE_PROVIDER_CODER
-        else "/root/.vscode-server-oss/extensions" if ide_provider == IDE_PROVIDER_CMUX_CODE
-        else "/root/.openvscode-server/extensions"
-    )
+    _, _, ext_dir, _ = get_ide_paths(ide_provider)
     ext_check_cmd = f"ls {shlex.quote(ext_dir)} 2>/dev/null | grep -q cmux && echo found || echo notfound"
     try:
         result = await client.aexec_in_container(vmid, ext_check_cmd, timeout=30, check=False)
@@ -4842,6 +5189,72 @@ async def _verify_template_artifacts(
     except Exception as e:
         missing.append(f"  - cmux VS Code extension: check failed ({e})")
         console.info(f"[verify] ERROR checking cmux extension: {e}")
+
+    expected_specs = get_expected_extension_specs(load_ide_deps())
+    installed: set[str] = set()
+
+    registry_cmd = f"cat {shlex.quote(ext_dir)}/extensions.json"
+    try:
+        registry_result = await client.aexec_in_container(
+            vmid,
+            registry_cmd,
+            timeout=60,
+            check=False,
+        )
+        if registry_result.returncode == 0:
+            installed.update(parse_extension_registry_specs(registry_result.stdout))
+            console.info(
+                f"[verify] Parsed {len(installed)} extensions from {ext_dir}/extensions.json"
+            )
+        else:
+            console.info(
+                f"[verify] WARN: failed to read {ext_dir}/extensions.json: {registry_result.stderr.strip()}"
+            )
+    except Exception as e:
+        console.info(f"[verify] WARN: failed to parse extension registry: {e}")
+
+    if not installed:
+        list_cmd = (
+            f"{shlex.quote(bin_path)} --list-extensions --show-versions "
+            f"--extensions-dir {shlex.quote(ext_dir)} "
+            f"--user-data-dir {shlex.quote(user_data_dir)}"
+        )
+        try:
+            result = await client.aexec_in_container(
+                vmid,
+                list_cmd,
+                timeout=60,
+                check=False,
+            )
+            if result.returncode != 0:
+                missing.append(
+                    f"  - IDE marketplace extensions: failed to list installed extensions via {bin_path}"
+                )
+                console.info(
+                    f"[verify] ERROR listing installed extensions via {bin_path}: {result.stderr.strip()}"
+                )
+            else:
+                installed.update(
+                    parse_cli_extension_specs(
+                        result.stdout,
+                        expected_specs=expected_specs,
+                    )
+                )
+                console.info(
+                    f"[verify] Parsed {len(installed)} extensions from CLI output"
+                )
+        except Exception as e:
+            missing.append(f"  - IDE marketplace extensions: check failed ({e})")
+            console.info(f"[verify] ERROR checking IDE marketplace extensions: {e}")
+
+    for spec in expected_specs:
+        if spec not in installed:
+            missing.append(
+                f"  - IDE marketplace extension missing: {spec} in {ext_dir}"
+            )
+            console.info(f"[verify] MISSING: IDE marketplace extension {spec}")
+        else:
+            console.info(f"[verify] OK: IDE marketplace extension {spec}")
 
     if missing:
         error_msg = (
