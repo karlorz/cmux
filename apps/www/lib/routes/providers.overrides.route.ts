@@ -4,9 +4,11 @@ import {
 } from "@/lib/utils/auth";
 import { getConvex } from "@/lib/utils/get-convex";
 import { api } from "@cmux/convex/api";
+import { ConvexError } from "convex/values";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import {
   ProviderListResponse,
+  ProviderOverrideErrorResponse,
   ProviderOverrideSchema,
   SuccessResponse,
   UpsertProviderBody,
@@ -14,6 +16,53 @@ import {
 } from "./providers.schemas";
 
 export const providersOverridesRouter = new OpenAPIHono();
+
+function mapProviderOverrideError(error: unknown): {
+  code: string;
+  message: string;
+  details?: {
+    providerId: string;
+    field: string;
+    reason: string;
+  };
+} | null {
+  if (!(error instanceof ConvexError)) {
+    return null;
+  }
+
+  const data = error.data as {
+    code?: unknown;
+    message?: unknown;
+    details?: {
+      providerId?: unknown;
+      field?: unknown;
+      reason?: unknown;
+    };
+  } | undefined;
+
+  if (data?.code !== "INVALID_PROVIDER_OVERRIDE") {
+    return null;
+  }
+
+  const details = data.details;
+  return {
+    code: "INVALID_PROVIDER_OVERRIDE",
+    message:
+      typeof data.message === "string"
+        ? data.message
+        : "Invalid provider override configuration",
+    details:
+      typeof details?.providerId === "string" &&
+      typeof details.field === "string" &&
+      typeof details.reason === "string"
+        ? {
+            providerId: details.providerId,
+            field: details.field,
+            reason: details.reason,
+          }
+        : undefined,
+  };
+}
 
 providersOverridesRouter.openapi(
   createRoute({
@@ -141,6 +190,14 @@ providersOverridesRouter.openapi(
         },
       },
       401: { description: "Unauthorized" },
+      422: {
+        description: "Invalid provider override configuration",
+        content: {
+          "application/json": {
+            schema: ProviderOverrideErrorResponse,
+          },
+        },
+      },
     },
   }),
   async (c) => {
@@ -159,19 +216,27 @@ providersOverridesRouter.openapi(
     const body = c.req.valid("json");
     const convex = getConvex({ accessToken });
 
-    const result = await convex.mutation(api.providerOverrides.upsert, {
-      teamSlugOrId,
-      providerId: id,
-      baseUrl: body.baseUrl,
-      apiFormat: body.apiFormat,
-      apiKeyEnvVar: body.apiKeyEnvVar,
-      customHeaders: body.customHeaders,
-      fallbacks: body.fallbacks,
-      claudeRouting: body.claudeRouting,
-      enabled: body.enabled,
-    });
+    try {
+      const result = await convex.mutation(api.providerOverrides.upsert, {
+        teamSlugOrId,
+        providerId: id,
+        baseUrl: body.baseUrl,
+        apiFormat: body.apiFormat,
+        apiKeyEnvVar: body.apiKeyEnvVar,
+        customHeaders: body.customHeaders,
+        fallbacks: body.fallbacks,
+        claudeRouting: body.claudeRouting,
+        enabled: body.enabled,
+      });
 
-    return c.json(result);
+      return c.json(result);
+    } catch (error) {
+      const mapped = mapProviderOverrideError(error);
+      if (mapped) {
+        return c.json(mapped, 422);
+      }
+      throw error;
+    }
   },
 );
 

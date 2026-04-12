@@ -8,11 +8,15 @@
  * - Define fallback chains for rate limit handling
  */
 
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { validateClaudeRoutingOverride } from "@cmux/shared/provider-registry";
 import { resolveTeamIdLoose } from "../_shared/team";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { authMutation, authQuery } from "./users/utils";
+
+const INVALID_PROVIDER_OVERRIDE_CODE = "INVALID_PROVIDER_OVERRIDE";
+const INVALID_PROVIDER_OVERRIDE_MESSAGE =
+  "Invalid provider override configuration";
 
 // Validator for API format enum
 const apiFormatValidator = v.union(
@@ -47,6 +51,49 @@ export const claudeRoutingValidator = v.object({
   subagentModel: v.optional(v.string()),
 });
 
+export type InvalidProviderOverrideData = {
+  code: typeof INVALID_PROVIDER_OVERRIDE_CODE;
+  message: typeof INVALID_PROVIDER_OVERRIDE_MESSAGE;
+  details: {
+    providerId: string;
+    field: "claudeRouting";
+    reason: string;
+  };
+};
+
+function isInvalidProviderOverrideData(
+  value: unknown,
+): value is InvalidProviderOverrideData {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const details = candidate.details;
+  if (typeof details !== "object" || details === null) {
+    return false;
+  }
+
+  const detailRecord = details as Record<string, unknown>;
+  return (
+    candidate.code === INVALID_PROVIDER_OVERRIDE_CODE &&
+    candidate.message === INVALID_PROVIDER_OVERRIDE_MESSAGE &&
+    typeof detailRecord.providerId === "string" &&
+    detailRecord.field === "claudeRouting" &&
+    typeof detailRecord.reason === "string"
+  );
+}
+
+export function getInvalidProviderOverrideError(
+  error: unknown,
+): InvalidProviderOverrideData | null {
+  if (!(error instanceof ConvexError)) {
+    return null;
+  }
+
+  return isInvalidProviderOverrideData(error.data) ? error.data : null;
+}
+
 function providerOverrideArgsValidator() {
   return {
     baseUrl: v.optional(v.string()),
@@ -56,6 +103,34 @@ function providerOverrideArgsValidator() {
     fallbacks: v.optional(v.array(fallbackValidator)),
     claudeRouting: v.optional(claudeRoutingValidator),
   };
+}
+
+function validateProviderOverrideOrThrow(args: {
+  providerId: string;
+  baseUrl?: string;
+  apiFormat?: "anthropic" | "openai" | "bedrock" | "vertex" | "passthrough";
+  claudeRouting?: {
+    mode: "direct_anthropic" | "anthropic_compatible_gateway";
+    opus?: { model: string };
+    sonnet?: { model: string };
+    haiku?: { model: string };
+    subagentModel?: string;
+  };
+}): void {
+  try {
+    validateClaudeRoutingOverride(args);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new ConvexError({
+      code: INVALID_PROVIDER_OVERRIDE_CODE,
+      message: INVALID_PROVIDER_OVERRIDE_MESSAGE,
+      details: {
+        providerId: args.providerId,
+        field: "claudeRouting",
+        reason: message,
+      },
+    });
+  }
 }
 
 /**
@@ -105,7 +180,7 @@ export const upsert = authMutation({
     enabled: v.boolean(),
   },
   handler: async (ctx, args) => {
-    validateClaudeRoutingOverride({
+    validateProviderOverrideOrThrow({
       providerId: args.providerId,
       baseUrl: args.baseUrl,
       apiFormat: args.apiFormat,

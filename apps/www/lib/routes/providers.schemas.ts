@@ -67,6 +67,20 @@ export const UpsertProviderBody = z
   })
   .openapi("UpsertProviderBody");
 
+export const ProviderOverrideErrorResponse = z
+  .object({
+    code: z.string(),
+    message: z.string(),
+    details: z
+      .object({
+        providerId: z.string(),
+        field: z.string(),
+        reason: z.string(),
+      })
+      .optional(),
+  })
+  .openapi("ProviderOverrideErrorResponse");
+
 export const SuccessResponse = z
   .object({
     success: z.boolean(),

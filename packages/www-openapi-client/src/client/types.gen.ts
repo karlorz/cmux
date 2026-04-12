@@ -2485,6 +2485,16 @@ export type UpsertResponse = {
     action: 'created' | 'updated';
 };
 
+export type ProviderOverrideErrorResponse = {
+    code: string;
+    message: string;
+    details?: {
+        providerId: string;
+        field: string;
+        reason: string;
+    };
+};
+
 export type UpsertProviderBody = {
     baseUrl?: string;
     apiFormat?: ApiFormat;
@@ -9131,7 +9141,13 @@ export type PutApiProvidersByIdErrors = {
      * Unauthorized
      */
     401: unknown;
+    /**
+     * Invalid provider override configuration
+     */
+    422: ProviderOverrideErrorResponse;
 };
+
+export type PutApiProvidersByIdError = PutApiProvidersByIdErrors[keyof PutApiProvidersByIdErrors];
 
 export type PutApiProvidersByIdResponses = {
     /**
