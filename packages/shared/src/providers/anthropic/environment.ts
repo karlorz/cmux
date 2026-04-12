@@ -2,6 +2,13 @@ import type {
   EnvironmentContext,
   EnvironmentResult,
 } from "../common/environment-result";
+import type { ClaudeAliasRoute } from "../../provider-registry";
+import {
+  CLAUDE_DEFAULT_MODEL_ENV_VARS,
+  CLAUDE_ROUTING_ENV_VARS,
+  type ClaudeModelFamily,
+  getClaudeModelSpecByAgentName,
+} from "./models";
 import {
   CMUX_ANTHROPIC_PROXY_PLACEHOLDER_API_KEY,
   normalizeAnthropicBaseUrl,
@@ -20,23 +27,72 @@ export const CLAUDE_KEY_ENV_VARS_TO_UNSET = [
   "ANTHROPIC_API_KEY",
   "ANTHROPIC_AUTH_TOKEN",
   "ANTHROPIC_CUSTOM_HEADERS",
+  ...CLAUDE_ROUTING_ENV_VARS,
+  "CLAUDE_CODE_EFFORT_LEVEL",
   "CLAUDE_API_KEY",
 ];
 
 const CLAUDE_OPUS_46_EFFORT_LEVELS = new Set(["low", "medium", "high", "max"]);
+const CLAUDE_NATIVE_EFFORT_MODELS = new Set(["claude-opus-4-6"]);
+
+function resolveClaudeDefaultModelMetadata(
+  env: Record<string, string | number>,
+  envVars: (typeof CLAUDE_DEFAULT_MODEL_ENV_VARS)[ClaudeModelFamily],
+  route: ClaudeAliasRoute | undefined,
+): void {
+  if (!route) {
+    return;
+  }
+
+  const model = route.model.trim();
+  if (!model) {
+    return;
+  }
+
+  env[envVars.model] = model;
+  if (route.name?.trim()) {
+    env[envVars.name] = route.name.trim();
+  }
+  if (route.description?.trim()) {
+    env[envVars.description] = route.description.trim();
+  }
+  if (route.supportedCapabilities?.length) {
+    env[envVars.supportedCapabilities] = route.supportedCapabilities.join(",");
+  }
+}
+
+function resolveClaudeEffectiveTarget(
+  ctx: Pick<EnvironmentContext, "agentName" | "providerConfig">,
+): string | undefined {
+  const routing = ctx.providerConfig?.claudeRouting;
+  if (routing?.mode === "anthropic_compatible_gateway") {
+    const spec = getClaudeModelSpecByAgentName(ctx.agentName);
+    if (spec?.family === "opus") {
+      return routing.opus?.model.trim() || undefined;
+    }
+    if (spec?.family === "sonnet") {
+      return routing.sonnet?.model.trim() || undefined;
+    }
+    if (spec?.family === "haiku") {
+      return routing.haiku?.model.trim() || undefined;
+    }
+  }
+
+  return getClaudeModelSpecByAgentName(ctx.agentName)?.nativeModelId;
+}
 
 function resolveClaudeEffortLevel(
-  agentName: string | undefined,
-  selectedVariant: string | undefined,
+  ctx: Pick<EnvironmentContext, "agentName" | "selectedVariant" | "providerConfig">,
 ): string | undefined {
-  const effort = selectedVariant?.trim();
+  const effort = ctx.selectedVariant?.trim();
   if (!effort) {
     return undefined;
   }
 
-  if (agentName !== "claude/opus-4.6") {
+  const effectiveTarget = resolveClaudeEffectiveTarget(ctx);
+  if (!effectiveTarget || !CLAUDE_NATIVE_EFFORT_MODELS.has(effectiveTarget)) {
     throw new Error(
-      `Model ${agentName ?? "claude"} does not support effort selection`,
+      `Model ${ctx.agentName ?? "claude"} does not support effort selection`,
     );
   }
 
@@ -77,10 +133,7 @@ export async function getClaudeEnvironment(
   const files: EnvironmentResult["files"] = [];
   const env: Record<string, string> = {};
   const startupCommands: string[] = [];
-  const effortLevel = resolveClaudeEffortLevel(
-    ctx.agentName,
-    ctx.selectedVariant,
-  );
+  const effortLevel = resolveClaudeEffortLevel(ctx);
   const claudeLifecycleDir = "/root/lifecycle/claude";
   const claudeSecretsDir = `${claudeLifecycleDir}/secrets`;
   const claudeApiKeyHelperPath = `${claudeSecretsDir}/anthropic_key_helper.sh`;
@@ -549,6 +602,12 @@ exit 0`;
   const userCustomBaseUrl = ctx.apiKeys?.ANTHROPIC_BASE_URL?.trim();
   const bypassProxy = ctx.workspaceSettings?.bypassAnthropicProxy ?? false;
   const hasTaskRunJwt = ctx.taskRunJwt.trim().length > 0;
+  const routingConfig = ctx.providerConfig?.claudeRouting;
+  const shouldApplyClaudeRouting =
+    !hasOAuthToken &&
+    ctx.providerConfig?.isOverridden === true &&
+    ctx.providerConfig.apiFormat === "anthropic" &&
+    routingConfig?.mode === "anthropic_compatible_gateway";
 
   // If OAuth token is provided, write it to /etc/claude-code/env
   // The wrapper scripts (claude and other launchers) source this file before running claude-code
@@ -761,18 +820,18 @@ exit 0`;
         // 3. bypassProxy && userCustomBaseUrl -> legacy bypass
         // 4. Default -> cmux proxy
 
+        const result: Record<string, string | number> = {};
+
         if (hasOAuthToken) {
           // OAuth users always connect directly to Anthropic.
-          return {};
+          return result;
         }
 
         // Provider override takes precedence over legacy bypass
         if (ctx.providerConfig?.isOverridden && ctx.providerConfig.baseUrl) {
-          const result: Record<string, string | number> = {
-            ANTHROPIC_BASE_URL: normalizeAnthropicBaseUrl(
-              ctx.providerConfig.baseUrl,
-            ).forRawFetch,
-          };
+          result.ANTHROPIC_BASE_URL = normalizeAnthropicBaseUrl(
+            ctx.providerConfig.baseUrl,
+          ).forRawFetch;
           if (ctx.providerConfig.customHeaders) {
             result.ANTHROPIC_CUSTOM_HEADERS = Object.entries(
               ctx.providerConfig.customHeaders,
@@ -780,20 +839,37 @@ exit 0`;
               .map(([k, v]) => `${k}:${v}`)
               .join("\n");
           }
-          return result;
+        } else if (bypassProxy && userCustomBaseUrl) {
+          result.ANTHROPIC_BASE_URL =
+            normalizeAnthropicBaseUrl(userCustomBaseUrl).forRawFetch;
+        } else {
+          result.ANTHROPIC_BASE_URL = `${ctx.callbackUrl}/api/anthropic`;
+          result.ANTHROPIC_CUSTOM_HEADERS = `x-cmux-token:${ctx.taskRunJwt}\nx-cmux-source:cmux`;
         }
 
-        if (bypassProxy && userCustomBaseUrl) {
-          return {
-            ANTHROPIC_BASE_URL:
-              normalizeAnthropicBaseUrl(userCustomBaseUrl).forRawFetch,
-          };
+        if (shouldApplyClaudeRouting && routingConfig) {
+          resolveClaudeDefaultModelMetadata(
+            result,
+            CLAUDE_DEFAULT_MODEL_ENV_VARS.opus,
+            routingConfig.opus,
+          );
+          resolveClaudeDefaultModelMetadata(
+            result,
+            CLAUDE_DEFAULT_MODEL_ENV_VARS.sonnet,
+            routingConfig.sonnet,
+          );
+          resolveClaudeDefaultModelMetadata(
+            result,
+            CLAUDE_DEFAULT_MODEL_ENV_VARS.haiku,
+            routingConfig.haiku,
+          );
+          if (routingConfig.subagentModel?.trim()) {
+            result.CLAUDE_CODE_SUBAGENT_MODEL = routingConfig.subagentModel.trim();
+          }
+          result.ANTHROPIC_CUSTOM_MODEL_OPTION = "custom";
         }
 
-        return {
-          ANTHROPIC_BASE_URL: `${ctx.callbackUrl}/api/anthropic`,
-          ANTHROPIC_CUSTOM_HEADERS: `x-cmux-token:${ctx.taskRunJwt}\nx-cmux-source:cmux`,
-        };
+        return result;
       })(),
     },
   };

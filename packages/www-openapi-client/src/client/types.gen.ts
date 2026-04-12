@@ -2442,6 +2442,23 @@ export type Fallback = {
     priority: number;
 };
 
+export type ClaudeRoutingMode = 'direct_anthropic' | 'anthropic_compatible_gateway';
+
+export type ClaudeAliasRoute = {
+    model: string;
+    name?: string;
+    description?: string;
+    supportedCapabilities?: Array<string>;
+};
+
+export type ClaudeRouting = {
+    mode: ClaudeRoutingMode;
+    opus?: ClaudeAliasRoute;
+    sonnet?: ClaudeAliasRoute;
+    haiku?: ClaudeAliasRoute;
+    subagentModel?: string;
+};
+
 export type ProviderOverride = {
     _id: string;
     teamId: string;
@@ -2453,6 +2470,7 @@ export type ProviderOverride = {
         [key: string]: string;
     };
     fallbacks?: Array<Fallback>;
+    claudeRouting?: ClaudeRouting;
     enabled: boolean;
     createdAt: number;
     updatedAt: number;
@@ -2467,6 +2485,16 @@ export type UpsertResponse = {
     action: 'created' | 'updated';
 };
 
+export type ProviderOverrideErrorResponse = {
+    code: string;
+    message: string;
+    details?: {
+        providerId: string;
+        field: string;
+        reason: string;
+    };
+};
+
 export type UpsertProviderBody = {
     baseUrl?: string;
     apiFormat?: ApiFormat;
@@ -2475,6 +2503,7 @@ export type UpsertProviderBody = {
         [key: string]: string;
     };
     fallbacks?: Array<Fallback>;
+    claudeRouting?: ClaudeRouting;
     enabled: boolean;
 };
 
@@ -9112,7 +9141,13 @@ export type PutApiProvidersByIdErrors = {
      * Unauthorized
      */
     401: unknown;
+    /**
+     * Invalid provider override configuration
+     */
+    422: ProviderOverrideErrorResponse;
 };
+
+export type PutApiProvidersByIdError = PutApiProvidersByIdErrors[keyof PutApiProvidersByIdErrors];
 
 export type PutApiProvidersByIdResponses = {
     /**

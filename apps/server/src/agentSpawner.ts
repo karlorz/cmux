@@ -13,6 +13,7 @@ import {
   getProviderIdFromAgentName,
   getProviderRegistry,
   type ApiFormat,
+  type ClaudeRoutingConfig,
   type ProviderOverride,
 } from "@cmux/shared/provider-registry";
 import {
@@ -156,6 +157,7 @@ export interface PreFetchedSpawnConfig {
     apiKeyEnvVar?: string;
     customHeaders?: Record<string, string>;
     fallbacks?: Array<{ modelName: string; priority: number }>;
+    claudeRouting?: ClaudeRoutingConfig;
     enabled: boolean;
   }>;
   mcpServerConfigs?: {
@@ -818,6 +820,7 @@ export async function spawnAgent(
       apiKeyEnvVar?: string;
       customHeaders?: Record<string, string>;
       fallbacks?: Array<{ modelName: string; priority: number }>;
+      claudeRouting?: ClaudeRoutingConfig;
       enabled: boolean;
     }>;
     let mcpServerConfigs:
@@ -1160,6 +1163,7 @@ export async function spawnAgent(
           apiKeyEnvVar: o.apiKeyEnvVar,
           customHeaders: o.customHeaders,
           fallbacks: o.fallbacks,
+          claudeRouting: o.claudeRouting,
           enabled: o.enabled,
         }),
       ),
@@ -1174,6 +1178,7 @@ export async function spawnAgent(
             baseUrl?: string;
             customHeaders?: Record<string, string>;
             apiFormat?: string;
+            claudeRouting?: ClaudeRoutingConfig;
             isOverridden: boolean;
           }
         | undefined;
@@ -1183,6 +1188,7 @@ export async function spawnAgent(
           baseUrl: resolvedProvider.baseUrl,
           customHeaders: resolvedProvider.customHeaders,
           apiFormat: resolvedProvider.apiFormat,
+          claudeRouting: resolvedProvider.claudeRouting,
           isOverridden: true,
         };
       } else if (

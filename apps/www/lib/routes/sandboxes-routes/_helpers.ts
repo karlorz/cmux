@@ -430,6 +430,7 @@ export function mapProviderOverrides(
     apiKeyEnvVar?: string;
     customHeaders?: Record<string, string>;
     fallbacks?: ProviderOverride["fallbacks"];
+    claudeRouting?: ProviderOverride["claudeRouting"];
     enabled: boolean;
   }>,
 ): ProviderOverride[] {
@@ -441,6 +442,7 @@ export function mapProviderOverrides(
     apiKeyEnvVar: override.apiKeyEnvVar,
     customHeaders: override.customHeaders,
     fallbacks: override.fallbacks,
+    claudeRouting: override.claudeRouting,
     enabled: override.enabled,
   }));
 }
@@ -463,6 +465,7 @@ export function buildProviderConfig(
     baseUrl: resolvedProvider.baseUrl,
     customHeaders: resolvedProvider.customHeaders,
     apiFormat: resolvedProvider.apiFormat,
+    claudeRouting: resolvedProvider.claudeRouting,
     isOverridden: true,
   };
 }

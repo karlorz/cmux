@@ -25,6 +25,7 @@ function createMockProvider(
     apiKeys: overrides.apiKeys ?? [],
     customHeaders: overrides.customHeaders,
     fallbacks: overrides.fallbacks,
+    claudeRouting: overrides.claudeRouting,
     isOverridden: overrides.isOverridden,
   };
 }
@@ -332,15 +333,28 @@ describe("sandboxes-routes helpers", () => {
       expect(result[0]?.teamId).toBe("123");
     });
 
-    it("maps multiple overrides", () => {
+    it("maps Claude routing fields", () => {
       const result = mapProviderOverrides([
-        { teamId: "team1", providerId: "anthropic", enabled: true },
-        { teamId: "team2", providerId: "openai", enabled: false },
+        {
+          teamId: "team_789",
+          providerId: "anthropic",
+          baseUrl: "https://gateway.example.com",
+          apiFormat: "anthropic" as const,
+          claudeRouting: {
+            mode: "anthropic_compatible_gateway" as const,
+            opus: { model: "gpt-5.4" },
+            subagentModel: "gpt-5.4-mini",
+          },
+          enabled: true,
+        },
       ]);
-      expect(result).toHaveLength(2);
-      expect(result[0]?.providerId).toBe("anthropic");
-      expect(result[1]?.providerId).toBe("openai");
+      expect(result[0]?.claudeRouting).toEqual({
+        mode: "anthropic_compatible_gateway",
+        opus: { model: "gpt-5.4" },
+        subagentModel: "gpt-5.4-mini",
+      });
     });
+
   });
 
   describe("buildProviderConfig", () => {
@@ -371,19 +385,28 @@ describe("sandboxes-routes helpers", () => {
       });
     });
 
-    it("handles missing optional customHeaders", () => {
+    it("includes Claude routing in provider config when overridden", () => {
       const provider = createMockProvider({
-        baseUrl: "https://api.example.com",
-        apiFormat: "openai",
+        baseUrl: "https://custom.api.com",
+        apiFormat: "anthropic",
+        claudeRouting: {
+          mode: "anthropic_compatible_gateway",
+          opus: { model: "gpt-5.4" },
+        },
         isOverridden: true,
       });
       expect(buildProviderConfig(provider)).toEqual({
-        baseUrl: "https://api.example.com",
+        baseUrl: "https://custom.api.com",
         customHeaders: undefined,
-        apiFormat: "openai",
+        apiFormat: "anthropic",
+        claudeRouting: {
+          mode: "anthropic_compatible_gateway",
+          opus: { model: "gpt-5.4" },
+        },
         isOverridden: true,
       });
     });
+
   });
 
   describe("buildOpenAiProviderConfig", () => {

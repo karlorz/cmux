@@ -18,6 +18,7 @@ import { z } from "zod";
  * This is returned by the getSpawnConfig endpoint and passed to spawnAgent.
  */
 import type { McpServerConfig } from "../../shared/src/mcp-server-config";
+import type { ClaudeRoutingConfig } from "../../shared/src/provider-registry";
 
 export interface SpawnConfigData {
   apiKeys: Record<string, string>;
@@ -37,6 +38,7 @@ export interface SpawnConfigData {
     apiKeyEnvVar?: string;
     customHeaders?: Record<string, string>;
     fallbacks?: Array<{ modelName: string; priority: number }>;
+    claudeRouting?: ClaudeRoutingConfig;
     enabled: boolean;
   }>;
   mcpServerConfigs?: {
@@ -623,6 +625,7 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
         apiKeyEnvVar: o.apiKeyEnvVar,
         customHeaders: o.customHeaders,
         fallbacks: o.fallbacks,
+        claudeRouting: o.claudeRouting,
         enabled: o.enabled,
       })),
       mcpServerConfigs: {
