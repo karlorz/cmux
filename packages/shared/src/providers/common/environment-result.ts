@@ -4,6 +4,7 @@ import type {
   PolicyRuleForInstructions,
   OrchestrationRuleForInstructions,
 } from "../../agent-memory-protocol";
+import type { ClaudeRoutingConfig } from "../../provider-registry";
 
 export interface EnvironmentResult {
   files: AuthFile[];
@@ -52,6 +53,7 @@ export type EnvironmentContext = {
     baseUrl?: string;
     customHeaders?: Record<string, string>;
     apiFormat?: string;
+    claudeRouting?: ClaudeRoutingConfig;
     isOverridden: boolean;
   };
   /** Previous knowledge content from earlier runs (for cross-run memory seeding) */

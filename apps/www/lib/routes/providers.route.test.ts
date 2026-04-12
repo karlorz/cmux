@@ -134,24 +134,64 @@ describe("providersRouter", () => {
       expect([200, 401, 403, 500]).toContain(res.response.status);
     });
 
-    it("accepts customHeaders", async () => {
+    it("returns 422 for invalid claudeRouting combinations", async () => {
       const tokens = await __TEST_INTERNAL_ONLY_GET_STACK_TOKENS();
       const res = await putApiProvidersById({
         client: testApiClient,
         headers: { "x-stack-auth": JSON.stringify(tokens) },
-        path: { id: "custom-headers-provider" },
+        path: { id: "anthropic" },
         query: { teamSlugOrId: TEST_TEAM },
         body: {
           enabled: true,
-          customHeaders: {
-            "X-Custom-Header": "custom-value",
+          baseUrl: "https://api.anthropic.com",
+          apiFormat: "anthropic",
+          claudeRouting: {
+            mode: "direct_anthropic",
+            opus: { model: "gpt-5.4" },
+          },
+        },
+      });
+
+      expect([401, 403, 422]).toContain(res.response.status);
+      if (res.response.status === 422) {
+        expect(res.error).toMatchObject({
+          code: "INVALID_PROVIDER_OVERRIDE",
+          message: "Invalid provider override configuration",
+          details: {
+            providerId: "anthropic",
+            field: "claudeRouting",
+            reason:
+              "direct_anthropic routing cannot define alias remaps or a subagent model",
+          },
+        });
+      }
+    });
+
+    it("accepts valid direct claudeRouting configuration", async () => {
+      const tokens = await __TEST_INTERNAL_ONLY_GET_STACK_TOKENS();
+      const res = await putApiProvidersById({
+        client: testApiClient,
+        headers: { "x-stack-auth": JSON.stringify(tokens) },
+        path: { id: "anthropic" },
+        query: { teamSlugOrId: TEST_TEAM },
+        body: {
+          enabled: true,
+          baseUrl: "https://api.anthropic.com",
+          apiFormat: "anthropic",
+          claudeRouting: {
+            mode: "direct_anthropic",
           },
         },
       });
 
       // 401 may occur if test tokens are invalid in CI
       expect([200, 401, 403, 500]).toContain(res.response.status);
+      if (res.response.status === 200 && res.data) {
+        expect(res.data).toHaveProperty("id");
+        expect(res.data).toHaveProperty("action");
+      }
     });
+
   });
 
   describe("DELETE /api/providers/:providerId", () => {

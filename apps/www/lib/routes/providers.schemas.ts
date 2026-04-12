@@ -11,6 +11,27 @@ export const FallbackSchema = z
   })
   .openapi("Fallback");
 
+export const ClaudeAliasRouteSchema = z
+  .object({
+    model: z.string(),
+    name: z.string().optional(),
+    description: z.string().optional(),
+    supportedCapabilities: z.array(z.string()).optional(),
+  })
+  .openapi("ClaudeAliasRoute");
+
+export const ClaudeRoutingSchema = z
+  .object({
+    mode: z
+      .enum(["direct_anthropic", "anthropic_compatible_gateway"])
+      .openapi("ClaudeRoutingMode"),
+    opus: ClaudeAliasRouteSchema.optional(),
+    sonnet: ClaudeAliasRouteSchema.optional(),
+    haiku: ClaudeAliasRouteSchema.optional(),
+    subagentModel: z.string().optional(),
+  })
+  .openapi("ClaudeRouting");
+
 export const ProviderOverrideSchema = z
   .object({
     _id: z.string(),
@@ -21,6 +42,7 @@ export const ProviderOverrideSchema = z
     apiKeyEnvVar: z.string().optional(),
     customHeaders: z.record(z.string(), z.string()).optional(),
     fallbacks: z.array(FallbackSchema).optional(),
+    claudeRouting: ClaudeRoutingSchema.optional(),
     enabled: z.boolean(),
     createdAt: z.number(),
     updatedAt: z.number(),
@@ -40,9 +62,24 @@ export const UpsertProviderBody = z
     apiKeyEnvVar: z.string().optional(),
     customHeaders: z.record(z.string(), z.string()).optional(),
     fallbacks: z.array(FallbackSchema).optional(),
+    claudeRouting: ClaudeRoutingSchema.optional(),
     enabled: z.boolean(),
   })
   .openapi("UpsertProviderBody");
+
+export const ProviderOverrideErrorResponse = z
+  .object({
+    code: z.string(),
+    message: z.string(),
+    details: z
+      .object({
+        providerId: z.string(),
+        field: z.string(),
+        reason: z.string(),
+      })
+      .optional(),
+  })
+  .openapi("ProviderOverrideErrorResponse");
 
 export const SuccessResponse = z
   .object({

@@ -68,6 +68,7 @@ async function buildControlPlaneContext(
     apiKeyEnvVar: o.apiKeyEnvVar,
     customHeaders: o.customHeaders,
     fallbacks: o.fallbacks,
+    claudeRouting: o.claudeRouting,
     enabled: o.enabled,
   }));
 

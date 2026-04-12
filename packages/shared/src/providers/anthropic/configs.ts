@@ -2,6 +2,7 @@ import type { AgentConfig, EnvironmentResult } from "../../agentConfig";
 import { ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN } from "../../apiKeys";
 import { checkClaudeRequirements } from "./check-requirements";
 import { startClaudeCompletionDetector } from "./completion-detector";
+import { getClaudeModelFamily, CLAUDE_MODEL_SPECS } from "./models";
 import {
   CLAUDE_KEY_ENV_VARS_TO_UNSET,
   getClaudeEnvironment,
@@ -57,21 +58,20 @@ export function createApplyClaudeApiKeys(): NonNullable<AgentConfig["applyApiKey
   };
 }
 
-// Factory types and implementation
-interface ClaudeModelSpec {
-  nameSuffix: string;
-  modelApiId: string;
-}
+function createClaudeConfig(nameSuffix: string): AgentConfig {
+  const family = getClaudeModelFamily(`claude/${nameSuffix}`);
+  if (!family) {
+    throw new Error(`Unknown Claude model family for ${nameSuffix}`);
+  }
 
-function createClaudeConfig(spec: ClaudeModelSpec): AgentConfig {
   return {
-    name: `claude/${spec.nameSuffix}`,
+    name: `claude/${nameSuffix}`,
     command: "claude",
     args: [
       "--allow-dangerously-skip-permissions",
       "--dangerously-skip-permissions",
       "--model",
-      spec.modelApiId,
+      family,
       "--ide",
       "$PROMPT",
     ],
@@ -83,13 +83,6 @@ function createClaudeConfig(spec: ClaudeModelSpec): AgentConfig {
   };
 }
 
-const CLAUDE_MODEL_SPECS: ClaudeModelSpec[] = [
-  { nameSuffix: "opus-4.6", modelApiId: "claude-opus-4-6" },
-  { nameSuffix: "sonnet-4.6", modelApiId: "claude-sonnet-4-6" },
-  { nameSuffix: "opus-4.5", modelApiId: "claude-opus-4-5-20251101" },
-  { nameSuffix: "sonnet-4.5", modelApiId: "claude-sonnet-4-5-20250929" },
-  { nameSuffix: "haiku-4.5", modelApiId: "claude-haiku-4-5-20251001" },
-];
-
-export const CLAUDE_AGENT_CONFIGS: AgentConfig[] =
-  CLAUDE_MODEL_SPECS.map(createClaudeConfig);
+export const CLAUDE_AGENT_CONFIGS: AgentConfig[] = CLAUDE_MODEL_SPECS.map(
+  (spec) => createClaudeConfig(spec.nameSuffix),
+);

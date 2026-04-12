@@ -18,6 +18,21 @@ import { getPluginLoader } from "./providers/plugin-loader";
 
 export { type ApiFormat, type ProviderSpec };
 
+export interface ClaudeAliasRoute {
+  model: string;
+  name?: string;
+  description?: string;
+  supportedCapabilities?: string[];
+}
+
+export interface ClaudeRoutingConfig {
+  mode: "direct_anthropic" | "anthropic_compatible_gateway";
+  opus?: ClaudeAliasRoute;
+  sonnet?: ClaudeAliasRoute;
+  haiku?: ClaudeAliasRoute;
+  subagentModel?: string;
+}
+
 /**
  * Feature flag for enabling dynamic plugin loading.
  * When true, ProviderRegistry uses the PluginLoader for provider resolution.
@@ -39,6 +54,7 @@ export interface ProviderOverride {
     modelName: string;
     priority: number;
   }>;
+  claudeRouting?: ClaudeRoutingConfig;
   enabled: boolean;
 }
 
@@ -57,7 +73,61 @@ export interface ResolvedProvider {
     modelName: string;
     priority: number;
   }>;
+  claudeRouting?: ClaudeRoutingConfig;
   isOverridden: boolean;
+}
+
+function hasClaudeRouteTarget(route: ClaudeAliasRoute | undefined): boolean {
+  return Boolean(route?.model.trim());
+}
+
+export function validateClaudeRoutingOverride(
+  override: Pick<
+    ProviderOverride,
+    "providerId" | "baseUrl" | "apiFormat" | "claudeRouting"
+  >,
+): void {
+  const routing = override.claudeRouting;
+  if (!routing) {
+    return;
+  }
+
+  if (override.providerId !== "anthropic") {
+    throw new Error("Claude routing is only supported for the anthropic provider");
+  }
+
+  if (override.apiFormat && override.apiFormat !== "anthropic") {
+    throw new Error(
+      "Claude routing requires an anthropic-compatible API format",
+    );
+  }
+
+  const hasAliasTarget =
+    hasClaudeRouteTarget(routing.opus) ||
+    hasClaudeRouteTarget(routing.sonnet) ||
+    hasClaudeRouteTarget(routing.haiku);
+  const hasSubagentModel = Boolean(routing.subagentModel?.trim());
+
+  if (routing.mode === "direct_anthropic") {
+    if (hasAliasTarget || hasSubagentModel) {
+      throw new Error(
+        "direct_anthropic routing cannot define alias remaps or a subagent model",
+      );
+    }
+    return;
+  }
+
+  if (!override.baseUrl?.trim()) {
+    throw new Error(
+      "anthropic_compatible_gateway routing requires a custom baseUrl",
+    );
+  }
+
+  if (!hasAliasTarget && !hasSubagentModel) {
+    throw new Error(
+      "anthropic_compatible_gateway routing must define at least one alias remap or subagent model",
+    );
+  }
 }
 
 /**
@@ -173,6 +243,7 @@ export class ProviderRegistry {
       apiKeys: baseProvider.apiKeys,
       customHeaders: teamOverride.customHeaders,
       fallbacks: teamOverride.fallbacks,
+      claudeRouting: teamOverride.claudeRouting,
       isOverridden: true,
     };
   }
@@ -190,6 +261,7 @@ export class ProviderRegistry {
       apiKeys: [],
       customHeaders: override.customHeaders,
       fallbacks: override.fallbacks,
+      claudeRouting: override.claudeRouting,
       isOverridden: true,
     };
   }

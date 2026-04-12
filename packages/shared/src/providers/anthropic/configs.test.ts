@@ -152,25 +152,25 @@ describe("CLAUDE_AGENT_CONFIGS", () => {
     it("includes opus-4.6 config", () => {
       const config = CLAUDE_AGENT_CONFIGS.find((c) => c.name === "claude/opus-4.6");
       expect(config).toBeDefined();
-      expect(config?.args).toContain("claude-opus-4-6");
+      expect(config?.args).toContain("opus");
     });
 
     it("includes opus-4.5 config", () => {
       const config = CLAUDE_AGENT_CONFIGS.find((c) => c.name === "claude/opus-4.5");
       expect(config).toBeDefined();
-      expect(config?.args).toContain("claude-opus-4-5-20251101");
+      expect(config?.args).toContain("opus");
     });
 
     it("includes sonnet-4.5 config", () => {
       const config = CLAUDE_AGENT_CONFIGS.find((c) => c.name === "claude/sonnet-4.5");
       expect(config).toBeDefined();
-      expect(config?.args).toContain("claude-sonnet-4-5-20250929");
+      expect(config?.args).toContain("sonnet");
     });
 
     it("includes haiku-4.5 config", () => {
       const config = CLAUDE_AGENT_CONFIGS.find((c) => c.name === "claude/haiku-4.5");
       expect(config).toBeDefined();
-      expect(config?.args).toContain("claude-haiku-4-5-20251001");
+      expect(config?.args).toContain("haiku");
     });
   });
 });
