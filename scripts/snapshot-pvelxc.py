@@ -2519,44 +2519,14 @@ async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
 
         {shell_vars}
 
-        package_present=0
-        if dpkg-query -W -f='${{Status}}\\n' "$NOVNC_PACKAGE_NAME" 2>/dev/null | grep -q '^install ok installed$'; then
-            package_present=1
-        fi
+        echo "[upgrade-novnc] Installing managed noVNC $NOVNC_VERSION"
 
-        # Log current state for debugging
-        echo "[upgrade-novnc] Current noVNC state:"
-        echo "[upgrade-novnc]   Directory exists: $([ -d "$NOVNC_DIR" ] && echo yes || echo no)"
-        echo "[upgrade-novnc]   Marker file: $(cat "$MARKER_FILE" 2>/dev/null || echo 'not found')"
-        echo "[upgrade-novnc]   Durable marker: $(cat "$DURABLE_MARKER" 2>/dev/null || echo 'not found')"
-        echo "[upgrade-novnc]   vnc.html exists: $([ -f "$NOVNC_DIR/vnc.html" ] && echo yes || echo no)"
-        echo "[upgrade-novnc]   distro package installed: $([ "$package_present" -eq 1 ] && echo yes || echo no)"
-
-        if [ "$package_present" -eq 1 ]; then
+        if dpkg-query -W -f='${{Status}}\n' "$NOVNC_PACKAGE_NAME" 2>/dev/null | grep -q '^install ok installed$'; then
             echo "[upgrade-novnc] Removing distro package $NOVNC_PACKAGE_NAME to avoid stale version reporting..."
             DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 purge -y "$NOVNC_PACKAGE_NAME"
             DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 autoremove -y
         fi
 
-        package_present=0
-        if dpkg-query -W -f='${{Status}}\\n' "$NOVNC_PACKAGE_NAME" 2>/dev/null | grep -q '^install ok installed$'; then
-            package_present=1
-        fi
-
-        # Check if already upgraded by looking for version marker and package removal state
-        if [ "$package_present" -eq 0 ] \
-            && [ -f "$MARKER_FILE" ] \
-            && grep -qF "$NOVNC_VERSION" "$MARKER_FILE" 2>/dev/null; then
-            if [ -f "$NOVNC_DIR/vnc.html" ] && [ -f "$NOVNC_DIR/core/rfb.js" ]; then
-                install -Dm0644 "$MARKER_FILE" "$DURABLE_MARKER"
-                echo "[upgrade-novnc] Already at $NOVNC_VERSION with distro package removed, skipping"
-                exit 0
-            else
-                echo "[upgrade-novnc] Marker says $NOVNC_VERSION but files missing, re-installing"
-            fi
-        fi
-
-        echo "[upgrade-novnc] Downloading noVNC $NOVNC_VERSION from GitHub..."
         cd /tmp
         rm -rf noVNC-* novnc-*.tar.gz novnc.tar.gz
 
@@ -2600,8 +2570,6 @@ async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
         if grep -q "vnc-clipboard-bridge" "$NOVNC_DIR/vnc.html" 2>/dev/null; then
             HAD_BRIDGE=1
         fi
-
-        echo "[upgrade-novnc] Installing noVNC $NOVNC_VERSION to $NOVNC_DIR..."
 
         OLD_INDEX=""
         if [ -L "$NOVNC_DIR/index.html" ]; then
@@ -3373,13 +3341,13 @@ async def task_package_vscode_extension(ctx: PveTaskContext) -> None:
 
 @registry.task(
     name="install-ide-extensions",
-    deps=("install-openvscode", "install-coder", "install-cmux-code", "package-vscode-extension", "restart-execd-early"),
+    deps=("install-openvscode", "install-coder", "install-cmux-code", "package-vscode-extension", "restart-execd-early", "build-worker-daemon"),
     description="Preinstall language extensions for the IDE",
 )
 @update_registry.task(
     name="install-ide-extensions",
     # Depends on restart-execd-early to ensure the new execd is running before this task
-    deps=("package-vscode-extension", "restart-execd-early"),
+    deps=("package-vscode-extension", "restart-execd-early", "build-worker-daemon"),
     description="Preinstall language extensions for the IDE",
 )
 async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
@@ -4598,12 +4566,12 @@ async def task_cleanup_build_artifacts(ctx: PveTaskContext) -> None:
 
 @registry.task(
     name="verify-novnc-installation",
-    deps=("install-vnc-clipboard-bridge",),
+    deps=("build-cdp-proxy", "install-vnc-clipboard-bridge"),
     description="Verify noVNC 1.7.0-beta is correctly installed with clipboard bridge",
 )
 @update_registry.task(
     name="verify-novnc-installation",
-    deps=("install-vnc-clipboard-bridge",),
+    deps=("build-cdp-proxy", "install-vnc-clipboard-bridge"),
     description="Verify noVNC 1.7.0-beta is correctly installed with clipboard bridge",
 )
 async def task_verify_novnc_installation(ctx: PveTaskContext) -> None:
@@ -5894,8 +5862,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--repo-root",
-        default=".",
-        help="Repository root (default: current directory)",
+        default=str(Path(__file__).resolve().parent.parent),
+        help="Repository root (default: script repo root)",
     )
     parser.add_argument(
         "--results-json",
@@ -6022,11 +5990,17 @@ def main() -> None:
         set_git_diff_mode(False)
 
     # Pre-flight check: validate MCP server script syntax before building snapshot
+    repo_root = Path(args.repo_root).resolve()
     print("[pre-flight] Validating MCP server script syntax...")
     import subprocess
     try:
         result = subprocess.run(
-            ["bun", "test", "packages/shared/src/agent-memory-protocol.test.ts"],
+            [
+                "bun",
+                "test",
+                "./src/agent-memory-protocol.test.ts",
+            ],
+            cwd=str(repo_root / "packages" / "shared"),
             capture_output=True,
             text=True,
             timeout=60,
