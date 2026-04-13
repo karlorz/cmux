@@ -95,6 +95,48 @@ PVE_SNAPSHOT_MANIFEST_PATH = (
 )
 CURRENT_MANIFEST_SCHEMA_VERSION = 2
 
+NOVNC_VERSION = "v1.7.0-beta"
+NOVNC_DIR = "/usr/share/novnc"
+NOVNC_MARKER_FILE = f"{NOVNC_DIR}/.cmux-novnc-version"
+NOVNC_DURABLE_MARKER = "/etc/cmux/novnc-version"
+NOVNC_PACKAGE_NAME = "novnc"
+NOVNC_SOURCE = f"github:noVNC/{NOVNC_VERSION}"
+NOVNC_ARCHIVE_URL = (
+    f"https://github.com/novnc/noVNC/archive/refs/tags/{NOVNC_VERSION}.tar.gz"
+)
+NOVNC_PACKAGE_STATE = "purged"
+
+
+def _build_novnc_shell_vars() -> str:
+    return "\n".join(
+        [
+            f"NOVNC_VERSION={shlex.quote(NOVNC_VERSION)}",
+            f"NOVNC_DIR={shlex.quote(NOVNC_DIR)}",
+            f"MARKER_FILE={shlex.quote(NOVNC_MARKER_FILE)}",
+            f"DURABLE_MARKER={shlex.quote(NOVNC_DURABLE_MARKER)}",
+            f"NOVNC_PACKAGE_NAME={shlex.quote(NOVNC_PACKAGE_NAME)}",
+            f"NOVNC_SOURCE={shlex.quote(NOVNC_SOURCE)}",
+            f"NOVNC_ARCHIVE_URL={shlex.quote(NOVNC_ARCHIVE_URL)}",
+        ]
+    )
+
+
+def _build_novnc_metadata() -> dict[str, str]:
+    return {
+        "novncVersion": NOVNC_VERSION,
+        "novncSource": NOVNC_SOURCE,
+        "novncPackageState": NOVNC_PACKAGE_STATE,
+    }
+
+
+def _build_novnc_description_lines() -> tuple[str, str, str]:
+    metadata = _build_novnc_metadata()
+    return (
+        f"novncVersion: {metadata['novncVersion']}",
+        f"novncSource: {metadata['novncSource']}",
+        f"novncPackageState: {metadata['novncPackageState']}",
+    )
+
 # Default template VMID (should be created via pve-lxc-template.sh)
 DEFAULT_TEMPLATE_VMID = 9000
 
@@ -1476,6 +1518,9 @@ class PveTemplateVersionEntry(t.TypedDict):
     snapshotId: str
     templateVmid: int  # The VMID of the template container
     capturedAt: str
+    novncVersion: t.NotRequired[str]
+    novncSource: t.NotRequired[str]
+    novncPackageState: t.NotRequired[str]
 
 
 class PveTemplatePresetEntry(t.TypedDict):
@@ -1534,6 +1579,7 @@ def _resolve_repo_relative_path(repo_root: Path, path: str) -> Path:
 
 
 def _serialize_template_result(result: TemplateRunResult) -> dict[str, t.Any]:
+    metadata = _build_novnc_metadata()
     return {
         "presetId": result.preset.preset_id,
         "label": result.preset.label,
@@ -1544,6 +1590,7 @@ def _serialize_template_result(result: TemplateRunResult) -> dict[str, t.Any]:
         "vcpus": result.preset.vcpus,
         "memoryMib": result.preset.memory_mib,
         "diskSizeMib": result.preset.disk_size_mib,
+        **metadata,
     }
 
 
@@ -1610,6 +1657,7 @@ def _build_template_description(
         f"presetId: {preset_id}" if preset_id else "presetId: unknown",
         f"capturedAt: {captured_at}",
         f"sourceVmid: {source_vmid}",
+        *_build_novnc_description_lines(),
     ]
     if hostname:
         lines.append(f"hostname: {hostname}")
@@ -1725,6 +1773,7 @@ def _add_version_to_preset(
         "snapshotId": snapshot_id,
         "templateVmid": template_vmid,
         "capturedAt": captured_at,
+        **_build_novnc_metadata(),
     }
     preset_entry["versions"].append(version_entry)
     preset_entry["versions"].sort(key=lambda entry: entry["version"])
@@ -1773,6 +1822,7 @@ def _update_manifest_with_template(
         "snapshotId": snapshot_id,
         "templateVmid": template_vmid,
         "capturedAt": captured_at,
+        **_build_novnc_metadata(),
     }
     preset_entry["versions"].append(version_entry)
     preset_entry["versions"].sort(key=lambda entry: entry["version"])
@@ -2409,7 +2459,7 @@ async def task_install_base_packages(ctx: PveTaskContext) -> None:
             ruby-full perl software-properties-common \
             tigervnc-standalone-server tigervnc-common \
             xvfb \
-            x11-xserver-utils xterm novnc \
+            x11-xserver-utils xterm \
             dbus-x11 openbox xclip xsel parcellite \
             tmux \
             bubblewrap \
@@ -2447,55 +2497,43 @@ async def task_install_base_packages(ctx: PveTaskContext) -> None:
 @registry.task(
     name="upgrade-novnc",
     deps=("install-base-packages",),
-    description="Upgrade noVNC to 1.7.0-beta for improved clipboard sync",
+    description="Install managed noVNC 1.7.0-beta for improved clipboard sync",
 )
 @update_registry.task(
     name="upgrade-novnc",
     deps=(),  # Safe to run anytime in update mode
-    description="Upgrade noVNC to 1.7.0-beta for improved clipboard sync",
+    description="Install managed noVNC 1.7.0-beta for improved clipboard sync",
 )
 async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
     """
-    Upgrade noVNC from Ubuntu's 1.3.0 to GitHub's 1.7.0-beta.
+    Install managed noVNC from GitHub and remove the distro novnc package.
 
     The newer version includes PR #1993 which adds automatic clipboard sync
     between the browser and VNC session, improving clipboard paste reliability.
     See: https://github.com/novnc/noVNC/pull/1993
     """
+    shell_vars = _build_novnc_shell_vars()
     cmd = textwrap.dedent(
-        """
+        f"""
         set -eux
 
-        NOVNC_VERSION="v1.7.0-beta"
-        NOVNC_DIR="/usr/share/novnc"
-        MARKER_FILE="${NOVNC_DIR}/.cmux-novnc-version"
+        {shell_vars}
 
-        # Log current state for debugging
-        echo "[upgrade-novnc] Current noVNC state:"
-        echo "[upgrade-novnc]   Directory exists: $([ -d "$NOVNC_DIR" ] && echo yes || echo no)"
-        echo "[upgrade-novnc]   Marker file: $(cat "$MARKER_FILE" 2>/dev/null || echo 'not found')"
-        echo "[upgrade-novnc]   vnc.html exists: $([ -f "$NOVNC_DIR/vnc.html" ] && echo yes || echo no)"
+        echo "[upgrade-novnc] Installing managed noVNC $NOVNC_VERSION"
 
-        # Check if already upgraded by looking for version marker
-        if [ -f "$MARKER_FILE" ] && grep -qF "$NOVNC_VERSION" "$MARKER_FILE" 2>/dev/null; then
-            # Double-check the actual files exist (marker might be stale)
-            if [ -f "$NOVNC_DIR/vnc.html" ] && [ -f "$NOVNC_DIR/core/rfb.js" ]; then
-                echo "[upgrade-novnc] Already at $NOVNC_VERSION, skipping"
-                exit 0
-            else
-                echo "[upgrade-novnc] Marker says $NOVNC_VERSION but files missing, re-installing"
-            fi
+        if dpkg-query -W -f='${{Status}}\n' "$NOVNC_PACKAGE_NAME" 2>/dev/null | grep -q '^install ok installed$'; then
+            echo "[upgrade-novnc] Removing distro package $NOVNC_PACKAGE_NAME to avoid stale version reporting..."
+            DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 purge -y "$NOVNC_PACKAGE_NAME"
+            DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 autoremove -y
         fi
 
-        echo "[upgrade-novnc] Downloading noVNC $NOVNC_VERSION from GitHub..."
         cd /tmp
         rm -rf noVNC-* novnc-*.tar.gz novnc.tar.gz
 
-        # Download with retries
         for attempt in 1 2 3; do
             echo "[upgrade-novnc] Download attempt $attempt/3..."
             if curl -fsSL --retry 3 --retry-delay 5 \
-                "https://github.com/novnc/noVNC/archive/refs/tags/${NOVNC_VERSION}.tar.gz" \
+                "$NOVNC_ARCHIVE_URL" \
                 -o novnc.tar.gz; then
                 break
             fi
@@ -2506,7 +2544,6 @@ async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
             sleep 5
         done
 
-        # Verify download
         if [ ! -f novnc.tar.gz ] || [ ! -s novnc.tar.gz ]; then
             echo "[upgrade-novnc] ERROR: Downloaded file is missing or empty" >&2
             ls -la novnc.tar.gz 2>/dev/null || true
@@ -2514,7 +2551,6 @@ async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
         fi
         echo "[upgrade-novnc] Downloaded $(stat -c%s novnc.tar.gz 2>/dev/null || echo '?') bytes"
 
-        # Extract
         tar xzf novnc.tar.gz
         EXTRACTED_DIR="$(ls -d noVNC-* 2>/dev/null | head -1)"
 
@@ -2524,60 +2560,52 @@ async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
             exit 1
         fi
 
-        # Verify extracted content has expected files
         if [ ! -f "$EXTRACTED_DIR/vnc.html" ] || [ ! -f "$EXTRACTED_DIR/core/rfb.js" ]; then
             echo "[upgrade-novnc] ERROR: Extracted archive missing expected files" >&2
             ls -la "$EXTRACTED_DIR/" 2>/dev/null || true
             exit 1
         fi
 
-        # Backup original vnc.html if it has our bridge script (will be re-injected later)
         HAD_BRIDGE=0
         if grep -q "vnc-clipboard-bridge" "$NOVNC_DIR/vnc.html" 2>/dev/null; then
             HAD_BRIDGE=1
         fi
 
-        # Replace noVNC installation
-        echo "[upgrade-novnc] Installing noVNC $NOVNC_VERSION to $NOVNC_DIR..."
-
-        # Preserve any custom configuration symlinks
         OLD_INDEX=""
         if [ -L "$NOVNC_DIR/index.html" ]; then
             OLD_INDEX="$(readlink -f "$NOVNC_DIR/index.html" 2>/dev/null || true)"
         fi
 
-        # Clear and replace
-        rm -rf "${NOVNC_DIR:?}"/*
+        install -d "$NOVNC_DIR"
+        rm -rf "${{NOVNC_DIR:?}}"/*
         cp -r "$EXTRACTED_DIR"/* "$NOVNC_DIR/"
 
-        # Re-create vnc.html symlink as index.html if it existed
         if [ -n "$OLD_INDEX" ] && [ -f "$NOVNC_DIR/vnc.html" ]; then
             ln -sf vnc.html "$NOVNC_DIR/index.html"
         fi
 
-        # Write version marker
         echo "$NOVNC_VERSION" > "$MARKER_FILE"
+        install -Dm0644 "$MARKER_FILE" "$DURABLE_MARKER"
 
-        # Some later tasks can replace noVNC files; keep a second marker outside
-        # the noVNC tree so we can restore the in-tree marker if needed.
-        install -Dm0644 "$MARKER_FILE" /etc/cmux/novnc-version
-
-        # Cleanup
         rm -rf /tmp/noVNC-* /tmp/novnc.tar.gz
 
-        # Final verification
         if [ ! -f "$NOVNC_DIR/vnc.html" ] || [ ! -f "$NOVNC_DIR/core/rfb.js" ]; then
             echo "[upgrade-novnc] ERROR: Installation verification failed" >&2
             ls -la "$NOVNC_DIR/" 2>/dev/null || true
             exit 1
         fi
 
+        if dpkg-query -W -f='${{Status}}\\n' "$NOVNC_PACKAGE_NAME" 2>/dev/null | grep -q '^install ok installed$'; then
+            echo "[upgrade-novnc] ERROR: Distro package $NOVNC_PACKAGE_NAME is still installed" >&2
+            exit 1
+        fi
+
         echo "[upgrade-novnc] Successfully installed noVNC $NOVNC_VERSION"
-        echo "[upgrade-novnc] Verified files:"
+        echo "[upgrade-novnc]   source: $NOVNC_SOURCE"
+        echo "[upgrade-novnc]   package state: $NOVNC_PACKAGE_STATE"
         echo "[upgrade-novnc]   vnc.html: $(ls -la "$NOVNC_DIR/vnc.html")"
         echo "[upgrade-novnc]   marker: $(cat "$MARKER_FILE")"
 
-        # Note: vnc-clipboard-bridge will be re-injected by install-vnc-clipboard-bridge task
         if [ "$HAD_BRIDGE" = "1" ]; then
             echo "[upgrade-novnc] Note: clipboard bridge will be re-injected"
         fi
@@ -3313,13 +3341,13 @@ async def task_package_vscode_extension(ctx: PveTaskContext) -> None:
 
 @registry.task(
     name="install-ide-extensions",
-    deps=("install-openvscode", "install-coder", "install-cmux-code", "package-vscode-extension", "restart-execd-early"),
+    deps=("install-openvscode", "install-coder", "install-cmux-code", "package-vscode-extension", "restart-execd-early", "build-worker-daemon"),
     description="Preinstall language extensions for the IDE",
 )
 @update_registry.task(
     name="install-ide-extensions",
     # Depends on restart-execd-early to ensure the new execd is running before this task
-    deps=("package-vscode-extension", "restart-execd-early"),
+    deps=("package-vscode-extension", "restart-execd-early", "build-worker-daemon"),
     description="Preinstall language extensions for the IDE",
 )
 async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
@@ -3830,20 +3858,18 @@ async def task_install_vnc_clipboard_bridge(ctx: PveTaskContext) -> None:
     and injects the text into the VNC session using noVNC's RFB API.
     """
     repo = shlex.quote(ctx.remote_repo_root)
+    shell_vars = _build_novnc_shell_vars()
     cmd = textwrap.dedent(
         f"""
         set -eux
 
-        NOVNC_DIR="/usr/share/novnc"
+        {shell_vars}
         VNC_HTML="$NOVNC_DIR/vnc.html"
         BRIDGE_SCRIPT="{repo}/packages/sandbox/scripts/vnc-clipboard-bridge.js"
-        MARKER_FILE="$NOVNC_DIR/.cmux-novnc-version"
-        DURABLE_MARKER="/etc/cmux/novnc-version"
-        EXPECTED_VERSION="v1.7.0-beta"
 
         ensure_markers() {{
             install -d /etc/cmux
-            printf '%s\n' "$EXPECTED_VERSION" > "$MARKER_FILE"
+            printf '%s\n' "$NOVNC_VERSION" > "$MARKER_FILE"
             install -Dm0644 "$MARKER_FILE" "$DURABLE_MARKER"
         }}
 
@@ -3868,11 +3894,11 @@ async def task_install_vnc_clipboard_bridge(ctx: PveTaskContext) -> None:
         cp "$VNC_HTML" "$VNC_HTML.backup"
 
         # Inject the script before </body> using Python for reliable multiline handling
-        BRIDGE_SCRIPT_PATH="$BRIDGE_SCRIPT" python3 << 'INJECT_SCRIPT'
+        VNC_HTML_PATH="$VNC_HTML" BRIDGE_SCRIPT_PATH="$BRIDGE_SCRIPT" python3 << 'INJECT_SCRIPT'
 import os
 import sys
 
-vnc_html_path = "/usr/share/novnc/vnc.html"
+vnc_html_path = os.environ.get("VNC_HTML_PATH", "/usr/share/novnc/vnc.html")
 bridge_script_path = os.environ["BRIDGE_SCRIPT_PATH"]
 
 with open(bridge_script_path, "r") as f:
@@ -4540,12 +4566,12 @@ async def task_cleanup_build_artifacts(ctx: PveTaskContext) -> None:
 
 @registry.task(
     name="verify-novnc-installation",
-    deps=("install-vnc-clipboard-bridge",),
+    deps=("build-cdp-proxy", "install-vnc-clipboard-bridge"),
     description="Verify noVNC 1.7.0-beta is correctly installed with clipboard bridge",
 )
 @update_registry.task(
     name="verify-novnc-installation",
-    deps=("install-vnc-clipboard-bridge",),
+    deps=("build-cdp-proxy", "install-vnc-clipboard-bridge"),
     description="Verify noVNC 1.7.0-beta is correctly installed with clipboard bridge",
 )
 async def task_verify_novnc_installation(ctx: PveTaskContext) -> None:
@@ -4553,21 +4579,19 @@ async def task_verify_novnc_installation(ctx: PveTaskContext) -> None:
     Final verification that noVNC 1.7.0-beta is correctly installed.
     This task runs after all noVNC-related tasks to catch any issues.
     """
+    shell_vars = _build_novnc_shell_vars()
     cmd = textwrap.dedent(
-        """
+        f"""
         set -eux
 
-        NOVNC_DIR="/usr/share/novnc"
-        MARKER_FILE="${NOVNC_DIR}/.cmux-novnc-version"
-        EXPECTED_VERSION="v1.7.0-beta"
+        {shell_vars}
 
         echo "[verify-novnc] Checking noVNC installation..."
 
-        # Check marker file
         if [ ! -f "$MARKER_FILE" ]; then
-            if [ -f /etc/cmux/novnc-version ]; then
-                echo "[verify-novnc] Restoring missing marker from /etc/cmux/novnc-version"
-                install -Dm0644 /etc/cmux/novnc-version "$MARKER_FILE"
+            if [ -f "$DURABLE_MARKER" ]; then
+                echo "[verify-novnc] Restoring missing marker from $DURABLE_MARKER"
+                install -Dm0644 "$DURABLE_MARKER" "$MARKER_FILE"
             else
                 echo "[verify-novnc] ERROR: Version marker file not found: $MARKER_FILE" >&2
                 echo "[verify-novnc] noVNC upgrade task may not have run" >&2
@@ -4577,14 +4601,13 @@ async def task_verify_novnc_installation(ctx: PveTaskContext) -> None:
         fi
 
         INSTALLED_VERSION="$(cat "$MARKER_FILE")"
-        if [ "$INSTALLED_VERSION" != "$EXPECTED_VERSION" ]; then
+        if [ "$INSTALLED_VERSION" != "$NOVNC_VERSION" ]; then
             echo "[verify-novnc] ERROR: Version mismatch" >&2
-            echo "[verify-novnc]   Expected: $EXPECTED_VERSION" >&2
+            echo "[verify-novnc]   Expected: $NOVNC_VERSION" >&2
             echo "[verify-novnc]   Found: $INSTALLED_VERSION" >&2
             exit 1
         fi
 
-        # Check critical files exist
         if [ ! -f "$NOVNC_DIR/vnc.html" ]; then
             echo "[verify-novnc] ERROR: vnc.html not found" >&2
             exit 1
@@ -4595,13 +4618,19 @@ async def task_verify_novnc_installation(ctx: PveTaskContext) -> None:
             exit 1
         fi
 
-        # Check clipboard bridge is injected
         if ! grep -q "vnc-clipboard-bridge" "$NOVNC_DIR/vnc.html" 2>/dev/null; then
             echo "[verify-novnc] ERROR: Clipboard bridge not found in vnc.html" >&2
             exit 1
         fi
 
-        echo "[verify-novnc] OK: noVNC $EXPECTED_VERSION installed with clipboard bridge"
+        if dpkg-query -W -f='${{Status}}\n' "$NOVNC_PACKAGE_NAME" 2>/dev/null | grep -q '^install ok installed$'; then
+            echo "[verify-novnc] ERROR: Distro package $NOVNC_PACKAGE_NAME is still installed" >&2
+            exit 1
+        fi
+
+        echo "[verify-novnc] OK: noVNC $NOVNC_VERSION installed with clipboard bridge"
+        echo "[verify-novnc]   Source: $NOVNC_SOURCE"
+        echo "[verify-novnc]   Package state: $NOVNC_PACKAGE_STATE"
         echo "[verify-novnc]   Marker: $(cat "$MARKER_FILE")"
         echo "[verify-novnc]   vnc.html: $(stat -c '%s bytes' "$NOVNC_DIR/vnc.html")"
         echo "[verify-novnc]   Bridge: $(grep -c 'vnc-clipboard-bridge' "$NOVNC_DIR/vnc.html") occurrences"
@@ -5116,6 +5145,7 @@ async def update_existing_template(
         "capturedAt": captured_at,
         "node": node,
         "sourceVmid": source_vmid,
+        **_build_novnc_metadata(),
     }
 
 
@@ -5159,10 +5189,31 @@ async def _verify_template_artifacts(
         ("/builtins/build/index.js", "cmux-worker service"),
         ("/usr/local/bin/worker-daemon", "Go worker-daemon (SSH/PTY proxy)"),
         ("/usr/local/bin/cmux-token-init", "Auth token generator script"),
+        (NOVNC_MARKER_FILE, "managed noVNC version marker"),
+        (f"{NOVNC_DIR}/vnc.html", "managed noVNC vnc.html"),
+        (f"{NOVNC_DIR}/core/rfb.js", "managed noVNC core/rfb.js"),
     ])
 
     # Verify artifacts exist
     missing: list[str] = []
+
+    novnc_pkg_cmd = (
+        f"dpkg-query -W -f='${{Status}}\\n' {shlex.quote(NOVNC_PACKAGE_NAME)} 2>/dev/null "
+        "| grep -q '^install ok installed$' && echo installed || echo absent"
+    )
+    try:
+        result = await client.aexec_in_container(vmid, novnc_pkg_cmd, timeout=30, check=False)
+        if result.returncode != 0 or "installed" in result.stdout:
+            missing.append(
+                f"  - distro noVNC package should be absent: {NOVNC_PACKAGE_NAME}"
+            )
+            console.info(f"[verify] MISSING: distro noVNC package removal for {NOVNC_PACKAGE_NAME}")
+        else:
+            console.info(f"[verify] OK: distro noVNC package removed ({NOVNC_PACKAGE_NAME})")
+    except Exception as e:
+        missing.append(f"  - distro noVNC package removal check failed: {e}")
+        console.info(f"[verify] ERROR checking distro noVNC package removal: {e}")
+
     for path, description in artifacts:
         check_cmd = f"test -e {shlex.quote(path)} && echo exists || echo missing"
         try:
@@ -5811,8 +5862,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--repo-root",
-        default=".",
-        help="Repository root (default: current directory)",
+        default=str(Path(__file__).resolve().parent.parent),
+        help="Repository root (default: script repo root)",
     )
     parser.add_argument(
         "--results-json",
@@ -5939,11 +5990,17 @@ def main() -> None:
         set_git_diff_mode(False)
 
     # Pre-flight check: validate MCP server script syntax before building snapshot
+    repo_root = Path(args.repo_root).resolve()
     print("[pre-flight] Validating MCP server script syntax...")
     import subprocess
     try:
         result = subprocess.run(
-            ["bun", "test", "packages/shared/src/agent-memory-protocol.test.ts"],
+            [
+                "bun",
+                "test",
+                "./src/agent-memory-protocol.test.ts",
+            ],
+            cwd=str(repo_root / "packages" / "shared"),
             capture_output=True,
             text=True,
             timeout=60,

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "updatedAt": "2026-04-11T22:52:54Z",
+  "updatedAt": "2026-04-13T16:03:10Z",
   "presets": [
     {
       "presetId": "4vcpu_8gb_32gb",
@@ -69,6 +69,15 @@
           "snapshotId": "snapshot_8ff6caa9",
           "templateVmid": 9091,
           "capturedAt": "2026-04-11T22:52:23Z"
+        },
+        {
+          "version": 102,
+          "snapshotId": "snapshot_8ae8a907",
+          "templateVmid": 9110,
+          "capturedAt": "2026-04-13T16:02:40Z",
+          "novncVersion": "v1.7.0-beta",
+          "novncSource": "github:noVNC/v1.7.0-beta",
+          "novncPackageState": "purged"
         }
       ]
     },
@@ -139,6 +148,15 @@
           "snapshotId": "snapshot_e680e0e5",
           "templateVmid": 9094,
           "capturedAt": "2026-04-11T22:52:54Z"
+        },
+        {
+          "version": 86,
+          "snapshotId": "snapshot_a1af1fd7",
+          "templateVmid": 9111,
+          "capturedAt": "2026-04-13T16:03:10Z",
+          "novncVersion": "v1.7.0-beta",
+          "novncSource": "github:noVNC/v1.7.0-beta",
+          "novncPackageState": "purged"
         }
       ]
     }

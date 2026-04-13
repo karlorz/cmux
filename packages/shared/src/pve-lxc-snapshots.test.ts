@@ -70,6 +70,19 @@ describe("pve lxc snapshots manifest", () => {
     }
   });
 
+  it("tracks canonical noVNC runtime metadata when present", () => {
+    for (const preset of PVE_LXC_SNAPSHOT_PRESETS) {
+      for (const version of preset.versions) {
+        if (!version.novncVersion) {
+          continue;
+        }
+        expect(version.novncVersion).toBeTruthy();
+        expect(version.novncSource).toBeTruthy();
+        expect(version.novncPackageState).toBeTruthy();
+      }
+    }
+  });
+
   it("has required fields for each preset", () => {
     for (const preset of PVE_LXC_SNAPSHOT_PRESETS) {
       expect(preset.presetId).toBeTruthy();

@@ -19,12 +19,18 @@ const presetIdSchema = z
  * Schema v2: Template-based versions for linked-clone support.
  * Each version has a snapshotId and templateVmid (the VMID of the template container).
  */
+const novncMetadataSchema = z.object({
+  novncVersion: z.string(),
+  novncSource: z.string(),
+  novncPackageState: z.string(),
+});
+
 export const pveLxcTemplateVersionSchema = z.object({
   version: z.number().int().positive(),
   snapshotId: z.string().regex(/^snapshot_[a-z0-9]+$/i),
   templateVmid: z.number().int().positive(),
   capturedAt: isoDateStringSchema,
-});
+}).and(novncMetadataSchema.partial());
 
 export const pveLxcTemplatePresetSchema = z
   .object({
