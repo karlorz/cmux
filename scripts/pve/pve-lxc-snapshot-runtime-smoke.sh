@@ -36,6 +36,11 @@ timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 log_dir="logs/pve-lxc-networkd"
 mkdir -p "${log_dir}"
 
+run_novnc_verify() {
+  local id="$1"
+  devsh exec "${id}" "set -euo pipefail; expected_version='v1.7.0-beta'; marker=\$(cat /etc/cmux/novnc-version 2>/dev/null || true); if [[ \"\${marker}\" != \"\${expected_version}\" ]]; then echo \"FAIL: expected /etc/cmux/novnc-version=\${expected_version}, got \${marker:-missing}\" >&2; exit 1; fi; if dpkg-query -W -f='\${Status}\\n' novnc 2>/dev/null | grep -q '^install ok installed$'; then echo 'FAIL: distro novnc package is still installed' >&2; exit 1; fi; if ! grep -q 'vnc-clipboard-bridge' /usr/share/novnc/vnc.html 2>/dev/null; then echo 'FAIL: vnc-clipboard-bridge missing from /usr/share/novnc/vnc.html' >&2; exit 1; fi; curl -I --max-time 5 http://127.0.0.1:39380/vnc.html >/dev/null"
+}
+
 readarray -t snapshot_lines < <(
   python3 - "${results_json}" <<'PY'
 import json
@@ -118,12 +123,27 @@ for line in "${snapshot_lines[@]}"; do
     exit 1
   fi
 
+  if ! run_novnc_verify "${active_id}"; then
+    echo "ERROR: noVNC runtime verification failed for ${active_id} (${snapshot_id})" >&2
+    echo "Diagnostics: ${diag_out}" >&2
+    exit 1
+  fi
+
   echo "Re-checking after 30s (post-boot overwrite detection)..."
   sleep 30
   if ! "${verify}" "${active_id}"; then
     late_diag_out="${log_dir}/diag.runtime.late.${preset}.${snapshot_id}.${active_id}.${timestamp}.txt"
     "${diag}" "${active_id}" "${late_diag_out}" || true
     echo "ERROR: runtime verification regressed after boot for ${active_id} (${snapshot_id})" >&2
+    echo "Diagnostics (early): ${diag_out}" >&2
+    echo "Diagnostics (late): ${late_diag_out}" >&2
+    exit 1
+  fi
+
+  if ! run_novnc_verify "${active_id}"; then
+    late_diag_out="${log_dir}/diag.runtime.late.${preset}.${snapshot_id}.${active_id}.${timestamp}.txt"
+    "${diag}" "${active_id}" "${late_diag_out}" || true
+    echo "ERROR: noVNC runtime verification regressed after boot for ${active_id} (${snapshot_id})" >&2
     echo "Diagnostics (early): ${diag_out}" >&2
     echo "Diagnostics (late): ${late_diag_out}" >&2
     exit 1
