@@ -4130,9 +4130,19 @@ async def task_build_worker(ctx: PveTaskContext) -> None:
             exit 1
           fi
         done
-        tar -xzf path-to-regexp-0.1.12.tgz
+        rm -rf package path-to-regexp
+        tarball="$(ls path-to-regexp-*.tgz | tail -n 1)"
+        if [ -z "$tarball" ] || [ ! -f "$tarball" ]; then
+          echo "path-to-regexp tarball missing after npm pack" >&2
+          exit 1
+        fi
+        tar -xzf "$tarball"
         mv package path-to-regexp
-        rm -f path-to-regexp-0.1.12.tgz
+        rm -f "$tarball"
+        if [ ! -f ./path-to-regexp/package.json ]; then
+          echo "path-to-regexp package.json missing after extraction" >&2
+          exit 1
+        fi
         cd {repo}
         install -d /builtins
         cat <<'JSON' > /builtins/package.json
@@ -4140,6 +4150,10 @@ async def task_build_worker(ctx: PveTaskContext) -> None:
 JSON
         rm -rf /builtins/build
         cp -r ./apps/worker/build /builtins/build
+        if [ ! -f /builtins/build/node_modules/path-to-regexp/package.json ]; then
+          echo "path-to-regexp missing from /builtins/build after copy" >&2
+          exit 1
+        fi
         install -Dm0755 ./apps/worker/wait-for-docker.sh /usr/local/bin/wait-for-docker.sh
         """
     )
@@ -4494,6 +4508,20 @@ async def task_cleanup_build_artifacts(ctx: PveTaskContext) -> None:
             echo "[cleanup-build-artifacts] ERROR: missing /builtins/build/index.js before repo cleanup" >&2
             exit 1
         fi
+        if [ ! -f /builtins/build/node_modules/path-to-regexp/package.json ]; then
+            if [ -f /builtins/build/node_modules/path-to-regexp-0.1.12.tgz ]; then
+                echo "[cleanup-build-artifacts] Recovering unpacked path-to-regexp runtime dependency from tarball"
+                cd /builtins/build/node_modules
+                rm -rf package path-to-regexp
+                tar -xzf path-to-regexp-0.1.12.tgz
+                mv package path-to-regexp
+                rm -f path-to-regexp-0.1.12.tgz
+                cd /
+            else
+                echo "[cleanup-build-artifacts] ERROR: missing unpacked path-to-regexp runtime dependency" >&2
+                exit 1
+            fi
+        fi
         rm -rf {repo}
         rm -f {tar_path}
         if [ -d /usr/local/cargo ]; then
@@ -4741,6 +4769,33 @@ async def task_check_systemd_services(ctx: PveTaskContext) -> None:
         """
     )
     await ctx.run("check-systemd-services", cmd)
+
+
+@registry.task(
+    name="check-worker",
+    deps=("cleanup-build-artifacts",),
+    description="Verify cmux-worker.service is healthy on the PVE-LXC worker port",
+)
+async def task_check_worker(ctx: PveTaskContext) -> None:
+    cmd = textwrap.dedent(
+        """
+        set -euo pipefail
+        for attempt in $(seq 1 30); do
+          if systemctl is-active --quiet cmux-worker.service; then
+            if health="$(curl -fsS http://127.0.0.1:39376/health)"; then
+              printf '%s\n' "$health"
+              exit 0
+            fi
+          fi
+          sleep 2
+        done
+        echo "ERROR: cmux-worker service failed health check on port 39376" >&2
+        systemctl status cmux-worker.service --no-pager || true
+        tail -n 80 /var/log/cmux/worker.log || true
+        exit 1
+        """
+    )
+    await ctx.run("check-worker", cmd)
 
 
 # ---------------------------------------------------------------------------
@@ -5208,6 +5263,7 @@ async def _verify_template_artifacts(
         ("/usr/local/go/bin/go", "Go toolchain"),
         ("/root/.bun/bin/bun", "Bun runtime"),
         ("/builtins/build/index.js", "cmux-worker service"),
+        ("/builtins/build/node_modules/path-to-regexp/package.json", "worker path-to-regexp runtime dependency"),
         ("/usr/local/bin/worker-daemon", "Go worker-daemon (SSH/PTY proxy)"),
         ("/usr/local/bin/cmux-token-init", "Auth token generator script"),
         (NOVNC_MARKER_FILE, "managed noVNC version marker"),
