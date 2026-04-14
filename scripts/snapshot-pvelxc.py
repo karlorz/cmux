@@ -4385,6 +4385,14 @@ async def task_install_systemd_units(ctx: PveTaskContext) -> None:
         f"""
         set -euo pipefail
 
+        # Stop stale services from the base template before replacing unit files.
+        # Otherwise systemd can keep the old worker-daemon process attached to the
+        # cmux-worker.service unit name even after the unit file is overwritten.
+        systemctl stop cmux.target 2>/dev/null || true
+        systemctl stop cmux-worker.service 2>/dev/null || true
+        systemctl stop cmux-worker-daemon.service 2>/dev/null || true
+        systemctl stop cmux-token-generator.service 2>/dev/null || true
+
         install -d /usr/local/lib/cmux
         install -d /etc/cmux
         install -Dm0644 {repo}/configs/systemd/cmux.target /usr/lib/systemd/system/cmux.target
@@ -4393,6 +4401,7 @@ async def task_install_systemd_units(ctx: PveTaskContext) -> None:
         # The Go worker now uses cmux-worker-daemon.service instead
         rm -f /etc/systemd/system/cmux-worker.service
         rm -f /etc/systemd/system/cmux.target.wants/cmux-worker.service
+        rm -f /etc/systemd/system/multi-user.target.wants/cmux-worker.service
         install -Dm0644 {repo}/configs/systemd/cmux-worker.service /usr/lib/systemd/system/cmux-worker.service
         # Override Node.js worker port to 39376 for PVE-LXC (Go worker uses 39377)
         sed -i 's/WORKER_PORT=39377/WORKER_PORT=39376/' /usr/lib/systemd/system/cmux-worker.service
@@ -4441,7 +4450,10 @@ async def task_install_systemd_units(ctx: PveTaskContext) -> None:
         ln -sf /usr/lib/systemd/system/cmux-memory-setup.service /etc/systemd/system/multi-user.target.wants/cmux-memory-setup.service
         ln -sf /usr/lib/systemd/system/cmux-memory-setup.service /etc/systemd/system/swap.target.wants/cmux-memory-setup.service
         {{ systemctl daemon-reload || true; }}
+        {{ systemctl reset-failed cmux-worker.service cmux-worker-daemon.service cmux-token-generator.service || true; }}
         {{ systemctl enable cmux.target || true; }}
+        {{ systemctl start cmux-token-generator.service 2>/dev/null || true; }}
+        {{ systemctl start cmux-worker-daemon.service 2>/dev/null || true; }}
         chown root:root /usr/local
         chown root:root /usr/local/bin
         chmod 0755 /usr/local
