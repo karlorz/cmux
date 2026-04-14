@@ -3643,6 +3643,25 @@ EXPECTED_EXTENSIONS
             resolved_target_platform,
         ) in extension_specs:
             task_label = ext_id.replace(".", "-")
+            expected_spec = f"{ext_id}@{version}"
+            verify_extension_cmd = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                export HOME=/root
+                bin_path="{bin_path}"
+                extensions_dir="{extensions_dir}"
+                user_data_dir="{user_data_dir}"
+                installed="$("${{bin_path}}" --list-extensions --show-versions \
+                  --extensions-dir "${{extensions_dir}}" \
+                  --user-data-dir "${{user_data_dir}}" || true)"
+                if ! printf '%s\\n' "${{installed}}" | grep -Fqx "{expected_spec}"; then
+                  echo "[install-ide-extensions] ERROR: missing expected extension {expected_spec}" >&2
+                  printf '%s\\n' "${{installed}}" >&2
+                  exit 1
+                fi
+                echo "[install-ide-extensions] verified {expected_spec}"
+                """
+            )
             if resolved_target_platform:
                 ctx.console.info(
                     f"[install-marketplace-exts] using {resolved_target_platform} asset "
@@ -3664,7 +3683,21 @@ EXPECTED_EXTENSIONS
                     )
                     break
                 except Exception as exc:
-                    if attempt >= 3 or not is_transient_http_exec_error(exc):
+                    if is_http_exec_transport_failure(exc):
+                        try:
+                            await ctx.run(
+                                f"verify-ext-{task_label}",
+                                verify_extension_cmd,
+                                timeout=60 * 2,
+                            )
+                            break
+                        except Exception as verify_exc:
+                            if not is_http_exec_transport_failure(verify_exc):
+                                raise verify_exc from exc
+                    if attempt >= 3 or not (
+                        is_transient_http_exec_error(exc)
+                        or is_http_exec_transport_failure(exc)
+                    ):
                         raise
                     delay = float(attempt * 5)
                     ctx.console.info(
