@@ -4509,15 +4509,17 @@ async def task_cleanup_build_artifacts(ctx: PveTaskContext) -> None:
             exit 1
         fi
         if [ ! -f /builtins/build/node_modules/path-to-regexp/package.json ]; then
-            if [ -f /builtins/build/node_modules/path-to-regexp-0.1.12.tgz ]; then
+            cd /builtins/build/node_modules
+            tarball="$(ls path-to-regexp-*.tgz 2>/dev/null | tail -n 1)"
+            if [ -n "$tarball" ] && [ -f "$tarball" ]; then
                 echo "[cleanup-build-artifacts] Recovering unpacked path-to-regexp runtime dependency from tarball"
-                cd /builtins/build/node_modules
                 rm -rf package path-to-regexp
-                tar -xzf path-to-regexp-0.1.12.tgz
+                tar -xzf "$tarball"
                 mv package path-to-regexp
-                rm -f path-to-regexp-0.1.12.tgz
+                rm -f "$tarball"
                 cd /
             else
+                cd /
                 echo "[cleanup-build-artifacts] ERROR: missing unpacked path-to-regexp runtime dependency" >&2
                 exit 1
             fi
