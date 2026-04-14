@@ -2571,14 +2571,11 @@ async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
     shell_vars = _build_novnc_shell_vars()
     cmd = textwrap.dedent(
         f"""
-        set -eux
+        set -eu
 
         {shell_vars}
 
-        echo "[upgrade-novnc] Installing managed noVNC $NOVNC_VERSION"
-
         if dpkg-query -W -f='${{Status}}\n' "$NOVNC_PACKAGE_NAME" 2>/dev/null | grep -q '^install ok installed$'; then
-            echo "[upgrade-novnc] Removing distro package $NOVNC_PACKAGE_NAME to avoid stale version reporting..."
             DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 purge -y "$NOVNC_PACKAGE_NAME"
             DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 autoremove -y
         fi
@@ -2587,7 +2584,6 @@ async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
         rm -rf noVNC-* novnc-*.tar.gz novnc.tar.gz
 
         for attempt in 1 2 3; do
-            echo "[upgrade-novnc] Download attempt $attempt/3..."
             if curl -fsSL --retry 3 --retry-delay 5 \
                 "$NOVNC_ARCHIVE_URL" \
                 -o novnc.tar.gz; then
@@ -2605,7 +2601,6 @@ async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
             ls -la novnc.tar.gz 2>/dev/null || true
             exit 1
         fi
-        echo "[upgrade-novnc] Downloaded $(stat -c%s novnc.tar.gz 2>/dev/null || echo '?') bytes"
 
         tar xzf novnc.tar.gz
         EXTRACTED_DIR="$(ls -d noVNC-* 2>/dev/null | head -1)"
@@ -2656,15 +2651,26 @@ async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
             exit 1
         fi
 
-        echo "[upgrade-novnc] Successfully installed noVNC $NOVNC_VERSION"
-        echo "[upgrade-novnc]   source: $NOVNC_SOURCE"
-        echo "[upgrade-novnc]   package state: $NOVNC_PACKAGE_STATE"
-        echo "[upgrade-novnc]   vnc.html: $(ls -la "$NOVNC_DIR/vnc.html")"
-        echo "[upgrade-novnc]   marker: $(cat "$MARKER_FILE")"
+        echo "[upgrade-novnc] Installed managed noVNC $NOVNC_VERSION"
 
         if [ "$HAD_BRIDGE" = "1" ]; then
             echo "[upgrade-novnc] Note: clipboard bridge will be re-injected"
         fi
+        """
+    )
+    verify_cmd = textwrap.dedent(
+        f"""
+        set -euo pipefail
+        {shell_vars}
+        [ -f "$MARKER_FILE" ]
+        [ "$(cat "$MARKER_FILE")" = "$NOVNC_VERSION" ]
+        [ -f "$NOVNC_DIR/vnc.html" ]
+        [ -f "$NOVNC_DIR/core/rfb.js" ]
+        if dpkg-query -W -f='${{Status}}\\n' "$NOVNC_PACKAGE_NAME" 2>/dev/null | grep -q '^install ok installed$'; then
+            echo "[upgrade-novnc] ERROR: Distro package $NOVNC_PACKAGE_NAME is still installed" >&2
+            exit 1
+        fi
+        echo "[upgrade-novnc] verified"
         """
     )
     for attempt in range(1, 4):
@@ -2672,6 +2678,13 @@ async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
             await ctx.run("upgrade-novnc", cmd)
             break
         except Exception as exc:
+            if is_http_exec_transport_failure(exc):
+                try:
+                    await ctx.run("verify-upgrade-novnc", verify_cmd)
+                    return
+                except Exception as verify_exc:
+                    if not is_http_exec_transport_failure(verify_exc):
+                        raise verify_exc from exc
             if attempt >= 3 or not (
                 is_transient_http_exec_error(exc)
                 or is_http_exec_transport_failure(exc)
