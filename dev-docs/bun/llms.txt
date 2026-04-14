@@ -1,42 +1,60 @@
 # Bun
 
-Bun is an all-in-one toolkit for JavaScript and TypeScript applications that ships as a single executable. At its core is the Bun runtime, a fast JavaScript runtime designed as a drop-in replacement for Node.js, written in Zig and powered by JavaScriptCore. Bun dramatically reduces startup times and memory usage compared to Node.js, handling roughly 2.5x more HTTP requests per second.
+Bun is an all-in-one JavaScript and TypeScript toolkit that ships as a single executable. At its core is the Bun runtime, a fast JavaScript runtime designed as a drop-in replacement for Node.js, written in Zig and powered by JavaScriptCore for dramatically reduced startup times and memory usage. Bun natively supports TypeScript and JSX without configuration, making it ideal for modern web development.
 
-Beyond the runtime, Bun includes a native bundler, a Jest-compatible test runner, and a Node.js-compatible package manager that's up to 25x faster than npm. TypeScript and JSX are supported out-of-the-box with zero configuration. Bun implements Web APIs like `fetch`, `WebSocket`, and `Response`, along with Node.js APIs for drop-in compatibility with existing projects.
+Beyond the runtime, Bun includes a built-in bundler, test runner, and Node.js-compatible package manager. The package manager is up to 25x faster than npm, while the bundler outperforms esbuild. Bun provides native APIs for HTTP servers, file I/O, SQLite, WebSockets, child processes, and shell scripting, all optimized for performance and developer experience.
 
-## Bun.serve - HTTP Server
+## HTTP Server (Bun.serve)
 
-Create high-performance HTTP servers with built-in routing, WebSocket support, and automatic request handling. Supports static routes, dynamic routes with parameters, and per-HTTP method handlers.
+`Bun.serve` creates a high-performance HTTP server with built-in routing, WebSocket support, and TLS. It can handle approximately 2.5x more requests per second than Node.js on Linux, using the standard Web API Request and Response objects.
 
 ```typescript
+import { Database } from "bun:sqlite";
+
+const db = new Database(":memory:");
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL
+  )
+`);
+
 const server = Bun.serve({
   port: 3000,
+
   routes: {
     // Static response
-    "/api/status": new Response("OK"),
+    "/api/health": new Response("OK"),
 
     // Dynamic route with parameters
-    "/users/:id": (req) => {
-      return Response.json({ userId: req.params.id });
+    "/api/users/:id": (req) => {
+      const user = db.query("SELECT * FROM users WHERE id = ?").get(req.params.id);
+      if (!user) {
+        return Response.json({ error: "User not found" }, { status: 404 });
+      }
+      return Response.json(user);
     },
 
     // Per-method handlers
-    "/api/posts": {
-      GET: () => Response.json({ posts: [] }),
+    "/api/users": {
+      GET: () => {
+        const users = db.query("SELECT * FROM users").all();
+        return Response.json(users);
+      },
       POST: async (req) => {
         const body = await req.json();
-        return Response.json({ created: true, ...body }, { status: 201 });
+        const result = db.query("INSERT INTO users (name, email) VALUES (?, ?) RETURNING *")
+          .get(body.name, body.email);
+        return Response.json(result, { status: 201 });
       },
     },
 
     // Wildcard route
-    "/api/*": Response.json({ message: "Not found" }, { status: 404 }),
-
-    // Serve static file
-    "/favicon.ico": Bun.file("./favicon.ico"),
+    "/api/*": Response.json({ error: "Not found" }, { status: 404 }),
   },
 
-  // Fallback for unmatched routes
+  // Fallback handler for unmatched routes
   fetch(req) {
     return new Response("Not Found", { status: 404 });
   },
@@ -50,199 +68,136 @@ const server = Bun.serve({
 
 console.log(`Server running at ${server.url}`);
 // Server running at http://localhost:3000
-
-// Hot reload routes without restart
-server.reload({
-  routes: {
-    "/api/version": () => Response.json({ version: "2.0.0" }),
-  },
-});
-
-// Graceful shutdown
-await server.stop();
 ```
 
-## Bun.serve WebSocket
+## File I/O (Bun.file, Bun.write)
 
-Server-side WebSocket implementation with pub/sub, compression, and contextual data per connection. 7x more throughput than Node.js + ws.
-
-```typescript
-type WebSocketData = {
-  username: string;
-  joinedAt: number;
-};
-
-const server = Bun.serve({
-  fetch(req, server) {
-    const url = new URL(req.url);
-    if (url.pathname === "/chat") {
-      const username = url.searchParams.get("user") || "anonymous";
-      const success = server.upgrade(req, {
-        data: { username, joinedAt: Date.now() },
-        headers: { "Set-Cookie": "session=abc123" },
-      });
-      return success ? undefined : new Response("Upgrade failed", { status: 500 });
-    }
-    return new Response("Hello");
-  },
-
-  websocket: {
-    // Type ws.data across all handlers
-    data: {} as WebSocketData,
-
-    open(ws) {
-      ws.subscribe("chat-room");
-      server.publish("chat-room", `${ws.data.username} joined`);
-    },
-
-    message(ws, message) {
-      // Broadcast to all subscribers
-      server.publish("chat-room", `${ws.data.username}: ${message}`);
-    },
-
-    close(ws) {
-      ws.unsubscribe("chat-room");
-      server.publish("chat-room", `${ws.data.username} left`);
-    },
-
-    // Configuration
-    idleTimeout: 120,          // seconds
-    maxPayloadLength: 1024 * 1024, // 1 MB
-    perMessageDeflate: true,   // compression
-  },
-});
-
-// Publish from server to all subscribers
-server.publish("chat-room", "Server announcement!");
-```
-
-## Bun.file and Bun.write - File I/O
-
-Optimized file operations using the fastest system calls per platform. BunFile is a lazy-loaded file reference conforming to the Blob interface.
+`Bun.file` creates a lazy-loaded file reference conforming to the Blob interface, while `Bun.write` handles writing data to disk using the fastest available system calls for each platform (copy_file_range on Linux, clonefile on macOS).
 
 ```typescript
-// Reading files - lazy loaded, doesn't read until needed
-const file = Bun.file("data.txt");
-console.log(file.size);  // bytes
-console.log(file.type);  // MIME type
+// Reading files - Bun.file returns a BunFile (extends Blob)
+const file = Bun.file("config.json");
+console.log(file.size);        // number of bytes
+console.log(file.type);        // MIME type: "application/json"
 
-// Multiple read formats
-const text = await file.text();           // string
-const json = await file.json();           // parsed JSON
-const buffer = await file.arrayBuffer();  // ArrayBuffer
-const bytes = await file.bytes();         // Uint8Array
-const stream = file.stream();             // ReadableStream
+// Read contents in various formats
+const text = await file.text();           // as string
+const json = await file.json();           // as parsed JSON
+const buffer = await file.arrayBuffer();  // as ArrayBuffer
+const bytes = await file.bytes();         // as Uint8Array
+const stream = file.stream();             // as ReadableStream
 
-// Check existence
+// Check if file exists
 const exists = await file.exists();  // boolean
 
-// Delete file
-await Bun.file("logs.json").delete();
+// Delete a file
+await Bun.file("temp.txt").delete();
 
-// Writing files - returns bytes written
-await Bun.write("output.txt", "Hello World");
-await Bun.write("data.json", JSON.stringify({ key: "value" }));
-
-// Copy file using optimized system calls
-const input = Bun.file("source.txt");
-await Bun.write("destination.txt", input);
+// Writing files - Bun.write returns bytes written
+await Bun.write("output.txt", "Hello, World!");           // string
+await Bun.write("data.bin", new Uint8Array([1, 2, 3]));   // binary
+await Bun.write("copy.txt", Bun.file("original.txt"));    // copy file
 
 // Write HTTP response body to file
 const response = await fetch("https://example.com");
 await Bun.write("page.html", response);
 
 // Write to stdout
-await Bun.write(Bun.stdout, "Hello stdout\n");
+await Bun.write(Bun.stdout, Bun.file("readme.txt"));
 
 // Incremental writing with FileSink
 const writer = Bun.file("log.txt").writer({ highWaterMark: 1024 * 1024 });
-writer.write("Line 1\n");
-writer.write("Line 2\n");
-writer.flush();  // write buffer to disk
-writer.end();    // flush and close
+writer.write("First line\n");
+writer.write("Second line\n");
+writer.flush();  // flush buffer to disk
+writer.end();    // close the file
+
+// Using node:fs for directory operations
+import { readdir, mkdir } from "node:fs/promises";
+const files = await readdir("./src", { recursive: true });
+await mkdir("./dist/assets", { recursive: true });
 ```
 
-## bun:sqlite - SQLite Database
+## SQLite Database (bun:sqlite)
 
-High-performance synchronous SQLite driver, 3-6x faster than better-sqlite3. Features transactions, prepared statements, and class mapping.
+Bun includes a high-performance SQLite3 driver that is 3-6x faster than better-sqlite3. It provides a synchronous API with prepared statements, transactions, parameter binding, and the ability to map results to class instances.
 
 ```typescript
 import { Database } from "bun:sqlite";
 
-// Create/open database
-const db = new Database("mydb.sqlite");
-const memoryDb = new Database(":memory:");
-const readonlyDb = new Database("mydb.sqlite", { readonly: true });
-
-// Enable strict mode for better error handling
-const strictDb = new Database(":memory:", { strict: true });
+// Create database (use ":memory:" for in-memory, or omit for temp)
+const db = new Database("app.sqlite", { create: true });
 
 // Enable WAL mode for better performance
 db.run("PRAGMA journal_mode = WAL;");
 
-// Create table
+// Create tables
 db.run(`
-  CREATE TABLE IF NOT EXISTS users (
+  CREATE TABLE IF NOT EXISTS posts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    email TEXT UNIQUE,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    title TEXT NOT NULL,
+    content TEXT,
+    published_at TEXT DEFAULT CURRENT_TIMESTAMP
   )
 `);
 
-// Prepared statements (cached and reusable)
-const insertUser = db.query("INSERT INTO users (name, email) VALUES ($name, $email)");
-const result = insertUser.run({ $name: "Alice", $email: "alice@example.com" });
-console.log(result.lastInsertRowid);  // 1
-console.log(result.changes);          // 1
+// Prepared statements with caching via db.query()
+const insertPost = db.query("INSERT INTO posts (title, content) VALUES ($title, $content) RETURNING *");
+const getPost = db.query("SELECT * FROM posts WHERE id = ?");
+const getAllPosts = db.query("SELECT * FROM posts ORDER BY published_at DESC");
 
-// Query methods
-const allUsers = db.query("SELECT * FROM users").all();          // array of objects
-const oneUser = db.query("SELECT * FROM users WHERE id = ?").get(1);  // single object or undefined
-const values = db.query("SELECT name, email FROM users").values(); // array of arrays
+// Execute queries
+const newPost = insertPost.get({ $title: "Hello World", $content: "My first post" });
+console.log(newPost);  // { id: 1, title: "Hello World", ... }
 
-// Iterate large result sets
-for (const row of db.query("SELECT * FROM users").iterate()) {
-  console.log(row.name);
+const post = getPost.get(1);      // single row or undefined
+const posts = getAllPosts.all();  // array of all rows
+
+// Use .run() for writes that don't return data
+const result = db.run("UPDATE posts SET title = ? WHERE id = ?", ["Updated Title", 1]);
+console.log(result.changes);        // number of affected rows
+console.log(result.lastInsertRowid); // last inserted row ID
+
+// Iterate over large result sets
+for (const row of db.query("SELECT * FROM posts").iterate()) {
+  console.log(row.title);
 }
 
 // Map results to class instances
-class User {
+class Post {
   id: number;
-  name: string;
-  get displayName() {
-    return `User: ${this.name}`;
+  title: string;
+  content: string;
+
+  get preview() {
+    return this.content?.slice(0, 100) + "...";
   }
 }
-const users = db.query("SELECT * FROM users").as(User).all();
-console.log(users[0].displayName);  // "User: Alice"
 
-// Transactions (atomic, auto-rollback on error)
-const insertMany = db.transaction((users) => {
-  for (const user of users) {
-    insertUser.run(user);
+const typedPosts = db.query("SELECT * FROM posts").as(Post).all();
+console.log(typedPosts[0].preview);  // uses getter
+
+// Transactions
+const insertMany = db.transaction((items: { title: string; content: string }[]) => {
+  for (const item of items) {
+    insertPost.run(item);
   }
-  return users.length;
+  return items.length;
 });
 
 const count = insertMany([
-  { $name: "Bob", $email: "bob@example.com" },
-  { $name: "Carol", $email: "carol@example.com" },
+  { $title: "Post 1", $content: "Content 1" },
+  { $title: "Post 2", $content: "Content 2" },
 ]);
-console.log(`Inserted ${count} users`);
-
-// Transaction modes
-insertMany.deferred(users);   // BEGIN DEFERRED
-insertMany.immediate(users);  // BEGIN IMMEDIATE
-insertMany.exclusive(users);  // BEGIN EXCLUSIVE
+// Automatically commits on success, rolls back on error
 
 // Close database
 db.close();
 ```
 
-## Bun.build - Bundler
+## Bundler (Bun.build)
 
-Fast native bundler for JavaScript, TypeScript, and JSX with tree-shaking, code splitting, and multiple output formats.
+Bun's bundler transforms JavaScript, TypeScript, and JSX into optimized bundles for browser, Bun, or Node.js targets. It supports code splitting, tree shaking, minification, sourcemaps, and plugins with an API compatible with esbuild.
 
 ```typescript
 // Basic bundling
@@ -253,250 +208,347 @@ const result = await Bun.build({
 
 if (!result.success) {
   console.error("Build failed:", result.logs);
+  process.exit(1);
 }
 
 // Full configuration
-await Bun.build({
-  entrypoints: ["./src/index.tsx", "./src/worker.ts"],
+const build = await Bun.build({
+  entrypoints: ["./src/app.tsx", "./src/worker.ts"],
   outdir: "./dist",
   target: "browser",     // "browser" | "bun" | "node"
   format: "esm",         // "esm" | "cjs" | "iife"
   splitting: true,       // enable code splitting
-  minify: true,          // or { whitespace: true, syntax: true, identifiers: true }
+  minify: true,          // minify output
   sourcemap: "linked",   // "none" | "linked" | "inline" | "external"
 
-  // External packages (not bundled)
-  external: ["react", "react-dom"],
-
-  // Or mark all packages external
-  packages: "external",
-
-  // Environment variable handling
-  env: "inline",         // or "PUBLIC_*" for prefix matching
+  // Environment variables
+  env: "inline",         // inline all env vars
+  // env: "PUBLIC_*",    // only inline vars starting with PUBLIC_
 
   // Define compile-time constants
   define: {
-    "process.env.NODE_ENV": JSON.stringify("production"),
+    "process.env.API_URL": JSON.stringify("https://api.example.com"),
+    "DEBUG": "false",
   },
 
-  // Custom file loaders
-  loader: {
-    ".png": "dataurl",
-    ".txt": "file",
-  },
+  // External packages (don't bundle)
+  external: ["react", "react-dom"],
+  // packages: "external",  // mark all packages as external
 
-  // Output naming with tokens
+  // Custom naming
   naming: {
     entry: "[dir]/[name]-[hash].[ext]",
     chunk: "chunks/[name]-[hash].[ext]",
     asset: "assets/[name]-[hash].[ext]",
   },
 
-  // JSX configuration
-  jsx: {
-    runtime: "automatic",
-    importSource: "react",
+  // Custom loaders
+  loader: {
+    ".png": "dataurl",
+    ".svg": "text",
   },
 
-  // Banner/footer for output
+  // Add banner/footer
   banner: '"use client";',
   footer: "// Built with Bun",
 
-  // Remove console/debugger
+  // Drop console/debugger
   drop: ["console", "debugger"],
 
-  // Generate build metadata
+  // Generate metafile for bundle analysis
   metafile: true,
 });
 
-// Access build outputs
-for (const output of result.outputs) {
-  console.log(output.path);    // absolute path
-  console.log(output.kind);    // "entry-point" | "chunk" | "asset" | "sourcemap"
-  const content = await output.text();  // file contents
+// Access build artifacts
+for (const output of build.outputs) {
+  console.log(output.path);   // absolute path
+  console.log(output.kind);   // "entry-point" | "chunk" | "asset"
+  console.log(output.hash);   // content hash
+
+  // Artifacts are Blobs
+  const content = await output.text();
+
+  // Serve directly
+  new Response(output);  // Content-Type header auto-set
+}
+
+// Analyze bundle
+if (build.metafile) {
+  for (const [path, meta] of Object.entries(build.metafile.outputs)) {
+    console.log(`${path}: ${meta.bytes} bytes`);
+  }
 }
 
 // CLI equivalent
-// bun build ./src/index.tsx --outdir ./dist --minify --splitting --sourcemap=linked
+// bun build ./src/app.tsx --outdir ./dist --minify --splitting --sourcemap=linked
 ```
 
-## $ Shell - Cross-Platform Shell Scripting
+## Test Runner (bun:test)
 
-Bash-like shell with JavaScript interop, automatic escaping, and cross-platform support for Windows, Linux, and macOS.
-
-```typescript
-import { $ } from "bun";
-
-// Basic commands
-await $`echo "Hello World!"`;  // prints to stdout
-
-// Capture output
-const result = await $`echo "Hello"`.text();  // "Hello\n"
-const json = await $`echo '{"a":1}'`.json();  // { a: 1 }
-const lines = await $`cat file.txt`.lines();  // async iterator
-
-// Quiet mode (no stdout)
-await $`npm install`.quiet();
-
-// Error handling
-try {
-  await $`command-that-fails`.text();
-} catch (err) {
-  console.log(err.exitCode);
-  console.log(err.stderr.toString());
-}
-
-// Disable throwing on non-zero exit
-const { exitCode, stdout } = await $`maybe-fails`.nothrow().quiet();
-if (exitCode !== 0) {
-  console.log("Command failed");
-}
-
-// Piping
-await $`cat file.txt | grep "pattern" | wc -l`;
-
-// Redirection
-await $`echo "data" > output.txt`;       // stdout to file
-await $`cat < input.txt`;                // file to stdin
-await $`command 2> errors.txt`;          // stderr to file
-await $`command &> all.txt`;             // both to file
-
-// JavaScript interop - use Response, Buffer, etc.
-const response = await fetch("https://example.com");
-await $`cat < ${response} | wc -c`;
-
-const buffer = Buffer.alloc(100);
-await $`echo "Hello" > ${buffer}`;
-
-// Environment variables
-await $`FOO=bar bun -e 'console.log(process.env.FOO)'`;
-$.env({ NODE_ENV: "production" });  // set globally
-await $`echo $NODE_ENV`.env({ NODE_ENV: "test" });  // override locally
-
-// Working directory
-await $`pwd`.cwd("/tmp");  // /tmp
-$.cwd("/app");             // set globally
-
-// Safe interpolation (auto-escaped)
-const userInput = "file.txt; rm -rf /";
-await $`ls ${userInput}`;  // treats as single argument, safe!
-
-// Builtin commands (cross-platform)
-await $`ls -la`;
-await $`rm -rf ./temp`;
-await $`mkdir -p ./nested/dir`;
-await $`cat file.txt`;
-await $`pwd`;
-```
-
-## bun:test - Test Runner
-
-Jest-compatible test runner with async support, mocking, snapshots, and code coverage. Run with `bun test`.
+Bun includes a Jest-compatible test runner with TypeScript support, lifecycle hooks, mocking, snapshot testing, and watch mode. It runs tests significantly faster than Jest by using the Bun runtime.
 
 ```typescript
-import { test, expect, describe, beforeEach, afterEach, mock, spyOn } from "bun:test";
+import { test, expect, describe, beforeAll, afterEach, mock, spyOn } from "bun:test";
 
 // Basic test
-test("addition works", () => {
+test("arithmetic", () => {
   expect(2 + 2).toBe(4);
+  expect([1, 2, 3]).toContain(2);
+  expect({ a: 1 }).toEqual({ a: 1 });
+  expect(() => { throw new Error("oops") }).toThrow("oops");
 });
 
 // Async test
-test("fetch works", async () => {
-  const response = await fetch("https://example.com");
+test("fetch data", async () => {
+  const response = await fetch("https://api.example.com/data");
   expect(response.ok).toBe(true);
+
+  const data = await response.json();
+  expect(data).toHaveProperty("id");
 });
 
-// Test groups
-describe("User API", () => {
-  let db;
+// Test groups with lifecycle hooks
+describe("UserService", () => {
+  let db: Database;
 
-  beforeEach(() => {
-    db = createTestDb();
+  beforeAll(() => {
+    db = new Database(":memory:");
+    db.run("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)");
   });
 
   afterEach(() => {
-    db.close();
+    db.run("DELETE FROM users");
   });
 
-  test("creates user", async () => {
-    const user = await db.createUser({ name: "Alice" });
-    expect(user.id).toBeDefined();
+  test("creates user", () => {
+    db.run("INSERT INTO users (name) VALUES (?)", ["Alice"]);
+    const user = db.query("SELECT * FROM users WHERE name = ?").get("Alice");
+    expect(user).toBeDefined();
     expect(user.name).toBe("Alice");
-  });
-
-  test("validates email", () => {
-    expect(() => db.createUser({ email: "invalid" })).toThrow("Invalid email");
   });
 });
 
-// Test modifiers
-test.skip("not ready yet", () => {});
-test.todo("implement later", () => {});
-test.only("run only this", () => {});  // use with `bun test --only`
+// Mocking functions
+const mockFn = mock((x: number) => x * 2);
+mockFn(5);
+mockFn(10);
 
-// Conditional tests
-test.if(process.platform === "darwin")("macOS only", () => {});
-test.skipIf(process.platform === "win32")("skip on Windows", () => {});
+expect(mockFn).toHaveBeenCalledTimes(2);
+expect(mockFn).toHaveBeenCalledWith(5);
+expect(mockFn.mock.results[0].value).toBe(10);
 
-// Timeout (default 5000ms)
+// Spying on methods
+const obj = {
+  method: (x: number) => x + 1,
+};
+
+const spy = spyOn(obj, "method");
+obj.method(5);
+
+expect(spy).toHaveBeenCalled();
+expect(spy).toHaveBeenCalledWith(5);
+
+// Snapshot testing
+test("component output", () => {
+  const output = { type: "div", children: ["Hello"] };
+  expect(output).toMatchSnapshot();
+});
+
+// Test timeouts and options
 test("slow operation", async () => {
-  await longRunningTask();
-}, 10000);
+  await Bun.sleep(100);
+}, { timeout: 5000 });
 
-// Retry flaky tests
-test("network call", async () => {
-  const res = await fetch("https://api.example.com");
-  expect(res.ok).toBe(true);
-}, { retry: 3 });
+// Skip and todo tests
+test.skip("not implemented yet", () => {});
+test.todo("add validation");
 
-// Parametrized tests
+// Parameterized tests
 test.each([
-  [1, 2, 3],
+  [1, 1, 2],
   [2, 3, 5],
   [5, 5, 10],
 ])("add(%i, %i) = %i", (a, b, expected) => {
   expect(a + b).toBe(expected);
 });
 
-// Mocking
-const mockFn = mock((x) => x * 2);
-mockFn(5);
-expect(mockFn).toHaveBeenCalledWith(5);
-expect(mockFn).toHaveBeenCalledTimes(1);
-expect(mockFn.mock.results[0].value).toBe(10);
-
-// Spy on methods
-const obj = { method: (x) => x + 1 };
-const spy = spyOn(obj, "method");
-obj.method(5);
-expect(spy).toHaveBeenCalled();
-
-// Matchers
-expect(value).toBe(exact);
-expect(value).toEqual(deepEqual);
-expect(value).toBeTruthy();
-expect(value).toBeFalsy();
-expect(value).toBeNull();
-expect(value).toBeDefined();
-expect(array).toContain(item);
-expect(array).toHaveLength(3);
-expect(string).toMatch(/pattern/);
-expect(obj).toHaveProperty("key", "value");
-expect(num).toBeGreaterThan(5);
-expect(num).toBeCloseTo(0.3, 5);
-expect(fn).toThrow("error message");
-await expect(asyncFn()).resolves.toBe(value);
-await expect(asyncFn()).rejects.toThrow();
-
-// Snapshots
-expect(data).toMatchSnapshot();
-expect(data).toMatchInlineSnapshot(`{ "key": "value" }`);
+// Run tests: bun test
+// Watch mode: bun test --watch
+// Coverage: bun test --coverage
+// Update snapshots: bun test --update-snapshots
 ```
 
-## bun install - Package Manager
+## Shell Scripting ($)
 
-Node.js-compatible package manager, up to 25x faster than npm with hardlinks, global cache, and workspace support.
+Bun Shell provides a cross-platform bash-like shell with JavaScript interop. It supports pipes, redirection, environment variables, and globs, with automatic input escaping to prevent injection attacks.
+
+```typescript
+import { $ } from "bun";
+
+// Basic commands
+await $`echo "Hello, World!"`;           // prints: Hello, World!
+await $`ls -la`;                          // list files
+
+// Capture output
+const result = await $`echo "Hello"`.text();
+console.log(result);  // "Hello\n"
+
+const files = await $`ls`.lines();
+for (const file of files) {
+  console.log(file);
+}
+
+// JSON output
+const pkg = await $`cat package.json`.json();
+console.log(pkg.name);
+
+// Quiet mode (no stdout)
+await $`npm install`.quiet();
+
+// String interpolation (automatically escaped for safety)
+const filename = "my file.txt";
+await $`cat ${filename}`;  // safely handles spaces
+
+const userInput = "foo; rm -rf /";  // malicious input
+await $`echo ${userInput}`;  // safely prints: foo; rm -rf /
+
+// Piping
+const count = await $`cat file.txt | wc -l`.text();
+await $`echo "data" | gzip > file.gz`;
+
+// Redirection
+await $`echo "log entry" >> app.log`;       // append to file
+await $`cat < input.txt > output.txt`;      // redirect stdin/stdout
+await $`command 2>&1`;                      // redirect stderr to stdout
+
+// JavaScript objects as stdin
+const response = await fetch("https://example.com");
+await $`cat < ${response} | wc -c`;
+
+const buffer = Buffer.from("Hello");
+await $`cat < ${buffer}`;
+
+// Environment variables
+await $`FOO=bar bun -e 'console.log(process.env.FOO)'`;
+
+// Change working directory
+await $`pwd`.cwd("/tmp");  // prints: /tmp
+
+// Set environment for command
+await $`printenv HOME`.env({ HOME: "/custom/home" });
+
+// Error handling
+try {
+  await $`exit 1`;
+} catch (err) {
+  console.log(err.exitCode);     // 1
+  console.log(err.stderr.toString());
+}
+
+// Don't throw on non-zero exit
+const { exitCode, stdout, stderr } = await $`maybe-fail`.nothrow().quiet();
+if (exitCode !== 0) {
+  console.log("Command failed:", stderr.toString());
+}
+
+// Command substitution
+await $`echo "Current commit: $(git rev-parse HEAD)"`;
+
+// Brace expansion
+const patterns = $.braces("file{1,2,3}.txt");
+// => ["file1.txt", "file2.txt", "file3.txt"]
+```
+
+## Child Processes (Bun.spawn)
+
+`Bun.spawn` creates child processes with support for stdin/stdout/stderr piping, IPC communication, timeouts, and resource usage tracking. It's 60% faster than Node.js child_process for spawning processes.
+
+```typescript
+// Basic usage
+const proc = Bun.spawn(["echo", "Hello, World!"]);
+await proc.exited;  // wait for completion
+console.log(proc.exitCode);  // 0
+
+// Read stdout
+const proc2 = Bun.spawn(["bun", "--version"]);
+const output = await proc2.stdout.text();
+console.log(output);  // "1.x.x\n"
+
+// Configure stdin/stdout/stderr
+const proc3 = Bun.spawn(["cat"], {
+  stdin: "pipe",                    // writable stream
+  stdout: "pipe",                   // readable stream (default)
+  stderr: "inherit",                // inherit from parent
+  cwd: "./subdir",                  // working directory
+  env: { ...process.env, DEBUG: "true" },
+});
+
+// Write to stdin
+proc3.stdin.write("Hello ");
+proc3.stdin.write("World!");
+proc3.stdin.end();
+
+const catOutput = await proc3.stdout.text();  // "Hello World!"
+
+// Use Response/Blob as stdin
+const response = await fetch("https://example.com");
+const proc4 = Bun.spawn(["wc", "-c"], {
+  stdin: response,  // pipe response body to stdin
+});
+const byteCount = await proc4.stdout.text();
+
+// Exit handling with callback
+Bun.spawn(["sleep", "1"], {
+  onExit(proc, exitCode, signalCode, error) {
+    console.log(`Process exited with code ${exitCode}`);
+  },
+});
+
+// Kill a process
+const longRunning = Bun.spawn(["sleep", "100"]);
+longRunning.kill();           // SIGTERM
+longRunning.kill("SIGKILL");  // force kill
+
+// Timeout
+const proc5 = Bun.spawn({
+  cmd: ["sleep", "10"],
+  timeout: 5000,  // kill after 5 seconds
+  killSignal: "SIGKILL",
+});
+
+// IPC between Bun processes
+// parent.ts
+const child = Bun.spawn(["bun", "child.ts"], {
+  ipc(message, childProc) {
+    console.log("From child:", message);
+    childProc.send({ reply: "Hello from parent" });
+  },
+});
+child.send({ greeting: "Hello from parent" });
+
+// child.ts
+process.on("message", (msg) => {
+  console.log("From parent:", msg);
+  process.send({ response: "Got it!" });
+});
+
+// Synchronous spawn
+const result = Bun.spawnSync(["echo", "Hello"]);
+console.log(result.stdout.toString());  // "Hello\n"
+console.log(result.success);            // true
+console.log(result.exitCode);           // 0
+
+// Resource usage
+const proc6 = Bun.spawn(["bun", "heavy-script.ts"]);
+await proc6.exited;
+const usage = proc6.resourceUsage();
+console.log(`Max memory: ${usage.maxRSS} bytes`);
+console.log(`CPU time: ${usage.cpuTime.total} µs`);
+```
+
+## Package Manager (bun install)
+
+Bun's package manager is a drop-in replacement for npm, yarn, and pnpm, up to 25x faster. It supports workspaces, lockfiles, lifecycle scripts, and automatic pnpm migration.
 
 ```bash
 # Install all dependencies
@@ -504,50 +556,58 @@ bun install
 
 # Add packages
 bun add react react-dom
-bun add -d typescript @types/react  # dev dependency
-bun add -o sharp                    # optional dependency
+bun add -d typescript @types/react   # dev dependency
+bun add -g cowsay                    # global install
 
 # Install specific versions
-bun add react@18.2.0
+bun add lodash@4.17.21
 bun add react@latest
-
-# Global packages
-bun add -g typescript
 
 # Remove packages
 bun remove lodash
 
 # Update packages
-bun update
-bun update react
-
-# Check outdated
-bun outdated
+bun update           # update all
+bun update react     # update specific package
 
 # Production install (no devDependencies)
 bun install --production
 
-# CI mode - fail if lockfile out of sync
-bun ci  # or bun install --frozen-lockfile
+# Frozen lockfile for CI
+bun install --frozen-lockfile
+# or
+bun ci
 
-# Generate yarn.lock for compatibility
-bun install --yarn
+# Check for outdated packages
+bun outdated
+
+# Workspaces
+bun install --filter './packages/api'    # install for specific workspace
+bun install --filter '!pkg-c'            # exclude workspace
+
+# Run scripts
+bun run build        # run "build" script from package.json
+bun run dev --watch  # pass flags to script
+
+# Execute packages
+bunx cowsay "Hello"  # run package without installing
+bunx create-next-app my-app
 ```
 
 ```json
-// package.json - workspace configuration
+// package.json configuration
 {
-  "name": "my-monorepo",
-  "workspaces": ["packages/*", "apps/*"],
-  "trustedDependencies": ["esbuild", "sharp"],
+  "name": "my-app",
+  "workspaces": ["packages/*"],
+  "trustedDependencies": ["esbuild"],  // allow lifecycle scripts
   "overrides": {
-    "lodash": "4.17.21"
+    "lodash": "4.17.21"  // force version for all deps
   }
 }
 ```
 
 ```toml
-# bunfig.toml - configuration
+# bunfig.toml configuration
 [install]
 optional = true
 dev = true
@@ -555,182 +615,207 @@ peer = true
 frozenLockfile = false
 
 [install.scopes]
-"@mycompany" = "https://npm.mycompany.com"
+"@myorg" = { url = "https://npm.myorg.com/", token = "$NPM_TOKEN" }
 ```
 
-## Bun.spawn - Child Processes
+## WebSocket Server
 
-Spawn and manage child processes with streaming I/O and IPC support.
+Bun.serve includes built-in WebSocket support with pub/sub messaging, compression, and per-connection context data. It can handle millions of concurrent connections efficiently.
 
 ```typescript
-// Simple execution
-const proc = Bun.spawn(["echo", "Hello World"]);
-await proc.exited;  // wait for completion
-console.log(proc.exitCode);
+const server = Bun.serve({
+  port: 3000,
 
-// Capture output
-const proc = Bun.spawn(["ls", "-la"], {
-  cwd: "/tmp",
-  env: { ...process.env, FOO: "bar" },
-  stdout: "pipe",
-  stderr: "pipe",
-});
+  fetch(req, server) {
+    const url = new URL(req.url);
 
-const output = await new Response(proc.stdout).text();
-console.log(output);
+    if (url.pathname === "/chat") {
+      // Upgrade HTTP to WebSocket
+      const username = url.searchParams.get("user") || "anonymous";
+      const upgraded = server.upgrade(req, {
+        data: { username, joinedAt: Date.now() },
+      });
 
-// Stream stdin
-const proc = Bun.spawn(["cat"], {
-  stdin: "pipe",
-  stdout: "pipe",
-});
-proc.stdin.write("Hello ");
-proc.stdin.write("World");
-proc.stdin.end();
-const result = await new Response(proc.stdout).text();
+      if (!upgraded) {
+        return new Response("WebSocket upgrade failed", { status: 400 });
+      }
+      return;  // Don't return a Response after upgrade
+    }
 
-// Synchronous execution
-const result = Bun.spawnSync(["echo", "Hello"]);
-console.log(result.stdout.toString());  // "Hello\n"
-console.log(result.exitCode);           // 0
+    return new Response("Hello");
+  },
 
-// IPC communication
-const child = Bun.spawn(["bun", "child.ts"], {
-  ipc(message) {
-    console.log("From child:", message);
+  websocket: {
+    // Max message size (default: 16MB)
+    maxPayloadLength: 1024 * 1024,
+
+    // Compression
+    perMessageDeflate: true,
+
+    // Idle timeout in seconds
+    idleTimeout: 120,
+
+    open(ws) {
+      console.log(`${ws.data.username} connected`);
+      ws.subscribe("chat");  // subscribe to topic
+      server.publish("chat", JSON.stringify({
+        type: "join",
+        user: ws.data.username,
+      }));
+    },
+
+    message(ws, message) {
+      // message is string or Buffer
+      const text = typeof message === "string" ? message : message.toString();
+
+      // Broadcast to all subscribers
+      server.publish("chat", JSON.stringify({
+        type: "message",
+        user: ws.data.username,
+        content: text,
+      }));
+    },
+
+    close(ws, code, reason) {
+      console.log(`${ws.data.username} disconnected: ${code}`);
+      ws.unsubscribe("chat");
+      server.publish("chat", JSON.stringify({
+        type: "leave",
+        user: ws.data.username,
+      }));
+    },
   },
 });
-child.send({ type: "ping" });
 
-// In child.ts:
-process.on("message", (msg) => {
-  if (msg.type === "ping") {
-    process.send({ type: "pong" });
-  }
-});
+// Get subscriber count for a topic
+const chatUsers = server.subscriberCount("chat");
+
+// Publish from outside websocket handlers
+server.publish("chat", JSON.stringify({ type: "announcement", text: "Server restart in 5 minutes" }));
+
+console.log(`WebSocket server running on ${server.url}`);
 ```
 
-## Bun.password - Password Hashing
+## Hashing and Passwords
 
-Secure password hashing using Argon2 or bcrypt with automatic salt generation.
+Bun provides fast hashing utilities and secure password hashing using Argon2id (recommended) or bcrypt. The password functions are designed to be resistant to timing attacks.
 
 ```typescript
-// Hash password (Argon2id by default)
-const hash = await Bun.password.hash("my-password");
+// Password hashing with Argon2id (default, recommended)
+const hash = await Bun.password.hash("mypassword");
 // $argon2id$v=19$m=65536,t=2,p=1$...
 
-// Verify password
-const isValid = await Bun.password.verify("my-password", hash);
+const isValid = await Bun.password.verify("mypassword", hash);
 console.log(isValid);  // true
 
-// Use bcrypt
-const bcryptHash = await Bun.password.hash("my-password", {
+// Bcrypt (for compatibility)
+const bcryptHash = await Bun.password.hash("mypassword", {
   algorithm: "bcrypt",
-  cost: 12,  // work factor (default 10)
+  cost: 10,  // work factor
 });
 
-// Argon2 configuration
-const argonHash = await Bun.password.hash("my-password", {
-  algorithm: "argon2id",  // or "argon2i", "argon2d"
-  memoryCost: 65536,      // KB
-  timeCost: 3,            // iterations
-});
+// Fast hashing (non-cryptographic)
+const hash1 = Bun.hash("hello world");           // Wyhash (default)
+const hash2 = Bun.hash("hello world", 12345);    // with seed
+const hash3 = Bun.hash.crc32("hello world");     // CRC32
+const hash4 = Bun.hash.adler32("hello world");   // Adler-32
+const hash5 = Bun.hash.cityHash32("hello");      // CityHash32
+const hash6 = Bun.hash.cityHash64("hello");      // CityHash64
+const hash7 = Bun.hash.murmur32v3("hello");      // MurmurHash3 32-bit
+const hash8 = Bun.hash.murmur64v2("hello");      // MurmurHash2 64-bit
 
-// Sync versions
-const hashSync = Bun.password.hashSync("password");
-const validSync = Bun.password.verifySync("password", hashSync);
-```
+// Cryptographic hashing
+const sha256 = Bun.sha("hello", "sha256");        // Uint8Array
+const sha512 = Bun.sha("hello", "sha512");
+const md5 = Bun.sha("hello", "md5");
 
-## Bun.Glob - Pattern Matching
+// Streaming hash with CryptoHasher
+const hasher = new Bun.CryptoHasher("sha256");
+hasher.update("Hello ");
+hasher.update("World!");
+const digest = hasher.digest("hex");  // "a591a6d40..."
 
-Fast glob pattern matching for file system operations.
-
-```typescript
-const glob = new Bun.Glob("**/*.ts");
-
-// Scan files matching pattern
-for await (const file of glob.scan({ cwd: "./src" })) {
-  console.log(file);  // relative paths
-}
-
-// Scan with options
-for await (const file of glob.scan({
-  cwd: "./src",
-  absolute: true,      // return absolute paths
-  onlyFiles: true,     // exclude directories
-  followSymlinks: false,
-})) {
-  console.log(file);
-}
-
-// Test if string matches pattern
-const glob = new Bun.Glob("*.json");
-console.log(glob.match("package.json"));  // true
-console.log(glob.match("src/data.json")); // false
-
-// Supported patterns:
-// *     - match any characters except /
-// **    - match any characters including /
-// ?     - match single character
-// [abc] - match character class
-// {a,b} - match alternatives
+// Hash a file
+const fileHasher = new Bun.CryptoHasher("sha256");
+fileHasher.update(await Bun.file("large-file.bin").arrayBuffer());
+const fileHash = fileHasher.digest("base64");
 ```
 
 ## Utilities
 
-Various built-in utilities for common operations.
+Bun provides various utility functions for common operations like sleeping, compression, string processing, and stream handling.
 
 ```typescript
 // Sleep
-await Bun.sleep(1000);  // milliseconds
-await Bun.sleepSync(1000);
+await Bun.sleep(1000);        // async sleep for 1 second
+Bun.sleepSync(1000);          // blocking sleep
 
-// Generate UUID
-const uuid = crypto.randomUUID();
+// Timing
+const start = Bun.nanoseconds();  // high-resolution time
+// ... do work ...
+const elapsed = Bun.nanoseconds() - start;
+console.log(`Took ${elapsed / 1e6} ms`);
 
-// Deep equality check
-const isEqual = Bun.deepEquals({ a: 1 }, { a: 1 });  // true
+// UUID generation
+const uuid = Bun.randomUUIDv7();  // time-sortable UUID v7
+const uuid4 = crypto.randomUUID(); // standard UUID v4
 
-// Escape HTML
-const safe = Bun.escapeHTML("<script>alert('xss')</script>");
-// &lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;
-
-// Gzip compression
-const compressed = Bun.gzipSync(Buffer.from("Hello World"));
-const decompressed = Bun.gunzipSync(compressed);
-
-// Deflate compression
-const deflated = Bun.deflateSync(Buffer.from("Hello World"));
-const inflated = Bun.inflateSync(deflated);
-
-// Get Bun version
-console.log(Bun.version);    // "1.0.0"
+// Version info
+console.log(Bun.version);    // "1.x.x"
 console.log(Bun.revision);   // git commit hash
 
-// Detect Bun runtime
-if (typeof Bun !== "undefined") {
-  console.log("Running in Bun");
+// Compression
+const data = "Hello World!".repeat(1000);
+const compressed = Bun.gzipSync(data);
+const decompressed = Bun.gunzipSync(compressed);
+
+const deflated = Bun.deflateSync(data);
+const inflated = Bun.inflateSync(deflated);
+
+// String utilities
+const escaped = Bun.escapeHTML("<script>alert('xss')</script>");
+// "&lt;script&gt;alert('xss')&lt;/script&gt;"
+
+const width = Bun.stringWidth("Hello 👋");  // 8 (accounts for emoji width)
+
+// Deep equality
+const isEqual = Bun.deepEquals({ a: [1, 2] }, { a: [1, 2] });  // true
+
+// Object inspection
+const str = Bun.inspect({ nested: { array: [1, 2, 3] } }, { colors: true, depth: 5 });
+
+// Path/URL conversion
+const path = Bun.fileURLToPath("file:///home/user/file.txt");  // "/home/user/file.txt"
+const url = Bun.pathToFileURL("/home/user/file.txt");          // URL object
+
+// Find executable
+const bunPath = Bun.which("bun");     // "/usr/local/bin/bun"
+const notFound = Bun.which("fake");   // null
+
+// Stream utilities
+const response = await fetch("https://example.com");
+const text = await Bun.readableStreamToText(response.body);
+const buffer = await Bun.readableStreamToArrayBuffer(response.body);
+const blob = await Bun.readableStreamToBlob(response.body);
+const json = await Bun.readableStreamToJSON(response.body);
+
+// Module resolution
+const resolved = Bun.resolveSync("react", "/path/to/project");
+// "/path/to/project/node_modules/react/index.js"
+
+// Glob pattern matching
+const glob = new Bun.Glob("**/*.ts");
+for await (const file of glob.scan({ cwd: "./src" })) {
+  console.log(file);  // "index.ts", "utils/helper.ts", etc.
 }
 
-// Check if file is main entry point
-if (import.meta.main) {
-  console.log("This is the entry point");
-}
-
-// File metadata
-console.log(import.meta.file);  // filename
-console.log(import.meta.dir);   // directory
-console.log(import.meta.path);  // full path
-
-// Resolve path
-const resolved = import.meta.resolve("./module.ts");
-
-// Which - find executable
-const bunPath = Bun.which("bun");  // "/usr/local/bin/bun"
+// Environment variables
+console.log(Bun.env.NODE_ENV);      // "development"
+console.log(Bun.env.DATABASE_URL);  // from .env file
 ```
 
 ## Summary
 
-Bun provides a complete JavaScript/TypeScript development toolkit with exceptional performance. The HTTP server (`Bun.serve`) handles routing, WebSockets, and static files in a single unified API. The SQLite driver (`bun:sqlite`) offers synchronous, high-performance database access with transactions and class mapping. The shell API (`$`) enables cross-platform scripting with JavaScript interop and automatic security escaping.
+Bun provides a comprehensive toolkit for modern JavaScript and TypeScript development, combining a fast runtime, bundler, test runner, and package manager into a single executable. Its key strengths are exceptional performance (often 2-25x faster than alternatives), native TypeScript and JSX support without configuration, and a batteries-included approach with built-in APIs for HTTP servers, WebSockets, SQLite, file I/O, and shell scripting.
 
-For building and testing, `Bun.build` bundles applications with tree-shaking and code splitting, while `bun:test` provides Jest-compatible testing with mocks, snapshots, and coverage. The package manager (`bun install`) dramatically speeds up dependency installation with hardlinks and a global cache. Together, these tools form a cohesive ecosystem for building modern JavaScript applications with minimal configuration and maximum performance.
+The primary use cases include building high-performance web servers and APIs using `Bun.serve` with built-in routing, developing full-stack applications with HTML imports and the bundler, running fast test suites with the Jest-compatible test runner, managing dependencies with the npm-compatible package manager, and automating tasks with the cross-platform shell API. Bun is designed as a drop-in replacement for Node.js, supporting most npm packages and Node.js APIs while providing significant performance improvements. Integration typically requires minimal changes: replace `node` with `bun` in scripts, use `bun install` instead of npm/yarn, and optionally migrate to Bun-native APIs for additional performance gains.

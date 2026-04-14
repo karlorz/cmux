@@ -1551,6 +1551,18 @@ mkdir my-projectcd my-projectnpm init -ynpm install -D parcelmkdir srctouch src/
 
 --------------------------------
 
+### Create Next.js project with TypeScript
+
+Source: https://v3.tailwindcss.com/docs/guides/nextjs
+
+Initialize a new Next.js project with TypeScript and ESLint enabled using Create Next App.
+
+```bash
+npx create-next-app@latest my-project --typescript --eslintcd my-project
+```
+
+--------------------------------
+
 ### Example of unintended class detection in HTML
 
 Source: https://v3.tailwindcss.com/docs/content-configuration
@@ -1563,18 +1575,6 @@ Demonstrates how plain text content can lead to the accidental generation of cla
   retrofitted with state of the art technology and finishes to turn it into
   a beautiful and functional way to entertain your guests all summer long.
 </div>
-```
-
---------------------------------
-
-### Create Next.js project with TypeScript
-
-Source: https://v3.tailwindcss.com/docs/guides/nextjs
-
-Initialize a new Next.js project with TypeScript and ESLint enabled using Create Next App.
-
-```bash
-npx create-next-app@latest my-project --typescript --eslintcd my-project
 ```
 
 --------------------------------
