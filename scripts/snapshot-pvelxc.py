@@ -1293,7 +1293,10 @@ class PveLxcClient:
             return None
 
         if exit_code is None:
-            exit_code = 0
+            stderr_lines.append(
+                "HTTP exec connection error: stream ended without exit event"
+            )
+            exit_code = 125
 
         result = subprocess.CompletedProcess(
             args=command,
@@ -1920,6 +1923,19 @@ class PveTaskContext:
                     timeout=timeout,
                     check=False,  # We handle errors ourselves
                 )
+                if is_http_exec_transport_failure_result(result):
+                    if attempts < max_attempts:
+                        delay = float(min(2**attempts, 8))
+                        failure_message = result.stderr.strip() or (
+                            "HTTP exec transport failed"
+                        )
+                        self.console.info(
+                            f"[{label}] retrying after transport failure "
+                            f"({failure_message}) "
+                            f"(attempt {attempts}/{max_attempts}) in {delay}s"
+                        )
+                        await asyncio.sleep(delay)
+                        continue
                 break
             except subprocess.TimeoutExpired as e:
                 raise TimeoutError(f"Command timed out after {timeout}s") from e
