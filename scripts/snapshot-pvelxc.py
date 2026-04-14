@@ -3233,17 +3233,11 @@ async def task_install_cmux_code(ctx: PveTaskContext) -> None:
         esac
         mkdir -p /app/cmux-code
         url="https://github.com/karlorz/vscode-1/releases/download/v${CODE_RELEASE}/vscode-server-linux-${ARCH}-web.tar.gz"
-        echo "Downloading ${url}..."
         curl -fSL --retry 6 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 600 -o /tmp/cmux-code.tar.gz "${url}" || \
           curl -fSL4 --retry 6 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 600 -o /tmp/cmux-code.tar.gz "${url}"
-        
-        ls -lh /tmp/cmux-code.tar.gz
-        
+
         tar xf /tmp/cmux-code.tar.gz -C /app/cmux-code --strip-components=1
         rm -f /tmp/cmux-code.tar.gz
-
-        echo "Contents of /app/cmux-code:"
-        ls -R /app/cmux-code
 
         mkdir -p /root/.vscode-server-oss/data/User
         cat > /root/.vscode-server-oss/data/User/settings.json << 'EOF'
@@ -3288,10 +3282,21 @@ EOF
         await ctx.push_file(local_script_path, remote_script_path)
         # Note: Don't use 'exec' here - it replaces the shell process which can
         # cause the HTTP exec daemon to think the command completed prematurely
-        await ctx.run(
-            "install-cmux-code",
-            f"chmod +x {remote_script_path} && bash {remote_script_path}",
-        )
+        install_cmd = f"chmod +x {remote_script_path} && bash {remote_script_path}"
+        try:
+            await ctx.run("install-cmux-code", install_cmd)
+        except RuntimeError as exc:
+            if not is_http_exec_transport_failure(exc):
+                raise
+            verify_cmd = textwrap.dedent(
+                """
+                set -euo pipefail
+                test -x /app/cmux-code/bin/code-server-oss
+                test -f /root/.vscode-server-oss/data/User/settings.json
+                echo "[install-cmux-code] verified"
+                """
+            )
+            await ctx.run("verify-install-cmux-code", verify_cmd)
     finally:
         import os
         os.unlink(local_script_path)
