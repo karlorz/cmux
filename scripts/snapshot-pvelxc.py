@@ -3440,10 +3440,25 @@ async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
 
     # Step 1: Install the bundled cmux extension
     cmux_vsix = "/tmp/cmux-vscode-extension.vsix"
+    repo_cmux_vsix_glob = (
+        f"{ctx.remote_repo_root}/packages/vscode-extension/cmux-vscode-extension-*.vsix"
+    )
     install_cmd = textwrap.dedent(
         f"""
         set -eux
         export HOME=/root
+        if ls -d {extensions_dir}/cmux.* 2>/dev/null; then
+            echo "[install-ide-extensions] cmux extension already present"
+            exit 0
+        fi
+        if [ ! -f {cmux_vsix} ]; then
+            latest_vsix="$(ls -1t {repo_cmux_vsix_glob} 2>/dev/null | head -n 1)"
+            if [ -z "${{latest_vsix}}" ] || [ ! -f "${{latest_vsix}}" ]; then
+                echo "[install-ide-extensions] ERROR: bundled cmux VSIX missing" >&2
+                exit 1
+            fi
+            install -Dm0644 "${{latest_vsix}}" {cmux_vsix}
+        fi
         echo "[install-ide-extensions] checking cmux extension"
         ls -la {cmux_vsix}
         echo "[install-ide-extensions] installing bundled cmux extension"
@@ -3454,7 +3469,6 @@ async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
             echo "[install-ide-extensions] ERROR: cmux extension not found in {extensions_dir}" >&2
             exit 1
         fi
-        rm -f {cmux_vsix}
         """
     )
     await ctx.run("install-cmux-ext", install_cmd)
