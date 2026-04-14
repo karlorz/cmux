@@ -117,6 +117,7 @@ def _build_novnc_shell_vars() -> str:
             f"NOVNC_PACKAGE_NAME={shlex.quote(NOVNC_PACKAGE_NAME)}",
             f"NOVNC_SOURCE={shlex.quote(NOVNC_SOURCE)}",
             f"NOVNC_ARCHIVE_URL={shlex.quote(NOVNC_ARCHIVE_URL)}",
+            f"NOVNC_PACKAGE_STATE={shlex.quote(NOVNC_PACKAGE_STATE)}",
         ]
     )
 
