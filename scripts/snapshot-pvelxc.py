@@ -117,6 +117,7 @@ def _build_novnc_shell_vars() -> str:
             f"NOVNC_PACKAGE_NAME={shlex.quote(NOVNC_PACKAGE_NAME)}",
             f"NOVNC_SOURCE={shlex.quote(NOVNC_SOURCE)}",
             f"NOVNC_ARCHIVE_URL={shlex.quote(NOVNC_ARCHIVE_URL)}",
+            f"NOVNC_PACKAGE_STATE={shlex.quote(NOVNC_PACKAGE_STATE)}",
         ]
     )
 
@@ -4636,6 +4637,26 @@ async def task_verify_novnc_installation(ctx: PveTaskContext) -> None:
         echo "[verify-novnc]   Bridge: $(grep -c 'vnc-clipboard-bridge' "$NOVNC_DIR/vnc.html") occurrences"
         """
     )
+    try:
+        await ctx.run("verify-novnc-installation", cmd)
+        return
+    except RuntimeError as exc:
+        repairable_failures = (
+            "Version marker file not found",
+            "Version mismatch",
+            "vnc.html not found",
+            "core/rfb.js not found",
+            "Clipboard bridge not found",
+            "Distro package",
+        )
+        if not any(marker in str(exc) for marker in repairable_failures):
+            raise
+
+    ctx.console.info(
+        "[verify-novnc] Repairing managed noVNC state before final retry..."
+    )
+    await task_upgrade_novnc(ctx)
+    await task_install_vnc_clipboard_bridge(ctx)
     await ctx.run("verify-novnc-installation", cmd)
 
 
