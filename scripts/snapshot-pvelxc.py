@@ -450,6 +450,29 @@ def parse_cli_extension_specs(
     return {spec for spec in expected_specs if spec in stripped}
 
 
+HTTP_EXEC_COMPLETION_MARKER = "__CMUX_EXEC_COMPLETE__:"
+
+
+def extract_http_exec_completion_marker(stdout: str) -> tuple[str, int | None]:
+    """Remove the synthetic completion marker and recover its exit code."""
+    marker_index = stdout.rfind(HTTP_EXEC_COMPLETION_MARKER)
+    if marker_index == -1:
+        return stdout, None
+
+    marker_value_start = marker_index + len(HTTP_EXEC_COMPLETION_MARKER)
+    marker_value_end = marker_value_start
+    while marker_value_end < len(stdout) and stdout[marker_value_end] in "0123456789-":
+        marker_value_end += 1
+
+    try:
+        exit_code = int(stdout[marker_value_start:marker_value_end])
+    except ValueError:
+        return stdout, None
+
+    cleaned_stdout = stdout[:marker_index] + stdout[marker_value_end:]
+    return cleaned_stdout, exit_code
+
+
 def is_transient_http_exec_error(exc: Exception) -> bool:
     """Check if an exception indicates a transient HTTP error worth retrying.
 
@@ -1292,13 +1315,22 @@ class PveLxcClient:
             # Return None to trigger SSH fallback if available
             return None
 
+        stdout, synthetic_exit_code = extract_http_exec_completion_marker(
+            "".join(stdout_lines)
+        )
+        if exit_code is None and synthetic_exit_code is not None:
+            exit_code = synthetic_exit_code
+
         if exit_code is None:
-            exit_code = 0
+            stderr_lines.append(
+                "HTTP exec connection error: stream ended without exit event"
+            )
+            exit_code = 125
 
         result = subprocess.CompletedProcess(
             args=command,
             returncode=exit_code,
-            stdout="".join(stdout_lines),
+            stdout=stdout,
             stderr="".join(stderr_lines),
         )
 
@@ -1905,7 +1937,17 @@ class PveTaskContext:
         # Wrap command in bash explicitly to ensure pipefail support
         # This handles the case where execd may use /bin/sh (dash) which doesn't support pipefail
         # We invoke bash explicitly so the script works regardless of execd's shell
-        escaped_command = command.replace("'", "'\"'\"'")
+        wrapped_command = textwrap.dedent(
+            f"""
+            (
+            {command}
+            )
+            cmux_exit_code=$?
+            printf '\\n{HTTP_EXEC_COMPLETION_MARKER}%s\\n' "$cmux_exit_code"
+            exit "$cmux_exit_code"
+            """
+        ).strip()
+        escaped_command = wrapped_command.replace("'", "'\"'\"'")
         script = f"/bin/bash -c '{escaped_command}'"
 
         attempts = 0
@@ -1920,6 +1962,19 @@ class PveTaskContext:
                     timeout=timeout,
                     check=False,  # We handle errors ourselves
                 )
+                if is_http_exec_transport_failure_result(result):
+                    if attempts < max_attempts:
+                        delay = float(min(2**attempts, 8))
+                        failure_message = result.stderr.strip() or (
+                            "HTTP exec transport failed"
+                        )
+                        self.console.info(
+                            f"[{label}] retrying after transport failure "
+                            f"({failure_message}) "
+                            f"(attempt {attempts}/{max_attempts}) in {delay}s"
+                        )
+                        await asyncio.sleep(delay)
+                        continue
                 break
             except subprocess.TimeoutExpired as e:
                 raise TimeoutError(f"Command timed out after {timeout}s") from e
@@ -2260,7 +2315,9 @@ async def upload_repo_via_diff(
             cd "$REPO_DIR"
             git fetch origin "$BRANCH"
             git checkout -f "$TARGET_COMMIT"
-            git clean -fd
+            # Snapshot builds reuse a disposable checkout in /cmux. Remove ignored
+            # artifacts like node_modules so stale binaries cannot survive across runs.
+            git clean -ffdx
         else
             echo "[git-diff] Cloning repository from GitHub..."
             rm -rf "$REPO_DIR"
@@ -2272,7 +2329,7 @@ async def upload_repo_via_diff(
             }}
             cd "$REPO_DIR"
             git checkout -f "$TARGET_COMMIT"
-            git clean -fd
+            git clean -ffdx
         fi
         echo "[git-diff] Repository at commit $(git rev-parse --short HEAD)"
         '
@@ -2516,14 +2573,11 @@ async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
     shell_vars = _build_novnc_shell_vars()
     cmd = textwrap.dedent(
         f"""
-        set -eux
+        set -eu
 
         {shell_vars}
 
-        echo "[upgrade-novnc] Installing managed noVNC $NOVNC_VERSION"
-
         if dpkg-query -W -f='${{Status}}\n' "$NOVNC_PACKAGE_NAME" 2>/dev/null | grep -q '^install ok installed$'; then
-            echo "[upgrade-novnc] Removing distro package $NOVNC_PACKAGE_NAME to avoid stale version reporting..."
             DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 purge -y "$NOVNC_PACKAGE_NAME"
             DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 autoremove -y
         fi
@@ -2532,7 +2586,6 @@ async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
         rm -rf noVNC-* novnc-*.tar.gz novnc.tar.gz
 
         for attempt in 1 2 3; do
-            echo "[upgrade-novnc] Download attempt $attempt/3..."
             if curl -fsSL --retry 3 --retry-delay 5 \
                 "$NOVNC_ARCHIVE_URL" \
                 -o novnc.tar.gz; then
@@ -2550,7 +2603,6 @@ async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
             ls -la novnc.tar.gz 2>/dev/null || true
             exit 1
         fi
-        echo "[upgrade-novnc] Downloaded $(stat -c%s novnc.tar.gz 2>/dev/null || echo '?') bytes"
 
         tar xzf novnc.tar.gz
         EXTRACTED_DIR="$(ls -d noVNC-* 2>/dev/null | head -1)"
@@ -2601,15 +2653,26 @@ async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
             exit 1
         fi
 
-        echo "[upgrade-novnc] Successfully installed noVNC $NOVNC_VERSION"
-        echo "[upgrade-novnc]   source: $NOVNC_SOURCE"
-        echo "[upgrade-novnc]   package state: $NOVNC_PACKAGE_STATE"
-        echo "[upgrade-novnc]   vnc.html: $(ls -la "$NOVNC_DIR/vnc.html")"
-        echo "[upgrade-novnc]   marker: $(cat "$MARKER_FILE")"
+        echo "[upgrade-novnc] Installed managed noVNC $NOVNC_VERSION"
 
         if [ "$HAD_BRIDGE" = "1" ]; then
             echo "[upgrade-novnc] Note: clipboard bridge will be re-injected"
         fi
+        """
+    )
+    verify_cmd = textwrap.dedent(
+        f"""
+        set -euo pipefail
+        {shell_vars}
+        [ -f "$MARKER_FILE" ]
+        [ "$(cat "$MARKER_FILE")" = "$NOVNC_VERSION" ]
+        [ -f "$NOVNC_DIR/vnc.html" ]
+        [ -f "$NOVNC_DIR/core/rfb.js" ]
+        if dpkg-query -W -f='${{Status}}\\n' "$NOVNC_PACKAGE_NAME" 2>/dev/null | grep -q '^install ok installed$'; then
+            echo "[upgrade-novnc] ERROR: Distro package $NOVNC_PACKAGE_NAME is still installed" >&2
+            exit 1
+        fi
+        echo "[upgrade-novnc] verified"
         """
     )
     for attempt in range(1, 4):
@@ -2617,6 +2680,13 @@ async def task_upgrade_novnc(ctx: PveTaskContext) -> None:
             await ctx.run("upgrade-novnc", cmd)
             break
         except Exception as exc:
+            if is_http_exec_transport_failure(exc):
+                try:
+                    await ctx.run("verify-upgrade-novnc", verify_cmd)
+                    return
+                except Exception as verify_exc:
+                    if not is_http_exec_transport_failure(verify_exc):
+                        raise verify_exc from exc
             if attempt >= 3 or not (
                 is_transient_http_exec_error(exc)
                 or is_http_exec_transport_failure(exc)
@@ -3165,17 +3235,11 @@ async def task_install_cmux_code(ctx: PveTaskContext) -> None:
         esac
         mkdir -p /app/cmux-code
         url="https://github.com/karlorz/vscode-1/releases/download/v${CODE_RELEASE}/vscode-server-linux-${ARCH}-web.tar.gz"
-        echo "Downloading ${url}..."
         curl -fSL --retry 6 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 600 -o /tmp/cmux-code.tar.gz "${url}" || \
           curl -fSL4 --retry 6 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 600 -o /tmp/cmux-code.tar.gz "${url}"
-        
-        ls -lh /tmp/cmux-code.tar.gz
-        
+
         tar xf /tmp/cmux-code.tar.gz -C /app/cmux-code --strip-components=1
         rm -f /tmp/cmux-code.tar.gz
-
-        echo "Contents of /app/cmux-code:"
-        ls -R /app/cmux-code
 
         mkdir -p /root/.vscode-server-oss/data/User
         cat > /root/.vscode-server-oss/data/User/settings.json << 'EOF'
@@ -3220,10 +3284,21 @@ EOF
         await ctx.push_file(local_script_path, remote_script_path)
         # Note: Don't use 'exec' here - it replaces the shell process which can
         # cause the HTTP exec daemon to think the command completed prematurely
-        await ctx.run(
-            "install-cmux-code",
-            f"chmod +x {remote_script_path} && bash {remote_script_path}",
-        )
+        install_cmd = f"chmod +x {remote_script_path} && bash {remote_script_path}"
+        try:
+            await ctx.run("install-cmux-code", install_cmd)
+        except RuntimeError as exc:
+            if not is_http_exec_transport_failure(exc):
+                raise
+            verify_cmd = textwrap.dedent(
+                """
+                set -euo pipefail
+                test -x /app/cmux-code/bin/code-server-oss
+                test -f /root/.vscode-server-oss/data/User/settings.json
+                echo "[install-cmux-code] verified"
+                """
+            )
+            await ctx.run("verify-install-cmux-code", verify_cmd)
     finally:
         import os
         os.unlink(local_script_path)
@@ -3365,10 +3440,25 @@ async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
 
     # Step 1: Install the bundled cmux extension
     cmux_vsix = "/tmp/cmux-vscode-extension.vsix"
+    repo_cmux_vsix_glob = (
+        f"{ctx.remote_repo_root}/packages/vscode-extension/cmux-vscode-extension-*.vsix"
+    )
     install_cmd = textwrap.dedent(
         f"""
         set -eux
         export HOME=/root
+        if ls -d {extensions_dir}/cmux.* 2>/dev/null; then
+            echo "[install-ide-extensions] cmux extension already present"
+            exit 0
+        fi
+        if [ ! -f {cmux_vsix} ]; then
+            latest_vsix="$(ls -1t {repo_cmux_vsix_glob} 2>/dev/null | head -n 1)"
+            if [ -z "${{latest_vsix}}" ] || [ ! -f "${{latest_vsix}}" ]; then
+                echo "[install-ide-extensions] ERROR: bundled cmux VSIX missing" >&2
+                exit 1
+            fi
+            install -Dm0644 "${{latest_vsix}}" {cmux_vsix}
+        fi
         echo "[install-ide-extensions] checking cmux extension"
         ls -la {cmux_vsix}
         echo "[install-ide-extensions] installing bundled cmux extension"
@@ -3379,7 +3469,6 @@ async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
             echo "[install-ide-extensions] ERROR: cmux extension not found in {extensions_dir}" >&2
             exit 1
         fi
-        rm -f {cmux_vsix}
         """
     )
     await ctx.run("install-cmux-ext", install_cmd)
@@ -3554,6 +3643,25 @@ EXPECTED_EXTENSIONS
             resolved_target_platform,
         ) in extension_specs:
             task_label = ext_id.replace(".", "-")
+            expected_spec = f"{ext_id}@{version}"
+            verify_extension_cmd = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                export HOME=/root
+                bin_path="{bin_path}"
+                extensions_dir="{extensions_dir}"
+                user_data_dir="{user_data_dir}"
+                installed="$("${{bin_path}}" --list-extensions --show-versions \
+                  --extensions-dir "${{extensions_dir}}" \
+                  --user-data-dir "${{user_data_dir}}" || true)"
+                if ! printf '%s\\n' "${{installed}}" | grep -Fqx "{expected_spec}"; then
+                  echo "[install-ide-extensions] ERROR: missing expected extension {expected_spec}" >&2
+                  printf '%s\\n' "${{installed}}" >&2
+                  exit 1
+                fi
+                echo "[install-ide-extensions] verified {expected_spec}"
+                """
+            )
             if resolved_target_platform:
                 ctx.console.info(
                     f"[install-marketplace-exts] using {resolved_target_platform} asset "
@@ -3575,7 +3683,21 @@ EXPECTED_EXTENSIONS
                     )
                     break
                 except Exception as exc:
-                    if attempt >= 3 or not is_transient_http_exec_error(exc):
+                    if is_http_exec_transport_failure(exc):
+                        try:
+                            await ctx.run(
+                                f"verify-ext-{task_label}",
+                                verify_extension_cmd,
+                                timeout=60 * 2,
+                            )
+                            break
+                        except Exception as verify_exc:
+                            if not is_http_exec_transport_failure(verify_exc):
+                                raise verify_exc from exc
+                    if attempt >= 3 or not (
+                        is_transient_http_exec_error(exc)
+                        or is_http_exec_transport_failure(exc)
+                    ):
                         raise
                     delay = float(attempt * 5)
                     ctx.console.info(
@@ -3706,7 +3828,34 @@ async def task_install_global_cli(ctx: PveTaskContext) -> None:
 async def task_setup_claude_oauth_wrappers(ctx: PveTaskContext) -> None:
     script_path = Path(__file__).parent.parent / "configs" / "setup-claude-oauth-wrappers.sh"
     script_content = script_path.read_text()
-    await ctx.run("setup-claude-oauth-wrappers", script_content)
+    try:
+        await ctx.run("setup-claude-oauth-wrappers", script_content)
+        return
+    except RuntimeError as exc:
+        if not is_http_exec_transport_failure(exc):
+            raise
+
+    verify_cmd = textwrap.dedent(
+        """
+        set -euo pipefail
+        test -f /etc/claude-code/env
+        claude_path="$(command -v claude)"
+        test -n "$claude_path"
+        head -1 "$claude_path" | grep -q '^#!/bin/bash'
+        grep -q '/etc/claude-code/env' "$claude_path"
+        grep -q 'claude-real' "$claude_path"
+
+        npx_path="$(command -v npx || true)"
+        if [ -n "$npx_path" ] && [ -e "$(dirname "$npx_path")/npx-real" ]; then
+            head -1 "$npx_path" | grep -q '^#!/bin/bash'
+            grep -q '/etc/claude-code/env' "$npx_path"
+            grep -q 'npx-real' "$npx_path"
+        fi
+
+        echo "[setup-claude-oauth-wrappers] verified"
+        """
+    )
+    await ctx.run("verify-claude-oauth-wrappers", verify_cmd)
 
 
 @registry.task(
@@ -4130,9 +4279,19 @@ async def task_build_worker(ctx: PveTaskContext) -> None:
             exit 1
           fi
         done
-        tar -xzf path-to-regexp-0.1.12.tgz
+        rm -rf package path-to-regexp
+        tarball="$(ls path-to-regexp-*.tgz | tail -n 1)"
+        if [ -z "$tarball" ] || [ ! -f "$tarball" ]; then
+          echo "path-to-regexp tarball missing after npm pack" >&2
+          exit 1
+        fi
+        tar -xzf "$tarball"
         mv package path-to-regexp
-        rm -f path-to-regexp-0.1.12.tgz
+        rm -f "$tarball"
+        if [ ! -f ./path-to-regexp/package.json ]; then
+          echo "path-to-regexp package.json missing after extraction" >&2
+          exit 1
+        fi
         cd {repo}
         install -d /builtins
         cat <<'JSON' > /builtins/package.json
@@ -4140,6 +4299,10 @@ async def task_build_worker(ctx: PveTaskContext) -> None:
 JSON
         rm -rf /builtins/build
         cp -r ./apps/worker/build /builtins/build
+        if [ ! -f /builtins/build/node_modules/path-to-regexp/package.json ]; then
+          echo "path-to-regexp missing from /builtins/build after copy" >&2
+          exit 1
+        fi
         install -Dm0755 ./apps/worker/wait-for-docker.sh /usr/local/bin/wait-for-docker.sh
         """
     )
@@ -4255,6 +4418,14 @@ async def task_install_systemd_units(ctx: PveTaskContext) -> None:
         f"""
         set -euo pipefail
 
+        # Stop stale services from the base template before replacing unit files.
+        # Otherwise systemd can keep the old worker-daemon process attached to the
+        # cmux-worker.service unit name even after the unit file is overwritten.
+        systemctl stop cmux.target 2>/dev/null || true
+        systemctl stop cmux-worker.service 2>/dev/null || true
+        systemctl stop cmux-worker-daemon.service 2>/dev/null || true
+        systemctl stop cmux-token-generator.service 2>/dev/null || true
+
         install -d /usr/local/lib/cmux
         install -d /etc/cmux
         install -Dm0644 {repo}/configs/systemd/cmux.target /usr/lib/systemd/system/cmux.target
@@ -4263,6 +4434,7 @@ async def task_install_systemd_units(ctx: PveTaskContext) -> None:
         # The Go worker now uses cmux-worker-daemon.service instead
         rm -f /etc/systemd/system/cmux-worker.service
         rm -f /etc/systemd/system/cmux.target.wants/cmux-worker.service
+        rm -f /etc/systemd/system/multi-user.target.wants/cmux-worker.service
         install -Dm0644 {repo}/configs/systemd/cmux-worker.service /usr/lib/systemd/system/cmux-worker.service
         # Override Node.js worker port to 39376 for PVE-LXC (Go worker uses 39377)
         sed -i 's/WORKER_PORT=39377/WORKER_PORT=39376/' /usr/lib/systemd/system/cmux-worker.service
@@ -4311,7 +4483,10 @@ async def task_install_systemd_units(ctx: PveTaskContext) -> None:
         ln -sf /usr/lib/systemd/system/cmux-memory-setup.service /etc/systemd/system/multi-user.target.wants/cmux-memory-setup.service
         ln -sf /usr/lib/systemd/system/cmux-memory-setup.service /etc/systemd/system/swap.target.wants/cmux-memory-setup.service
         {{ systemctl daemon-reload || true; }}
+        {{ systemctl reset-failed cmux-worker.service cmux-worker-daemon.service cmux-token-generator.service || true; }}
         {{ systemctl enable cmux.target || true; }}
+        {{ systemctl start cmux-token-generator.service 2>/dev/null || true; }}
+        {{ systemctl start cmux-worker-daemon.service 2>/dev/null || true; }}
         chown root:root /usr/local
         chown root:root /usr/local/bin
         chmod 0755 /usr/local
@@ -4494,6 +4669,22 @@ async def task_cleanup_build_artifacts(ctx: PveTaskContext) -> None:
             echo "[cleanup-build-artifacts] ERROR: missing /builtins/build/index.js before repo cleanup" >&2
             exit 1
         fi
+        if [ ! -f /builtins/build/node_modules/path-to-regexp/package.json ]; then
+            cd /builtins/build/node_modules
+            tarball="$(ls path-to-regexp-*.tgz 2>/dev/null | tail -n 1)"
+            if [ -n "$tarball" ] && [ -f "$tarball" ]; then
+                echo "[cleanup-build-artifacts] Recovering unpacked path-to-regexp runtime dependency from tarball"
+                rm -rf package path-to-regexp
+                tar -xzf "$tarball"
+                mv package path-to-regexp
+                rm -f "$tarball"
+                cd /
+            else
+                cd /
+                echo "[cleanup-build-artifacts] ERROR: missing unpacked path-to-regexp runtime dependency" >&2
+                exit 1
+            fi
+        fi
         rm -rf {repo}
         rm -f {tar_path}
         if [ -d /usr/local/cargo ]; then
@@ -4583,15 +4774,12 @@ async def task_verify_novnc_installation(ctx: PveTaskContext) -> None:
     shell_vars = _build_novnc_shell_vars()
     cmd = textwrap.dedent(
         f"""
-        set -eux
+        set -eu
 
         {shell_vars}
 
-        echo "[verify-novnc] Checking noVNC installation..."
-
         if [ ! -f "$MARKER_FILE" ]; then
             if [ -f "$DURABLE_MARKER" ]; then
-                echo "[verify-novnc] Restoring missing marker from $DURABLE_MARKER"
                 install -Dm0644 "$DURABLE_MARKER" "$MARKER_FILE"
             else
                 echo "[verify-novnc] ERROR: Version marker file not found: $MARKER_FILE" >&2
@@ -4630,17 +4818,31 @@ async def task_verify_novnc_installation(ctx: PveTaskContext) -> None:
         fi
 
         echo "[verify-novnc] OK: noVNC $NOVNC_VERSION installed with clipboard bridge"
-        echo "[verify-novnc]   Source: $NOVNC_SOURCE"
-        echo "[verify-novnc]   Package state: $NOVNC_PACKAGE_STATE"
-        echo "[verify-novnc]   Marker: $(cat "$MARKER_FILE")"
-        echo "[verify-novnc]   vnc.html: $(stat -c '%s bytes' "$NOVNC_DIR/vnc.html")"
-        echo "[verify-novnc]   Bridge: $(grep -c 'vnc-clipboard-bridge' "$NOVNC_DIR/vnc.html") occurrences"
         """
     )
     try:
         await ctx.run("verify-novnc-installation", cmd)
         return
     except RuntimeError as exc:
+        if is_http_exec_transport_failure(exc):
+            concise_verify_cmd = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                {shell_vars}
+                [ -f "$MARKER_FILE" ]
+                [ "$(cat "$MARKER_FILE")" = "$NOVNC_VERSION" ]
+                [ -f "$NOVNC_DIR/vnc.html" ]
+                [ -f "$NOVNC_DIR/core/rfb.js" ]
+                grep -q "vnc-clipboard-bridge" "$NOVNC_DIR/vnc.html"
+                if dpkg-query -W -f='${{Status}}\\n' "$NOVNC_PACKAGE_NAME" 2>/dev/null | grep -q '^install ok installed$'; then
+                    echo "[verify-novnc] ERROR: Distro package $NOVNC_PACKAGE_NAME is still installed" >&2
+                    exit 1
+                fi
+                echo "[verify-novnc] verified"
+                """
+            )
+            await ctx.run("verify-novnc-installation", concise_verify_cmd)
+            return
         repairable_failures = (
             "Version marker file not found",
             "Version mismatch",
@@ -4741,6 +4943,33 @@ async def task_check_systemd_services(ctx: PveTaskContext) -> None:
         """
     )
     await ctx.run("check-systemd-services", cmd)
+
+
+@registry.task(
+    name="check-worker",
+    deps=("cleanup-build-artifacts",),
+    description="Verify cmux-worker.service is healthy on the PVE-LXC worker port",
+)
+async def task_check_worker(ctx: PveTaskContext) -> None:
+    cmd = textwrap.dedent(
+        """
+        set -euo pipefail
+        for attempt in $(seq 1 30); do
+          if systemctl is-active --quiet cmux-worker.service; then
+            if health="$(curl -fsS http://127.0.0.1:39376/health)"; then
+              printf '%s\n' "$health"
+              exit 0
+            fi
+          fi
+          sleep 2
+        done
+        echo "ERROR: cmux-worker service failed health check on port 39376" >&2
+        systemctl status cmux-worker.service --no-pager || true
+        tail -n 80 /var/log/cmux/worker.log || true
+        exit 1
+        """
+    )
+    await ctx.run("check-worker", cmd)
 
 
 # ---------------------------------------------------------------------------
@@ -5208,6 +5437,7 @@ async def _verify_template_artifacts(
         ("/usr/local/go/bin/go", "Go toolchain"),
         ("/root/.bun/bin/bun", "Bun runtime"),
         ("/builtins/build/index.js", "cmux-worker service"),
+        ("/builtins/build/node_modules/path-to-regexp/package.json", "worker path-to-regexp runtime dependency"),
         ("/usr/local/bin/worker-daemon", "Go worker-daemon (SSH/PTY proxy)"),
         ("/usr/local/bin/cmux-token-init", "Auth token generator script"),
         (NOVNC_MARKER_FILE, "managed noVNC version marker"),

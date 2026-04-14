@@ -2,7 +2,7 @@
 # Setup wrapper scripts for claude/npx to support OAuth token injection.
 # This allows cmux to inject CLAUDE_CODE_OAUTH_TOKEN at runtime without needing
 # to set it as an environment variable (which doesn't work due to OAuth check timing).
-set -eux
+set -eu
 
 # Create the env file directory
 mkdir -p /etc/claude-code
