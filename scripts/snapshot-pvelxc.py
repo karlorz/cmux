@@ -2315,7 +2315,9 @@ async def upload_repo_via_diff(
             cd "$REPO_DIR"
             git fetch origin "$BRANCH"
             git checkout -f "$TARGET_COMMIT"
-            git clean -fd
+            # Snapshot builds reuse a disposable checkout in /cmux. Remove ignored
+            # artifacts like node_modules so stale binaries cannot survive across runs.
+            git clean -ffdx
         else
             echo "[git-diff] Cloning repository from GitHub..."
             rm -rf "$REPO_DIR"
@@ -2327,7 +2329,7 @@ async def upload_repo_via_diff(
             }}
             cd "$REPO_DIR"
             git checkout -f "$TARGET_COMMIT"
-            git clean -fd
+            git clean -ffdx
         fi
         echo "[git-diff] Repository at commit $(git rev-parse --short HEAD)"
         '
