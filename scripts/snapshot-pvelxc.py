@@ -450,6 +450,26 @@ def parse_cli_extension_specs(
     return {spec for spec in expected_specs if spec in stripped}
 
 
+HTTP_EXEC_COMPLETION_MARKER = "__CMUX_EXEC_COMPLETE__:"
+
+
+def extract_http_exec_completion_marker(stdout: str) -> tuple[str, int | None]:
+    """Remove the synthetic completion marker and recover its exit code."""
+    exit_code: int | None = None
+    cleaned_lines: list[str] = []
+    for line in stdout.splitlines(keepends=True):
+        stripped = line.rstrip("\r\n")
+        if stripped.startswith(HTTP_EXEC_COMPLETION_MARKER):
+            marker_value = stripped.removeprefix(HTTP_EXEC_COMPLETION_MARKER)
+            try:
+                exit_code = int(marker_value)
+            except ValueError:
+                cleaned_lines.append(line)
+            continue
+        cleaned_lines.append(line)
+    return "".join(cleaned_lines), exit_code
+
+
 def is_transient_http_exec_error(exc: Exception) -> bool:
     """Check if an exception indicates a transient HTTP error worth retrying.
 
@@ -1292,6 +1312,12 @@ class PveLxcClient:
             # Return None to trigger SSH fallback if available
             return None
 
+        stdout, synthetic_exit_code = extract_http_exec_completion_marker(
+            "".join(stdout_lines)
+        )
+        if exit_code is None and synthetic_exit_code is not None:
+            exit_code = synthetic_exit_code
+
         if exit_code is None:
             stderr_lines.append(
                 "HTTP exec connection error: stream ended without exit event"
@@ -1301,7 +1327,7 @@ class PveLxcClient:
         result = subprocess.CompletedProcess(
             args=command,
             returncode=exit_code,
-            stdout="".join(stdout_lines),
+            stdout=stdout,
             stderr="".join(stderr_lines),
         )
 
@@ -1908,7 +1934,17 @@ class PveTaskContext:
         # Wrap command in bash explicitly to ensure pipefail support
         # This handles the case where execd may use /bin/sh (dash) which doesn't support pipefail
         # We invoke bash explicitly so the script works regardless of execd's shell
-        escaped_command = command.replace("'", "'\"'\"'")
+        wrapped_command = textwrap.dedent(
+            f"""
+            (
+            {command}
+            )
+            cmux_exit_code=$?
+            printf '\\n{HTTP_EXEC_COMPLETION_MARKER}%s\\n' "$cmux_exit_code"
+            exit "$cmux_exit_code"
+            """
+        ).strip()
+        escaped_command = wrapped_command.replace("'", "'\"'\"'")
         script = f"/bin/bash -c '{escaped_command}'"
 
         attempts = 0
