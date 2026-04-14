@@ -455,19 +455,22 @@ HTTP_EXEC_COMPLETION_MARKER = "__CMUX_EXEC_COMPLETE__:"
 
 def extract_http_exec_completion_marker(stdout: str) -> tuple[str, int | None]:
     """Remove the synthetic completion marker and recover its exit code."""
-    exit_code: int | None = None
-    cleaned_lines: list[str] = []
-    for line in stdout.splitlines(keepends=True):
-        stripped = line.rstrip("\r\n")
-        if stripped.startswith(HTTP_EXEC_COMPLETION_MARKER):
-            marker_value = stripped.removeprefix(HTTP_EXEC_COMPLETION_MARKER)
-            try:
-                exit_code = int(marker_value)
-            except ValueError:
-                cleaned_lines.append(line)
-            continue
-        cleaned_lines.append(line)
-    return "".join(cleaned_lines), exit_code
+    marker_index = stdout.rfind(HTTP_EXEC_COMPLETION_MARKER)
+    if marker_index == -1:
+        return stdout, None
+
+    marker_value_start = marker_index + len(HTTP_EXEC_COMPLETION_MARKER)
+    marker_value_end = marker_value_start
+    while marker_value_end < len(stdout) and stdout[marker_value_end] in "0123456789-":
+        marker_value_end += 1
+
+    try:
+        exit_code = int(stdout[marker_value_start:marker_value_end])
+    except ValueError:
+        return stdout, None
+
+    cleaned_stdout = stdout[:marker_index] + stdout[marker_value_end:]
+    return cleaned_stdout, exit_code
 
 
 def is_transient_http_exec_error(exc: Exception) -> bool:
@@ -3758,7 +3761,34 @@ async def task_install_global_cli(ctx: PveTaskContext) -> None:
 async def task_setup_claude_oauth_wrappers(ctx: PveTaskContext) -> None:
     script_path = Path(__file__).parent.parent / "configs" / "setup-claude-oauth-wrappers.sh"
     script_content = script_path.read_text()
-    await ctx.run("setup-claude-oauth-wrappers", script_content)
+    try:
+        await ctx.run("setup-claude-oauth-wrappers", script_content)
+        return
+    except RuntimeError as exc:
+        if not is_http_exec_transport_failure(exc):
+            raise
+
+    verify_cmd = textwrap.dedent(
+        """
+        set -euo pipefail
+        test -f /etc/claude-code/env
+        claude_path="$(command -v claude)"
+        test -n "$claude_path"
+        head -1 "$claude_path" | grep -q '^#!/bin/bash'
+        grep -q '/etc/claude-code/env' "$claude_path"
+        grep -q 'claude-real' "$claude_path"
+
+        npx_path="$(command -v npx || true)"
+        if [ -n "$npx_path" ] && [ -e "$(dirname "$npx_path")/npx-real" ]; then
+            head -1 "$npx_path" | grep -q '^#!/bin/bash'
+            grep -q '/etc/claude-code/env' "$npx_path"
+            grep -q 'npx-real' "$npx_path"
+        fi
+
+        echo "[setup-claude-oauth-wrappers] verified"
+        """
+    )
+    await ctx.run("verify-claude-oauth-wrappers", verify_cmd)
 
 
 @registry.task(
@@ -4665,15 +4695,12 @@ async def task_verify_novnc_installation(ctx: PveTaskContext) -> None:
     shell_vars = _build_novnc_shell_vars()
     cmd = textwrap.dedent(
         f"""
-        set -eux
+        set -eu
 
         {shell_vars}
 
-        echo "[verify-novnc] Checking noVNC installation..."
-
         if [ ! -f "$MARKER_FILE" ]; then
             if [ -f "$DURABLE_MARKER" ]; then
-                echo "[verify-novnc] Restoring missing marker from $DURABLE_MARKER"
                 install -Dm0644 "$DURABLE_MARKER" "$MARKER_FILE"
             else
                 echo "[verify-novnc] ERROR: Version marker file not found: $MARKER_FILE" >&2
@@ -4712,17 +4739,31 @@ async def task_verify_novnc_installation(ctx: PveTaskContext) -> None:
         fi
 
         echo "[verify-novnc] OK: noVNC $NOVNC_VERSION installed with clipboard bridge"
-        echo "[verify-novnc]   Source: $NOVNC_SOURCE"
-        echo "[verify-novnc]   Package state: $NOVNC_PACKAGE_STATE"
-        echo "[verify-novnc]   Marker: $(cat "$MARKER_FILE")"
-        echo "[verify-novnc]   vnc.html: $(stat -c '%s bytes' "$NOVNC_DIR/vnc.html")"
-        echo "[verify-novnc]   Bridge: $(grep -c 'vnc-clipboard-bridge' "$NOVNC_DIR/vnc.html") occurrences"
         """
     )
     try:
         await ctx.run("verify-novnc-installation", cmd)
         return
     except RuntimeError as exc:
+        if is_http_exec_transport_failure(exc):
+            concise_verify_cmd = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                {shell_vars}
+                [ -f "$MARKER_FILE" ]
+                [ "$(cat "$MARKER_FILE")" = "$NOVNC_VERSION" ]
+                [ -f "$NOVNC_DIR/vnc.html" ]
+                [ -f "$NOVNC_DIR/core/rfb.js" ]
+                grep -q "vnc-clipboard-bridge" "$NOVNC_DIR/vnc.html"
+                if dpkg-query -W -f='${{Status}}\\n' "$NOVNC_PACKAGE_NAME" 2>/dev/null | grep -q '^install ok installed$'; then
+                    echo "[verify-novnc] ERROR: Distro package $NOVNC_PACKAGE_NAME is still installed" >&2
+                    exit 1
+                fi
+                echo "[verify-novnc] verified"
+                """
+            )
+            await ctx.run("verify-novnc-installation", concise_verify_cmd)
+            return
         repairable_failures = (
             "Version marker file not found",
             "Version mismatch",
