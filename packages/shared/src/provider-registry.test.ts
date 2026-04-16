@@ -311,32 +311,57 @@ describe("BASE_PROVIDERS", () => {
 });
 
 describe("CLAUDE_MODEL_SPECS", () => {
-  it("maps Claude agent names to stable families and native ids", () => {
-    expect(CLAUDE_MODEL_SPECS).toEqual([
+  it("maps Claude agent names to stable families, launch models, and native ids", () => {
+    expect(
+      CLAUDE_MODEL_SPECS.map((spec) => ({
+        nameSuffix: spec.nameSuffix,
+        family: spec.family,
+        launchModel: spec.launchModel,
+        nativeModelId: spec.nativeModelId,
+        requiresCustomEndpoint: spec.requiresCustomEndpoint ?? false,
+      })),
+    ).toEqual([
       {
         nameSuffix: "opus-4.6",
         family: "opus",
+        launchModel: "opus",
         nativeModelId: "claude-opus-4-6",
+        requiresCustomEndpoint: false,
       },
       {
         nameSuffix: "sonnet-4.6",
         family: "sonnet",
+        launchModel: "sonnet",
         nativeModelId: "claude-sonnet-4-6",
+        requiresCustomEndpoint: false,
       },
       {
         nameSuffix: "opus-4.5",
         family: "opus",
+        launchModel: "opus",
         nativeModelId: "claude-opus-4-5-20251101",
+        requiresCustomEndpoint: false,
       },
       {
         nameSuffix: "sonnet-4.5",
         family: "sonnet",
+        launchModel: "sonnet",
         nativeModelId: "claude-sonnet-4-5-20250929",
+        requiresCustomEndpoint: false,
       },
       {
         nameSuffix: "haiku-4.5",
         family: "haiku",
+        launchModel: "haiku",
         nativeModelId: "claude-haiku-4-5-20251001",
+        requiresCustomEndpoint: false,
+      },
+      {
+        nameSuffix: "gpt-5.1-codex-mini",
+        family: undefined,
+        launchModel: "gpt-5.1-codex-mini",
+        nativeModelId: "gpt-5.1-codex-mini",
+        requiresCustomEndpoint: true,
       },
     ]);
   });
