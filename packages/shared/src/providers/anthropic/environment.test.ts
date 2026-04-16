@@ -429,6 +429,50 @@ describe("getClaudeEnvironment", () => {
     expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBeUndefined();
   });
 
+  it("injects custom model option env vars for proxy-only Claude models", async () => {
+    const env = await getClaudeEnvVars({
+      agentName: "claude/gpt-5.1-codex-mini",
+      apiKeys: {
+        ANTHROPIC_API_KEY: "sk-ant-api-key-123",
+        ANTHROPIC_BASE_URL: "https://gateway.example.com",
+      },
+      workspaceSettings: {
+        bypassAnthropicProxy: true,
+      },
+    });
+
+    expect(env.ANTHROPIC_BASE_URL).toBe("https://gateway.example.com");
+    expect(env.ANTHROPIC_CUSTOM_MODEL_OPTION).toBe("gpt-5.1-codex-mini");
+    expect(env.ANTHROPIC_CUSTOM_MODEL_OPTION_NAME).toBe("GPT-5.1 Codex Mini");
+  });
+
+  it("rejects proxy-only Claude models without a custom endpoint", async () => {
+    await expect(
+      getClaudeEnvironment({
+        ...BASE_CONTEXT,
+        agentName: "claude/gpt-5.1-codex-mini",
+        apiKeys: {
+          ANTHROPIC_API_KEY: "sk-ant-api-key-123",
+        },
+      }),
+    ).rejects.toThrow(/requires an Anthropic-compatible custom endpoint/);
+  });
+
+  it("rejects proxy-only Claude models without an Anthropic API key", async () => {
+    await expect(
+      getClaudeEnvironment({
+        ...BASE_CONTEXT,
+        agentName: "claude/gpt-5.1-codex-mini",
+        apiKeys: {
+          ANTHROPIC_BASE_URL: "https://gateway.example.com",
+        },
+        workspaceSettings: {
+          bypassAnthropicProxy: true,
+        },
+      }),
+    ).rejects.toThrow(/requires an Anthropic API key/);
+  });
+
   it("rejects effort selection for routed third-party targets", async () => {
     await expect(
       getClaudeEnvironment({
@@ -472,10 +516,9 @@ describe("getClaudeEnvironment", () => {
         );
         expect(hookFile, `Hook ${hookPath} should exist`).toBeDefined();
 
-        const script = Buffer.from(
-          hookFile!.contentBase64,
-          "base64",
-        ).toString("utf-8");
+        const script = Buffer.from(hookFile!.contentBase64, "base64").toString(
+          "utf-8",
+        );
 
         // Thin stubs should reference the dispatch endpoint
         expect(
@@ -484,10 +527,9 @@ describe("getClaudeEnvironment", () => {
         ).toContain("/api/hooks/dispatch");
 
         // Thin stubs should have cache handling
-        expect(
-          script,
-          `Hook ${hookPath} should have cache file`,
-        ).toContain("CACHE_FILE=");
+        expect(script, `Hook ${hookPath} should have cache file`).toContain(
+          "CACHE_FILE=",
+        );
       }
     });
 
@@ -514,10 +556,9 @@ describe("getClaudeEnvironment", () => {
         const hookFile = result.files.find((f) => f.destinationPath === path);
         expect(hookFile, `Critical hook ${path} should exist`).toBeDefined();
 
-        const script = Buffer.from(
-          hookFile!.contentBase64,
-          "base64",
-        ).toString("utf-8");
+        const script = Buffer.from(hookFile!.contentBase64, "base64").toString(
+          "utf-8",
+        );
 
         for (const content of mustContain) {
           expect(
@@ -551,7 +592,8 @@ describe("getClaudeEnvironment", () => {
       const result = await getClaudeEnvironment(BASE_CONTEXT);
 
       const precompactHook = result.files.find(
-        (f) => f.destinationPath === "/root/lifecycle/claude/precompact-hook.sh",
+        (f) =>
+          f.destinationPath === "/root/lifecycle/claude/precompact-hook.sh",
       );
       expect(precompactHook).toBeDefined();
 

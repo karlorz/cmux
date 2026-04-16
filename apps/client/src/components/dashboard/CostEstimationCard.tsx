@@ -3,7 +3,14 @@ import type { Id } from "@cmux/convex/dataModel";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { memo } from "react";
-import { AlertTriangle, Clock, Cpu, DollarSign, RefreshCw, Zap } from "lucide-react";
+import {
+  AlertTriangle,
+  Clock,
+  Cpu,
+  DollarSign,
+  RefreshCw,
+  Zap,
+} from "lucide-react";
 
 type CostEstimationCardProps = {
   taskRunId: Id<"taskRuns">;
@@ -19,6 +26,7 @@ const ESTIMATED_COST_PER_MINUTE: Record<string, number> = {
   "claude/sonnet-4.5": 0.03,
   "claude/sonnet-4.6": 0.03,
   "claude/haiku-4.5": 0.005,
+  "claude/gpt-5.1-codex-mini": 0.02,
   // OpenAI Codex models
   "codex/gpt-5.4-xhigh": 0.12,
   "codex/gpt-5.1-codex-mini": 0.02,
@@ -80,7 +88,7 @@ export const CostEstimationCard = memo(function CostEstimationCard({
   teamSlugOrId,
 }: CostEstimationCardProps) {
   const taskRunQuery = useQuery(
-    convexQuery(api.taskRuns.get, { id: taskRunId, teamSlugOrId })
+    convexQuery(api.taskRuns.get, { id: taskRunId, teamSlugOrId }),
   );
 
   if (taskRunQuery.isLoading) {
@@ -88,15 +96,20 @@ export const CostEstimationCard = memo(function CostEstimationCard({
   }
 
   if (taskRunQuery.isError) {
-    const message = taskRunQuery.error?.message ?? "Failed to load cost estimate";
+    const message =
+      taskRunQuery.error?.message ?? "Failed to load cost estimate";
     return (
       <div className="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950/30">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-2 text-red-700 dark:text-red-300">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" />
             <div>
-              <p className="text-sm font-medium">Failed to load cost estimate</p>
-              <p className="mt-1 text-xs text-red-600 dark:text-red-400">{message}</p>
+              <p className="text-sm font-medium">
+                Failed to load cost estimate
+              </p>
+              <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                {message}
+              </p>
             </div>
           </div>
           <button
@@ -128,8 +141,7 @@ export const CostEstimationCard = memo(function CostEstimationCard({
   // Get cost rate for the model
   const agentName = taskRun.agentName ?? "default";
   const costPerMinute =
-    ESTIMATED_COST_PER_MINUTE[agentName] ??
-    ESTIMATED_COST_PER_MINUTE.default;
+    ESTIMATED_COST_PER_MINUTE[agentName] ?? ESTIMATED_COST_PER_MINUTE.default;
 
   // Estimate cost
   const estimatedCost = durationMinutes * costPerMinute;
@@ -177,31 +189,44 @@ export const CostEstimationCard = memo(function CostEstimationCard({
         </div>
         {taskRun.contextUsage && (
           <div className="flex items-center gap-2">
-            <Zap className={
-              taskRun.contextUsage.usagePercent !== undefined && taskRun.contextUsage.usagePercent >= 80
-                ? "size-3.5 text-amber-500"
-                : "size-3.5"
-            } />
+            <Zap
+              className={
+                taskRun.contextUsage.usagePercent !== undefined &&
+                taskRun.contextUsage.usagePercent >= 80
+                  ? "size-3.5 text-amber-500"
+                  : "size-3.5"
+              }
+            />
             <span>
-              Tokens: {formatTokenCount(taskRun.contextUsage.totalInputTokens)} in / {formatTokenCount(taskRun.contextUsage.totalOutputTokens)} out
+              Tokens: {formatTokenCount(taskRun.contextUsage.totalInputTokens)}{" "}
+              in / {formatTokenCount(taskRun.contextUsage.totalOutputTokens)}{" "}
+              out
               {taskRun.contextUsage.usagePercent !== undefined && (
-                <span className={
-                  taskRun.contextUsage.usagePercent >= 80
-                    ? "ml-1 text-amber-500 font-medium"
-                    : "ml-1 text-neutral-400 dark:text-neutral-500"
-                }>
+                <span
+                  className={
+                    taskRun.contextUsage.usagePercent >= 80
+                      ? "ml-1 text-amber-500 font-medium"
+                      : "ml-1 text-neutral-400 dark:text-neutral-500"
+                  }
+                >
                   ({taskRun.contextUsage.usagePercent}% context)
                 </span>
               )}
             </span>
           </div>
         )}
-        {taskRun.contextUsage?.usagePercent !== undefined && taskRun.contextUsage.usagePercent >= 80 && (
-          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
-            <AlertTriangle className="size-3.5" />
-            <span className="font-medium">Context window {taskRun.contextUsage.usagePercent >= 95 ? "nearly full" : "filling up"}</span>
-          </div>
-        )}
+        {taskRun.contextUsage?.usagePercent !== undefined &&
+          taskRun.contextUsage.usagePercent >= 80 && (
+            <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="size-3.5" />
+              <span className="font-medium">
+                Context window{" "}
+                {taskRun.contextUsage.usagePercent >= 95
+                  ? "nearly full"
+                  : "filling up"}
+              </span>
+            </div>
+          )}
       </div>
 
       {/* Disclaimer */}

@@ -8,6 +8,7 @@ import {
   CLAUDE_ROUTING_ENV_VARS,
   type ClaudeModelFamily,
   getClaudeModelSpecByAgentName,
+  hasAnthropicCustomEndpointConfigured,
 } from "./models";
 import {
   CMUX_ANTHROPIC_PROXY_PLACEHOLDER_API_KEY,
@@ -82,7 +83,10 @@ function resolveClaudeEffectiveTarget(
 }
 
 function resolveClaudeEffortLevel(
-  ctx: Pick<EnvironmentContext, "agentName" | "selectedVariant" | "providerConfig">,
+  ctx: Pick<
+    EnvironmentContext,
+    "agentName" | "selectedVariant" | "providerConfig"
+  >,
 ): string | undefined {
   const effort = ctx.selectedVariant?.trim();
   if (!effort) {
@@ -134,6 +138,7 @@ export async function getClaudeEnvironment(
   const env: Record<string, string> = {};
   const startupCommands: string[] = [];
   const effortLevel = resolveClaudeEffortLevel(ctx);
+  const modelSpec = getClaudeModelSpecByAgentName(ctx.agentName);
   const claudeLifecycleDir = "/root/lifecycle/claude";
   const claudeSecretsDir = `${claudeLifecycleDir}/secrets`;
   const claudeApiKeyHelperPath = `${claudeSecretsDir}/anthropic_key_helper.sh`;
@@ -594,6 +599,7 @@ exit 0`;
 
   // Check if user has provided an OAuth token (preferred) or API key
   const hasOAuthToken =
+    modelSpec?.requiresCustomEndpoint !== true &&
     ctx.apiKeys?.CLAUDE_CODE_OAUTH_TOKEN &&
     ctx.apiKeys.CLAUDE_CODE_OAUTH_TOKEN.trim().length > 0;
   const hasAnthropicApiKey =
@@ -601,6 +607,22 @@ exit 0`;
     ctx.apiKeys.ANTHROPIC_API_KEY.trim().length > 0;
   const userCustomBaseUrl = ctx.apiKeys?.ANTHROPIC_BASE_URL?.trim();
   const bypassProxy = ctx.workspaceSettings?.bypassAnthropicProxy ?? false;
+  const hasAnthropicCustomEndpoint = hasAnthropicCustomEndpointConfigured({
+    apiKeys: {
+      ANTHROPIC_BASE_URL: ctx.apiKeys?.ANTHROPIC_BASE_URL,
+    },
+    bypassAnthropicProxy: bypassProxy,
+    providerOverrides: ctx.providerConfig?.isOverridden
+      ? [
+          {
+            providerId: "anthropic",
+            enabled: true,
+            baseUrl: ctx.providerConfig.baseUrl,
+            apiFormat: ctx.providerConfig.apiFormat,
+          },
+        ]
+      : [],
+  });
   const hasTaskRunJwt = ctx.taskRunJwt.trim().length > 0;
   const routingConfig = ctx.providerConfig?.claudeRouting;
   const shouldApplyClaudeRouting =
@@ -608,6 +630,12 @@ exit 0`;
     ctx.providerConfig?.isOverridden === true &&
     ctx.providerConfig.apiFormat === "anthropic" &&
     routingConfig?.mode === "anthropic_compatible_gateway";
+
+  if (modelSpec?.requiresCustomEndpoint && !hasAnthropicApiKey) {
+    throw new Error(
+      `${ctx.agentName ?? "claude"} requires an Anthropic API key`,
+    );
+  }
 
   // If OAuth token is provided, write it to /etc/claude-code/env
   // The wrapper scripts (claude and other launchers) source this file before running claude-code
@@ -864,9 +892,31 @@ exit 0`;
             routingConfig.haiku,
           );
           if (routingConfig.subagentModel?.trim()) {
-            result.CLAUDE_CODE_SUBAGENT_MODEL = routingConfig.subagentModel.trim();
+            result.CLAUDE_CODE_SUBAGENT_MODEL =
+              routingConfig.subagentModel.trim();
           }
           result.ANTHROPIC_CUSTOM_MODEL_OPTION = "custom";
+        }
+
+        if (modelSpec?.requiresCustomEndpoint) {
+          if (!hasAnthropicCustomEndpoint) {
+            throw new Error(
+              `${ctx.agentName ?? "claude"} requires an Anthropic-compatible custom endpoint`,
+            );
+          }
+          result.ANTHROPIC_CUSTOM_MODEL_OPTION = modelSpec.nativeModelId;
+          if (modelSpec.customModelOptionName?.trim()) {
+            result.ANTHROPIC_CUSTOM_MODEL_OPTION_NAME =
+              modelSpec.customModelOptionName.trim();
+          }
+          if (modelSpec.customModelOptionDescription?.trim()) {
+            result.ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION =
+              modelSpec.customModelOptionDescription.trim();
+          }
+          if (modelSpec.customModelOptionSupportedCapabilities?.length) {
+            result.ANTHROPIC_CUSTOM_MODEL_OPTION_SUPPORTED_CAPABILITIES =
+              modelSpec.customModelOptionSupportedCapabilities.join(",");
+          }
         }
 
         return result;
