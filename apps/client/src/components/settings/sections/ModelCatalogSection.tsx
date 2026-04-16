@@ -1,17 +1,16 @@
 import { AgentLogo } from "@/components/icons/agent-logos";
 import { SettingSection } from "@/components/settings/SettingSection";
+import {
+  useModelAvailability,
+  useTeamModelCatalog,
+} from "@/hooks/useTeamModelCatalog";
 import { api } from "@cmux/convex/api";
 import type { AgentVendor } from "@cmux/shared/agent-catalog";
-import {
-  hasAnthropicCustomEndpointConfigured,
-  requiresAnthropicCustomEndpoint,
-} from "@cmux/shared/providers/anthropic/models";
 import { Switch, Button, Spinner } from "@heroui/react";
-import { convexQuery } from "@convex-dev/react-query";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { useAction, useConvex } from "convex/react";
+import { useMutation } from "@tanstack/react-query";
+import { useConvex } from "convex/react";
 import { GripVertical, RefreshCw, Search, Database, Zap } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { cachedGetUser } from "@/lib/cachedGetUser";
 import {
@@ -64,116 +63,8 @@ export function ModelCatalogSection({
   const [draggedModel, setDraggedModel] = useState<string | null>(null);
   const [dragOverModel, setDragOverModel] = useState<string | null>(null);
 
-  // Query all models (admin view)
-  const {
-    data: models,
-    refetch: refetchModels,
-    isLoading,
-  } = useQuery(convexQuery(api.models.listAll, { teamSlugOrId }));
-
-  // Auto-seed models if none exist (self-healing mechanism)
-  const ensureModelsSeeded = useAction(api.modelDiscovery.ensureModelsSeeded);
-  const hasTriedSeeding = useRef(false);
-  useEffect(() => {
-    // Only try seeding once per component mount
-    if (hasTriedSeeding.current) return;
-    // Wait for query to complete
-    if (isLoading) return;
-    // If we have models, no need to seed
-    if (models && models.length > 0) return;
-
-    // No models found - trigger seeding
-    hasTriedSeeding.current = true;
-    console.log(
-      "[ModelCatalogSection] No models found, triggering auto-seed...",
-    );
-    ensureModelsSeeded({ teamSlugOrId })
-      .then((result) => {
-        if (result.seeded) {
-          console.log(
-            `[ModelCatalogSection] Auto-seeded ${result.count} models`,
-          );
-          void refetchModels();
-        }
-      })
-      .catch((error) => {
-        console.error("[ModelCatalogSection] Auto-seed failed:", error);
-      });
-  }, [models, isLoading, ensureModelsSeeded, teamSlugOrId, refetchModels]);
-
-  // Query API keys to determine model availability
-  const { data: apiKeys } = useQuery(
-    convexQuery(api.apiKeys.getAll, { teamSlugOrId }),
-  );
-  const { data: workspaceSettings } = useQuery(
-    convexQuery(api.workspaceSettings.get, { teamSlugOrId }),
-  );
-  const { data: anthropicOverride } = useQuery(
-    convexQuery(api.providerOverrides.getByProvider, {
-      teamSlugOrId,
-      providerId: "anthropic",
-    }),
-  );
-
-  // Build a Set of configured API key env vars for efficient lookup
-  const configuredApiKeys = useMemo(() => {
-    if (!apiKeys) return new Set<string>();
-    return new Set(apiKeys.map((k) => k.envVar));
-  }, [apiKeys]);
-  const storedApiKeys = useMemo(() => {
-    return (apiKeys ?? []).reduce<Record<string, string | undefined>>(
-      (acc, key) => {
-        acc[key.envVar] = key.value;
-        return acc;
-      },
-      {},
-    );
-  }, [apiKeys]);
-  const hasAnthropicCustomEndpoint = useMemo(
-    () =>
-      hasAnthropicCustomEndpointConfigured({
-        apiKeys: {
-          ANTHROPIC_BASE_URL: storedApiKeys.ANTHROPIC_BASE_URL,
-        },
-        bypassAnthropicProxy: workspaceSettings?.bypassAnthropicProxy ?? false,
-        providerOverrides: anthropicOverride
-          ? [
-              {
-                providerId: anthropicOverride.providerId,
-                enabled: anthropicOverride.enabled,
-                baseUrl: anthropicOverride.baseUrl,
-                apiFormat: anthropicOverride.apiFormat,
-              },
-            ]
-          : [],
-      }),
-    [
-      anthropicOverride,
-      storedApiKeys.ANTHROPIC_BASE_URL,
-      workspaceSettings?.bypassAnthropicProxy,
-    ],
-  );
-
-  // Check if a model is available (required API key is configured)
-  const isModelAvailable = useCallback(
-    (model: Model) => {
-      if (
-        requiresAnthropicCustomEndpoint(model.name) &&
-        !hasAnthropicCustomEndpoint
-      ) {
-        return false;
-      }
-      // Free models are always available
-      if (model.tier === "free") return true;
-      // If no API keys required, it's available
-      if (model.requiredApiKeys.length === 0) return true;
-      // Check if at least ONE of the required API keys is configured
-      return model.requiredApiKeys.some((requiredKey) =>
-        configuredApiKeys.has(requiredKey),
-      );
-    },
-    [configuredApiKeys, hasAnthropicCustomEndpoint],
-  );
+  const { models, refetchModels, isLoading } = useTeamModelCatalog(teamSlugOrId);
+  const { isModelAvailable } = useModelAvailability(teamSlugOrId);
 
   // Mutation to toggle model enabled state
   const toggleEnabledMutation = useMutation({
