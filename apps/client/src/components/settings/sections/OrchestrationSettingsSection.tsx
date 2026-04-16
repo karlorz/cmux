@@ -19,6 +19,7 @@ const CODING_AGENT_OPTIONS = [
   { value: "codex/gpt-5.1-codex-mini", label: "Codex 5.1 Mini (Fast)" },
   { value: "codex/gpt-5.4-xhigh", label: "Codex 5.4 XHigh (Powerful)" },
   { value: "claude/haiku-4.5", label: "Claude Haiku (Fast)" },
+  { value: "claude/gpt-5.1-codex-mini", label: "Claude GPT-5.1 Codex Mini (Proxy)" },
   { value: "claude/sonnet-4", label: "Claude Sonnet (Balanced)" },
   { value: "claude/opus-4.5", label: "Claude Opus (Powerful)" },
 ];

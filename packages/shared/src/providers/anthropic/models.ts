@@ -1,4 +1,4 @@
-export type ClaudeModelFamily = "opus" | "sonnet" | "haiku";
+export type ClaudeModelFamily = "opus" | "sonnet" | "haiku" | "custom";
 
 export const CLAUDE_DEFAULT_MODEL_ENV_VARS = {
   opus: {
@@ -39,6 +39,7 @@ export interface ClaudeModelSpec {
   nameSuffix: string;
   family: ClaudeModelFamily;
   nativeModelId: string;
+  cliModel?: string;
 }
 
 export const CLAUDE_MODEL_SPECS: ClaudeModelSpec[] = [
@@ -66,6 +67,12 @@ export const CLAUDE_MODEL_SPECS: ClaudeModelSpec[] = [
     nameSuffix: "haiku-4.5",
     family: "haiku",
     nativeModelId: "claude-haiku-4-5-20251001",
+  },
+  {
+    nameSuffix: "gpt-5.1-codex-mini",
+    family: "custom",
+    nativeModelId: "gpt-5.1-codex-mini",
+    cliModel: "gpt-5.1-codex-mini",
   },
 ];
 

@@ -2,7 +2,7 @@ import type { AgentConfig, EnvironmentResult } from "../../agentConfig";
 import { ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN } from "../../apiKeys";
 import { checkClaudeRequirements } from "./check-requirements";
 import { startClaudeCompletionDetector } from "./completion-detector";
-import { getClaudeModelFamily, CLAUDE_MODEL_SPECS } from "./models";
+import { CLAUDE_MODEL_SPECS, type ClaudeModelSpec } from "./models";
 import {
   CLAUDE_KEY_ENV_VARS_TO_UNSET,
   getClaudeEnvironment,
@@ -58,20 +58,17 @@ export function createApplyClaudeApiKeys(): NonNullable<AgentConfig["applyApiKey
   };
 }
 
-function createClaudeConfig(nameSuffix: string): AgentConfig {
-  const family = getClaudeModelFamily(`claude/${nameSuffix}`);
-  if (!family) {
-    throw new Error(`Unknown Claude model family for ${nameSuffix}`);
-  }
+function createClaudeConfig(spec: ClaudeModelSpec): AgentConfig {
+  const modelArg = spec.cliModel ?? spec.family;
 
   return {
-    name: `claude/${nameSuffix}`,
+    name: `claude/${spec.nameSuffix}`,
     command: "claude",
     args: [
       "--allow-dangerously-skip-permissions",
       "--dangerously-skip-permissions",
       "--model",
-      family,
+      modelArg,
       "--ide",
       "$PROMPT",
     ],
@@ -84,5 +81,5 @@ function createClaudeConfig(nameSuffix: string): AgentConfig {
 }
 
 export const CLAUDE_AGENT_CONFIGS: AgentConfig[] = CLAUDE_MODEL_SPECS.map(
-  (spec) => createClaudeConfig(spec.nameSuffix),
+  (spec) => createClaudeConfig(spec),
 );

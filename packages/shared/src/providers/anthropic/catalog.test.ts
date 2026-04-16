@@ -52,6 +52,14 @@ describe("CLAUDE_CATALOG", () => {
     expect(haiku?.tags).toContain("fast");
   });
 
+  it("includes GPT-5.1 Codex Mini entry", () => {
+    const codexMini = CLAUDE_CATALOG.find(
+      (e) => e.name === "claude/gpt-5.1-codex-mini"
+    );
+    expect(codexMini).toBeDefined();
+    expect(codexMini?.displayName).toBe("GPT-5.1 Codex Mini");
+  });
+
   it("all tiers are paid", () => {
     for (const entry of CLAUDE_CATALOG) {
       expect(entry.tier).toBe("paid");

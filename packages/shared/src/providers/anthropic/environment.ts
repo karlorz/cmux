@@ -6,7 +6,6 @@ import type { ClaudeAliasRoute } from "../../provider-registry";
 import {
   CLAUDE_DEFAULT_MODEL_ENV_VARS,
   CLAUDE_ROUTING_ENV_VARS,
-  type ClaudeModelFamily,
   getClaudeModelSpecByAgentName,
 } from "./models";
 import {
@@ -37,7 +36,7 @@ const CLAUDE_NATIVE_EFFORT_MODELS = new Set(["claude-opus-4-6"]);
 
 function resolveClaudeDefaultModelMetadata(
   env: Record<string, string | number>,
-  envVars: (typeof CLAUDE_DEFAULT_MODEL_ENV_VARS)[ClaudeModelFamily],
+  envVars: (typeof CLAUDE_DEFAULT_MODEL_ENV_VARS)[keyof typeof CLAUDE_DEFAULT_MODEL_ENV_VARS],
   route: ClaudeAliasRoute | undefined,
 ): void {
   if (!route) {

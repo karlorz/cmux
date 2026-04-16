@@ -172,5 +172,13 @@ describe("CLAUDE_AGENT_CONFIGS", () => {
       expect(config).toBeDefined();
       expect(config?.args).toContain("haiku");
     });
+
+    it("includes gpt-5.1-codex-mini config", () => {
+      const config = CLAUDE_AGENT_CONFIGS.find(
+        (c) => c.name === "claude/gpt-5.1-codex-mini"
+      );
+      expect(config).toBeDefined();
+      expect(config?.args).toContain("gpt-5.1-codex-mini");
+    });
   });
 });
