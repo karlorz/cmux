@@ -20,9 +20,10 @@ describe("CLAUDE_CATALOG", () => {
   it("all entries require CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY", () => {
     for (const entry of CLAUDE_CATALOG) {
       const hasClaudeToken = entry.requiredApiKeys.includes(
-        "CLAUDE_CODE_OAUTH_TOKEN"
+        "CLAUDE_CODE_OAUTH_TOKEN",
       );
-      const hasAnthropicKey = entry.requiredApiKeys.includes("ANTHROPIC_API_KEY");
+      const hasAnthropicKey =
+        entry.requiredApiKeys.includes("ANTHROPIC_API_KEY");
       expect(hasClaudeToken || hasAnthropicKey).toBe(true);
     }
   });
@@ -50,6 +51,15 @@ describe("CLAUDE_CATALOG", () => {
     const haiku = CLAUDE_CATALOG.find((e) => e.name === "claude/haiku-4.5");
     expect(haiku).toBeDefined();
     expect(haiku?.tags).toContain("fast");
+  });
+
+  it("includes GPT-5.1 Codex Mini as a proxy-backed Claude model", () => {
+    const model = CLAUDE_CATALOG.find(
+      (e) => e.name === "claude/gpt-5.1-codex-mini",
+    );
+    expect(model).toBeDefined();
+    expect(model?.requiredApiKeys).toEqual(["ANTHROPIC_API_KEY"]);
+    expect(model?.tags).toContain("proxy");
   });
 
   it("all tiers are paid", () => {

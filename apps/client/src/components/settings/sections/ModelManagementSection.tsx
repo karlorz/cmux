@@ -1,15 +1,21 @@
 import { AgentLogo } from "@/components/icons/agent-logos";
 import { SettingSection } from "@/components/settings/SettingSection";
+import {
+  useModelAvailability,
+  useTeamModelCatalog,
+} from "@/hooks/useTeamModelCatalog";
 import { api } from "@cmux/convex/api";
 import type { AgentVendor } from "@cmux/shared/agent-catalog";
 import { Switch } from "@heroui/react";
-import { convexQuery } from "@convex-dev/react-query";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { useAction, useConvex } from "convex/react";
+import { useMutation } from "@tanstack/react-query";
+import { useConvex } from "convex/react";
 import { Search } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { getVendorDisplayName, groupModelsByVendor } from "@/lib/model-vendor-utils";
+import {
+  getVendorDisplayName,
+  groupModelsByVendor,
+} from "@/lib/model-vendor-utils";
 
 // Model entry from Convex database
 interface ModelEntry {
@@ -37,62 +43,11 @@ export function ModelManagementSection({
   const [searchQuery, setSearchQuery] = useState("");
   const [showHiddenOnly, setShowHiddenOnly] = useState(false);
 
-  // Query all models from Convex database (includes disabled and discovered models)
-  const { data: convexModels, refetch: refetchModels, isLoading } = useQuery(
-    convexQuery(api.models.listAll, { teamSlugOrId })
-  );
-
-  // Auto-seed models if none exist (self-healing mechanism)
-  const ensureModelsSeeded = useAction(api.modelDiscovery.ensureModelsSeeded);
-  const hasTriedSeeding = useRef(false);
-  useEffect(() => {
-    // Only try seeding once per component mount
-    if (hasTriedSeeding.current) return;
-    // Wait for query to complete
-    if (isLoading) return;
-    // If we have models, no need to seed
-    if (convexModels && convexModels.length > 0) return;
-
-    // No models found - trigger seeding
-    hasTriedSeeding.current = true;
-    console.log("[ModelManagementSection] No models found, triggering auto-seed...");
-    ensureModelsSeeded({ teamSlugOrId })
-      .then((result) => {
-        if (result.seeded) {
-          console.log(`[ModelManagementSection] Auto-seeded ${result.count} models`);
-          void refetchModels();
-        }
-      })
-      .catch((error) => {
-        console.error("[ModelManagementSection] Auto-seed failed:", error);
-      });
-  }, [convexModels, isLoading, ensureModelsSeeded, teamSlugOrId, refetchModels]);
-
-  // Query API keys to determine model availability
-  const { data: apiKeys } = useQuery(
-    convexQuery(api.apiKeys.getAll, { teamSlugOrId })
-  );
-
-  // Build a Set of configured API key env vars for efficient lookup
-  const configuredApiKeys = useMemo(() => {
-    if (!apiKeys) return new Set<string>();
-    return new Set(apiKeys.map((k) => k.envVar));
-  }, [apiKeys]);
-
-  // Check if a model is available (required API key is configured)
-  const isModelAvailable = useCallback(
-    (entry: ModelEntry) => {
-      // Free models are always available
-      if (entry.tier === "free") return true;
-      // If no API keys required, it's available
-      if (!entry.requiredApiKeys || entry.requiredApiKeys.length === 0) return true;
-      // Check if at least ONE of the required API keys is configured
-      return entry.requiredApiKeys.some((requiredKey) =>
-        configuredApiKeys.has(requiredKey)
-      );
-    },
-    [configuredApiKeys]
-  );
+  const {
+    models: convexModels,
+    refetchModels,
+  } = useTeamModelCatalog(teamSlugOrId);
+  const { isModelAvailable } = useModelAvailability(teamSlugOrId);
 
   const isVisibleForTeam = useCallback((entry: ModelEntry) => {
     return entry.enabled && !entry.hiddenForTeam;
@@ -126,7 +81,7 @@ export function ModelManagementSection({
     (modelName: string, visible: boolean) => {
       toggleModelMutation.mutate({ modelName, hidden: !visible });
     },
-    [toggleModelMutation]
+    [toggleModelMutation],
   );
 
   // Filter and group models by vendor
@@ -158,7 +113,13 @@ export function ModelManagementSection({
 
     // Group by vendor using shared utility (preserves sort order within vendor)
     return groupModelsByVendor(filtered);
-  }, [convexModels, searchQuery, showHiddenOnly, isModelAvailable, isVisibleForTeam]);
+  }, [
+    convexModels,
+    searchQuery,
+    showHiddenOnly,
+    isModelAvailable,
+    isVisibleForTeam,
+  ]);
 
   // Count only available models (with API keys configured)
   const availableModels = convexModels?.filter(isModelAvailable) ?? [];
@@ -287,7 +248,9 @@ export function ModelManagementSection({
                               size="sm"
                               color="primary"
                               isSelected={isVisible}
-                              isDisabled={isToggling || isSystemDisabled || entry.disabled}
+                              isDisabled={
+                                isToggling || isSystemDisabled || entry.disabled
+                              }
                               onValueChange={(visible) =>
                                 handleSetVisibility(entry.name, visible)
                               }
@@ -298,7 +261,7 @@ export function ModelManagementSection({
                     })}
                   </div>
                 </div>
-              )
+              ),
             )}
 
             {filteredAndGroupedModels.size === 0 && (

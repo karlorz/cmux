@@ -4,6 +4,10 @@ import { authMutation, authQuery } from "./users/utils";
 import { resolveTeamIdLoose } from "../_shared/team";
 import { isAuthFreeModel } from "@cmux/shared/providers/control-plane";
 import { AGENT_CATALOG } from "@cmux/shared/agent-catalog";
+import {
+  hasAnthropicCustomEndpointConfigured,
+  requiresAnthropicCustomEndpoint,
+} from "@cmux/shared/providers/anthropic/models";
 
 function catalogDefinesVariants(
   catalogEntry: (typeof AGENT_CATALOG)[number] | undefined,
@@ -104,21 +108,35 @@ export const listAvailable = authQuery({
   },
   handler: async (ctx, args) => {
     // Verify user has access to the team and get teamId
+    const userId = ctx.identity.subject;
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
     console.log(
       `[listAvailable] teamSlugOrId=${args.teamSlugOrId}, resolved teamId=${teamId}`,
     );
 
-    const [models, teamVisibility] = await Promise.all([
-      ctx.db
-        .query("models")
-        .withIndex("by_enabled", (q) => q.eq("enabled", true))
-        .collect(),
-      ctx.db
-        .query("teamModelVisibility")
-        .withIndex("by_team", (q) => q.eq("teamId", teamId))
-        .first(),
-    ]);
+    const [models, teamVisibility, workspaceSettings, anthropicOverride] =
+      await Promise.all([
+        ctx.db
+          .query("models")
+          .withIndex("by_enabled", (q) => q.eq("enabled", true))
+          .collect(),
+        ctx.db
+          .query("teamModelVisibility")
+          .withIndex("by_team", (q) => q.eq("teamId", teamId))
+          .first(),
+        ctx.db
+          .query("workspaceSettings")
+          .withIndex("by_team_user", (q) =>
+            q.eq("teamId", teamId).eq("userId", userId),
+          )
+          .first(),
+        ctx.db
+          .query("providerOverrides")
+          .withIndex("by_team_provider", (q) =>
+            q.eq("teamId", teamId).eq("providerId", "anthropic"),
+          )
+          .first(),
+      ]);
     const hiddenModels = new Set(teamVisibility?.hiddenModels ?? []);
 
     console.log(`[listAvailable] Found ${models.length} enabled models`);
@@ -144,9 +162,37 @@ export const listAvailable = authQuery({
       .collect();
 
     const configuredKeyEnvVars = new Set(apiKeys.map((k) => k.envVar));
+    const storedApiKeys = Object.fromEntries(
+      apiKeys.map((key) => [key.envVar, key.value]),
+    );
+    const hasAnthropicCustomEndpoint = hasAnthropicCustomEndpointConfigured({
+      apiKeys: {
+        ANTHROPIC_BASE_URL:
+          typeof storedApiKeys.ANTHROPIC_BASE_URL === "string"
+            ? storedApiKeys.ANTHROPIC_BASE_URL
+            : undefined,
+      },
+      bypassAnthropicProxy: workspaceSettings?.bypassAnthropicProxy ?? false,
+      providerOverrides: anthropicOverride
+        ? [
+            {
+              providerId: anthropicOverride.providerId,
+              enabled: anthropicOverride.enabled,
+              baseUrl: anthropicOverride.baseUrl,
+              apiFormat: anthropicOverride.apiFormat,
+            },
+          ]
+        : [],
+    });
 
     // Filter models by availability
     const availableModels = visibleModels.filter((model) => {
+      if (
+        requiresAnthropicCustomEndpoint(model.name) &&
+        !hasAnthropicCustomEndpoint
+      ) {
+        return false;
+      }
       // Auth-free free tier models are always available
       if (isAuthFreeModel(model)) return true;
       // Models with no required keys are available

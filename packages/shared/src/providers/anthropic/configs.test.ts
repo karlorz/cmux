@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { CLAUDE_AGENT_CONFIGS, createApplyClaudeApiKeys } from "./configs";
+import {
+  CLAUDE_AGENT_CONFIGS,
+  createApplyClaudeApiKeys,
+  createApplyClaudeApiKeysWithOptions,
+} from "./configs";
 import { ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN } from "../../apiKeys";
 
 describe("createApplyClaudeApiKeys", () => {
   const applyApiKeys = createApplyClaudeApiKeys();
+  const applyProxyOnlyApiKeys = createApplyClaudeApiKeysWithOptions({
+    allowOAuth: false,
+  });
 
   describe("OAuth token priority", () => {
     it("prefers OAuth token over API key when both are set", async () => {
@@ -11,7 +18,10 @@ describe("createApplyClaudeApiKeys", () => {
         CLAUDE_CODE_OAUTH_TOKEN: "oauth-token-123",
         ANTHROPIC_API_KEY: "sk-ant-api-key-456",
       });
-      expect(result.env).toHaveProperty("CLAUDE_CODE_OAUTH_TOKEN", "oauth-token-123");
+      expect(result.env).toHaveProperty(
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "oauth-token-123",
+      );
       expect(result.env).not.toHaveProperty("ANTHROPIC_API_KEY");
     });
 
@@ -26,7 +36,9 @@ describe("createApplyClaudeApiKeys", () => {
       const result = await applyApiKeys({
         CLAUDE_CODE_OAUTH_TOKEN: "oauth-token-123",
       });
-      expect(result.env).toEqual({ CLAUDE_CODE_OAUTH_TOKEN: "oauth-token-123" });
+      expect(result.env).toEqual({
+        CLAUDE_CODE_OAUTH_TOKEN: "oauth-token-123",
+      });
     });
   });
 
@@ -35,7 +47,10 @@ describe("createApplyClaudeApiKeys", () => {
       const result = await applyApiKeys({
         ANTHROPIC_API_KEY: "sk-ant-api-key-456",
       });
-      expect(result.env).toHaveProperty("ANTHROPIC_API_KEY", "sk-ant-api-key-456");
+      expect(result.env).toHaveProperty(
+        "ANTHROPIC_API_KEY",
+        "sk-ant-api-key-456",
+      );
       expect(result.env).not.toHaveProperty("CLAUDE_CODE_OAUTH_TOKEN");
     });
 
@@ -44,7 +59,10 @@ describe("createApplyClaudeApiKeys", () => {
         CLAUDE_CODE_OAUTH_TOKEN: "",
         ANTHROPIC_API_KEY: "sk-ant-api-key-456",
       });
-      expect(result.env).toHaveProperty("ANTHROPIC_API_KEY", "sk-ant-api-key-456");
+      expect(result.env).toHaveProperty(
+        "ANTHROPIC_API_KEY",
+        "sk-ant-api-key-456",
+      );
     });
 
     it("uses API key when OAuth token is whitespace only", async () => {
@@ -52,7 +70,10 @@ describe("createApplyClaudeApiKeys", () => {
         CLAUDE_CODE_OAUTH_TOKEN: "   ",
         ANTHROPIC_API_KEY: "sk-ant-api-key-456",
       });
-      expect(result.env).toHaveProperty("ANTHROPIC_API_KEY", "sk-ant-api-key-456");
+      expect(result.env).toHaveProperty(
+        "ANTHROPIC_API_KEY",
+        "sk-ant-api-key-456",
+      );
     });
   });
 
@@ -92,6 +113,18 @@ describe("createApplyClaudeApiKeys", () => {
         ANTHROPIC_API_KEY: "",
       });
       expect(result.env).toEqual({});
+    });
+  });
+
+  describe("proxy-only mode", () => {
+    it("ignores OAuth tokens and uses Anthropic API key only", async () => {
+      const result = await applyProxyOnlyApiKeys({
+        CLAUDE_CODE_OAUTH_TOKEN: "oauth-token-123",
+        ANTHROPIC_API_KEY: "sk-ant-api-key-456",
+      });
+      expect(result.env).toEqual({
+        ANTHROPIC_API_KEY: "sk-ant-api-key-456",
+      });
     });
   });
 });
@@ -141,36 +174,56 @@ describe("CLAUDE_AGENT_CONFIGS", () => {
     }
   });
 
-  it("all configs have both OAuth and API key in apiKeys", () => {
+  it("native configs keep OAuth + API key while proxy-only config uses API key only", () => {
     for (const config of CLAUDE_AGENT_CONFIGS) {
-      expect(config.apiKeys).toContain(CLAUDE_CODE_OAUTH_TOKEN);
       expect(config.apiKeys).toContain(ANTHROPIC_API_KEY);
+      if (config.name === "claude/gpt-5.1-codex-mini") {
+        expect(config.apiKeys).not.toContain(CLAUDE_CODE_OAUTH_TOKEN);
+      } else {
+        expect(config.apiKeys).toContain(CLAUDE_CODE_OAUTH_TOKEN);
+      }
     }
   });
 
   describe("model mapping", () => {
     it("includes opus-4.6 config", () => {
-      const config = CLAUDE_AGENT_CONFIGS.find((c) => c.name === "claude/opus-4.6");
+      const config = CLAUDE_AGENT_CONFIGS.find(
+        (c) => c.name === "claude/opus-4.6",
+      );
       expect(config).toBeDefined();
       expect(config?.args).toContain("opus");
     });
 
     it("includes opus-4.5 config", () => {
-      const config = CLAUDE_AGENT_CONFIGS.find((c) => c.name === "claude/opus-4.5");
+      const config = CLAUDE_AGENT_CONFIGS.find(
+        (c) => c.name === "claude/opus-4.5",
+      );
       expect(config).toBeDefined();
       expect(config?.args).toContain("opus");
     });
 
     it("includes sonnet-4.5 config", () => {
-      const config = CLAUDE_AGENT_CONFIGS.find((c) => c.name === "claude/sonnet-4.5");
+      const config = CLAUDE_AGENT_CONFIGS.find(
+        (c) => c.name === "claude/sonnet-4.5",
+      );
       expect(config).toBeDefined();
       expect(config?.args).toContain("sonnet");
     });
 
     it("includes haiku-4.5 config", () => {
-      const config = CLAUDE_AGENT_CONFIGS.find((c) => c.name === "claude/haiku-4.5");
+      const config = CLAUDE_AGENT_CONFIGS.find(
+        (c) => c.name === "claude/haiku-4.5",
+      );
       expect(config).toBeDefined();
       expect(config?.args).toContain("haiku");
+    });
+
+    it("includes GPT-5.1 Codex Mini as a direct custom model launch", () => {
+      const config = CLAUDE_AGENT_CONFIGS.find(
+        (c) => c.name === "claude/gpt-5.1-codex-mini",
+      );
+      expect(config).toBeDefined();
+      expect(config?.args).toContain("gpt-5.1-codex-mini");
     });
   });
 });

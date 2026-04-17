@@ -1,8 +1,8 @@
 import type { AgentConfig, EnvironmentResult } from "../../agentConfig";
 import { ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN } from "../../apiKeys";
-import { checkClaudeRequirements } from "./check-requirements";
+import { createCheckClaudeRequirements } from "./check-requirements";
 import { startClaudeCompletionDetector } from "./completion-detector";
-import { getClaudeModelFamily, CLAUDE_MODEL_SPECS } from "./models";
+import { CLAUDE_MODEL_SPECS, getClaudeModelSpecByAgentName } from "./models";
 import {
   CLAUDE_KEY_ENV_VARS_TO_UNSET,
   getClaudeEnvironment,
@@ -18,7 +18,17 @@ import {
  *      the request will be routed to platform Bedrock proxy
  * 3. No fallback - users must provide credentials to use Claude agents
  */
-export function createApplyClaudeApiKeys(): NonNullable<AgentConfig["applyApiKeys"]> {
+export function createApplyClaudeApiKeys(): NonNullable<
+  AgentConfig["applyApiKeys"]
+> {
+  return createApplyClaudeApiKeysWithOptions();
+}
+
+export function createApplyClaudeApiKeysWithOptions(options?: {
+  allowOAuth?: boolean;
+}): NonNullable<AgentConfig["applyApiKeys"]> {
+  const allowOAuth = options?.allowOAuth ?? true;
+
   return async (keys): Promise<Partial<EnvironmentResult>> => {
     // Base env vars to unset (prevent conflicts)
     const unsetEnv = [...CLAUDE_KEY_ENV_VARS_TO_UNSET];
@@ -27,7 +37,7 @@ export function createApplyClaudeApiKeys(): NonNullable<AgentConfig["applyApiKey
     const anthropicKey = keys.ANTHROPIC_API_KEY;
 
     // Priority 1: OAuth token (user pays via their subscription)
-    if (oauthToken && oauthToken.trim().length > 0) {
+    if (allowOAuth && oauthToken && oauthToken.trim().length > 0) {
       // Ensure ANTHROPIC_API_KEY is in the unset list
       if (!unsetEnv.includes("ANTHROPIC_API_KEY")) {
         unsetEnv.push("ANTHROPIC_API_KEY");
@@ -59,10 +69,15 @@ export function createApplyClaudeApiKeys(): NonNullable<AgentConfig["applyApiKey
 }
 
 function createClaudeConfig(nameSuffix: string): AgentConfig {
-  const family = getClaudeModelFamily(`claude/${nameSuffix}`);
-  if (!family) {
+  const spec = getClaudeModelSpecByAgentName(`claude/${nameSuffix}`);
+  if (!spec) {
     throw new Error(`Unknown Claude model family for ${nameSuffix}`);
   }
+
+  const allowOAuth = !spec.requiresCustomEndpoint;
+  const apiKeys = allowOAuth
+    ? [CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY]
+    : [ANTHROPIC_API_KEY];
 
   return {
     name: `claude/${nameSuffix}`,
@@ -71,14 +86,14 @@ function createClaudeConfig(nameSuffix: string): AgentConfig {
       "--allow-dangerously-skip-permissions",
       "--dangerously-skip-permissions",
       "--model",
-      family,
+      spec.launchModel,
       "--ide",
       "$PROMPT",
     ],
     environment: getClaudeEnvironment,
-    checkRequirements: checkClaudeRequirements,
-    apiKeys: [CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY],
-    applyApiKeys: createApplyClaudeApiKeys(),
+    checkRequirements: createCheckClaudeRequirements({ allowOAuth }),
+    apiKeys,
+    applyApiKeys: createApplyClaudeApiKeysWithOptions({ allowOAuth }),
     completionDetector: startClaudeCompletionDetector,
   };
 }

@@ -1,76 +1,88 @@
 import type { ProviderRequirementsContext } from "../../agentConfig";
 
-export async function checkClaudeRequirements(
-  context?: ProviderRequirementsContext
-): Promise<string[]> {
-  const { access } = await import("node:fs/promises");
-  const { homedir } = await import("node:os");
-  const { join } = await import("node:path");
-  const { exec } = await import("node:child_process");
-  const { promisify } = await import("node:util");
-  const execAsync = promisify(exec);
+export function createCheckClaudeRequirements(options?: {
+  allowOAuth?: boolean;
+}) {
+  const allowOAuth = options?.allowOAuth ?? true;
 
-  const missing: string[] = [];
+  return async function checkClaudeRequirements(
+    context?: ProviderRequirementsContext,
+  ): Promise<string[]> {
+    const { access } = await import("node:fs/promises");
+    const { homedir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { exec } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execAsync = promisify(exec);
 
-  // Check if API keys are provided in settings (from context)
-  // Either CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY works
-  const hasOAuthToken =
-    context?.apiKeys?.CLAUDE_CODE_OAUTH_TOKEN &&
-    context.apiKeys.CLAUDE_CODE_OAUTH_TOKEN.trim() !== "";
-  const hasApiKeyInSettings =
-    context?.apiKeys?.ANTHROPIC_API_KEY &&
-    context.apiKeys.ANTHROPIC_API_KEY.trim() !== "";
+    const missing: string[] = [];
 
-  // If user has provided credentials via settings, skip local checks
-  if (hasOAuthToken || hasApiKeyInSettings) {
-    return missing;
-  }
+    // Check if API keys are provided in settings (from context)
+    const hasOAuthToken =
+      allowOAuth &&
+      context?.apiKeys?.CLAUDE_CODE_OAUTH_TOKEN &&
+      context.apiKeys.CLAUDE_CODE_OAUTH_TOKEN.trim() !== "";
+    const hasApiKeyInSettings =
+      context?.apiKeys?.ANTHROPIC_API_KEY &&
+      context.apiKeys.ANTHROPIC_API_KEY.trim() !== "";
 
-  try {
-    // Check for .claude.json
-    await access(join(homedir(), ".claude.json"));
-  } catch {
-    missing.push(".claude.json file");
-  }
+    // If user has provided credentials via settings, skip local checks
+    if (hasOAuthToken || hasApiKeyInSettings) {
+      return missing;
+    }
 
-  try {
-    // Check for credentials
-    const hasCredentialsFile = await access(
-      join(homedir(), ".claude", ".credentials.json")
-    )
-      .then(() => true)
-      .catch(() => false);
+    try {
+      // Check for .claude.json
+      await access(join(homedir(), ".claude.json"));
+    } catch {
+      missing.push(".claude.json file");
+    }
 
-    if (!hasCredentialsFile) {
-      // Check for API key in keychain - try both Claude Code and Claude Code-credentials
-      let foundInKeychain = false;
+    try {
+      // Check for credentials
+      const hasCredentialsFile = await access(
+        join(homedir(), ".claude", ".credentials.json"),
+      )
+        .then(() => true)
+        .catch(() => false);
 
-      try {
-        await execAsync(
-          "security find-generic-password -a $USER -w -s 'Claude Code'"
-        );
-        foundInKeychain = true;
-      } catch {
-        // Try Claude Code-credentials as fallback
+      if (!hasCredentialsFile) {
+        // Check for API key in keychain - try both Claude Code and Claude Code-credentials
+        let foundInKeychain = false;
+
         try {
           await execAsync(
-            "security find-generic-password -a $USER -w -s 'Claude Code-credentials'"
+            "security find-generic-password -a $USER -w -s 'Claude Code'",
           );
           foundInKeychain = true;
         } catch {
-          // Neither keychain entry found
+          // Try Claude Code-credentials as fallback
+          if (allowOAuth) {
+            try {
+              await execAsync(
+                "security find-generic-password -a $USER -w -s 'Claude Code-credentials'",
+              );
+              foundInKeychain = true;
+            } catch {
+              // Neither keychain entry found
+            }
+          }
+        }
+
+        if (!foundInKeychain) {
+          missing.push(
+            allowOAuth
+              ? "Claude credentials (no .credentials.json, API key in keychain, or API key in Settings)"
+              : "Anthropic API key (no API key in keychain or Settings)",
+          );
         }
       }
-
-      if (!foundInKeychain) {
-        missing.push(
-          "Claude credentials (no .credentials.json, API key in keychain, or API key in Settings)"
-        );
-      }
+    } catch {
+      missing.push(allowOAuth ? "Claude credentials" : "Anthropic API key");
     }
-  } catch {
-    missing.push("Claude credentials");
-  }
 
-  return missing;
+    return missing;
+  };
 }
+
+export const checkClaudeRequirements = createCheckClaudeRequirements();

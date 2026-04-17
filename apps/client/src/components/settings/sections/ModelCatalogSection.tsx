@@ -1,16 +1,22 @@
 import { AgentLogo } from "@/components/icons/agent-logos";
 import { SettingSection } from "@/components/settings/SettingSection";
+import {
+  useModelAvailability,
+  useTeamModelCatalog,
+} from "@/hooks/useTeamModelCatalog";
 import { api } from "@cmux/convex/api";
 import type { AgentVendor } from "@cmux/shared/agent-catalog";
 import { Switch, Button, Spinner } from "@heroui/react";
-import { convexQuery } from "@convex-dev/react-query";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { useAction, useConvex } from "convex/react";
+import { useMutation } from "@tanstack/react-query";
+import { useConvex } from "convex/react";
 import { GripVertical, RefreshCw, Search, Database, Zap } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { cachedGetUser } from "@/lib/cachedGetUser";
-import { getVendorDisplayName, groupModelsByVendor } from "@/lib/model-vendor-utils";
+import {
+  getVendorDisplayName,
+  groupModelsByVendor,
+} from "@/lib/model-vendor-utils";
 import { stackClientApp } from "@/lib/stack";
 import { WWW_ORIGIN } from "@/lib/wwwOrigin";
 
@@ -48,69 +54,17 @@ export function ModelCatalogSection({
 }: ModelCatalogSectionProps) {
   const convex = useConvex();
   const [searchQuery, setSearchQuery] = useState("");
-  const [sourceFilter, setSourceFilter] = useState<"all" | "curated" | "discovered">("all");
+  const [sourceFilter, setSourceFilter] = useState<
+    "all" | "curated" | "discovered"
+  >("all");
   const [showDisabledOnly, setShowDisabledOnly] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSeeding, setIsSeeding] = useState(false);
   const [draggedModel, setDraggedModel] = useState<string | null>(null);
   const [dragOverModel, setDragOverModel] = useState<string | null>(null);
 
-  // Query all models (admin view)
-  const { data: models, refetch: refetchModels, isLoading } = useQuery(
-    convexQuery(api.models.listAll, { teamSlugOrId })
-  );
-
-  // Auto-seed models if none exist (self-healing mechanism)
-  const ensureModelsSeeded = useAction(api.modelDiscovery.ensureModelsSeeded);
-  const hasTriedSeeding = useRef(false);
-  useEffect(() => {
-    // Only try seeding once per component mount
-    if (hasTriedSeeding.current) return;
-    // Wait for query to complete
-    if (isLoading) return;
-    // If we have models, no need to seed
-    if (models && models.length > 0) return;
-
-    // No models found - trigger seeding
-    hasTriedSeeding.current = true;
-    console.log("[ModelCatalogSection] No models found, triggering auto-seed...");
-    ensureModelsSeeded({ teamSlugOrId })
-      .then((result) => {
-        if (result.seeded) {
-          console.log(`[ModelCatalogSection] Auto-seeded ${result.count} models`);
-          void refetchModels();
-        }
-      })
-      .catch((error) => {
-        console.error("[ModelCatalogSection] Auto-seed failed:", error);
-      });
-  }, [models, isLoading, ensureModelsSeeded, teamSlugOrId, refetchModels]);
-
-  // Query API keys to determine model availability
-  const { data: apiKeys } = useQuery(
-    convexQuery(api.apiKeys.getAll, { teamSlugOrId })
-  );
-
-  // Build a Set of configured API key env vars for efficient lookup
-  const configuredApiKeys = useMemo(() => {
-    if (!apiKeys) return new Set<string>();
-    return new Set(apiKeys.map((k) => k.envVar));
-  }, [apiKeys]);
-
-  // Check if a model is available (required API key is configured)
-  const isModelAvailable = useCallback(
-    (model: Model) => {
-      // Free models are always available
-      if (model.tier === "free") return true;
-      // If no API keys required, it's available
-      if (model.requiredApiKeys.length === 0) return true;
-      // Check if at least ONE of the required API keys is configured
-      return model.requiredApiKeys.some((requiredKey) =>
-        configuredApiKeys.has(requiredKey)
-      );
-    },
-    [configuredApiKeys]
-  );
+  const { models, refetchModels, isLoading } = useTeamModelCatalog(teamSlugOrId);
+  const { isModelAvailable } = useModelAvailability(teamSlugOrId);
 
   // Mutation to toggle model enabled state
   const toggleEnabledMutation = useMutation({
@@ -158,7 +112,7 @@ export function ModelCatalogSection({
     (modelName: string, enabled: boolean) => {
       toggleEnabledMutation.mutate({ modelName, enabled });
     },
-    [toggleEnabledMutation]
+    [toggleEnabledMutation],
   );
 
   // Trigger discovery refresh via www API
@@ -177,7 +131,7 @@ export function ModelCatalogSection({
 
       const endpoint = new URL(
         `/api/models/refresh?teamSlugOrId=${encodeURIComponent(teamSlugOrId)}`,
-        WWW_ORIGIN
+        WWW_ORIGIN,
       );
 
       const response = await fetch(endpoint.toString(), {
@@ -185,7 +139,7 @@ export function ModelCatalogSection({
         headers,
       });
 
-      const result = await response.json() as {
+      const result = (await response.json()) as {
         success: boolean;
         curated?: number;
         discovered?: number;
@@ -196,7 +150,7 @@ export function ModelCatalogSection({
 
       if (result.success) {
         toast.success(
-          `Discovery complete: ${result.curated ?? 0} curated, ${result.discovered ?? 0} discovered (${result.free ?? 0} free)`
+          `Discovery complete: ${result.curated ?? 0} curated, ${result.discovered ?? 0} discovered (${result.free ?? 0} free)`,
         );
         void refetchModels();
       } else {
@@ -226,7 +180,7 @@ export function ModelCatalogSection({
 
       const endpoint = new URL(
         `/api/models/seed?teamSlugOrId=${encodeURIComponent(teamSlugOrId)}`,
-        WWW_ORIGIN
+        WWW_ORIGIN,
       );
 
       const response = await fetch(endpoint.toString(), {
@@ -234,7 +188,7 @@ export function ModelCatalogSection({
         headers,
       });
 
-      const result = await response.json() as {
+      const result = (await response.json()) as {
         success: boolean;
         seededCount: number;
         error?: string;
@@ -259,10 +213,13 @@ export function ModelCatalogSection({
     setDraggedModel(modelName);
   }, []);
 
-  const handleDragOver = useCallback((e: React.DragEvent, modelName: string) => {
-    e.preventDefault();
-    setDragOverModel(modelName);
-  }, []);
+  const handleDragOver = useCallback(
+    (e: React.DragEvent, modelName: string) => {
+      e.preventDefault();
+      setDragOverModel(modelName);
+    },
+    [],
+  );
 
   const handleDragEnd = useCallback(() => {
     setDraggedModel(null);
@@ -293,7 +250,7 @@ export function ModelCatalogSection({
       setDraggedModel(null);
       setDragOverModel(null);
     },
-    [draggedModel, models, reorderMutation]
+    [draggedModel, models, reorderMutation],
   );
 
   // Filter and group models
@@ -336,8 +293,10 @@ export function ModelCatalogSection({
 
   const enabledCount = models?.filter((m) => m.enabled).length ?? 0;
   const totalCount = models?.length ?? 0;
-  const curatedCount = models?.filter((m) => m.source === "curated").length ?? 0;
-  const discoveredCount = models?.filter((m) => m.source === "discovered").length ?? 0;
+  const curatedCount =
+    models?.filter((m) => m.source === "curated").length ?? 0;
+  const discoveredCount =
+    models?.filter((m) => m.source === "discovered").length ?? 0;
 
   if (isLoading) {
     return (
@@ -361,7 +320,8 @@ export function ModelCatalogSection({
               No models in catalog
             </h3>
             <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-6">
-              Seed the catalog with curated models or discover new ones from providers.
+              Seed the catalog with curated models or discover new ones from
+              providers.
             </p>
             <div className="flex items-center justify-center gap-3">
               <Button
@@ -376,7 +336,9 @@ export function ModelCatalogSection({
                 variant="bordered"
                 isLoading={isRefreshing}
                 onPress={() => void handleRefresh()}
-                startContent={!isRefreshing && <RefreshCw className="h-4 w-4" />}
+                startContent={
+                  !isRefreshing && <RefreshCw className="h-4 w-4" />
+                }
               >
                 Discover Models
               </Button>
@@ -412,7 +374,11 @@ export function ModelCatalogSection({
               {/* Source filter */}
               <select
                 value={sourceFilter}
-                onChange={(e) => setSourceFilter(e.target.value as "all" | "curated" | "discovered")}
+                onChange={(e) =>
+                  setSourceFilter(
+                    e.target.value as "all" | "curated" | "discovered",
+                  )
+                }
                 className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
               >
                 {SOURCE_FILTER_OPTIONS.map((opt) => (
@@ -439,7 +405,9 @@ export function ModelCatalogSection({
                 variant="bordered"
                 isLoading={isRefreshing}
                 onPress={() => void handleRefresh()}
-                startContent={!isRefreshing && <RefreshCw className="h-4 w-4" />}
+                startContent={
+                  !isRefreshing && <RefreshCw className="h-4 w-4" />
+                }
               >
                 Discover
               </Button>
@@ -461,7 +429,8 @@ export function ModelCatalogSection({
                     {entries.map((entry) => {
                       const isToggling =
                         toggleEnabledMutation.isPending &&
-                        toggleEnabledMutation.variables?.modelName === entry.name;
+                        toggleEnabledMutation.variables?.modelName ===
+                          entry.name;
                       const isDragging = draggedModel === entry.name;
                       const isDragOver = dragOverModel === entry.name;
                       return (
@@ -473,7 +442,9 @@ export function ModelCatalogSection({
                           onDragEnd={handleDragEnd}
                           onDrop={() => handleDrop(entry.name)}
                           className={`flex items-center justify-between gap-4 px-3 py-2.5 cursor-grab active:cursor-grabbing transition-colors ${
-                            isDragging ? "opacity-50 bg-neutral-100 dark:bg-neutral-800" : ""
+                            isDragging
+                              ? "opacity-50 bg-neutral-100 dark:bg-neutral-800"
+                              : ""
                           } ${
                             isDragOver ? "bg-blue-50 dark:bg-blue-900/20" : ""
                           }`}
@@ -558,7 +529,7 @@ export function ModelCatalogSection({
                     })}
                   </div>
                 </div>
-              )
+              ),
             )}
 
             {filteredAndGroupedModels.size === 0 && (

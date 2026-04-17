@@ -5,19 +5,22 @@ export const CLAUDE_DEFAULT_MODEL_ENV_VARS = {
     model: "ANTHROPIC_DEFAULT_OPUS_MODEL",
     name: "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME",
     description: "ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION",
-    supportedCapabilities: "ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES",
+    supportedCapabilities:
+      "ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES",
   },
   sonnet: {
     model: "ANTHROPIC_DEFAULT_SONNET_MODEL",
     name: "ANTHROPIC_DEFAULT_SONNET_MODEL_NAME",
     description: "ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION",
-    supportedCapabilities: "ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES",
+    supportedCapabilities:
+      "ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES",
   },
   haiku: {
     model: "ANTHROPIC_DEFAULT_HAIKU_MODEL",
     name: "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME",
     description: "ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION",
-    supportedCapabilities: "ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES",
+    supportedCapabilities:
+      "ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES",
   },
 } as const;
 
@@ -37,35 +40,54 @@ export const CLAUDE_ROUTING_ENV_VARS = [
 
 export interface ClaudeModelSpec {
   nameSuffix: string;
-  family: ClaudeModelFamily;
+  family?: ClaudeModelFamily;
+  launchModel: string;
   nativeModelId: string;
+  requiresCustomEndpoint?: boolean;
+  customModelOptionName?: string;
+  customModelOptionDescription?: string;
+  customModelOptionSupportedCapabilities?: string[];
 }
 
 export const CLAUDE_MODEL_SPECS: ClaudeModelSpec[] = [
   {
     nameSuffix: "opus-4.6",
     family: "opus",
+    launchModel: "opus",
     nativeModelId: "claude-opus-4-6",
   },
   {
     nameSuffix: "sonnet-4.6",
     family: "sonnet",
+    launchModel: "sonnet",
     nativeModelId: "claude-sonnet-4-6",
   },
   {
     nameSuffix: "opus-4.5",
     family: "opus",
+    launchModel: "opus",
     nativeModelId: "claude-opus-4-5-20251101",
   },
   {
     nameSuffix: "sonnet-4.5",
     family: "sonnet",
+    launchModel: "sonnet",
     nativeModelId: "claude-sonnet-4-5-20250929",
   },
   {
     nameSuffix: "haiku-4.5",
     family: "haiku",
+    launchModel: "haiku",
     nativeModelId: "claude-haiku-4-5-20251001",
+  },
+  {
+    nameSuffix: "gpt-5.1-codex-mini",
+    launchModel: "gpt-5.1-codex-mini",
+    nativeModelId: "gpt-5.1-codex-mini",
+    requiresCustomEndpoint: true,
+    customModelOptionName: "GPT-5.1 Codex Mini",
+    customModelOptionDescription:
+      "Claude Code via an Anthropic-compatible custom endpoint.",
   },
 ];
 
@@ -87,8 +109,49 @@ export function getClaudeModelFamily(
   return getClaudeModelSpecByAgentName(agentName)?.family;
 }
 
+export function getClaudeLaunchModel(
+  agentName: string | undefined,
+): string | undefined {
+  return getClaudeModelSpecByAgentName(agentName)?.launchModel;
+}
+
 export function getClaudeNativeModelId(
   agentName: string | undefined,
 ): string | undefined {
   return getClaudeModelSpecByAgentName(agentName)?.nativeModelId;
+}
+
+export function requiresAnthropicCustomEndpoint(
+  agentName: string | undefined,
+): boolean {
+  return (
+    getClaudeModelSpecByAgentName(agentName)?.requiresCustomEndpoint === true
+  );
+}
+
+export function hasAnthropicCustomEndpointConfigured(options?: {
+  apiKeys?: Record<string, string | undefined>;
+  bypassAnthropicProxy?: boolean;
+  providerOverrides?: Array<{
+    providerId: string;
+    enabled: boolean;
+    baseUrl?: string;
+    apiFormat?: string;
+  }>;
+}): boolean {
+  const userCustomBaseUrl = options?.apiKeys?.ANTHROPIC_BASE_URL?.trim();
+  if (options?.bypassAnthropicProxy && userCustomBaseUrl) {
+    return true;
+  }
+
+  return (
+    options?.providerOverrides?.some(
+      (override) =>
+        override.providerId === "anthropic" &&
+        override.enabled &&
+        Boolean(override.baseUrl?.trim()) &&
+        (override.apiFormat === undefined ||
+          override.apiFormat === "anthropic"),
+    ) ?? false
+  );
 }
