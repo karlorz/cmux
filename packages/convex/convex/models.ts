@@ -137,7 +137,8 @@ export const list = query({
       .query("models")
       .withIndex("by_enabled", (q) => q.eq("enabled", true))
       .collect();
-    return filterLegacyPreseededCustomClaudeModels(models).sort(
+    const visibleGlobalModels = filterLegacyPreseededCustomClaudeModels(models);
+    return visibleGlobalModels.sort(
       (a, b) => a.sortOrder - b.sortOrder,
     );
   },
@@ -166,8 +167,9 @@ export const listAll = authQuery({
     ]);
 
     const hiddenModels = new Set(teamVisibility?.hiddenModels ?? []);
+    const visibleGlobalModels = filterLegacyPreseededCustomClaudeModels(models);
     const mergedModels = [
-      ...filterLegacyPreseededCustomClaudeModels(models).map((model) =>
+      ...visibleGlobalModels.map((model) =>
         applyCatalogVariantOverrides(model),
       ),
       ...customClaudeModels.map((model) => toCustomClaudeModelCatalogEntry(model)),
@@ -232,8 +234,9 @@ export const listAvailable = authQuery({
     const enabledCustomClaudeModels = customClaudeModels
       .filter((model) => model.enabled)
       .map((model) => toCustomClaudeModelCatalogEntry(model));
+    const visibleGlobalModels = filterLegacyPreseededCustomClaudeModels(models);
     const mergedModels = [
-      ...filterLegacyPreseededCustomClaudeModels(models).map((model) =>
+      ...visibleGlobalModels.map((model) =>
         applyCatalogVariantOverrides(model),
       ),
       ...enabledCustomClaudeModels,
@@ -486,11 +489,10 @@ export const createCustomClaudeModel = authMutation({
           .collect(),
       ]);
 
-    const hasLegacyGlobalCollision =
-      existingGlobalModel !== null &&
-      isLegacyPreseededCustomClaudeModel(existingGlobalModel);
-
-    if (existingGlobalModel && !hasLegacyGlobalCollision) {
+    if (
+      existingGlobalModel &&
+      !isLegacyPreseededCustomClaudeModel(existingGlobalModel)
+    ) {
       throw new Error(`Model already exists: ${name}`);
     }
 
@@ -498,7 +500,7 @@ export const createCustomClaudeModel = authMutation({
       throw new Error(`Model already exists: ${name}`);
     }
 
-    if (existingGlobalModel && hasLegacyGlobalCollision) {
+    if (existingGlobalModel) {
       await ctx.db.delete(existingGlobalModel._id);
     }
 
