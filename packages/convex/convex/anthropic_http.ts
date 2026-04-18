@@ -19,6 +19,7 @@ const hardCodedApiKey = CMUX_ANTHROPIC_PROXY_PLACEHOLDER_API_KEY;
 // Context window sizes per model for usage tracking (Phase 5c)
 // These match the catalog values in packages/shared/src/providers/anthropic/catalog.ts
 const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
+  "claude-opus-4-7": 1000000, // 1M context
   "claude-opus-4-6": 1000000, // 1M context
   "claude-opus-4-5-20251101": 200000,
   "claude-sonnet-4-5-20250514": 200000,

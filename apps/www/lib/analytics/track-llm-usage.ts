@@ -123,6 +123,7 @@ export function estimateCost(event: LLMUsageEvent): number {
     "claude-3-5-sonnet-20241022": { input: 3, output: 15 },
     "claude-sonnet-4-5-20261022": { input: 3, output: 15 },
     "claude-3-5-haiku-20241022": { input: 0.8, output: 4 },
+    "claude-opus-4-7": { input: 15, output: 75 },
     "claude-opus-4-6-20261022": { input: 15, output: 75 },
     // OpenAI
     "gpt-4o": { input: 2.5, output: 10 },

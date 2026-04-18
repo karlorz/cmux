@@ -115,7 +115,7 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/dashboard")({
 
 // Default agents (not persisted to localStorage)
 const DEFAULT_AGENT_SELECTIONS = [
-  "claude/opus-4.6",
+  "claude/opus-4.7",
   "codex/gpt-5.4-xhigh",
 ]
   .map((agentName) => normalizeStoredAgentSelectionEntry(agentName))

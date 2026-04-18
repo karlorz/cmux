@@ -110,15 +110,15 @@ Persistent Run Directory (default):
   partial state and events up to that point. Use --persist=false to disable.
 
 Supported agents:
-  claude/*    - Claude Code CLI (haiku-4.5, sonnet-4.5, opus-4.5, opus-4.6)
+  claude/*    - Claude Code CLI (haiku-4.5, sonnet-4.5, opus-4.5, opus-4.6, opus-4.7)
   codex/*     - Codex CLI (gpt-5.4, gpt-5.3-codex, gpt-5.2-codex, gpt-5.1-codex-mini, etc.)
   gemini/*    - Gemini CLI (gemini-2.5-pro, gemini-2.5-flash)
   opencode/*  - Opencode CLI (big-pickle, small-pickle)
   amp/*       - Amp CLI (amp-1)
 
 Examples:
-  devsh orchestrate run-local --agent claude/opus-4.6 "Fix the bug in auth.ts"
-  devsh orchestrate run-local --agent claude/opus-4.6 --effort max "Handle the hairy refactor"
+  devsh orchestrate run-local --agent claude/opus-4.7 "Fix the bug in auth.ts"
+  devsh orchestrate run-local --agent claude/opus-4.7 --effort max "Handle the hairy refactor"
   devsh orchestrate run-local --agent codex/gpt-5.4 --variant xhigh --workspace ./my-repo "Add tests"
   devsh orchestrate run-local --agent gemini/gemini-2.5-pro --export ./debug.json "Refactor"
   devsh orchestrate run-local --agent claude/haiku-4.5 --timeout 1h "Long running task"

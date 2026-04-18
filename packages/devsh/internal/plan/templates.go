@@ -147,7 +147,7 @@ func generatePipeline(params TemplateParams) (*BatchSpec, error) {
 	spec.Tasks = append(spec.Tasks, BatchTask{
 		ID:     "design",
 		Prompt: fmt.Sprintf("Design the implementation approach for: %s\n\nOutput a clear plan with:\n1. Files to create/modify\n2. Key interfaces and types\n3. Implementation steps", params.Prompt),
-		Agent:  agentOrDefault(params.Agent, "claude/opus-4.6"),
+		Agent:  agentOrDefault(params.Agent, "claude/opus-4.7"),
 		Repo:   params.Repo,
 		Branch: params.Branch,
 	})
@@ -176,7 +176,7 @@ func generatePipeline(params TemplateParams) (*BatchSpec, error) {
 	spec.Tasks = append(spec.Tasks, BatchTask{
 		ID:        "review",
 		Prompt:    fmt.Sprintf("Review the implementation and tests for: %s\n\nCheck for:\n1. Code quality and best practices\n2. Test coverage\n3. Security issues\n4. Performance concerns\n\nFix any issues found.", params.Prompt),
-		Agent:     agentOrDefault(params.Agent, "claude/opus-4.6"),
+		Agent:     agentOrDefault(params.Agent, "claude/opus-4.7"),
 		DependsOn: []string{"test"},
 		Repo:      params.Repo,
 		Branch:    params.Branch,
@@ -210,7 +210,7 @@ func generateReview(params TemplateParams) (*BatchSpec, error) {
 	spec.Tasks = append(spec.Tasks, BatchTask{
 		ID:        "review",
 		Prompt:    fmt.Sprintf("Review the changes made for: %s\n\nProvide feedback on:\n1. Code quality\n2. Potential bugs\n3. Test coverage\n4. Documentation\n\nFix any issues you find.", params.Prompt),
-		Agent:     agentOrDefault(params.Agent, "claude/opus-4.6"),
+		Agent:     agentOrDefault(params.Agent, "claude/opus-4.7"),
 		DependsOn: []string{"implement"},
 		Repo:      params.Repo,
 		Branch:    params.Branch,

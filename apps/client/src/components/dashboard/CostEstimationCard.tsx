@@ -21,6 +21,7 @@ type CostEstimationCardProps = {
 // These are rough estimates - actual costs vary by model and token usage
 const ESTIMATED_COST_PER_MINUTE: Record<string, number> = {
   // Anthropic Claude models (based on typical token usage patterns)
+  "claude/opus-4.7": 0.15,
   "claude/opus-4.5": 0.15,
   "claude/opus-4.6": 0.15,
   "claude/sonnet-4.5": 0.03,

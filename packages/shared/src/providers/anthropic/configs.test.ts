@@ -183,6 +183,14 @@ describe("CLAUDE_AGENT_CONFIGS", () => {
   });
 
   describe("model mapping", () => {
+    it("includes opus-4.7 config", () => {
+      const config = CLAUDE_AGENT_CONFIGS.find(
+        (c) => c.name === "claude/opus-4.7",
+      );
+      expect(config).toBeDefined();
+      expect(config?.args).toContain("opus");
+    });
+
     it("includes opus-4.6 config", () => {
       const config = CLAUDE_AGENT_CONFIGS.find(
         (c) => c.name === "claude/opus-4.6",

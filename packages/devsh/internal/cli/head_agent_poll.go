@@ -497,7 +497,7 @@ func init() {
 	headAgentPollCmd.Flags().StringVar(&headAgentPollAgent, "agent", "auto", "Agent to dispatch (or 'auto' for label/field-based selection)")
 	headAgentPollCmd.Flags().StringVar(&headAgentPollAgentDefault, "agent-default", "claude/haiku-4.5", "Default agent when using auto selection")
 	headAgentPollCmd.Flags().StringVar(&headAgentPollAgentFrontend, "agent-frontend", "codex/gpt-5.2-xhigh", "Agent for frontend items when using auto selection")
-	headAgentPollCmd.Flags().StringVar(&headAgentPollAgentBackend, "agent-backend", "claude/opus-4.6", "Agent for backend items when using auto selection")
+	headAgentPollCmd.Flags().StringVar(&headAgentPollAgentBackend, "agent-backend", "claude/opus-4.7", "Agent for backend items when using auto selection")
 	headAgentPollCmd.Flags().IntVar(&headAgentPollMaxItems, "max-items", 5, "Maximum items to dispatch per poll (default: 5)")
 	headAgentPollCmd.Flags().IntVar(&headAgentPollMaxRetries, "max-retries", 2, "Maximum retry attempts per task (default: 2)")
 	headAgentPollCmd.Flags().BoolVar(&headAgentPollDryRun, "dry-run", false, "Show what would be dispatched without actually dispatching")

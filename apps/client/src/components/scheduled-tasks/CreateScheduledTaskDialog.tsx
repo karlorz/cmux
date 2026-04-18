@@ -12,7 +12,10 @@ interface CreateScheduledTaskDialogProps {
   onCreated: () => void;
 }
 
+const DEFAULT_AGENT_NAME = "claude/opus-4.7";
+
 const AGENT_OPTIONS = [
+  { value: DEFAULT_AGENT_NAME, label: "Claude Opus 4.7" },
   { value: "claude/opus-4.5", label: "Claude Opus 4.5" },
   { value: "claude/sonnet-4", label: "Claude Sonnet 4" },
   { value: "claude/haiku-4.5", label: "Claude Haiku 4.5" },
@@ -46,7 +49,7 @@ export function CreateScheduledTaskDialog({
 }: CreateScheduledTaskDialogProps) {
   const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [agentName, setAgentName] = useState("claude/opus-4.5");
+  const [agentName, setAgentName] = useState(DEFAULT_AGENT_NAME);
   const [repoFullName, setRepoFullName] = useState("");
   const [scheduleType, setScheduleType] = useState<"interval" | "daily" | "weekly" | "cron">("daily");
   const [intervalMinutes, setIntervalMinutes] = useState(60);
@@ -89,7 +92,7 @@ export function CreateScheduledTaskDialog({
   const resetForm = () => {
     setName("");
     setPrompt("");
-    setAgentName("claude/opus-4.5");
+    setAgentName(DEFAULT_AGENT_NAME);
     setRepoFullName("");
     setScheduleType("daily");
     setIntervalMinutes(60);

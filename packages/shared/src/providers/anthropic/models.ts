@@ -53,6 +53,12 @@ const CUSTOM_CLAUDE_MODEL_ID_REGEX = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 export const CLAUDE_MODEL_SPECS: ClaudeModelSpec[] = [
   {
+    nameSuffix: "opus-4.7",
+    family: "opus",
+    launchModel: "opus",
+    nativeModelId: "claude-opus-4-7",
+  },
+  {
     nameSuffix: "opus-4.6",
     family: "opus",
     launchModel: "opus",

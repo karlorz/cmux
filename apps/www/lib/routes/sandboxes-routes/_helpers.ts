@@ -869,7 +869,7 @@ export async function setupProviderAuth(
       apiKeys.ANTHROPIC_API_KEY || apiKeys.CLAUDE_CODE_OAUTH_TOKEN;
     if (hasClaudeKeys) {
       const resolvedClaude = registry.resolveForAgent(
-        "claude/opus-4.6",
+        "claude/opus-4.7",
         overrideMapped,
       );
 

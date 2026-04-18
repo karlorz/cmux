@@ -33,8 +33,11 @@ export const CLAUDE_KEY_ENV_VARS_TO_UNSET = [
   "CLAUDE_API_KEY",
 ];
 
-const CLAUDE_OPUS_46_EFFORT_LEVELS = new Set(["low", "medium", "high", "max"]);
-const CLAUDE_NATIVE_EFFORT_MODELS = new Set(["claude-opus-4-6"]);
+const CLAUDE_OPUS_EFFORT_LEVELS = new Set(["low", "medium", "high", "max"]);
+const CLAUDE_NATIVE_EFFORT_MODELS = new Set([
+  "claude-opus-4-6",
+  "claude-opus-4-7",
+]);
 
 function resolveClaudeDefaultModelMetadata(
   env: Record<string, string | number>,
@@ -100,7 +103,7 @@ function resolveClaudeEffortLevel(
     );
   }
 
-  if (!CLAUDE_OPUS_46_EFFORT_LEVELS.has(effort)) {
+  if (!CLAUDE_OPUS_EFFORT_LEVELS.has(effort)) {
     throw new Error(
       `Unsupported Claude effort "${effort}". Allowed values: low, medium, high, max`,
     );

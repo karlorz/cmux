@@ -129,7 +129,7 @@ echo "[info] selftest-local override check passed"
 DRY_RUN_OUTPUT="$(
   DEVSH_CLAUDE_BIN="$CLAUDE_BIN" \
   "$DEVSH_BIN_RESOLVED" orchestrate run-local \
-    --agent claude/opus-4.6 \
+    --agent claude/opus-4.7 \
     --dry-run \
     --workspace "$WORKSPACE" \
     --plugin-dir "$PLUGIN_DIR" \

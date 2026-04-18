@@ -86,7 +86,7 @@ Plan file format:
       prompt: "Second task"
       depends_on: [task1]   # Wait for task1 to complete
     - id: task3
-      agent: claude/opus-4.5
+      agent: claude/opus-4.7
       prompt: "Third task"
       workspace: /other/repo  # Override workspace
       timeout: 2h             # Override timeout
