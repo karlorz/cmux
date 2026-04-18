@@ -8,7 +8,7 @@ import {
   createCodexVariantConfig,
   type CodexReasoningEffort,
 } from "./providers/openai/configs";
-import { createDynamicClaudeConfig } from "./providers/anthropic/configs";
+import * as anthropicConfigs from "./providers/anthropic/configs";
 import { createOpencodeFreeDynamicConfig } from "./providers/opencode/configs";
 import {
   resolveModelForTaskClass,
@@ -36,7 +36,8 @@ function resolveAgentConfig(
     return staticConfig;
   }
 
-  const dynamicClaudeConfig = createDynamicClaudeConfig(agentName);
+  const dynamicClaudeConfig =
+    anthropicConfigs.createDynamicClaudeConfig?.(agentName);
   if (dynamicClaudeConfig) {
     return dynamicClaudeConfig;
   }
