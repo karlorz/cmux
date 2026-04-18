@@ -9,6 +9,81 @@ import {
   requiresAnthropicCustomEndpoint,
 } from "@cmux/shared/providers/anthropic/models";
 
+const CUSTOM_CLAUDE_MODEL_ID_REGEX = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const CUSTOM_CLAUDE_AGENT_PREFIX = "claude/";
+const CUSTOM_CLAUDE_DEFAULT_CONTEXT_WINDOW = 200000;
+const CUSTOM_CLAUDE_DEFAULT_MAX_OUTPUT_TOKENS = 32000;
+const CUSTOM_CLAUDE_MODEL_TAGS = ["custom", "proxy"] as const;
+const LEGACY_PRESEEDED_CUSTOM_CLAUDE_MODEL_NAMES = new Set([
+  "claude/gpt-5.1-codex-mini",
+]);
+
+function isLegacyPreseededCustomClaudeModel(model: {
+  name: string;
+  source?: string;
+}): boolean {
+  return (
+    model.source === "curated" &&
+    LEGACY_PRESEEDED_CUSTOM_CLAUDE_MODEL_NAMES.has(model.name)
+  );
+}
+
+function filterLegacyPreseededCustomClaudeModels<
+  T extends { name: string; source?: string },
+>(models: T[]): T[] {
+  return models.filter((model) => !isLegacyPreseededCustomClaudeModel(model));
+}
+
+function normalizeCustomClaudeModelId(rawModelId: string): string {
+  return rawModelId.trim();
+}
+
+function normalizeOptionalDescription(rawDescription: string | undefined): string | undefined {
+  const normalized = rawDescription?.trim();
+  return normalized ? normalized : undefined;
+}
+
+function buildCustomClaudeModelName(modelId: string): string {
+  return `${CUSTOM_CLAUDE_AGENT_PREFIX}${modelId}`;
+}
+
+function toCustomClaudeModelCatalogEntry(
+  customModel: {
+    _id: string;
+    name: string;
+    modelId: string;
+    displayName: string;
+    description?: string;
+    enabled: boolean;
+    sortOrder: number;
+    createdAt: number;
+    updatedAt: number;
+  },
+) {
+  return {
+    _id: customModel._id,
+    name: customModel.name,
+    displayName: customModel.displayName,
+    vendor: "anthropic",
+    source: "custom" as const,
+    requiredApiKeys: ["ANTHROPIC_API_KEY"],
+    tier: "paid" as const,
+    tags: [...CUSTOM_CLAUDE_MODEL_TAGS],
+    enabled: customModel.enabled,
+    sortOrder: customModel.sortOrder,
+    variants: [],
+    defaultVariant: undefined,
+    disabled: false,
+    disabledReason: undefined,
+    contextWindow: CUSTOM_CLAUDE_DEFAULT_CONTEXT_WINDOW,
+    maxOutputTokens: CUSTOM_CLAUDE_DEFAULT_MAX_OUTPUT_TOKENS,
+    createdAt: customModel.createdAt,
+    updatedAt: customModel.updatedAt,
+    customModelId: customModel.modelId,
+    customModelDescription: customModel.description,
+  };
+}
+
 function catalogDefinesVariants(
   catalogEntry: (typeof AGENT_CATALOG)[number] | undefined,
 ): boolean {
@@ -62,7 +137,10 @@ export const list = query({
       .query("models")
       .withIndex("by_enabled", (q) => q.eq("enabled", true))
       .collect();
-    return models.sort((a, b) => a.sortOrder - b.sortOrder);
+    const visibleGlobalModels = filterLegacyPreseededCustomClaudeModels(models);
+    return visibleGlobalModels.sort(
+      (a, b) => a.sortOrder - b.sortOrder,
+    );
   },
 });
 
@@ -76,8 +154,12 @@ export const listAll = authQuery({
   handler: async (ctx, args) => {
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
 
-    const [models, teamVisibility] = await Promise.all([
+    const [models, customClaudeModels, teamVisibility] = await Promise.all([
       ctx.db.query("models").collect(),
+      ctx.db
+        .query("teamCustomClaudeModels")
+        .withIndex("by_team", (q) => q.eq("teamId", teamId))
+        .collect(),
       ctx.db
         .query("teamModelVisibility")
         .withIndex("by_team", (q) => q.eq("teamId", teamId))
@@ -85,11 +167,17 @@ export const listAll = authQuery({
     ]);
 
     const hiddenModels = new Set(teamVisibility?.hiddenModels ?? []);
+    const visibleGlobalModels = filterLegacyPreseededCustomClaudeModels(models);
+    const mergedModels = [
+      ...visibleGlobalModels.map((model) =>
+        applyCatalogVariantOverrides(model),
+      ),
+      ...customClaudeModels.map((model) => toCustomClaudeModelCatalogEntry(model)),
+    ].sort((a, b) => a.sortOrder - b.sortOrder);
 
-    return models
-      .sort((a, b) => a.sortOrder - b.sortOrder)
+    return mergedModels
       .map((model) => ({
-        ...applyCatalogVariantOverrides(model),
+        ...model,
         hiddenForTeam: hiddenModels.has(model.name),
       }));
   },
@@ -114,11 +202,15 @@ export const listAvailable = authQuery({
       `[listAvailable] teamSlugOrId=${args.teamSlugOrId}, resolved teamId=${teamId}`,
     );
 
-    const [models, teamVisibility, workspaceSettings, anthropicOverride] =
+    const [models, customClaudeModels, teamVisibility, workspaceSettings, anthropicOverride] =
       await Promise.all([
         ctx.db
           .query("models")
           .withIndex("by_enabled", (q) => q.eq("enabled", true))
+          .collect(),
+        ctx.db
+          .query("teamCustomClaudeModels")
+          .withIndex("by_team", (q) => q.eq("teamId", teamId))
           .collect(),
         ctx.db
           .query("teamModelVisibility")
@@ -139,20 +231,29 @@ export const listAvailable = authQuery({
       ]);
     const hiddenModels = new Set(teamVisibility?.hiddenModels ?? []);
 
-    console.log(`[listAvailable] Found ${models.length} enabled models`);
+    const enabledCustomClaudeModels = customClaudeModels
+      .filter((model) => model.enabled)
+      .map((model) => toCustomClaudeModelCatalogEntry(model));
+    const visibleGlobalModels = filterLegacyPreseededCustomClaudeModels(models);
+    const mergedModels = [
+      ...visibleGlobalModels.map((model) =>
+        applyCatalogVariantOverrides(model),
+      ),
+      ...enabledCustomClaudeModels,
+    ].sort((a, b) => a.sortOrder - b.sortOrder);
+
+    console.log(`[listAvailable] Found ${mergedModels.length} enabled models`);
     console.log(
       `[listAvailable] Found ${hiddenModels.size} team-hidden models`,
     );
 
-    const visibleModels = models.filter(
+    const visibleModels = mergedModels.filter(
       (model) => !hiddenModels.has(model.name),
     );
 
     // If showAll is true, return all team-visible enabled models without credential filtering
     if (args.showAll) {
-      return visibleModels
-        .sort((a, b) => a.sortOrder - b.sortOrder)
-        .map((model) => applyCatalogVariantOverrides(model));
+      return visibleModels.sort((a, b) => a.sortOrder - b.sortOrder);
     }
 
     // Get team's configured API keys
@@ -219,9 +320,7 @@ export const listAvailable = authQuery({
     console.log(
       `[listAvailable] Returning ${availableModels.length} available models`,
     );
-    return availableModels
-      .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((model) => applyCatalogVariantOverrides(model));
+    return availableModels.sort((a, b) => a.sortOrder - b.sortOrder);
   },
 });
 
@@ -236,23 +335,40 @@ export const setEnabled = authMutation({
   },
   handler: async (ctx, args) => {
     // Verify user has access to the team
-    await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
 
-    const model = await ctx.db
-      .query("models")
-      .withIndex("by_name", (q) => q.eq("name", args.modelName))
-      .first();
+    const [model, customModel] = await Promise.all([
+      ctx.db
+        .query("models")
+        .withIndex("by_name", (q) => q.eq("name", args.modelName))
+        .first(),
+      ctx.db
+        .query("teamCustomClaudeModels")
+        .withIndex("by_team_name", (q) =>
+          q.eq("teamId", teamId).eq("name", args.modelName),
+        )
+        .first(),
+    ]);
 
-    if (!model) {
-      throw new Error(`Model not found: ${args.modelName}`);
+    if (customModel) {
+      await ctx.db.patch(customModel._id, {
+        enabled: args.enabled,
+        updatedAt: Date.now(),
+        updatedBy: userId,
+      });
+      return { success: true };
     }
 
-    await ctx.db.patch(model._id, {
-      enabled: args.enabled,
-      updatedAt: Date.now(),
-    });
+    if (model) {
+      await ctx.db.patch(model._id, {
+        enabled: args.enabled,
+        updatedAt: Date.now(),
+      });
+      return { success: true };
+    }
 
-    return { success: true };
+    throw new Error(`Model not found: ${args.modelName}`);
   },
 });
 
@@ -267,38 +383,234 @@ export const reorder = authMutation({
   },
   handler: async (ctx, args) => {
     // Verify user has access to the team
-    await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
 
     const now = Date.now();
+    const [models, customModels] = await Promise.all([
+      ctx.db.query("models").collect(),
+      ctx.db
+        .query("teamCustomClaudeModels")
+        .withIndex("by_team", (q) => q.eq("teamId", teamId))
+        .collect(),
+    ]);
 
-    // Batch fetch all models by name using parallel queries
-    const models = await Promise.all(
-      args.modelNames.map((name) =>
+    const modelByName = new Map(models.map((model) => [model.name, model]));
+    const customModelByName = new Map(
+      customModels.map((model) => [model.name, model]),
+    );
+
+    const patches: Array<Promise<unknown>> = [];
+    args.modelNames.forEach((name, index) => {
+      const model = modelByName.get(name);
+      if (model) {
+        patches.push(
+          ctx.db.patch(model._id, {
+            sortOrder: index,
+            updatedAt: now,
+          }),
+        );
+      }
+
+      const customModel = customModelByName.get(name);
+      if (customModel) {
+        patches.push(
+          ctx.db.patch(customModel._id, {
+            sortOrder: index,
+            updatedAt: now,
+            updatedBy: userId,
+          }),
+        );
+      }
+    });
+
+    await Promise.all(patches);
+
+    return { success: true };
+  },
+});
+
+/**
+ * Team query: list custom Claude models configured for this team.
+ */
+export const listTeamCustomClaudeModels = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    return ctx.db
+      .query("teamCustomClaudeModels")
+      .withIndex("by_team_sort_order", (q) => q.eq("teamId", teamId))
+      .collect();
+  },
+});
+
+/**
+ * Team mutation: create a custom Claude model entry.
+ */
+export const createCustomClaudeModel = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    modelId: v.string(),
+    displayName: v.string(),
+    description: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const modelId = normalizeCustomClaudeModelId(args.modelId);
+    if (!CUSTOM_CLAUDE_MODEL_ID_REGEX.test(modelId)) {
+      throw new Error(
+        "Invalid model ID. Use letters, numbers, dot, underscore, colon, or hyphen.",
+      );
+    }
+
+    const displayName = args.displayName.trim();
+    if (!displayName) {
+      throw new Error("Display name is required");
+    }
+
+    const name = buildCustomClaudeModelName(modelId);
+    const [existingGlobalModel, existingCustomModel, allModels, allTeamCustomModels] =
+      await Promise.all([
         ctx.db
           .query("models")
           .withIndex("by_name", (q) => q.eq("name", name))
           .first(),
+        ctx.db
+          .query("teamCustomClaudeModels")
+          .withIndex("by_team_name", (q) => q.eq("teamId", teamId).eq("name", name))
+          .first(),
+        ctx.db.query("models").collect(),
+        ctx.db
+          .query("teamCustomClaudeModels")
+          .withIndex("by_team", (q) => q.eq("teamId", teamId))
+          .collect(),
+      ]);
+
+    if (
+      existingGlobalModel &&
+      !isLegacyPreseededCustomClaudeModel(existingGlobalModel)
+    ) {
+      throw new Error(`Model already exists: ${name}`);
+    }
+
+    if (existingCustomModel) {
+      throw new Error(`Model already exists: ${name}`);
+    }
+
+    if (existingGlobalModel) {
+      await ctx.db.delete(existingGlobalModel._id);
+    }
+
+    const maxSortOrder = Math.max(
+      -1,
+      ...filterLegacyPreseededCustomClaudeModels(allModels).map(
+        (model) => model.sortOrder,
       ),
+      ...allTeamCustomModels.map((model) => model.sortOrder),
     );
+    const now = Date.now();
 
-    // Build name-to-model map for efficient lookup
-    const modelByName = new Map(
-      args.modelNames.map((name, i) => [name, models[i]]),
-    );
+    const insertedId = await ctx.db.insert("teamCustomClaudeModels", {
+      teamId,
+      name,
+      modelId,
+      displayName,
+      description: normalizeOptionalDescription(args.description),
+      enabled: true,
+      sortOrder: maxSortOrder + 1,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: userId,
+      updatedBy: userId,
+    });
 
-    // Batch update all models with new sort orders
-    await Promise.all(
-      args.modelNames.map((name, i) => {
-        const model = modelByName.get(name);
-        if (model) {
-          return ctx.db.patch(model._id, {
-            sortOrder: i,
-            updatedAt: now,
-          });
-        }
-        return Promise.resolve();
-      }),
-    );
+    return {
+      success: true,
+      modelId: insertedId,
+      name,
+    };
+  },
+});
+
+/**
+ * Team mutation: update display metadata for a custom Claude model.
+ */
+export const updateCustomClaudeModel = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    name: v.string(),
+    displayName: v.string(),
+    description: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const displayName = args.displayName.trim();
+    if (!displayName) {
+      throw new Error("Display name is required");
+    }
+
+    const customModel = await ctx.db
+      .query("teamCustomClaudeModels")
+      .withIndex("by_team_name", (q) => q.eq("teamId", teamId).eq("name", args.name))
+      .first();
+
+    if (!customModel) {
+      throw new Error(`Custom Claude model not found: ${args.name}`);
+    }
+
+    await ctx.db.patch(customModel._id, {
+      displayName,
+      description: normalizeOptionalDescription(args.description),
+      updatedAt: Date.now(),
+      updatedBy: userId,
+    });
+
+    return { success: true };
+  },
+});
+
+/**
+ * Team mutation: delete a custom Claude model.
+ */
+export const deleteCustomClaudeModel = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    const [customModel, teamVisibility] = await Promise.all([
+      ctx.db
+        .query("teamCustomClaudeModels")
+        .withIndex("by_team_name", (q) => q.eq("teamId", teamId).eq("name", args.name))
+        .first(),
+      ctx.db
+        .query("teamModelVisibility")
+        .withIndex("by_team", (q) => q.eq("teamId", teamId))
+        .first(),
+    ]);
+
+    if (!customModel) {
+      throw new Error(`Custom Claude model not found: ${args.name}`);
+    }
+
+    await ctx.db.delete(customModel._id);
+
+    if (teamVisibility?.hiddenModels.includes(args.name)) {
+      await ctx.db.patch(teamVisibility._id, {
+        hiddenModels: teamVisibility.hiddenModels.filter(
+          (modelName) => modelName !== args.name,
+        ),
+        updatedAt: Date.now(),
+        updatedBy: userId,
+      });
+    }
 
     return { success: true };
   },

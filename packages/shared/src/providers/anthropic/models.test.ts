@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  getClaudeModelSpecByAgentName,
   hasAnthropicCustomEndpointConfigured,
   requiresAnthropicCustomEndpoint,
 } from "./models";
@@ -10,6 +11,30 @@ describe("anthropic model helpers", () => {
       true,
     );
     expect(requiresAnthropicCustomEndpoint("claude/opus-4.6")).toBe(false);
+  });
+
+  it("treats unknown claude/* names as custom-endpoint models", () => {
+    expect(requiresAnthropicCustomEndpoint("claude/my-proxy-model-01")).toBe(
+      true,
+    );
+    expect(requiresAnthropicCustomEndpoint("claude/my/proxy/model")).toBe(
+      false,
+    );
+  });
+
+  it("builds dynamic model specs for valid custom claude models", () => {
+    expect(getClaudeModelSpecByAgentName("claude/my-proxy-model-01")).toEqual({
+      nameSuffix: "my-proxy-model-01",
+      launchModel: "my-proxy-model-01",
+      nativeModelId: "my-proxy-model-01",
+      requiresCustomEndpoint: true,
+      customModelOptionName: "my-proxy-model-01",
+      customModelOptionDescription:
+        "Claude Code via an Anthropic-compatible custom endpoint.",
+    });
+    expect(getClaudeModelSpecByAgentName("claude/my/proxy/model")).toBe(
+      undefined,
+    );
   });
 
   it("accepts bypassed user Anthropic base URLs as custom endpoints", () => {

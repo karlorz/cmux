@@ -10,7 +10,7 @@ type Model = {
   name: string;
   displayName: string;
   vendor: string;
-  source: "curated" | "discovered";
+  source: "curated" | "discovered" | "custom";
   discoveredFrom?: string;
   requiredApiKeys: string[];
   tier: "free" | "paid";

@@ -53,15 +53,6 @@ describe("CLAUDE_CATALOG", () => {
     expect(haiku?.tags).toContain("fast");
   });
 
-  it("includes GPT-5.1 Codex Mini as a proxy-backed Claude model", () => {
-    const model = CLAUDE_CATALOG.find(
-      (e) => e.name === "claude/gpt-5.1-codex-mini",
-    );
-    expect(model).toBeDefined();
-    expect(model?.requiredApiKeys).toEqual(["ANTHROPIC_API_KEY"]);
-    expect(model?.tags).toContain("proxy");
-  });
-
   it("all tiers are paid", () => {
     for (const entry of CLAUDE_CATALOG) {
       expect(entry.tier).toBe("paid");

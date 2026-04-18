@@ -35,10 +35,16 @@ export const toggleModel = authMutation({
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
 
     // Parallel fetch: validate model exists while fetching team visibility
-    const [model, existing] = await Promise.all([
+    const [model, customModel, existing] = await Promise.all([
       ctx.db
         .query("models")
         .withIndex("by_name", (q) => q.eq("name", args.modelName))
+        .first(),
+      ctx.db
+        .query("teamCustomClaudeModels")
+        .withIndex("by_team_name", (q) =>
+          q.eq("teamId", teamId).eq("name", args.modelName),
+        )
         .first(),
       ctx.db
         .query("teamModelVisibility")
@@ -46,7 +52,7 @@ export const toggleModel = authMutation({
         .first(),
     ]);
 
-    if (!model) {
+    if (!model && !customModel) {
       throw new Error(`Model not found: ${args.modelName}`);
     }
 

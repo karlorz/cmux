@@ -100,17 +100,4 @@ export const CLAUDE_CATALOG: AgentCatalogEntry[] = [
     contextWindow: 200000,
     maxOutputTokens: 8000,
   },
-  {
-    name: "claude/gpt-5.1-codex-mini",
-    displayName: "GPT-5.1 Codex Mini",
-    description:
-      "Claude Code routed to GPT-5.1 Codex Mini through an Anthropic-compatible custom endpoint.",
-    vendor: "anthropic",
-    requiredApiKeys: ["ANTHROPIC_API_KEY"],
-    tier: "paid",
-    tags: ["fast", "custom", "proxy"],
-    variants: [],
-    contextWindow: 200000,
-    maxOutputTokens: 32000,
-  },
 ];
