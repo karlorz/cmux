@@ -427,11 +427,6 @@ export function ModelCatalogSection({
     const searchLower = searchQuery.toLowerCase();
 
     const filtered = models.filter((entry) => {
-      // Filter out unavailable models (no API key configured)
-      if (!isModelAvailable(entry)) {
-        return false;
-      }
-
       // Apply search filter
       if (searchQuery) {
         const matchesSearch =
@@ -456,7 +451,7 @@ export function ModelCatalogSection({
 
     // Group by vendor using shared utility (preserves sort order within vendor)
     return groupModelsByVendor(filtered);
-  }, [models, searchQuery, sourceFilter, showDisabledOnly, isModelAvailable]);
+  }, [models, searchQuery, sourceFilter, showDisabledOnly]);
 
   const customClaudeModels = useMemo(
     () =>
@@ -766,6 +761,7 @@ export function ModelCatalogSection({
                         toggleEnabledMutation.isPending &&
                         toggleEnabledMutation.variables?.modelName ===
                           entry.name;
+                      const isAvailable = isModelAvailable(entry);
                       const isDragging = draggedModel === entry.name;
                       const isDragOver = dragOverModel === entry.name;
                       return (
@@ -837,6 +833,12 @@ export function ModelCatalogSection({
                                 <span className="inline-flex items-center gap-0.5 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-medium text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
                                   <Zap className="h-2.5 w-2.5" />
                                   Reasoning
+                                </span>
+                              )}
+
+                              {!isAvailable && (
+                                <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                                  Needs setup
                                 </span>
                               )}
 
