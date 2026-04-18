@@ -82,15 +82,6 @@ export const CLAUDE_MODEL_SPECS: ClaudeModelSpec[] = [
     launchModel: "haiku",
     nativeModelId: "claude-haiku-4-5-20251001",
   },
-  {
-    nameSuffix: "gpt-5.1-codex-mini",
-    launchModel: "gpt-5.1-codex-mini",
-    nativeModelId: "gpt-5.1-codex-mini",
-    requiresCustomEndpoint: true,
-    customModelOptionName: "GPT-5.1 Codex Mini",
-    customModelOptionDescription:
-      "Claude Code via an Anthropic-compatible custom endpoint.",
-  },
 ];
 
 function getDynamicCustomClaudeModelSpec(

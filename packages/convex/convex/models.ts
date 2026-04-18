@@ -14,6 +14,25 @@ const CUSTOM_CLAUDE_AGENT_PREFIX = "claude/";
 const CUSTOM_CLAUDE_DEFAULT_CONTEXT_WINDOW = 200000;
 const CUSTOM_CLAUDE_DEFAULT_MAX_OUTPUT_TOKENS = 32000;
 const CUSTOM_CLAUDE_MODEL_TAGS = ["custom", "proxy"] as const;
+const LEGACY_PRESEEDED_CUSTOM_CLAUDE_MODEL_NAMES = new Set([
+  "claude/gpt-5.1-codex-mini",
+]);
+
+function isLegacyPreseededCustomClaudeModel(model: {
+  name: string;
+  source?: string;
+}): boolean {
+  return (
+    model.source === "curated" &&
+    LEGACY_PRESEEDED_CUSTOM_CLAUDE_MODEL_NAMES.has(model.name)
+  );
+}
+
+function filterLegacyPreseededCustomClaudeModels<
+  T extends { name: string; source?: string },
+>(models: T[]): T[] {
+  return models.filter((model) => !isLegacyPreseededCustomClaudeModel(model));
+}
 
 function normalizeCustomClaudeModelId(rawModelId: string): string {
   return rawModelId.trim();
@@ -118,7 +137,9 @@ export const list = query({
       .query("models")
       .withIndex("by_enabled", (q) => q.eq("enabled", true))
       .collect();
-    return models.sort((a, b) => a.sortOrder - b.sortOrder);
+    return filterLegacyPreseededCustomClaudeModels(models).sort(
+      (a, b) => a.sortOrder - b.sortOrder,
+    );
   },
 });
 
@@ -146,7 +167,9 @@ export const listAll = authQuery({
 
     const hiddenModels = new Set(teamVisibility?.hiddenModels ?? []);
     const mergedModels = [
-      ...models.map((model) => applyCatalogVariantOverrides(model)),
+      ...filterLegacyPreseededCustomClaudeModels(models).map((model) =>
+        applyCatalogVariantOverrides(model),
+      ),
       ...customClaudeModels.map((model) => toCustomClaudeModelCatalogEntry(model)),
     ].sort((a, b) => a.sortOrder - b.sortOrder);
 
@@ -210,7 +233,9 @@ export const listAvailable = authQuery({
       .filter((model) => model.enabled)
       .map((model) => toCustomClaudeModelCatalogEntry(model));
     const mergedModels = [
-      ...models.map((model) => applyCatalogVariantOverrides(model)),
+      ...filterLegacyPreseededCustomClaudeModels(models).map((model) =>
+        applyCatalogVariantOverrides(model),
+      ),
       ...enabledCustomClaudeModels,
     ].sort((a, b) => a.sortOrder - b.sortOrder);
 
@@ -461,13 +486,27 @@ export const createCustomClaudeModel = authMutation({
           .collect(),
       ]);
 
-    if (existingGlobalModel || existingCustomModel) {
+    const hasLegacyGlobalCollision =
+      existingGlobalModel !== null &&
+      isLegacyPreseededCustomClaudeModel(existingGlobalModel);
+
+    if (existingGlobalModel && !hasLegacyGlobalCollision) {
       throw new Error(`Model already exists: ${name}`);
+    }
+
+    if (existingCustomModel) {
+      throw new Error(`Model already exists: ${name}`);
+    }
+
+    if (existingGlobalModel && hasLegacyGlobalCollision) {
+      await ctx.db.delete(existingGlobalModel._id);
     }
 
     const maxSortOrder = Math.max(
       -1,
-      ...allModels.map((model) => model.sortOrder),
+      ...filterLegacyPreseededCustomClaudeModels(allModels).map(
+        (model) => model.sortOrder,
+      ),
       ...allTeamCustomModels.map((model) => model.sortOrder),
     );
     const now = Date.now();

@@ -443,7 +443,7 @@ describe("getClaudeEnvironment", () => {
 
     expect(env.ANTHROPIC_BASE_URL).toBe("https://gateway.example.com");
     expect(env.ANTHROPIC_CUSTOM_MODEL_OPTION).toBe("gpt-5.1-codex-mini");
-    expect(env.ANTHROPIC_CUSTOM_MODEL_OPTION_NAME).toBe("GPT-5.1 Codex Mini");
+    expect(env.ANTHROPIC_CUSTOM_MODEL_OPTION_NAME).toBe("gpt-5.1-codex-mini");
   });
 
   it("rejects proxy-only Claude models without a custom endpoint", async () => {
