@@ -939,6 +939,24 @@ const convexSchema = defineSchema({
     updatedBy: v.optional(v.string()),
   }).index("by_team", ["teamId"]),
 
+  // Team-scoped custom Claude models surfaced in settings/dashboard model pickers.
+  teamCustomClaudeModels: defineTable({
+    teamId: v.string(),
+    name: v.string(), // Agent name, e.g. "claude/gpt-5.1-codex-mini-custom"
+    modelId: v.string(), // Model ID sent to Anthropic-compatible endpoint
+    displayName: v.string(),
+    description: v.optional(v.string()),
+    enabled: v.boolean(),
+    sortOrder: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    createdBy: v.optional(v.string()),
+    updatedBy: v.optional(v.string()),
+  })
+    .index("by_team", ["teamId"])
+    .index("by_team_name", ["teamId", "name"])
+    .index("by_team_sort_order", ["teamId", "sortOrder"]),
+
   // Source repo mappings for Codex-style worktrees
   // Maps projects to local repo paths per user
   sourceRepoMappings: defineTable({

@@ -356,13 +356,6 @@ describe("CLAUDE_MODEL_SPECS", () => {
         nativeModelId: "claude-haiku-4-5-20251001",
         requiresCustomEndpoint: false,
       },
-      {
-        nameSuffix: "gpt-5.1-codex-mini",
-        family: undefined,
-        launchModel: "gpt-5.1-codex-mini",
-        nativeModelId: "gpt-5.1-codex-mini",
-        requiresCustomEndpoint: true,
-      },
     ]);
   });
 });

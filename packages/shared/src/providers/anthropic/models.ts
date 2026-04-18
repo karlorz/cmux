@@ -49,6 +49,8 @@ export interface ClaudeModelSpec {
   customModelOptionSupportedCapabilities?: string[];
 }
 
+const CUSTOM_CLAUDE_MODEL_ID_REGEX = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
 export const CLAUDE_MODEL_SPECS: ClaudeModelSpec[] = [
   {
     nameSuffix: "opus-4.6",
@@ -80,16 +82,37 @@ export const CLAUDE_MODEL_SPECS: ClaudeModelSpec[] = [
     launchModel: "haiku",
     nativeModelId: "claude-haiku-4-5-20251001",
   },
-  {
-    nameSuffix: "gpt-5.1-codex-mini",
-    launchModel: "gpt-5.1-codex-mini",
-    nativeModelId: "gpt-5.1-codex-mini",
+];
+
+function getDynamicCustomClaudeModelSpec(
+  agentName: string,
+): ClaudeModelSpec | undefined {
+  if (!agentName.startsWith("claude/")) {
+    return undefined;
+  }
+
+  const customModelId = agentName.slice("claude/".length).trim();
+  if (!customModelId) {
+    return undefined;
+  }
+
+  if (
+    CLAUDE_MODEL_SPECS.some((spec) => customModelId === spec.nameSuffix) ||
+    !CUSTOM_CLAUDE_MODEL_ID_REGEX.test(customModelId)
+  ) {
+    return undefined;
+  }
+
+  return {
+    nameSuffix: customModelId,
+    launchModel: customModelId,
+    nativeModelId: customModelId,
     requiresCustomEndpoint: true,
-    customModelOptionName: "GPT-5.1 Codex Mini",
+    customModelOptionName: customModelId,
     customModelOptionDescription:
       "Claude Code via an Anthropic-compatible custom endpoint.",
-  },
-];
+  };
+}
 
 export function getClaudeModelSpecByAgentName(
   agentName: string | undefined,
@@ -98,9 +121,14 @@ export function getClaudeModelSpecByAgentName(
     return undefined;
   }
 
-  return CLAUDE_MODEL_SPECS.find(
+  const staticSpec = CLAUDE_MODEL_SPECS.find(
     (spec) => agentName === `claude/${spec.nameSuffix}`,
   );
+  if (staticSpec) {
+    return staticSpec;
+  }
+
+  return getDynamicCustomClaudeModelSpec(agentName);
 }
 
 export function getClaudeModelFamily(

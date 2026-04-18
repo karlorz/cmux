@@ -3,6 +3,7 @@ import {
   CLAUDE_AGENT_CONFIGS,
   createApplyClaudeApiKeys,
   createApplyClaudeApiKeysWithOptions,
+  createDynamicClaudeConfig,
 } from "./configs";
 import { ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN } from "../../apiKeys";
 
@@ -174,14 +175,10 @@ describe("CLAUDE_AGENT_CONFIGS", () => {
     }
   });
 
-  it("native configs keep OAuth + API key while proxy-only config uses API key only", () => {
+  it("native Claude configs keep OAuth + API key support", () => {
     for (const config of CLAUDE_AGENT_CONFIGS) {
       expect(config.apiKeys).toContain(ANTHROPIC_API_KEY);
-      if (config.name === "claude/gpt-5.1-codex-mini") {
-        expect(config.apiKeys).not.toContain(CLAUDE_CODE_OAUTH_TOKEN);
-      } else {
-        expect(config.apiKeys).toContain(CLAUDE_CODE_OAUTH_TOKEN);
-      }
+      expect(config.apiKeys).toContain(CLAUDE_CODE_OAUTH_TOKEN);
     }
   });
 
@@ -218,12 +215,27 @@ describe("CLAUDE_AGENT_CONFIGS", () => {
       expect(config?.args).toContain("haiku");
     });
 
-    it("includes GPT-5.1 Codex Mini as a direct custom model launch", () => {
-      const config = CLAUDE_AGENT_CONFIGS.find(
-        (c) => c.name === "claude/gpt-5.1-codex-mini",
-      );
-      expect(config).toBeDefined();
-      expect(config?.args).toContain("gpt-5.1-codex-mini");
-    });
+  });
+});
+
+describe("createDynamicClaudeConfig", () => {
+  it("creates proxy-only Claude configs for valid custom model names", () => {
+    const config = createDynamicClaudeConfig("claude/custom-model-01");
+    expect(config).toBeDefined();
+    expect(config?.name).toBe("claude/custom-model-01");
+    expect(config?.args).toContain("--model");
+    expect(config?.args).toContain("custom-model-01");
+    expect(config?.apiKeys).toEqual([ANTHROPIC_API_KEY]);
+  });
+
+  it("returns undefined for invalid custom model names", () => {
+    expect(createDynamicClaudeConfig("claude/custom/model/01")).toBeUndefined();
+    expect(createDynamicClaudeConfig("codex/gpt-5.4")).toBeUndefined();
+  });
+
+  it("supports previously pre-seeded proxy model ids as custom entries", () => {
+    const config = createDynamicClaudeConfig("claude/gpt-5.1-codex-mini");
+    expect(config).toBeDefined();
+    expect(config?.apiKeys).toEqual([ANTHROPIC_API_KEY]);
   });
 });

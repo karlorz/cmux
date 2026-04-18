@@ -68,19 +68,17 @@ export function createApplyClaudeApiKeysWithOptions(options?: {
   };
 }
 
-function createClaudeConfig(nameSuffix: string): AgentConfig {
-  const spec = getClaudeModelSpecByAgentName(`claude/${nameSuffix}`);
-  if (!spec) {
-    throw new Error(`Unknown Claude model family for ${nameSuffix}`);
-  }
-
+function createClaudeConfigFromSpec(
+  spec: NonNullable<ReturnType<typeof getClaudeModelSpecByAgentName>>,
+  agentName: string,
+): AgentConfig {
   const allowOAuth = !spec.requiresCustomEndpoint;
   const apiKeys = allowOAuth
     ? [CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY]
     : [ANTHROPIC_API_KEY];
 
   return {
-    name: `claude/${nameSuffix}`,
+    name: agentName,
     command: "claude",
     args: [
       "--allow-dangerously-skip-permissions",
@@ -98,6 +96,30 @@ function createClaudeConfig(nameSuffix: string): AgentConfig {
   };
 }
 
+function createClaudeConfig(nameSuffix: string): AgentConfig {
+  const agentName = `claude/${nameSuffix}`;
+  const spec = getClaudeModelSpecByAgentName(agentName);
+  if (!spec) {
+    throw new Error(`Unknown Claude model family for ${nameSuffix}`);
+  }
+  return createClaudeConfigFromSpec(spec, agentName);
+}
+
 export const CLAUDE_AGENT_CONFIGS: AgentConfig[] = CLAUDE_MODEL_SPECS.map(
   (spec) => createClaudeConfig(spec.nameSuffix),
 );
+
+export function createDynamicClaudeConfig(
+  agentName: string,
+): AgentConfig | undefined {
+  if (!agentName.startsWith("claude/")) {
+    return undefined;
+  }
+
+  const spec = getClaudeModelSpecByAgentName(agentName);
+  if (!spec) {
+    return undefined;
+  }
+
+  return createClaudeConfigFromSpec(spec, agentName);
+}
