@@ -3,6 +3,7 @@ import {
   CLAUDE_AGENT_CONFIGS,
   createApplyClaudeApiKeys,
   createApplyClaudeApiKeysWithOptions,
+  createDynamicClaudeConfig,
 } from "./configs";
 import { ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN } from "../../apiKeys";
 
@@ -225,5 +226,21 @@ describe("CLAUDE_AGENT_CONFIGS", () => {
       expect(config).toBeDefined();
       expect(config?.args).toContain("gpt-5.1-codex-mini");
     });
+  });
+});
+
+describe("createDynamicClaudeConfig", () => {
+  it("creates proxy-only Claude configs for valid custom model names", () => {
+    const config = createDynamicClaudeConfig("claude/custom-model-01");
+    expect(config).toBeDefined();
+    expect(config?.name).toBe("claude/custom-model-01");
+    expect(config?.args).toContain("--model");
+    expect(config?.args).toContain("custom-model-01");
+    expect(config?.apiKeys).toEqual([ANTHROPIC_API_KEY]);
+  });
+
+  it("returns undefined for invalid custom model names", () => {
+    expect(createDynamicClaudeConfig("claude/custom/model/01")).toBeUndefined();
+    expect(createDynamicClaudeConfig("codex/gpt-5.4")).toBeUndefined();
   });
 });
