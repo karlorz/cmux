@@ -14,10 +14,10 @@ class ClaudePricingEntry(TypedDict, total=False):
 
 
 CLAUDE_MODEL_PRICING: dict[str, ClaudePricingEntry] = {
-    "claude-opus-4-7": {input_per_million: 15, output_per_million: 75, cache_read_per_million: 1.5, cache_write_per_million: 18.75},
-    "claude-opus-4-6": {input_per_million: 15, output_per_million: 75, cache_read_per_million: 1.5, cache_write_per_million: 18.75},
-    "claude-sonnet-4-6": {input_per_million: 3, output_per_million: 15, cache_read_per_million: 0.3, cache_write_per_million: 3.75},
-    "claude-opus-4-5-20251101": {input_per_million: 15, output_per_million: 75, cache_read_per_million: 1.5, cache_write_per_million: 18.75},
-    "claude-sonnet-4-5-20250929": {input_per_million: 3, output_per_million: 15, cache_read_per_million: 0.3, cache_write_per_million: 3.75},
-    "claude-haiku-4-5-20251001": {input_per_million: 0.8, output_per_million: 4, cache_read_per_million: 0.08, cache_write_per_million: 1},
+    "claude-opus-4-7": {"input_per_million": 15, "output_per_million": 75, "cache_read_per_million": 1.5, "cache_write_per_million": 18.75},
+    "claude-opus-4-6": {"input_per_million": 15, "output_per_million": 75, "cache_read_per_million": 1.5, "cache_write_per_million": 18.75},
+    "claude-sonnet-4-6": {"input_per_million": 3, "output_per_million": 15, "cache_read_per_million": 0.3, "cache_write_per_million": 3.75},
+    "claude-opus-4-5-20251101": {"input_per_million": 15, "output_per_million": 75, "cache_read_per_million": 1.5, "cache_write_per_million": 18.75},
+    "claude-sonnet-4-5-20250929": {"input_per_million": 3, "output_per_million": 15, "cache_read_per_million": 0.3, "cache_write_per_million": 3.75},
+    "claude-haiku-4-5-20251001": {"input_per_million": 0.8, "output_per_million": 4, "cache_read_per_million": 0.08, "cache_write_per_million": 1},
 }

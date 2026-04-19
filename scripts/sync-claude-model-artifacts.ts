@@ -130,14 +130,14 @@ function generateAgentSdkClaudePricingPy(): string {
   const entries = CLAUDE_CURATED_MODELS.map((entry) => {
     const pricing = entry.pricing;
     const parts = [
-      `input_per_million: ${pricing.inputPerMillion}`,
-      `output_per_million: ${pricing.outputPerMillion}`,
+      `"input_per_million": ${pricing.inputPerMillion}`,
+      `"output_per_million": ${pricing.outputPerMillion}`,
     ];
     if (pricing.cacheReadPerMillion !== undefined) {
-      parts.push(`cache_read_per_million: ${pricing.cacheReadPerMillion}`);
+      parts.push(`"cache_read_per_million": ${pricing.cacheReadPerMillion}`);
     }
     if (pricing.cacheWritePerMillion !== undefined) {
-      parts.push(`cache_write_per_million: ${pricing.cacheWritePerMillion}`);
+      parts.push(`"cache_write_per_million": ${pricing.cacheWritePerMillion}`);
     }
     return `    "${entry.nativeModelId}": {${parts.join(", ")}},`;
   }).join("\n");
