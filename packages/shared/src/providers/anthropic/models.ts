@@ -120,6 +120,10 @@ function getDynamicCustomClaudeModelSpec(
   };
 }
 
+const CLAUDE_MODEL_SPEC_MAP = new Map<string, ClaudeModelSpec>(
+  CLAUDE_MODEL_SPECS.map((spec) => [`claude/${spec.nameSuffix}`, spec]),
+);
+
 export function getClaudeModelSpecByAgentName(
   agentName: string | undefined,
 ): ClaudeModelSpec | undefined {
@@ -127,14 +131,7 @@ export function getClaudeModelSpecByAgentName(
     return undefined;
   }
 
-  const staticSpec = CLAUDE_MODEL_SPECS.find(
-    (spec) => agentName === `claude/${spec.nameSuffix}`,
-  );
-  if (staticSpec) {
-    return staticSpec;
-  }
-
-  return getDynamicCustomClaudeModelSpec(agentName);
+  return CLAUDE_MODEL_SPEC_MAP.get(agentName) ?? getDynamicCustomClaudeModelSpec(agentName);
 }
 
 export function getClaudeModelFamily(
