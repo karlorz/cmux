@@ -45,6 +45,7 @@ type BatchCostEstimate struct {
 // Pricing tiers (approximate USD per 1M tokens as of 2026)
 var pricingTiers = map[string]ModelPricing{
 	// Anthropic
+	"claude/opus-4.7":   {InputPer1M: 15.0, OutputPer1M: 75.0},
 	"claude/opus-4.6":   {InputPer1M: 15.0, OutputPer1M: 75.0},
 	"claude/opus-4.5":   {InputPer1M: 15.0, OutputPer1M: 75.0},
 	"claude/sonnet-4.6": {InputPer1M: 3.0, OutputPer1M: 15.0},

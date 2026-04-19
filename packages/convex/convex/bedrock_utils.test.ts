@@ -9,6 +9,14 @@ import {
 } from "./bedrock_utils";
 
 describe("toBedrockModelId", () => {
+  describe("Claude 4.7 models", () => {
+    it("maps claude-opus-4-7 to Bedrock model ID", () => {
+      const result = toBedrockModelId("claude-opus-4-7");
+      expect(result).toContain("anthropic.claude-opus-4-7");
+      expect(result).toMatch(/^(us|global)\./);
+    });
+  });
+
   describe("Claude 4.6 models", () => {
     it("maps claude-opus-4-6 to Bedrock model ID", () => {
       const result = toBedrockModelId("claude-opus-4-6");
@@ -121,6 +129,7 @@ describe("exported constants", () => {
   });
 
   it("MODEL_MAP has expected models", () => {
+    expect(MODEL_MAP["claude-opus-4-7"]).toBeDefined();
     expect(MODEL_MAP["claude-opus-4-6"]).toBeDefined();
     expect(MODEL_MAP["claude-sonnet-4-6"]).toBeDefined();
     expect(MODEL_MAP["claude-opus-4-5"]).toBeDefined();

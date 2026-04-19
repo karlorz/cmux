@@ -49,7 +49,7 @@ export const TASK_CLASS_MAPPINGS: TaskClassMapping[] = [
     displayName: "Deep Coding",
     description: "Large refactoring, multi-file changes",
     defaultModels: ["codex/gpt-5.4", "claude/opus-4.5"],
-    escalationModels: ["claude/opus-4.6"],
+    escalationModels: ["claude/opus-4.7"],
     defaultVariant: "high",
   },
   {
@@ -70,7 +70,7 @@ export const TASK_CLASS_MAPPINGS: TaskClassMapping[] = [
     taskClass: "architecture",
     displayName: "Architecture",
     description: "Complex planning, hard debugging",
-    defaultModels: ["claude/opus-4.6", "codex/gpt-5.4-pro"],
+    defaultModels: ["claude/opus-4.7", "codex/gpt-5.4-pro"],
     escalationModels: [],
     defaultVariant: "max",
   },
@@ -79,7 +79,7 @@ export const TASK_CLASS_MAPPINGS: TaskClassMapping[] = [
     displayName: "Large Context",
     description: "Cross-file comparison, repo triage",
     defaultModels: ["gemini/2.5-pro"],
-    escalationModels: ["claude/opus-4.6"],
+    escalationModels: ["claude/opus-4.7"],
   },
 ];
 

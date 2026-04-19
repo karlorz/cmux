@@ -322,6 +322,13 @@ describe("CLAUDE_MODEL_SPECS", () => {
       })),
     ).toEqual([
       {
+        nameSuffix: "opus-4.7",
+        family: "opus",
+        launchModel: "opus",
+        nativeModelId: "claude-opus-4-7",
+        requiresCustomEndpoint: false,
+      },
+      {
         nameSuffix: "opus-4.6",
         family: "opus",
         launchModel: "opus",

@@ -111,6 +111,7 @@ interface TaskGraphCardProps {
 // ============================================================================
 
 const DEFAULT_AGENTS = [
+  "claude/opus-4.7",
   "claude/opus-4.5",
   "claude/sonnet-4.5",
   "claude/haiku-4.5",

@@ -117,10 +117,10 @@ describe("task-class-routing", () => {
 
     it("should apply default variant from mapping", () => {
       const result = resolveModelForTaskClass("architecture", [
-        "claude/opus-4.6",
+        "claude/opus-4.7",
       ]);
       expect(result).not.toBeNull();
-      expect(result?.agentName).toBe("claude/opus-4.6");
+      expect(result?.agentName).toBe("claude/opus-4.7");
       expect(result?.selectedVariant).toBe("max");
     });
 
@@ -152,7 +152,7 @@ describe("task-class-routing", () => {
 
   describe("getRecommendedTaskClassForModel", () => {
     it("should return task class for default model", () => {
-      expect(getRecommendedTaskClassForModel("claude/opus-4.6")).toBe(
+      expect(getRecommendedTaskClassForModel("claude/opus-4.7")).toBe(
         "architecture"
       );
       expect(getRecommendedTaskClassForModel("gemini/2.5-flash")).toBe("eval");
@@ -172,8 +172,8 @@ describe("task-class-routing", () => {
     });
 
     it("should not return task class for escalation-only models", () => {
-      // claude/opus-4.6 is a default for architecture, not just escalation
-      expect(getRecommendedTaskClassForModel("claude/opus-4.6")).toBe(
+      // claude/opus-4.7 is a default for architecture, not just escalation
+      expect(getRecommendedTaskClassForModel("claude/opus-4.7")).toBe(
         "architecture"
       );
     });
@@ -199,10 +199,10 @@ describe("task-class-routing", () => {
     });
 
     it("should have valid variants only for models that support them", () => {
-      // Architecture has max variant - only Opus 4.6 supports it
+      // Architecture has max variant - Opus 4.7 supports it
       const archMapping = getTaskClassMapping("architecture");
       expect(archMapping?.defaultVariant).toBe("max");
-      expect(archMapping?.defaultModels).toContain("claude/opus-4.6");
+      expect(archMapping?.defaultModels).toContain("claude/opus-4.7");
 
       // Deep-coding has high variant
       const deepMapping = getTaskClassMapping("deep-coding");

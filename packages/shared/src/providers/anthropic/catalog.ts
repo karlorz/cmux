@@ -2,12 +2,45 @@ import type { AgentCatalogEntry } from "../../agent-catalog";
 
 export const CLAUDE_CATALOG: AgentCatalogEntry[] = [
   {
+    name: "claude/opus-4.7",
+    displayName: "Opus 4.7",
+    vendor: "anthropic",
+    requiredApiKeys: ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
+    tier: "paid",
+    tags: ["latest", "recommended", "reasoning"],
+    variants: [
+      {
+        id: "low",
+        displayName: "Low",
+        description: "Lower thinking effort for faster responses",
+      },
+      {
+        id: "medium",
+        displayName: "Medium",
+        description: "Balanced thinking effort for everyday work",
+      },
+      {
+        id: "high",
+        displayName: "High",
+        description: "Higher thinking effort for complex tasks",
+      },
+      {
+        id: "max",
+        displayName: "Max",
+        description: "Maximum thinking effort supported by Opus 4.7",
+      },
+    ],
+    defaultVariant: "medium",
+    contextWindow: 1000000, // 1M context
+    maxOutputTokens: 128000,
+  },
+  {
     name: "claude/opus-4.6",
     displayName: "Opus 4.6",
     vendor: "anthropic",
     requiredApiKeys: ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
     tier: "paid",
-    tags: ["latest", "recommended", "reasoning"],
+    tags: ["reasoning"],
     variants: [
       {
         id: "low",

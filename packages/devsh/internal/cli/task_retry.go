@@ -97,7 +97,7 @@ Examples:
 			}
 		}
 		if agentName == "" {
-			agentName = "claude/opus-4.5"
+			agentName = "claude/opus-4.7"
 		}
 
 		eligible := qg.Retry.ShouldRetry

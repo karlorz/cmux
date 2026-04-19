@@ -33,6 +33,8 @@ export const BEDROCK_INFERENCE_PROFILE: "us" | "global" = "us";
  * The prefix (us/global) is applied dynamically based on BEDROCK_INFERENCE_PROFILE.
  */
 const BASE_MODELS = {
+  // Claude 4.7 models
+  "opus-4-7": "anthropic.claude-opus-4-7",
   // Claude 4.6 models
   "opus-4-6": "anthropic.claude-opus-4-6-v1",
   "sonnet-4-6": "anthropic.claude-sonnet-4-6",
@@ -65,6 +67,9 @@ function withPrefix(baseModel: string): string {
  * Uses the configured BEDROCK_INFERENCE_PROFILE prefix.
  */
 export const MODEL_MAP: Record<string, string> = {
+  // Opus 4.7 variants
+  "claude-opus-4-7": withPrefix(BASE_MODELS["opus-4-7"]),
+  "claude-4-7-opus": withPrefix(BASE_MODELS["opus-4-7"]),
   // Opus 4.6 variants
   "claude-opus-4-6": withPrefix(BASE_MODELS["opus-4-6"]),
   "claude-4-6-opus": withPrefix(BASE_MODELS["opus-4-6"]),

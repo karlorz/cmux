@@ -464,6 +464,7 @@ class ModelPricing(BaseModel):
 # Known model pricing (as of 2026-04)
 MODEL_PRICING: dict[str, ModelPricing] = {
     # Claude models
+    "claude-opus-4-7": ModelPricing(input_per_million=15, output_per_million=75, cache_read_per_million=1.5, cache_write_per_million=18.75),
     "claude-opus-4-6": ModelPricing(input_per_million=15, output_per_million=75, cache_read_per_million=1.5, cache_write_per_million=18.75),
     "claude-opus-4-5-20251101": ModelPricing(input_per_million=15, output_per_million=75, cache_read_per_million=1.5, cache_write_per_million=18.75),
     "claude-sonnet-4-6": ModelPricing(input_per_million=3, output_per_million=15, cache_read_per_million=0.3, cache_write_per_million=3.75),

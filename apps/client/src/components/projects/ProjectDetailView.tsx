@@ -39,7 +39,7 @@ import type { Plan, PlanTask } from "./PlanEditor";
 import type { Doc } from "@cmux/convex/dataModel";
 
 type OrchestrationTask = Doc<"orchestrationTasks">;
-const DEFAULT_IMPORTED_PLAN_AGENT = "claude/opus-4.5";
+const DEFAULT_IMPORTED_PLAN_AGENT = "claude/opus-4.7";
 
 function mapGitHubStatusToPlanStatus(
   statusValue: unknown,

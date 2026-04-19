@@ -53,6 +53,12 @@ const CUSTOM_CLAUDE_MODEL_ID_REGEX = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 export const CLAUDE_MODEL_SPECS: ClaudeModelSpec[] = [
   {
+    nameSuffix: "opus-4.7",
+    family: "opus",
+    launchModel: "opus",
+    nativeModelId: "claude-opus-4-7",
+  },
+  {
     nameSuffix: "opus-4.6",
     family: "opus",
     launchModel: "opus",
@@ -114,6 +120,10 @@ function getDynamicCustomClaudeModelSpec(
   };
 }
 
+const CLAUDE_MODEL_SPEC_MAP = new Map<string, ClaudeModelSpec>(
+  CLAUDE_MODEL_SPECS.map((spec) => [`claude/${spec.nameSuffix}`, spec]),
+);
+
 export function getClaudeModelSpecByAgentName(
   agentName: string | undefined,
 ): ClaudeModelSpec | undefined {
@@ -121,14 +131,7 @@ export function getClaudeModelSpecByAgentName(
     return undefined;
   }
 
-  const staticSpec = CLAUDE_MODEL_SPECS.find(
-    (spec) => agentName === `claude/${spec.nameSuffix}`,
-  );
-  if (staticSpec) {
-    return staticSpec;
-  }
-
-  return getDynamicCustomClaudeModelSpec(agentName);
+  return CLAUDE_MODEL_SPEC_MAP.get(agentName) ?? getDynamicCustomClaudeModelSpec(agentName);
 }
 
 export function getClaudeModelFamily(

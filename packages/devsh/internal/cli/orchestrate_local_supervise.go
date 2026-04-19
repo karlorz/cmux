@@ -73,7 +73,7 @@ Examples:
 
   devsh orchestrate supervise-local "Refactor the API layer" \
     --executor claude/sonnet-4.5 \
-    --supervisor claude/opus-4.5 \
+    --supervisor claude/opus-4.7 \
     --max-rounds 3 \
     --persist`,
 	Args: cobra.ExactArgs(1),

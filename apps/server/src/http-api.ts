@@ -302,7 +302,7 @@ async function handleStartTask(
         ? selectedAgentSelections
         : selectedAgents && selectedAgents.length > 0
           ? selectedAgents.map((agentName) => ({ agentName }))
-          : [{ agentName: "claude/opus-4.5" }];
+          : [{ agentName: "claude/opus-4.7" }];
 
     // Validate branchNames override early so we can return 400 (not 500)
     const agentsToSpawnPreview = requestedAgentSelections.map(

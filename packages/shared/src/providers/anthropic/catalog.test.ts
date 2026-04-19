@@ -40,11 +40,11 @@ describe("CLAUDE_CATALOG", () => {
     }
   });
 
-  it("includes Opus 4.6 as latest and recommended", () => {
-    const opus46 = CLAUDE_CATALOG.find((e) => e.name === "claude/opus-4.6");
-    expect(opus46).toBeDefined();
-    expect(opus46?.tags).toContain("latest");
-    expect(opus46?.tags).toContain("recommended");
+  it("includes Opus 4.7 as latest and recommended", () => {
+    const opus47 = CLAUDE_CATALOG.find((e) => e.name === "claude/opus-4.7");
+    expect(opus47).toBeDefined();
+    expect(opus47?.tags).toContain("latest");
+    expect(opus47?.tags).toContain("recommended");
   });
 
   it("includes Haiku 4.5 with fast tag", () => {

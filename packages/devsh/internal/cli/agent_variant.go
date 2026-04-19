@@ -25,17 +25,23 @@ type localAgentSelection struct {
 }
 
 var claudeLocalModelIDs = map[string]string{
+	"claude/opus-4.7":   "claude-opus-4-7",
 	"claude/opus-4.6":   "claude-opus-4-6",
 	"claude/opus-4.5":   "claude-opus-4-5-20251101",
 	"claude/sonnet-4.5": "claude-sonnet-4-5-20250929",
 	"claude/haiku-4.5":  "claude-haiku-4-5-20251001",
 }
 
-var claudeOpus46EffortVariants = map[string]struct{}{
+var claudeOpusEffortVariants = map[string]struct{}{
 	"low":    {},
 	"medium": {},
 	"high":   {},
 	"max":    {},
+}
+
+var claudeEffortCapableAgents = map[string]struct{}{
+	"claude/opus-4.7": {},
+	"claude/opus-4.6": {},
 }
 
 var codexReasoningVariants = []string{
@@ -96,10 +102,10 @@ func resolveLocalAgentSelection(
 			return localAgentSelection{}, fmt.Errorf("unsupported local Claude agent: %s", requested)
 		}
 		if explicitVariant != "" {
-			if requested != "claude/opus-4.6" {
-				return localAgentSelection{}, fmt.Errorf("effort is only supported locally for claude/opus-4.6")
+			if _, ok := claudeEffortCapableAgents[requested]; !ok {
+				return localAgentSelection{}, fmt.Errorf("effort is only supported locally for claude/opus-4.7 or claude/opus-4.6")
 			}
-			if _, ok := claudeOpus46EffortVariants[explicitVariant]; !ok {
+			if _, ok := claudeOpusEffortVariants[explicitVariant]; !ok {
 				return localAgentSelection{}, fmt.Errorf("unsupported Claude effort %q (allowed: low, medium, high, max)", explicitVariant)
 			}
 		}
