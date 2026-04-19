@@ -57,8 +57,9 @@ function withPrefix(baseModel: string): string {
 function buildCuratedClaudeModelMap(): Record<string, string> {
   const map: Record<string, string> = {};
   for (const entry of CLAUDE_CURATED_MODELS) {
+    const prefixedModelId = withPrefix(entry.bedrockBaseModelId);
     for (const alias of entry.bedrockAliases) {
-      map[alias] = withPrefix(entry.bedrockBaseModelId);
+      map[alias] = prefixedModelId;
     }
   }
   return map;

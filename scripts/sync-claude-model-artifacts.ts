@@ -163,8 +163,19 @@ ${entries}
 `;
 }
 
+function readFileIfExists(filePath: string): string | undefined {
+  try {
+    return fs.readFileSync(filePath, "utf8");
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
 function writeOrCheckFile(filePath: string, content: string): boolean {
-  const current = fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : "";
+  const current = readFileIfExists(filePath) ?? "";
   if (current === content) {
     return true;
   }

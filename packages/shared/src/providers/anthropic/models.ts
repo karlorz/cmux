@@ -71,6 +71,14 @@ export const CLAUDE_MODEL_SPECS: ClaudeModelSpec[] = CLAUDE_CURATED_MODELS.map(
   }),
 );
 
+const CLAUDE_CURATED_NAME_SUFFIXES = new Set(
+  CLAUDE_MODEL_SPECS.map((spec) => spec.nameSuffix),
+);
+
+const CLAUDE_MODEL_SPEC_MAP = new Map<string, ClaudeModelSpec>(
+  CLAUDE_MODEL_SPECS.map((spec) => [`claude/${spec.nameSuffix}`, spec]),
+);
+
 function getDynamicCustomClaudeModelSpec(
   agentName: string,
 ): ClaudeModelSpec | undefined {
@@ -84,7 +92,7 @@ function getDynamicCustomClaudeModelSpec(
   }
 
   if (
-    CLAUDE_MODEL_SPECS.some((spec) => customModelId === spec.nameSuffix) ||
+    CLAUDE_CURATED_NAME_SUFFIXES.has(customModelId) ||
     !CUSTOM_CLAUDE_MODEL_ID_REGEX.test(customModelId)
   ) {
     return undefined;
@@ -100,18 +108,6 @@ function getDynamicCustomClaudeModelSpec(
       "Claude Code via an Anthropic-compatible custom endpoint.",
   };
 }
-
-const CLAUDE_MODEL_SPEC_MAP = new Map<string, ClaudeModelSpec>(
-  CLAUDE_CURATED_MODELS.map((entry) => [
-    entry.agentName,
-    {
-      nameSuffix: entry.nameSuffix,
-      family: entry.family,
-      launchModel: entry.launchModel,
-      nativeModelId: entry.nativeModelId,
-    },
-  ]),
-);
 
 export function getClaudeModelSpecByAgentName(
   agentName: string | undefined,
