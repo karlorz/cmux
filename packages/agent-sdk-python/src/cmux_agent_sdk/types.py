@@ -7,6 +7,8 @@ from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, Field, field_validator
 
+from .claude_pricing_generated import CLAUDE_MODEL_PRICING as CLAUDE_MODEL_PRICING_RAW
+
 
 class AgentBackend(str, Enum):
     """Supported agent backends."""
@@ -463,13 +465,10 @@ class ModelPricing(BaseModel):
 
 # Known model pricing (as of 2026-04)
 MODEL_PRICING: dict[str, ModelPricing] = {
-    # Claude models
-    "claude-opus-4-7": ModelPricing(input_per_million=15, output_per_million=75, cache_read_per_million=1.5, cache_write_per_million=18.75),
-    "claude-opus-4-6": ModelPricing(input_per_million=15, output_per_million=75, cache_read_per_million=1.5, cache_write_per_million=18.75),
-    "claude-opus-4-5-20251101": ModelPricing(input_per_million=15, output_per_million=75, cache_read_per_million=1.5, cache_write_per_million=18.75),
-    "claude-sonnet-4-6": ModelPricing(input_per_million=3, output_per_million=15, cache_read_per_million=0.3, cache_write_per_million=3.75),
-    "claude-sonnet-4-5-20250929": ModelPricing(input_per_million=3, output_per_million=15, cache_read_per_million=0.3, cache_write_per_million=3.75),
-    "claude-haiku-4-5-20251001": ModelPricing(input_per_million=0.8, output_per_million=4, cache_read_per_million=0.08, cache_write_per_million=1),
+    **{
+        model: ModelPricing(**pricing)
+        for model, pricing in CLAUDE_MODEL_PRICING_RAW.items()
+    },
     # Codex/OpenAI models (approximate)
     "gpt-5.4": ModelPricing(input_per_million=10, output_per_million=30),
     "gpt-5.4-xhigh": ModelPricing(input_per_million=10, output_per_million=30),

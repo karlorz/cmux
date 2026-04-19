@@ -11,28 +11,18 @@ import { capturePosthogEvent, drainPosthogEvents } from "../_shared/posthog";
 import {
   CLOUDFLARE_ANTHROPIC_BASE_URL as SHARED_CLOUDFLARE_ANTHROPIC_BASE_URL,
   CMUX_ANTHROPIC_PROXY_PLACEHOLDER_API_KEY,
+  getClaudeContextWindowByModelId,
   normalizeAnthropicBaseUrl,
 } from "@cmux/shared/convex-safe";
 
 const hardCodedApiKey = CMUX_ANTHROPIC_PROXY_PLACEHOLDER_API_KEY;
-
-// Context window sizes per model for usage tracking (Phase 5c)
-// These match the catalog values in packages/shared/src/providers/anthropic/catalog.ts
-const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
-  "claude-opus-4-7": 1000000, // 1M context
-  "claude-opus-4-6": 1000000, // 1M context
-  "claude-opus-4-5-20251101": 200000,
-  "claude-sonnet-4-5-20250514": 200000,
-  "claude-sonnet-4-6": 200000,
-  "claude-haiku-4-5-20251001": 200000,
-};
 
 /**
  * Get context window size for a model API ID.
  * Returns undefined for unknown models.
  */
 function getModelContextWindow(modelApiId: string): number | undefined {
-  return MODEL_CONTEXT_WINDOWS[modelApiId];
+  return getClaudeContextWindowByModelId(modelApiId);
 }
 
 export const CLOUDFLARE_ANTHROPIC_BASE_URL =

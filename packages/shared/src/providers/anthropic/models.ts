@@ -1,4 +1,15 @@
-export type ClaudeModelFamily = "opus" | "sonnet" | "haiku";
+import {
+  CLAUDE_CURATED_MODELS,
+  CLAUDE_DEFAULT_EFFORT_VARIANT,
+  CLAUDE_EFFORT_AGENT_NAMES,
+  CLAUDE_EFFORT_NATIVE_MODEL_IDS,
+  CLAUDE_EFFORT_VARIANTS,
+  DEFAULT_CLAUDE_AGENT_NAME,
+  DEFAULT_CLAUDE_NATIVE_MODEL_ID,
+  type ClaudeModelFamily,
+  getClaudeContextWindowByModelId,
+  getClaudeManifestByAgentName,
+} from "./manifest";
 
 export const CLAUDE_DEFAULT_MODEL_ENV_VARS = {
   opus: {
@@ -51,44 +62,14 @@ export interface ClaudeModelSpec {
 
 const CUSTOM_CLAUDE_MODEL_ID_REGEX = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
-export const CLAUDE_MODEL_SPECS: ClaudeModelSpec[] = [
-  {
-    nameSuffix: "opus-4.7",
-    family: "opus",
-    launchModel: "opus",
-    nativeModelId: "claude-opus-4-7",
-  },
-  {
-    nameSuffix: "opus-4.6",
-    family: "opus",
-    launchModel: "opus",
-    nativeModelId: "claude-opus-4-6",
-  },
-  {
-    nameSuffix: "sonnet-4.6",
-    family: "sonnet",
-    launchModel: "sonnet",
-    nativeModelId: "claude-sonnet-4-6",
-  },
-  {
-    nameSuffix: "opus-4.5",
-    family: "opus",
-    launchModel: "opus",
-    nativeModelId: "claude-opus-4-5-20251101",
-  },
-  {
-    nameSuffix: "sonnet-4.5",
-    family: "sonnet",
-    launchModel: "sonnet",
-    nativeModelId: "claude-sonnet-4-5-20250929",
-  },
-  {
-    nameSuffix: "haiku-4.5",
-    family: "haiku",
-    launchModel: "haiku",
-    nativeModelId: "claude-haiku-4-5-20251001",
-  },
-];
+export const CLAUDE_MODEL_SPECS: ClaudeModelSpec[] = CLAUDE_CURATED_MODELS.map(
+  (entry) => ({
+    nameSuffix: entry.nameSuffix,
+    family: entry.family,
+    launchModel: entry.launchModel,
+    nativeModelId: entry.nativeModelId,
+  }),
+);
 
 function getDynamicCustomClaudeModelSpec(
   agentName: string,
@@ -121,7 +102,15 @@ function getDynamicCustomClaudeModelSpec(
 }
 
 const CLAUDE_MODEL_SPEC_MAP = new Map<string, ClaudeModelSpec>(
-  CLAUDE_MODEL_SPECS.map((spec) => [`claude/${spec.nameSuffix}`, spec]),
+  CLAUDE_CURATED_MODELS.map((entry) => [
+    entry.agentName,
+    {
+      nameSuffix: entry.nameSuffix,
+      family: entry.family,
+      launchModel: entry.launchModel,
+      nativeModelId: entry.nativeModelId,
+    },
+  ]),
 );
 
 export function getClaudeModelSpecByAgentName(
@@ -131,7 +120,9 @@ export function getClaudeModelSpecByAgentName(
     return undefined;
   }
 
-  return CLAUDE_MODEL_SPEC_MAP.get(agentName) ?? getDynamicCustomClaudeModelSpec(agentName);
+  return (
+    CLAUDE_MODEL_SPEC_MAP.get(agentName) ?? getDynamicCustomClaudeModelSpec(agentName)
+  );
 }
 
 export function getClaudeModelFamily(
@@ -186,3 +177,16 @@ export function hasAnthropicCustomEndpointConfigured(options?: {
     ) ?? false
   );
 }
+
+export {
+  CLAUDE_CURATED_MODELS,
+  CLAUDE_DEFAULT_EFFORT_VARIANT,
+  CLAUDE_EFFORT_AGENT_NAMES,
+  CLAUDE_EFFORT_NATIVE_MODEL_IDS,
+  CLAUDE_EFFORT_VARIANTS,
+  DEFAULT_CLAUDE_AGENT_NAME,
+  DEFAULT_CLAUDE_NATIVE_MODEL_ID,
+  getClaudeContextWindowByModelId,
+  getClaudeManifestByAgentName,
+};
+export type { ClaudeModelFamily };

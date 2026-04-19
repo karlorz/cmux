@@ -6,8 +6,9 @@ import { Loader2, Play, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import type { ProjectItem } from "@cmux/www-openapi-client";
+import { DEFAULT_CLAUDE_AGENT_NAME } from "@cmux/shared/providers/anthropic/models";
 
-const DEFAULT_AGENTS = "claude/opus-4.7";
+const DEFAULT_AGENTS = DEFAULT_CLAUDE_AGENT_NAME;
 
 interface DispatchFromProjectDialogProps {
   open: boolean;
@@ -31,7 +32,7 @@ export function DispatchFromProjectDialog({
   item,
 }: DispatchFromProjectDialogProps) {
   const [repo, setRepo] = useState("");
-  const [agents, setAgents] = useState(DEFAULT_AGENTS);
+  const [agents, setAgents] = useState<string>(DEFAULT_AGENTS);
   const [isCreating, setIsCreating] = useState(false);
 
   const createTask = useMutation(api.tasks.create);

@@ -34,6 +34,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import clsx from "clsx";
+import { DEFAULT_CLAUDE_AGENT_NAME } from "@cmux/shared/providers/anthropic/models";
 
 import { Button } from "@/components/ui/button";
 
@@ -111,7 +112,7 @@ interface TaskGraphCardProps {
 // ============================================================================
 
 const DEFAULT_AGENTS = [
-  "claude/opus-4.7",
+  DEFAULT_CLAUDE_AGENT_NAME,
   "claude/opus-4.5",
   "claude/sonnet-4.5",
   "claude/haiku-4.5",

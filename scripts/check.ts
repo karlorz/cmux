@@ -99,10 +99,16 @@ async function main() {
   const startTime = performance.now();
   if (!quiet) console.log("Running lint + typecheck in parallel...\n");
 
-  // Run lint + single tsgo --build in parallel
-  const [lintResult, typecheckResult] = await Promise.all([
+  // Run lint + typecheck + generated-artifact consistency checks in parallel
+  const [lintResult, typecheckResult, claudeSyncResult] = await Promise.all([
     runCommand("bunx", ["eslint", "."], repoRoot, "lint"),
     runCommand("bunx", ["tsgo", "--build", "--noEmit"], repoRoot, "typecheck"),
+    runCommand(
+      "bun",
+      ["run", "scripts/sync-claude-model-artifacts.ts", "--check"],
+      repoRoot,
+      "claude-model-sync"
+    ),
   ]);
 
   // Report failures
@@ -122,13 +128,20 @@ async function main() {
     console.log();
   }
 
+  if (!claudeSyncResult.success) {
+    hasFailures = true;
+    console.log("❌ Claude model sync check failed:\n");
+    console.log(claudeSyncResult.output.replace(/^/gm, "  "));
+    console.log();
+  }
+
   if (hasFailures) {
     process.exit(1);
   }
 
   // Print timing summary (only in verbose mode)
   if (!quiet) {
-    const results = [lintResult, typecheckResult];
+    const results = [lintResult, typecheckResult, claudeSyncResult];
     console.log("⏱  Timings:\n");
     for (const r of results.sort((a, b) => b.durationMs - a.durationMs)) {
       const status = r.success ? "✓" : "✗";

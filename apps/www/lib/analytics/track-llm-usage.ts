@@ -6,6 +6,7 @@
  */
 
 import { captureServerPosthogEvent } from "@/lib/analytics/posthog-server";
+import { CLAUDE_CURATED_MODELS } from "@cmux/shared/providers/anthropic/models";
 
 export type LLMProvider = "anthropic" | "openai" | "gemini";
 
@@ -114,13 +115,23 @@ export async function trackLLMUsage(event: LLMUsageEvent): Promise<void> {
  * Note: These are approximate prices and should be updated periodically.
  * For precise billing, use provider-specific usage APIs.
  */
+const CLAUDE_MODEL_PRICING = Object.fromEntries(
+  CLAUDE_CURATED_MODELS.map((entry) => [
+    entry.nativeModelId,
+    {
+      input: entry.pricing.inputPerMillion,
+      output: entry.pricing.outputPerMillion,
+    },
+  ]),
+) satisfies Record<string, { input: number; output: number }>;
+
 // Prices per 1M tokens (input/output)
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
-  // Anthropic
+  ...CLAUDE_MODEL_PRICING,
+  // Legacy Anthropic aliases
   "claude-3-5-sonnet-20241022": { input: 3, output: 15 },
   "claude-sonnet-4-5-20261022": { input: 3, output: 15 },
   "claude-3-5-haiku-20241022": { input: 0.8, output: 4 },
-  "claude-opus-4-7": { input: 15, output: 75 },
   "claude-opus-4-6-20261022": { input: 15, output: 75 },
   // OpenAI
   "gpt-4o": { input: 2.5, output: 10 },
