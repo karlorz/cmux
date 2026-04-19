@@ -18,6 +18,7 @@ import {
   ORCHESTRATION_STATUSES,
 } from "@cmux/convex/orchestrationQueries";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
+import { DEFAULT_CLAUDE_AGENT_NAME } from "@cmux/shared/providers/anthropic/models";
 import {
   spawnAgent,
   spawnAllAgents,
@@ -302,7 +303,7 @@ async function handleStartTask(
         ? selectedAgentSelections
         : selectedAgents && selectedAgents.length > 0
           ? selectedAgents.map((agentName) => ({ agentName }))
-          : [{ agentName: "claude/opus-4.7" }];
+          : [{ agentName: DEFAULT_CLAUDE_AGENT_NAME }];
 
     // Validate branchNames override early so we can return 400 (not 500)
     const agentsToSpawnPreview = requestedAgentSelections.map(

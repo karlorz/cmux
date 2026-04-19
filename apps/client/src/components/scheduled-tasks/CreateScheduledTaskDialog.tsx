@@ -26,7 +26,7 @@ export function CreateScheduledTaskDialog({
 }: CreateScheduledTaskDialogProps) {
   const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [agentName, setAgentName] = useState(DEFAULT_AGENT_NAME);
+  const [agentName, setAgentName] = useState<string>(DEFAULT_AGENT_NAME);
   const [repoFullName, setRepoFullName] = useState("");
   const [scheduleType, setScheduleType] = useState<"interval" | "daily" | "weekly" | "cron">("daily");
   const [intervalMinutes, setIntervalMinutes] = useState(60);

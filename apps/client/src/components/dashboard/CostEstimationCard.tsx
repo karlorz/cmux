@@ -2,6 +2,7 @@ import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
+import { DEFAULT_CLAUDE_AGENT_NAME } from "@cmux/shared/providers/anthropic/models";
 import { memo } from "react";
 import {
   AlertTriangle,
@@ -21,7 +22,7 @@ type CostEstimationCardProps = {
 // These are rough estimates - actual costs vary by model and token usage
 const ESTIMATED_COST_PER_MINUTE: Record<string, number> = {
   // Anthropic Claude models (based on typical token usage patterns)
-  "claude/opus-4.7": 0.15,
+  [DEFAULT_CLAUDE_AGENT_NAME]: 0.15,
   "claude/opus-4.5": 0.15,
   "claude/opus-4.6": 0.15,
   "claude/sonnet-4.5": 0.03,

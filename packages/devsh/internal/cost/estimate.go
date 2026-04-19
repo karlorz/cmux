@@ -4,6 +4,8 @@ package cost
 import (
 	"fmt"
 	"strings"
+
+	"github.com/karlorz/devsh/internal/models"
 )
 
 // ModelPricing contains estimated pricing per 1M tokens (USD).
@@ -43,23 +45,28 @@ type BatchCostEstimate struct {
 }
 
 // Pricing tiers (approximate USD per 1M tokens as of 2026)
-var pricingTiers = map[string]ModelPricing{
-	// Anthropic
-	"claude/opus-4.7":   {InputPer1M: 15.0, OutputPer1M: 75.0},
-	"claude/opus-4.6":   {InputPer1M: 15.0, OutputPer1M: 75.0},
-	"claude/opus-4.5":   {InputPer1M: 15.0, OutputPer1M: 75.0},
-	"claude/sonnet-4.6": {InputPer1M: 3.0, OutputPer1M: 15.0},
-	"claude/sonnet-4.5": {InputPer1M: 3.0, OutputPer1M: 15.0},
-	"claude/haiku-4.5":  {InputPer1M: 0.80, OutputPer1M: 4.0},
+var pricingTiers = buildPricingTiers()
 
-	// OpenAI Codex
-	"codex/gpt-5.4-xhigh":     {InputPer1M: 10.0, OutputPer1M: 30.0},
-	"codex/gpt-5.1-codex":     {InputPer1M: 2.5, OutputPer1M: 10.0},
-	"codex/gpt-5.1-codex-mini": {InputPer1M: 1.5, OutputPer1M: 6.0},
+func buildPricingTiers() map[string]ModelPricing {
+	tiers := map[string]ModelPricing{
+		// OpenAI Codex
+		"codex/gpt-5.4-xhigh":      {InputPer1M: 10.0, OutputPer1M: 30.0},
+		"codex/gpt-5.1-codex":      {InputPer1M: 2.5, OutputPer1M: 10.0},
+		"codex/gpt-5.1-codex-mini": {InputPer1M: 1.5, OutputPer1M: 6.0},
 
-	// Defaults by tier
-	"tier:paid": {InputPer1M: 5.0, OutputPer1M: 20.0},
-	"tier:free": {InputPer1M: 0.0, OutputPer1M: 0.0},
+		// Defaults by tier
+		"tier:paid": {InputPer1M: 5.0, OutputPer1M: 20.0},
+		"tier:free": {InputPer1M: 0.0, OutputPer1M: 0.0},
+	}
+
+	for agentName, pricing := range models.ClaudePricingByAgent {
+		tiers[agentName] = ModelPricing{
+			InputPer1M:  pricing.InputPer1M,
+			OutputPer1M: pricing.OutputPer1M,
+		}
+	}
+
+	return tiers
 }
 
 // Typical token usage for different task complexities.

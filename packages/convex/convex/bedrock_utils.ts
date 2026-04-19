@@ -6,6 +6,7 @@
  * - Bedrock streaming format conversion (AWS event stream → SSE)
  * - Base64 decode for Convex runtime (no atob/Buffer)
  */
+import { CLAUDE_CURATED_MODELS } from "@cmux/shared/convex-safe";
 
 /**
  * AWS Bedrock configuration.
@@ -29,19 +30,10 @@ export const BEDROCK_BASE_URL = `https://bedrock-runtime.${BEDROCK_AWS_REGION}.a
 export const BEDROCK_INFERENCE_PROFILE: "us" | "global" = "us";
 
 /**
- * Base model definitions without inference profile prefix.
- * The prefix (us/global) is applied dynamically based on BEDROCK_INFERENCE_PROFILE.
+ * Legacy base model definitions without inference profile prefix.
+ * Curated Claude 4.5+ mappings come from @cmux/shared manifest.
  */
-const BASE_MODELS = {
-  // Claude 4.7 models
-  "opus-4-7": "anthropic.claude-opus-4-7",
-  // Claude 4.6 models
-  "opus-4-6": "anthropic.claude-opus-4-6-v1",
-  "sonnet-4-6": "anthropic.claude-sonnet-4-6",
-  // Claude 4.5 models
-  "sonnet-4-5": "anthropic.claude-sonnet-4-5-20250929-v1:0",
-  "opus-4-5": "anthropic.claude-opus-4-5-20251101-v1:0",
-  "haiku-4-5": "anthropic.claude-haiku-4-5-20251001-v1:0",
+const LEGACY_BASE_MODELS = {
   // Claude 4 models
   "sonnet-4": "anthropic.claude-sonnet-4-20250514-v1:0",
   "opus-4": "anthropic.claude-opus-4-20250514-v1:0",
@@ -62,55 +54,56 @@ function withPrefix(baseModel: string): string {
   return `${BEDROCK_INFERENCE_PROFILE}.${baseModel}`;
 }
 
+function buildCuratedClaudeModelMap(): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const entry of CLAUDE_CURATED_MODELS) {
+    const prefixedModelId = withPrefix(entry.bedrockBaseModelId);
+    for (const alias of entry.bedrockAliases) {
+      map[alias] = prefixedModelId;
+    }
+  }
+  return map;
+}
+
+const LEGACY_MODEL_MAP: Record<string, string> = {
+  // Sonnet 4 variants
+  "claude-sonnet-4-20250514": withPrefix(LEGACY_BASE_MODELS["sonnet-4"]),
+  "claude-sonnet-4": withPrefix(LEGACY_BASE_MODELS["sonnet-4"]),
+  "claude-4-sonnet": withPrefix(LEGACY_BASE_MODELS["sonnet-4"]),
+  // Opus 4 variants
+  "claude-opus-4-20250514": withPrefix(LEGACY_BASE_MODELS["opus-4"]),
+  "claude-opus-4": withPrefix(LEGACY_BASE_MODELS["opus-4"]),
+  "claude-4-opus": withPrefix(LEGACY_BASE_MODELS["opus-4"]),
+  // Sonnet 3.7 variants
+  "claude-3-7-sonnet-20250219": withPrefix(LEGACY_BASE_MODELS["sonnet-3-7"]),
+  "claude-3-7-sonnet": withPrefix(LEGACY_BASE_MODELS["sonnet-3-7"]),
+  // Sonnet 3.5 variants (v2)
+  "claude-3-5-sonnet-20241022": withPrefix(
+    LEGACY_BASE_MODELS["sonnet-3-5-v2"]
+  ),
+  "claude-3-5-sonnet-v2": withPrefix(LEGACY_BASE_MODELS["sonnet-3-5-v2"]),
+  // Sonnet 3.5 variants (v1)
+  "claude-3-5-sonnet-20240620": withPrefix(
+    LEGACY_BASE_MODELS["sonnet-3-5-v1"]
+  ),
+  "claude-3-5-sonnet": withPrefix(LEGACY_BASE_MODELS["sonnet-3-5-v2"]),
+  // Haiku 3.5 variants
+  "claude-3-5-haiku-20241022": withPrefix(
+    LEGACY_BASE_MODELS["haiku-3-5"]
+  ),
+  "claude-3-5-haiku": withPrefix(LEGACY_BASE_MODELS["haiku-3-5"]),
+  // Haiku 3 variants
+  "claude-3-haiku-20240307": withPrefix(LEGACY_BASE_MODELS["haiku-3"]),
+  "claude-3-haiku": withPrefix(LEGACY_BASE_MODELS["haiku-3"]),
+};
+
 /**
  * Model name mapping from Anthropic API model IDs to AWS Bedrock model IDs.
- * Uses the configured BEDROCK_INFERENCE_PROFILE prefix.
+ * Uses curated Claude metadata from @cmux/shared plus legacy mappings.
  */
 export const MODEL_MAP: Record<string, string> = {
-  // Opus 4.7 variants
-  "claude-opus-4-7": withPrefix(BASE_MODELS["opus-4-7"]),
-  "claude-4-7-opus": withPrefix(BASE_MODELS["opus-4-7"]),
-  // Opus 4.6 variants
-  "claude-opus-4-6": withPrefix(BASE_MODELS["opus-4-6"]),
-  "claude-4-6-opus": withPrefix(BASE_MODELS["opus-4-6"]),
-  // Sonnet 4.6 variants
-  "claude-sonnet-4-6": withPrefix(BASE_MODELS["sonnet-4-6"]),
-  "claude-4-6-sonnet": withPrefix(BASE_MODELS["sonnet-4-6"]),
-  // Sonnet 4.5 variants
-  "claude-sonnet-4-5-20250929": withPrefix(BASE_MODELS["sonnet-4-5"]),
-  "claude-sonnet-4-5": withPrefix(BASE_MODELS["sonnet-4-5"]),
-  "claude-4-5-sonnet": withPrefix(BASE_MODELS["sonnet-4-5"]),
-  // Opus 4.5 variants
-  "claude-opus-4-5-20251101": withPrefix(BASE_MODELS["opus-4-5"]),
-  "claude-opus-4-5": withPrefix(BASE_MODELS["opus-4-5"]),
-  "claude-4-5-opus": withPrefix(BASE_MODELS["opus-4-5"]),
-  // Haiku 4.5 variants
-  "claude-haiku-4-5-20251001": withPrefix(BASE_MODELS["haiku-4-5"]),
-  "claude-haiku-4-5": withPrefix(BASE_MODELS["haiku-4-5"]),
-  "claude-4-5-haiku": withPrefix(BASE_MODELS["haiku-4-5"]),
-  // Sonnet 4 variants
-  "claude-sonnet-4-20250514": withPrefix(BASE_MODELS["sonnet-4"]),
-  "claude-sonnet-4": withPrefix(BASE_MODELS["sonnet-4"]),
-  "claude-4-sonnet": withPrefix(BASE_MODELS["sonnet-4"]),
-  // Opus 4 variants
-  "claude-opus-4-20250514": withPrefix(BASE_MODELS["opus-4"]),
-  "claude-opus-4": withPrefix(BASE_MODELS["opus-4"]),
-  "claude-4-opus": withPrefix(BASE_MODELS["opus-4"]),
-  // Sonnet 3.7 variants
-  "claude-3-7-sonnet-20250219": withPrefix(BASE_MODELS["sonnet-3-7"]),
-  "claude-3-7-sonnet": withPrefix(BASE_MODELS["sonnet-3-7"]),
-  // Sonnet 3.5 variants (v2)
-  "claude-3-5-sonnet-20241022": withPrefix(BASE_MODELS["sonnet-3-5-v2"]),
-  "claude-3-5-sonnet-v2": withPrefix(BASE_MODELS["sonnet-3-5-v2"]),
-  // Sonnet 3.5 variants (v1)
-  "claude-3-5-sonnet-20240620": withPrefix(BASE_MODELS["sonnet-3-5-v1"]),
-  "claude-3-5-sonnet": withPrefix(BASE_MODELS["sonnet-3-5-v2"]),
-  // Haiku 3.5 variants
-  "claude-3-5-haiku-20241022": withPrefix(BASE_MODELS["haiku-3-5"]),
-  "claude-3-5-haiku": withPrefix(BASE_MODELS["haiku-3-5"]),
-  // Haiku 3 variants
-  "claude-3-haiku-20240307": withPrefix(BASE_MODELS["haiku-3"]),
-  "claude-3-haiku": withPrefix(BASE_MODELS["haiku-3"]),
+  ...buildCuratedClaudeModelMap(),
+  ...LEGACY_MODEL_MAP,
 };
 
 /**

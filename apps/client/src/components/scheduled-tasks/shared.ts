@@ -1,10 +1,12 @@
+import { DEFAULT_CLAUDE_AGENT_NAME } from "@cmux/shared/providers/anthropic/models";
+
 /**
  * Shared constants for scheduled task dialogs.
  * Extracted from CreateScheduledTaskDialog and EditScheduledTaskDialog
  * to avoid duplication and ensure consistency.
  */
 
-export const DEFAULT_AGENT_NAME = "claude/opus-4.7";
+export const DEFAULT_AGENT_NAME = DEFAULT_CLAUDE_AGENT_NAME;
 
 export const AGENT_OPTIONS = [
   { value: DEFAULT_AGENT_NAME, label: "Claude Opus 4.7" },

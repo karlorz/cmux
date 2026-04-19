@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CLAUDE_MODEL_PRICING } from "./claude-pricing.generated";
 
 /**
  * Supported agent backends
@@ -436,13 +437,7 @@ export interface ModelPricing {
  * Prices in USD per million tokens
  */
 export const MODEL_PRICING: Record<string, ModelPricing> = {
-  // Claude models
-  "claude-opus-4-7": { inputPerMillion: 15, outputPerMillion: 75, cacheReadPerMillion: 1.5, cacheWritePerMillion: 18.75 },
-  "claude-opus-4-6": { inputPerMillion: 15, outputPerMillion: 75, cacheReadPerMillion: 1.5, cacheWritePerMillion: 18.75 },
-  "claude-opus-4-5-20251101": { inputPerMillion: 15, outputPerMillion: 75, cacheReadPerMillion: 1.5, cacheWritePerMillion: 18.75 },
-  "claude-sonnet-4-6": { inputPerMillion: 3, outputPerMillion: 15, cacheReadPerMillion: 0.3, cacheWritePerMillion: 3.75 },
-  "claude-sonnet-4-5-20250929": { inputPerMillion: 3, outputPerMillion: 15, cacheReadPerMillion: 0.3, cacheWritePerMillion: 3.75 },
-  "claude-haiku-4-5-20251001": { inputPerMillion: 0.8, outputPerMillion: 4, cacheReadPerMillion: 0.08, cacheWritePerMillion: 1 },
+  ...CLAUDE_MODEL_PRICING,
   // Codex/OpenAI models (approximate)
   "gpt-5.4": { inputPerMillion: 10, outputPerMillion: 30 },
   "gpt-5.4-xhigh": { inputPerMillion: 10, outputPerMillion: 30 },

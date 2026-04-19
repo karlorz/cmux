@@ -5,6 +5,8 @@ import type {
 import type { ClaudeAliasRoute } from "../../provider-registry";
 import {
   CLAUDE_DEFAULT_MODEL_ENV_VARS,
+  CLAUDE_EFFORT_NATIVE_MODEL_IDS,
+  CLAUDE_EFFORT_VARIANTS,
   CLAUDE_ROUTING_ENV_VARS,
   type ClaudeModelFamily,
   getClaudeModelSpecByAgentName,
@@ -33,11 +35,10 @@ export const CLAUDE_KEY_ENV_VARS_TO_UNSET = [
   "CLAUDE_API_KEY",
 ];
 
-const CLAUDE_OPUS_EFFORT_LEVELS = new Set(["low", "medium", "high", "max"]);
-const CLAUDE_NATIVE_EFFORT_MODELS = new Set([
-  "claude-opus-4-6",
-  "claude-opus-4-7",
-]);
+const CLAUDE_OPUS_EFFORT_LEVELS = new Set(
+  CLAUDE_EFFORT_VARIANTS.map((variant) => variant.id),
+);
+const CLAUDE_NATIVE_EFFORT_MODELS = new Set(CLAUDE_EFFORT_NATIVE_MODEL_IDS);
 
 function resolveClaudeDefaultModelMetadata(
   env: Record<string, string | number>,

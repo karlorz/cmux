@@ -62,6 +62,7 @@ import type { McpServerConfig } from "@cmux/shared";
 import { AGENT_CONFIGS, type EnvironmentResult } from "@cmux/shared/agentConfig";
 import { getClaudeEnvironment } from "@cmux/shared/providers/anthropic/environment";
 import { createApplyClaudeApiKeys } from "@cmux/shared/providers/anthropic/configs";
+import { DEFAULT_CLAUDE_AGENT_NAME } from "@cmux/shared/providers/anthropic/models";
 import {
   getOpenAIEnvironment,
   applyCodexApiKeys,
@@ -869,7 +870,7 @@ export async function setupProviderAuth(
       apiKeys.ANTHROPIC_API_KEY || apiKeys.CLAUDE_CODE_OAUTH_TOKEN;
     if (hasClaudeKeys) {
       const resolvedClaude = registry.resolveForAgent(
-        "claude/opus-4.7",
+        DEFAULT_CLAUDE_AGENT_NAME,
         overrideMapped,
       );
 
