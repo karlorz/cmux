@@ -7,7 +7,33 @@ on:
   workflow_dispatch:
 
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      src: ${{ steps.filter.outputs.src }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            src:
+              - '**'
+              - '!dev-docs/**'
+
+  # Always reports success — satisfies branch protection when heavy jobs are skipped
   test:
+    needs: changes
+    if: always() && needs.changes.outputs.src != 'true'
+    name: Run tests on ubuntu-24.04
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "Skipped — only dev-docs changed"
+
+  # Full test suite — only runs when source files changed
+  test-full:
+    needs: changes
+    if: needs.changes.outputs.src == 'true'
     name: Run tests on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     environment: dev
@@ -132,6 +158,8 @@ jobs:
           bun run test
 
   python-sdk:
+    needs: changes
+    if: needs.changes.outputs.src == 'true'
     name: Validate Python SDK
     runs-on: ubuntu-latest
     defaults:

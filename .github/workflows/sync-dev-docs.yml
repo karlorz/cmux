@@ -50,8 +50,6 @@ jobs:
           git add dev-docs
           git commit -m "chore: sync dev-docs from dev-docs-cmux"
           git push -u origin "$BRANCH"
-          gh workflow run checks.yml --ref "$BRANCH"
-          gh workflow run tests.yml --ref "$BRANCH"
           gh pr create \
             --title "chore: sync dev-docs from dev-docs-cmux" \
             --body "Automated sync from karlorz/dev-docs-cmux repository." \
