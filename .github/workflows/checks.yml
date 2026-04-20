@@ -7,7 +7,32 @@ on:
   workflow_dispatch:
 
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      src: ${{ steps.filter.outputs.src }}
+    steps:
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          token: ${{ github.token }}
+          filters: |
+            src:
+              - '**'
+              - '!dev-docs/**'
+
+  # Always reports success — satisfies branch protection when heavy jobs are skipped
   verify:
+    needs: changes
+    if: always() && needs.changes.outputs.src != 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "Skipped — only dev-docs changed"
+
+  # Full checks — only runs when source files changed
+  verify-full:
+    needs: changes
+    if: needs.changes.outputs.src == 'true'
     runs-on: ubuntu-24.04
     environment: dev
     steps:
@@ -94,7 +119,8 @@ jobs:
 
   # Simplify review for PRs (optional, runs in report-only mode)
   simplify-review:
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.src == 'true'
     runs-on: ubuntu-24.04
     permissions:
       pull-requests: write
