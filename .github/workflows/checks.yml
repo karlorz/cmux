@@ -12,10 +12,10 @@ jobs:
     outputs:
       src: ${{ steps.filter.outputs.src }}
     steps:
-      - uses: actions/checkout@v4
       - id: filter
         uses: dorny/paths-filter@v3
         with:
+          token: ${{ github.token }}
           filters: |
             src:
               - '**'
@@ -119,7 +119,8 @@ jobs:
 
   # Simplify review for PRs (optional, runs in report-only mode)
   simplify-review:
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.src == 'true'
     runs-on: ubuntu-24.04
     permissions:
       pull-requests: write

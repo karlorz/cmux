@@ -12,10 +12,10 @@ jobs:
     outputs:
       src: ${{ steps.filter.outputs.src }}
     steps:
-      - uses: actions/checkout@v4
       - id: filter
         uses: dorny/paths-filter@v3
         with:
+          token: ${{ github.token }}
           filters: |
             src:
               - '**'
