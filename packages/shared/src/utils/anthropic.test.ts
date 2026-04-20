@@ -3,6 +3,7 @@ import {
   normalizeAnthropicBaseUrl,
   CLOUDFLARE_ANTHROPIC_BASE_URL,
   CMUX_ANTHROPIC_PROXY_PLACEHOLDER_API_KEY,
+  ANTHROPIC_MODEL_OPUS_47,
   ANTHROPIC_MODEL_OPUS_46,
   ANTHROPIC_MODEL_OPUS_45,
   ANTHROPIC_MODEL_HAIKU_45,
@@ -100,6 +101,11 @@ describe("exported constants", () => {
   it("ANTHROPIC_MODEL_OPUS_46 contains claude", () => {
     expect(ANTHROPIC_MODEL_OPUS_46).toContain("claude");
     expect(ANTHROPIC_MODEL_OPUS_46).toContain("opus");
+  });
+
+  it("ANTHROPIC_MODEL_OPUS_47 contains claude", () => {
+    expect(ANTHROPIC_MODEL_OPUS_47).toContain("claude");
+    expect(ANTHROPIC_MODEL_OPUS_47).toContain("opus");
   });
 
   it("ANTHROPIC_MODEL_OPUS_45 contains claude", () => {

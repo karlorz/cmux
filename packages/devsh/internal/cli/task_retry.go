@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/karlorz/devsh/internal/auth"
+	"github.com/karlorz/devsh/internal/models"
 	"github.com/karlorz/devsh/internal/vm"
 	"github.com/spf13/cobra"
 )
@@ -97,7 +98,7 @@ Examples:
 			}
 		}
 		if agentName == "" {
-			agentName = "claude/opus-4.5"
+			agentName = models.RecommendedClaudeAgent
 		}
 
 		eligible := qg.Retry.ShouldRetry

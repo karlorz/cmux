@@ -10,6 +10,7 @@ describe("anthropic model helpers", () => {
     expect(requiresAnthropicCustomEndpoint("claude/gpt-5.1-codex-mini")).toBe(
       true,
     );
+    expect(requiresAnthropicCustomEndpoint("claude/opus-4.7")).toBe(false);
     expect(requiresAnthropicCustomEndpoint("claude/opus-4.6")).toBe(false);
   });
 

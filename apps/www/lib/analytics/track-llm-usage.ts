@@ -6,6 +6,7 @@
  */
 
 import { captureServerPosthogEvent } from "@/lib/analytics/posthog-server";
+import { CLAUDE_CURATED_MODELS } from "@cmux/shared/providers/anthropic/models";
 
 export type LLMProvider = "anthropic" | "openai" | "gemini";
 
@@ -114,50 +115,55 @@ export async function trackLLMUsage(event: LLMUsageEvent): Promise<void> {
  * Note: These are approximate prices and should be updated periodically.
  * For precise billing, use provider-specific usage APIs.
  */
+const CLAUDE_MODEL_PRICING = Object.fromEntries(
+  CLAUDE_CURATED_MODELS.map((entry) => [
+    entry.nativeModelId,
+    {
+      input: entry.pricing.inputPerMillion,
+      output: entry.pricing.outputPerMillion,
+    },
+  ]),
+) satisfies Record<string, { input: number; output: number }>;
+
+// Prices per 1M tokens (input/output)
+const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  ...CLAUDE_MODEL_PRICING,
+  // Legacy Anthropic aliases
+  "claude-3-5-sonnet-20241022": { input: 3, output: 15 },
+  "claude-sonnet-4-5-20261022": { input: 3, output: 15 },
+  "claude-3-5-haiku-20241022": { input: 0.8, output: 4 },
+  "claude-opus-4-6-20261022": { input: 15, output: 75 },
+  // OpenAI
+  "gpt-4o": { input: 2.5, output: 10 },
+  "gpt-4o-mini": { input: 0.15, output: 0.6 },
+  "o1": { input: 15, output: 60 },
+  "o1-mini": { input: 3, output: 12 },
+  // Gemini
+  "gemini-2.5-pro": { input: 1.25, output: 5 },
+  "gemini-2.5-flash": { input: 0.075, output: 0.3 },
+};
+
+const PROVIDER_FALLBACK_PRICING: Record<LLMProvider, { input: number; output: number }> = {
+  anthropic: { input: 3, output: 15 },
+  openai: { input: 2.5, output: 10 },
+  gemini: { input: 1.25, output: 5 },
+};
+
 export function estimateCost(event: LLMUsageEvent): number {
   const { provider, model, inputTokens = 0, outputTokens = 0 } = event;
 
-  // Prices per 1M tokens (input/output)
-  const pricing: Record<string, { input: number; output: number }> = {
-    // Anthropic
-    "claude-3-5-sonnet-20241022": { input: 3, output: 15 },
-    "claude-sonnet-4-5-20261022": { input: 3, output: 15 },
-    "claude-3-5-haiku-20241022": { input: 0.8, output: 4 },
-    "claude-opus-4-6-20261022": { input: 15, output: 75 },
-    // OpenAI
-    "gpt-4o": { input: 2.5, output: 10 },
-    "gpt-4o-mini": { input: 0.15, output: 0.6 },
-    "o1": { input: 15, output: 60 },
-    "o1-mini": { input: 3, output: 12 },
-    // Gemini
-    "gemini-2.5-pro": { input: 1.25, output: 5 },
-    "gemini-2.5-flash": { input: 0.075, output: 0.3 },
-  };
-
-  // Find matching pricing (try exact match, then prefix match)
-  let prices = pricing[model];
+  let prices = MODEL_PRICING[model];
   if (!prices) {
-    const modelPrefix = Object.keys(pricing).find((key) =>
+    const modelPrefix = Object.keys(MODEL_PRICING).find((key) =>
       model.startsWith(key)
     );
     if (modelPrefix) {
-      prices = pricing[modelPrefix];
+      prices = MODEL_PRICING[modelPrefix];
     }
   }
 
   if (!prices) {
-    // Default fallback pricing
-    switch (provider) {
-      case "anthropic":
-        prices = { input: 3, output: 15 };
-        break;
-      case "openai":
-        prices = { input: 2.5, output: 10 };
-        break;
-      case "gemini":
-        prices = { input: 1.25, output: 5 };
-        break;
-    }
+    prices = PROVIDER_FALLBACK_PRICING[provider];
   }
 
   return (inputTokens * prices.input + outputTokens * prices.output) / 1_000_000;

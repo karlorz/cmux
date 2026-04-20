@@ -5,6 +5,8 @@ import type {
 import type { ClaudeAliasRoute } from "../../provider-registry";
 import {
   CLAUDE_DEFAULT_MODEL_ENV_VARS,
+  CLAUDE_EFFORT_NATIVE_MODEL_IDS,
+  CLAUDE_EFFORT_VARIANTS,
   CLAUDE_ROUTING_ENV_VARS,
   type ClaudeModelFamily,
   getClaudeModelSpecByAgentName,
@@ -33,8 +35,10 @@ export const CLAUDE_KEY_ENV_VARS_TO_UNSET = [
   "CLAUDE_API_KEY",
 ];
 
-const CLAUDE_OPUS_46_EFFORT_LEVELS = new Set(["low", "medium", "high", "max"]);
-const CLAUDE_NATIVE_EFFORT_MODELS = new Set(["claude-opus-4-6"]);
+const CLAUDE_OPUS_EFFORT_LEVELS = new Set(
+  CLAUDE_EFFORT_VARIANTS.map((variant) => variant.id),
+);
+const CLAUDE_NATIVE_EFFORT_MODELS = new Set(CLAUDE_EFFORT_NATIVE_MODEL_IDS);
 
 function resolveClaudeDefaultModelMetadata(
   env: Record<string, string | number>,
@@ -64,10 +68,10 @@ function resolveClaudeDefaultModelMetadata(
 
 function resolveClaudeEffectiveTarget(
   ctx: Pick<EnvironmentContext, "agentName" | "providerConfig">,
+  spec: ReturnType<typeof getClaudeModelSpecByAgentName>,
 ): string | undefined {
   const routing = ctx.providerConfig?.claudeRouting;
   if (routing?.mode === "anthropic_compatible_gateway") {
-    const spec = getClaudeModelSpecByAgentName(ctx.agentName);
     if (spec?.family === "opus") {
       return routing.opus?.model.trim() || undefined;
     }
@@ -79,7 +83,7 @@ function resolveClaudeEffectiveTarget(
     }
   }
 
-  return getClaudeModelSpecByAgentName(ctx.agentName)?.nativeModelId;
+  return spec?.nativeModelId;
 }
 
 function resolveClaudeEffortLevel(
@@ -87,20 +91,22 @@ function resolveClaudeEffortLevel(
     EnvironmentContext,
     "agentName" | "selectedVariant" | "providerConfig"
   >,
+  modelSpec: ReturnType<typeof getClaudeModelSpecByAgentName>,
 ): string | undefined {
   const effort = ctx.selectedVariant?.trim();
   if (!effort) {
     return undefined;
   }
 
-  const effectiveTarget = resolveClaudeEffectiveTarget(ctx);
+  const effectiveTarget = resolveClaudeEffectiveTarget(ctx, modelSpec);
+
   if (!effectiveTarget || !CLAUDE_NATIVE_EFFORT_MODELS.has(effectiveTarget)) {
     throw new Error(
       `Model ${ctx.agentName ?? "claude"} does not support effort selection`,
     );
   }
 
-  if (!CLAUDE_OPUS_46_EFFORT_LEVELS.has(effort)) {
+  if (!CLAUDE_OPUS_EFFORT_LEVELS.has(effort)) {
     throw new Error(
       `Unsupported Claude effort "${effort}". Allowed values: low, medium, high, max`,
     );
@@ -112,11 +118,7 @@ function resolveClaudeEffortLevel(
 export async function getClaudeEnvironment(
   ctx: EnvironmentContext,
 ): Promise<EnvironmentResult> {
-  // These must be lazy since configs are imported into the browser
-  // const { exec } = await import("node:child_process");
-  // const { promisify } = await import("node:util");
   const { Buffer } = await import("node:buffer");
-  // const execAsync = promisify(exec);
 
   // useHostConfig is safe for desktop/Electron apps where the host IS the user's machine.
   // For server deployments, this should be false to prevent credential leakage.
@@ -137,8 +139,8 @@ export async function getClaudeEnvironment(
   const files: EnvironmentResult["files"] = [];
   const env: Record<string, string> = {};
   const startupCommands: string[] = [];
-  const effortLevel = resolveClaudeEffortLevel(ctx);
   const modelSpec = getClaudeModelSpecByAgentName(ctx.agentName);
+  const effortLevel = resolveClaudeEffortLevel(ctx, modelSpec);
   const claudeLifecycleDir = "/root/lifecycle/claude";
   const claudeSecretsDir = `${claudeLifecycleDir}/secrets`;
   const claudeApiKeyHelperPath = `${claudeSecretsDir}/anthropic_key_helper.sh`;
@@ -217,48 +219,6 @@ export async function getClaudeEnvironment(
     console.warn("Failed to prepare .claude.json:", error);
   }
 
-  // // Try to get credentials and prepare .credentials.json
-  // let credentialsAdded = false;
-  // try {
-  //   // First try Claude Code-credentials (preferred)
-  //   const execResult = await execAsync(
-  //     "security find-generic-password -a $USER -w -s 'Claude Code-credentials'",
-  //   );
-  //   const credentialsText = execResult.stdout.trim();
-
-  //   // Validate that it's valid JSON with claudeAiOauth
-  //   const credentials = JSON.parse(credentialsText);
-  //   if (credentials.claudeAiOauth) {
-  //     files.push({
-  //       destinationPath: "$HOME/.claude/.credentials.json",
-  //       contentBase64: Buffer.from(credentialsText).toString("base64"),
-  //       mode: "600",
-  //     });
-  //     credentialsAdded = true;
-  //   }
-  // } catch {
-  //   // noop
-  // }
-
-  // // If no credentials file was created, try to use API key via helper script (avoid env var to prevent prompts)
-  // if (!credentialsAdded) {
-  //   try {
-  //     const execResult = await execAsync(
-  //       "security find-generic-password -a $USER -w -s 'Claude Code'",
-  //     );
-  //     const apiKey = execResult.stdout.trim();
-
-  //     // Write the key to a persistent location with strict perms
-  //     files.push({
-  //       destinationPath: claudeApiKeyPath,
-  //       contentBase64: Buffer.from(apiKey).toString("base64"),
-  //       mode: "600",
-  //     });
-  //     credentialsAdded = true;
-  //   } catch {
-  //     console.warn("No Claude API key found in keychain");
-  //   }
-  // }
 
   // Ensure directories exist
   startupCommands.unshift("mkdir -p ~/.claude");

@@ -37,9 +37,10 @@ import { MilestoneEditor, type Milestone } from "./MilestoneEditor";
 import { GitHubProjectLink } from "./GitHubProjectLink";
 import type { Plan, PlanTask } from "./PlanEditor";
 import type { Doc } from "@cmux/convex/dataModel";
+import { DEFAULT_CLAUDE_AGENT_NAME } from "@cmux/shared/providers/anthropic/models";
 
 type OrchestrationTask = Doc<"orchestrationTasks">;
-const DEFAULT_IMPORTED_PLAN_AGENT = "claude/opus-4.5";
+const DEFAULT_IMPORTED_PLAN_AGENT = DEFAULT_CLAUDE_AGENT_NAME;
 
 function mapGitHubStatusToPlanStatus(
   statusValue: unknown,

@@ -48,6 +48,7 @@
     "check": "bun scripts/check.ts",
     "lint": "eslint .",
     "test": "bun run scripts/test.ts",
+    "sync-claude-model-artifacts": "bun run scripts/sync-claude-model-artifacts.ts",
     "sync-ide-deps": "bun run scripts/sync-ide-deps.ts",
     "bump-ide-deps": "bun run scripts/bump-ide-deps.ts",
     "apply-ide-deps-package-overrides": "bun run scripts/apply-ide-deps-package-overrides.ts",

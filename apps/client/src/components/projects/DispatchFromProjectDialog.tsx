@@ -6,6 +6,9 @@ import { Loader2, Play, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import type { ProjectItem } from "@cmux/www-openapi-client";
+import { DEFAULT_CLAUDE_AGENT_NAME } from "@cmux/shared/providers/anthropic/models";
+
+const DEFAULT_AGENTS = DEFAULT_CLAUDE_AGENT_NAME;
 
 interface DispatchFromProjectDialogProps {
   open: boolean;
@@ -29,7 +32,7 @@ export function DispatchFromProjectDialog({
   item,
 }: DispatchFromProjectDialogProps) {
   const [repo, setRepo] = useState("");
-  const [agents, setAgents] = useState("claude/opus-4.6");
+  const [agents, setAgents] = useState<string>(DEFAULT_AGENTS);
   const [isCreating, setIsCreating] = useState(false);
 
   const createTask = useMutation(api.tasks.create);
@@ -81,7 +84,7 @@ export function DispatchFromProjectDialog({
 
       // Reset form
       setRepo("");
-      setAgents("claude/opus-4.6");
+      setAgents(DEFAULT_AGENTS);
     } catch (err) {
       console.error("[DispatchFromProject] Failed to create task:", err);
       toast.error(
@@ -147,7 +150,7 @@ export function DispatchFromProjectDialog({
                 type="text"
                 value={agents}
                 onChange={(e) => setAgents(e.target.value)}
-                placeholder="claude/opus-4.6, codex/gpt-5.4-xhigh"
+                placeholder={`${DEFAULT_AGENTS}, codex/gpt-5.4-xhigh`}
                 className="w-full rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">

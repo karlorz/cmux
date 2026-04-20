@@ -62,7 +62,7 @@ YAML/JSON schema:
   tasks:
     - id: design          # Unique task ID
       prompt: "..."       # Task prompt
-      agent: claude/opus-4.6
+      agent: claude/opus-4.7
     - id: implement
       prompt: "..."
       agent: codex/gpt-5.4-xhigh

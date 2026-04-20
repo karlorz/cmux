@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/karlorz/devsh/internal/auth"
+	"github.com/karlorz/devsh/internal/models"
 	"github.com/karlorz/devsh/internal/vm"
 	"github.com/spf13/cobra"
 )
@@ -59,13 +60,13 @@ Examples:
 
 // LoopStatus represents the current state of the head agent loop
 type LoopStatus struct {
-	Running       bool      `json:"running"`
-	StartedAt     time.Time `json:"startedAt"`
-	PollCount     int       `json:"pollCount"`
-	LastPollAt    time.Time `json:"lastPollAt,omitempty"`
-	TotalDispatched int     `json:"totalDispatched"`
-	TotalRetries  int       `json:"totalRetries"`
-	Errors        []string  `json:"errors,omitempty"`
+	Running         bool      `json:"running"`
+	StartedAt       time.Time `json:"startedAt"`
+	PollCount       int       `json:"pollCount"`
+	LastPollAt      time.Time `json:"lastPollAt,omitempty"`
+	TotalDispatched int       `json:"totalDispatched"`
+	TotalRetries    int       `json:"totalRetries"`
+	Errors          []string  `json:"errors,omitempty"`
 }
 
 func runHeadAgentStart(cmd *cobra.Command, args []string) error {
@@ -227,7 +228,7 @@ func init() {
 	headAgentStartCmd.Flags().StringVar(&headAgentStartAgent, "agent", "auto", "Agent to dispatch (or 'auto' for label/field-based selection)")
 	headAgentStartCmd.Flags().StringVar(&headAgentStartAgentDefault, "agent-default", "claude/haiku-4.5", "Default agent when using auto selection")
 	headAgentStartCmd.Flags().StringVar(&headAgentStartAgentFrontend, "agent-frontend", "codex/gpt-5.2-xhigh", "Agent for frontend items when using auto selection")
-	headAgentStartCmd.Flags().StringVar(&headAgentStartAgentBackend, "agent-backend", "claude/opus-4.6", "Agent for backend items when using auto selection")
+	headAgentStartCmd.Flags().StringVar(&headAgentStartAgentBackend, "agent-backend", models.RecommendedClaudeAgent, "Agent for backend items when using auto selection")
 	headAgentStartCmd.Flags().IntVar(&headAgentStartMaxItems, "max-items", 5, "Maximum items to dispatch per poll (default: 5)")
 	headAgentStartCmd.Flags().IntVar(&headAgentStartMaxRetries, "max-retries", 2, "Maximum retry attempts per task (default: 2)")
 	headAgentStartCmd.Flags().IntVar(&headAgentStartPollInterval, "poll-interval", 300, "Seconds between polls (default: 300 = 5 minutes)")

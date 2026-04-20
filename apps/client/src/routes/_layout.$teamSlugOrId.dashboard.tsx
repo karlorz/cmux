@@ -41,6 +41,7 @@ import type {
   TaskError,
   TaskStarted,
 } from "@cmux/shared";
+import { DEFAULT_CLAUDE_AGENT_NAME } from "@cmux/shared/providers/anthropic/models";
 import {
   normalizeAgentSelection as normalizeSharedAgentSelection,
   type SelectedAgentSelection,
@@ -115,7 +116,7 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/dashboard")({
 
 // Default agents (not persisted to localStorage)
 const DEFAULT_AGENT_SELECTIONS = [
-  "claude/opus-4.6",
+  DEFAULT_CLAUDE_AGENT_NAME,
   "codex/gpt-5.4-xhigh",
 ]
   .map((agentName) => normalizeStoredAgentSelectionEntry(agentName))

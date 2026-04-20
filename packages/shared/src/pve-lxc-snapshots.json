@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "updatedAt": "2026-04-14T16:10:21Z",
+  "updatedAt": "2026-04-19T15:55:42.614Z",
   "presets": [
     {
       "presetId": "4vcpu_8gb_32gb",
@@ -10,60 +10,6 @@
       "disk": "32 GB SSD",
       "description": "Great default for day-to-day work. Balanced CPU, memory, and storage.",
       "versions": [
-        {
-          "version": 92,
-          "snapshotId": "snapshot_d1b4f444",
-          "templateVmid": 9188,
-          "capturedAt": "2026-03-26T22:31:28Z"
-        },
-        {
-          "version": 93,
-          "snapshotId": "snapshot_ce030776",
-          "templateVmid": 9191,
-          "capturedAt": "2026-03-27T22:46:36Z"
-        },
-        {
-          "version": 94,
-          "snapshotId": "snapshot_b52eba27",
-          "templateVmid": 9148,
-          "capturedAt": "2026-03-28T22:31:09Z"
-        },
-        {
-          "version": 95,
-          "snapshotId": "snapshot_baaa02a6",
-          "templateVmid": 9002,
-          "capturedAt": "2026-03-29T15:57:13Z"
-        },
-        {
-          "version": 96,
-          "snapshotId": "snapshot_826a8ca7",
-          "templateVmid": 9013,
-          "capturedAt": "2026-03-30T22:59:16Z"
-        },
-        {
-          "version": 97,
-          "snapshotId": "snapshot_6b744b32",
-          "templateVmid": 9027,
-          "capturedAt": "2026-03-31T17:55:33Z"
-        },
-        {
-          "version": 98,
-          "snapshotId": "snapshot_efdb6786",
-          "templateVmid": 9041,
-          "capturedAt": "2026-04-05T00:17:10Z"
-        },
-        {
-          "version": 99,
-          "snapshotId": "snapshot_f6b9c3a4",
-          "templateVmid": 9082,
-          "capturedAt": "2026-04-09T22:49:58Z"
-        },
-        {
-          "version": 100,
-          "snapshotId": "snapshot_1aaabb23",
-          "templateVmid": 9092,
-          "capturedAt": "2026-04-10T04:06:27Z"
-        },
         {
           "version": 101,
           "snapshotId": "snapshot_8ff6caa9",
@@ -117,60 +63,6 @@
       "description": "Extra headroom for larger codebases or heavier workloads.",
       "versions": [
         {
-          "version": 76,
-          "snapshotId": "snapshot_a64f9681",
-          "templateVmid": 9189,
-          "capturedAt": "2026-03-26T22:31:59Z"
-        },
-        {
-          "version": 77,
-          "snapshotId": "snapshot_8a010ada",
-          "templateVmid": 9192,
-          "capturedAt": "2026-03-27T22:47:06Z"
-        },
-        {
-          "version": 78,
-          "snapshotId": "snapshot_500d5f51",
-          "templateVmid": 9173,
-          "capturedAt": "2026-03-28T22:31:39Z"
-        },
-        {
-          "version": 79,
-          "snapshotId": "snapshot_002d06ba",
-          "templateVmid": 9007,
-          "capturedAt": "2026-03-29T15:57:46Z"
-        },
-        {
-          "version": 80,
-          "snapshotId": "snapshot_6bb9a891",
-          "templateVmid": 9014,
-          "capturedAt": "2026-03-30T22:59:46Z"
-        },
-        {
-          "version": 81,
-          "snapshotId": "snapshot_3c6d2ac6",
-          "templateVmid": 9026,
-          "capturedAt": "2026-03-31T17:56:03Z"
-        },
-        {
-          "version": 82,
-          "snapshotId": "snapshot_826225df",
-          "templateVmid": 9042,
-          "capturedAt": "2026-04-05T00:17:42Z"
-        },
-        {
-          "version": 83,
-          "snapshotId": "snapshot_a81e2503",
-          "templateVmid": 9083,
-          "capturedAt": "2026-04-09T22:50:29Z"
-        },
-        {
-          "version": 84,
-          "snapshotId": "snapshot_a027b7da",
-          "templateVmid": 9093,
-          "capturedAt": "2026-04-10T04:06:57Z"
-        },
-        {
           "version": 85,
           "snapshotId": "snapshot_e680e0e5",
           "templateVmid": 9094,
@@ -214,7 +106,5 @@
         }
       ]
     }
-  ],
-  "baseTemplateVmid": 9000,
-  "node": "karl-ws"
+  ]
 }

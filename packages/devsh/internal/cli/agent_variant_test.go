@@ -43,10 +43,23 @@ func TestResolveLocalAgentSelection(t *testing.T) {
 		}
 	})
 
-	t.Run("rejects unsupported Claude effort on non-opus-4.6 models", func(t *testing.T) {
+	t.Run("rejects unsupported Claude effort on non-opus models", func(t *testing.T) {
 		_, err := resolveLocalAgentSelection("claude/opus-4.5", "max")
 		if err == nil {
 			t.Fatal("expected error")
+		}
+	})
+
+	t.Run("supports Claude effort on opus-4.7", func(t *testing.T) {
+		selection, err := resolveLocalAgentSelection("claude/opus-4.7", "high")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if selection.SelectedVariant != "high" {
+			t.Fatalf("got variant %q, want %q", selection.SelectedVariant, "high")
+		}
+		if selection.ClaudeModel != "claude-opus-4-7" {
+			t.Fatalf("got model %q, want %q", selection.ClaudeModel, "claude-opus-4-7")
 		}
 	})
 }

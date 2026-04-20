@@ -2,6 +2,7 @@ import { CLOUDFLARE_ANTHROPIC_BASE_URL, normalizeAnthropicBaseUrl } from "./anth
 import { CLOUDFLARE_GEMINI_BASE_URL } from "./gemini";
 import { CLOUDFLARE_OPENAI_BASE_URL } from "./openai";
 import { normalizeOpenAiBaseUrl, normalizeGeminiBaseUrl } from "./provider-url";
+import { DEFAULT_CLAUDE_NATIVE_MODEL_ID } from "../providers/anthropic/models";
 
 export const PLATFORM_AI_PROVIDERS = ["anthropic", "openai", "gemini"] as const;
 export type PlatformAiProvider = (typeof PLATFORM_AI_PROVIDERS)[number];
@@ -36,7 +37,7 @@ export const PLATFORM_AI_MODELS: Record<PlatformAiProvider, PlatformAiTierMap> =
   anthropic: {
     low: { modelId: "claude-haiku-4-5-20251001", maxOutputTokens: 8000 },
     mid: { modelId: "claude-sonnet-4-6", maxOutputTokens: 16000 },
-    high: { modelId: "claude-opus-4-6", maxOutputTokens: 32000 },
+    high: { modelId: DEFAULT_CLAUDE_NATIVE_MODEL_ID, maxOutputTokens: 32000 },
   },
   openai: {
     low: { modelId: "gpt-5-nano", maxOutputTokens: 16000 },

@@ -9,6 +9,7 @@ import { useConvex } from "convex/react";
 import { useState, useEffect, type ChangeEvent } from "react";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
+import { DEFAULT_CLAUDE_AGENT_NAME } from "@cmux/shared/providers/anthropic/models";
 
 interface OrchestrationSettingsSectionProps {
   teamSlugOrId: string;
@@ -20,7 +21,8 @@ const CODING_AGENT_OPTIONS = [
   { value: "codex/gpt-5.4-xhigh", label: "Codex 5.4 XHigh (Powerful)" },
   { value: "claude/haiku-4.5", label: "Claude Haiku (Fast)" },
   { value: "claude/sonnet-4", label: "Claude Sonnet (Balanced)" },
-  { value: "claude/opus-4.5", label: "Claude Opus (Powerful)" },
+  { value: DEFAULT_CLAUDE_AGENT_NAME, label: "Claude Opus 4.7 (Powerful)" },
+  { value: "claude/opus-4.5", label: "Claude Opus 4.5 (Powerful)" },
 ];
 
 const MAX_CONCURRENT_OPTIONS = [

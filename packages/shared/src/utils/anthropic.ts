@@ -3,6 +3,7 @@
  */
 
 import { normalizeAnthropicUrl as normalizeAnthropicUrlImpl } from "./provider-url-normalizer";
+import { getClaudeManifestByAgentName } from "../providers/anthropic/models";
 
 /** Cloudflare AI Gateway URL for proxying Anthropic requests */
 export const CLOUDFLARE_ANTHROPIC_BASE_URL =
@@ -70,9 +71,35 @@ export function normalizeAnthropicBaseUrl(
  * AWS Bedrock model IDs for Claude models.
  * Used by code review heatmap feature.
  */
-export const ANTHROPIC_MODEL_OPUS_46 = "global.anthropic.claude-opus-4-6-v1";
-export const ANTHROPIC_MODEL_OPUS_45 =
-  "global.anthropic.claude-opus-4-5-20251101-v1:0";
-export const ANTHROPIC_MODEL_HAIKU_45 =
-  "us.anthropic.claude-haiku-4-5-20251001-v1:0";
+function getBedrockModelId(
+  agentName: "claude/opus-4.7" | "claude/opus-4.6" | "claude/opus-4.5" | "claude/haiku-4.5",
+  profile: "us" | "global",
+  fallbackBaseModelId: string,
+): string {
+  const baseModelId =
+    getClaudeManifestByAgentName(agentName)?.bedrockBaseModelId ??
+    fallbackBaseModelId;
+  return `${profile}.${baseModelId}`;
+}
+
+export const ANTHROPIC_MODEL_OPUS_46 = getBedrockModelId(
+  "claude/opus-4.6",
+  "global",
+  "anthropic.claude-opus-4-6-v1",
+);
+export const ANTHROPIC_MODEL_OPUS_47 = getBedrockModelId(
+  "claude/opus-4.7",
+  "global",
+  "anthropic.claude-opus-4-7",
+);
+export const ANTHROPIC_MODEL_OPUS_45 = getBedrockModelId(
+  "claude/opus-4.5",
+  "global",
+  "anthropic.claude-opus-4-5-20251101-v1:0",
+);
+export const ANTHROPIC_MODEL_HAIKU_45 = getBedrockModelId(
+  "claude/haiku-4.5",
+  "us",
+  "anthropic.claude-haiku-4-5-20251001-v1:0",
+);
 export const BEDROCK_AWS_REGION = "us-east-1";
