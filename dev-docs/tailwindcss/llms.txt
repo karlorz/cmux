@@ -10,6 +10,19 @@ npm install -D tailwindcss@3 postcss autoprefixernpx tailwindcss init
 
 --------------------------------
 
+### Install Tailwind CSS and dependencies
+
+Source: https://v3.tailwindcss.com/docs/guides/sveltekit
+
+Install tailwindcss, postcss, and autoprefixer, then generate the configuration files.
+
+```terminal
+npm install -D tailwindcss@3 postcss autoprefixer
+npx tailwindcss init -p
+```
+
+--------------------------------
+
 ### Start the React development server
 
 Source: https://v3.tailwindcss.com/docs/guides/create-react-app
@@ -36,19 +49,6 @@ mix phx.server
 
 ### Install Tailwind CSS and dependencies
 
-Source: https://v3.tailwindcss.com/docs/guides/sveltekit
-
-Install tailwindcss, postcss, and autoprefixer, then generate the configuration files.
-
-```terminal
-npm install -D tailwindcss@3 postcss autoprefixer
-npx tailwindcss init -p
-```
-
---------------------------------
-
-### Install Tailwind CSS and dependencies
-
 Source: https://v3.tailwindcss.com/docs/guides/adonisjs
 
 Install `tailwindcss`, `postcss`, and `autoprefixer` as development dependencies, then initialize Tailwind CSS.
@@ -59,246 +59,23 @@ npm install -D tailwindcss@3 postcss autoprefixernpx tailwindcss init -p
 
 --------------------------------
 
-### Start the development build process
+### Set gradient starting color with from-* utility
 
-Source: https://v3.tailwindcss.com/docs/guides/adonisjs
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
 
-Run the development server to compile assets and apply Tailwind CSS.
+Use from-* utilities to define the starting color of a gradient. Combine with bg-gradient-to-* for direction control.
 
-```bash
-npm run dev
+```HTML
+<div class="bg-gradient-to-r from-indigo-500 ..."></div>
 ```
 
 --------------------------------
 
-### Install Tailwind CSS and initialize config
-
-Source: https://v3.tailwindcss.com/docs/guides/create-react-app
-
-Install tailwindcss as a development dependency via npm, and then run the init command to generate your tailwind.config.js file.
-
-```bash
-npm install -D tailwindcss@3npx tailwindcss init
-```
-
---------------------------------
-
-### Start the build process
-
-Source: https://v3.tailwindcss.com/docs/guides/symfony
-
-Run the development build process to watch for file changes and recompile assets.
-
-```terminal
-npm run watch
-```
-
---------------------------------
-
-### Install postcss-import
-
-Source: https://v3.tailwindcss.com/docs/using-with-preprocessors
-
-Install the `postcss-import` plugin as a development dependency using npm. This plugin handles `@import` statements at build time.
-
-```bash
-npm install -D postcss-import
-```
-
---------------------------------
-
-### Install Tailwind CSS and dependencies
-
-Source: https://v3.tailwindcss.com/docs/guides/gatsby
-
-Install Tailwind CSS v3, PostCSS, autoprefixer, and the Gatsby PostCSS plugin, then generate configuration files.
-
-```bash
-npm install -D tailwindcss@3 postcss autoprefixer gatsby-plugin-postcssnpx tailwindcss init -p
-```
-
---------------------------------
-
-### Install Tailwind CSS Typography Plugin
-
-Source: https://v3.tailwindcss.com/docs/typography-plugin
-
-Install the `@tailwindcss/typography` plugin using npm as a development dependency.
-
-```bash
-npm install -D @tailwindcss/typography
-```
-
---------------------------------
-
-### Install Tailwind CSS and dependencies
-
-Source: https://v3.tailwindcss.com/docs/guides/remix
-
-Install tailwindcss, postcss, and autoprefixer as dev dependencies, then generate the configuration files tailwind.config.ts and postcss.config.js.
-
-```bash
-npm install -D tailwindcss@3 postcss autoprefixernpx tailwindcss init --ts -p
-```
-
---------------------------------
-
-### Install Tailwind CSS and PostCSS
-
-Source: https://v3.tailwindcss.com/docs/guides/parcel
-
-Install Tailwind CSS v3 and PostCSS as dev dependencies, then generate the default tailwind.config.js configuration file.
-
-```bash
-npm install -D tailwindcss@3 postcssnpx tailwindcss init
-```
-
---------------------------------
-
-### Create a new Vite React project
-
-Source: https://v3.tailwindcss.com/docs/guides/vite
-
-Initializes a new React project using Vite, creating a project directory and installing initial dependencies.
-
-```bash
-npm create vite@latest my-project -- --template reactcd my-project
-```
-
---------------------------------
-
-### Install Tailwind CSS and PostCSS dependencies
-
-Source: https://v3.tailwindcss.com/docs/guides/emberjs
-
-Install Tailwind CSS, PostCSS, postcss-loader, and autoprefixer as development dependencies, then initialize Tailwind CSS to generate its configuration files.
-
-```bash
-npm install -D tailwindcss@3 postcss postcss-loader autoprefixernpx tailwindcss init -p
-```
-
---------------------------------
-
-### Build Responsive Layout Components
-
-Source: https://v3.tailwindcss.com/docs/responsive-design
-
-Example of a marketing component that uses a stacked layout on small screens and a flex layout on medium screens.
-
-```html
-<div class="max-w-md mx-auto bg-white rounded-xl shadow-md overflow-hidden md:max-w-2xl">
-  <div class="md:flex">
-    <div class="md:shrink-0">
-      <img class="h-48 w-full object-cover md:h-full md:w-48" src="/img/building.jpg" alt="Modern building architecture">
-    </div>
-    <div class="p-8">
-      <div class="uppercase tracking-wide text-sm text-indigo-500 font-semibold">Company retreats</div>
-      <a href="#" class="block mt-1 text-lg leading-tight font-medium text-black hover:underline">Incredible accommodation for your team</a>
-      <p class="mt-2 text-slate-500">Looking to take your team away on a retreat to enjoy awesome food and take in some sunshine? We have a list of places to do just that.</p>
-    </div>
-  </div>
-</div>
-```
-
---------------------------------
-
-### Start the Tailwind CSS build process
-
-Source: https://v3.tailwindcss.com/docs/guides/ruby-on-rails
-
-Run the development server to compile your Tailwind CSS and watch for changes.
-
-```bash
-./bin/dev
-```
-
---------------------------------
-
-### Start Parcel build process
-
-Source: https://v3.tailwindcss.com/docs/guides/parcel
-
-Run the Parcel development server to build and serve your project with hot module reloading.
-
-```bash
-npx parcel src/index.html
-```
-
---------------------------------
-
-### Install Autoprefixer via npm
-
-Source: https://v3.tailwindcss.com/docs/browser-support
-
-Installs Autoprefixer as a development dependency, which automatically adds vendor prefixes to CSS.
-
-```bash
-npm install -D autoprefixer
-```
-
---------------------------------
-
-### Start Gatsby development server
-
-Source: https://v3.tailwindcss.com/docs/guides/gatsby
-
-Run the Gatsby development server to build and serve your project with Tailwind CSS.
-
-```bash
-gatsby develop
-```
-
---------------------------------
-
-### Install Tailwind CLI
-
-Source: https://v3.tailwindcss.com/docs/guides/phoenix
-
-Download the standalone Tailwind CLI and generate the tailwind.config.js file in the assets directory.
-
-```bash
-mix tailwind.install
-```
-
---------------------------------
-
-### Generated CSS with prefix and important
-
-Source: https://v3.tailwindcss.com/docs/plugins
-
-Example of how static utilities are transformed when prefix and important settings are active.
-
-```css
-.tw-content-auto {
-  content-visibility: auto !important;
-}
-.tw-content-hidden {
-  content-visibility: hidden !important;
-}
-.tw-content-visible {
-  content-visibility: visible !important;
-}
-```
-
---------------------------------
-
-### Start Angular development server
-
-Source: https://v3.tailwindcss.com/docs/guides/angular
-
-Run the Angular development server to build and serve your application with Tailwind CSS.
-
-```Terminal
-ng serve
-```
-
---------------------------------
-
-### Apply snap-start with Tailwind CSS
+### Snapping to the start
 
 Source: https://v3.tailwindcss.com/docs/scroll-snap-align
 
-Use the `snap-start` utility to align an element to the start of its scroll container when scrolling.
+Use the snap-start utility to snap an element to its start when being scrolled inside a snap container.
 
 ```html
 <div class="snap-x ...">
@@ -325,6 +102,354 @@ Use the `snap-start` utility to align an element to the start of its scroll cont
 
 --------------------------------
 
+### Install Tailwind CSS and initialize config
+
+Source: https://v3.tailwindcss.com/docs/guides/create-react-app
+
+Install tailwindcss as a development dependency via npm, and then run the init command to generate your tailwind.config.js file.
+
+```bash
+npm install -D tailwindcss@3npx tailwindcss init
+```
+
+--------------------------------
+
+### Install postcss-nesting Plugin
+
+Source: https://v3.tailwindcss.com/docs/using-with-preprocessors
+
+Install `postcss-nesting` as a development dependency if you prefer it over the default `postcss-nested` for CSS Nesting specification compliance.
+
+```bash
+npm install -D postcss-nesting
+```
+
+--------------------------------
+
+### Start the development build process
+
+Source: https://v3.tailwindcss.com/docs/guides/adonisjs
+
+Run the development server to compile assets and apply Tailwind CSS.
+
+```bash
+npm run dev
+```
+
+--------------------------------
+
+### place-items-start - Align grid items to start
+
+Source: https://v3.tailwindcss.com/docs/place-items
+
+Use place-items-start to align grid items to the start of their grid areas on both axes.
+
+```HTML
+<div class="grid grid-cols-3 gap-4 place-items-start ...">
+  <div>01</div>
+  <div>02</div>
+  <div>03</div>
+  <div>04</div>
+  <div>05</div>
+  <div>06</div>
+</div>
+```
+
+--------------------------------
+
+### Install Tailwind CSS Typography Plugin with npm
+
+Source: https://v3.tailwindcss.com/docs/typography-plugin
+
+Install the `@tailwindcss/typography` plugin as a development dependency using npm.
+
+```Bash
+npm install -D @tailwindcss/typography
+```
+
+--------------------------------
+
+### Install Tailwind CSS and dependencies
+
+Source: https://v3.tailwindcss.com/docs/guides/gatsby
+
+Install Tailwind CSS v3, PostCSS, autoprefixer, and the Gatsby PostCSS plugin, then generate configuration files.
+
+```bash
+npm install -D tailwindcss@3 postcss autoprefixer gatsby-plugin-postcssnpx tailwindcss init -p
+```
+
+--------------------------------
+
+### Install Tailwind CSS and PostCSS
+
+Source: https://v3.tailwindcss.com/docs/guides/parcel
+
+Install Tailwind CSS v3 and PostCSS as dev dependencies, then generate the default tailwind.config.js configuration file.
+
+```bash
+npm install -D tailwindcss@3 postcssnpx tailwindcss init
+```
+
+--------------------------------
+
+### Align item to start using place-self-start
+
+Source: https://v3.tailwindcss.com/docs/place-self
+
+Aligns an item to the start on both the block and inline axes.
+
+```html
+<div class="grid grid-cols-3 gap-4 ...">
+  <div>01</div>
+  <div class="place-self-start ...">02</div>
+  <div>03</div>
+  <div>04</div>
+  <div>05</div>
+  <div>06</div>
+</div>
+```
+
+--------------------------------
+
+### Text Decoration Utilities HTML Examples
+
+Source: https://v3.tailwindcss.com/docs/text-decoration
+
+Basic HTML examples demonstrating the underline, overline, line-through, and no-underline utility classes applied to paragraph elements.
+
+```html
+<p class="underline ...">The quick brown fox ...</p>
+<p class="overline ...">The quick brown fox ...</p>
+<p class="line-through ...">The quick brown fox ...</p>
+<p class="no-underline ...">The quick brown fox ...</p>
+```
+
+--------------------------------
+
+### Install Tailwind CSS and dependencies
+
+Source: https://v3.tailwindcss.com/docs/guides/remix
+
+Install tailwindcss, postcss, and autoprefixer as dev dependencies, then generate the configuration files tailwind.config.ts and postcss.config.js.
+
+```bash
+npm install -D tailwindcss@3 postcss autoprefixernpx tailwindcss init --ts -p
+```
+
+--------------------------------
+
+### Start the build process
+
+Source: https://v3.tailwindcss.com/docs/guides/symfony
+
+Run the development build process to watch for file changes and recompile assets.
+
+```terminal
+npm run watch
+```
+
+--------------------------------
+
+### Install Tailwind CSS and PostCSS dependencies
+
+Source: https://v3.tailwindcss.com/docs/guides/emberjs
+
+Install Tailwind CSS, PostCSS, postcss-loader, and autoprefixer as development dependencies, then initialize Tailwind CSS to generate its configuration files.
+
+```bash
+npm install -D tailwindcss@3 postcss postcss-loader autoprefixernpx tailwindcss init -p
+```
+
+--------------------------------
+
+### Place Content Start with Tailwind CSS
+
+Source: https://v3.tailwindcss.com/docs/place-content
+
+Use place-content-start to pack grid items against the start of the block axis. Requires a grid container with defined height.
+
+```HTML
+<div class="grid grid-cols-2 gap-4 place-content-start h-48 ...">
+  <div>01</div>
+  <div>02</div>
+  <div>03</div>
+  <div>04</div>
+</div>
+```
+
+--------------------------------
+
+### Install Autoprefixer via npm
+
+Source: https://v3.tailwindcss.com/docs/browser-support
+
+Installs Autoprefixer as a development dependency, which automatically adds vendor prefixes to CSS.
+
+```bash
+npm install -D autoprefixer
+```
+
+--------------------------------
+
+### Install postcss-import plugin
+
+Source: https://v3.tailwindcss.com/docs/using-with-preprocessors
+
+Install the `postcss-import` plugin as a development dependency using npm. This plugin is crucial for handling CSS `@import` statements at build time.
+
+```bash
+npm install -D postcss-import
+```
+
+--------------------------------
+
+### Create a new Vite React project
+
+Source: https://v3.tailwindcss.com/docs/guides/vite
+
+Initializes a new React project using Vite, creating a project directory and installing initial dependencies.
+
+```bash
+npm create vite@latest my-project -- --template reactcd my-project
+```
+
+--------------------------------
+
+### CLASS .place-items-start
+
+Source: https://v3.tailwindcss.com/docs/place-items
+
+Places grid items on the start of their grid areas on both axes.
+
+```APIDOC
+## CLASS .place-items-start
+
+### Description
+Use place-items-start to place grid items on the start of their grid areas on both axes.
+
+### Method
+CLASS
+
+### Endpoint
+.place-items-start
+
+### Parameters
+#### CSS Properties
+- **place-items** (string) - Required - start
+
+### Request Example
+<div class="grid grid-cols-3 gap-4 place-items-start">
+  <div>01</div>
+  <div>02</div>
+</div>
+
+### Response
+#### Success Response (Applied)
+- **Alignment** (CSS) - Items are aligned to the start of their grid areas on both axes.
+```
+
+--------------------------------
+
+### Start Parcel build process
+
+Source: https://v3.tailwindcss.com/docs/guides/parcel
+
+Run the Parcel development server to build and serve your project with hot module reloading.
+
+```bash
+npx parcel src/index.html
+```
+
+--------------------------------
+
+### Start the Tailwind CSS build process
+
+Source: https://v3.tailwindcss.com/docs/guides/ruby-on-rails
+
+Run the development server to compile your Tailwind CSS and watch for changes.
+
+```bash
+./bin/dev
+```
+
+--------------------------------
+
+### Start Gatsby development server
+
+Source: https://v3.tailwindcss.com/docs/guides/gatsby
+
+Run the Gatsby development server to build and serve your project with Tailwind CSS.
+
+```bash
+gatsby develop
+```
+
+--------------------------------
+
+### Place Self Start
+
+Source: https://v3.tailwindcss.com/docs/place-self
+
+Aligns a grid item to the start position on both the horizontal and vertical axes. Use place-self-start to position items at the beginning of their grid cell.
+
+```APIDOC
+## place-self-start
+
+### Description
+Aligns an item to the start on both axes.
+
+### CSS Property
+`place-self: start;`
+
+### Usage Example
+```html
+<div class="grid grid-cols-3 gap-4 ...">
+  <div>01</div>
+  <div class="place-self-start ...">02</div>
+  <div>03</div>
+  <div>04</div>
+  <div>05</div>
+  <div>06</div>
+</div>
+```
+```
+
+--------------------------------
+
+### Generated Utility Classes with Prefix
+
+Source: https://v3.tailwindcss.com/docs/configuration
+
+Example output showing how utilities are generated with the tw- prefix applied to class names.
+
+```css
+.tw-text-left {
+  text-align: left;
+}
+.tw-text-center {
+  text-align: center;
+}
+.tw-text-right {
+  text-align: right;
+}
+/* etc. */
+```
+
+--------------------------------
+
+### Install Tailwind CLI
+
+Source: https://v3.tailwindcss.com/docs/guides/phoenix
+
+Download the standalone Tailwind CLI and generate the tailwind.config.js file in the assets directory.
+
+```bash
+mix tailwind.install
+```
+
+--------------------------------
+
 ### Start the Tailwind CLI build process
 
 Source: https://v3.tailwindcss.com/docs/installation
@@ -337,180 +462,75 @@ npx tailwindcss -i ./src/input.css -o ./src/output.css --watch
 
 --------------------------------
 
-### Basic alignment and distribution with place-content
+### Setting the Flex Basis
 
-Source: https://v3.tailwindcss.com/docs/place-content
+Source: https://v3.tailwindcss.com/docs/flex-basis
 
-Use these utilities to control the alignment of grid items. These examples demonstrate centering, start/end alignment, and various spacing distributions.
-
-```html
-<div class="grid grid-cols-2 gap-4 place-content-center h-48 ...">
-  <div>01</div>
-  <div>02</div>
-  <div>03</div>
-  <div>04</div>
-</div>
-```
-
-```html
-<div class="grid grid-cols-2 gap-4 place-content-start h-48 ...">
-  <div>01</div>
-  <div>02</div>
-  <div>03</div>
-  <div>04</div>
-</div>
-```
-
-```html
-<div class="grid grid-cols-2 gap-4 place-content-end h-48 ...">
-  <div>01</div>
-  <div>02</div>
-  <div>03</div>
-  <div>04</div>
-</div>
-```
-
-```html
-<div class="grid grid-cols-2 gap-4 place-content-between h-48 ...">
-  <div>01</div>
-  <div>02</div>
-  <div>03</div>
-  <div>04</div>
-</div>
-```
-
-```html
-<div class="grid grid-cols-2 gap-4 place-content-around h-48 ...">
-  <div>01</div>
-  <div>02</div>
-  <div>03</div>
-  <div>04</div>
-</div>
-```
-
-```html
-<div class="grid grid-cols-2 gap-4 place-content-evenly h-48 ...">
-  <div>01</div>
-  <div>02</div>
-  <div>03</div>
-  <div>04</div>
-</div>
-```
-
-```html
-<div class="grid grid-cols-2 gap-4 place-content-stretch h-48 ...">
-  <div>01</div>
-  <div>02</div>
-  <div>03</div>
-  <div>04</div>
-</div>
-```
-
---------------------------------
-
-### Adding Drop Shadows to Elements
-
-Source: https://v3.tailwindcss.com/docs/drop-shadow
-
-Basic usage examples demonstrating how to apply drop shadow utilities to HTML elements using the drop-shadow-* classes.
+Basic usage example demonstrating how to use the basis-* utilities to set the initial size of flex items within a flex container.
 
 ```APIDOC
-## Adding Drop Shadows
+## Setting the Flex Basis
 
 ### Description
-Apply drop shadow effects to elements using the drop-shadow-* utility classes. These classes add CSS drop-shadow filters that work well with irregular shapes.
+Use the `basis-*` utilities to set the initial size of flex items before free space is distributed.
 
-### Usage
-
+### Example
 ```html
-<div class="drop-shadow-md">
-  <!-- Element with medium drop shadow -->
-</div>
-<div class="drop-shadow-lg">
-  <!-- Element with large drop shadow -->
-</div>
-<div class="drop-shadow-xl">
-  <!-- Element with extra large drop shadow -->
-</div>
-<div class="drop-shadow-2xl">
-  <!-- Element with 2x large drop shadow -->
+<div class="flex flex-row">
+  <div class="basis-1/4">01</div>
+  <div class="basis-1/4">02</div>
+  <div class="basis-1/2">03</div>
 </div>
 ```
 
-### Notes
-- Use drop-shadow utilities for irregular shapes like text and SVG elements
-- For regular rectangular elements, consider using box-shadow instead
-- Available sizes: sm, (default), md, lg, xl, 2xl, none
+### Result
+This creates a flex container with three items:
+- Item 01: Initial width of 25% (basis-1/4)
+- Item 02: Initial width of 25% (basis-1/4)
+- Item 03: Initial width of 50% (basis-1/2)
 ```
 
 --------------------------------
 
-### HTML Example with Tailwind Classes
+### Start Angular development server
 
-Source: https://v3.tailwindcss.com/docs/content-configuration
+Source: https://v3.tailwindcss.com/docs/guides/angular
 
-Shows an HTML structure styled with various Tailwind utility classes, demonstrating how the framework scans for complete class strings.
+Run the Angular development server to build and serve your application with Tailwind CSS.
 
+```Terminal
+ng serve
+```
+
+--------------------------------
+
+### Adding Backdrop Sepia Filters
+
+Source: https://v3.tailwindcss.com/docs/backdrop-sepia
+
+Basic usage examples demonstrating how to apply backdrop sepia filters to elements using the backdrop-sepia and backdrop-sepia-0 utility classes.
+
+```APIDOC
+## Adding Backdrop Sepia Filters
+
+### Description
+Use the `backdrop-sepia` and `backdrop-sepia-0` utilities to control whether an element's backdrop should be rendered as sepia or in full color.
+
+### Usage Examples
+
+#### No Sepia Effect
 ```html
-<div class="md:flex">
-  <div class="md:flex-shrink-0">
-    <img class="rounded-lg md:w-56" src="/img/shopping.jpg" alt="Woman paying for a purchase">
-  </div>
-  <div class="mt-4 md:mt-0 md:ml-6">
-    <div class="uppercase tracking-wide text-sm text-indigo-600 font-bold">
-      Marketing
-    </div>
-    <a href="/get-started" class="block mt-1 text-lg leading-tight font-semibold text-gray-900 hover:underline">
-      Finding customers for your new business
-    </a>
-    <p class="mt-2 text-gray-600">
-      Getting a new business off the ground is a lot of hard work.
-      Here are five ideas you can use to find your first customers.
-    </p>
-  </div>
+<div class="backdrop-sepia-0 bg-white/30 ...">
+  <!-- ... -->
 </div>
 ```
 
---------------------------------
-
-### Align Content to Start with Tailwind CSS
-
-Source: https://v3.tailwindcss.com/docs/align-content
-
-Use `content-start` to pack rows against the beginning of the cross axis in a grid or flex container.
-
+#### Full Sepia Effect
 ```html
-<div class="h-56 grid grid-cols-3 gap-4 content-start ...">
-  <div>01</div>
-  <div>02</div>
-  <div>03</div>
-  <div>04</div>
-  <div>05</div>
+<div class="backdrop-sepia bg-white/30 ...">
+  <!-- ... -->
 </div>
 ```
-
---------------------------------
-
-### Install Webpack Encore
-
-Source: https://v3.tailwindcss.com/docs/guides/symfony
-
-Add the Webpack Encore bundle to manage asset compilation in your Symfony project.
-
-```terminal
-composer require symfony/webpack-encore-bundle
-```
-
---------------------------------
-
-### Install Tailwind CSS in Astro
-
-Source: https://v3.tailwindcss.com/docs/guides/astro
-
-Add Tailwind CSS and the Astro Tailwind integration to your project using the `astro add` command.
-
-```bash
-npx astro add tailwind
 ```
 
 --------------------------------
@@ -523,141 +543,6 @@ Initialize a new project using the Qwik CLI.
 
 ```terminal
 npm create qwik@latest my-projectcd my-project
-```
-
---------------------------------
-
-### Example of Repeated Utility Classes for Avatars
-
-Source: https://v3.tailwindcss.com/docs/reusing-styles
-
-This HTML snippet demonstrates a common scenario where Tailwind CSS utility classes are repeated for similar elements, such as avatar images. It highlights the problem of duplication that this guide aims to address.
-
-```html
-<div>
-  <div class="flex items-center space-x-2 text-base">
-    <h4 class="font-semibold text-slate-900">Contributors</h4>
-    <span class="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">204</span>
-  </div>
-  <div class="mt-3 flex -space-x-2 overflow-hidden">
-    <img class="inline-block h-12 w-12 rounded-full ring-2 ring-white" src="https://images.unsplash.com/photo-1491528323818-fdd1faba62cc?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80" alt=""/>
-    <img class="inline-block h-12 w-12 rounded-full ring-2 ring-white" src="https://images.unsplash.com/photo-1550525811-e5869dd03032?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80" alt=""/>
-    <img class="inline-block h-12 w-12 rounded-full ring-2 ring-white" src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2.25&w=256&h=256&q=80" alt=""/>
-    <img class="inline-block h-12 w-12 rounded-full ring-2 ring-white" src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80" alt=""/>
-    <img class="inline-block h-12 w-12 rounded-full ring-2 ring-white" src="https://images.unsplash.com/photo-1517365830460-955ce3ccd263?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80" alt=""/>
-  </div>
-  <div class="mt-3 text-sm font-medium">
-    <a href="#" class="text-blue-500">+ 198 others</a>
-  </div>
-</div>
-```
-
---------------------------------
-
-### Border Radius Utilities Reference
-
-Source: https://v3.tailwindcss.com/docs/border-radius
-
-Complete reference guide for Tailwind CSS border radius utility classes. Includes all-corner rounding, side-specific rounding (start, end, top, right, bottom), and size variants from none to full.
-
-```APIDOC
-# Tailwind CSS Border Radius Utilities
-
-## General Border Radius Classes
-
-### All Corners
-
-| Class | CSS Property | Value |
-|-------|--------------|-------|
-| `rounded-none` | border-radius | 0px |
-| `rounded-sm` | border-radius | 0.125rem (2px) |
-| `rounded` | border-radius | 0.25rem (4px) |
-| `rounded-md` | border-radius | 0.375rem (6px) |
-| `rounded-lg` | border-radius | 0.5rem (8px) |
-| `rounded-xl` | border-radius | 0.75rem (12px) |
-| `rounded-2xl` | border-radius | 1rem (16px) |
-| `rounded-3xl` | border-radius | 1.5rem (24px) |
-| `rounded-full` | border-radius | 9999px |
-
-## Side-Specific Border Radius Classes
-
-### Start Side (rounded-s-*)
-
-| Class | CSS Properties |
-|-------|----------------|
-| `rounded-s-none` | border-start-start-radius: 0px; border-end-start-radius: 0px; |
-| `rounded-s-sm` | border-start-start-radius: 0.125rem (2px); border-end-start-radius: 0.125rem (2px); |
-| `rounded-s` | border-start-start-radius: 0.25rem (4px); border-end-start-radius: 0.25rem (4px); |
-| `rounded-s-md` | border-start-start-radius: 0.375rem (6px); border-end-start-radius: 0.375rem (6px); |
-| `rounded-s-lg` | border-start-start-radius: 0.5rem (8px); border-end-start-radius: 0.5rem (8px); |
-| `rounded-s-xl` | border-start-start-radius: 0.75rem (12px); border-end-start-radius: 0.75rem (12px); |
-| `rounded-s-2xl` | border-start-start-radius: 1rem (16px); border-end-start-radius: 1rem (16px); |
-| `rounded-s-3xl` | border-start-start-radius: 1.5rem (24px); border-end-start-radius: 1.5rem (24px); |
-| `rounded-s-full` | border-start-start-radius: 9999px; border-end-start-radius: 9999px; |
-
-### End Side (rounded-e-*)
-
-| Class | CSS Properties |
-|-------|----------------|
-| `rounded-e-none` | border-start-end-radius: 0px; border-end-end-radius: 0px; |
-| `rounded-e-sm` | border-start-end-radius: 0.125rem (2px); border-end-end-radius: 0.125rem (2px); |
-| `rounded-e` | border-start-end-radius: 0.25rem (4px); border-end-end-radius: 0.25rem (4px); |
-| `rounded-e-md` | border-start-end-radius: 0.375rem (6px); border-end-end-radius: 0.375rem (6px); |
-| `rounded-e-lg` | border-start-end-radius: 0.5rem (8px); border-end-end-radius: 0.5rem (8px); |
-| `rounded-e-xl` | border-start-end-radius: 0.75rem (12px); border-end-end-radius: 0.75rem (12px); |
-| `rounded-e-2xl` | border-start-end-radius: 1rem (16px); border-end-end-radius: 1rem (16px); |
-| `rounded-e-3xl` | border-start-end-radius: 1.5rem (24px); border-end-end-radius: 1.5rem (24px); |
-| `rounded-e-full` | border-start-end-radius: 9999px; border-end-end-radius: 9999px; |
-
-### Top Side (rounded-t-*)
-
-| Class | CSS Properties |
-|-------|----------------|
-| `rounded-t-none` | border-top-left-radius: 0px; border-top-right-radius: 0px; |
-| `rounded-t-sm` | border-top-left-radius: 0.125rem (2px); border-top-right-radius: 0.125rem (2px); |
-| `rounded-t` | border-top-left-radius: 0.25rem (4px); border-top-right-radius: 0.25rem (4px); |
-| `rounded-t-md` | border-top-left-radius: 0.375rem (6px); border-top-right-radius: 0.375rem (6px); |
-| `rounded-t-lg` | border-top-left-radius: 0.5rem (8px); border-top-right-radius: 0.5rem (8px); |
-| `rounded-t-xl` | border-top-left-radius: 0.75rem (12px); border-top-right-radius: 0.75rem (12px); |
-| `rounded-t-2xl` | border-top-left-radius: 1rem (16px); border-top-right-radius: 1rem (16px); |
-| `rounded-t-3xl` | border-top-left-radius: 1.5rem (24px); border-top-right-radius: 1.5rem (24px); |
-| `rounded-t-full` | border-top-left-radius: 9999px; border-top-right-radius: 9999px; |
-
-### Right Side (rounded-r-*)
-
-| Class | CSS Properties |
-|-------|----------------|
-| `rounded-r-none` | border-top-right-radius: 0px; border-bottom-right-radius: 0px; |
-| `rounded-r-sm` | border-top-right-radius: 0.125rem (2px); border-bottom-right-radius: 0.125rem (2px); |
-| `rounded-r` | border-top-right-radius: 0.25rem (4px); border-bottom-right-radius: 0.25rem (4px); |
-| `rounded-r-md` | border-top-right-radius: 0.375rem (6px); border-bottom-right-radius: 0.375rem (6px); |
-| `rounded-r-lg` | border-top-right-radius: 0.5rem (8px); border-bottom-right-radius: 0.5rem (8px); |
-| `rounded-r-xl` | border-top-right-radius: 0.75rem (12px); border-bottom-right-radius: 0.75rem (12px); |
-| `rounded-r-2xl` | border-top-right-radius: 1rem (16px); border-bottom-right-radius: 1rem (16px); |
-| `rounded-r-3xl` | border-top-right-radius: 1.5rem (24px); border-bottom-right-radius: 1.5rem (24px); |
-| `rounded-r-full` | border-top-right-radius: 9999px; border-bottom-right-radius: 9999px; |
-
-### Bottom Side (rounded-b-*)
-
-| Class | CSS Properties |
-|-------|----------------|
-| `rounded-b-none` | border-bottom-right-radius: 0px; border-bottom-left-radius: 0px; |
-| `rounded-b-sm` | border-bottom-right-radius: 0.125rem (2px); border-bottom-left-radius: 0.125rem (2px); |
-| `rounded-b` | border-bottom-right-radius: 0.25rem (4px); border-bottom-left-radius: 0.25rem (4px); |
-| `rounded-b-md` | border-bottom-right-radius: 0.375rem (6px); border-bottom-left-radius: 0.375rem (6px); |
-| `rounded-b-lg` | border-bottom-right-radius: 0.5rem (8px); border-bottom-left-radius: 0.5rem (8px); |
-| `rounded-b-xl` | border-bottom-right-radius: 0.75rem (12px); border-bottom-left-radius: 0.75rem (12px); |
-| `rounded-b-2xl` | border-bottom-right-radius: 1rem (16px); border-bottom-left-radius: 1rem (16px); |
-| `rounded-b-3xl` | border-bottom-right-radius: 1.5rem (24px); border-bottom-left-radius: 1.5rem (24px); |
-| `rounded-b-full` | border-bottom-right-radius: 9999px; border-bottom-left-radius: 9999px; |
-
-## Usage Notes
-
-- **General classes** (`rounded-*`) apply border-radius to all four corners
-- **Side-specific classes** apply border-radius to specific sides or corners
-- **Size variants** range from `none` (0px) to `full` (9999px for circular elements)
-- **Directional classes** use logical properties (start/end) for better RTL support
-- All values are based on Tailwind CSS default spacing scale
 ```
 
 --------------------------------
@@ -687,62 +572,101 @@ cd my-project
 
 --------------------------------
 
-### Basic Skew Usage
+### Configure theme with screens, colors, and spacing
 
-Source: https://v3.tailwindcss.com/docs/skew
+Source: https://v3.tailwindcss.com/docs/theme
 
-Demonstrates how to apply skew transformations to elements using skew-x-* and skew-y-* utility classes. Shows examples of different skew intensities applied to image elements.
+Complete theme configuration example showing how to define custom responsive breakpoints, color palette, font families, and extend default spacing and border radius values.
+
+```javascript
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  theme: {
+    screens: {
+      sm: '480px',
+      md: '768px',
+      lg: '976px',
+      xl: '1440px',
+    },
+    colors: {
+      'blue': '#1fb6ff',
+      'purple': '#7e5bef',
+      'pink': '#ff49db',
+      'orange': '#ff7849',
+      'green': '#13ce66',
+      'yellow': '#ffc82c',
+      'gray-dark': '#273444',
+      'gray': '#8492a6',
+      'gray-light': '#d3dce6',
+    },
+    fontFamily: {
+      sans: ['Graphik', 'sans-serif'],
+      serif: ['Merriweather', 'serif'],
+    },
+    extend: {
+      spacing: {
+        '128': '32rem',
+        '144': '36rem',
+      },
+      borderRadius: {
+        '4xl': '2rem',
+      }
+    }
+  }
+}
+```
+
+--------------------------------
+
+### GET /opacity-utilities
+
+Source: https://v3.tailwindcss.com/docs/opacity
+
+Retrieve and apply standard opacity utility classes to elements to control their transparency levels.
 
 ```APIDOC
-## Basic Skew Usage
-
-### Skewing an Element
-
-Use the `skew-x-*` and `skew-y-*` utilities to skew an element.
-
-### HTML Example
-```html
-<img class="skew-y-0 ...">
-<img class="skew-y-3 ...">
-<img class="skew-y-6 ...">
-<img class="skew-y-12 ...">
-```
+## GET /opacity-utilities
 
 ### Description
-Apply skew transformations by adding the appropriate utility class to your HTML element. The examples above show increasing levels of vertical skew (0, 3, 6, and 12 degrees).
+Use the `opacity-*` utilities to control the opacity of an element. The scale ranges from 0 to 100 in increments of 5 (with some exceptions).
+
+### Method
+CSS_CLASS
+
+### Endpoint
+.opacity-{value}
+
+### Parameters
+#### Path Parameters
+- **value** (string) - Required - The opacity level. Valid values: 0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100.
+
+### Request Example
+<button class="bg-indigo-500 opacity-100">Button A</button>
+<button class="bg-indigo-500 opacity-75">Button B</button>
+<button class="bg-indigo-500 opacity-50">Button C</button>
+<button class="bg-indigo-500 opacity-25">Button D</button>
+
+### Response
+#### Success Response (200)
+- **opacity** (float) - The resulting CSS opacity property value (e.g., opacity: 0.75;)
+
+#### Response Example
+{
+  "class": "opacity-75",
+  "property": "opacity: 0.75;"
+}
 ```
 
 --------------------------------
 
-### Applying Transition Delay Utilities in HTML
+### Install Tailwind CSS in Astro
 
-Source: https://v3.tailwindcss.com/docs/transition-delay
+Source: https://v3.tailwindcss.com/docs/guides/astro
 
-Use `delay-*` utilities to control the transition delay of elements. This example demonstrates different delay values for buttons.
+Add Tailwind CSS and the Astro Tailwind integration to your project using the `astro add` command.
 
-```html
-<button class="transition delay-150 duration-300 ease-in-out ...">Button A</button>
-<button class="transition delay-300 duration-300 ease-in-out ...">Button B</button>
-<button class="transition delay-700 duration-300 ease-in-out ...">Button C</button>
-```
-
---------------------------------
-
-### Align Grid Item to Start with justify-self-start in HTML
-
-Source: https://v3.tailwindcss.com/docs/justify-self
-
-Use `justify-self-start` to align a grid item to the start of its inline axis.
-
-```html
-<div class="grid justify-items-stretch ...">
-  <!-- ... -->
-  <div class="justify-self-start ...">02</div>
-  <!-- ... -->
-  <!-- ... -->
-  <!-- ... -->
-  <!-- ... -->
-</div>
+```bash
+npx astro add tailwind
 ```
 
 --------------------------------
@@ -759,6 +683,40 @@ npm create astro@latest my-projectcd my-project
 
 --------------------------------
 
+### Positioning with logical properties
+
+Source: https://v3.tailwindcss.com/docs/top-right-bottom-left
+
+Use start and end utilities to automatically adjust positioning based on the text direction (LTR vs RTL).
+
+```html
+<div dir="ltr">
+  <div class="relative h-32 w-32 ...">
+    <div class="absolute h-14 w-14 top-0 start-0 ..."></div>
+  </div>
+<div>
+
+<div dir="rtl">
+  <div class="relative h-32 w-32 ...">
+    <div class="absolute h-14 w-14 top-0 start-0 ..."></div>
+  </div>
+<div>
+```
+
+--------------------------------
+
+### Install Webpack Encore
+
+Source: https://v3.tailwindcss.com/docs/guides/symfony
+
+Add the Webpack Encore bundle to manage asset compilation in your Symfony project.
+
+```terminal
+composer require symfony/webpack-encore-bundle
+```
+
+--------------------------------
+
 ### Create a new Ruby on Rails project
 
 Source: https://v3.tailwindcss.com/docs/guides/ruby-on-rails
@@ -767,6 +725,39 @@ Use the Rails command line to initialize a new project and navigate into its dir
 
 ```bash
 rails new my-projectcd my-project
+```
+
+--------------------------------
+
+### Justify Items Start - Tailwind CSS
+
+Source: https://v3.tailwindcss.com/docs/justify-items
+
+Aligns grid items to the start of their inline axis using the justify-items-start class.
+
+```html
+<div class="grid justify-items-start ...">
+  <div>01</div>
+  <div>02</div>
+  <div>03</div>
+  <div>04</div>
+  <div>05</div>
+  <div>06</div>
+</div>
+```
+
+--------------------------------
+
+### Apply Transition Duration Utilities
+
+Source: https://v3.tailwindcss.com/docs/transition-duration
+
+Use `duration-*` utilities to set the transition duration for elements. These examples demonstrate different durations applied to buttons.
+
+```html
+<button class="transition duration-150 ease-in-out ...">Button A</button>
+<button class="transition duration-300 ease-in-out ...">Button B</button>
+<button class="transition duration-700 ease-in-out ...">Button C</button>
 ```
 
 --------------------------------
@@ -795,6 +786,33 @@ Add the tailwindcss-rails gem to your project and run the install command to cre
 
 --------------------------------
 
+### Repeated Utility Classes in HTML
+
+Source: https://v3.tailwindcss.com/docs/reusing-styles
+
+Example of repeated utility classes for avatar images before applying abstraction or loops.
+
+```html
+<div>
+  <div class="flex items-center space-x-2 text-base">
+    <h4 class="font-semibold text-slate-900">Contributors</h4>
+    <span class="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">204</span>
+  </div>
+  <div class="mt-3 flex -space-x-2 overflow-hidden">
+    <img class="inline-block h-12 w-12 rounded-full ring-2 ring-white" src="https://images.unsplash.com/photo-1491528323818-fdd1faba62cc?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80" alt=""/>
+    <img class="inline-block h-12 w-12 rounded-full ring-2 ring-white" src="https://images.unsplash.com/photo-1550525811-e5869dd03032?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80" alt=""/>
+    <img class="inline-block h-12 w-12 rounded-full ring-2 ring-white" src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2.25&w=256&h=256&q=80" alt=""/>
+    <img class="inline-block h-12 w-12 rounded-full ring-2 ring-white" src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80" alt=""/>
+    <img class="inline-block h-12 w-12 rounded-full ring-2 ring-white" src="https://images.unsplash.com/photo-1517365830460-955ce3ccd263?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80" alt=""/>
+  </div>
+  <div class="mt-3 text-sm font-medium">
+    <a href="#" class="text-blue-500">+ 198 others</a>
+  </div>
+</div>
+```
+
+--------------------------------
+
 ### Create new Phoenix project
 
 Source: https://v3.tailwindcss.com/docs/guides/phoenix
@@ -819,147 +837,69 @@ symfony new --webapp my-projectcd my-project
 
 --------------------------------
 
-### CSS Specificity and Declaration Order Example
+### Translating an Element
 
-Source: https://v3.tailwindcss.com/docs/adding-custom-styles
+Source: https://v3.tailwindcss.com/docs/translate
 
-Demonstrates how CSS declaration order determines which rule wins when selectors have equal specificity. Later rules override earlier ones.
+Basic usage examples demonstrating how to apply translate utility classes to elements. Shows how to translate elements along the X and Y axes using positive values.
 
-```CSS
-.btn {
-  background: blue;
-  /* ... */
-}
+```APIDOC
+## Translating an Element
 
-.bg-black {
-  background: black;
-}
+### Description
+Use the `translate-x-*` and `translate-y-*` utilities to translate an element along the horizontal (X) or vertical (Y) axis.
+
+### Usage
+
+#### Translate Y-axis
+Apply `translate-y-6` to move an element down by 1.5rem (24px):
+```html
+<img class="translate-y-6 ...">
 ```
 
-```HTML
-<button class="btn bg-black">...</button>
-<button class="bg-black btn">...</button>
+#### Translate X-axis
+Apply `translate-x-6` to move an element right by 1.5rem (24px):
+```html
+<img class="translate-x-6 ...">
+```
+
+### Example
+```html
+<img class="translate-y-6 ...">
+<img class="translate-x-6 ...">
+```
 ```
 
 --------------------------------
 
-### Justify grid items to the start
+### Basic Alignment Utilities
 
-Source: https://v3.tailwindcss.com/docs/justify-items
+Source: https://v3.tailwindcss.com/docs/justify-content
 
-Use `justify-items-start` to align grid items to the start of their inline axis within a grid container.
+Use justify-start, justify-center, or justify-end to align items along the start, center, or end of the container's main axis.
 
 ```html
-<div class="grid justify-items-start ...">
+<div class="flex justify-start ...">
   <div>01</div>
   <div>02</div>
   <div>03</div>
-  <div>04</div>
-  <div>05</div>
-  <div>06</div>
 </div>
 ```
 
---------------------------------
-
-### Apply Scale Utilities to Elements in HTML
-
-Source: https://v3.tailwindcss.com/docs/scale
-
-Use `scale-*`, `scale-x-*`, and `scale-y-*` classes to resize elements. These examples demonstrate scaling an image to 75%, 100%, and 125% of its original size.
-
 ```html
-<img class="scale-75 ...">
-<img class="scale-100 ...">
-<img class="scale-125 ...">
-```
-
---------------------------------
-
-### Using Arbitrary Transition Delay Values in HTML
-
-Source: https://v3.tailwindcss.com/docs/transition-delay
-
-Apply one-off `transition-delay` values using arbitrary value syntax. This example sets a delay of 2000ms directly in the class attribute.
-
-```html
-<div class="delay-[2000ms]">
-  <!-- ... -->
-</div>
-```
-
---------------------------------
-
-### Applying Responsive Transition Delay with Breakpoints
-
-Source: https://v3.tailwindcss.com/docs/transition-delay
-
-Use responsive variant modifiers to apply transition delay utilities at specific screen sizes. This example applies a different delay for medium screens and above.
-
-```html
-<div class="transition duration-300 delay-150 md:delay-300">
-  <!-- ... -->
-</div>
-```
-
---------------------------------
-
-### Basic Min-Width Usage
-
-Source: https://v3.tailwindcss.com/docs/min-width
-
-Demonstrates how to set the minimum width of elements using min-w-* utility classes. Shows practical examples of applying different minimum width values to nested elements.
-
-```APIDOC
-## Setting the Minimum Width
-
-### Description
-Set the minimum width of an element using `min-w-*` utilities. This ensures that an element will not shrink below the specified minimum width, even if its container is smaller.
-
-### Usage Example
-
-```html
-<div class="w-96 ...">
-  <div class="min-w-80 ...">min-w-80</div>
-  <div class="min-w-64 ...">min-w-64</div>
-  <div class="min-w-48 ...">min-w-48</div>
-  <div class="min-w-40 ...">min-w-40</div>
-  <div class="min-w-32 ...">min-w-32</div>
-  <div class="min-w-24 ...">min-w-24</div>
-  <div class="min-w-full ...">min-w-full</div>
-</div>
-```
-
-### Explanation
-In this example, a parent container with width `w-96` (24rem/384px) contains multiple child elements, each with different minimum width constraints. The `min-w-*` classes prevent these elements from shrinking below their specified minimum widths.
-```
-
---------------------------------
-
-### Aligning an item to the start
-
-Source: https://v3.tailwindcss.com/docs/align-self
-
-Use self-start to align an item to the start of the container’s cross axis, despite the container’s align-items value.
-
-```html
-<div class="flex items-stretch ...">
+<div class="flex justify-center ...">
   <div>01</div>
-  <div class="self-start ...">02</div>
+  <div>02</div>
   <div>03</div>
 </div>
 ```
 
---------------------------------
-
-### Initialize with Full Default Configuration
-
-Source: https://v3.tailwindcss.com/docs/configuration
-
-CLI command to scaffold a complete configuration file including all of Tailwind's default settings using the --full flag.
-
-```bash
-npx tailwindcss init --full
+```html
+<div class="flex justify-end ...">
+  <div>01</div>
+  <div>02</div>
+  <div>03</div>
+</div>
 ```
 
 --------------------------------
@@ -976,6 +916,51 @@ gatsby new my-projectcd my-project
 
 --------------------------------
 
+### Use Arbitrary Transition Duration Value
+
+Source: https://v3.tailwindcss.com/docs/transition-duration
+
+Generate one-off `transition-duration` values using arbitrary value syntax. This example sets a 2000ms duration directly.
+
+```html
+<div class="duration-[2000ms]">
+  <!-- ... -->
+</div>
+```
+
+--------------------------------
+
+### Linear Gradients Basic Usage
+
+Source: https://v3.tailwindcss.com/docs/background-image
+
+Guide for creating linear gradient backgrounds using bg-gradient-* utilities combined with gradient color stop utilities (from-* and to-*).
+
+```APIDOC
+## Linear Gradients
+
+### Description
+Create linear gradient backgrounds by combining gradient direction utilities with color stop utilities.
+
+### Usage
+Combine `bg-gradient-*` utilities with `from-*` and `to-*` color utilities to define gradient start and end colors.
+
+### Example
+```html
+<div class="h-14 bg-gradient-to-r from-cyan-500 to-blue-500"></div>
+<div class="h-14 bg-gradient-to-r from-sky-500 to-indigo-500"></div>
+<div class="h-14 bg-gradient-to-r from-violet-500 to-fuchsia-500"></div>
+<div class="h-14 bg-gradient-to-r from-purple-500 to-pink-500"></div>
+```
+
+### Parameters
+- **bg-gradient-*** (string) - Required - Gradient direction class (to-t, to-r, to-b, to-l, etc.)
+- **from-*** (string) - Required - Starting color of the gradient
+- **to-*** (string) - Required - Ending color of the gradient
+```
+
+--------------------------------
+
 ### Create a new Angular project
 
 Source: https://v3.tailwindcss.com/docs/guides/angular
@@ -984,18 +969,6 @@ Use the Angular CLI to initialize a new project and navigate into its directory.
 
 ```Terminal
 ng new my-projectcd my-project
-```
-
---------------------------------
-
-### Set gradient starting color with from-* utility
-
-Source: https://v3.tailwindcss.com/docs/gradient-color-stops
-
-Use from-* utilities to define the starting color of a gradient. Combine with a gradient direction class like bg-gradient-to-r.
-
-```HTML
-<div class="bg-gradient-to-r from-indigo-500 ..."></div>
 ```
 
 --------------------------------
@@ -1012,168 +985,56 @@ npx create-remix@latest my-projectcd my-project
 
 --------------------------------
 
-### Starting and ending grid lines with col-start and col-end
+### Basic Grid Layout - Specifying Columns
 
-Source: https://v3.tailwindcss.com/docs/grid-column
+Source: https://v3.tailwindcss.com/docs/grid-template-columns
 
-Use col-start-* and col-end-* utilities to position elements at specific grid lines. These can be combined with col-span-* to control both position and span. CSS grid lines start at 1, not 0.
+Demonstrates how to use grid-cols-* utilities to create grids with equally sized columns. Shows a practical example of a 4-column grid with gap spacing.
+
+```APIDOC
+## Specifying the Columns in a Grid
+
+### Description
+Use the `grid-cols-*` utilities to create grids with n equally sized columns.
+
+### Usage
+Apply the `grid-cols-*` class to a container element with the `grid` class to define the number of columns.
+
+### HTML Example
+```html
+<div class="grid grid-cols-4 gap-4">
+  <div>01</div>
+  <div>02</div>
+  <div>03</div>
+  <div>04</div>
+  <div>05</div>
+  <div>06</div>
+  <div>07</div>
+  <div>08</div>
+  <div>09</div>
+</div>
+```
+
+### Result
+Creates a 4-column grid layout with equal column widths and 4 units of gap spacing between items.
+```
+
+--------------------------------
+
+### Align Content Start with Tailwind CSS
+
+Source: https://v3.tailwindcss.com/docs/align-content
+
+Pack grid rows against the start of the cross axis using the content-start class on a grid container with defined height and columns.
 
 ```HTML
-<div class="grid grid-cols-6 gap-4">
-  <div class="col-start-2 col-span-4 ...">01</div>
-  <div class="col-start-1 col-end-3 ...">02</div>
-  <div class="col-end-7 col-span-2 ...">03</div>
-  <div class="col-start-1 col-end-7 ...">04</div>
+<div class="h-56 grid grid-cols-3 gap-4 content-start ...">
+  <div>01</div>
+  <div>02</div>
+  <div>03</div>
+  <div>04</div>
+  <div>05</div>
 </div>
-```
-
---------------------------------
-
-### Starting and ending grid lines with row-start and row-end
-
-Source: https://v3.tailwindcss.com/docs/grid-row
-
-Use row-start-* and row-end-* utilities to position elements at specific grid lines. CSS grid lines start at 1, not 0; combine with row-span-* for precise control over row placement.
-
-```HTML
-<div class="grid grid-rows-3 grid-flow-col gap-4">
-  <div class="row-start-2 row-span-2 ...">01</div>
-  <div class="row-end-3 row-span-2 ...">02</div>
-  <div class="row-start-1 row-end-4 ...">03</div>
-</div>
-```
-
---------------------------------
-
-### Initialize with PostCSS Configuration
-
-Source: https://v3.tailwindcss.com/docs/configuration
-
-CLI command to generate both tailwind.config.js and postcss.config.js files in one step using the -p flag.
-
-```bash
-npx tailwindcss init -p
-```
-
---------------------------------
-
-### GET /border-y-{color}
-
-Source: https://v3.tailwindcss.com/docs/border-color
-
-Sets the border color for the top and bottom sides of an element.
-
-```APIDOC
-## GET /border-y-{color}
-
-### Description
-Sets the border color for the top and bottom sides of an element using Tailwind CSS utility classes.
-
-### Method
-GET
-
-### Endpoint
-/border-y-{color}
-
-### Parameters
-#### Path Parameters
-- **color** (string) - Required - The color name and shade (e.g., slate-500, zinc-400, gray-50).
-
-### Request Example
-{
-  "class": "border-y-slate-500"
-}
-
-### Response
-#### Success Response (200)
-- **border-top-color** (string) - CSS color value
-- **border-bottom-color** (string) - CSS color value
-
-#### Response Example
-{
-  "border-top-color": "rgb(100 116 139 / var(--tw-border-opacity, 1))",
-  "border-bottom-color": "rgb(100 116 139 / var(--tw-border-opacity, 1))"
-}
-```
-
---------------------------------
-
-### GET /border-x-{color}
-
-Source: https://v3.tailwindcss.com/docs/border-color
-
-Sets the border color for the left and right sides of an element.
-
-```APIDOC
-## GET /border-x-{color}
-
-### Description
-Sets the border color for the left and right sides of an element using Tailwind CSS utility classes.
-
-### Method
-GET
-
-### Endpoint
-/border-x-{color}
-
-### Parameters
-#### Path Parameters
-- **color** (string) - Required - The color name and shade (e.g., rose-950).
-
-### Request Example
-{
-  "class": "border-x-rose-950"
-}
-
-### Response
-#### Success Response (200)
-- **border-left-color** (string) - CSS color value
-- **border-right-color** (string) - CSS color value
-
-#### Response Example
-{
-  "border-left-color": "rgb(76 5 25 / var(--tw-border-opacity, 1))",
-  "border-right-color": "rgb(76 5 25 / var(--tw-border-opacity, 1))"
-}
-```
-
---------------------------------
-
-### GET .max-h-[{value}]
-
-Source: https://v3.tailwindcss.com/docs/max-height
-
-Generates a max-height property on the fly using an arbitrary value.
-
-```APIDOC
-## GET .max-h-[{value}]
-
-### Description
-Use square brackets to generate a property using any arbitrary CSS value that isn't part of the theme.
-
-### Method
-GET
-
-### Endpoint
-.max-h-[{value}]
-
-### Parameters
-#### Path Parameters
-- **value** (string) - Required - Any valid CSS length value (e.g., 220px, 50vh, 15rem).
-
-### Request Example
-<div class="max-h-[220px]">
-  <!-- Content -->
-</div>
-
-### Response
-#### Success Response (200)
-- **max-height** (string) - The custom CSS value applied.
-
-#### Response Example
-{
-  "max-height": "220px"
-}
 ```
 
 --------------------------------
@@ -1190,6 +1051,55 @@ npx degit solidjs/templates/js my-projectcd my-project
 
 --------------------------------
 
+### Tailwind CSS: Controlling Grid Row Start and End
+
+Source: https://v3.tailwindcss.com/docs/grid-row
+
+Position grid items using `row-start-*` and `row-end-*` utilities to specify their starting and ending grid lines. This snippet also shows combining them with `row-span-*` for precise control.
+
+```html
+<div class="grid grid-rows-3 grid-flow-col gap-4">
+  <div class="row-start-2 row-span-2 ...">01</div>
+  <div class="row-end-3 row-span-2 ...">02</div>
+  <div class="row-start-1 row-end-4 ...">03</div>
+</div>
+```
+
+--------------------------------
+
+### Apply Dynamic Custom Variants with Arbitrary Values in HTML
+
+Source: https://v3.tailwindcss.com/docs/plugins
+
+This HTML example demonstrates using a dynamic variant defined with `matchVariant` and arbitrary values in square bracket notation.
+
+```HTML
+<div class="nth-[3n+1]:bg-blue-500 ...">
+  <!-- ... -->
+</div>
+```
+
+--------------------------------
+
+### Gradient From Positions
+
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
+
+Utilities for setting the position of the starting gradient stop.
+
+```APIDOC
+## from-[percentage]
+
+### Description
+Sets the position of the starting gradient stop.
+
+### Parameters
+#### Path Parameters
+- **percentage** (string) - Required - The position (0%, 5%, 10%, 15%, 20%, 25%, 30%, 35%, 40%, 45%, 50%, 55%, 60%, 65%, 70%, 75%, 80%, 85%, 90%, 95%, 100%).
+```
+
+--------------------------------
+
 ### Create a new AdonisJS project
 
 Source: https://v3.tailwindcss.com/docs/guides/adonisjs
@@ -1202,52 +1112,93 @@ npm init adonisjs@latest my-project -- --kit=webcd my-project
 
 --------------------------------
 
-### Apply a local preset with project-specific extensions
+### CSS for from-violet-500 Gradient
 
-Source: https://v3.tailwindcss.com/docs/presets
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
 
-Import a local preset file and add project-specific theme extensions. Project configuration merges with the preset, with project values taking precedence for top-level theme keys.
+Defines the CSS custom properties for a gradient starting with violet-500.
 
-```javascript
-/** @type {import('tailwindcss').Config} */
-module.exports = {
-  presets: [
-    require('./my-preset.js')
-  ],
-  // Customizations specific to this project would go here
-  theme: {
-    extend: {
-      minHeight: {
-        48: '12rem',
-      }
-    }
-  },
-}
+```css
+--tw-gradient-from: #8b5cf6 var(--tw-gradient-from-position); --tw-gradient-to: rgb(139 92 246 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 ```
 
 --------------------------------
 
-### Apply Responsive Utility Prefixes
+### CSS for from-violet-400 Gradient
 
-Source: https://v3.tailwindcss.com/docs/responsive-design
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
 
-Prefix any utility class with a breakpoint name to apply it conditionally at different screen sizes.
+Defines the CSS custom properties for a gradient starting with violet-400.
+
+```css
+--tw-gradient-from: #a78bfa var(--tw-gradient-from-position); --tw-gradient-to: rgb(167 139 250 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+```
+
+--------------------------------
+
+### Setting Maximum Width - Basic Usage
+
+Source: https://v3.tailwindcss.com/docs/max-width
+
+Example demonstrating how to use max-width utility classes to constrain element widths. Shows practical usage of various max-w-* classes applied to div elements with full width containers.
+
+```APIDOC
+## Setting Maximum Width
+
+### Description
+Apply max-width constraints to elements using the max-w-* utility classes. These classes limit the maximum width an element can expand to, useful for creating responsive layouts and controlling content width.
+
+### Basic Usage Example
 
 ```html
-<!-- Width of 16 by default, 32 on medium screens, and 48 on large screens -->
-<img class="w-16 md:w-32 lg:w-48" src="...">
+<div>
+  <div class="w-full max-w-96 ...">max-w-96</div>
+  <div class="w-full max-w-80 ...">max-w-80</div>
+  <div class="w-full max-w-64 ...">max-w-64</div>
+  <div class="w-full max-w-48 ...">max-w-48</div>
+  <div class="w-full max-w-40 ...">max-w-40</div>
+  <div class="w-full max-w-32 ...">max-w-32</div>
+  <div class="w-full max-w-24 ...">max-w-24</div>
+</div>
+```
+
+### Named Scale Usage Example
+
+```html
+<div class="max-w-md ...">
+  <!-- Content constrained to 28rem (448px) maximum width -->
+</div>
+```
+
+### Notes
+- Combine max-w-* with w-full to create responsive containers that expand up to a maximum width
+- Named scales (max-w-xs, max-w-sm, max-w-md, etc.) are recommended for values above 24rem for easier readability
+- Use max-w-prose (65ch) for optimal reading line length in text content
+- Responsive breakpoint variants (max-w-screen-*) constrain width to specific viewport sizes
 ```
 
 --------------------------------
 
-### Initialize with Custom Configuration File Name
+### CSS for from-violet-300 Gradient
 
-Source: https://v3.tailwindcss.com/docs/configuration
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
 
-CLI command to generate a Tailwind config file with a custom name instead of the default tailwind.config.js.
+Defines the CSS custom properties for a gradient starting with violet-300.
 
-```bash
-npx tailwindcss init tailwindcss-config.js
+```css
+--tw-gradient-from: #c4b5fd var(--tw-gradient-from-position); --tw-gradient-to: rgb(196 181 253 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+```
+
+--------------------------------
+
+### CSS for from-violet-200 Gradient
+
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
+
+Defines the CSS custom properties for a gradient starting with violet-200.
+
+```css
+--tw-gradient-from: #ddd6fe var(--tw-gradient-from-position); --tw-gradient-to: rgb(221 214 254 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 ```
 
 --------------------------------
@@ -1264,277 +1215,86 @@ npm create rspack@latest
 
 --------------------------------
 
-### CLASS .row-start-{n} / .row-end-{n}
+### CSS for from-violet-100 Gradient
 
-Source: https://v3.tailwindcss.com/docs/grid-row
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
 
-Utilities for positioning an element at specific starting or ending grid lines.
+Defines the CSS custom properties for a gradient starting with violet-100.
 
-```APIDOC
-## CLASS .row-start-{n} / .row-end-{n}
-
-### Description
-Use the row-start-* and row-end-* utilities to make an element start or end at the nth grid line. These can be combined with row-span utilities.
-
-### Method
-CLASS
-
-### Endpoint
-.row-start-{n} / .row-end-{n}
-
-### Parameters
-#### Path Parameters
-- **n** (string|number) - Required - The grid line index (1-13) or 'auto'. Note that CSS grid lines start at 1.
-
-### Request Example
-<div class="grid grid-rows-3 grid-flow-col gap-4">
-  <div class="row-start-2 row-span-2">01</div>
-  <div class="row-end-3 row-span-2">02</div>
-  <div class="row-start-1 row-end-4">03</div>
-</div>
-
-### Response
-#### Success Response (200)
-- **grid-row-start** (string) - The CSS property for the starting line.
-- **grid-row-end** (string) - The CSS property for the ending line.
-
-#### Response Example
-{
-  "grid-row-start": "2",
-  "grid-row-end": "auto"
-}
+```css
+--tw-gradient-from: #ede9fe var(--tw-gradient-from-position); --tw-gradient-to: rgb(237 233 254 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 ```
 
 --------------------------------
 
-### Implement Mobile-First Styling
+### CSS for from-violet-50 Gradient
 
-Source: https://v3.tailwindcss.com/docs/responsive-design
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
 
-Use unprefixed utilities for mobile and prefixed utilities to override them for larger screens.
+Defines the CSS custom properties for a gradient starting with violet-50.
 
-```html
-<!-- This will only center text on screens 640px and wider, not on small screens -->
-<div class="sm:text-center"></div>
-```
-
-```html
-<!-- This will center text on mobile, and left align it on screens 640px and wider -->
-<div class="text-center sm:text-left"></div>
+```css
+--tw-gradient-from: #f5f3ff var(--tw-gradient-from-position); --tw-gradient-to: rgb(245 243 255 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 ```
 
 --------------------------------
 
-### GET .max-h-{size}
+### CSS for from-indigo-950 Gradient
 
-Source: https://v3.tailwindcss.com/docs/max-height
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
 
-Sets the maximum height of an element using the default spacing scale or specific keywords.
+Defines the CSS custom properties for a gradient starting with indigo-950.
 
-```APIDOC
-## GET .max-h-{size}
-
-### Description
-Utility classes for setting the maximum height of an element. The scale includes values from 0 to 96, as well as percentage and viewport-based units.
-
-### Method
-GET
-
-### Endpoint
-.max-h-{size}
-
-### Parameters
-#### Path Parameters
-- **size** (string|number) - Required - The size key from the spacing scale (e.g., 0, 0.5, 1, 4, 96) or keywords (none, full, screen, svh, lvh, dvh, min, max, fit).
-
-### Request Example
-<div class="h-96 ...">
-  <div class="h-full max-h-80 ...">max-h-80</div>
-</div>
-
-### Response
-#### Success Response (200)
-- **max-height** (string) - The resulting CSS max-height property value.
-
-#### Response Example
-{
-  "max-height": "20rem" /* 320px */
-}
+```css
+--tw-gradient-from: #1e1b4b var(--tw-gradient-from-position); --tw-gradient-to: rgb(30 27 75 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 ```
 
 --------------------------------
 
-### Apply Important Modifier to Utilities
+### CSS for from-indigo-900 Gradient
 
-Source: https://v3.tailwindcss.com/docs/configuration
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
 
-Add a ! character to the start of a utility to force !important. Place the ! after variants but before any custom prefixes.
+Defines the CSS custom properties for a gradient starting with indigo-900.
 
-```html
-<p class="!font-medium font-bold">
-  This will be medium even though bold comes later in the CSS.
-</p>
-```
-
-```html
-<div class="sm:hover:!tw-font-bold">
+```css
+--tw-gradient-from: #312e81 var(--tw-gradient-from-position); --tw-gradient-to: rgb(49 46 129 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 ```
 
 --------------------------------
 
-### Use Complete Class Names Dynamically (HTML)
+### CSS for from-indigo-800 Gradient
 
-Source: https://v3.tailwindcss.com/docs/content-configuration
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
 
-Demonstrates the correct way to apply dynamic classes in HTML by ensuring that full class names are present as static strings.
+Defines the CSS custom properties for a gradient starting with indigo-800.
 
-```html
-<div class="{{ error ? 'text-red-600' : 'text-green-600' }}"></div>
+```css
+--tw-gradient-from: #3730a3 var(--tw-gradient-from-position); --tw-gradient-to: rgb(55 48 163 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 ```
 
 --------------------------------
 
-### GET /vertical-align/utilities
+### CSS for from-indigo-700 Gradient
 
-Source: https://v3.tailwindcss.com/docs/vertical-align
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
 
-Retrieve and apply standard vertical alignment utility classes to control the positioning of inline or table-cell boxes.
+Defines the CSS custom properties for a gradient starting with indigo-700.
 
-```APIDOC
-## GET /vertical-align/utilities
-
-### Description
-Utilities for controlling the vertical alignment of an inline or table-cell box.
-
-### Method
-GET
-
-### Endpoint
-/vertical-align/utilities
-
-### Parameters
-#### Request Body
-- **align-baseline** (string) - Required - vertical-align: baseline;
-- **align-top** (string) - Required - vertical-align: top;
-- **align-middle** (string) - Required - vertical-align: middle;
-- **align-bottom** (string) - Required - vertical-align: bottom;
-- **align-text-top** (string) - Required - vertical-align: text-top;
-- **align-text-bottom** (string) - Required - vertical-align: text-bottom;
-- **align-sub** (string) - Required - vertical-align: sub;
-- **align-super** (string) - Required - vertical-align: super;
-
-### Request Example
-<span class="inline-block align-baseline">...</span>
-
-### Response
-#### Success Response (200)
-- **css_property** (string) - The vertical-align CSS property applied to the element.
-
-#### Response Example
-{
-  "vertical-align": "baseline"
-}
+```css
+--tw-gradient-from: #4338ca var(--tw-gradient-from-position); --tw-gradient-to: rgb(67 56 202 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 ```
 
 --------------------------------
 
-### Responsive Min-Width with Breakpoints
+### CSS for from-indigo-600 Gradient
 
-Source: https://v3.tailwindcss.com/docs/min-width
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
 
-Explains how to use responsive breakpoint modifiers to apply different min-width values at different screen sizes. Demonstrates using the md: variant for medium and larger screens.
+Defines the CSS custom properties for a gradient starting with indigo-600.
 
-```APIDOC
-## Breakpoints and Media Queries
-
-### Description
-You can use variant modifiers to target media queries like responsive breakpoints, dark mode, prefers-reduced-motion, and more. This allows you to apply different min-width values based on screen size and other media query conditions.
-
-### Available Responsive Modifiers
-Common breakpoint modifiers include: `sm:`, `md:`, `lg:`, `xl:`, `2xl:`, and others for responsive design.
-
-### Usage Example
-
-```html
-<div class="w-24 min-w-full md:min-w-0">
-  <!-- ... -->
-</div>
-```
-
-### Explanation
-In this example:
-- On small screens, the element has a minimum width of `min-w-full` (100%)
-- On medium screens and above (md breakpoint), the minimum width changes to `md:min-w-0` (0px)
-
-Other media query modifiers available:
-- Dark mode: `dark:min-w-*`
-- Prefers reduced motion: `motion-safe:min-w-*`, `motion-reduce:min-w-*`
-- Print styles: `print:min-w-*`
-
-For more information, refer to the Responsive Design and Dark Mode documentation.
-```
-
---------------------------------
-
-### GET .{variant}:max-h-{size}
-
-Source: https://v3.tailwindcss.com/docs/max-height
-
-Applies max-height utilities conditionally based on states like hover or responsive breakpoints.
-
-```APIDOC
-## GET .{variant}:max-h-{size}
-
-### Description
-Tailwind allows you to apply utility classes in different states using variant modifiers for responsive design and pseudo-classes.
-
-### Method
-GET
-
-### Endpoint
-.{variant}:max-h-{size}
-
-### Parameters
-#### Path Parameters
-- **variant** (string) - Required - The modifier state (e.g., hover, focus) or breakpoint (e.g., sm, md, lg, xl).
-- **size** (string) - Required - The max-height size value.
-
-### Request Example
-<div class="h-48 max-h-full hover:max-h-screen md:max-h-screen">
-  <!-- Content -->
-</div>
-
-### Response
-#### Success Response (200)
-- **css_rule** (string) - The generated CSS rule with the appropriate media query or pseudo-selector.
-
-#### Response Example
-{
-  "@media (min-width: 768px)": {
-    ".md:max-h-screen": {
-      "max-height": "100vh"
-    }
-  }
-}
-```
-
---------------------------------
-
-### Grid with place-items-start alignment
-
-Source: https://v3.tailwindcss.com/docs/place-items
-
-Aligns grid items to the start of their grid areas on both axes. Useful for left-aligned or top-aligned grid layouts.
-
-```HTML
-<div class="grid grid-cols-3 gap-4 place-items-start ...">
-  <div>01</div>
-  <div>02</div>
-  <div>03</div>
-  <div>04</div>
-  <div>05</div>
-  <div>06</div>
-</div>
+```css
+--tw-gradient-from: #4f46e5 var(--tw-gradient-from-position); --tw-gradient-to: rgb(79 70 229 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 ```
 
 --------------------------------
@@ -1551,18 +1311,26 @@ mkdir my-projectcd my-projectnpm init -ynpm install -D parcelmkdir srctouch src/
 
 --------------------------------
 
-### Example of unintended class detection in HTML
+### CSS for from-indigo-500 Gradient
 
-Source: https://v3.tailwindcss.com/docs/content-configuration
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
 
-Demonstrates how plain text content can lead to the accidental generation of classes like 'container'.
+Defines the CSS custom properties for a gradient starting with indigo-500.
 
-```html
-<div class="text-lg leading-8 text-gray-600">
-  Every custom pool we design starts as a used shipping container, and is
-  retrofitted with state of the art technology and finishes to turn it into
-  a beautiful and functional way to entertain your guests all summer long.
-</div>
+```css
+--tw-gradient-from: #6366f1 var(--tw-gradient-from-position); --tw-gradient-to: rgb(99 102 241 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+```
+
+--------------------------------
+
+### CSS for from-indigo-400 Gradient
+
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
+
+Defines the CSS custom properties for a gradient starting with indigo-400.
+
+```css
+--tw-gradient-from: #818cf8 var(--tw-gradient-from-position); --tw-gradient-to: rgb(129 140 248 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 ```
 
 --------------------------------
@@ -1579,82 +1347,311 @@ npx create-next-app@latest my-project --typescript --eslintcd my-project
 
 --------------------------------
 
-### JavaScript Class Toggling Example
+### CSS for from-indigo-300 Gradient
 
-Source: https://v3.tailwindcss.com/docs/content-configuration
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
 
-Demonstrates using JavaScript to toggle Tailwind classes, such as 'hidden' and 'block', for dynamic UI changes.
+Defines the CSS custom properties for a gradient starting with indigo-300.
 
-```javascript
-<script>
-  menuButton.addEventListener('click', function () {
-    let classList = document.getElementById('nav').classList
-    classList.toggle('hidden')
-    classList.toggle('block')
-  })
-</script>
+```css
+--tw-gradient-from: #a5b4fc var(--tw-gradient-from-position); --tw-gradient-to: rgb(165 180 252 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 ```
 
 --------------------------------
 
-### Install Official Plugins in tailwind.config.js
+### CSS for from-indigo-200 Gradient
 
-Source: https://v3.tailwindcss.com/docs/plugins
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
 
-Add official Tailwind plugins (typography, forms, aspect-ratio, container-queries) to your configuration by requiring them in the plugins array.
+Defines the CSS custom properties for a gradient starting with indigo-200.
 
-```JavaScript
-/** @type {import('tailwindcss').Config} */
-module.exports = {
-  // ...
-  plugins: [
-    require('@tailwindcss/typography'),
-    require('@tailwindcss/forms'),
-    require('@tailwindcss/aspect-ratio'),
-    require('@tailwindcss/container-queries'),
-  ]
-}
+```css
+--tw-gradient-from: #c7d2fe var(--tw-gradient-from-position); --tw-gradient-to: rgb(199 210 254 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 ```
 
 --------------------------------
 
-### Style first and last children in Tailwind CSS
+### CSS for from-indigo-100 Gradient
+
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
+
+Defines the CSS custom properties for a gradient starting with indigo-100.
+
+```css
+--tw-gradient-from: #e0e7ff var(--tw-gradient-from-position); --tw-gradient-to: rgb(224 231 255 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+```
+
+--------------------------------
+
+### CSS for from-indigo-50 Gradient
+
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
+
+Defines the CSS custom properties for a gradient starting with indigo-50.
+
+```css
+--tw-gradient-from: #eef2ff var(--tw-gradient-from-position); --tw-gradient-to: rgb(238 242 255 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+```
+
+--------------------------------
+
+### CSS for from-blue-950 Gradient
+
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
+
+Defines the CSS custom properties for a gradient starting with blue-950.
+
+```css
+--tw-gradient-from: #172554 var(--tw-gradient-from-position); --tw-gradient-to: rgb(23 37 84 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+```
+
+--------------------------------
+
+### CSS for from-blue-900 Gradient
+
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
+
+Defines the CSS custom properties for a gradient starting with blue-900.
+
+```css
+--tw-gradient-from: #1e3a8a var(--tw-gradient-from-position); --tw-gradient-to: rgb(30 58 138 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+```
+
+--------------------------------
+
+### Responsive Grid with Breakpoints
+
+Source: https://v3.tailwindcss.com/docs/grid-template-columns
+
+Shows how to apply different grid column configurations at different screen sizes using responsive breakpoint modifiers like md:grid-cols-6.
+
+```APIDOC
+## Responsive Grid Layouts with Breakpoints
+
+### Description
+Use variant modifiers to apply different grid column utilities at specific breakpoints and media queries.
+
+### Breakpoint Modifiers
+Apply responsive prefixes to grid-cols utilities to target specific screen sizes:
+- `sm:` - Small screens
+- `md:` - Medium screens and above
+- `lg:` - Large screens and above
+- `xl:` - Extra large screens and above
+- `2xl:` - 2XL screens and above
+
+### HTML Example
+```html
+<div class="grid grid-cols-1 md:grid-cols-6">
+  <!-- 1 column on mobile, 6 columns on medium screens and above -->
+</div>
+```
+
+### Additional Media Query Modifiers
+- Dark mode: `dark:grid-cols-*`
+- Prefers reduced motion: `motion-safe:grid-cols-*`
+- And more state variants available in Hover, Focus, & Other States documentation
+```
+
+--------------------------------
+
+### CSS for from-blue-800 Gradient
+
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
+
+Defines the CSS custom properties for a gradient starting with blue-800.
+
+```css
+--tw-gradient-from: #1e40af var(--tw-gradient-from-position); --tw-gradient-to: rgb(30 64 175 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+```
+
+--------------------------------
+
+### Backdrop Sepia Utilities Reference
+
+Source: https://v3.tailwindcss.com/docs/backdrop-sepia
+
+Quick reference guide for available backdrop sepia utility classes and their corresponding CSS properties. Includes backdrop-sepia-0 for no sepia effect and backdrop-sepia for full sepia effect.
+
+```APIDOC
+## Backdrop Sepia Utilities
+
+### Quick Reference
+
+| Class | CSS Property |
+|-------|---------------|
+| `backdrop-sepia-0` | `backdrop-filter: sepia(0);` |
+| `backdrop-sepia` | `backdrop-filter: sepia(100%);` |
+
+### Description
+Utility classes for controlling whether an element's backdrop should be rendered with a sepia filter effect or in full color.
+```
+
+--------------------------------
+
+### Basic Transform Origin Usage
+
+Source: https://v3.tailwindcss.com/docs/transform-origin
+
+Examples demonstrating how to apply transform-origin utilities to elements. Shows how to combine origin classes with transform utilities like rotate to control the pivot point of transformations.
+
+```APIDOC
+## Basic Usage - Changing the Transform Origin
+
+### Description
+Specify an element's transform origin using the `origin-*` utilities to control where transforms originate from.
+
+### Usage Examples
+
+#### Center Origin with Rotation
+```html
+<img class="origin-center rotate-45 ...">
+```
+Rotates the image 45 degrees around its center point.
+
+#### Top-Left Origin with Slight Rotation
+```html
+<img class="origin-top-left rotate-12 ...">
+```
+Rotates the image 12 degrees around its top-left corner.
+
+#### Bottom Origin with Negative Rotation
+```html
+<img class="origin-bottom -rotate-12 ...">
+```
+Rotates the image -12 degrees around its bottom edge.
+
+### Notes
+- Combine origin classes with transform utilities (rotate, scale, skew, etc.)
+- The origin class determines the pivot point for the transformation
+- Multiple transform utilities can be applied to the same element
+```
+
+--------------------------------
+
+### CSS for from-blue-700 Gradient
+
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
+
+Defines the CSS custom properties for a gradient starting with blue-700.
+
+```css
+--tw-gradient-from: #1d4ed8 var(--tw-gradient-from-position); --tw-gradient-to: rgb(29 78 216 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+```
+
+--------------------------------
+
+### CSS for from-blue-600 Gradient
+
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
+
+Defines the CSS custom properties for a gradient starting with blue-600.
+
+```css
+--tw-gradient-from: #2563eb var(--tw-gradient-from-position); --tw-gradient-to: rgb(37 99 235 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+```
+
+--------------------------------
+
+### Focus Modifier Example
 
 Source: https://v3.tailwindcss.com/docs/hover-focus-and-other-states
 
-Use first:pt-0 and last:pb-0 to remove padding from the start and end of a list.
+Apply styles to an element when it has focus using the focus modifier.
 
 ```html
-<ul role="list" class="p-6 divide-y divide-slate-200">
-  {#each people as person}
-    <!-- Remove top/bottom padding when first/last child -->
-    <li class="flex py-4 first:pt-0 last:pb-0">
-      <img class="h-10 w-10 rounded-full" src="{person.imageUrl}" alt="" />
-      <div class="ml-3 overflow-hidden">
-        <p class="text-sm font-medium text-slate-900">{person.name}</p>
-        <p class="text-sm text-slate-500 truncate">{person.email}</p>
-      </div>
-    </li>
-  {/each}
-</ul>
+<input class="border-gray-300 focus:border-blue-400 ..." />
 ```
 
 --------------------------------
 
-### Use @config directive (incorrect ordering)
+### Responsive Design - Breakpoint Variants
 
-Source: https://v3.tailwindcss.com/docs/functions-and-directives
+Source: https://v3.tailwindcss.com/docs/transition-duration
 
-This example shows the incorrect pattern of placing @config before @import statements, which will not work correctly with postcss-import.
+Demonstrates how to apply different transition durations at different screen sizes using responsive breakpoint modifiers. Allows for adaptive animations based on device viewport.
 
-```CSS
-@config "./tailwind.admin.config.js";
+```APIDOC
+## Responsive Transition Duration with Breakpoints
 
-@import "tailwindcss/base";
-@import "./custom-base.css";
-@import "tailwindcss/components";
-@import "./custom-components.css";
-@import "tailwindcss/utilities";
+### Description
+Use breakpoint variant modifiers to apply different duration values at different screen sizes.
+
+### Breakpoint Variants
+
+#### Medium Screen and Above
+```html
+<div class="transition duration-0 md:duration-150">
+  <!-- 0ms duration on small screens, 150ms on medium screens and above -->
+</div>
+```
+
+### Available Media Query Modifiers
+- Responsive breakpoints (e.g., `sm:`, `md:`, `lg:`, `xl:`)
+- Dark mode: `dark:`
+- Prefers reduced motion: `motion-reduce:`
+- And other media query modifiers
+
+### Usage
+- Prefix duration classes with breakpoint modifiers
+- Example: `md:duration-150`, `lg:duration-300`
+- Combine with state variants: `md:hover:duration-200`
+```
+
+--------------------------------
+
+### Gradient From Colors
+
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
+
+Utilities for setting the starting color of a gradient using the rose color palette.
+
+```APIDOC
+## from-rose-[shade]
+
+### Description
+Sets the starting color of a gradient to a specific shade of rose.
+
+### Parameters
+#### Path Parameters
+- **shade** (string) - Required - The color weight (600, 700, 800, 900, 950).
+
+### Response
+#### Success Response
+- **--tw-gradient-from** (string) - Hex color value (#e11d48, #be123c, #9f1239, #881337, #4c0519)
+- **--tw-gradient-stops** (string) - Gradient stop sequence
+```
+
+--------------------------------
+
+### Apply justify-self-start in HTML
+
+Source: https://v3.tailwindcss.com/docs/justify-self
+
+Use `justify-self-start` to align a grid item to the start of its inline axis.
+
+```html
+<div class="grid justify-items-stretch ...">
+  <!-- ... -->
+  <div class="justify-self-start ...">02</div>
+  <!-- ... -->
+  <!-- ... -->
+  <!-- ... -->
+  <!-- ... -->
+</div>
+```
+
+--------------------------------
+
+### Focus-Within Modifier Example
+
+Source: https://v3.tailwindcss.com/docs/hover-focus-and-other-states
+
+Apply styles to an element when it or any of its descendants has focus using the focus-within modifier.
+
+```html
+<div class="focus-within:shadow-lg ...">
+  <input type="text" />
+</div>
 ```
 
 --------------------------------
@@ -1667,6 +1664,57 @@ Initializes a new Laravel application using the Composer create-project command.
 
 ```terminal
 composer create-project laravel/laravel my-projectcd my-project
+```
+
+--------------------------------
+
+### Using Arbitrary Values
+
+Source: https://v3.tailwindcss.com/docs/backdrop-sepia
+
+Guide for using one-off backdrop sepia values that don't need to be added to the theme configuration using square bracket syntax for arbitrary values.
+
+```APIDOC
+## Arbitrary Values
+
+### Description
+If you need to use a one-off `backdrop-sepia` value that doesn't make sense to include in your theme, use square brackets to generate a property on the fly using any arbitrary value.
+
+### Usage Example
+```html
+<div class="backdrop-sepia-[.25]">
+  <!-- ... -->
+</div>
+```
+
+### Syntax
+`backdrop-sepia-[value]` where `value` is any valid CSS sepia filter value between 0 and 1.
+```
+
+--------------------------------
+
+### Hover Modifier Example
+
+Source: https://v3.tailwindcss.com/docs/hover-focus-and-other-states
+
+Apply styles when the user hovers over an element using the hover modifier.
+
+```html
+<div class="bg-black hover:bg-white ...">
+  <!-- ... -->
+</div>
+```
+
+--------------------------------
+
+### Generate Tailwind and PostCSS Configuration Files
+
+Source: https://v3.tailwindcss.com/docs/configuration
+
+Use the `-p` flag to generate both `tailwind.config.js` and a basic `postcss.config.js` file simultaneously.
+
+```bash
+npx tailwindcss init -p
 ```
 
 --------------------------------
@@ -1691,11 +1739,104 @@ module.exports = {
 
 --------------------------------
 
-### Generated CSS Output with Important Flag
+### JavaScript for Combined System Preference and Manual Dark Mode
+
+Source: https://v3.tailwindcss.com/docs/dark-mode
+
+This JavaScript snippet provides a common approach to support light mode, dark mode, and respecting the operating system preference using `localStorage` and `window.matchMedia()`.
+
+```javascript
+// On page load or when changing themes, best to add inline in `head` to avoid FOUC
+document.documentElement.classList.toggle(
+  'dark',
+  localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)
+)
+
+// Whenever the user explicitly chooses light mode
+localStorage.theme = 'light'
+
+// Whenever the user explicitly chooses dark mode
+localStorage.theme = 'dark'
+
+// Whenever the user explicitly chooses to respect the OS preference
+localStorage.removeItem('theme')
+```
+
+--------------------------------
+
+### Use logical padding properties
+
+Source: https://v3.tailwindcss.com/docs/padding
+
+Use ps-* and pe-* to set padding-inline-start and padding-inline-end, which adjust based on text direction.
+
+```html
+<div dir="ltr">
+  <div class="ps-8 ...">ps-8</div>
+  <div class="pe-8 ...">pe-8</div>
+<div>
+
+<div dir="rtl">
+  <div class="ps-8 ...">ps-8</div>
+  <div class="pe-8 ...">pe-8</div>
+<div>
+```
+
+--------------------------------
+
+### Configure PostCSS
+
+Source: https://v3.tailwindcss.com/docs/guides/parcel
+
+Create a .postcssrc file in the project root to enable the Tailwind CSS plugin for PostCSS processing.
+
+```json
+{
+  "plugins": {
+    "tailwindcss": {}
+  }
+}
+```
+
+--------------------------------
+
+### Create a new Meteor project
+
+Source: https://v3.tailwindcss.com/docs/guides/meteor
+
+Use the Meteor CLI to scaffold a new project and change into the project directory.
+
+```terminal
+meteor create my-projectcd my-project
+```
+
+--------------------------------
+
+### Basic container usage with centering and padding
+
+Source: https://v3.tailwindcss.com/docs/container
+
+Use mx-auto to center the container and px-* utilities to add horizontal padding.
+
+```html
+<div class="container mx-auto">
+  <!-- ... -->
+</div>
+```
+
+```html
+<div class="container mx-auto px-4">
+  <!-- ... -->
+</div>
+```
+
+--------------------------------
+
+### Generated Utilities with Important Flag
 
 Source: https://v3.tailwindcss.com/docs/configuration
 
-Example of Tailwind utilities generated with !important when the important option is enabled. All utilities include the !important declaration.
+Example output showing utilities generated with !important when the important option is enabled.
 
 ```css
 .leading-none {
@@ -1712,128 +1853,90 @@ Example of Tailwind utilities generated with !important when the important optio
 
 --------------------------------
 
-### Initialize Tailwind Configuration
+### Enable GPU acceleration with transform-gpu
 
-Source: https://v3.tailwindcss.com/docs/configuration
+Source: https://v3.tailwindcss.com/docs/rotate
 
-CLI command to generate a minimal tailwind.config.js file at the project root using the Tailwind CLI utility.
-
-```bash
-npx tailwindcss init
-```
-
---------------------------------
-
-### Apply Prefix to Negative Values
-
-Source: https://v3.tailwindcss.com/docs/configuration
-
-Negative utility values place the dash before the custom prefix. For example, with tw- prefix, -mt-8 becomes -tw-mt-8.
+Add transform-gpu to force GPU rendering for better transition performance. Use transform-cpu to revert to CPU rendering if needed.
 
 ```html
-<div class="-tw-mt-8">
-  <!-- -->
+<div class="rotate-45 transform-gpu">
+  <!-- ... -->
 </div>
 ```
 
 --------------------------------
 
-### Create configurable plugin with plugin.withOptions
+### Responsive Breakpoints and Media Queries
 
-Source: https://v3.tailwindcss.com/docs/plugins
+Source: https://v3.tailwindcss.com/docs/backdrop-sepia
 
-Use plugin.withOptions to allow users to pass custom options when registering the plugin, such as custom class names or other configuration that doesn't belong in theme.
+Documentation for applying backdrop sepia utilities conditionally using responsive breakpoint modifiers and media query variants like dark mode and prefers-reduced-motion.
 
-```javascript
-const plugin = require('tailwindcss/plugin')
+```APIDOC
+## Responsive Design and Media Queries
 
-module.exports = plugin.withOptions(function (options = {}) {
-  return function({ addComponents }) {
-    const className = options.className ?? 'markdown'
+### Description
+You can use variant modifiers to target media queries like responsive breakpoints, dark mode, prefers-reduced-motion, and more. Use `md:backdrop-sepia-0` to apply the `backdrop-sepia-0` utility at only medium screen sizes and above.
 
-    addComponents({
-      [`.${className}`]: {
-        // ...
-      }
-    })
-  }
-}, function (options) {
-  return {
-    theme: {
-      markdown: {
-        // ...
-      }
-    },
-  }
-})
+### Usage Example
+```html
+<div class="backdrop-sepia md:backdrop-sepia-0">
+  <!-- ... -->
+</div>
+```
+
+### Available Media Query Modifiers
+- Responsive breakpoints (e.g., `md:`, `lg:`, `xl:`)
+- Dark mode
+- Prefers reduced motion
+- Other media query modifiers as documented in Responsive Design documentation
 ```
 
 --------------------------------
 
-### Update Tailwind CSS and dependencies via npm
+### Use Presets for Base Configuration
 
-Source: https://v3.tailwindcss.com/docs/upgrade-guide
+Source: https://v3.tailwindcss.com/docs/configuration
 
-Install the latest versions of Tailwind CSS, PostCSS, and Autoprefixer. Note that v3.0 requires PostCSS 8.
-
-```shell
-npm install -D tailwindcss@latest postcss@latest autoprefixer@latest
-```
-
-```shell
-npm install -D tailwindcss@latest \
-  @tailwindcss/typography@latest \
-  @tailwindcss/forms@latest \
-  @tailwindcss/aspect-ratio@latest \
-  @tailwindcss/line-clamp@latest \
-  postcss@latest \
-  autoprefixer@latest
-```
-
---------------------------------
-
-### Configure prefix and important options
-
-Source: https://v3.tailwindcss.com/docs/plugins
-
-Plugin utilities automatically respect global configuration settings for prefixes and importance.
+Specify a custom base configuration via presets instead of using Tailwind's defaults, then layer project-specific customizations on top.
 
 ```javascript
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  prefix: 'tw-',
-  important: true,
   // ...
+  presets: [
+    require('@acmecorp/base-tailwind-config')
+  ],
+
+  // Project-specific customizations
+  theme: {
+    //...
+  },
 }
 ```
 
 --------------------------------
 
-### Use postcss-nesting with tailwindcss/nesting
+### Responsive contrast utilities
 
-Source: https://v3.tailwindcss.com/docs/using-with-preprocessors
+Source: https://v3.tailwindcss.com/docs/contrast
 
-Install postcss-nesting separately and pass it as an argument to tailwindcss/nesting to use the standard CSS Nesting specification instead of the default Sass-like syntax.
+Apply different contrast values at specific breakpoints using responsive modifiers.
 
-```JavaScript
-// postcss.config.js
-module.exports = {
-  plugins: {
-    'postcss-import': {},
-    'tailwindcss/nesting': 'postcss-nesting',
-    tailwindcss: {},
-    autoprefixer: {},
-  }
-}
+```html
+<div class="contrast-125 md:contrast-150">
+  <!-- ... -->
+</div>
 ```
 
 --------------------------------
 
-### Add custom col-start-* utilities in Tailwind config
+### Customize Grid Column Start Positions in Tailwind CSS
 
 Source: https://v3.tailwindcss.com/docs/grid-column
 
-Extend the gridColumnStart section to add new col-start-* utilities for specifying grid column start lines.
+Add custom col-start-* utilities by extending the gridColumnStart section of the configuration.
 
 ```javascript
 module.exports = {
@@ -1853,31 +1956,14 @@ module.exports = {
 
 --------------------------------
 
-### Using Arbitrary Drop Shadow Values
+### Apply Transition Duration at Medium Breakpoint
 
-Source: https://v3.tailwindcss.com/docs/drop-shadow
+Source: https://v3.tailwindcss.com/docs/transition-duration
 
-Demonstrates how to use arbitrary drop shadow values with square bracket notation for one-off values that don't need to be added to the theme configuration.
-
-```APIDOC
-## Using Arbitrary Drop Shadow Values
-
-### Description
-Use square bracket notation to generate drop shadow utilities on the fly with arbitrary values that don't need to be added to your theme configuration.
-
-### Usage
+Use responsive variant modifiers to apply `duration-*` utilities at specific screen sizes. This example applies a 150ms duration from the medium breakpoint upwards.
 
 ```html
-<div class="drop-shadow-[0_35px_35px_rgba(0,0,0,0.25)]">
-  <!-- Element with custom drop shadow value -->
+<div class="transition duration-0 md:duration-150">
+  <!-- ... -->
 </div>
-```
-
-### Syntax
-- Use square brackets: drop-shadow-[value]
-- Replace spaces with underscores in the value
-- Supports any valid CSS drop-shadow filter value
-
-### Notes
-For more information about arbitrary value support, refer to the arbitrary values documentation.
 ```
