@@ -462,36 +462,6 @@ npx tailwindcss -i ./src/input.css -o ./src/output.css --watch
 
 --------------------------------
 
-### Setting the Flex Basis
-
-Source: https://v3.tailwindcss.com/docs/flex-basis
-
-Basic usage example demonstrating how to use the basis-* utilities to set the initial size of flex items within a flex container.
-
-```APIDOC
-## Setting the Flex Basis
-
-### Description
-Use the `basis-*` utilities to set the initial size of flex items before free space is distributed.
-
-### Example
-```html
-<div class="flex flex-row">
-  <div class="basis-1/4">01</div>
-  <div class="basis-1/4">02</div>
-  <div class="basis-1/2">03</div>
-</div>
-```
-
-### Result
-This creates a flex container with three items:
-- Item 01: Initial width of 25% (basis-1/4)
-- Item 02: Initial width of 25% (basis-1/4)
-- Item 03: Initial width of 50% (basis-1/2)
-```
-
---------------------------------
-
 ### Start Angular development server
 
 Source: https://v3.tailwindcss.com/docs/guides/angular
@@ -531,6 +501,36 @@ Use the `backdrop-sepia` and `backdrop-sepia-0` utilities to control whether an 
   <!-- ... -->
 </div>
 ```
+```
+
+--------------------------------
+
+### Setting the Flex Basis
+
+Source: https://v3.tailwindcss.com/docs/flex-basis
+
+Basic usage example demonstrating how to use the basis-* utilities to set the initial size of flex items within a flex container.
+
+```APIDOC
+## Setting the Flex Basis
+
+### Description
+Use the `basis-*` utilities to set the initial size of flex items before free space is distributed.
+
+### Example
+```html
+<div class="flex flex-row">
+  <div class="basis-1/4">01</div>
+  <div class="basis-1/4">02</div>
+  <div class="basis-1/2">03</div>
+</div>
+```
+
+### Result
+This creates a flex container with three items:
+- Item 01: Initial width of 25% (basis-1/4)
+- Item 02: Initial width of 25% (basis-1/4)
+- Item 03: Initial width of 50% (basis-1/2)
 ```
 
 --------------------------------
@@ -1179,6 +1179,18 @@ Apply max-width constraints to elements using the max-w-* utility classes. These
 
 --------------------------------
 
+### Create a new Rspack project
+
+Source: https://v3.tailwindcss.com/docs/guides/rspack
+
+Use the Rspack CLI to initialize a new project.
+
+```Terminal
+npm create rspack@latest
+```
+
+--------------------------------
+
 ### CSS for from-violet-300 Gradient
 
 Source: https://v3.tailwindcss.com/docs/gradient-color-stops
@@ -1199,18 +1211,6 @@ Defines the CSS custom properties for a gradient starting with violet-200.
 
 ```css
 --tw-gradient-from: #ddd6fe var(--tw-gradient-from-position); --tw-gradient-to: rgb(221 214 254 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
-```
-
---------------------------------
-
-### Create a new Rspack project
-
-Source: https://v3.tailwindcss.com/docs/guides/rspack
-
-Use the Rspack CLI to initialize a new project.
-
-```Terminal
-npm create rspack@latest
 ```
 
 --------------------------------
