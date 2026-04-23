@@ -20,88 +20,9 @@ export interface CodexModelEntry extends AgentCatalogEntry {
  */
 export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
   {
-    "name": "codex/gpt-5.1-codex-max",
-    "displayName": "gpt-5.1-codex-max",
-    "description": "Codex-optimized flagship for deep and fast reasoning.",
-    "vendor": "openai",
-    "requiredApiKeys": [
-      "OPENAI_API_KEY",
-      "CODEX_AUTH_JSON"
-    ],
-    "tier": "paid",
-    "tags": [
-      "upgradeable",
-      "reasoning"
-    ],
-    "hidden": false,
-    "isDefault": false,
-    "defaultVariant": "medium",
-    "variants": [
-      {
-        "id": "low",
-        "displayName": "Low",
-        "description": "Fast responses with lighter reasoning"
-      },
-      {
-        "id": "medium",
-        "displayName": "Medium",
-        "description": "Balances speed and reasoning depth for everyday tasks"
-      },
-      {
-        "id": "high",
-        "displayName": "High",
-        "description": "Greater reasoning depth for complex problems"
-      },
-      {
-        "id": "xhigh",
-        "displayName": "Extra High",
-        "description": "Extra high reasoning depth for complex problems"
-      }
-    ],
-    "upgrade": "gpt-5.4",
-    "inputModalities": [
-      "text",
-      "image"
-    ]
-  },
-  {
-    "name": "codex/gpt-5.1-codex-mini",
-    "displayName": "gpt-5.1-codex-mini",
-    "description": "Optimized for codex. Cheaper, faster, but less capable.",
-    "vendor": "openai",
-    "requiredApiKeys": [
-      "OPENAI_API_KEY",
-      "CODEX_AUTH_JSON"
-    ],
-    "tier": "paid",
-    "tags": [
-      "upgradeable"
-    ],
-    "hidden": false,
-    "isDefault": false,
-    "defaultVariant": "medium",
-    "variants": [
-      {
-        "id": "medium",
-        "displayName": "Medium",
-        "description": "Dynamically adjusts reasoning based on the task"
-      },
-      {
-        "id": "high",
-        "displayName": "High",
-        "description": "Maximizes reasoning depth for complex or ambiguous problems"
-      }
-    ],
-    "upgrade": "gpt-5.4",
-    "inputModalities": [
-      "text",
-      "image"
-    ]
-  },
-  {
     "name": "codex/gpt-5.2",
     "displayName": "gpt-5.2",
-    "description": "Latest frontier model with improvements across knowledge, reasoning and coding",
+    "description": "Optimized for professional work and long-running agents",
     "vendor": "openai",
     "requiredApiKeys": [
       "OPENAI_API_KEY",
@@ -144,9 +65,9 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
     ]
   },
   {
-    "name": "codex/gpt-5.2-codex",
-    "displayName": "gpt-5.2-codex",
-    "description": "Frontier agentic coding model.",
+    "name": "codex/gpt-5.3-codex",
+    "displayName": "gpt-5.3-codex",
+    "description": "Frontier Codex-optimized agentic coding model.",
     "vendor": "openai",
     "requiredApiKeys": [
       "OPENAI_API_KEY",
@@ -159,52 +80,6 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
     ],
     "hidden": false,
     "isDefault": false,
-    "defaultVariant": "medium",
-    "variants": [
-      {
-        "id": "low",
-        "displayName": "Low",
-        "description": "Fast responses with lighter reasoning"
-      },
-      {
-        "id": "medium",
-        "displayName": "Medium",
-        "description": "Balances speed and reasoning depth for everyday tasks"
-      },
-      {
-        "id": "high",
-        "displayName": "High",
-        "description": "Greater reasoning depth for complex problems"
-      },
-      {
-        "id": "xhigh",
-        "displayName": "Extra High",
-        "description": "Extra high reasoning depth for complex problems"
-      }
-    ],
-    "upgrade": "gpt-5.4",
-    "inputModalities": [
-      "text",
-      "image"
-    ]
-  },
-  {
-    "name": "codex/gpt-5.3-codex",
-    "displayName": "gpt-5.3-codex",
-    "description": "Latest frontier agentic coding model.",
-    "vendor": "openai",
-    "requiredApiKeys": [
-      "OPENAI_API_KEY",
-      "CODEX_AUTH_JSON"
-    ],
-    "tier": "paid",
-    "tags": [
-      "default",
-      "upgradeable",
-      "reasoning"
-    ],
-    "hidden": false,
-    "isDefault": true,
     "defaultVariant": "medium",
     "variants": [
       {
@@ -245,6 +120,50 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
     ],
     "tier": "paid",
     "tags": [
+      "default",
+      "reasoning"
+    ],
+    "hidden": false,
+    "isDefault": true,
+    "defaultVariant": "medium",
+    "variants": [
+      {
+        "id": "low",
+        "displayName": "Low",
+        "description": "Fast responses with lighter reasoning"
+      },
+      {
+        "id": "medium",
+        "displayName": "Medium",
+        "description": "Balances speed and reasoning depth for everyday tasks"
+      },
+      {
+        "id": "high",
+        "displayName": "High",
+        "description": "Greater reasoning depth for complex problems"
+      },
+      {
+        "id": "xhigh",
+        "displayName": "Extra High",
+        "description": "Extra high reasoning depth for complex problems"
+      }
+    ],
+    "inputModalities": [
+      "text",
+      "image"
+    ]
+  },
+  {
+    "name": "codex/gpt-5.4-mini",
+    "displayName": "GPT-5.4-Mini",
+    "description": "Smaller frontier agentic coding model.",
+    "vendor": "openai",
+    "requiredApiKeys": [
+      "OPENAI_API_KEY",
+      "CODEX_AUTH_JSON"
+    ],
+    "tier": "paid",
+    "tags": [
       "reasoning"
     ],
     "hidden": false,
@@ -278,9 +197,9 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
     ]
   },
   {
-    "name": "codex/gpt-5",
-    "displayName": "gpt-5",
-    "description": "Broad world knowledge with strong general reasoning.",
+    "name": "codex/codex-auto-review",
+    "displayName": "Codex Auto Review",
+    "description": "Automatic approval review model for Codex.",
     "vendor": "openai",
     "requiredApiKeys": [
       "OPENAI_API_KEY",
@@ -289,266 +208,36 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
     "tier": "paid",
     "tags": [
       "hidden",
-      "upgradeable"
+      "reasoning"
     ],
     "hidden": true,
     "isDefault": false,
     "defaultVariant": "medium",
     "variants": [
       {
-        "id": "minimal",
-        "displayName": "Minimal",
-        "description": "Fastest responses with little reasoning"
-      },
-      {
         "id": "low",
         "displayName": "Low",
-        "description": "Balances speed with some reasoning; useful for straightforward queries and short explanations"
+        "description": "Fast responses with lighter reasoning"
       },
       {
         "id": "medium",
         "displayName": "Medium",
-        "description": "Provides a solid balance of reasoning depth and latency for general-purpose tasks"
+        "description": "Balances speed and reasoning depth for everyday tasks"
       },
       {
         "id": "high",
         "displayName": "High",
-        "description": "Maximizes reasoning depth for complex or ambiguous problems"
+        "description": "Greater reasoning depth for complex problems"
+      },
+      {
+        "id": "xhigh",
+        "displayName": "Extra High",
+        "description": "Extra high reasoning depth for complex problems"
       }
     ],
-    "upgrade": "gpt-5.3-codex",
     "inputModalities": [
       "text",
       "image"
-    ]
-  },
-  {
-    "name": "codex/gpt-5-codex",
-    "displayName": "gpt-5-codex",
-    "description": "Optimized for codex.",
-    "vendor": "openai",
-    "requiredApiKeys": [
-      "OPENAI_API_KEY",
-      "CODEX_AUTH_JSON"
-    ],
-    "tier": "paid",
-    "tags": [
-      "hidden",
-      "upgradeable"
-    ],
-    "hidden": true,
-    "isDefault": false,
-    "defaultVariant": "medium",
-    "variants": [
-      {
-        "id": "low",
-        "displayName": "Low",
-        "description": "Fastest responses with limited reasoning"
-      },
-      {
-        "id": "medium",
-        "displayName": "Medium",
-        "description": "Dynamically adjusts reasoning based on the task"
-      },
-      {
-        "id": "high",
-        "displayName": "High",
-        "description": "Maximizes reasoning depth for complex or ambiguous problems"
-      }
-    ],
-    "upgrade": "gpt-5.3-codex",
-    "inputModalities": [
-      "text",
-      "image"
-    ]
-  },
-  {
-    "name": "codex/gpt-5-codex-mini",
-    "displayName": "gpt-5-codex-mini",
-    "description": "Optimized for codex. Cheaper, faster, but less capable.",
-    "vendor": "openai",
-    "requiredApiKeys": [
-      "OPENAI_API_KEY",
-      "CODEX_AUTH_JSON"
-    ],
-    "tier": "paid",
-    "tags": [
-      "hidden",
-      "upgradeable"
-    ],
-    "hidden": true,
-    "isDefault": false,
-    "defaultVariant": "medium",
-    "variants": [
-      {
-        "id": "medium",
-        "displayName": "Medium",
-        "description": "Dynamically adjusts reasoning based on the task"
-      },
-      {
-        "id": "high",
-        "displayName": "High",
-        "description": "Maximizes reasoning depth for complex or ambiguous problems"
-      }
-    ],
-    "upgrade": "gpt-5.3-codex",
-    "inputModalities": [
-      "text",
-      "image"
-    ]
-  },
-  {
-    "name": "codex/gpt-5.1",
-    "displayName": "gpt-5.1",
-    "description": "Broad world knowledge with strong general reasoning.",
-    "vendor": "openai",
-    "requiredApiKeys": [
-      "OPENAI_API_KEY",
-      "CODEX_AUTH_JSON"
-    ],
-    "tier": "paid",
-    "tags": [
-      "hidden",
-      "upgradeable"
-    ],
-    "hidden": true,
-    "isDefault": false,
-    "defaultVariant": "medium",
-    "variants": [
-      {
-        "id": "low",
-        "displayName": "Low",
-        "description": "Balances speed with some reasoning; useful for straightforward queries and short explanations"
-      },
-      {
-        "id": "medium",
-        "displayName": "Medium",
-        "description": "Provides a solid balance of reasoning depth and latency for general-purpose tasks"
-      },
-      {
-        "id": "high",
-        "displayName": "High",
-        "description": "Maximizes reasoning depth for complex or ambiguous problems"
-      }
-    ],
-    "upgrade": "gpt-5.3-codex",
-    "inputModalities": [
-      "text",
-      "image"
-    ]
-  },
-  {
-    "name": "codex/gpt-5.1-codex",
-    "displayName": "gpt-5.1-codex",
-    "description": "Optimized for codex.",
-    "vendor": "openai",
-    "requiredApiKeys": [
-      "OPENAI_API_KEY",
-      "CODEX_AUTH_JSON"
-    ],
-    "tier": "paid",
-    "tags": [
-      "hidden",
-      "upgradeable"
-    ],
-    "hidden": true,
-    "isDefault": false,
-    "defaultVariant": "medium",
-    "variants": [
-      {
-        "id": "low",
-        "displayName": "Low",
-        "description": "Fastest responses with limited reasoning"
-      },
-      {
-        "id": "medium",
-        "displayName": "Medium",
-        "description": "Dynamically adjusts reasoning based on the task"
-      },
-      {
-        "id": "high",
-        "displayName": "High",
-        "description": "Maximizes reasoning depth for complex or ambiguous problems"
-      }
-    ],
-    "upgrade": "gpt-5.3-codex",
-    "inputModalities": [
-      "text",
-      "image"
-    ]
-  },
-  {
-    "name": "codex/gpt-oss-120b",
-    "displayName": "gpt-oss-120b",
-    "description": "OpenAI OSS model, 120B parameters.",
-    "vendor": "openai",
-    "requiredApiKeys": [
-      "OPENAI_API_KEY",
-      "CODEX_AUTH_JSON"
-    ],
-    "tier": "paid",
-    "tags": [
-      "hidden"
-    ],
-    "hidden": true,
-    "isDefault": false,
-    "defaultVariant": "medium",
-    "variants": [
-      {
-        "id": "low",
-        "displayName": "Low",
-        "description": "Balances speed with some reasoning; useful for straightforward queries and short explanations"
-      },
-      {
-        "id": "medium",
-        "displayName": "Medium",
-        "description": "Provides a solid balance of reasoning depth and latency for general-purpose tasks"
-      },
-      {
-        "id": "high",
-        "displayName": "High",
-        "description": "Maximizes reasoning depth for complex or ambiguous problems"
-      }
-    ],
-    "inputModalities": [
-      "text"
-    ]
-  },
-  {
-    "name": "codex/gpt-oss-20b",
-    "displayName": "gpt-oss-20b",
-    "description": "OpenAI OSS model, 20B parameters.",
-    "vendor": "openai",
-    "requiredApiKeys": [
-      "OPENAI_API_KEY",
-      "CODEX_AUTH_JSON"
-    ],
-    "tier": "paid",
-    "tags": [
-      "hidden"
-    ],
-    "hidden": true,
-    "isDefault": false,
-    "defaultVariant": "medium",
-    "variants": [
-      {
-        "id": "low",
-        "displayName": "Low",
-        "description": "Balances speed with some reasoning; useful for straightforward queries and short explanations"
-      },
-      {
-        "id": "medium",
-        "displayName": "Medium",
-        "description": "Provides a solid balance of reasoning depth and latency for general-purpose tasks"
-      },
-      {
-        "id": "high",
-        "displayName": "High",
-        "description": "Maximizes reasoning depth for complex or ambiguous problems"
-      }
-    ],
-    "inputModalities": [
-      "text"
     ]
   }
 ];
