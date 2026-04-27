@@ -450,18 +450,6 @@ mix tailwind.install
 
 --------------------------------
 
-### Start the Tailwind CLI build process
-
-Source: https://v3.tailwindcss.com/docs/installation
-
-Run the CLI to watch for changes in template files and compile the final CSS output.
-
-```terminal
-npx tailwindcss -i ./src/input.css -o ./src/output.css --watch
-```
-
---------------------------------
-
 ### Setting the Flex Basis
 
 Source: https://v3.tailwindcss.com/docs/flex-basis
@@ -488,6 +476,18 @@ This creates a flex container with three items:
 - Item 01: Initial width of 25% (basis-1/4)
 - Item 02: Initial width of 25% (basis-1/4)
 - Item 03: Initial width of 50% (basis-1/2)
+```
+
+--------------------------------
+
+### Start the Tailwind CLI build process
+
+Source: https://v3.tailwindcss.com/docs/installation
+
+Run the CLI to watch for changes in template files and compile the final CSS output.
+
+```terminal
+npx tailwindcss -i ./src/input.css -o ./src/output.css --watch
 ```
 
 --------------------------------
