@@ -1,12 +1,23 @@
 # Nitro
 
-Nitro is a full-stack server framework that extends Vite applications with production-ready server capabilities. It provides filesystem routing, code-splitting, built-in support for storage, caching, and databases—all runtime-agnostic and deployable anywhere. Nitro compiles routes at build time, eliminating the need for a runtime router, making it ideal for serverless hosting with near-0ms boot time regardless of project size.
+Nitro is a full-stack server framework that extends Vite applications with a production-ready server, designed to run anywhere. It provides filesystem-based routing, automatic code-splitting, built-in support for storage, caching, and databases — all runtime-agnostic and deployable to Node.js, Bun, Deno, Cloudflare Workers, Vercel, Netlify, and many more platforms without configuration changes.
 
-With Nitro, you can create server and API routes inside a `routes/` directory where each file maps directly to a URL path. It integrates seamlessly with Vite as a plugin, and `vite build` produces an optimized `.output/` folder containing both frontend and backend code ready to deploy on Node.js, Bun, Deno, Cloudflare Workers, Netlify, Vercel, and many more platforms with zero configuration.
+At its core, Nitro compiles routes at build time, eliminating the need for a runtime router. Only the code required for each request is loaded and executed, making it ideal for serverless deployments with near-0ms boot time. Nitro seamlessly integrates with Vite as a plugin, enabling developers to add API routes, server-side rendering, and full production server capabilities to any Vite project with minimal setup.
 
-## Vite Integration
+## Installation and Setup
 
-Nitro integrates as a Vite plugin to add server-side capabilities to any Vite project.
+Install Nitro and Vite, then add the Nitro plugin to your Vite configuration to enable server-side capabilities in your project.
+
+```bash
+# Using npm
+npm install nitro vite
+
+# Using pnpm
+pnpm add nitro vite
+
+# Using yarn
+yarn add nitro vite
+```
 
 ```typescript
 // vite.config.ts
@@ -18,147 +29,139 @@ export default defineConfig({
 });
 ```
 
-## Nitro Configuration
-
-Configure Nitro using `nitro.config.ts` to set the server directory and other options.
-
 ```typescript
 // nitro.config.ts
-import { defineNitroConfig } from "nitro/config";
+import { defineConfig } from "nitro";
 
-export default defineNitroConfig({
+export default defineConfig({
   serverDir: "./server",
-  preset: "cloudflare_pages", // optional: target specific platform
-  experimental: {
-    database: true,
-    tasks: true,
-  },
-  features: {
-    websocket: true,
-  },
-  runtimeConfig: {
-    apiSecret: "default-secret", // override with NITRO_API_SECRET env var
-  },
 });
 ```
 
-## Route Handlers with defineHandler
+## defineHandler - Create Route Handlers
 
-Create API routes using `defineHandler` for type-safe request handling. Files in `routes/` or `api/` directories are automatically mapped to URL paths.
+The `defineHandler` function creates request handlers for API routes. Handlers receive an H3 event object and can return strings, JSON objects, Response instances, or readable streams.
 
 ```typescript
 // server/api/hello.ts
 import { defineHandler } from "nitro";
 
-export default defineHandler(() => {
-  return { message: "Hello Nitro!" };
+export default defineHandler((event) => {
+  return { message: "Hello from Nitro!", timestamp: Date.now() };
 });
 
-// Accessible at: GET /api/hello
-// Response: { "message": "Hello Nitro!" }
+// GET /api/hello -> { "message": "Hello from Nitro!", "timestamp": 1699900000000 }
 ```
 
 ## Dynamic Route Parameters
 
-Use bracket syntax `[param]` in filenames to capture URL parameters. Parameters are accessible via `event.context.params`.
+Use bracket notation `[param]` in filenames to create dynamic routes. Parameters are accessible via `event.context.params`.
 
 ```typescript
-// server/routes/users/[id].ts
+// server/api/users/[id].ts
 import { defineHandler } from "nitro";
 
 export default defineHandler((event) => {
   const { id } = event.context.params;
-  return { userId: id, name: `User ${id}` };
+  return { userId: id, profile: `User profile for ${id}` };
 });
 
-// GET /users/123 → { "userId": "123", "name": "User 123" }
-```
-
-## HTTP Method-Specific Routes
-
-Append HTTP method to filename to restrict route to specific methods. Supported: `get`, `post`, `put`, `delete`, `patch`, `head`, `options`.
-
-```typescript
-// server/routes/users.post.ts
-import { defineHandler } from "nitro";
-
-export default defineHandler(async (event) => {
-  const body = await event.req.json();
-  // Save user to database
-  return { created: true, user: body };
-});
-
-// POST /users with JSON body
-// curl -X POST http://localhost:3000/users -H "Content-Type: application/json" -d '{"name":"John"}'
+// GET /api/users/123 -> { "userId": "123", "profile": "User profile for 123" }
 ```
 
 ## Catch-All Routes
 
-Use `[...param]` syntax to capture all remaining URL segments including slashes.
+Use `[...param]` syntax to capture all remaining path segments, including slashes.
 
 ```typescript
-// server/routes/docs/[...slug].ts
+// server/api/files/[...path].ts
 import { defineHandler } from "nitro";
 
 export default defineHandler((event) => {
-  const { slug } = event.context.params;
-  return { path: slug }; // slug contains everything after /docs/
+  const { path } = event.context.params;
+  return { filePath: path, segments: path.split("/") };
 });
 
-// GET /docs/guide/getting-started → { "path": "guide/getting-started" }
+// GET /api/files/docs/images/logo.png
+// -> { "filePath": "docs/images/logo.png", "segments": ["docs", "images", "logo.png"] }
 ```
 
-## Middleware
+## HTTP Method-Specific Routes
 
-Middleware files in `middleware/` directory run before route handlers. They can modify the request context but should not return values.
+Append HTTP method to filename to restrict route to specific methods.
+
+```typescript
+// server/api/posts.get.ts
+import { defineHandler } from "nitro";
+
+export default defineHandler(() => {
+  return [{ id: 1, title: "First Post" }, { id: 2, title: "Second Post" }];
+});
+
+// server/api/posts.post.ts
+import { defineHandler } from "nitro";
+
+export default defineHandler(async (event) => {
+  const body = await event.req.json();
+  return { created: true, post: { id: 3, ...body } };
+});
+
+// GET /api/posts -> [{ "id": 1, "title": "First Post" }, ...]
+// POST /api/posts with body { "title": "New Post" } -> { "created": true, "post": { "id": 3, "title": "New Post" } }
+```
+
+## defineMiddleware - Create Middleware
+
+Middleware run before route handlers and can modify the request context. They should not return a value (returning terminates the request).
 
 ```typescript
 // server/middleware/auth.ts
-import { defineHandler } from "nitro";
+import { defineMiddleware } from "nitro";
 
-export default defineHandler((event) => {
+export default defineMiddleware((event) => {
   const token = event.req.headers.get("authorization");
-  if (token) {
-    event.context.user = { authenticated: true, token };
-  }
+  event.context.user = token ? { authenticated: true, token } : null;
 });
 
-// server/routes/protected.ts
+// server/api/profile.ts
 import { defineHandler } from "nitro";
 
 export default defineHandler((event) => {
-  if (!event.context.user?.authenticated) {
-    return new Response("Unauthorized", { status: 401 });
+  if (!event.context.user) {
+    throw new Error("Unauthorized");
   }
-  return { message: "Protected content", user: event.context.user };
+  return { user: event.context.user };
 });
 ```
 
-## Cached Handlers with defineCachedHandler
+## defineCachedHandler - Cache Route Responses
 
-Cache route responses using `defineCachedHandler`. Supports stale-while-revalidate (SWR) pattern by default.
+Cache handler responses with configurable TTL and stale-while-revalidate behavior.
 
 ```typescript
-// server/routes/cached-data.ts
+// server/api/weather.ts
 import { defineCachedHandler } from "nitro/cache";
 
 export default defineCachedHandler(
   async () => {
-    // Expensive operation - cached for 1 hour
-    const data = await fetch("https://api.example.com/data").then((r) => r.json());
-    return data;
+    const response = await fetch("https://api.weather.example/current");
+    const data = await response.json();
+    return { weather: data, cachedAt: new Date().toISOString() };
   },
   {
-    maxAge: 60 * 60, // Cache for 1 hour
+    maxAge: 60 * 5, // Cache for 5 minutes
     swr: true, // Serve stale while revalidating
-    name: "external-data",
+    shouldBypassCache: ({ req }) => req.url.includes("refresh=true"),
   }
 );
+
+// GET /api/weather -> cached response
+// GET /api/weather?refresh=true -> fresh response, bypasses cache
 ```
 
-## Cached Functions with defineCachedFunction
+## defineCachedFunction - Cache Function Results
 
-Cache function results that are used across multiple handlers.
+Cache the results of any function for reuse across multiple handlers.
 
 ```typescript
 // server/utils/github.ts
@@ -171,15 +174,15 @@ export const getGitHubStars = defineCachedFunction(
     return data.stargazers_count;
   },
   {
-    maxAge: 60 * 60, // 1 hour
-    name: "ghStars",
+    maxAge: 60 * 60, // Cache for 1 hour
+    name: "githubStars",
     getKey: (repo: string) => repo,
   }
 );
 
-// server/routes/stars/[...repo].ts
+// server/api/stars/[...repo].ts
 import { defineHandler } from "nitro";
-import { getGitHubStars } from "~/utils/github";
+import { getGitHubStars } from "../utils/github";
 
 export default defineHandler(async (event) => {
   const { repo } = event.context.params;
@@ -187,522 +190,409 @@ export default defineHandler(async (event) => {
   return { repo, stars };
 });
 
-// GET /stars/nitrojs/nitro → { "repo": "nitrojs/nitro", "stars": 5000 }
+// GET /api/stars/nitrojs/nitro -> { "repo": "nitrojs/nitro", "stars": 5000 }
 ```
 
-## KV Storage with useStorage
+## useStorage - Key-Value Storage
 
-Access the built-in key-value storage layer. Default is in-memory; configure drivers for persistence.
+Access Nitro's built-in key-value storage layer powered by unstorage with support for multiple drivers.
 
 ```typescript
-// server/routes/storage-example.ts
+// server/api/settings.ts
 import { defineHandler } from "nitro";
 import { useStorage } from "nitro/storage";
 
-export default defineHandler(async () => {
-  const storage = useStorage();
+export default defineHandler(async (event) => {
+  const storage = useStorage("settings");
 
-  // Set a value
-  await storage.setItem("user:1", { name: "John", email: "john@example.com" });
+  if (event.method === "GET") {
+    const theme = await storage.getItem("theme");
+    const language = await storage.getItem("language");
+    return { theme: theme || "light", language: language || "en" };
+  }
 
-  // Get a value
-  const user = await storage.getItem("user:1");
-
-  // Check if exists
-  const exists = await storage.hasItem("user:1");
-
-  // Get all keys
-  const keys = await storage.getKeys("user");
-
-  // Remove a value
-  await storage.removeItem("user:1");
-
-  return { user, exists, keys };
+  if (event.method === "POST") {
+    const body = await event.req.json();
+    await storage.setItem("theme", body.theme);
+    await storage.setItem("language", body.language);
+    return { saved: true };
+  }
 });
+
+// GET /api/settings -> { "theme": "light", "language": "en" }
+// POST /api/settings with { "theme": "dark", "language": "es" } -> { "saved": true }
 ```
 
 ## Storage Configuration
 
-Configure storage drivers in `nitro.config.ts` for different backends.
+Configure storage drivers for production use including Redis, filesystem, and cloud storage.
 
 ```typescript
 // nitro.config.ts
-import { defineNitroConfig } from "nitro/config";
+import { defineConfig } from "nitro";
 
-export default defineNitroConfig({
+export default defineConfig({
   storage: {
-    redis: {
+    cache: {
       driver: "redis",
       url: "redis://localhost:6379",
     },
-    fs: {
+    data: {
       driver: "fs",
-      base: "./data",
+      base: "./.data/storage",
     },
   },
   devStorage: {
-    redis: {
+    cache: {
       driver: "fs",
-      base: "./.data/redis", // Use filesystem in development
+      base: "./.data/cache",
     },
   },
 });
 ```
 
-## Database with useDatabase
+## useDatabase - SQL Database Access
 
-Built-in SQL database layer using SQLite by default. Requires `experimental.database: true`.
-
-```typescript
-// server/routes/db-example.ts
-import { defineHandler } from "nitro";
-import { useDatabase } from "nitro/database";
-
-export default defineHandler(async () => {
-  const db = useDatabase();
-
-  // Create table
-  await db.sql`CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    name TEXT,
-    email TEXT
-  )`;
-
-  // Insert data with parameterized values (SQL injection safe)
-  const userId = crypto.randomUUID();
-  await db.sql`INSERT INTO users VALUES (${userId}, ${"John Doe"}, ${"john@example.com"})`;
-
-  // Query data
-  const { rows } = await db.sql`SELECT * FROM users WHERE id = ${userId}`;
-
-  return { users: rows };
-});
-```
-
-## Database Configuration
-
-Configure multiple database connections with different connectors.
+Access Nitro's built-in SQL database layer with support for SQLite, PostgreSQL, MySQL, and more.
 
 ```typescript
 // nitro.config.ts
-import { defineNitroConfig } from "nitro/config";
+import { defineConfig } from "nitro";
 
-export default defineNitroConfig({
+export default defineConfig({
   experimental: {
     database: true,
   },
-  database: {
-    default: {
-      connector: "sqlite",
-      options: { name: "app-db" },
-    },
-    analytics: {
-      connector: "postgresql",
-      options: {
-        url: "postgresql://user:pass@host:5432/analytics",
-      },
-    },
-  },
-  devDatabase: {
-    default: {
-      connector: "sqlite",
-      options: { name: "dev-db" },
-    },
-  },
 });
+
+// server/api/users.ts
+import { defineHandler } from "nitro";
+import { useDatabase } from "nitro/database";
+
+export default defineHandler(async (event) => {
+  const db = useDatabase();
+
+  if (event.method === "GET") {
+    const { rows } = await db.sql`SELECT * FROM users LIMIT 10`;
+    return { users: rows };
+  }
+
+  if (event.method === "POST") {
+    const body = await event.req.json();
+    const id = crypto.randomUUID();
+    await db.sql`INSERT INTO users (id, name, email) VALUES (${id}, ${body.name}, ${body.email})`;
+    return { created: true, id };
+  }
+});
+
+// GET /api/users -> { "users": [{ "id": "...", "name": "John", "email": "john@example.com" }] }
+// POST /api/users with { "name": "Jane", "email": "jane@example.com" } -> { "created": true, "id": "..." }
 ```
 
-## Plugins with definePlugin
+## defineWebSocketHandler - WebSocket Support
 
-Extend Nitro's runtime behavior with plugins. Auto-registered from `plugins/` directory.
+Create real-time WebSocket handlers with pub/sub messaging support.
+
+```typescript
+// nitro.config.ts
+import { defineConfig } from "nitro";
+
+export default defineConfig({
+  features: {
+    websocket: true,
+  },
+});
+
+// server/routes/_ws.ts
+import { defineWebSocketHandler } from "nitro";
+
+export default defineWebSocketHandler({
+  open(peer) {
+    peer.send({ type: "welcome", message: `Welcome ${peer.id}!` });
+    peer.subscribe("chat");
+    peer.publish("chat", { type: "join", user: peer.id });
+  },
+  message(peer, message) {
+    const data = message.json();
+    if (data.type === "chat") {
+      peer.publish("chat", { type: "message", user: peer.id, text: data.text });
+      peer.send({ type: "ack", messageId: data.id });
+    }
+  },
+  close(peer) {
+    peer.publish("chat", { type: "leave", user: peer.id });
+  },
+});
+
+// Client-side connection:
+// const ws = new WebSocket("ws://localhost:3000/_ws");
+// ws.send(JSON.stringify({ type: "chat", text: "Hello!", id: 1 }));
+```
+
+## Server-Sent Events (SSE)
+
+Stream real-time updates to clients using Server-Sent Events.
+
+```typescript
+// server/api/events.ts
+import { defineHandler } from "nitro";
+import { createEventStream } from "nitro/h3";
+
+export default defineHandler((event) => {
+  const stream = createEventStream(event);
+  let count = 0;
+
+  const interval = setInterval(async () => {
+    await stream.push({
+      id: String(count++),
+      event: "tick",
+      data: JSON.stringify({ time: new Date().toISOString(), count }),
+    });
+  }, 1000);
+
+  stream.onClosed(() => {
+    clearInterval(interval);
+  });
+
+  return stream.send();
+});
+
+// Client-side:
+// const source = new EventSource("/api/events");
+// source.addEventListener("tick", (e) => console.log(JSON.parse(e.data)));
+```
+
+## definePlugin - Server Plugins
+
+Create plugins that run during server startup to extend Nitro's runtime behavior.
 
 ```typescript
 // server/plugins/logger.ts
 import { definePlugin } from "nitro";
 
 export default definePlugin((nitroApp) => {
-  // Hook into request lifecycle
   nitroApp.hooks.hook("request", (event) => {
     console.log(`[${new Date().toISOString()}] ${event.req.method} ${event.req.url}`);
   });
 
-  // Hook into response lifecycle
   nitroApp.hooks.hook("response", (res, event) => {
-    console.log(`[${new Date().toISOString()}] Response: ${res.status}`);
+    console.log(`[${new Date().toISOString()}] Response ${res.status} for ${event.req.url}`);
   });
 
-  // Hook into error handling
-  nitroApp.hooks.hook("error", (error, { event }) => {
-    console.error(`Error on ${event?.req.url}:`, error.message);
+  nitroApp.hooks.hook("error", (error, { event, tags }) => {
+    console.error(`[ERROR] ${tags?.join(", ")}: ${error.message}`, event?.req.url);
   });
 
-  // Hook into server shutdown
-  nitroApp.hooks.hook("close", async () => {
+  nitroApp.hooks.hook("close", () => {
     console.log("Server shutting down...");
   });
 });
 ```
 
-## Tasks with defineTask
+## useRuntimeConfig - Runtime Configuration
 
-Define and run background tasks. Requires `experimental.tasks: true`.
-
-```typescript
-// server/tasks/db/migrate.ts
-export default defineTask({
-  meta: {
-    name: "db:migrate",
-    description: "Run database migrations",
-  },
-  async run({ payload, context }) {
-    console.log("Running migrations...", payload);
-    // Perform migration logic
-    return { result: "Migration completed" };
-  },
-});
-
-// server/routes/admin/migrate.ts
-import { defineHandler } from "nitro";
-import { runTask } from "nitro/task";
-
-export default defineHandler(async (event) => {
-  const { result } = await runTask("db:migrate", {
-    payload: { version: "1.0.0" },
-  });
-  return { success: true, result };
-});
-
-// Run via CLI: nitro task run db:migrate --payload '{"version":"1.0.0"}'
-// Or via API: GET /_nitro/tasks/db:migrate
-```
-
-## Scheduled Tasks
-
-Configure tasks to run on a cron schedule.
+Access environment-specific configuration that can be overridden via environment variables.
 
 ```typescript
 // nitro.config.ts
-import { defineNitroConfig } from "nitro/config";
+import { defineConfig } from "nitro";
 
-export default defineNitroConfig({
-  experimental: {
-    tasks: true,
-  },
-  scheduledTasks: {
-    "* * * * *": ["cache:cleanup"], // Every minute
-    "0 * * * *": "reports:generate", // Every hour
-    "0 0 * * *": ["db:backup", "logs:rotate"], // Daily at midnight
-  },
-});
-```
-
-## WebSocket Handler
-
-Enable real-time communication with WebSocket support. Requires `features.websocket: true`.
-
-```typescript
-// server/routes/_ws.ts
-import { defineWebSocketHandler } from "nitro";
-
-export default defineWebSocketHandler({
-  open(peer) {
-    peer.send({ type: "welcome", message: `Hello ${peer}!` });
-    peer.subscribe("chat");
-    peer.publish("chat", { type: "join", user: peer.toString() });
-  },
-
-  message(peer, message) {
-    const text = message.text();
-    if (text === "ping") {
-      peer.send({ type: "pong" });
-    } else {
-      peer.publish("chat", {
-        type: "message",
-        user: peer.toString(),
-        text: text,
-      });
-    }
-  },
-
-  close(peer) {
-    peer.publish("chat", { type: "leave", user: peer.toString() });
+export default defineConfig({
+  runtimeConfig: {
+    apiKey: "dev_key",
+    database: {
+      host: "localhost",
+      port: 5432,
+    },
   },
 });
 
-// Client connection: ws://localhost:3000/_ws
+// server/api/config.ts
+import { defineHandler } from "nitro";
+import { useRuntimeConfig } from "nitro/runtime-config";
+
+export default defineHandler(() => {
+  const config = useRuntimeConfig();
+  return {
+    hasApiKey: !!config.apiKey,
+    dbHost: config.database.host,
+  };
+});
+
+// Override via environment variables:
+// NITRO_API_KEY="prod_key" NITRO_DATABASE_HOST="db.example.com" node .output/server/index.mjs
 ```
 
 ## Route Rules Configuration
 
-Configure caching, redirects, proxying, CORS, and authentication at the route level.
+Configure route-level caching, redirects, proxying, CORS, and basic auth.
 
 ```typescript
 // nitro.config.ts
-import { defineNitroConfig } from "nitro/config";
+import { defineConfig } from "nitro";
 
-export default defineNitroConfig({
+export default defineConfig({
   routeRules: {
-    // Caching with SWR
-    "/blog/**": { swr: 600 }, // 10 minutes
+    // Enable SWR caching for blog routes
+    "/blog/**": { swr: 3600 },
 
-    // Full cache options
-    "/api/data/**": {
-      cache: { maxAge: 60, swr: true },
-    },
+    // Add CORS headers for API
+    "/api/**": { cors: true, headers: { "access-control-allow-methods": "GET,POST" } },
 
-    // Redirects
+    // Redirect old URLs
     "/old-page": { redirect: "/new-page" },
-    "/legacy/**": { redirect: { to: "/v2/**", status: 301 } },
+    "/legacy/**": { redirect: { to: "/modern/**", status: 308 } },
 
-    // Proxy
-    "/proxy/api/**": { proxy: "https://api.example.com/**" },
+    // Proxy requests to external service
+    "/external/**": { proxy: "https://api.example.com/**" },
 
-    // CORS
-    "/api/public/**": {
-      cors: true,
-      headers: { "access-control-allow-methods": "GET,POST" },
-    },
+    // Basic auth for admin area
+    "/admin/**": { basicAuth: { username: "admin", password: "secret" } },
 
-    // Basic authentication
-    "/admin/**": {
-      basicAuth: { username: "admin", password: "secret" },
-    },
-
-    // Disable for sub-path
-    "/admin/public/**": { basicAuth: false },
-
-    // Custom headers
-    "/assets/**": {
-      headers: { "cache-control": "public, max-age=31536000, immutable" },
-    },
-
-    // Prerendering
-    "/about": { prerender: true },
+    // Disable caching for real-time endpoints
+    "/api/realtime/**": { cache: false },
   },
 });
 ```
 
-## HTML Renderer Configuration
+## Server Entry with Framework Integration
 
-Configure HTML templates for SPA or SSR with dynamic template processing.
+Use server entry to integrate with web frameworks like Hono, Elysia, or H3.
+
+```typescript
+// server.ts - Using Hono
+import { Hono } from "hono";
+
+const app = new Hono();
+
+app.get("/", (c) => c.text("Hello from Hono with Nitro!"));
+app.get("/json", (c) => c.json({ framework: "hono", status: "ok" }));
+
+export default app;
+```
+
+```typescript
+// server.ts - Using plain fetch handler
+export default {
+  fetch(req: Request) {
+    const url = new URL(req.url);
+
+    if (url.pathname === "/health") {
+      return new Response("OK", { status: 200 });
+    }
+
+    // Return nothing to continue to route handlers
+  },
+};
+```
+
+## Tasks - Background Operations
+
+Define and run background tasks with scheduling support.
 
 ```typescript
 // nitro.config.ts
-import { defineNitroConfig } from "nitro/config";
+import { defineConfig } from "nitro";
 
-export default defineNitroConfig({
-  renderer: {
-    template: "./index.html", // HTML template file
-    static: false, // Enable dynamic template processing
+export default defineConfig({
+  experimental: {
+    tasks: true,
+  },
+  scheduledTasks: {
+    "*/5 * * * *": "cleanup:expired", // Run every 5 minutes
+    "0 0 * * *": "reports:daily",     // Run daily at midnight
   },
 });
+
+// server/tasks/cleanup/expired.ts
+export default defineTask({
+  meta: {
+    name: "cleanup:expired",
+    description: "Remove expired sessions from database",
+  },
+  async run({ payload, context }) {
+    const db = useDatabase();
+    const { rows } = await db.sql`DELETE FROM sessions WHERE expires_at < NOW() RETURNING id`;
+    return { result: { deleted: rows.length } };
+  },
+});
+
+// Programmatic execution from a route:
+// server/api/admin/cleanup.ts
+import { defineHandler } from "nitro";
+import { runTask } from "nitro/task";
+
+export default defineHandler(async () => {
+  const { result } = await runTask("cleanup:expired");
+  return result;
+});
 ```
+
+## HTML Renderer with Template Processing
+
+Serve dynamic HTML using Nitro's built-in template processor.
 
 ```html
-<!-- index.html with dynamic template syntax -->
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <title>{{ $URL.pathname }} - My App</title>
-  </head>
-  <body>
+<head>
+  <title>{{ $URL.pathname }} - My App</title>
+</head>
+<body>
+  <h1>Welcome!</h1>
+  <p>Current path: {{ $URL.pathname }}</p>
+  <p>Method: {{ $METHOD }}</p>
+
+  <? if ($METHOD === 'POST') { ?>
     <script server>
-      const data = await fetch("https://api.example.com/config").then((r) => r.json());
+      const formData = await $REQUEST.formData();
+      const name = formData.get('name');
     </script>
-    <div id="app">
-      <h1>Welcome {{ $COOKIES["user"] || "Guest" }}</h1>
-      <pre>{{ JSON.stringify(data) }}</pre>
-    </div>
-    <? if ($METHOD === 'POST') { ?>
-    <p>Form submitted!</p>
-    <? } ?>
-  </body>
+    <p>Hello, {{ name }}!</p>
+  <? } else { ?>
+    <form method="POST">
+      <input name="name" placeholder="Your name" />
+      <button type="submit">Submit</button>
+    </form>
+  <? } ?>
+</body>
 </html>
 ```
 
-## Custom Renderer Handler
-
-Create a fully custom renderer for SSR or custom HTML generation.
-
-```typescript
-// server/renderer.ts
-export default function renderer({ req }: { req: Request }) {
-  const url = new URL(req.url);
-
-  return new Response(
-    `<!DOCTYPE html>
-    <html>
-    <head><title>SSR App</title></head>
-    <body>
-      <h1>Server-rendered page</h1>
-      <p>Path: ${url.pathname}</p>
-      <p>Time: ${new Date().toISOString()}</p>
-    </body>
-    </html>`,
-    { headers: { "content-type": "text/html; charset=utf-8" } }
-  );
-}
-```
-
 ```typescript
 // nitro.config.ts
-import { defineNitroConfig } from "nitro/config";
+import { defineConfig } from "nitro";
 
-export default defineNitroConfig({
+export default defineConfig({
   renderer: {
-    handler: "./server/renderer.ts",
+    template: "./index.html",
   },
 });
-```
-
-## Server Assets
-
-Bundle and access static files at runtime via storage layer.
-
-```typescript
-// nitro.config.ts
-import { defineNitroConfig } from "nitro/config";
-
-export default defineNitroConfig({
-  serverAssets: [
-    {
-      baseName: "templates",
-      dir: "./templates",
-    },
-  ],
-});
-```
-
-```typescript
-// server/routes/email.ts
-import { defineHandler } from "nitro";
-import { useStorage } from "nitro/storage";
-
-export default defineHandler(async () => {
-  const templates = useStorage("assets/templates");
-
-  // Get template content
-  const html = await templates.getItem("welcome.html");
-
-  // Get metadata
-  const meta = await templates.getMeta("welcome.html");
-
-  // List all templates
-  const keys = await templates.getKeys();
-
-  return { html, meta, availableTemplates: keys };
-});
-```
-
-## OpenAPI Documentation
-
-Auto-generate OpenAPI documentation for your API routes.
-
-```typescript
-// nitro.config.ts
-import { defineNitroConfig } from "nitro/config";
-
-export default defineNitroConfig({
-  experimental: {
-    openAPI: true,
-  },
-  openAPI: {
-    meta: {
-      title: "My API",
-      description: "API documentation",
-      version: "1.0.0",
-    },
-    ui: {
-      scalar: { theme: "purple" },
-    },
-  },
-});
-```
-
-```typescript
-// server/routes/api/users.ts
-import { defineRouteMeta, defineHandler } from "nitro";
-
-defineRouteMeta({
-  openAPI: {
-    tags: ["users"],
-    description: "Get all users",
-    parameters: [{ in: "query", name: "limit", required: false }],
-  },
-});
-
-export default defineHandler(() => {
-  return [{ id: 1, name: "John" }];
-});
-
-// Access docs at: /_scalar, /_swagger, /_openapi.json
 ```
 
 ## Deployment Presets
 
-Build for specific deployment targets using presets. Auto-detected in CI/CD environments.
-
-```bash
-# Build for specific platform
-nitro build --preset cloudflare_pages
-nitro build --preset vercel
-nitro build --preset netlify
-
-# Or set via environment variable
-NITRO_PRESET=cloudflare_pages nitro build
-```
-
-```typescript
-// nitro.config.ts for platform-specific options
-import { defineNitroConfig } from "nitro/config";
-
-export default defineNitroConfig({
-  preset: "vercel",
-  vercel: {
-    config: { runtime: "nodejs20.x" },
-  },
-  // Or for Cloudflare
-  // preset: "cloudflare_pages",
-  // cloudflare: {
-  //   wrangler: { compatibility_date: "2025-01-01" },
-  // },
-});
-```
-
-## Error Handling
-
-Define custom error handlers for production error responses.
-
-```typescript
-// server/error.ts
-export default defineNitroErrorHandler((error, event) => {
-  const isDev = process.env.NODE_ENV === "development";
-
-  return new Response(
-    JSON.stringify({
-      error: error.message,
-      statusCode: error.statusCode || 500,
-      stack: isDev ? error.stack : undefined,
-    }),
-    {
-      status: error.statusCode || 500,
-      headers: { "Content-Type": "application/json" },
-    }
-  );
-});
-```
+Deploy to various platforms with zero configuration using built-in presets.
 
 ```typescript
 // nitro.config.ts
-import { defineNitroConfig } from "nitro/config";
+import { defineConfig } from "nitro";
 
-export default defineNitroConfig({
-  errorHandler: "~/error",
+export default defineConfig({
+  // Automatically detected, or set explicitly:
+  // preset: "cloudflare_pages",
+  // preset: "vercel",
+  // preset: "netlify",
+  // preset: "node_server",
 });
+
+// Build commands:
+// NITRO_PRESET=cloudflare_pages npx nitro build
+// NITRO_PRESET=vercel npx nitro build
+// NITRO_PRESET=node_server npx nitro build
 ```
 
-## Summary
+Nitro serves as an excellent foundation for building full-stack applications, APIs, and meta-frameworks. Its primary use cases include creating REST APIs with file-based routing, building real-time applications with WebSocket support, implementing caching strategies for performance optimization, and developing universal JavaScript applications that deploy anywhere. Popular frameworks like Nuxt, SolidStart, and TanStack Start leverage Nitro as their server foundation.
 
-Nitro is designed for building full-stack JavaScript/TypeScript applications that deploy anywhere. Its primary use cases include creating API backends with filesystem-based routing, adding server-side rendering to Vite applications, building serverless functions with automatic code-splitting, and implementing real-time features with WebSocket support. The built-in storage and caching layers enable persistent data handling and performance optimization without external dependencies.
-
-Integration patterns typically involve using Nitro as a Vite plugin for unified frontend/backend development, leveraging route rules for declarative caching and proxying, utilizing the plugin system for cross-cutting concerns like logging and authentication, and configuring deployment presets for zero-configuration deployments to platforms like Cloudflare, Vercel, Netlify, AWS, and traditional Node.js servers. The framework's runtime-agnostic design means the same codebase can target different deployment environments by simply changing the build preset.
+Integration patterns typically involve adding Nitro as a Vite plugin for frontend projects needing backend capabilities, using the storage and database layers for data persistence, implementing middleware for authentication and logging, and configuring route rules for caching and proxying. The framework's runtime-agnostic design means the same codebase runs on Node.js during development and deploys to edge platforms like Cloudflare Workers or Vercel Edge Functions in production without code changes.
