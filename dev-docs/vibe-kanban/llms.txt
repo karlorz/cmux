@@ -1,926 +1,808 @@
 # Vibe Kanban
 
-Vibe Kanban is a kanban board application designed to orchestrate AI coding agents like Claude Code, Gemini CLI, Codex, Amp, and others. It enables developers to manage multiple coding tasks simultaneously, with each task running in an isolated git worktree environment. The application provides a web-based UI for creating projects, managing tasks, monitoring agent execution, reviewing code changes, and creating pull requests.
+Vibe Kanban is an AI-powered kanban board designed to manage and orchestrate multiple coding agents working in parallel. It provides a local-first, self-hosted project management platform where AI agents (Claude Code, Codex, Gemini, AMP, and others) operate inside isolated "workspaces" — git-branched sandbox environments scoped to individual tasks or issues. Users create workspaces linked to tasks, fire off prompts to coding agents within sessions, track their progress in real time, and merge or push the resulting changes when complete.
 
-The core architecture consists of a Rust backend server with an Axum-based REST API, a React frontend, and an MCP (Model Context Protocol) server for programmatic access. Vibe Kanban supports multiple coding agents, workspace isolation via git worktrees, real-time WebSocket streams for monitoring execution, and integrations with GitHub for PR creation and merging. The application runs locally via `npx vibe-kanban` and binds to a random free port.
+The system is structured as a Rust backend (Axum HTTP server, SQLite via SQLx), a React/TypeScript frontend, an MCP (Model Context Protocol) server for agent-to-agent orchestration, and an NPX CLI entrypoint that downloads and runs the server. The REST API covers workspace lifecycle, session management, git operations (rebase, merge, push, diff), execution process tracking, configuration of AI executors, MCP server settings, real-time event streaming over SSE, an interactive terminal over WebSocket, and a rich remote issue-tracker integration layer.
 
-## Installation and Quick Start
+---
 
-Run Vibe Kanban directly with npx:
+## Installation and Launch
+
+**NPX CLI** — downloads and runs the correct binary for the current platform.
 
 ```bash
-# Basic installation - binds to random free port
+# Launch the browser-based UI (default)
 npx vibe-kanban
 
-# Run with fixed port
-PORT=8080 npx vibe-kanban
+# Launch the Tauri desktop app
+npx vibe-kanban --desktop
 
-# Environment variables for configuration
-HOST=0.0.0.0 PORT=3000 npx vibe-kanban
+# Run the MCP server in global mode
+npx vibe-kanban mcp --mode global
+
+# Run the MCP server in orchestrator mode (scoped to a single workspace)
+npx vibe-kanban mcp --mode orchestrator
+
+# Run the review CLI tool
+npx vibe-kanban review
 ```
 
-## REST API Endpoints
+Environment variables recognised by the binary:
 
-### List All Projects
+| Variable | Purpose |
+|---|---|
+| `VIBE_BACKEND_URL` | Override the backend base URL |
+| `MCP_HOST` / `HOST` | Override the MCP server host |
+| `MCP_PORT` / `PORT` / `BACKEND_PORT` | Override the port |
+| `VIBE_KANBAN_DEBUG` | Enable verbose/debug output |
 
-Returns all projects configured in Vibe Kanban with their metadata including ID, name, and timestamps.
+---
 
-```bash
-curl -X GET http://localhost:PORT/api/projects
+## REST API — Base Path `/api`
 
-# Response
-{
-  "success": true,
-  "data": [
-    {
-      "id": "550e8400-e29b-41d4-a716-446655440000",
-      "name": "my-frontend-app",
-      "created_at": "2024-01-15T10:30:00Z",
-      "updated_at": "2024-01-15T14:22:00Z"
-    }
-  ]
-}
+All REST endpoints return a uniform JSON envelope:
+
+```json
+{ "success": true, "data": <payload> }
+{ "success": false, "message": "Error description" }
 ```
 
-### Create a New Project
+---
 
-Creates a new project from an existing git repository path. The repository must be a valid git repository.
+### `GET /api/info` — Get system info
+
+Returns the running version, current configuration, login status, available executor profiles, executor capabilities, and environment info.
 
 ```bash
-curl -X POST http://localhost:PORT/api/projects \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "my-new-project",
-    "repositories": [
-      {
-        "git_repo_path": "/path/to/your/repo",
-        "display_name": "Main Repository"
-      }
-    ]
-  }'
+curl http://localhost:3000/api/info | jq .
 
 # Response
 {
   "success": true,
   "data": {
-    "id": "550e8400-e29b-41d4-a716-446655440001",
-    "name": "my-new-project",
-    "created_at": "2024-01-16T09:00:00Z",
-    "updated_at": "2024-01-16T09:00:00Z"
-  }
-}
-```
-
-### Get Project Repositories
-
-Retrieves all repositories associated with a specific project.
-
-```bash
-curl -X GET http://localhost:PORT/api/projects/{project_id}/repositories
-
-# Response
-{
-  "success": true,
-  "data": [
-    {
-      "id": "660e8400-e29b-41d4-a716-446655440000",
-      "name": "frontend",
-      "display_name": "Frontend App",
-      "path": "/Users/dev/projects/frontend",
-      "setup_script": "npm install",
-      "cleanup_script": "npm run format",
-      "dev_server_script": "npm run dev"
-    }
-  ]
-}
-```
-
-### List Tasks in a Project
-
-Returns all tasks in a project with their current status and execution state.
-
-```bash
-curl -X GET "http://localhost:PORT/api/tasks?project_id={project_id}"
-
-# Response
-{
-  "success": true,
-  "data": [
-    {
-      "id": "770e8400-e29b-41d4-a716-446655440000",
-      "title": "Add user authentication",
-      "description": "Implement login/logout with JWT tokens",
-      "status": "inprogress",
-      "project_id": "550e8400-e29b-41d4-a716-446655440000",
-      "has_in_progress_attempt": true,
-      "last_attempt_failed": false,
-      "created_at": "2024-01-16T10:00:00Z",
-      "updated_at": "2024-01-16T11:30:00Z"
-    }
-  ]
-}
-```
-
-### Create a New Task
-
-Creates a new task in a project. Tasks can optionally include images for context.
-
-```bash
-curl -X POST http://localhost:PORT/api/tasks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "project_id": "550e8400-e29b-41d4-a716-446655440000",
-    "title": "Implement dark mode toggle",
-    "description": "Add a dark mode toggle to the settings page with system preference detection"
-  }'
-
-# Response
-{
-  "success": true,
-  "data": {
-    "id": "880e8400-e29b-41d4-a716-446655440000",
-    "title": "Implement dark mode toggle",
-    "description": "Add a dark mode toggle to the settings page with system preference detection",
-    "status": "todo",
-    "project_id": "550e8400-e29b-41d4-a716-446655440000",
-    "created_at": "2024-01-16T12:00:00Z",
-    "updated_at": "2024-01-16T12:00:00Z"
-  }
-}
-```
-
-### Create and Start Task with Agent
-
-Creates a task and immediately starts a coding agent to work on it in a single operation.
-
-```bash
-curl -X POST http://localhost:PORT/api/tasks/create-and-start \
-  -H "Content-Type: application/json" \
-  -d '{
-    "task": {
-      "project_id": "550e8400-e29b-41d4-a716-446655440000",
-      "title": "Fix pagination bug",
-      "description": "The pagination component shows wrong page count when filtering"
-    },
-    "executor_profile_id": {
-      "executor": "CLAUDE_CODE",
-      "variant": "DEFAULT"
-    },
-    "repos": [
-      {
-        "repo_id": "660e8400-e29b-41d4-a716-446655440000",
-        "target_branch": "main"
-      }
-    ]
-  }'
-
-# Response
-{
-  "success": true,
-  "data": {
-    "task": {
-      "id": "990e8400-e29b-41d4-a716-446655440000",
-      "title": "Fix pagination bug",
-      "status": "inprogress"
-    },
-    "has_in_progress_attempt": true,
-    "last_attempt_failed": false,
-    "executor": "CLAUDE_CODE"
-  }
-}
-```
-
-### Update a Task
-
-Updates task properties including title, description, and status.
-
-```bash
-curl -X PUT http://localhost:PORT/api/tasks/{task_id} \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "Fix pagination bug - URGENT",
-    "status": "inreview"
-  }'
-
-# Response
-{
-  "success": true,
-  "data": {
-    "id": "990e8400-e29b-41d4-a716-446655440000",
-    "title": "Fix pagination bug - URGENT",
-    "status": "inreview",
-    "updated_at": "2024-01-16T14:00:00Z"
-  }
-}
-```
-
-### Delete a Task
-
-Deletes a task and cleans up associated workspaces. Returns 202 Accepted as cleanup happens in background.
-
-```bash
-curl -X DELETE http://localhost:PORT/api/tasks/{task_id}
-
-# Response (202 Accepted)
-{
-  "success": true,
-  "data": null
-}
-```
-
-### Create a Task Attempt (Workspace)
-
-Creates a new workspace for executing a coding agent on a task. Each workspace is an isolated git worktree.
-
-```bash
-curl -X POST http://localhost:PORT/api/task-attempts \
-  -H "Content-Type: application/json" \
-  -d '{
-    "task_id": "770e8400-e29b-41d4-a716-446655440000",
-    "executor_profile_id": {
-      "executor": "GEMINI",
-      "variant": null
-    },
-    "repos": [
-      {
-        "repo_id": "660e8400-e29b-41d4-a716-446655440000",
-        "target_branch": "develop"
-      }
-    ]
-  }'
-
-# Response
-{
-  "success": true,
-  "data": {
-    "id": "aa0e8400-e29b-41d4-a716-446655440000",
-    "task_id": "770e8400-e29b-41d4-a716-446655440000",
-    "branch": "vk/add-user-authentication-aa0e8400",
-    "container_ref": "/Users/dev/.vibe-kanban/workspaces/aa0e8400",
-    "archived": false,
-    "pinned": false,
-    "created_at": "2024-01-16T15:00:00Z"
-  }
-}
-```
-
-### Get Workspace Branch Status
-
-Returns git branch status including commits ahead/behind, uncommitted changes, and merge/rebase state.
-
-```bash
-curl -X GET http://localhost:PORT/api/task-attempts/{workspace_id}/branch-status
-
-# Response
-{
-  "success": true,
-  "data": [
-    {
-      "repo_id": "660e8400-e29b-41d4-a716-446655440000",
-      "repo_name": "frontend",
-      "commits_ahead": 3,
-      "commits_behind": 0,
-      "has_uncommitted_changes": false,
-      "uncommitted_count": 0,
-      "untracked_count": 0,
-      "target_branch_name": "main",
-      "is_rebase_in_progress": false,
-      "conflicted_files": [],
-      "is_target_remote": false,
-      "merges": []
-    }
-  ]
-}
-```
-
-### Merge Workspace Changes
-
-Merges the workspace branch into the target branch (local merge, not PR).
-
-```bash
-curl -X POST http://localhost:PORT/api/task-attempts/{workspace_id}/merge \
-  -H "Content-Type: application/json" \
-  -d '{
-    "repo_id": "660e8400-e29b-41d4-a716-446655440000"
-  }'
-
-# Response
-{
-  "success": true,
-  "data": null
-}
-```
-
-### Push Workspace Branch to Remote
-
-Pushes the workspace branch to the remote repository.
-
-```bash
-curl -X POST http://localhost:PORT/api/task-attempts/{workspace_id}/push \
-  -H "Content-Type: application/json" \
-  -d '{
-    "repo_id": "660e8400-e29b-41d4-a716-446655440000"
-  }'
-
-# Response
-{
-  "success": true,
-  "data": null
-}
-
-# If force push required (branch diverged)
-{
-  "success": false,
-  "data": {
-    "type": "force_push_required"
-  }
-}
-```
-
-### Create Pull Request
-
-Creates a pull request on GitHub for the workspace branch.
-
-```bash
-curl -X POST http://localhost:PORT/api/task-attempts/{workspace_id}/pr \
-  -H "Content-Type: application/json" \
-  -d '{
-    "repo_id": "660e8400-e29b-41d4-a716-446655440000",
-    "title": "Add user authentication feature",
-    "body": "Implements JWT-based authentication with login/logout functionality"
-  }'
-
-# Response
-{
-  "success": true,
-  "data": {
-    "pr_url": "https://github.com/owner/repo/pull/123",
-    "pr_number": 123
-  }
-}
-```
-
-### Rebase Workspace Branch
-
-Rebases the workspace branch onto a new base branch.
-
-```bash
-curl -X POST http://localhost:PORT/api/task-attempts/{workspace_id}/rebase \
-  -H "Content-Type: application/json" \
-  -d '{
-    "repo_id": "660e8400-e29b-41d4-a716-446655440000",
-    "new_base_branch": "main"
-  }'
-
-# Response (success)
-{
-  "success": true,
-  "data": null
-}
-
-# Response (conflicts)
-{
-  "success": false,
-  "data": {
-    "type": "merge_conflicts",
-    "message": "Rebase failed due to conflicts",
-    "op": "rebase",
-    "conflicted_files": ["src/auth.ts", "src/config.ts"],
-    "target_branch": "main"
-  }
-}
-```
-
-### Start Dev Server
-
-Starts the configured dev server script for the workspace repositories.
-
-```bash
-curl -X POST http://localhost:PORT/api/task-attempts/{workspace_id}/start-dev-server
-
-# Response
-{
-  "success": true,
-  "data": [
-    {
-      "id": "bb0e8400-e29b-41d4-a716-446655440000",
-      "status": "running",
-      "run_reason": "dev_server",
-      "created_at": "2024-01-16T16:00:00Z"
-    }
-  ]
-}
-```
-
-### Stop Workspace Execution
-
-Stops any running coding agent or script in the workspace.
-
-```bash
-curl -X POST http://localhost:PORT/api/task-attempts/{workspace_id}/stop
-
-# Response
-{
-  "success": true,
-  "data": null
-}
-```
-
-### Create Session in Workspace
-
-Creates a new chat session within a workspace for conversing with a coding agent.
-
-```bash
-curl -X POST http://localhost:PORT/api/sessions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "workspace_id": "aa0e8400-e29b-41d4-a716-446655440000",
-    "executor": "CLAUDE_CODE"
-  }'
-
-# Response
-{
-  "success": true,
-  "data": {
-    "id": "cc0e8400-e29b-41d4-a716-446655440000",
-    "workspace_id": "aa0e8400-e29b-41d4-a716-446655440000",
-    "executor": "CLAUDE_CODE",
-    "created_at": "2024-01-16T17:00:00Z"
-  }
-}
-```
-
-### Send Follow-up Message to Session
-
-Sends a follow-up message to continue the conversation with a coding agent.
-
-```bash
-curl -X POST http://localhost:PORT/api/sessions/{session_id}/follow-up \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "Now add unit tests for the authentication module",
-    "executor_profile_id": {
-      "executor": "CLAUDE_CODE",
-      "variant": "DEFAULT"
-    }
-  }'
-
-# Response
-{
-  "success": true,
-  "data": {
-    "id": "dd0e8400-e29b-41d4-a716-446655440000",
-    "status": "running",
-    "run_reason": "coding_agent",
-    "created_at": "2024-01-16T17:30:00Z"
-  }
-}
-```
-
-### Get User System Info and Config
-
-Returns system information, user configuration, available coding agents, and their capabilities.
-
-```bash
-curl -X GET http://localhost:PORT/api/info
-
-# Response
-{
-  "success": true,
-  "data": {
+    "version": "0.1.44",
     "config": {
-      "disclaimer_acknowledged": true,
-      "analytics_enabled": false,
-      "editor": "vscode",
-      "git_branch_prefix": "vk",
-      "default_branch": "main"
+      "git_branch_prefix": "vibe/",
+      "relay_enabled": false,
+      "analytics_enabled": true,
+      "editor": "CURSOR",
+      "executor_profile": "CLAUDE_CODE"
     },
-    "analytics_user_id": "user-123",
-    "login_status": "logged_out",
-    "executors": {
-      "CLAUDE_CODE": { "variants": ["DEFAULT", "PLAN"] },
-      "GEMINI": { "variants": ["DEFAULT"] },
-      "CODEX": { "variants": ["DEFAULT"] },
-      "AMP": { "variants": ["DEFAULT"] }
+    "machine_id": "a1b2c3d4-...",
+    "login_status": { "type": "logged_in", "profile": { "username": "alice" } },
+    "environment": {
+      "os_type": "Darwin",
+      "os_version": "14.4",
+      "os_architecture": "arm64",
+      "bitness": "64-bit"
     },
     "capabilities": {
       "CLAUDE_CODE": ["SESSION_FORK"]
-    },
-    "environment": {
-      "os_type": "macos",
-      "os_version": "14.0.0",
-      "os_architecture": "arm64"
     }
   }
 }
 ```
 
-### Update User Configuration
+---
 
-Updates user preferences including editor, git settings, and feature flags.
+### `PUT /api/config` — Update configuration
 
 ```bash
-curl -X PUT http://localhost:PORT/api/config \
+curl -X PUT http://localhost:3000/api/config \
   -H "Content-Type: application/json" \
   -d '{
-    "editor": "cursor",
-    "git_branch_prefix": "feature",
-    "default_branch": "develop",
-    "analytics_enabled": false,
-    "sound_enabled": true
+    "git_branch_prefix": "feat/",
+    "relay_enabled": true,
+    "host_nickname": "my-machine",
+    "analytics_enabled": true,
+    "editor": "CURSOR",
+    "executor_profile": "CLAUDE_CODE",
+    "disclaimer_acknowledged": true,
+    "onboarding_acknowledged": true
   }'
 
 # Response
-{
-  "success": true,
-  "data": {
-    "editor": "cursor",
-    "git_branch_prefix": "feature",
-    "default_branch": "develop"
-  }
-}
+{ "success": true, "data": { /* updated config */ } }
 ```
 
-### Get MCP Server Configuration
+---
 
-Retrieves the MCP server configuration for a specific coding agent.
+### `GET /api/config/mcp-config?executor=CLAUDE_CODE` — Get MCP server config
 
 ```bash
-curl -X GET "http://localhost:PORT/api/mcp-config?executor=CLAUDE_CODE"
+curl "http://localhost:3000/api/config/mcp-config?executor=CLAUDE_CODE" | jq .
 
 # Response
 {
   "success": true,
   "data": {
     "mcp_config": {
+      "servers_path": ["mcpServers"],
       "servers": {
-        "vibe_kanban": {
+        "vibe-kanban": {
           "command": "npx",
-          "args": ["-y", "vibe-kanban@latest", "--mcp"]
+          "args": ["vibe-kanban", "mcp"]
         }
-      },
-      "servers_path": ["mcpServers"]
+      }
     },
-    "config_path": "/Users/dev/.claude/settings.json"
+    "config_path": "/Users/alice/.claude/claude_desktop_config.json"
   }
 }
 ```
 
-### Update MCP Server Configuration
+---
 
-Updates the MCP servers configuration for a specific coding agent.
+### `POST /api/config/mcp-config?executor=CLAUDE_CODE` — Update MCP servers
 
 ```bash
-curl -X POST "http://localhost:PORT/api/mcp-config?executor=CLAUDE_CODE" \
+curl -X POST "http://localhost:3000/api/config/mcp-config?executor=CLAUDE_CODE" \
   -H "Content-Type: application/json" \
   -d '{
     "servers": {
-      "vibe_kanban": {
+      "vibe-kanban": {
         "command": "npx",
-        "args": ["-y", "vibe-kanban@latest", "--mcp"]
+        "args": ["-y", "vibe-kanban@latest", "mcp"]
       },
       "filesystem": {
         "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user"]
       }
     }
   }'
 
-# Response
-{
-  "success": true,
-  "data": "Updated MCP server configuration (was 1, now 2)"
-}
+# Response: { "success": true, "data": "Added 2 MCP server(s)" }
 ```
 
-### Check Agent Availability
+---
 
-Checks if a specific coding agent is installed and available on the system.
+### `GET /api/config/agents/check-availability?executor=CLAUDE_CODE` — Check agent availability
 
 ```bash
-curl -X GET "http://localhost:PORT/api/agents/check-availability?executor=CLAUDE_CODE"
+curl "http://localhost:3000/api/config/agents/check-availability?executor=CLAUDE_CODE"
+
+# Response
+{ "success": true, "data": { "type": "available" } }
+# or
+{ "success": true, "data": { "type": "not_installed", "install_url": "..." } }
+```
+
+---
+
+### `GET /api/workspaces` — List all workspaces
+
+```bash
+curl http://localhost:3000/api/workspaces | jq '.data[] | {id, branch, name, archived}'
 
 # Response
 {
   "success": true,
-  "data": {
-    "status": "available",
-    "version": "1.0.0",
-    "path": "/usr/local/bin/claude"
-  }
-}
-```
-
-## WebSocket Endpoints
-
-### Stream Projects Updates
-
-Real-time updates when projects are created, modified, or deleted.
-
-```javascript
-const ws = new WebSocket('ws://localhost:PORT/api/projects/stream/ws');
-
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  // data contains project updates with JSON patches
-  console.log('Project update:', data);
-};
-```
-
-### Stream Tasks Updates
-
-Real-time updates for tasks in a specific project.
-
-```javascript
-const projectId = '550e8400-e29b-41d4-a716-446655440000';
-const ws = new WebSocket(`ws://localhost:PORT/api/tasks/stream/ws?project_id=${projectId}`);
-
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  // data contains task updates including status changes
-  console.log('Task update:', data);
-};
-```
-
-### Stream Workspace Diff
-
-Real-time file changes and diff updates for a workspace.
-
-```javascript
-const workspaceId = 'aa0e8400-e29b-41d4-a716-446655440000';
-const ws = new WebSocket(`ws://localhost:PORT/api/task-attempts/${workspaceId}/diff/ws`);
-
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  // data contains file diffs, additions, deletions
-  console.log('Diff update:', data);
-};
-
-// For stats only (files changed count, lines added/removed)
-const wsStats = new WebSocket(`ws://localhost:PORT/api/task-attempts/${workspaceId}/diff/ws?stats_only=true`);
-```
-
-### Stream Workspaces Updates
-
-Real-time updates for all workspaces, optionally filtered by archived status.
-
-```javascript
-// Stream all active workspaces
-const ws = new WebSocket('ws://localhost:PORT/api/task-attempts/stream/ws?archived=false&limit=50');
-
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  console.log('Workspace update:', data);
-};
-```
-
-## MCP Server Integration
-
-Vibe Kanban exposes an MCP server for programmatic task management from AI assistants.
-
-### MCP Server Configuration
-
-Add Vibe Kanban to your coding agent's MCP configuration:
-
-```json
-{
-  "mcpServers": {
-    "vibe_kanban": {
-      "command": "npx",
-      "args": ["-y", "vibe-kanban@latest", "--mcp"]
-    }
-  }
-}
-```
-
-### MCP Tool: list_projects
-
-Lists all available projects.
-
-```json
-// Request
-{
-  "tool": "list_projects",
-  "arguments": {}
-}
-
-// Response
-{
-  "projects": [
+  "data": [
     {
-      "id": "550e8400-e29b-41d4-a716-446655440000",
-      "name": "my-frontend-app",
-      "created_at": "2024-01-15T10:30:00Z",
-      "updated_at": "2024-01-15T14:22:00Z"
-    }
-  ],
-  "count": 1
-}
-```
-
-### MCP Tool: list_tasks
-
-Lists tasks in a project with optional filtering.
-
-```json
-// Request
-{
-  "tool": "list_tasks",
-  "arguments": {
-    "project_id": "550e8400-e29b-41d4-a716-446655440000",
-    "status": "todo",
-    "limit": 10
-  }
-}
-
-// Response
-{
-  "tasks": [
-    {
-      "id": "770e8400-e29b-41d4-a716-446655440000",
-      "title": "Add user authentication",
-      "status": "todo",
-      "has_in_progress_attempt": false,
-      "last_attempt_failed": false
-    }
-  ],
-  "count": 1,
-  "project_id": "550e8400-e29b-41d4-a716-446655440000",
-  "applied_filters": {
-    "status": "todo",
-    "limit": 10
-  }
-}
-```
-
-### MCP Tool: create_task
-
-Creates a new task in a project. Supports @tagname expansion for reusable text snippets.
-
-```json
-// Request
-{
-  "tool": "create_task",
-  "arguments": {
-    "project_id": "550e8400-e29b-41d4-a716-446655440000",
-    "title": "Implement user settings page",
-    "description": "Create a settings page with profile editing @coding-standards"
-  }
-}
-
-// Response
-{
-  "task_id": "880e8400-e29b-41d4-a716-446655440000"
-}
-```
-
-### MCP Tool: start_workspace_session
-
-Starts a coding agent session for a task.
-
-```json
-// Request
-{
-  "tool": "start_workspace_session",
-  "arguments": {
-    "task_id": "770e8400-e29b-41d4-a716-446655440000",
-    "executor": "CLAUDE_CODE",
-    "variant": "DEFAULT",
-    "repos": [
-      {
-        "repo_id": "660e8400-e29b-41d4-a716-446655440000",
-        "base_branch": "main"
-      }
-    ]
-  }
-}
-
-// Response
-{
-  "task_id": "770e8400-e29b-41d4-a716-446655440000",
-  "workspace_id": "aa0e8400-e29b-41d4-a716-446655440000"
-}
-```
-
-### MCP Tool: get_context
-
-Returns workspace context when running inside an active Vibe Kanban session.
-
-```json
-// Request
-{
-  "tool": "get_context",
-  "arguments": {}
-}
-
-// Response
-{
-  "project_id": "550e8400-e29b-41d4-a716-446655440000",
-  "task_id": "770e8400-e29b-41d4-a716-446655440000",
-  "task_title": "Add user authentication",
-  "workspace_id": "aa0e8400-e29b-41d4-a716-446655440000",
-  "workspace_branch": "vk/add-user-authentication-aa0e8400",
-  "workspace_repos": [
-    {
-      "repo_id": "660e8400-e29b-41d4-a716-446655440000",
-      "repo_name": "frontend",
-      "target_branch": "main"
+      "id": "550e8400-...",
+      "branch": "vibe/fix-auth-bug",
+      "name": "Fix authentication bug",
+      "archived": false,
+      "pinned": false,
+      "container_ref": "/home/user/.vibe-kanban/workspaces/550e8400-...",
+      "created_at": "2024-12-01T10:00:00Z",
+      "updated_at": "2024-12-01T10:05:00Z"
     }
   ]
 }
 ```
 
-### MCP Tool: update_task
+---
 
-Updates an existing task's properties.
+### `POST /api/workspaces` — Create a workspace
 
-```json
-// Request
-{
-  "tool": "update_task",
-  "arguments": {
-    "task_id": "770e8400-e29b-41d4-a716-446655440000",
-    "title": "Add user authentication - Phase 1",
-    "status": "inprogress"
-  }
-}
-
-// Response
-{
-  "task": {
-    "id": "770e8400-e29b-41d4-a716-446655440000",
-    "title": "Add user authentication - Phase 1",
-    "status": "inprogress"
-  }
-}
-```
-
-### MCP Tool: list_repos
-
-Lists repositories for a project.
-
-```json
-// Request
-{
-  "tool": "list_repos",
-  "arguments": {
-    "project_id": "550e8400-e29b-41d4-a716-446655440000"
-  }
-}
-
-// Response
-{
-  "repos": [
-    {
-      "id": "660e8400-e29b-41d4-a716-446655440000",
-      "name": "frontend"
+```bash
+curl -X POST http://localhost:3000/api/workspaces \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Implement user dashboard",
+    "repos": [
+      { "repo_id": "repo-uuid-...", "target_branch": "main" }
+    ],
+    "linked_issue": {
+      "remote_project_id": "proj-uuid-...",
+      "issue_id": "issue-uuid-..."
     }
-  ],
-  "count": 1,
-  "project_id": "550e8400-e29b-41d4-a716-446655440000"
-}
+  }'
 ```
 
-### MCP Tool: update_setup_script
+---
 
-Updates a repository's setup script that runs before agent execution.
+### `POST /api/workspaces/start` — Create workspace and start a coding agent
 
-```json
-// Request
-{
-  "tool": "update_setup_script",
-  "arguments": {
-    "repo_id": "660e8400-e29b-41d4-a716-446655440000",
-    "script": "npm install && npm run build"
-  }
-}
+```bash
+curl -X POST http://localhost:3000/api/workspaces/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Fix login bug",
+    "repos": [{ "repo_id": "repo-uuid-...", "target_branch": "main" }],
+    "executor_config": {
+      "executor": "CLAUDE_CODE",
+      "variant": null,
+      "model_id": null,
+      "permission_policy": "auto_edit"
+    },
+    "prompt": "The login button on the homepage is broken. Investigate and fix it.",
+    "attachment_ids": []
+  }'
 
-// Response
+# Response includes workspace and the first execution_process
 {
   "success": true,
-  "repo_id": "660e8400-e29b-41d4-a716-446655440000",
-  "field": "setup_script"
+  "data": {
+    "workspace": { "id": "550e8400-...", "branch": "vibe/fix-login-bug", ... },
+    "session": { "id": "sess-uuid-...", ... },
+    "execution_process": { "id": "exec-uuid-...", "status": "running", ... }
+  }
 }
 ```
 
-## Supported Coding Agents
+---
 
-Vibe Kanban supports the following coding agents (case-insensitive):
+### `GET /api/workspaces/{id}` — Get a workspace
 
+```bash
+curl http://localhost:3000/api/workspaces/550e8400-...
 ```
-CLAUDE_CODE / claude-code    - Anthropic's Claude Code
-AMP / amp                    - Sourcegraph Amp
-GEMINI / gemini              - Google Gemini CLI
-CODEX / codex                - OpenAI Codex
-OPENCODE / opencode          - OpenCode
-CURSOR_AGENT / cursor-agent  - Cursor Agent
-QWEN_CODE / qwen-code        - Qwen Code
-COPILOT / copilot            - GitHub Copilot
-DROID / droid                - Droid
+
+---
+
+### `PUT /api/workspaces/{id}` — Update a workspace
+
+```bash
+curl -X PUT http://localhost:3000/api/workspaces/550e8400-... \
+  -H "Content-Type: application/json" \
+  -d '{ "archived": true, "name": "Archived: old feature" }'
 ```
+
+---
+
+### `DELETE /api/workspaces/{id}?delete_remote=true&delete_branches=false` — Delete a workspace
+
+```bash
+curl -X DELETE "http://localhost:3000/api/workspaces/550e8400-...?delete_remote=true&delete_branches=true"
+# Returns 204 on success
+```
+
+---
+
+### `GET /api/workspaces/{id}/git/status` — Get branch status
+
+Returns commit counts, uncommitted changes, merge status, rebase state, and conflict info.
+
+```bash
+curl http://localhost:3000/api/workspaces/550e8400-.../git/status | jq .
+
+# Response
+{
+  "success": true,
+  "data": [
+    {
+      "repo_id": "repo-uuid-...",
+      "repo_name": "my-app",
+      "commits_ahead": 3,
+      "commits_behind": 0,
+      "has_uncommitted_changes": false,
+      "head_oid": "abc1234...",
+      "target_branch_name": "main",
+      "remote_commits_behind": 0,
+      "is_rebase_in_progress": false,
+      "conflicted_files": [],
+      "merges": []
+    }
+  ]
+}
+```
+
+---
+
+### `POST /api/workspaces/{id}/git/push` — Push workspace branch
+
+```bash
+curl -X POST http://localhost:3000/api/workspaces/550e8400-.../git/push \
+  -H "Content-Type: application/json" \
+  -d '{ "repo_id": "repo-uuid-..." }'
+
+# On conflict:
+{ "success": false, "data": { "type": "force_push_required" } }
+```
+
+---
+
+### `POST /api/workspaces/{id}/git/rebase` — Rebase workspace branch
+
+```bash
+curl -X POST http://localhost:3000/api/workspaces/550e8400-.../git/rebase \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repo_id": "repo-uuid-...",
+    "new_base_branch": "main"
+  }'
+
+# On merge conflicts:
+{
+  "success": false,
+  "data": {
+    "type": "merge_conflicts",
+    "conflicted_files": ["src/auth.ts", "src/routes.ts"],
+    "op": "rebase",
+    "target_branch": "main"
+  }
+}
+```
+
+---
+
+### `POST /api/workspaces/{id}/git/merge` — Merge workspace branch into target
+
+```bash
+curl -X POST http://localhost:3000/api/workspaces/550e8400-.../git/merge \
+  -H "Content-Type: application/json" \
+  -d '{ "repo_id": "repo-uuid-..." }'
+```
+
+---
+
+### `GET /api/workspaces/{id}/git/diff/ws` — Stream diff over WebSocket
+
+```javascript
+const ws = new WebSocket('ws://localhost:3000/api/workspaces/550e8400-.../git/diff/ws');
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  if (msg.type === 'json_patch') {
+    // Apply JSON Patch to diff state
+    applyPatch(diffState, msg.patch);
+  } else if (msg.type === 'ready') {
+    console.log('Initial diff loaded');
+  }
+};
+```
+
+---
+
+### `GET /api/sessions?workspace_id={id}` — List sessions
+
+```bash
+curl "http://localhost:3000/api/sessions?workspace_id=550e8400-..."
+
+# Response
+{
+  "success": true,
+  "data": [
+    {
+      "id": "sess-uuid-...",
+      "workspace_id": "550e8400-...",
+      "name": "Initial implementation",
+      "executor": "CLAUDE_CODE",
+      "created_at": "2024-12-01T10:00:00Z"
+    }
+  ]
+}
+```
+
+---
+
+### `POST /api/sessions` — Create a session
+
+```bash
+curl -X POST http://localhost:3000/api/sessions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "workspace_id": "550e8400-...",
+    "executor": "CLAUDE_CODE",
+    "name": "Attempt 2"
+  }'
+```
+
+---
+
+### `POST /api/sessions/{id}/follow-up` — Run a coding agent turn in a session
+
+This is the primary way to send a prompt to an AI coding agent. It creates and starts an `ExecutionProcess`.
+
+```bash
+curl -X POST http://localhost:3000/api/sessions/sess-uuid-.../follow-up \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Now add unit tests for the authentication module.",
+    "executor_config": {
+      "executor": "CLAUDE_CODE",
+      "variant": null,
+      "model_id": null,
+      "permission_policy": "auto_edit"
+    },
+    "retry_process_id": null,
+    "force_when_dirty": false,
+    "perform_git_reset": false
+  }'
+
+# Response
+{
+  "success": true,
+  "data": {
+    "id": "exec-uuid-...",
+    "session_id": "sess-uuid-...",
+    "status": "running",
+    "run_reason": "coding_agent",
+    "created_at": "2024-12-01T10:10:00Z"
+  }
+}
+```
+
+---
+
+### `POST /api/sessions/{id}/reset` — Reset session to a prior process state
+
+```bash
+curl -X POST http://localhost:3000/api/sessions/sess-uuid-.../reset \
+  -H "Content-Type: application/json" \
+  -d '{
+    "process_id": "exec-uuid-...",
+    "force_when_dirty": false,
+    "perform_git_reset": true
+  }'
+```
+
+---
+
+### `POST /api/sessions/{id}/setup` — Run the workspace setup script
+
+```bash
+curl -X POST http://localhost:3000/api/sessions/sess-uuid-.../setup
+
+# Returns an ExecutionProcess for the setup script run
+```
+
+---
+
+### `GET /api/execution-processes/{id}` — Get execution process status
+
+```bash
+curl http://localhost:3000/api/execution-processes/exec-uuid-...
+
+{
+  "success": true,
+  "data": {
+    "id": "exec-uuid-...",
+    "session_id": "sess-uuid-...",
+    "status": "completed",   // "running" | "completed" | "failed" | "killed"
+    "run_reason": "coding_agent",
+    "executor_profile": { "executor": "CLAUDE_CODE" },
+    "created_at": "...",
+    "updated_at": "..."
+  }
+}
+```
+
+---
+
+### `GET /api/events` — Server-Sent Events stream
+
+Stream all live workspace, session, and execution-process events.
+
+```javascript
+const es = new EventSource('http://localhost:3000/api/events');
+es.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log(data); // { type: "workspace_updated", payload: {...} }
+};
+```
+
+---
+
+### `GET /api/terminal/ws?workspace_id={id}&cols=220&rows=50` — Interactive terminal (WebSocket)
+
+Binary-safe PTY session multiplexed as base64-encoded JSON messages.
+
+```javascript
+const ws = new WebSocket(
+  'ws://localhost:3000/api/terminal/ws?workspace_id=550e8400-...&cols=220&rows=50'
+);
+
+// Send input
+ws.send(JSON.stringify({ type: 'input', data: btoa('ls -la\n') }));
+
+// Resize
+ws.send(JSON.stringify({ type: 'resize', cols: 250, rows: 60 }));
+
+// Receive output
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  if (msg.type === 'output') {
+    process.stdout.write(atob(msg.data));
+  } else if (msg.type === 'error') {
+    console.error(msg.message);
+  }
+};
+```
+
+---
+
+### `GET /api/remote/issues?project_id={id}` — List remote issues
+
+```bash
+curl "http://localhost:3000/api/remote/issues?project_id=proj-uuid-..."
+
+{
+  "success": true,
+  "data": {
+    "issues": [
+      {
+        "id": "issue-uuid-...",
+        "title": "Fix authentication bug",
+        "simple_id": "PROJ-42",
+        "status_id": "status-uuid-...",
+        "priority": 2,
+        "project_id": "proj-uuid-...",
+        "created_at": "2024-12-01T09:00:00Z"
+      }
+    ],
+    "total_count": 1,
+    "limit": 50,
+    "offset": 0
+  }
+}
+```
+
+---
+
+### `POST /api/remote/issues` — Create a remote issue
+
+```bash
+curl -X POST http://localhost:3000/api/remote/issues \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "proj-uuid-...",
+    "status_id": "status-uuid-...",
+    "title": "Add dark mode support",
+    "description": "Users have requested a dark mode option.",
+    "priority": 2,
+    "sort_order": 0.0,
+    "extension_metadata": {}
+  }'
+```
+
+---
+
+### `PATCH /api/remote/issues/{id}` — Update a remote issue
+
+```bash
+curl -X PATCH http://localhost:3000/api/remote/issues/issue-uuid-... \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Add dark mode support (v2)",
+    "status_id": "done-status-uuid-..."
+  }'
+```
+
+---
+
+### `POST /api/remote/issues/search` — Search issues
+
+```bash
+curl -X POST http://localhost:3000/api/remote/issues/search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "proj-uuid-...",
+    "search": "auth",
+    "priority": 1,
+    "limit": 20,
+    "offset": 0,
+    "sort_field": "updated_at",
+    "sort_direction": "desc"
+  }'
+```
+
+---
+
+## MCP Server
+
+Vibe Kanban ships a Model Context Protocol (MCP) server (`vibe-kanban-mcp`) that exposes tools to AI coding agents, enabling fully automated or orchestrated workflows.
+
+### Launch modes
+
+| Mode | Command | Tools available |
+|---|---|---|
+| `global` | `npx vibe-kanban mcp --mode global` | All tools: workspaces, sessions, issues, repos, organizations, tags, relationships |
+| `orchestrator` | `npx vibe-kanban mcp --mode orchestrator` | Scoped subset: `get_context`, `create_session`, `list_sessions`, `update_session`, `run_session_prompt`, `get_execution`, `update_workspace` |
+
+### Claude Desktop integration
+
+Add to `~/.claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "vibe-kanban": {
+      "command": "npx",
+      "args": ["-y", "vibe-kanban@latest", "mcp", "--mode", "global"]
+    }
+  }
+}
+```
+
+### MCP Tool: `start_workspace`
+
+Create a new workspace and immediately start a coding agent session.
+
+```json
+{
+  "tool": "start_workspace",
+  "arguments": {
+    "name": "Fix login button",
+    "prompt": "The login button on /dashboard is broken. Investigate and fix it.",
+    "executor": "CLAUDE_CODE",
+    "repositories": [
+      { "repo_id": "repo-uuid-...", "branch": "main" }
+    ],
+    "issue_id": "issue-uuid-..."
+  }
+}
+
+// Response
+{ "workspace_id": "550e8400-..." }
+```
+
+### MCP Tool: `run_session_prompt`
+
+Send a prompt to an existing session's coding agent and return the execution process immediately (non-blocking).
+
+```json
+{
+  "tool": "run_session_prompt",
+  "arguments": {
+    "session_id": "sess-uuid-...",
+    "prompt": "Add unit tests for the auth module."
+  }
+}
+
+// Response
+{
+  "session_id": "sess-uuid-...",
+  "execution_id": "exec-uuid-...",
+  "execution": { "id": "exec-uuid-...", "status": "running", ... }
+}
+```
+
+### MCP Tool: `get_execution`
+
+Poll execution status to know when the agent has finished.
+
+```json
+{
+  "tool": "get_execution",
+  "arguments": {
+    "execution_id": "exec-uuid-..."
+  }
+}
+
+// Response
+{
+  "execution_id": "exec-uuid-...",
+  "session_id": "sess-uuid-...",
+  "status": "completed",
+  "is_finished": true,
+  "execution": { ... }
+}
+```
+
+### MCP Tool: `list_workspaces`
+
+```json
+{
+  "tool": "list_workspaces",
+  "arguments": {
+    "archived": false,
+    "pinned": false,
+    "name_search": "auth",
+    "limit": 10,
+    "offset": 0
+  }
+}
+
+// Response
+{
+  "workspaces": [
+    {
+      "id": "550e8400-...",
+      "branch": "vibe/fix-auth",
+      "name": "Fix auth bug",
+      "archived": false,
+      "pinned": false,
+      "created_at": "2024-12-01T10:00:00Z",
+      "updated_at": "2024-12-01T10:05:00Z"
+    }
+  ],
+  "total_count": 1,
+  "returned_count": 1,
+  "limit": 10,
+  "offset": 0
+}
+```
+
+### MCP Tool: `create_issue` / `list_issues` / `update_issue` / `delete_issue`
+
+Issue management tools for the connected remote project tracker.
+
+```json
+// Create
+{
+  "tool": "create_issue",
+  "arguments": {
+    "title": "Implement dark mode",
+    "description": "Add a dark mode toggle to the settings page. See @design-guidelines for specs.",
+    "priority": "high"
+  }
+}
+
+// List with filters
+{
+  "tool": "list_issues",
+  "arguments": {
+    "status": "In Progress",
+    "priority": "urgent",
+    "sort_field": "updated_at",
+    "sort_direction": "desc",
+    "limit": 25
+  }
+}
+
+// Update
+{
+  "tool": "update_issue",
+  "arguments": {
+    "issue_id": "issue-uuid-...",
+    "status": "Done",
+    "title": "Implement dark mode (complete)"
+  }
+}
+```
+
+### MCP Tool: `get_context`
+
+Retrieve the current workspace context (available only when the MCP server is running inside a workspace directory).
+
+```json
+{ "tool": "get_context", "arguments": {} }
+
+// Response
+{
+  "workspace_id": "550e8400-...",
+  "workspace_branch": "vibe/fix-auth",
+  "workspace_repos": [
+    { "repo_id": "repo-uuid-...", "repo_name": "my-app", "target_branch": "main" }
+  ],
+  "project_id": "proj-uuid-...",
+  "organization_id": "org-uuid-...",
+  "issue_id": "issue-uuid-..."
+}
+```
+
+---
+
+## Configuration Reference
+
+The application configuration is stored in `~/.vibe-kanban/config.json`. Key fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `git_branch_prefix` | `string` | Prefix for all workspace branches (e.g. `"vibe/"`) |
+| `relay_enabled` | `bool` | Enable the remote relay for cross-machine access |
+| `host_nickname` | `string?` | Friendly name for this host shown in the relay |
+| `editor` | `string` | Preferred editor: `"CURSOR"`, `"VSCODE"`, `"WINDSURF"`, etc. |
+| `executor_profile` | `string` | Default AI agent: `"CLAUDE_CODE"`, `"CODEX"`, `"GEMINI"`, `"AMP"`, etc. |
+| `analytics_enabled` | `bool` | Opt-in usage analytics |
+| `disclaimer_acknowledged` | `bool` | Onboarding disclaimer acceptance |
+| `onboarding_acknowledged` | `bool` | Onboarding completion flag |
+
+---
 
 ## Summary
 
-Vibe Kanban serves as a central orchestration layer for AI-assisted software development, enabling teams to manage multiple coding tasks simultaneously with proper isolation and version control. The primary use cases include: (1) orchestrating multiple AI coding agents in parallel across different tasks, (2) managing code review workflows with automatic git worktree isolation, (3) integrating AI assistants into existing development workflows via the MCP protocol, and (4) providing a unified interface for monitoring and controlling agent execution across projects.
+Vibe Kanban's primary use case is parallel AI-agent task management: a developer breaks down a feature or bug fix into issues, creates one workspace per issue (each on its own git branch), and fires off an initial prompt to a coding agent. The system tracks agent progress in real time through the SSE `/api/events` stream, surfaces git diff output over WebSocket, and allows follow-up prompts or retries within the same session. When the agent finishes, the developer can review the diff, push the branch, and open or merge a pull request — all from within the UI.
 
-Integration patterns typically involve running Vibe Kanban as a local service via `npx vibe-kanban`, connecting coding agents through the MCP server configuration, and using the REST API or WebSocket streams for automation and monitoring. The application supports both interactive use through the web UI and programmatic access for CI/CD integration, automated task creation from project management tools, or building custom workflows around AI-assisted development. For multi-repository projects, Vibe Kanban handles workspace creation across all repos with coordinated branching and merge operations.
+The MCP server unlocks a second integration pattern: using Vibe Kanban as an orchestration layer for meta-agents. An outer AI (e.g., Claude in orchestrator mode) connects via MCP, reads project context with `get_context`, creates child sessions with `create_session`, delegates coding tasks with `run_session_prompt`, polls completion with `get_execution`, and updates remote issues with `update_issue`. This creates fully autonomous pipelines where a planning agent dispatches multiple coding agents in parallel and assembles results without human intervention. The separation of `global` and `orchestrator` MCP modes ensures that workspace-scoped agents cannot accidentally modify unrelated workspaces or administrative settings.
