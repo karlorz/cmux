@@ -81,10 +81,12 @@ function codexWithEfforts(
 
 // Spec array preserves exact ordering of the original CODEX_AGENT_CONFIGS export
 const CODEX_MODEL_SPECS: CodexModelSpec[] = [
+  // gpt-5.5 family (xhigh, high, medium, low, base) - frontier model
+  ...codexWithEfforts("gpt-5.5"),
   // gpt-5.4 family (xhigh, high, medium, low, base) - flagship frontier model
   ...codexWithEfforts("gpt-5.4"),
-  // gpt-5.4-mini - low-cost fast model
-  { model: "gpt-5.4-mini" },
+  // gpt-5.4-mini family (xhigh, high, medium, low, base) - low-cost fast model
+  ...codexWithEfforts("gpt-5.4-mini"),
   // gpt-5.3-codex family (xhigh, high, medium, low, base)
   ...codexWithEfforts("gpt-5.3-codex"),
   // gpt-5.2-codex family (xhigh, high, medium, low, base)

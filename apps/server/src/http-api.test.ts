@@ -395,7 +395,7 @@ describe("HTTP API - apps/server", () => {
           (model: { name: string }) => model.name === "codex/gpt-5.4",
         );
         expect(gpt54).toBeDefined();
-        expect(gpt54.defaultVariant).toBe("medium");
+        expect(gpt54.defaultVariant).toBe("xhigh");
         expect(
           gpt54.variants.some(
             (variant: { id: string }) => variant.id === "xhigh",
