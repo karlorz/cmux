@@ -7,6 +7,7 @@ import {
 } from "@cmux/shared/agentConfig";
 import { resolveAgentSelection } from "@cmux/shared/agent-selection";
 import { createOpencodeFreeDynamicConfig } from "@cmux/shared/providers/opencode/configs";
+import { createDynamicClaudeConfig } from "@cmux/shared/providers/anthropic/configs";
 import type { McpServerConfig, RunControlSummary } from "@cmux/shared";
 import type { PolicyRuleForInstructions, OrchestrationRuleForInstructions } from "@cmux/shared/agent-memory-protocol";
 import {
@@ -2613,7 +2614,7 @@ export async function spawnAllAgents(
               ];
             }
 
-            const dynamicConfig = createOpencodeFreeDynamicConfig(name);
+            const dynamicConfig = createOpencodeFreeDynamicConfig(name) ?? createDynamicClaudeConfig(name);
             if (dynamicConfig) {
               serverLogger.info(
                 `[AgentSpawner] Using dynamic config for discovered model: ${name}`,
