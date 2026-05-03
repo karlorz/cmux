@@ -20,6 +20,7 @@ import {
 } from "@cmux/shared";
 import WebSocket from "ws";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
+import { createDynamicClaudeConfig } from "@cmux/shared/providers/anthropic/configs";
 import type { Id } from "@cmux/convex/dataModel";
 
 import { getWorkerServerSocketOptions } from "@cmux/shared/node/socket";
@@ -293,6 +294,18 @@ async function runPreviewJobScreenshots({
 const Terminal = xtermHeadless.Terminal;
 
 // Configuration
+/**
+ * Resolve an agent config by name, falling back to dynamic Claude config
+ * for custom/unlisted models with the "claude/" prefix.
+ */
+function resolveAgentConfig(agentModel?: string) {
+  if (!agentModel) return undefined;
+  const staticConfig = AGENT_CONFIGS.find((c) => c.name === agentModel);
+  if (staticConfig) return staticConfig;
+  // Dynamic fallback for unlisted Claude models (e.g., claude/glm-5.1)
+  return createDynamicClaudeConfig(agentModel);
+}
+
 const WORKER_ID = process.env.WORKER_ID || `worker-${Date.now()}`;
 const WORKER_PORT = parseInt(process.env.WORKER_PORT || "39377", 10);
 const CONTAINER_IMAGE = process.env.CONTAINER_IMAGE || "cmux-worker";
@@ -1742,9 +1755,7 @@ async function createTerminal(
 
         // 7. Set up completion detection (same as tmux backend)
         const processStartTime = Date.now();
-        const agentConfig = options.agentModel
-          ? AGENT_CONFIGS.find((c) => c.name === options.agentModel)
-          : undefined;
+        const agentConfig = resolveAgentConfig(options.agentModel);
 
         if (!agentConfig && options.agentModel) {
           log("WARN", `[cmux-pty] Agent config not found for ${options.agentModel}`, {
@@ -2155,9 +2166,7 @@ async function createTerminal(
   const stopErrorCaptureAt = Date.now() + INITIAL_ERROR_CAPTURE_WINDOW_MS;
 
   // Config-driven completion detector
-  const agentConfig = options.agentModel
-    ? AGENT_CONFIGS.find((c) => c.name === options.agentModel)
-    : undefined;
+  const agentConfig = resolveAgentConfig(options.agentModel);
 
   if (!agentConfig && options.agentModel) {
     log("WARN", `Agent config not found for ${options.agentModel}`, {
