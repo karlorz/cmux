@@ -25,34 +25,6 @@ import type { CodexModelEntry } from "./catalog.generated";
  * The CLI accepts them and routes to the configured provider.
  */
 export const CODEX_CUSTOM_MODELS: CodexModelEntry[] = [
-  // GPT-5.4 Mini - Fast & low-cost option
-  // Available via OpenAI API, not in Codex app-server model/list
-  // Tested working with Codex CLI v0.116+ via cmux-proxy
-  {
-    name: "codex/gpt-5.4-mini",
-    displayName: "GPT-5.4 Mini",
-    description: "Fast & low-cost GPT-5.4 variant. Not in Codex picker but works via API.",
-    vendor: "openai",
-    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
-    tier: "paid",
-    tags: ["fast", "low-cost", "custom"],
-    hidden: false,
-    isDefault: false,
-    defaultVariant: "medium",
-    variants: [
-      {
-        id: "medium",
-        displayName: "Medium",
-        description: "Balanced reasoning for everyday tasks",
-      },
-      {
-        id: "high",
-        displayName: "High",
-        description: "Greater reasoning depth",
-      },
-    ],
-    inputModalities: ["text", "image"],
-  },
   // GPT-5 Nano - Ultra-fast, lowest cost
   // May be available via some providers
   {

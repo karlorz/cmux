@@ -44,11 +44,10 @@ describe("CODEX_CATALOG", () => {
     expect(gpt54?.variants?.some((v) => v.id === "xhigh")).toBe(true);
   });
 
-  it("includes GPT-5.1 codex mini", () => {
-    const mini = CODEX_CATALOG.find((e) => e.name === "codex/gpt-5.1-codex-mini");
-    expect(mini).toBeDefined();
-    // Generated catalog uses lowercase displayName from app-server
-    expect(mini?.displayName).toBe("gpt-5.1-codex-mini");
+  it("includes GPT-5.5 as the default model", () => {
+    const gpt55 = CODEX_CATALOG.find((e) => e.name === "codex/gpt-5.5");
+    expect(gpt55).toBeDefined();
+    expect(gpt55?.displayName).toBe("GPT-5.5");
   });
 
   it("all tiers are paid", () => {

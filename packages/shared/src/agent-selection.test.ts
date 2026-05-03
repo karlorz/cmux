@@ -8,12 +8,12 @@ describe("resolveAgentSelection", () => {
     });
 
     expect(resolved.assignedAgentName).toBe("codex/gpt-5.4");
-    expect(resolved.selectedVariant).toBe("medium");
+    expect(resolved.selectedVariant).toBe("xhigh");
     expect(resolved.agentConfig.name).toBe("codex/gpt-5.4");
     expect(resolved.agentConfig.args).toContain("--model");
     expect(resolved.agentConfig.args).toContain("gpt-5.4");
     expect(resolved.agentConfig.args).toContain(
-      'model_reasoning_effort="medium"',
+      'model_reasoning_effort="xhigh"',
     );
   });
 

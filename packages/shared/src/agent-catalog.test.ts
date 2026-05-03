@@ -19,19 +19,17 @@ import { AGENT_CONFIGS, type AgentConfig } from "./agentConfig";
 // Codex base models in the static catalog (from app-server)
 // Note: These use variants internally (xhigh/high/medium/low), not suffixes
 const CODEX_CATALOG_BASE_MODELS = new Set([
+  "codex/gpt-5.5",
   "codex/gpt-5.4",
+  "codex/gpt-5.4-mini",
   "codex/gpt-5.3-codex",
-  "codex/gpt-5.2-codex",
   "codex/gpt-5.2",
-  "codex/gpt-5.1-codex-max",
-  "codex/gpt-5.1-codex-mini",
 ]);
 
 // Custom API-only Codex models (in catalog.custom.ts, not in app-server)
 // These work via OpenAI API but don't have dedicated AGENT_CONFIGS entries
 // because they route through the generic Codex CLI infra
 const CODEX_CUSTOM_API_ONLY = new Set([
-  "codex/gpt-5.4-mini", // Custom fast model
   "codex/gpt-5-nano", // Custom ultra-fast model
 ]);
 
