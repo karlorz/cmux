@@ -135,22 +135,49 @@ parse_remote_target() {
     fi
 }
 
+# Install sshpass if needed and password is provided
+ensure_sshpass() {
+    if [[ -z "${SSH_PASSWORD:-}" ]]; then
+        return 0
+    fi
+
+    if command -v sshpass &>/dev/null; then
+        return 0
+    fi
+
+    log_info "Installing sshpass for password-based automation..."
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        if command -v brew &>/dev/null; then
+            brew install sshpass 2>/dev/null || true
+        fi
+    elif command -v apt-get &>/dev/null; then
+        apt-get update -qq >/dev/null 2>&1
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sshpass 2>/dev/null || true
+    elif command -v yum &>/dev/null; then
+        yum install -y sshpass 2>/dev/null || true
+    elif command -v dnf &>/dev/null; then
+        dnf install -y sshpass 2>/dev/null || true
+    fi
+
+    if ! command -v sshpass &>/dev/null; then
+        log_warn "Could not install sshpass - will fall back to interactive prompts"
+    fi
+}
+
 # Detect remote OS type via SSH
 detect_remote_os() {
     local ssh_opts="$1"
     local os_type="linux"
 
-    # Try to detect Windows
-    if [[ -n "${SSH_PASSWORD:-}" ]]; then
-        if sshpass -p "$SSH_PASSWORD" ssh $ssh_opts -o PasswordAuthentication=yes -o PreferredAuthentications=password \
-            "${REMOTE_USER}@${REMOTE_HOST}" "echo %OS%" 2>/dev/null | grep -q "Windows_NT"; then
+    if [[ -n "${SSH_PASSWORD:-}" ]] && command -v sshpass &>/dev/null; then
+        local os_output
+        os_output=$(sshpass -p "$SSH_PASSWORD" ssh $ssh_opts -o PasswordAuthentication=yes -o PreferredAuthentications=password \
+            "${REMOTE_USER}@${REMOTE_HOST}" "echo %OS%" 2>/dev/null || true)
+        if echo "$os_output" | grep -q "Windows_NT"; then
             os_type="windows"
         fi
-    else
-        # Try without password first (if key already exists)
-        if ssh $ssh_opts -o BatchMode=yes "${REMOTE_USER}@${REMOTE_HOST}" "echo %OS%" 2>/dev/null | grep -q "Windows_NT"; then
-            os_type="windows"
-        fi
+    elif ssh $ssh_opts -o BatchMode=yes "${REMOTE_USER}@${REMOTE_HOST}" "echo %OS%" 2>/dev/null | grep -q "Windows_NT"; then
+        os_type="windows"
     fi
 
     echo "$os_type"
@@ -261,29 +288,8 @@ copy_key_linux() {
     local ssh_opts="$1"
     log_info "Detected Linux/macOS remote host"
 
-    if [[ -n "${SSH_PASSWORD:-}" ]]; then
+    if [[ -n "${SSH_PASSWORD:-}" ]] && command -v sshpass &>/dev/null; then
         log_info "Using sshpass for automated key copy..."
-
-        if ! command -v sshpass &>/dev/null; then
-            log_warn "sshpass not installed. Installing..."
-            if [[ "$OSTYPE" == "darwin"* ]]; then
-                if command -v brew &>/dev/null; then
-                    brew install sshpass
-                else
-                    log_error "Please install sshpass manually: brew install sshpass"
-                    return 1
-                fi
-            elif command -v apt-get &>/dev/null; then
-                sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
-            elif command -v yum &>/dev/null; then
-                sudo yum install -y sshpass
-            elif command -v dnf &>/dev/null; then
-                sudo dnf install -y sshpass
-            else
-                log_error "Could not install sshpass. Please install manually."
-                return 1
-            fi
-        fi
 
         # Create .ssh directory and copy key using sshpass
         if sshpass -p "$SSH_PASSWORD" ssh $ssh_opts -o PasswordAuthentication=yes \
@@ -325,22 +331,40 @@ copy_key_windows() {
     local ssh_opts="$1"
     log_info "Detected Windows remote host"
 
-    if [[ -n "${SSH_PASSWORD:-}" ]]; then
+    if [[ -n "${SSH_PASSWORD:-}" ]] && command -v sshpass &>/dev/null; then
         log_info "Using sshpass for automated key copy to Windows..."
 
-        if ! command -v sshpass &>/dev/null; then
-            log_warn "sshpass not installed. Cannot automate Windows setup."
-            return 1
-        fi
-
-        # Windows OpenSSH stores keys in different location
-        # Try to create .ssh directory and append key
         local win_user="$REMOTE_USER"
 
-        # Attempt to create directory and copy key via SSH
+        # Detect if user is admin and determine auth file location
+        local pub_key
+        pub_key=$(cat "$PUB_KEY_PATH")
+        local is_admin
+        is_admin=$(sshpass -p "$SSH_PASSWORD" ssh $ssh_opts -o PasswordAuthentication=yes \
+            "${REMOTE_USER}@${REMOTE_HOST}" "powershell -Command \"(New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)\"" 2>/dev/null | tr -d '\r')
+
+        local auth_file
+        if [[ "$is_admin" == "True" ]]; then
+            auth_file='C:\ProgramData\ssh\administrators_authorized_keys'
+            log_info "User is Windows Administrator, using $auth_file"
+        else
+            auth_file="C:\\Users\\${win_user}\\.ssh\\authorized_keys"
+            sshpass -p "$SSH_PASSWORD" ssh $ssh_opts -o PasswordAuthentication=yes \
+                "${REMOTE_USER}@${REMOTE_HOST}" "cmd /c mkdir C:\\Users\\${win_user}\\.ssh 2>nul" 2>/dev/null
+        fi
+
+        # Grant write access BEFORE appending, then set final restrictive permissions after.
+        # This handles the case where the file already exists with read-only permissions.
+        local write_cmd
+        if [[ "$is_admin" == "True" ]]; then
+            write_cmd="icacls ${auth_file} /grant:r ${win_user}:F >nul 2>&1 && cmd /c echo ${pub_key} >> ${auth_file} && icacls ${auth_file} /inheritance:r /grant:r SYSTEM:F /grant:r ${win_user}:R >nul 2>&1"
+        else
+            write_cmd="icacls C:\\Users\\${win_user}\\.ssh /grant:r ${win_user}:(OI)(CI)F >nul 2>&1 && icacls ${auth_file} /grant:r ${win_user}:F >nul 2>&1 && cmd /c echo ${pub_key} >> ${auth_file} && icacls C:\\Users\\${win_user}\\.ssh /inheritance:r /grant:r ${win_user}:(OI)(CI)RX >nul 2>&1 && icacls ${auth_file} /inheritance:r /grant:r ${win_user}:R >nul 2>&1"
+        fi
+
         if sshpass -p "$SSH_PASSWORD" ssh $ssh_opts -o PasswordAuthentication=yes \
-            "${REMOTE_USER}@${REMOTE_HOST}" "powershell -Command \"New-Item -ItemType Directory -Force -Path \\\"C:\\\\Users\\\\$win_user\\\\.ssh\\\"; \$content = Get-Content -Raw -Path \\\"C:\\\\Users\\\\$win_user\\\\.ssh\\\\authorized_keys\\\" -ErrorAction SilentlyContinue; if (\$content -notcontains '$(cat "$PUB_KEY_PATH")') { Add-Content -Path \\\"C:\\\\Users\\\\$win_user\\\\.ssh\\\\authorized_keys\\\" -Value '$(cat "$PUB_KEY_PATH")' }\"" 2>/dev/null; then
-            log_success "Public key copied to Windows host"
+            "${REMOTE_USER}@${REMOTE_HOST}" "$write_cmd" 2>/dev/null; then
+            log_success "Public key copied to Windows host (with permissions fixed)"
             return 0
         fi
 
@@ -358,21 +382,10 @@ copy_key_windows() {
     cat "$PUB_KEY_PATH"
     echo ""
     echo "2. On Windows (PowerShell as Administrator):"
-    echo "   # Create .ssh directory"
-    echo "   New-Item -ItemType Directory -Force -Path \"C:\\Users\\$REMOTE_USER\\.ssh\""
-    echo ""
-    echo "   # Add key to authorized_keys"
-    echo "   Add-Content -Path \"C:\\Users\\$REMOTE_USER\\.ssh\\authorized_keys\" -Value '$(cat "$PUB_KEY_PATH")'"
-    echo ""
-    echo "   # Set permissions (critical!)"
-    echo '   icacls "C:\Users\'$REMOTE_USER'\.ssh\authorized_keys" /inheritance:r /grant:r "$($env:USERNAME):(RX)"'
-    echo '   icacls "C:\Users\'$REMOTE_USER'\.ssh" /inheritance:r /grant:r "$($env:USERNAME):(RX)"'
-    echo ""
-    echo "3. Ensure Windows OpenSSH Server is installed and running:"
-    echo "   Get-WindowsCapability -Online | Where-Object Name -like 'OpenSSH*'"
-    echo "   Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0"
-    echo "   Start-Service sshd"
-    echo "   Set-Service -Name sshd -StartupType 'Automatic'"
+    echo "   New-Item -ItemType Directory -Force -Path C:\Users\$REMOTE_USER\.ssh"
+    echo "   Add-Content C:\Users\$REMOTE_USER\.ssh\authorized_keys '$(cat "$PUB_KEY_PATH")'"
+    echo "   icacls C:\Users\$REMOTE_USER\.ssh /inheritance:r /grant:r \"${REMOTE_USER}:(OI)(CI)RX\""
+    echo "   icacls C:\Users\$REMOTE_USER\.ssh\authorized_keys /inheritance:r /grant:r \"${REMOTE_USER}:R\""
     echo ""
     echo "After completing Windows setup, run: ssh $HOST_ALIAS"
     echo ""
@@ -535,6 +548,7 @@ main() {
     echo ""
 
     check_prerequisites
+    ensure_sshpass
     setup_ssh_directory
     setup_ssh_key
     copy_public_key
