@@ -1,707 +1,692 @@
 # shadcn/ui
 
-shadcn/ui is a collection of beautifully designed, accessible, and customizable React components built on top of Radix UI primitives and styled with Tailwind CSS. Unlike traditional component libraries, shadcn/ui takes a unique approach: components are added directly to your project as source code via the CLI, giving you full ownership and the ability to customize every aspect. The library supports React 19 with Tailwind CSS v4 and provides a rich ecosystem of UI components, blocks, and theming options.
+shadcn/ui is an open-source, open-code component distribution platform for building custom React component libraries. Rather than providing a traditional installable package that you import from npm, shadcn/ui copies the actual component source code directly into your project, giving you full ownership and the freedom to read, modify, and extend every component. Built on Tailwind CSS v4 and React 19, it supports a composable, accessible component architecture backed by Radix UI or the Base UI primitives, with beautifully designed defaults using OKLCH color tokens and a semantic CSS variable theming system.
 
-The project consists of the `shadcn` CLI package (version 4.1.2) for managing components, a comprehensive component registry with multiple visual styles (nova, vega, luma, etc.), and templates for popular frameworks including Next.js, Vite, React Router, TanStack Start, and Astro. Components follow consistent patterns using CSS variables for theming, making it easy to customize colors, typography, and spacing across your entire application while maintaining accessibility standards through proper ARIA attributes and keyboard navigation.
+The core of shadcn/ui is the `shadcn` CLI (package `shadcn`, current version 4.6.0), which automates project initialization, component installation, theming, registry publishing, migrations, and MCP server integration. The project also ships a flat-file registry schema (`registry.json` / `registry-item.json`) that lets any developer author, host, and distribute their own component registries — which the CLI can consume at install time, enabling an ecosystem of public and private component libraries. Integration spans Next.js, Vite, React Router, TanStack Start, Astro, Laravel, Gatsby, and plain React projects, with full monorepo support via Turborepo.
 
-## CLI Commands
+---
 
-### Initialize a New Project
+## CLI: `shadcn init` — Initialize a project
 
-The `init` command creates a new shadcn/ui project or initializes an existing project with the component system. It supports presets for quick configuration and templates for different frameworks.
+The `init` command bootstraps a new or existing project with Tailwind CSS configuration, the `cn` utility, CSS variables, and optionally scaffolds a full monorepo structure. Accepts a template flag (`next`, `vite`, `start`, `react-router`, `laravel`, `astro`) and a preset code to apply a pre-configured design system.
 
 ```bash
-# Create a new Next.js project with default preset
-npx shadcn@latest init --name my-app --preset base-nova
+# Scaffold a brand-new Next.js project with default settings
+npx shadcn@latest init -t next
 
-# Create with specific template and preset code
-npx shadcn@latest init --name my-app --preset a2r6bw --template vite
+# Scaffold a Next.js monorepo (creates apps/web + packages/ui with Turborepo)
+npx shadcn@latest init -t next --monorepo
 
-# Create a monorepo project
-npx shadcn@latest init --name my-app --preset base-nova --monorepo
+# Initialize an existing project interactively
+npx shadcn@latest init
 
-# Initialize existing project with defaults
-npx shadcn@latest init --defaults
+# Initialize with a preset code (design system preset from ui.shadcn.com/create)
+npx shadcn@latest init --preset a2r6bw --template next
 
-# Initialize with force overwrite and component reinstall
-npx shadcn@latest init --preset radix-nova --force --reinstall
+# Initialize with no CSS variables (uses inline Tailwind utility classes instead)
+npx shadcn@latest init --no-css-variables
+
+# Initialize with RTL support enabled
+npx shadcn@latest init --rtl
+
+# Scaffold into a named subdirectory
+npx shadcn@latest init --name my-app
+
+# Output (example):
+# ✔ Preflight checks.
+# ✔ Verifying framework. Found Next.js.
+# ✔ Validating Tailwind CSS.
+# ✔ Writing components.json.
+# ✔ Checking registry.
+# ✔ Installing dependencies.
+# ✔ Writing cn util.
+# ✔ Writing CSS variables.
+# ✔ Writing index.css.
+# Success! Project initialization complete.
 ```
 
-### Add Components
+---
 
-The `add` command installs components from the registry into your project. Components are copied as source files, allowing full customization.
+## CLI: `shadcn add` — Add components to a project
+
+The `add` command fetches one or more components (or blocks) from the shadcn registry or any configured namespaced registry and writes the source files into your project under the paths defined in `components.json`. It handles all npm dependencies, registry dependencies, and import rewrites automatically.
 
 ```bash
-# Add single component
+# Add a single component
 npx shadcn@latest add button
 
-# Add multiple components
-npx shadcn@latest add button card dialog form
-
-# Add from community registry
-npx shadcn@latest add @magicui/shimmer-button
+# Add multiple components at once
+npx shadcn@latest add button card dialog input label
 
 # Add all available components
 npx shadcn@latest add --all
 
-# Preview changes without writing files (dry-run)
+# Add a pre-built block (multi-file UI block)
+npx shadcn@latest add login-03
+
+# Add from a namespaced registry configured in components.json
+npx shadcn@latest add @v0/dashboard
+npx shadcn@latest add @acme/header @internal/auth-utils
+
+# Add directly by URL
+npx shadcn@latest add https://registry.acme.com/components/hero.json
+
+# Dry-run: preview what would be written without making changes
 npx shadcn@latest add button --dry-run
 
-# Show diff for a specific file
-npx shadcn@latest add button --diff button.tsx
+# Overwrite existing files
+npx shadcn@latest add button --overwrite
 
-# View file contents before installing
-npx shadcn@latest add button --view button.tsx
+# Specify a working directory (useful in monorepos)
+npx shadcn@latest add card -c apps/web
+
+# After adding button, use it in your app:
+# app/page.tsx
+import { Button } from "@/components/ui/button"
+
+export default function Home() {
+  return (
+    <div className="flex min-h-svh items-center justify-center">
+      <Button>Click me</Button>
+    </div>
+  )
+}
 ```
 
-### Search Registries
+---
 
-The `search` command performs fuzzy search across component registries to help you find components and blocks.
+## CLI: `shadcn apply` — Apply a preset to an existing project
+
+The `apply` command applies a design-system preset (identified by a short code) to an existing project, updating CSS variables, fonts, and reinstalling UI components. Partial application is supported via `--only`.
 
 ```bash
-# Search shadcn registry for sidebar components
-npx shadcn@latest search @shadcn -q "sidebar"
+# Apply a full preset (theme + fonts + components)
+npx shadcn@latest apply a2r6bw
 
-# Search community registry
-npx shadcn@latest search @tailark -q "stats"
+# Apply only the theme colors, skip component reinstall
+npx shadcn@latest apply a2r6bw --only theme
 
-# List all items from a registry
+# Apply only the font configuration
+npx shadcn@latest apply a2r6bw --only font
+
+# Skip confirmation prompt
+npx shadcn@latest apply a2r6bw -y
+```
+
+---
+
+## CLI: `shadcn preset` — Inspect and manage presets
+
+The `preset` subcommands let you decode preset codes, resolve the preset from the current project, get the creation URL, or open the preset in the browser.
+
+```bash
+# Decode a preset code to see its full configuration
+npx shadcn@latest preset decode a2r6bw
+# Output (JSON representation of the preset):
+# {
+#   "style": "new-york",
+#   "baseColor": "neutral",
+#   "cssVariables": true,
+#   ...
+# }
+
+# Output as JSON
+npx shadcn@latest preset decode a2r6bw --json
+
+# Resolve and print the current project's preset
+npx shadcn@latest preset resolve
+# Alias:
+npx shadcn@latest preset info
+
+# Get the ui.shadcn.com/create URL for a preset code
+npx shadcn@latest preset url a2r6bw
+
+# Open the preset in the browser
+npx shadcn@latest preset open a2r6bw
+```
+
+---
+
+## CLI: `shadcn view` — View registry items before installing
+
+The `view` command fetches and displays the source files of a registry item without installing them, letting you preview what would be added to your project.
+
+```bash
+# View a single component
+npx shadcn@latest view button
+
+# View multiple items at once
+npx shadcn@latest view button card dialog
+
+# View items from namespaced registries
+npx shadcn@latest view @acme/auth @v0/dashboard
+```
+
+---
+
+## CLI: `shadcn search` — Search registries for components
+
+The `search` command queries one or more registries and lists available items. Supports pagination and text queries.
+
+```bash
+# Search the default shadcn registry interactively
 npx shadcn@latest search @shadcn
 
-# Search with pagination
-npx shadcn@latest search @shadcn -q "form" --limit 20 --offset 0
+# Search with a text query
+npx shadcn@latest search @shadcn -q "button"
+
+# Search multiple registries at once
+npx shadcn@latest search @shadcn @v0 @acme
+
+# Alias: list
+npx shadcn@latest list @acme
+
+# Limit results and paginate
+npx shadcn@latest search @shadcn --limit 20 --offset 0
 ```
 
-### Get Component Documentation
+---
 
-The `docs` command outputs URLs for component documentation, examples, and API references.
+## CLI: `shadcn build` — Build a custom registry
 
-```bash
-# Get docs for single component
-npx shadcn@latest docs button
-
-# Get docs for multiple components
-npx shadcn@latest docs button dialog select form
-```
-
-### View Project Information
-
-The `info` command displays project configuration including framework detection, aliases, Tailwind version, and installed components.
+The `build` command reads a `registry.json` file in your project and generates the flat-file JSON payloads for each item into `public/r/`, making your registry servable over HTTP to the shadcn CLI.
 
 ```bash
-# Display project info
-npx shadcn@latest info
-
-# Output as JSON for programmatic use
-npx shadcn@latest info --json
-```
-
-### Build Custom Registry
-
-The `build` command compiles a registry.json file into individual JSON files for distribution.
-
-```bash
-# Build registry with defaults
+# Build registry with defaults (reads ./registry.json, outputs to ./public/r/)
 npx shadcn@latest build
 
-# Build to custom output directory
-npx shadcn@latest build --output ./dist/registry
+# Specify a custom registry.json path
+npx shadcn@latest build ./custom-registry.json
+
+# Specify a custom output directory
+npx shadcn@latest build --output ./public/registry
+
+# Typical package.json integration:
+# {
+#   "scripts": {
+#     "registry:build": "shadcn build"
+#   }
+# }
+npm run registry:build
+
+# Generated output example:
+# public/r/hello-world.json  → installable by: npx shadcn@latest add http://localhost:3000/r/hello-world.json
 ```
 
-## Core Components
+---
 
-### Button Component
+## CLI: `shadcn docs` — Fetch component documentation
 
-The Button component provides multiple variants (default, destructive, outline, secondary, ghost, link) and sizes (default, xs, sm, lg, icon variants). Icons use the `data-icon` attribute for proper spacing.
+The `docs` command retrieves the documentation and API reference for a specific component, optionally outputting as JSON for programmatic use.
 
-```tsx
-import { Button } from "@/components/ui/button"
-import { SearchIcon, ArrowRightIcon } from "lucide-react"
-import { Spinner } from "@/components/ui/spinner"
+```bash
+# Fetch docs for the button component
+npx shadcn@latest docs button
 
-// Basic variants
-<Button>Default</Button>
-<Button variant="destructive">Delete</Button>
-<Button variant="outline">Outline</Button>
-<Button variant="secondary">Secondary</Button>
-<Button variant="ghost">Ghost</Button>
-<Button variant="link">Link</Button>
+# Output as JSON
+npx shadcn@latest docs button --json
 
-// Sizes
-<Button size="xs">Extra Small</Button>
-<Button size="sm">Small</Button>
-<Button size="lg">Large</Button>
-<Button size="icon"><SearchIcon /></Button>
-
-// With icons (use data-icon attribute)
-<Button>
-  <SearchIcon data-icon="inline-start" />
-  Search
-</Button>
-
-<Button>
-  Next
-  <ArrowRightIcon data-icon="inline-end" />
-</Button>
-
-// Loading state (compose with Spinner)
-<Button disabled>
-  <Spinner data-icon="inline-start" />
-  Saving...
-</Button>
-
-// As child for custom elements
-<Button asChild>
-  <a href="/dashboard">Go to Dashboard</a>
-</Button>
+# Use a specific base (radix or base)
+npx shadcn@latest docs button --base radix
 ```
 
-### Dialog Component
+---
 
-The Dialog component creates modal dialogs with proper accessibility. Always include DialogTitle (use `className="sr-only"` if visually hidden).
+## CLI: `shadcn info` — Get project information
 
-```tsx
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Field, FieldLabel, FieldGroup } from "@/components/ui/field"
+The `info` command inspects the current project's `components.json` and prints resolved configuration details: framework, Tailwind version, aliases, installed components, icon library, and base library.
 
-function EditProfileDialog() {
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button variant="outline">Edit Profile</Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Edit Profile</DialogTitle>
-          <DialogDescription>
-            Make changes to your profile here. Click save when you're done.
-          </DialogDescription>
-        </DialogHeader>
-        <FieldGroup>
-          <Field>
-            <FieldLabel htmlFor="name">Name</FieldLabel>
-            <Input id="name" defaultValue="John Doe" />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="username">Username</FieldLabel>
-            <Input id="username" defaultValue="@johndoe" />
-          </Field>
-        </FieldGroup>
-        <DialogFooter>
-          <Button type="submit">Save changes</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
+```bash
+# Print project info
+npx shadcn@latest info
+
+# Output as JSON (used by the shadcn skill and MCP server)
+npx shadcn@latest info --json
+# Output example:
+# {
+#   "framework": "next",
+#   "tailwindVersion": 4,
+#   "style": "new-york",
+#   "baseColor": "neutral",
+#   "base": "radix",
+#   "iconLibrary": "lucide",
+#   "rsc": true,
+#   "tsx": true,
+#   "aliases": {
+#     "components": "@/components",
+#     "ui": "@/components/ui",
+#     "utils": "@/lib/utils",
+#     "lib": "@/lib",
+#     "hooks": "@/hooks"
+#   }
+# }
+```
+
+---
+
+## CLI: `shadcn migrate` — Run migrations
+
+The `migrate` command transforms existing component files to adopt new patterns: RTL support, updated Radix UI imports, or a different icon library. Accepts file paths and glob patterns to scope the migration.
+
+```bash
+# List all available migrations
+npx shadcn@latest migrate --list
+
+# Migrate all UI components to RTL (physical → logical CSS properties)
+npx shadcn@latest migrate rtl
+# Example transform: ml-4 → ms-4, text-left → text-start, space-x-4 → space-x-4 rtl:space-x-reverse
+
+# Migrate a specific file to RTL
+npx shadcn@latest migrate rtl src/components/ui/button.tsx
+
+# Migrate files matching a glob
+npx shadcn@latest migrate rtl "src/components/ui/**"
+
+# Migrate Radix UI imports to the unified radix-ui package
+npx shadcn@latest migrate radix
+# Before: import * as DialogPrimitive from "@radix-ui/react-dialog"
+# After:  import { Dialog as DialogPrimitive } from "radix-ui"
+
+# Migrate specific files for radix
+npx shadcn@latest migrate radix "src/components/ui/**"
+
+# Migrate icon library (interactive prompt to choose new library)
+npx shadcn@latest migrate icons
+```
+
+---
+
+## CLI: `shadcn mcp init` — Initialize the MCP server
+
+The `mcp init` command configures the shadcn Model Context Protocol server in your AI assistant editor, enabling natural-language component discovery and installation.
+
+```bash
+# Initialize for Claude Code (writes .mcp.json)
+npx shadcn@latest mcp init --client claude
+
+# Initialize for Cursor (writes .cursor/mcp.json)
+npx shadcn@latest mcp init --client cursor
+
+# Initialize for VS Code + GitHub Copilot (writes .vscode/mcp.json)
+npx shadcn@latest mcp init --client vscode
+
+# Initialize for OpenCode
+npx shadcn@latest mcp init --client opencode
+
+# Manual configuration for Claude Code (.mcp.json):
+# {
+#   "mcpServers": {
+#     "shadcn": {
+#       "command": "npx",
+#       "args": ["shadcn@latest", "mcp"]
+#     }
+#   }
+# }
+
+# Manual configuration for Codex (~/.codex/config.toml):
+# [mcp_servers.shadcn]
+# command = "npx"
+# args = ["shadcn@latest", "mcp"]
+```
+
+---
+
+## `components.json` — Project configuration file
+
+The `components.json` file is the per-project configuration consumed by the shadcn CLI. It controls the component style, Tailwind setup, RSC/TSX options, import aliases, and optional namespaced registry sources. Created by `npx shadcn@latest init`.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": true,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "app/globals.css",
+    "baseColor": "neutral",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "iconLibrary": "lucide",
+  "aliases": {
+    "components": "@/components",
+    "ui": "@/components/ui",
+    "lib": "@/lib",
+    "hooks": "@/hooks",
+    "utils": "@/lib/utils"
+  },
+  "registries": {
+    "@v0": "https://v0.dev/chat/b/{name}",
+    "@acme": "https://registry.acme.com/{name}.json",
+    "@private": {
+      "url": "https://api.company.com/registry/{name}.json",
+      "headers": {
+        "Authorization": "Bearer ${REGISTRY_TOKEN}"
+      },
+      "params": {
+        "version": "latest"
+      }
+    }
+  }
 }
 ```
 
-### Card Component
+---
 
-The Card component provides a structured layout with header, content, and footer sections. Use full composition with CardHeader, CardTitle, CardDescription, CardContent, and CardFooter.
+## Theming — CSS variables and OKLCH tokens
 
-```tsx
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-
-function TeamCard() {
-  return (
-    <Card className="max-w-md">
-      <CardHeader>
-        <CardTitle>Team Members</CardTitle>
-        <CardDescription>Invite and manage your team members.</CardDescription>
-        <CardAction>
-          <Badge variant="secondary">Pro Plan</Badge>
-        </CardAction>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center gap-4">
-            <Avatar>
-              <AvatarImage src="/avatar.png" />
-              <AvatarFallback>JD</AvatarFallback>
-            </Avatar>
-            <div>
-              <p className="font-medium">John Doe</p>
-              <p className="text-sm text-muted-foreground">john@example.com</p>
-            </div>
-          </div>
-        </div>
-      </CardContent>
-      <CardFooter>
-        <Button>Invite Member</Button>
-      </CardFooter>
-    </Card>
-  )
-}
-```
-
-### Form Fields
-
-Forms use FieldGroup and Field components for proper layout and accessibility. Never use raw div with space-y-* for form layout.
-
-```tsx
-import { Field, FieldDescription, FieldGroup, FieldLabel, FieldError } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Button } from "@/components/ui/button"
-
-function ContactForm() {
-  return (
-    <form>
-      <FieldGroup>
-        <Field>
-          <FieldLabel htmlFor="email">Email</FieldLabel>
-          <Input id="email" type="email" placeholder="john@example.com" />
-          <FieldDescription>We'll never share your email.</FieldDescription>
-        </Field>
-
-        <Field>
-          <FieldLabel htmlFor="message">Message</FieldLabel>
-          <Textarea id="message" placeholder="Your message..." />
-        </Field>
-
-        {/* Invalid field state */}
-        <Field data-invalid>
-          <FieldLabel htmlFor="phone">Phone</FieldLabel>
-          <Input id="phone" aria-invalid />
-          <FieldError>Please enter a valid phone number.</FieldError>
-        </Field>
-
-        {/* Disabled field state */}
-        <Field data-disabled>
-          <FieldLabel htmlFor="company">Company</FieldLabel>
-          <Input id="company" disabled defaultValue="Acme Inc." />
-        </Field>
-
-        {/* Horizontal layout for checkboxes */}
-        <Field orientation="horizontal">
-          <Checkbox id="terms" />
-          <FieldLabel htmlFor="terms" className="font-normal">
-            I agree to the terms and conditions
-          </FieldLabel>
-        </Field>
-
-        <Button type="submit">Send Message</Button>
-      </FieldGroup>
-    </form>
-  )
-}
-```
-
-### Select Component
-
-The Select component provides a dropdown with keyboard navigation. Always wrap SelectItems in SelectGroup.
-
-```tsx
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Field, FieldLabel, FieldGroup } from "@/components/ui/field"
-
-function CountrySelect() {
-  return (
-    <FieldGroup>
-      <Field>
-        <FieldLabel>Country</FieldLabel>
-        <Select>
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="Select a country" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectLabel>North America</SelectLabel>
-              <SelectItem value="us">United States</SelectItem>
-              <SelectItem value="ca">Canada</SelectItem>
-              <SelectItem value="mx">Mexico</SelectItem>
-            </SelectGroup>
-            <SelectGroup>
-              <SelectLabel>Europe</SelectLabel>
-              <SelectItem value="uk">United Kingdom</SelectItem>
-              <SelectItem value="fr">France</SelectItem>
-              <SelectItem value="de">Germany</SelectItem>
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-      </Field>
-    </FieldGroup>
-  )
-}
-```
-
-### InputGroup Component
-
-InputGroup combines inputs with addons like buttons, icons, or text. Use InputGroupInput instead of raw Input inside InputGroup.
-
-```tsx
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-  InputGroupTextarea,
-} from "@/components/ui/input-group"
-import { Button } from "@/components/ui/button"
-import { SearchIcon, AtSignIcon, DollarSignIcon } from "lucide-react"
-
-// Search input with button
-<InputGroup>
-  <InputGroupInput placeholder="Search..." />
-  <InputGroupAddon>
-    <Button size="icon">
-      <SearchIcon data-icon="inline-start" />
-    </Button>
-  </InputGroupAddon>
-</InputGroup>
-
-// Input with icon prefix
-<InputGroup>
-  <InputGroupAddon>
-    <AtSignIcon />
-  </InputGroupAddon>
-  <InputGroupInput placeholder="username" />
-</InputGroup>
-
-// Input with text prefix
-<InputGroup>
-  <InputGroupAddon>
-    <DollarSignIcon />
-  </InputGroupAddon>
-  <InputGroupInput type="number" placeholder="0.00" />
-  <InputGroupAddon>USD</InputGroupAddon>
-</InputGroup>
-```
-
-### Tabs Component
-
-The Tabs component organizes content into tabbed sections. TabsTrigger must be inside TabsList.
-
-```tsx
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-
-function SettingsTabs() {
-  return (
-    <Tabs defaultValue="account" className="w-full max-w-lg">
-      <TabsList>
-        <TabsTrigger value="account">Account</TabsTrigger>
-        <TabsTrigger value="password">Password</TabsTrigger>
-        <TabsTrigger value="notifications">Notifications</TabsTrigger>
-      </TabsList>
-      <TabsContent value="account">
-        <Card>
-          <CardHeader>
-            <CardTitle>Account Settings</CardTitle>
-            <CardDescription>Manage your account information.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {/* Account settings form */}
-          </CardContent>
-        </Card>
-      </TabsContent>
-      <TabsContent value="password">
-        <Card>
-          <CardHeader>
-            <CardTitle>Change Password</CardTitle>
-            <CardDescription>Update your password here.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {/* Password form */}
-          </CardContent>
-        </Card>
-      </TabsContent>
-    </Tabs>
-  )
-}
-```
-
-### Alert and Toast
-
-Alert displays inline callouts while toast (via sonner) shows temporary notifications.
-
-```tsx
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { toast } from "sonner"
-import { AlertCircleIcon, CheckCircleIcon, InfoIcon } from "lucide-react"
-
-// Alert component for inline messages
-<Alert>
-  <InfoIcon />
-  <AlertTitle>Heads up!</AlertTitle>
-  <AlertDescription>
-    You can add components using the CLI.
-  </AlertDescription>
-</Alert>
-
-<Alert variant="destructive">
-  <AlertCircleIcon />
-  <AlertTitle>Error</AlertTitle>
-  <AlertDescription>
-    Your session has expired. Please log in again.
-  </AlertDescription>
-</Alert>
-
-// Toast notifications using sonner
-function handleSave() {
-  // Success toast
-  toast.success("Changes saved successfully!")
-
-  // Error toast
-  toast.error("Failed to save changes.")
-
-  // Toast with action
-  toast("File deleted.", {
-    action: {
-      label: "Undo",
-      onClick: () => restoreFile(),
-    },
-  })
-
-  // Promise toast for async operations
-  toast.promise(saveData(), {
-    loading: "Saving...",
-    success: "Data saved!",
-    error: "Could not save.",
-  })
-}
-```
-
-### ToggleGroup Component
-
-ToggleGroup provides a set of toggle buttons for selecting between options. Use instead of manually looping Button components with active state.
-
-```tsx
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { Field, FieldTitle } from "@/components/ui/field"
-import { BoldIcon, ItalicIcon, UnderlineIcon } from "lucide-react"
-
-// Single selection toggle group
-<ToggleGroup type="single" defaultValue="weekly" spacing={2}>
-  <ToggleGroupItem value="daily">Daily</ToggleGroupItem>
-  <ToggleGroupItem value="weekly">Weekly</ToggleGroupItem>
-  <ToggleGroupItem value="monthly">Monthly</ToggleGroupItem>
-</ToggleGroup>
-
-// Multiple selection with icons
-<ToggleGroup type="multiple" spacing={2}>
-  <ToggleGroupItem value="bold" aria-label="Toggle bold">
-    <BoldIcon />
-  </ToggleGroupItem>
-  <ToggleGroupItem value="italic" aria-label="Toggle italic">
-    <ItalicIcon />
-  </ToggleGroupItem>
-  <ToggleGroupItem value="underline" aria-label="Toggle underline">
-    <UnderlineIcon />
-  </ToggleGroupItem>
-</ToggleGroup>
-
-// With Field for labeled toggle groups
-<Field orientation="horizontal">
-  <FieldTitle id="theme-label">Theme</FieldTitle>
-  <ToggleGroup aria-labelledby="theme-label" type="single" defaultValue="system">
-    <ToggleGroupItem value="light">Light</ToggleGroupItem>
-    <ToggleGroupItem value="dark">Dark</ToggleGroupItem>
-    <ToggleGroupItem value="system">System</ToggleGroupItem>
-  </ToggleGroup>
-</Field>
-```
-
-## Theming and Customization
-
-### CSS Variables
-
-shadcn/ui uses CSS variables for theming. Colors follow the `name` / `name-foreground` convention where base is for backgrounds and `-foreground` is for text.
+shadcn/ui uses semantic CSS variable pairs (surface + `-foreground`) defined under `:root` and `.dark` and exposed to Tailwind via `@theme inline`. Changing a variable cascades across all components that use it.
 
 ```css
-/* globals.css - Light mode */
-:root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.965 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.965 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.965 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --radius: 0.625rem;
+/* app/globals.css — Full neutral theme scaffold */
+@import "tailwindcss";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
 }
 
-/* Dark mode */
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+}
+
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
   --primary-foreground: oklch(0.205 0 0);
-  /* ... other dark mode variables */
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --ring: oklch(0.556 0 0);
 }
+
+/* Add a custom warning token */
+:root { --warning: oklch(0.84 0.16 84); --warning-foreground: oklch(0.28 0.07 46); }
+.dark  { --warning: oklch(0.41 0.11 46); --warning-foreground: oklch(0.99 0.02 95); }
+@theme inline { --color-warning: var(--warning); --color-warning-foreground: var(--warning-foreground); }
+
+/* Usage in components */
+/* <div className="bg-primary text-primary-foreground">Hello</div>   */
+/* <div className="bg-warning text-warning-foreground">Alert</div>   */
 ```
 
-### Adding Custom Colors
+---
 
-Define custom CSS variables and register them with Tailwind for use in components.
+## Monorepo setup
 
-```css
-/* 1. Define in globals.css */
-:root {
-  --warning: oklch(0.84 0.16 84);
-  --warning-foreground: oklch(0.28 0.07 46);
-}
-.dark {
-  --warning: oklch(0.41 0.11 46);
-  --warning-foreground: oklch(0.99 0.02 95);
-}
+The CLI natively supports Turborepo monorepos with a `packages/ui` shared component package and one or more `apps/*` consumers. Each workspace must have its own `components.json` that configures workspace-specific aliases.
 
-/* 2. Register with Tailwind v4 */
-@theme inline {
-  --color-warning: var(--warning);
-  --color-warning-foreground: var(--warning-foreground);
+```bash
+# Scaffold a fresh Next.js monorepo
+npx shadcn@latest init -t next --monorepo
+
+# Add a UI component from inside the app workspace
+cd apps/web
+npx shadcn@latest add button
+# → installs button.tsx to packages/ui/src/components/
+# → imports automatically rewritten to @workspace/ui/components/button
+
+# Add a block (only the page-level component goes to apps/web)
+npx shadcn@latest add login-01
+# → button, input, label, card → packages/ui/src/components/
+# → login-form.tsx → apps/web/components/
+```
+
+```json
+// apps/web/components.json
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "radix-nova",
+  "rsc": true,
+  "tsx": true,
+  "tailwind": { "config": "", "css": "../../packages/ui/src/styles/globals.css", "baseColor": "neutral", "cssVariables": true },
+  "iconLibrary": "lucide",
+  "aliases": {
+    "components": "@/components",
+    "hooks": "@/hooks",
+    "lib": "@/lib",
+    "utils": "@workspace/ui/lib/utils",
+    "ui": "@workspace/ui/components"
+  }
 }
 ```
 
 ```tsx
-// 3. Use in components
-<div className="bg-warning text-warning-foreground rounded-md p-4">
-  Warning message
-</div>
+// Consuming shared components in apps/web
+import { Button } from "@workspace/ui/components/button"
+import { cn } from "@workspace/ui/lib/utils"
+import { useTheme } from "@workspace/ui/hooks/use-theme"
 
-// Or add a new button variant in button.tsx
-const buttonVariants = cva("...", {
-  variants: {
-    variant: {
-      warning: "bg-warning text-warning-foreground hover:bg-warning/90",
-    },
+export default function Page() {
+  return <Button className={cn("mt-4")}>Get started</Button>
+}
+```
+
+---
+
+## Registry authoring — `registry.json` and `registry-item.json`
+
+Developers can publish their own shadcn-compatible registries. Define items in `registry.json`, run `shadcn build` to generate flat JSON payloads, and deploy to any HTTP host.
+
+```json
+// registry.json — entry point for your registry
+{
+  "$schema": "https://ui.shadcn.com/schema/registry.json",
+  "name": "acme",
+  "homepage": "https://acme.com",
+  "items": [
+    {
+      "name": "hello-world",
+      "type": "registry:block",
+      "title": "Hello World",
+      "description": "A simple hello world component.",
+      "registryDependencies": ["button"],
+      "dependencies": ["motion"],
+      "devDependencies": ["tw-animate-css"],
+      "files": [
+        {
+          "path": "registry/new-york/hello-world/hello-world.tsx",
+          "type": "registry:component"
+        },
+        {
+          "path": "registry/new-york/hello-world/use-hello-world.ts",
+          "type": "registry:hook"
+        },
+        {
+          "path": "registry/new-york/hello-world/page.tsx",
+          "type": "registry:page",
+          "target": "app/hello/page.tsx"
+        }
+      ],
+      "cssVars": {
+        "theme": { "font-heading": "Poppins, sans-serif" },
+        "light": { "brand": "oklch(0.205 0.015 18)" },
+        "dark":  { "brand": "oklch(0.205 0.015 18)" }
+      },
+      "envVars": {
+        "NEXT_PUBLIC_APP_URL": "http://localhost:3000"
+      },
+      "docs": "Visit https://acme.com/hello-world for usage examples."
+    }
+  ]
+}
+```
+
+```bash
+# Build and serve your registry
+npm run registry:build        # → generates public/r/hello-world.json
+
+# Install from your local registry during development
+npx shadcn@latest add http://localhost:3000/r/hello-world.json
+
+# Install from your published registry
+npx shadcn@latest add https://acme.com/r/hello-world.json
+```
+
+---
+
+## Registry content negotiation — root-hosted registries
+
+The CLI sends `Accept: application/vnd.shadcn.v1+json` and `User-Agent: shadcn` headers. Servers can use this to serve HTML to browsers and JSON to the CLI from the same URL.
+
+```typescript
+// next.config.ts — serve registry JSON to the CLI at domain root
+import type { NextConfig } from "next"
+
+const nextConfig: NextConfig = {
+  async rewrites() {
+    return {
+      beforeFiles: [
+        {
+          source: "/",
+          has: [{ type: "header", key: "accept", value: "(.*)application/vnd\\.shadcn\\.v1\\+json(.*)" }],
+          destination: "/r/index.json",
+        },
+        {
+          source: "/",
+          has: [{ type: "header", key: "user-agent", value: "shadcn" }],
+          destination: "/r/index.json",
+        },
+      ],
+    }
   },
-})
-```
-
-### Dark Mode Setup
-
-Use next-themes for class-based dark mode toggling in Next.js applications.
-
-```tsx
-// app/layout.tsx
-import { ThemeProvider } from "next-themes"
-
-export default function RootLayout({ children }) {
-  return (
-    <html lang="en" suppressHydrationWarning>
-      <body>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-          {children}
-        </ThemeProvider>
-      </body>
-    </html>
-  )
+  async headers() {
+    return [{ source: "/", headers: [{ key: "Vary", value: "Accept, User-Agent" }] }]
+  },
 }
 
-// components/mode-toggle.tsx
-import { useTheme } from "next-themes"
-import { Button } from "@/components/ui/button"
-import { MoonIcon, SunIcon } from "lucide-react"
+export default nextConfig
 
-export function ModeToggle() {
-  const { setTheme, theme } = useTheme()
+// Users can now install with: npx shadcn@latest add https://ui.example.com
+```
 
-  return (
-    <Button
-      variant="outline"
-      size="icon"
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-    >
-      <SunIcon className="size-4 dark:hidden" />
-      <MoonIcon className="hidden size-4 dark:block" />
-      <span className="sr-only">Toggle theme</span>
-    </Button>
-  )
+---
+
+## Namespaced registries — private and third-party sources
+
+`components.json` supports a `registries` map that assigns short `@namespace` prefixes to registry URLs (with optional auth headers and query params). Once configured, components from those registries are installed using the `@namespace/name` syntax.
+
+```json
+// components.json — configure multiple registries
+{
+  "registries": {
+    "@shadcn":     "https://ui.shadcn.com/r/{name}.json",
+    "@v0":         "https://v0.dev/chat/b/{name}",
+    "@company-ui": {
+      "url": "https://registry.company.com/ui/{name}.json",
+      "headers": { "Authorization": "Bearer ${COMPANY_TOKEN}" }
+    },
+    "@team": {
+      "url": "https://team.company.com/{name}.json",
+      "params": { "team": "frontend", "version": "${REGISTRY_VERSION}" }
+    }
+  }
 }
 ```
 
-## Styling Best Practices
+```bash
+# .env.local — supply credentials
+COMPANY_TOKEN=your_token_here
+REGISTRY_VERSION=stable
 
-### Semantic Colors and Utility Classes
+# Install from any configured registry
+npx shadcn@latest add @company-ui/button
+npx shadcn@latest add @team/auth-form
+npx shadcn@latest add @v0/dashboard @shadcn/card
 
-Always use semantic color tokens instead of raw Tailwind colors. Use `cn()` for conditional classes.
-
-```tsx
-import { cn } from "@/lib/utils"
-
-// CORRECT: Semantic colors
-<div className="bg-primary text-primary-foreground">Primary</div>
-<div className="bg-muted text-muted-foreground">Muted</div>
-<div className="text-destructive">Error text</div>
-
-// WRONG: Raw colors
-<div className="bg-blue-500 text-white">Primary</div>
-
-// CORRECT: Use cn() for conditional classes
-<div className={cn(
-  "flex items-center rounded-md p-4",
-  isActive ? "bg-primary text-primary-foreground" : "bg-muted"
-)}>
-  Content
-</div>
-
-// WRONG: Manual ternary in className
-<div className={`flex items-center ${isActive ? "bg-primary" : "bg-muted"}`}>
-
-// CORRECT: gap-* for spacing
-<div className="flex flex-col gap-4">
-
-// WRONG: space-y-*
-<div className="space-y-4">
-
-// CORRECT: size-* for equal dimensions
-<Avatar className="size-10">
-
-// WRONG: w-* h-*
-<Avatar className="w-10 h-10">
-
-// CORRECT: truncate shorthand
-<p className="truncate">Long text...</p>
-
-// WRONG: expanded truncate
-<p className="overflow-hidden text-ellipsis whitespace-nowrap">
+# Search across multiple registries
+npx shadcn@latest search @shadcn @company-ui -q "form"
 ```
 
-shadcn/ui is primarily used for building modern web applications with React, from small projects to large-scale enterprise applications. Common use cases include admin dashboards, SaaS products, marketing websites, e-commerce platforms, and developer tools. The component library excels in scenarios where teams need full control over their UI components while maintaining consistent design patterns and accessibility standards. The CLI-based approach makes it particularly suitable for teams that prefer owning their component code rather than depending on external library updates.
+---
 
-Integration typically follows a pattern of initializing a project with `npx shadcn@latest init`, adding required components via `npx shadcn@latest add`, and then customizing the theme through CSS variables in the global stylesheet. Components work seamlessly with popular form libraries like React Hook Form and TanStack Form, state management solutions, and server-side rendering frameworks. The registry system also supports community components and custom component registries, enabling teams to share components across multiple projects while maintaining consistent theming through presets.
+## Tailwind v4 upgrade — removing `forwardRef` and updating CSS
+
+shadcn/ui v4 components drop `React.forwardRef` in favor of direct `React.ComponentProps` and add `data-slot` attributes to every primitive for Tailwind-based styling.
+
+```tsx
+// Before (Tailwind v3 / React 18 pattern)
+const AccordionItem = React.forwardRef<
+  React.ElementRef<typeof AccordionPrimitive.Item>,
+  React.ComponentPropsWithoutRef<typeof AccordionPrimitive.Item>
+>(({ className, ...props }, ref) => (
+  <AccordionPrimitive.Item
+    ref={ref}
+    className={cn("border-b last:border-b-0", className)}
+    {...props}
+  />
+))
+AccordionItem.displayName = "AccordionItem"
+
+// After (Tailwind v4 / React 19 pattern)
+function AccordionItem({
+  className,
+  ...props
+}: React.ComponentProps<typeof AccordionPrimitive.Item>) {
+  return (
+    <AccordionPrimitive.Item
+      data-slot="accordion-item"
+      className={cn("border-b last:border-b-0", className)}
+      {...props}
+    />
+  )
+}
+
+// Tailwind v4 CSS variable migration
+// Before:
+// @layer base { :root { --background: 0 0% 100%; } }
+// @theme { --color-background: hsl(var(--background)); }
+
+// After (with @theme inline):
+:root  { --background: oklch(1 0 0); }
+.dark  { --background: oklch(0.145 0 0); }
+@theme inline { --color-background: var(--background); }
+```
+
+---
+
+## Skills — AI assistant integration
+
+The shadcn skill gives AI assistants (Claude Code, etc.) project-aware context by running `shadcn info --json` on each interaction and injecting the resolved project configuration, component inventory, aliases, and CLI reference into the assistant's context window.
+
+```bash
+# Install the shadcn skill into your project
+npx skills add shadcn/ui
+
+# The skill auto-detects projects with a components.json file.
+# Example prompts once installed:
+# "Add a login form with email and password fields."
+# "Create a settings page with profile update form."
+# "Build a dashboard with a sidebar, stats cards, and data table."
+# "Switch to --preset a2r6bw"
+# "Can you add a hero section from @tailark?"
+```
+
+---
+
+shadcn/ui is used primarily in two scenarios: as a starting point for building design systems in greenfield React applications, and as an incremental adoption tool for adding accessible, well-styled components to existing projects. In the first scenario, `shadcn init` bootstraps a complete project scaffold (single app or monorepo), the preset system lets teams encode their brand tokens into a shareable code, and the registry system lets platform teams publish internal component libraries that product teams consume with a single `add` command. In the second scenario, individual components are cherry-picked and installed into an existing Tailwind project without requiring a wholesale migration, and migrations (`migrate rtl`, `migrate radix`) handle the mechanical transformation work.
+
+Integration patterns center on three entry points: the CLI for human-driven workflows, the MCP server for AI-driven workflows (Claude Code, Cursor, VS Code Copilot), and the Skills system for giving AI assistants deep project context. The registry spec (`registry.json` + `registry-item.json`) acts as the common interchange format for all three: the CLI installs from it, the MCP server browses and installs from it, and AI assistants can generate conformant registry items to distribute new components. Teams building internal design systems typically pair a hosted registry (deployed Next.js or Express app serving `/r/*.json`) with `components.json` namespace configuration so developers can install internal components with the same `npx shadcn@latest add @company/button` UX as the public registry.
