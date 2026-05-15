@@ -159,6 +159,51 @@ test('can query products', async () => {
 
 --------------------------------
 
+### Plugin Implementation Examples
+
+Source: https://main.vitest.dev/api/advanced/plugin
+
+Examples demonstrating how to implement a Vitest plugin, showing variations for Vitest-only and Vite+Vitest compatible plugins.
+
+```APIDOC
+::: code-group
+
+```ts [only vitest]
+import type { Vite, VitestPluginContext } from 'vitest/node'
+
+export function plugin(): Vite.Plugin {
+  return {
+    name: 'vitest:my-plugin',
+    configureVitest(context: VitestPluginContext) {
+      // ...
+    }
+  }
+}
+```
+
+```ts [vite and vitest]
+/// <reference types="vitest/config" />
+
+import type { Plugin } from 'vite'
+
+export function plugin(): Plugin {
+  return {
+    name: 'vitest:my-plugin',
+    transform() {
+      // ...
+    },
+    configureVitest(context) {
+      // ...
+    }
+  }
+}
+```
+
+:::
+```
+
+--------------------------------
+
 ### Reporter Configuration Example
 
 Source: https://main.vitest.dev/config/coverage
@@ -215,51 +260,6 @@ export default {
   }
 }
 ```
-```
-
---------------------------------
-
-### Plugin Implementation Examples
-
-Source: https://main.vitest.dev/api/advanced/plugin
-
-Examples demonstrating how to implement a Vitest plugin, showing variations for Vitest-only and Vite+Vitest compatible plugins.
-
-```APIDOC
-::: code-group
-
-```ts [only vitest]
-import type { Vite, VitestPluginContext } from 'vitest/node'
-
-export function plugin(): Vite.Plugin {
-  return {
-    name: 'vitest:my-plugin',
-    configureVitest(context: VitestPluginContext) {
-      // ...
-    }
-  }
-}
-```
-
-```ts [vite and vitest]
-/// <reference types="vitest/config" />
-
-import type { Plugin } from 'vite'
-
-export function plugin(): Plugin {
-  return {
-    name: 'vitest:my-plugin',
-    transform() {
-      // ...
-    },
-    configureVitest(context) {
-      // ...
-    }
-  }
-}
-```
-
-:::
 ```
 
 --------------------------------
