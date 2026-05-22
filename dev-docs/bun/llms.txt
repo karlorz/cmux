@@ -1,821 +1,1849 @@
-# Bun
+### Install dependencies and run Bun examples
 
-Bun is an all-in-one JavaScript and TypeScript toolkit that ships as a single executable. At its core is the Bun runtime, a fast JavaScript runtime designed as a drop-in replacement for Node.js, written in Zig and powered by JavaScriptCore for dramatically reduced startup times and memory usage. Bun natively supports TypeScript and JSX without configuration, making it ideal for modern web development.
+Source: https://github.com/oven-sh/bun/blob/main/bench/README.md
 
-Beyond the runtime, Bun includes a built-in bundler, test runner, and Node.js-compatible package manager. The package manager is up to 25x faster than npm, while the bundler outperforms esbuild. Bun provides native APIs for HTTP servers, file I/O, SQLite, WebSockets, child processes, and shell scripting, all optimized for performance and developer experience.
+Install npm dependencies and execute various example scripts demonstrating Bun features including FFI, logging, compression, async operations, and SQLite integration.
 
-## HTTP Server (Bun.serve)
+```bash
+npm install
 
-`Bun.serve` creates a high-performance HTTP server with built-in routing, WebSocket support, and TLS. It can handle approximately 2.5x more requests per second than Node.js on Linux, using the standard Web API Request and Response objects.
+bun run ffi
+bun run log
+bun run gzip
+bun run async
+bun run sqlite
+```
+
+--------------------------------
+
+### Setup benchmark fixtures for Bun and Vitest
+
+Source: https://github.com/oven-sh/bun/blob/main/bench/test/README.md
+
+Prepare the environment by installing dependencies and running setup scripts to generate the test suites.
+
+```sh
+cd bench/test
+bun install                       # for vitest
+bun parallel/setup.ts
+bun isolate-cache/setup.ts
+```
+
+--------------------------------
+
+### Configure Setup Scripts in Local Template package.json
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/templating/create.mdx
+
+Add 'preinstall' and 'postinstall' scripts within the 'bun-create' section of your local template's 'package.json'. These scripts run before and after dependency installation.
+
+```json
+{
+  "name": "@bun-examples/simplereact",
+  "version": "0.0.1",
+  "main": "index.js",
+  "dependencies": {
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2"
+  },
+  "bun-create": {
+    "preinstall": "echo 'Installing...'", // a single command
+    "postinstall": ["echo 'Done!'"], // an array of commands
+    "start": "bun run echo 'Hello world!'"
+  }
+}
+```
+
+--------------------------------
+
+### Clone and Set Up bun-lambda Project
+
+Source: https://github.com/oven-sh/bun/blob/main/packages/bun-lambda/README.md
+
+This sequence of shell commands clones the bun repository, checks out the `packages/bun-lambda` sparse directory, navigates into it, installs dependencies, and publishes the Lambda layer to AWS. This is the initial setup required to get the bun-lambda project running locally and deploy the layer.
+
+```sh
+git clone --filter=blob:none --sparse https://github.com/oven-sh/bun.git
+git -C bun sparse-checkout set packages/bun-lambda
+cd bun/packages/bun-lambda
+bun install
+bun run publish-layer
+```
+
+--------------------------------
+
+### Install dependencies and run development server with Bun
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/solidstart.mdx
+
+Installs project dependencies using Bun and starts the development server. The dev server runs on localhost:3000 with hot-reload enabled for automatic updates when source files change.
+
+```shell
+cd my-app
+bun install
+bun dev
+```
+
+--------------------------------
+
+### Install dependencies with Bun
+
+Source: https://github.com/oven-sh/bun/blob/main/bench/expect-to-equal/README.md
+
+Installs project dependencies using the Bun package manager. This is the initial setup step required before running any tests.
+
+```bash
+bun install
+```
+
+--------------------------------
+
+### Initialize Qwik Application with Bun
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/qwik.mdx
+
+This command initializes a new Qwik application using Bun. It leverages `bunx create-qwik`, which automatically detects Bun and installs dependencies using it. The process guides the user through selecting a project name, starter template, and options for dependency installation and Git initialization, resulting in a ready-to-use Qwik project directory.
+
+```sh
+bun create qwik
+```
+
+--------------------------------
+
+### Bun Test: Multi-File Project Setup
+
+Source: https://github.com/oven-sh/bun/blob/main/CLAUDE.md
+
+This example demonstrates testing a project with multiple files by creating a temporary directory using tempDir and spawning Bun to execute the main entry point. Useful for integration tests involving module imports.
 
 ```typescript
-import { Database } from "bun:sqlite";
+import { test, expect } from "bun:test";
+import { bunEnv, bunExe, normalizeBunSnapshot, tempDir } from "harness";
 
-const db = new Database(":memory:");
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL
-  )
-`);
+test("(multi-file test) my feature", async () => {
+  // Create temp directory with test files
+  using dir = tempDir("test-prefix", {
+    "index.js": `import { foo } from "./foo.ts"; foo();`,
+    "foo.ts": `export function foo() { console.log("foo"); }`,
+  });
 
+  // Spawn Bun process
+  await using proc = Bun.spawn({
+    cmd: [bunExe(), "index.js"],
+    env: bunEnv,
+    cwd: String(dir),
+    stderr: "pipe",
+  });
+
+  const [stdout, stderr, exitCode] = await Promise.all([
+    proc.stdout.text(),
+    proc.stderr.text(),
+    proc.exited,
+  ]);
+
+  // Prefer snapshot tests over expect(stdout).toBe("hello\n");
+  expect(normalizeBunSnapshot(stdout, dir)).toMatchInlineSnapshot(`"hello"`);
+
+  // Assert the exit code last. This gives you a more useful error message on test failure.
+  expect(exitCode).toBe(0);
+});
+```
+
+--------------------------------
+
+### Complete uWS Server Setup with GET Route and Event Loop
+
+Source: https://github.com/oven-sh/bun/blob/main/packages/bun-uws/misc/READMORE.md
+
+Demonstrates a minimal but complete uWS application that defines a GET route handler, listens on port 9001, and enters the event loop with App.run(). The blocking run() call returns when all async work completes and sockets are closed, allowing graceful shutdown with automatic memory cleanup via RAII.
+
+```c++
+int main() {
+    uWS::App().get("/*", [](auto *res, auto *req) {
+        res->end("Hello World!");
+    }).listen(9001, [](auto *listenSocket) {
+        if (listenSocket) {
+            std::cout << "Listening for connections..." << std::endl;
+        }
+    }).run();
+
+    std::cout << "Shoot! We failed to listen and the App fell through, exiting now!" << std::endl;
+}
+```
+
+--------------------------------
+
+### onStart Hook
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/bundler/esbuild.mdx
+
+Hook that is called when the bundle starts. Use this to perform initialization tasks or setup operations before bundling begins.
+
+```APIDOC
+## onStart Hook
+
+### Description
+Called when the bundle starts. Use this hook to perform initialization tasks or setup operations before the bundling process begins.
+
+### Method
+builder.onStart(callback: () => void): void
+
+### Callback
+- No parameters
+- No return value
+
+### Example
+```typescript
+builder.onStart(() => {
+  console.log("Bundle starting...");
+});
+```
+```
+
+--------------------------------
+
+### Run Development Server with npm
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/third_party/pnpm/install_fixture/README.md
+
+Start the development server in development mode. The application will be accessible at http://localhost:5173 in the browser with hot module reloading enabled.
+
+```bash
+npm run dev
+```
+
+--------------------------------
+
+### Initialize project and install dependencies
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/prisma-postgres.mdx
+
+Create a new directory and install the Prisma CLI, Prisma Client, and Accelerate extension.
+
+```bash
+mkdir prisma-postgres-app
+cd prisma-postgres-app
+bun init
+```
+
+```bash
+bun add -d prisma
+bun add @prisma/client @prisma/extension-accelerate
+```
+
+--------------------------------
+
+### Manually Install Required Packages for Bun Secrets API Tests
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/secrets-ci-setup.md
+
+This command sequence updates package lists and installs the essential dependencies (`libsecret-1-dev`, `gnome-keyring`, `dbus-x11`) required for `Bun.secrets` API functionality on Ubuntu/Debian systems, as part of a manual CI setup.
+
+```bash
+apt-get update && apt-get install -y libsecret-1-dev gnome-keyring dbus-x11
+```
+
+--------------------------------
+
+### Example output of `bun init`
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/templating/init.mdx
+
+This output demonstrates the interactive prompts and the files created when running `bun init` to scaffold a new project.
+
+```txt
+? Select a project template - Press return to submit.
+❯ Blank
+  React
+  Library
+
+✓ Select a project template: Blank
+
+ + .gitignore
+ + CLAUDE.md
+ + .cursor/rules/use-bun-instead-of-node-vite-npm-pnpm.mdc -> CLAUDE.md
+ + index.ts
+ + tsconfig.json (for editor autocomplete)
+ + README.md
+```
+
+--------------------------------
+
+### Run Bun Secrets Tests in GitHub Actions (Explicit Keyring Setup)
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/secrets-ci-setup.md
+
+This GitHub Actions workflow explicitly installs keyring packages (`libsecret-1-dev`, `gnome-keyring`, `dbus-x11`) using `apt-get` to ensure all dependencies for Bun's secrets API are met. After installation, it executes the Bun secrets tests.
+
+```yaml
+- name: Install keyring packages  
+  run: |
+    sudo apt-get update
+    sudo apt-get install -y libsecret-1-dev gnome-keyring dbus-x11
+
+- name: Run secrets tests
+  run: bun test test/js/bun/secrets.test.ts
+```
+
+--------------------------------
+
+### Start Development Server - Multiple Package Managers
+
+Source: https://github.com/oven-sh/bun/blob/main/test/integration/next-pages/README.md
+
+Commands to start the Next.js development server using npm, yarn, pnpm, or bun. The server runs on http://localhost:3000 and supports hot-reloading for file changes.
+
+```bash
+npm run dev
+```
+
+```bash
+yarn dev
+```
+
+```bash
+pnpm dev
+```
+
+```bash
+bun dev
+```
+
+--------------------------------
+
+### Install Bun CLI on macOS, Linux, or WSL
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/web/fetch/fixture.html
+
+This command installs the Bun command-line interface (CLI) on macOS (x64 & Silicon), Linux (x64), and Windows Subsystem for Linux (WSL). It fetches an installation script from the official Bun website and executes it using bash, providing a quick way to get started with Bun.
+
+```bash
+curl https://bun.sh/install | bash
+```
+
+--------------------------------
+
+### Run Bun Secrets API Tests Automatically in CI
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/secrets-ci-setup.md
+
+This command executes the `Bun.secrets` API tests, leveraging the automatic CI detection and setup features. It handles package installation, keyring configuration, and service initialization on supported Linux environments.
+
+```bash
+bun test test/js/bun/secrets.test.ts
+```
+
+--------------------------------
+
+### Basic Bun.serve setup with routing
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/http/server.mdx
+
+This snippet demonstrates how to set up a basic HTTP server with `Bun.serve`, including static, dynamic, method-specific, wildcard, redirect, and file serving routes.
+
+```ts
 const server = Bun.serve({
-  port: 3000,
-
+  // `routes` requires Bun v1.2.3+
   routes: {
-    // Static response
-    "/api/health": new Response("OK"),
+    // Static routes
+    "/api/status": new Response("OK"),
 
-    // Dynamic route with parameters
-    "/api/users/:id": (req) => {
-      const user = db.query("SELECT * FROM users WHERE id = ?").get(req.params.id);
-      if (!user) {
-        return Response.json({ error: "User not found" }, { status: 404 });
-      }
-      return Response.json(user);
+    // Dynamic routes
+    "/users/:id": req => {
+      return new Response(`Hello User ${req.params.id}!`);
     },
 
-    // Per-method handlers
-    "/api/users": {
-      GET: () => {
-        const users = db.query("SELECT * FROM users").all();
-        return Response.json(users);
-      },
-      POST: async (req) => {
+    // Per-HTTP method handlers
+    "/api/posts": {
+      GET: () => new Response("List posts"),
+      POST: async req => {
         const body = await req.json();
-        const result = db.query("INSERT INTO users (name, email) VALUES (?, ?) RETURNING *")
-          .get(body.name, body.email);
-        return Response.json(result, { status: 201 });
-      },
+        return Response.json({ created: true, ...body });
+      }
     },
 
-    // Wildcard route
-    "/api/*": Response.json({ error: "Not found" }, { status: 404 }),
+    // Wildcard route for all routes that start with "/api/" and aren't otherwise matched
+    "/api/*": Response.json({ message: "Not found" }, { status: 404 }),
+
+    // Redirect from /blog/hello to /blog/hello/world
+    "/blog/hello": Response.redirect("/blog/hello/world"),
+
+    // Serve a file by lazily loading it into memory
+    "/favicon.ico": Bun.file("./favicon.ico")
   },
 
-  // Fallback handler for unmatched routes
+  // (optional) fallback for unmatched routes:
+  // Required if Bun's version < 1.2.3
   fetch(req) {
     return new Response("Not Found", { status: 404 });
-  },
-
-  // Error handler
-  error(error) {
-    console.error(error);
-    return new Response("Internal Server Error", { status: 500 });
-  },
+  }
 });
 
 console.log(`Server running at ${server.url}`);
-// Server running at http://localhost:3000
 ```
 
-## File I/O (Bun.file, Bun.write)
+--------------------------------
 
-`Bun.file` creates a lazy-loaded file reference conforming to the Blob interface, while `Bun.write` handles writing data to disk using the fastest available system calls for each platform (copy_file_range on Linux, clonefile on macOS).
+### Initialize project and install Mongoose
 
-```typescript
-// Reading files - Bun.file returns a BunFile (extends Blob)
-const file = Bun.file("config.json");
-console.log(file.size);        // number of bytes
-console.log(file.type);        // MIME type: "application/json"
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/mongoose.mdx
 
-// Read contents in various formats
-const text = await file.text();           // as string
-const json = await file.json();           // as parsed JSON
-const buffer = await file.arrayBuffer();  // as ArrayBuffer
-const bytes = await file.bytes();         // as Uint8Array
-const stream = file.stream();             // as ReadableStream
+Commands to create a project directory, initialize Bun, and add Mongoose as a dependency.
 
-// Check if file exists
-const exists = await file.exists();  // boolean
-
-// Delete a file
-await Bun.file("temp.txt").delete();
-
-// Writing files - Bun.write returns bytes written
-await Bun.write("output.txt", "Hello, World!");           // string
-await Bun.write("data.bin", new Uint8Array([1, 2, 3]));   // binary
-await Bun.write("copy.txt", Bun.file("original.txt"));    // copy file
-
-// Write HTTP response body to file
-const response = await fetch("https://example.com");
-await Bun.write("page.html", response);
-
-// Write to stdout
-await Bun.write(Bun.stdout, Bun.file("readme.txt"));
-
-// Incremental writing with FileSink
-const writer = Bun.file("log.txt").writer({ highWaterMark: 1024 * 1024 });
-writer.write("First line\n");
-writer.write("Second line\n");
-writer.flush();  // flush buffer to disk
-writer.end();    // close the file
-
-// Using node:fs for directory operations
-import { readdir, mkdir } from "node:fs/promises";
-const files = await readdir("./src", { recursive: true });
-await mkdir("./dist/assets", { recursive: true });
+```sh
+mkdir mongoose-app
+cd mongoose-app
+bun init
 ```
 
-## SQLite Database (bun:sqlite)
-
-Bun includes a high-performance SQLite3 driver that is 3-6x faster than better-sqlite3. It provides a synchronous API with prepared statements, transactions, parameter binding, and the ability to map results to class instances.
-
-```typescript
-import { Database } from "bun:sqlite";
-
-// Create database (use ":memory:" for in-memory, or omit for temp)
-const db = new Database("app.sqlite", { create: true });
-
-// Enable WAL mode for better performance
-db.run("PRAGMA journal_mode = WAL;");
-
-// Create tables
-db.run(`
-  CREATE TABLE IF NOT EXISTS posts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    content TEXT,
-    published_at TEXT DEFAULT CURRENT_TIMESTAMP
-  )
-`);
-
-// Prepared statements with caching via db.query()
-const insertPost = db.query("INSERT INTO posts (title, content) VALUES ($title, $content) RETURNING *");
-const getPost = db.query("SELECT * FROM posts WHERE id = ?");
-const getAllPosts = db.query("SELECT * FROM posts ORDER BY published_at DESC");
-
-// Execute queries
-const newPost = insertPost.get({ $title: "Hello World", $content: "My first post" });
-console.log(newPost);  // { id: 1, title: "Hello World", ... }
-
-const post = getPost.get(1);      // single row or undefined
-const posts = getAllPosts.all();  // array of all rows
-
-// Use .run() for writes that don't return data
-const result = db.run("UPDATE posts SET title = ? WHERE id = ?", ["Updated Title", 1]);
-console.log(result.changes);        // number of affected rows
-console.log(result.lastInsertRowid); // last inserted row ID
-
-// Iterate over large result sets
-for (const row of db.query("SELECT * FROM posts").iterate()) {
-  console.log(row.title);
-}
-
-// Map results to class instances
-class Post {
-  id: number;
-  title: string;
-  content: string;
-
-  get preview() {
-    return this.content?.slice(0, 100) + "...";
-  }
-}
-
-const typedPosts = db.query("SELECT * FROM posts").as(Post).all();
-console.log(typedPosts[0].preview);  // uses getter
-
-// Transactions
-const insertMany = db.transaction((items: { title: string; content: string }[]) => {
-  for (const item of items) {
-    insertPost.run(item);
-  }
-  return items.length;
-});
-
-const count = insertMany([
-  { $title: "Post 1", $content: "Content 1" },
-  { $title: "Post 2", $content: "Content 2" },
-]);
-// Automatically commits on success, rolls back on error
-
-// Close database
-db.close();
+```sh
+bun add mongoose
 ```
 
-## Bundler (Bun.build)
+--------------------------------
 
-Bun's bundler transforms JavaScript, TypeScript, and JSX into optimized bundles for browser, Bun, or Node.js targets. It supports code splitting, tree shaking, minification, sourcemaps, and plugins with an API compatible with esbuild.
+### Example Output: Commander.js Showing Help After Error
 
-```typescript
-// Basic bundling
-const result = await Bun.build({
-  entrypoints: ["./src/index.tsx"],
-  outdir: "./dist",
-});
+Source: https://github.com/oven-sh/bun/blob/main/test/js/node/test/fixtures/postject-copy/node_modules/commander/Readme.md
 
-if (!result.success) {
-  console.error("Build failed:", result.logs);
-  process.exit(1);
-}
+This console output illustrates the behavior when `showHelpAfterError()` is enabled in Commander.js. Upon encountering an unknown option, an error message is displayed, followed by the custom hint configured to guide the user towards the help documentation.
 
-// Full configuration
-const build = await Bun.build({
-  entrypoints: ["./src/app.tsx", "./src/worker.ts"],
-  outdir: "./dist",
-  target: "browser",     // "browser" | "bun" | "node"
-  format: "esm",         // "esm" | "cjs" | "iife"
-  splitting: true,       // enable code splitting
-  minify: true,          // minify output
-  sourcemap: "linked",   // "none" | "linked" | "inline" | "external"
-
-  // Environment variables
-  env: "inline",         // inline all env vars
-  // env: "PUBLIC_*",    // only inline vars starting with PUBLIC_
-
-  // Define compile-time constants
-  define: {
-    "process.env.API_URL": JSON.stringify("https://api.example.com"),
-    "DEBUG": "false",
-  },
-
-  // External packages (don't bundle)
-  external: ["react", "react-dom"],
-  // packages: "external",  // mark all packages as external
-
-  // Custom naming
-  naming: {
-    entry: "[dir]/[name]-[hash].[ext]",
-    chunk: "chunks/[name]-[hash].[ext]",
-    asset: "assets/[name]-[hash].[ext]",
-  },
-
-  // Custom loaders
-  loader: {
-    ".png": "dataurl",
-    ".svg": "text",
-  },
-
-  // Add banner/footer
-  banner: '"use client";',
-  footer: "// Built with Bun",
-
-  // Drop console/debugger
-  drop: ["console", "debugger"],
-
-  // Generate metafile for bundle analysis
-  metafile: true,
-});
-
-// Access build artifacts
-for (const output of build.outputs) {
-  console.log(output.path);   // absolute path
-  console.log(output.kind);   // "entry-point" | "chunk" | "asset"
-  console.log(output.hash);   // content hash
-
-  // Artifacts are Blobs
-  const content = await output.text();
-
-  // Serve directly
-  new Response(output);  // Content-Type header auto-set
-}
-
-// Analyze bundle
-if (build.metafile) {
-  for (const [path, meta] of Object.entries(build.metafile.outputs)) {
-    console.log(`${path}: ${meta.bytes} bytes`);
-  }
-}
-
-// CLI equivalent
-// bun build ./src/app.tsx --outdir ./dist --minify --splitting --sourcemap=linked
+```console
+$ pizza --unknown
+error: unknown option '--unknown'
+(add --help for additional information)
 ```
 
-## Test Runner (bun:test)
+--------------------------------
 
-Bun includes a Jest-compatible test runner with TypeScript support, lifecycle hooks, mocking, snapshot testing, and watch mode. It runs tests significantly faster than Jest by using the Bun runtime.
+### Install Core Packages for Bun Secrets API on Ubuntu/Debian
 
-```typescript
-import { test, expect, describe, beforeAll, afterEach, mock, spyOn } from "bun:test";
+Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/secrets-ci-setup.md
 
-// Basic test
-test("arithmetic", () => {
-  expect(2 + 2).toBe(4);
-  expect([1, 2, 3]).toContain(2);
-  expect({ a: 1 }).toEqual({ a: 1 });
-  expect(() => { throw new Error("oops") }).toThrow("oops");
-});
-
-// Async test
-test("fetch data", async () => {
-  const response = await fetch("https://api.example.com/data");
-  expect(response.ok).toBe(true);
-
-  const data = await response.json();
-  expect(data).toHaveProperty("id");
-});
-
-// Test groups with lifecycle hooks
-describe("UserService", () => {
-  let db: Database;
-
-  beforeAll(() => {
-    db = new Database(":memory:");
-    db.run("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)");
-  });
-
-  afterEach(() => {
-    db.run("DELETE FROM users");
-  });
-
-  test("creates user", () => {
-    db.run("INSERT INTO users (name) VALUES (?)", ["Alice"]);
-    const user = db.query("SELECT * FROM users WHERE name = ?").get("Alice");
-    expect(user).toBeDefined();
-    expect(user.name).toBe("Alice");
-  });
-});
-
-// Mocking functions
-const mockFn = mock((x: number) => x * 2);
-mockFn(5);
-mockFn(10);
-
-expect(mockFn).toHaveBeenCalledTimes(2);
-expect(mockFn).toHaveBeenCalledWith(5);
-expect(mockFn.mock.results[0].value).toBe(10);
-
-// Spying on methods
-const obj = {
-  method: (x: number) => x + 1,
-};
-
-const spy = spyOn(obj, "method");
-obj.method(5);
-
-expect(spy).toHaveBeenCalled();
-expect(spy).toHaveBeenCalledWith(5);
-
-// Snapshot testing
-test("component output", () => {
-  const output = { type: "div", children: ["Hello"] };
-  expect(output).toMatchSnapshot();
-});
-
-// Test timeouts and options
-test("slow operation", async () => {
-  await Bun.sleep(100);
-}, { timeout: 5000 });
-
-// Skip and todo tests
-test.skip("not implemented yet", () => {});
-test.todo("add validation");
-
-// Parameterized tests
-test.each([
-  [1, 1, 2],
-  [2, 3, 5],
-  [5, 5, 10],
-])("add(%i, %i) = %i", (a, b, expected) => {
-  expect(a + b).toBe(expected);
-});
-
-// Run tests: bun test
-// Watch mode: bun test --watch
-// Coverage: bun test --coverage
-// Update snapshots: bun test --update-snapshots
-```
-
-## Shell Scripting ($)
-
-Bun Shell provides a cross-platform bash-like shell with JavaScript interop. It supports pipes, redirection, environment variables, and globs, with automatic input escaping to prevent injection attacks.
-
-```typescript
-import { $ } from "bun";
-
-// Basic commands
-await $`echo "Hello, World!"`;           // prints: Hello, World!
-await $`ls -la`;                          // list files
-
-// Capture output
-const result = await $`echo "Hello"`.text();
-console.log(result);  // "Hello\n"
-
-const files = await $`ls`.lines();
-for (const file of files) {
-  console.log(file);
-}
-
-// JSON output
-const pkg = await $`cat package.json`.json();
-console.log(pkg.name);
-
-// Quiet mode (no stdout)
-await $`npm install`.quiet();
-
-// String interpolation (automatically escaped for safety)
-const filename = "my file.txt";
-await $`cat ${filename}`;  // safely handles spaces
-
-const userInput = "foo; rm -rf /";  // malicious input
-await $`echo ${userInput}`;  // safely prints: foo; rm -rf /
-
-// Piping
-const count = await $`cat file.txt | wc -l`.text();
-await $`echo "data" | gzip > file.gz`;
-
-// Redirection
-await $`echo "log entry" >> app.log`;       // append to file
-await $`cat < input.txt > output.txt`;      // redirect stdin/stdout
-await $`command 2>&1`;                      // redirect stderr to stdout
-
-// JavaScript objects as stdin
-const response = await fetch("https://example.com");
-await $`cat < ${response} | wc -c`;
-
-const buffer = Buffer.from("Hello");
-await $`cat < ${buffer}`;
-
-// Environment variables
-await $`FOO=bar bun -e 'console.log(process.env.FOO)'`;
-
-// Change working directory
-await $`pwd`.cwd("/tmp");  // prints: /tmp
-
-// Set environment for command
-await $`printenv HOME`.env({ HOME: "/custom/home" });
-
-// Error handling
-try {
-  await $`exit 1`;
-} catch (err) {
-  console.log(err.exitCode);     // 1
-  console.log(err.stderr.toString());
-}
-
-// Don't throw on non-zero exit
-const { exitCode, stdout, stderr } = await $`maybe-fail`.nothrow().quiet();
-if (exitCode !== 0) {
-  console.log("Command failed:", stderr.toString());
-}
-
-// Command substitution
-await $`echo "Current commit: $(git rev-parse HEAD)"`;
-
-// Brace expansion
-const patterns = $.braces("file{1,2,3}.txt");
-// => ["file1.txt", "file2.txt", "file3.txt"]
-```
-
-## Child Processes (Bun.spawn)
-
-`Bun.spawn` creates child processes with support for stdin/stdout/stderr piping, IPC communication, timeouts, and resource usage tracking. It's 60% faster than Node.js child_process for spawning processes.
-
-```typescript
-// Basic usage
-const proc = Bun.spawn(["echo", "Hello, World!"]);
-await proc.exited;  // wait for completion
-console.log(proc.exitCode);  // 0
-
-// Read stdout
-const proc2 = Bun.spawn(["bun", "--version"]);
-const output = await proc2.stdout.text();
-console.log(output);  // "1.x.x\n"
-
-// Configure stdin/stdout/stderr
-const proc3 = Bun.spawn(["cat"], {
-  stdin: "pipe",                    // writable stream
-  stdout: "pipe",                   // readable stream (default)
-  stderr: "inherit",                // inherit from parent
-  cwd: "./subdir",                  // working directory
-  env: { ...process.env, DEBUG: "true" },
-});
-
-// Write to stdin
-proc3.stdin.write("Hello ");
-proc3.stdin.write("World!");
-proc3.stdin.end();
-
-const catOutput = await proc3.stdout.text();  // "Hello World!"
-
-// Use Response/Blob as stdin
-const response = await fetch("https://example.com");
-const proc4 = Bun.spawn(["wc", "-c"], {
-  stdin: response,  // pipe response body to stdin
-});
-const byteCount = await proc4.stdout.text();
-
-// Exit handling with callback
-Bun.spawn(["sleep", "1"], {
-  onExit(proc, exitCode, signalCode, error) {
-    console.log(`Process exited with code ${exitCode}`);
-  },
-});
-
-// Kill a process
-const longRunning = Bun.spawn(["sleep", "100"]);
-longRunning.kill();           // SIGTERM
-longRunning.kill("SIGKILL");  // force kill
-
-// Timeout
-const proc5 = Bun.spawn({
-  cmd: ["sleep", "10"],
-  timeout: 5000,  // kill after 5 seconds
-  killSignal: "SIGKILL",
-});
-
-// IPC between Bun processes
-// parent.ts
-const child = Bun.spawn(["bun", "child.ts"], {
-  ipc(message, childProc) {
-    console.log("From child:", message);
-    childProc.send({ reply: "Hello from parent" });
-  },
-});
-child.send({ greeting: "Hello from parent" });
-
-// child.ts
-process.on("message", (msg) => {
-  console.log("From parent:", msg);
-  process.send({ response: "Got it!" });
-});
-
-// Synchronous spawn
-const result = Bun.spawnSync(["echo", "Hello"]);
-console.log(result.stdout.toString());  // "Hello\n"
-console.log(result.success);            // true
-console.log(result.exitCode);           // 0
-
-// Resource usage
-const proc6 = Bun.spawn(["bun", "heavy-script.ts"]);
-await proc6.exited;
-const usage = proc6.resourceUsage();
-console.log(`Max memory: ${usage.maxRSS} bytes`);
-console.log(`CPU time: ${usage.cpuTime.total} µs`);
-```
-
-## Package Manager (bun install)
-
-Bun's package manager is a drop-in replacement for npm, yarn, and pnpm, up to 25x faster. It supports workspaces, lockfiles, lifecycle scripts, and automatic pnpm migration.
+This `apt-get` command installs the fundamental packages necessary for the `Bun.secrets` API to interact with the system keyring on Ubuntu/Debian. It includes the libsecret development headers, the GNOME Keyring daemon, and D-Bus X11 integration.
 
 ```bash
-# Install all dependencies
-bun install
-
-# Add packages
-bun add react react-dom
-bun add -d typescript @types/react   # dev dependency
-bun add -g cowsay                    # global install
-
-# Install specific versions
-bun add lodash@4.17.21
-bun add react@latest
-
-# Remove packages
-bun remove lodash
-
-# Update packages
-bun update           # update all
-bun update react     # update specific package
-
-# Production install (no devDependencies)
-bun install --production
-
-# Frozen lockfile for CI
-bun install --frozen-lockfile
-# or
-bun ci
-
-# Check for outdated packages
-bun outdated
-
-# Workspaces
-bun install --filter './packages/api'    # install for specific workspace
-bun install --filter '!pkg-c'            # exclude workspace
-
-# Run scripts
-bun run build        # run "build" script from package.json
-bun run dev --watch  # pass flags to script
-
-# Execute packages
-bunx cowsay "Hello"  # run package without installing
-bunx create-next-app my-app
+apt-get install -y \
+  libsecret-1-dev \
+  gnome-keyring \
+  dbus-x11
 ```
 
+--------------------------------
+
+### Complete Server Example
+
+Source: https://github.com/oven-sh/bun/blob/main/packages/bun-uws/misc/READMORE.md
+
+A complete example demonstrating how to create an HTTP server, define routes, listen on a port, and run the event loop using the uWS framework.
+
+```APIDOC
+## Complete uWS Server Setup
+
+### Description
+Full example of initializing a uWS application with route handling, port listening, and event loop execution.
+
+### Code Example
+```cpp
+int main() {
+    uWS::App().get("/*", [](auto *res, auto *req) {
+        res->end("Hello World!");
+    }).listen(9001, [](auto *listenSocket) {
+        if (listenSocket) {
+            std::cout << "Listening for connections..." << std::endl;
+        }
+    }).run();
+
+    std::cout << "Shoot! We failed to listen and the App fell through, exiting now!" << std::endl;
+}
+```
+
+### Components
+1. **Route Definition** - `.get("/*", callback)` handles all GET requests
+2. **Port Binding** - `.listen(9001, callback)` binds to port 9001
+3. **Event Loop** - `.run()` starts the blocking event loop
+4. **Method Chaining** - All methods return App instance for chaining
+
+### Execution Flow
+1. App instance created
+2. Route handler registered
+3. Server binds to port 9001
+4. Event loop starts and blocks
+5. Server processes incoming requests
+6. Loop exits when all resources cleaned up
+```
+
+--------------------------------
+
+### Run Bun Secrets Tests in Docker
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/secrets-ci-setup.md
+
+This Dockerfile snippet first installs required keyring dependencies (`libsecret-1-dev`, `gnome-keyring`, `dbus-x11`) to support Bun's secrets API. Following the dependency installation, it executes the Bun secrets tests within the Docker image.
+
+```dockerfile
+# Optional: pre-install packages for faster test startup
+RUN apt-get update && apt-get install -y \
+    libsecret-1-dev \
+    gnome-keyring \
+    dbus-x11
+
+# Run test normally - setup is automatic
+RUN bun test test/js/bun/secrets.test.ts
+```
+
+--------------------------------
+
+### Initialize Bun project
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/gel.mdx
+
+Create a new project directory and initialize it with Bun.
+
+```sh
+mkdir my-edgedb-app
+cd my-edgedb-app
+bun init -y
+```
+
+--------------------------------
+
+### Example Output of Custom Help Text in Commander.js
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/node/test/fixtures/postject-copy/node_modules/commander/Readme.md
+
+This text output shows the result of adding custom help text to a Commander.js program. The `Example call:` section, defined using `addHelpText('after', ...)`, is appended to the standard help output, enhancing the user's understanding.
+
+```Text
+Usage: custom-help [options]
+
+Options:
+  -f, --foo   enable some foo
+  -h, --help  display help for command
+
+Example call:
+  $ custom-help --help
+```
+
+--------------------------------
+
+### Start local development server
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/README.md
+
+Run the Mintlify development server to preview documentation at http://localhost:3000.
+
+```bash
+mint dev
+```
+
+--------------------------------
+
+### Add Custom Help Text to Commander.js Output
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/node/test/fixtures/postject-copy/node_modules/commander/Readme.md
+
+This JavaScript snippet demonstrates how to add custom text to the auto-generated help output of a Commander.js program using `addHelpText()`. The example adds an 'after' position text, which appears after the built-in help options, providing additional usage examples.
+
+```js
+program
+  .option('-f, --foo', 'enable some foo');
+
+program.addHelpText('after', `
+
+Example call:
+  $ custom-help --help`);
+```
+
+--------------------------------
+
+### Initialize Bun project
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/prisma.mdx
+
+Create a new directory and initialize a Bun project with bun init.
+
+```bash
+mkdir prisma-app
+cd prisma-app
+bun init
+```
+
+--------------------------------
+
+### Create Multi-Command CLI with Subcommands in Node.js
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/node/test/fixtures/postject-copy/node_modules/commander/Readme.md
+
+Advanced Commander.js example creating a named CLI program with version, description, and subcommands. Demonstrates command definition with arguments, options, descriptions, and action handlers for processing user input.
+
+```javascript
+const { Command } = require('commander');
+const program = new Command();
+
+program
+  .name('string-util')
+  .description('CLI to some JavaScript string utilities')
+  .version('0.8.0');
+
+program.command('split')
+  .description('Split a string into substrings and display as an array')
+  .argument('<string>', 'string to split')
+  .option('--first', 'display just the first substring')
+  .option('-s, --separator <char>', 'separator character', ',')
+  .action((str, options) => {
+    const limit = options.first ? 1 : undefined;
+    console.log(str.split(options.separator, limit));
+  });
+
+program.parse();
+```
+
+--------------------------------
+
+### Initialize a Bun project
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
+
+Scaffold a new project directory and select a template using the interactive initialization command.
+
+```bash
+bun init my-app
+```
+
+```bash
+bun init my-app
+```
+
+```txt
+✓ Select a project template: Blank
+
+- .gitignore
+- CLAUDE.md
+- .cursor/rules/use-bun-instead-of-node-vite-npm-pnpm.mdc -> CLAUDE.md
+- index.ts
+- tsconfig.json (for editor autocomplete)
+- README.md
+```
+
+--------------------------------
+
+### Initialize a new Bun project interactively
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/templating/init.mdx
+
+Use `bun init` followed by a directory name to start an interactive project scaffolding process.
+
+```bash
+bun init my-app
+```
+
+--------------------------------
+
+### Add Start Script to package.json
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
+
+Illustrates how to define a 'start' script in `package.json` to run the main application file, enabling easier execution.
+
 ```json
-// package.json configuration
 {
-  "name": "my-app",
-  "workspaces": ["packages/*"],
-  "trustedDependencies": ["esbuild"],  // allow lifecycle scripts
-  "overrides": {
-    "lodash": "4.17.21"  // force version for all deps
+  "name": "quickstart",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": { 
+    "start": "bun run index.ts" 
+  }, 
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
   }
 }
 ```
 
-```toml
-# bunfig.toml configuration
-[install]
-optional = true
-dev = true
-peer = true
-frozenLockfile = false
+--------------------------------
 
-[install.scopes]
-"@myorg" = { url = "https://npm.myorg.com/", token = "$NPM_TOKEN" }
+### Example Output: Commander.js Without Spelling Suggestions
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/node/test/fixtures/postject-copy/node_modules/commander/Readme.md
+
+This console output demonstrates the effect of disabling spelling suggestions in Commander.js. When an unknown, misspelled option is provided, only the error message is displayed, without the 'Did you mean?' suggestion that would normally appear.
+
+```console
+$ pizza --hepl
+error: unknown option '--hepl'
 ```
 
-## WebSocket Server
+--------------------------------
 
-Bun.serve includes built-in WebSocket support with pub/sub messaging, compression, and per-connection context data. It can handle millions of concurrent connections efficiently.
+### Access Help for Commander.js Subcommands via Shell
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/node/test/fixtures/postject-copy/node_modules/commander/Readme.md
+
+This shell script illustrates different ways to invoke help for a Commander.js program and its subcommands. It shows that `help` and `--help` can be used interchangeably for the main command, and also how to get help for specific subcommands.
+
+```sh
+shell help
+shell --help
+
+shell help spawn
+shell spawn --help
+```
+
+--------------------------------
+
+### Complete Bun.build() compilation example with plugin
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/bundler/executables.mdx
+
+Full example demonstrating Bun.build() with compile options, plugin integration, minification, sourcemaps, bytecode, environment variables, and success validation.
 
 ```typescript
-const server = Bun.serve({
-  port: 3000,
+import type { BunPlugin } from "bun";
 
-  fetch(req, server) {
-    const url = new URL(req.url);
+const myPlugin: BunPlugin = {
+  name: "my-plugin",
+  setup(build) {
+    // Plugin implementation
+  },
+};
 
-    if (url.pathname === "/chat") {
-      // Upgrade HTTP to WebSocket
-      const username = url.searchParams.get("user") || "anonymous";
-      const upgraded = server.upgrade(req, {
-        data: { username, joinedAt: Date.now() },
-      });
+const result = await Bun.build({
+  entrypoints: ["./src/cli.ts"],
+  compile: {
+    target: "bun-linux-x64",
+    outfile: "./dist/mycli",
+    execArgv: ["--smol"],
+    autoloadDotenv: false,
+    autoloadBunfig: false,
+  },
+  minify: true,
+  sourcemap: "linked",
+  bytecode: true,
+  define: {
+    "process.env.NODE_ENV": JSON.stringify("production"),
+    VERSION: JSON.stringify("1.0.0"),
+  },
+  plugins: [myPlugin],
+});
 
-      if (!upgraded) {
-        return new Response("WebSocket upgrade failed", { status: 400 });
-      }
-      return;  // Don't return a Response after upgrade
+if (result.success) {
+  console.log("Build successful:", result.outputs[0].path);
+}
+```
+
+--------------------------------
+
+### Define Negatable Boolean Options in CLI
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/node/test/fixtures/postject-copy/node_modules/commander/Readme.md
+
+Demonstrates negatable boolean options using the `--no-` prefix to set option values to false. This allows defining options that can be explicitly disabled. The example shows how to handle both regular and negatable options together.
+
+```javascript
+program
+  .option('--no-sauce', 'Remove sauce')
+  .option('--cheese <flavour>', 'cheese flavour', 'mozzarella')
+  .option('--no-cheese', 'plain with no cheese')
+  .parse();
+
+const options = program.opts();
+const sauceStr = options.sauce ? 'sauce' : 'no sauce';
+const cheeseStr = (options.cheese === false) ? 'no cheese' : `${options.cheese} cheese`;
+console.log(`You ordered a pizza with ${sauceStr} and ${cheeseStr}`);
+```
+
+--------------------------------
+
+### Initialize a Bun Project
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/discordjs.mdx
+
+Create a new directory and initialize it as a Bun project using `bun init`.
+
+```sh
+mkdir my-bot
+cd my-bot
+bun init
+```
+
+--------------------------------
+
+### Install NAPI CLI and create native plugin project
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/plugins.mdx
+
+Set up the NAPI CLI tool and initialize a new native plugin project. Run these commands to prepare the Rust environment for native plugin development.
+
+```bash
+bun add -g @napi-rs/cli
+napi new
+```
+
+--------------------------------
+
+### Parse Command-Line Arguments with Options in Node.js
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/node/test/fixtures/postject-copy/node_modules/commander/Readme.md
+
+Basic Commander.js setup that defines boolean and value options, then parses command-line arguments. The program splits a string using a specified separator character. Demonstrates option parsing and accessing parsed values via program.opts().
+
+```javascript
+const { program } = require('commander');
+
+program
+  .option('--first')
+  .option('-s, --separator <char>');
+
+program.parse();
+
+const options = program.opts();
+const limit = options.first ? 1 : undefined;
+console.log(program.args[0].split(options.separator, limit));
+```
+
+--------------------------------
+
+### Execute package.json Start Script with Bun
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
+
+Runs the 'start' script defined in `package.json` using `bun run`. The output shows the server successfully starting.
+
+```bash
+bun run start
+```
+
+```txt
+Listening on http://localhost:3000
+```
+
+--------------------------------
+
+### Set up Bun project with Drizzle and Neon serverless driver
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/neon-drizzle.mdx
+
+Initialize a new Bun project and install necessary dependencies for Drizzle ORM and the Neon serverless driver.
+
+```sh
+mkdir bun-drizzle-neon
+cd bun-drizzle-neon
+bun init -y
+bun add drizzle-orm @neondatabase/serverless
+bun add -D drizzle-kit
+```
+
+--------------------------------
+
+### Delete Bun Secret by Setting Empty String Value (TypeScript)
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/secrets-ci-setup.md
+
+This TypeScript example illustrates an alternative method to delete a stored credential using `Bun.secrets.set()`. By providing an empty string as the `value`, the credential associated with the specified service and name will be removed, offering simplified set/delete operations.
+
+```typescript
+// These are equivalent:
+await Bun.secrets.delete({ service: "myapp", name: "token" });
+await Bun.secrets.set({ service: "myapp", name: "token", value: "" });
+```
+
+--------------------------------
+
+### Preconnect to a Host at Startup via CLI
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/networking/fetch.mdx
+
+Use the `--fetch-preconnect` CLI flag with `bun` to preconnect to a specified host when the application starts, similar to `<link rel="preconnect">` in HTML.
+
+```sh
+bun --fetch-preconnect https://bun.com ./my-script.ts
+```
+
+--------------------------------
+
+### Install Bun using npm
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/installation.mdx
+
+Install Bun globally using npm. This is a convenient way to get Bun if you already have Node.js and npm set up.
+
+```bash
+npm install -g bun # the last `npm` command you'll ever need
+```
+
+--------------------------------
+
+### Define an HTTP route and start Elysia server
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/elysia.mdx
+
+Initializes an Elysia instance, defines a root GET route, and starts listening on port 8080.
+
+```typescript
+import { Elysia } from "elysia";
+
+const app = new Elysia().get("/", () => "Hello Elysia").listen(8080);
+
+console.log(`🦺 Elysia is running at on port ${app.server?.port}...`);
+```
+
+--------------------------------
+
+### Set up a StricJS project with Bun
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/stric.mdx
+
+Initialize a new Bun project and add the necessary StricJS router and utility packages.
+
+```bash
+mkdir myapp
+cd myapp
+bun init
+bun add @stricjs/router @stricjs/utils
+```
+
+--------------------------------
+
+### Implement Life Cycle Hooks in Commander.js Commands
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/node/test/fixtures/postject-copy/node_modules/commander/Readme.md
+
+This JavaScript example illustrates how to add callback hooks to Commander.js commands for various life cycle events, such as 'preAction'. Hooks can be used to perform actions or log information before a command's action handler is executed, and they can be asynchronous, requiring `parseAsync`.
+
+```js
+program
+  .option('-t, --trace', 'display trace statements for commands')
+  .hook('preAction', (thisCommand, actionCommand) => {
+    if (thisCommand.opts().trace) {
+      console.log(`About to call action handler for subcommand: ${actionCommand.name()}`);
+      console.log('arguments: %O', actionCommand.args);
+      console.log('options: %o', actionCommand.opts());
     }
-
-    return new Response("Hello");
-  },
-
-  websocket: {
-    // Max message size (default: 16MB)
-    maxPayloadLength: 1024 * 1024,
-
-    // Compression
-    perMessageDeflate: true,
-
-    // Idle timeout in seconds
-    idleTimeout: 120,
-
-    open(ws) {
-      console.log(`${ws.data.username} connected`);
-      ws.subscribe("chat");  // subscribe to topic
-      server.publish("chat", JSON.stringify({
-        type: "join",
-        user: ws.data.username,
-      }));
-    },
-
-    message(ws, message) {
-      // message is string or Buffer
-      const text = typeof message === "string" ? message : message.toString();
-
-      // Broadcast to all subscribers
-      server.publish("chat", JSON.stringify({
-        type: "message",
-        user: ws.data.username,
-        content: text,
-      }));
-    },
-
-    close(ws, code, reason) {
-      console.log(`${ws.data.username} disconnected: ${code}`);
-      ws.unsubscribe("chat");
-      server.publish("chat", JSON.stringify({
-        type: "leave",
-        user: ws.data.username,
-      }));
-    },
-  },
-});
-
-// Get subscriber count for a topic
-const chatUsers = server.subscriberCount("chat");
-
-// Publish from outside websocket handlers
-server.publish("chat", JSON.stringify({ type: "announcement", text: "Server restart in 5 minutes" }));
-
-console.log(`WebSocket server running on ${server.url}`);
+  });
 ```
 
-## Hashing and Passwords
+--------------------------------
 
-Bun provides fast hashing utilities and secure password hashing using Argon2id (recommended) or bcrypt. The password functions are designed to be resistant to timing attacks.
+### Define Boolean and Value Options in CLI
 
-```typescript
-// Password hashing with Argon2id (default, recommended)
-const hash = await Bun.password.hash("mypassword");
-// $argon2id$v=19$m=65536,t=2,p=1$...
+Source: https://github.com/oven-sh/bun/blob/main/test/js/node/test/fixtures/postject-copy/node_modules/commander/Readme.md
 
-const isValid = await Bun.password.verify("mypassword", hash);
-console.log(isValid);  // true
+Demonstrates how to define basic boolean options (flags) and options that accept values using angle brackets. Boolean options are undefined unless specified, while value options require an argument. The example shows parsing arguments and accessing options through program.opts().
 
-// Bcrypt (for compatibility)
-const bcryptHash = await Bun.password.hash("mypassword", {
-  algorithm: "bcrypt",
-  cost: 10,  // work factor
-});
+```javascript
+program
+  .option('-d, --debug', 'output extra debugging')
+  .option('-s, --small', 'small pizza size')
+  .option('-p, --pizza-type <type>', 'flavour of pizza');
 
-// Fast hashing (non-cryptographic)
-const hash1 = Bun.hash("hello world");           // Wyhash (default)
-const hash2 = Bun.hash("hello world", 12345);    // with seed
-const hash3 = Bun.hash.crc32("hello world");     // CRC32
-const hash4 = Bun.hash.adler32("hello world");   // Adler-32
-const hash5 = Bun.hash.cityHash32("hello");      // CityHash32
-const hash6 = Bun.hash.cityHash64("hello");      // CityHash64
-const hash7 = Bun.hash.murmur32v3("hello");      // MurmurHash3 32-bit
-const hash8 = Bun.hash.murmur64v2("hello");      // MurmurHash2 64-bit
+program.parse(process.argv);
 
-// Cryptographic hashing
-const sha256 = Bun.sha("hello", "sha256");        // Uint8Array
-const sha512 = Bun.sha("hello", "sha512");
-const md5 = Bun.sha("hello", "md5");
-
-// Streaming hash with CryptoHasher
-const hasher = new Bun.CryptoHasher("sha256");
-hasher.update("Hello ");
-hasher.update("World!");
-const digest = hasher.digest("hex");  // "a591a6d40..."
-
-// Hash a file
-const fileHasher = new Bun.CryptoHasher("sha256");
-fileHasher.update(await Bun.file("large-file.bin").arrayBuffer());
-const fileHash = fileHasher.digest("base64");
+const options = program.opts();
+if (options.debug) console.log(options);
+console.log('pizza details:');
+if (options.small) console.log('- small pizza size');
+if (options.pizzaType) console.log(`- ${options.pizzaType}`);
 ```
 
-## Utilities
+--------------------------------
 
-Bun provides various utility functions for common operations like sleeping, compression, string processing, and stream handling.
+### Bun.serve() - Basic Routing Setup
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/http/routing.mdx
+
+Configure basic routes in Bun.serve() with static paths and a fallback fetch handler for unmatched requests. Routes are defined as an object mapping paths to handler functions that return Response objects.
+
+```APIDOC
+## Bun.serve()
+
+### Description
+Initialize an HTTP server with route handlers and optional fallback fetch handler.
+
+### Method
+Configuration API
+
+### Parameters
+
+#### Configuration Object
+- **routes** (object) - Optional - Object mapping route paths to handler functions or Response objects
+- **fetch** (function) - Optional - Fallback handler for unmatched routes. Receives a Request and returns a Response or Promise<Response>
+- **port** (number) - Optional - Port to listen on
+
+### Route Handler Signature
+```
+(request: BunRequest) => Response | Promise<Response>
+```
+
+### BunRequest Interface
+- **params** (Record<string, string>) - Route parameters extracted from the path
+- **cookies** (CookieMap) - Parsed cookies from the request
+- Extends standard Web API Request
+
+### Request Example
+```ts
+Bun.serve({
+  routes: {
+    "/": () => new Response("Home"),
+    "/api": () => Response.json({ success: true }),
+    "/users": async () => Response.json({ users: [] })
+  },
+  fetch() {
+    return new Response("Unmatched route");
+  }
+});
+```
+
+### Response
+Returns a server object that listens for HTTP requests and dispatches them to matching route handlers.
+```
+
+--------------------------------
+
+### Basic route setup with Bun.serve
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/http/routing.mdx
+
+Define static and dynamic routes using the routes property. Unmatched requests fall through to the fetch handler.
 
 ```typescript
-// Sleep
-await Bun.sleep(1000);        // async sleep for 1 second
-Bun.sleepSync(1000);          // blocking sleep
+Bun.serve({
+  routes: {
+    "/": () => new Response("Home"),
+    "/api": () => Response.json({ success: true }),
+    "/users": async () => Response.json({ users: [] }),
+  },
+  fetch() {
+    return new Response("Unmatched route");
+  },
+});
+```
 
-// Timing
-const start = Bun.nanoseconds();  // high-resolution time
-// ... do work ...
-const elapsed = Bun.nanoseconds() - start;
-console.log(`Took ${elapsed / 1e6} ms`);
+--------------------------------
 
-// UUID generation
-const uuid = Bun.randomUUIDv7();  // time-sortable UUID v7
-const uuid4 = crypto.randomUUID(); // standard UUID v4
+### Configure Advanced Command-line Arguments with Commander.js
 
-// Version info
-console.log(Bun.version);    // "1.x.x"
-console.log(Bun.revision);   // git commit hash
+Source: https://github.com/oven-sh/bun/blob/main/test/js/node/test/fixtures/postject-copy/node_modules/commander/Readme.md
 
-// Compression
-const data = "Hello World!".repeat(1000);
-const compressed = Bun.gzipSync(data);
-const decompressed = Bun.gunzipSync(compressed);
+This example demonstrates using `commander.Argument` explicitly to configure arguments with advanced features. It shows how to define argument choices for validation (e.g., 'small', 'medium', 'large') and how to set a default value along with a descriptive text for that default, providing more control over argument behavior.
 
-const deflated = Bun.deflateSync(data);
-const inflated = Bun.inflateSync(deflated);
+```javascript
+program
+  .addArgument(new commander.Argument('<drink-size>', 'drink cup size').choices(['small', 'medium', 'large']))
+  .addArgument(new commander.Argument('[timeout]', 'timeout in seconds').default(60, 'one minute'))
+```
 
-// String utilities
-const escaped = Bun.escapeHTML("<script>alert('xss')</script>");
-// "&lt;script&gt;alert('xss')&lt;/script&gt;"
+--------------------------------
 
-const width = Bun.stringWidth("Hello 👋");  // 8 (accounts for emoji width)
+### Start development server with Bun
 
-// Deep equality
-const isEqual = Bun.deepEquals({ a: [1, 2] }, { a: [1, 2] });  // true
+Source: https://github.com/oven-sh/bun/blob/main/src/runtime/cli/init/README2.default.md
 
-// Object inspection
-const str = Bun.inspect({ nested: { array: [1, 2, 3] } }, { colors: true, depth: 5 });
+Start a development server with hot-reload capabilities for local development and testing.
 
-// Path/URL conversion
-const path = Bun.fileURLToPath("file:///home/user/file.txt");  // "/home/user/file.txt"
-const url = Bun.pathToFileURL("/home/user/file.txt");          // URL object
+```bash
+bun dev
+```
 
-// Find executable
-const bunPath = Bun.which("bun");     // "/usr/local/bin/bun"
-const notFound = Bun.which("fake");   // null
+--------------------------------
 
-// Stream utilities
-const response = await fetch("https://example.com");
-const text = await Bun.readableStreamToText(response.body);
-const buffer = await Bun.readableStreamToArrayBuffer(response.body);
-const blob = await Bun.readableStreamToBlob(response.body);
-const json = await Bun.readableStreamToJSON(response.body);
+### GET /api/*
 
-// Module resolution
-const resolved = Bun.resolveSync("react", "/path/to/project");
-// "/path/to/project/node_modules/react/index.js"
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/http/server.mdx
 
-// Glob pattern matching
-const glob = new Bun.Glob("**/*.ts");
-for await (const file of glob.scan({ cwd: "./src" })) {
-  console.log(file);  // "index.ts", "utils/helper.ts", etc.
+A wildcard route that catches any unmatched requests starting with '/api/'.
+
+```APIDOC
+## GET /api/*
+
+### Description
+Serves as a fallback for any routes under `/api/` that are not explicitly matched.
+
+### Method
+GET
+
+### Endpoint
+/api/*
+
+### Response
+#### Error Response (404)
+- **message** (string) - A message indicating the resource was not found.
+
+#### Response Example
+{
+  "message": "Not found"
+}
+```
+
+--------------------------------
+
+### Stack trace output example from Error.captureStackTrace
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/debugger.mdx
+
+Example output showing how Error.captureStackTrace modifies the stack trace to start from the specified function boundary instead of the actual throw point.
+
+```text
+Error: here!
+    at myInner (file.js:4:15)
+    at fn (file.js:8:5)
+    at module code (file.js:17:1)
+    at moduleEvaluation (native)
+    at moduleEvaluation (native)
+    at <anonymous> (native)
+
+-- captureStackTrace --
+
+Error: here!
+    at module code (file.js:17:1)
+    at moduleEvaluation (native)
+    at moduleEvaluation (native)
+    at <anonymous> (native)
+```
+
+--------------------------------
+
+### Configure Bun global installation paths
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/pm/cli/add.mdx
+
+Provides an example of `bunfig.toml` configuration to customize the directories where `bun add --global` installs packages and links their binaries. This allows users to control the global installation behavior of Bun.
+
+```toml
+[install]
+# where `bun add --global` installs packages
+globalDir = "~/.bun/install/global"
+
+# where globally-installed package bins are linked
+globalBinDir = "~/.bun/bin"
+```
+
+--------------------------------
+
+### Initialize Bun Project and Install Drizzle ORM
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/drizzle.mdx
+
+Use `bun init` to create a new project and `bun add` to install Drizzle ORM and Drizzle Kit dependencies.
+
+```sh
+bun init -y
+bun add drizzle-orm
+bun add -D drizzle-kit
+```
+
+--------------------------------
+
+### Define Variadic Command-line Arguments in Commander.js
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/node/test/fixtures/postject-copy/node_modules/commander/Readme.md
+
+This example illustrates how to define a variadic argument, which collects multiple values into an array. By appending `...` to the argument name (e.g., `<dirs...>`), the last argument can accept an indefinite number of values. These values are then passed as an array to the action handler, allowing for operations on multiple items.
+
+```javascript
+program
+  .version('0.1.0')
+  .command('rmdir')
+  .argument('<dirs...>')
+  .action(function (dirs) {
+    dirs.forEach((dir) => {
+      console.log('rmdir %s', dir);
+    });
+  });
+```
+
+--------------------------------
+
+### Bun.serve - HTTP Server
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/bun-apis.mdx
+
+Start an HTTP server using Bun's native server API. This is the canonical way to create a web server in Bun, accepting a fetch handler that processes incoming requests and returns responses.
+
+```APIDOC
+## Bun.serve
+
+### Description
+Start an HTTP server with a fetch handler to process incoming requests.
+
+### Method
+Function call
+
+### Signature
+```typescript
+Bun.serve(options: ServeOptions): Server
+```
+
+### Parameters
+- **fetch** (function) - Required - Handler function that receives a Request and returns a Response
+
+### Request Example
+```typescript
+Bun.serve({
+  fetch(req: Request) {
+    return new Response("Success!");
+  },
+});
+```
+```
+
+--------------------------------
+
+### Comprehensive examples of bun info command usage
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/pm/cli/info.mdx
+
+This section provides various examples demonstrating how to use `bun info` to view basic package details, specific versions, all available versions, dependencies, homepage URLs, and to retrieve output in JSON format.
+
+```bash
+# View basic package information
+bun info is-number
+
+# View a specific version
+bun info is-number@7.0.0
+
+# View all available versions
+bun info is-number versions
+
+# View package dependencies
+bun info express dependencies
+
+# View package homepage
+bun info lodash homepage
+
+# Get JSON output
+bun info react --json
+```
+
+--------------------------------
+
+### Bun Install Disabling Lifecycle Script Optimizations
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/pm/cli/install.mdx
+
+Provides examples of environment variables to disable Bun's automatic optimizations for postinstall scripts. This offers fine-grained control over the installation process, useful for specific build environments or debugging.
+
+```bash
+BUN_FEATURE_FLAG_DISABLE_NATIVE_DEPENDENCY_LINKER=1 bun install
+BUN_FEATURE_FLAG_DISABLE_IGNORE_SCRIPTS=1 bun install
+```
+
+--------------------------------
+
+### Setup Bun in GitHub Actions Workflow
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/pm/cli/install.mdx
+
+Configure a GitHub Actions workflow to install Bun and run build commands. Uses the official oven-sh/setup-bun action to set up Bun v2, install dependencies, and execute build scripts in an Ubuntu environment.
+
+```yaml
+name: bun-types
+jobs:
+  build:
+    name: build-app
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      - name: Install bun
+        uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install
+      - name: Build app
+        run: bun run build
+```
+
+--------------------------------
+
+### Start Production Remix App with Bun
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/remix.mdx
+
+After building the application, run `bun start` from the project root to launch the production server. This command typically uses `remix-serve` to host the compiled application, making it accessible at `http://localhost:3000`.
+
+```sh
+bun start
+```
+
+```txt
+$ remix-serve ./build/index.js
+[remix-serve] http://localhost:3000 (http://192.168.86.237:3000)
+```
+
+--------------------------------
+
+### Define Asynchronous Action Handlers in Commander.js
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/node/test/fixtures/postject-copy/node_modules/commander/Readme.md
+
+This example illustrates how to define an `async` function as an action handler for commands. This is useful when command logic involves asynchronous operations, such as network requests or file I/O. To properly handle asynchronous action handlers, the command parsing must also be asynchronous, achieved by calling `program.parseAsync()` instead of `program.parse()`.
+
+```javascript
+async function run() { /* code goes here */ }
+
+async function main() {
+  program
+    .command('run')
+    .action(run);
+  await program.parseAsync(process.argv);
+}
+```
+
+--------------------------------
+
+### Navigate to project and install dependencies with Bun
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/vite.mdx
+
+After project creation, these commands navigate into the new project directory and install all required dependencies using Bun's package manager, `bun install`.
+
+```bash
+cd my-app
+bun install
+```
+
+--------------------------------
+
+### Serve Static and File Routes in Bun
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/http/routing.mdx
+
+Demonstrates how to configure Bun.serve with both static routes (content buffered at startup) and file routes (content read per request) for different file serving behaviors.
+
+```ts
+Bun.serve({
+  routes: {
+    // Static route - content is buffered in memory at startup
+    "/logo.png": new Response(await Bun.file("./logo.png").bytes()),
+
+    // File route - content is read from filesystem on each request
+    "/download.zip": new Response(Bun.file("./download.zip")),
+  }
+});
+```
+
+--------------------------------
+
+### Create TanStack Start App with Bun CLI
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/tanstack-start.mdx
+
+This command uses the `@tanstack/cli` to scaffold a new TanStack Start project. It leverages `bunx` to execute the CLI tool without global installation, creating a project directory named `my-tanstack-app`.
+
+```sh
+bunx @tanstack/cli create my-tanstack-app
+```
+
+--------------------------------
+
+### Install Prisma dependencies
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/prisma.mdx
+
+Install Prisma CLI, Prisma Client, and LibSQL adapter for database access.
+
+```bash
+bun add -d prisma
+bun add @prisma/client @prisma/adapter-libsql
+```
+
+--------------------------------
+
+### Import aliased package in TypeScript
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/install/npm-alias.mdx
+
+Import and use a package that was installed under an alias. After installing with a custom alias, you can import the package using the alias name instead of the original package name. This example imports the zod package that was aliased as my-custom-name.
+
+```typescript
+import { z } from "my-custom-name";
+
+z.string();
+```
+
+--------------------------------
+
+### Navigate into project directory and install dependencies with Bun
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/hono.mdx
+
+These commands navigate into the newly created project directory (`myapp`) and then use `bun install` to download and install all required project dependencies. This prepares the Hono application for development or production use.
+
+```sh
+cd myapp
+bun install
+```
+
+--------------------------------
+
+### Access Arguments, Options, and Command Object in Commander.js Action Handler
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/node/test/fixtures/postject-copy/node_modules/commander/Readme.md
+
+This example shows how the action handler receives command arguments, parsed options, and the command object itself as parameters. It demonstrates accessing argument values directly, retrieving option values (e.g., `options.title`), and using the command object (e.g., `command.name()`) for more contextual logic, such as conditional debugging output.
+
+```javascript
+program
+  .argument('<name>')
+  .option('-t, --title <honorific>', 'title to use before name')
+  .option('-d, --debug', 'display some debugging')
+  .action((name, options, command) => {
+    if (options.debug) {
+      console.error('Called %s with options %o', command.name(), options);
+    }
+    const title = options.title ? `${options.title} ` : '';
+    console.log(`Thank-you ${title}${name}`);
+  });
+```
+
+--------------------------------
+
+### Initialize Gel project
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/gel.mdx
+
+Initialize a Gel instance for the project and view the configuration output.
+
+```sh
+gel project init
+```
+
+```txt
+No `gel.toml` found in `/Users/colinmcd94/Documents/bun/fun/examples/my-gel-app` or above
+Do you want to initialize a new project? [Y/n]
+> Y
+Specify the name of Gel instance to use with this project [default: my_gel_app]:
+> my_gel_app
+Checking Gel versions...
+Specify the version of Gel to use with this project [default: x.y]:
+> x.y
+┌─────────────────────┬──────────────────────────────────────────────────────────────────┐
+│ Project directory   │ /Users/colinmcd94/Documents/bun/fun/examples/my-gel-app         │
+│ Project config      │ /Users/colinmcd94/Documents/bun/fun/examples/my-gel-app/gel.toml│
+│ Schema dir (empty)  │ /Users/colinmcd94/Documents/bun/fun/examples/my-gel-app/dbschema│
+│ Installation method │ portable package                                                 │
+│ Version             │ x.y+6d5921b                                                      │
+│ Instance name       │ my_gel_app                                                       │
+└─────────────────────┴──────────────────────────────────────────────────────────────────┘
+Version x.y+6d5921b is already downloaded
+Initializing Gel instance...
+Applying migrations...
+Everything is up to date. Revision initial
+Project initialized.
+To connect to my_gel_app, run `gel`
+```
+
+--------------------------------
+
+### Install Dependencies with npm, pnpm, or yarn
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/third_party/pnpm/install_fixture/README.md
+
+Install project dependencies using one of the supported package managers. This command sets up all required packages for the Solid.js project to run locally.
+
+```bash
+npm install
+```
+
+```bash
+pnpm install
+```
+
+```bash
+yarn install
+```
+
+--------------------------------
+
+### Declare and Use Variadic Options in JavaScript CLI with Bun
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/node/test/fixtures/postject-copy/node_modules/commander/Readme.md
+
+This snippet demonstrates how to define variadic command-line options using `program.option()` in JavaScript, allowing multiple arguments for a single option. It shows examples of how these options are parsed into an array, how remaining arguments are handled, and the effect of the `--` separator. This functionality is useful for commands that accept a variable number of inputs for a specific flag.
+
+```javascript
+program
+  .option('-n, --number <numbers...>', 'specify numbers')
+  .option('-l, --letter [letters...]', 'specify letters');
+
+program.parse();
+
+console.log('Options: ', program.opts());
+console.log('Remaining arguments: ', program.args);
+```
+
+```console
+$ collect -n 1 2 3 --letter a b c
+Options:  { number: [ '1', '2', '3' ], letter: [ 'a', 'b', 'c' ] }
+Remaining arguments:  []
+$ collect --letter=A -n80 operand
+Options:  { number: [ '80' ], letter: [ 'A' ] }
+Remaining arguments:  [ 'operand' ]
+$ collect --letter -n 1 -n 2 3 -- operand
+Options:  { number: [ '1', '2', '3' ], letter: true }
+Remaining arguments:  [ 'operand' ]
+```
+
+--------------------------------
+
+### Start PM2 with configuration file
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/pm2.mdx
+
+Launch your Bun application using the pm2.config.js configuration file.
+
+```bash
+pm2 start pm2.config.js
+```
+
+--------------------------------
+
+### Initialize NAPI project and add Bun native plugin crate
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/bundler/plugins.mdx
+
+Setup commands for creating a new NAPI project and adding the necessary Rust crate for Bun native plugins.
+
+```bash
+bun add -g @napi-rs/cli
+napi new
+```
+
+```bash
+cargo add bun-native-plugin
+```
+
+--------------------------------
+
+### Paragraph Interrupted by Ordered List Starting with 1
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/md/spec.txt
+
+This example shows that an ordered list starting with '1.' *can* interrupt a paragraph in CommonMark. The text before '1.' becomes a paragraph, and the line starting with '1.' initiates an ordered list, potentially leading to unintended results but preventing most spurious list captures.
+
+```markdown
+The number of windows in my house is
+1.  The number of doors is 6.
+```
+
+```html
+<p>The number of windows in my house is</p>
+<ol>
+<li>The number of doors is 6.</li>
+</ol>
+```
+
+--------------------------------
+
+### Initialize and Manage a React App with Bun
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/react.mdx
+
+Use these commands to create a new React project, run it in development with hot reloading, build for production, and start the production server.
+
+```bash
+# Create a new React app
+bun init --react
+
+# Run the app in development mode
+bun dev
+
+# Build as a static site for production
+bun run build
+
+# Run the server in production
+bun start
+```
+
+--------------------------------
+
+### Force Bun Secrets API Keyring Setup via Environment Variable
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/secrets-ci-setup.md
+
+This command demonstrates how to explicitly force the `Bun.secrets` API test to perform its keyring setup routine, even if automatic detection might not trigger it. This is achieved by setting the `FORCE_KEYRING_SETUP` environment variable.
+
+```bash
+FORCE_KEYRING_SETUP=1 bun test test/js/bun/secrets.test.ts
+```
+
+--------------------------------
+
+### Create Project from GitHub Repository
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/templating/create.mdx
+
+Use these commands to download and initialize a project from a GitHub repository. The repository name will be used as the destination folder name.
+
+```bash
+bun create <user>/<repo>
+bun create github.com/<user>/<repo>
+```
+
+--------------------------------
+
+### Spawn Multi-File Bun Process in Test
+
+Source: https://github.com/oven-sh/bun/blob/main/test/AGENTS.md
+
+Shows how to set up a multi-file test environment using `tempDir` to create temporary files and then spawn a Bun process to execute one of them.
+
+```ts
+import { bunEnv, bunExe, tempDir } from "harness";
+import { test, expect } from "bun:test";
+
+test("multi-file test spawns a Bun process", async () => {
+  // If a test MUST use multiple files:
+  using dir = tempDir("my-test-prefix", {
+    "my.fixture.ts": `
+      import { foo } from "./foo.ts";
+      foo();
+    `,
+    "foo.ts": `
+      export function foo() {
+        console.log("Hello, world!");
+      }
+    `,
+  });
+
+  await using proc = Bun.spawn({
+    cmd: [bunExe(), "my.fixture.ts"],
+    env: bunEnv,
+    cwd: String(dir),
+  });
+
+  const [stdout, stderr, exitCode] = await Promise.all([
+
+    // ReadableStream in Bun supports:
+    //  - `await stream.text()`
+    //  - `await stream.json()`
+    //  - `await stream.bytes()`
+    //  - `await stream.blob()`
+    proc.stdout.text(),
+    proc.stderr.text(),
+
+    proc.exitCode,
+  ]);
+
+  expect(stdout).toBe("Hello, world!");
+  expect(stderr).toBe("");
+  expect(exitCode).toBe(0);
+
+```
+
+--------------------------------
+
+### Initialize Bun Redis Client
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/redis.mdx
+
+Shows how to use the default Redis client (configured via environment variables) and how to create a custom client with a specific connection string.
+
+```typescript
+import { redis, RedisClient } from "bun";
+
+// Using the default client (reads connection info from environment)
+// process.env.REDIS_URL is used by default
+await redis.set("hello", "world");
+const result = await redis.get("hello");
+
+// Creating a custom client
+const client = new RedisClient("redis://username:password@localhost:6379");
+await client.set("counter", "0");
+await client.incr("counter");
+```
+
+--------------------------------
+
+### Get high-precision timing with Bun.nanoseconds
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/utils.mdx
+
+Returns the number of nanoseconds elapsed since the current Bun process started as a number. Useful for benchmarking and high-precision timing measurements.
+
+```TypeScript
+Bun.nanoseconds();
+// => 7288958
+```
+
+--------------------------------
+
+### Start and stop an API server using Bun test lifecycle hooks
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/test/lifecycle.mdx
+
+This example illustrates how to use `beforeAll` and `afterAll` hooks to manage the lifecycle of an API server for Bun tests. The server is started once before all tests and stopped once after all tests, providing a stable testing environment for API interactions.
+
+```typescript
+import { beforeAll, afterAll } from "bun:test";
+import { startServer, stopServer } from "./server";
+
+let server;
+
+beforeAll(async () => {
+  // Start test server
+  server = await startServer({
+    port: 3001,
+    env: "test",
+  });
+});
+
+afterAll(async () => {
+  // Stop test server
+  await stopServer(server);
+});
+```
+
+--------------------------------
+
+### Build HTML for Production with CLI
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/bundler/html-static.mdx
+
+Use the Bun CLI to build and minify an HTML entrypoint for production, outputting to a specified directory.
+
+```bash
+bun build ./index.html --minify --outdir=dist
+```
+
+--------------------------------
+
+### Filter `bun install` operations by package name or path
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/pm/filter.mdx
+
+This example demonstrates how to use the `--filter` flag with `bun install` to manage dependencies for specific packages in a monorepo. It shows filtering by excluding a package, including packages by path, and combining filters to target specific sets of packages.
+
+```bash
+# Install dependencies for all workspaces except `pkg-c`
+bun install --filter '!pkg-c'
+
+# Install dependencies for packages in `./packages` (`pkg-a`, `pkg-b`, `pkg-c`)
+bun install --filter './packages/*'
+
+# Save as above, but exclude the root package.json
+bun install --filter '!./' --filter './packages/*'
+```
+
+--------------------------------
+
+### Install Bun using Scoop
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/installation.mdx
+
+Install Bun on Windows using the Scoop package manager. Make sure Scoop is installed and set up.
+
+```bash
+scoop install bun
+```
+
+--------------------------------
+
+### Redirect image imports with onResolve plugin
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/bundler/plugins.mdx
+
+Example plugin that redirects all imports starting with 'images/' to './public/images/' using onResolve(). Demonstrates filter-based matching and path transformation during module resolution.
+
+```typescript
+import { plugin } from "bun";
+
+plugin({
+  name: "onResolve example",
+  setup(build) {
+    build.onResolve({ filter: /.*/, namespace: "file" }, args => {
+      if (args.path.startsWith("images/")) {
+        return {
+          path: args.path.replace("images/", "./public/images/"),
+        };
+      }
+    });
+  },
+});
+```
+
+--------------------------------
+
+### Start Qwik Development Server with Bun
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/qwik.mdx
+
+This command starts the development server for the Qwik application using Bun. It typically utilizes Vite to provide a local server with hot-module replacement, allowing developers to see changes in real-time. The server usually becomes accessible at `http://localhost:5173`.
+
+```sh
+bun run dev
+```
+
+--------------------------------
+
+### Initialize SQLite Databases with Bun.SQL
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/sql.mdx
+
+Demonstrates different ways to initialize SQLite databases using the SQL constructor, including in-memory, file-based, and option-based configurations.
+
+```typescript
+import { SQL } from "bun";
+
+// In-memory database
+const memory = new SQL(":memory:");
+const memory2 = new SQL("sqlite://:memory:");
+
+// File-based database
+const sql1 = new SQL("sqlite://myapp.db");
+
+// Using options object
+const sql2 = new SQL({
+  adapter: "sqlite",
+  filename: "./data/app.db",
+});
+
+// For simple filenames, specify adapter explicitly
+const sql3 = new SQL("myapp.db", { adapter: "sqlite" });
+```
+
+--------------------------------
+
+### POST Bun.build (entrypoints)
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/bundler/index.mdx
+
+Defines the entrypoints for the application. One bundle will be generated for each entrypoint.
+
+```APIDOC
+## POST Bun.build
+
+### Description
+An array of paths corresponding to the entrypoints of our application. One bundle will be generated for each entrypoint.
+
+### Method
+POST (JavaScript API)
+
+### Endpoint
+Bun.build
+
+### Parameters
+#### Request Body
+- **entrypoints** (string[]) - Required - An array of paths corresponding to the entrypoints of the application.
+
+### Request Example
+{
+  "entrypoints": ["./index.ts"]
 }
 
-// Environment variables
-console.log(Bun.env.NODE_ENV);      // "development"
-console.log(Bun.env.DATABASE_URL);  // from .env file
+### Response
+#### Success Response (200)
+- **success** (boolean) - Indicates if the build was successful.
+- **outputs** (BuildArtifact[]) - An array of generated build artifacts.
+- **logs** (BuildMessage[]) - An array of messages or errors generated during the build.
+
+#### Response Example
+{
+  "success": true,
+  "outputs": [],
+  "logs": []
+}
 ```
-
-## Summary
-
-Bun provides a comprehensive toolkit for modern JavaScript and TypeScript development, combining a fast runtime, bundler, test runner, and package manager into a single executable. Its key strengths are exceptional performance (often 2-25x faster than alternatives), native TypeScript and JSX support without configuration, and a batteries-included approach with built-in APIs for HTTP servers, WebSockets, SQLite, file I/O, and shell scripting.
-
-The primary use cases include building high-performance web servers and APIs using `Bun.serve` with built-in routing, developing full-stack applications with HTML imports and the bundler, running fast test suites with the Jest-compatible test runner, managing dependencies with the npm-compatible package manager, and automating tasks with the cross-platform shell API. Bun is designed as a drop-in replacement for Node.js, supporting most npm packages and Node.js APIs while providing significant performance improvements. Integration typically requires minimal changes: replace `node` with `bun` in scripts, use `bun install` instead of npm/yarn, and optionally migrate to Bun-native APIs for additional performance gains.
