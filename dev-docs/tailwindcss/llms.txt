@@ -251,11 +251,11 @@ npm install -D autoprefixer
 
 --------------------------------
 
-### Install Typography plugin via npm
+### Install Tailwind CSS Typography Plugin via npm
 
 Source: https://v3.tailwindcss.com/docs/typography-plugin
 
-Install the Tailwind CSS Typography plugin as a development dependency using npm.
+Install the typography plugin as a development dependency using npm.
 
 ```bash
 npm install -D @tailwindcss/typography
@@ -474,6 +474,36 @@ npx tailwindcss -i ./src/input.css -o ./src/output.css --watch
 
 --------------------------------
 
+### Setting the Flex Basis
+
+Source: https://v3.tailwindcss.com/docs/flex-basis
+
+Basic usage example demonstrating how to use the basis-* utilities to set the initial size of flex items within a flex container.
+
+```APIDOC
+## Setting the Flex Basis
+
+### Description
+Use the `basis-*` utilities to set the initial size of flex items before free space is distributed.
+
+### Example
+```html
+<div class="flex flex-row">
+  <div class="basis-1/4">01</div>
+  <div class="basis-1/4">02</div>
+  <div class="basis-1/2">03</div>
+</div>
+```
+
+### Result
+This creates a flex container with three items:
+- Item 01: Initial width of 25% (basis-1/4)
+- Item 02: Initial width of 25% (basis-1/4)
+- Item 03: Initial width of 50% (basis-1/2)
+```
+
+--------------------------------
+
 ### Start Angular development server
 
 Source: https://v3.tailwindcss.com/docs/guides/angular
@@ -513,36 +543,6 @@ Use the `backdrop-sepia` and `backdrop-sepia-0` utilities to control whether an 
   <!-- ... -->
 </div>
 ```
-```
-
---------------------------------
-
-### Setting the Flex Basis
-
-Source: https://v3.tailwindcss.com/docs/flex-basis
-
-Basic usage example demonstrating how to use the basis-* utilities to set the initial size of flex items within a flex container.
-
-```APIDOC
-## Setting the Flex Basis
-
-### Description
-Use the `basis-*` utilities to set the initial size of flex items before free space is distributed.
-
-### Example
-```html
-<div class="flex flex-row">
-  <div class="basis-1/4">01</div>
-  <div class="basis-1/4">02</div>
-  <div class="basis-1/2">03</div>
-</div>
-```
-
-### Result
-This creates a flex container with three items:
-- Item 01: Initial width of 25% (basis-1/4)
-- Item 02: Initial width of 25% (basis-1/4)
-- Item 03: Initial width of 50% (basis-1/2)
 ```
 
 --------------------------------
@@ -671,18 +671,6 @@ CSS_CLASS
 
 --------------------------------
 
-### Install Tailwind CSS in Astro
-
-Source: https://v3.tailwindcss.com/docs/guides/astro
-
-Add Tailwind CSS and the Astro Tailwind integration to your project using the `astro add` command.
-
-```bash
-npx astro add tailwind
-```
-
---------------------------------
-
 ### Create a new Astro project
 
 Source: https://v3.tailwindcss.com/docs/guides/astro
@@ -691,6 +679,18 @@ Use `create astro` to initialize a new Astro project and navigate into its direc
 
 ```bash
 npm create astro@latest my-projectcd my-project
+```
+
+--------------------------------
+
+### Install Tailwind CSS in Astro
+
+Source: https://v3.tailwindcss.com/docs/guides/astro
+
+Add Tailwind CSS and the Astro Tailwind integration to your project using the `astro add` command.
+
+```bash
+npx astro add tailwind
 ```
 
 --------------------------------
@@ -729,32 +729,6 @@ rails new my-projectcd my-project
 
 --------------------------------
 
-### Install Webpack Encore
-
-Source: https://v3.tailwindcss.com/docs/guides/symfony
-
-Add the Webpack Encore bundle to manage asset compilation in your Symfony project.
-
-```terminal
-composer require symfony/webpack-encore-bundle
-```
-
---------------------------------
-
-### Apply Transition Duration Utilities
-
-Source: https://v3.tailwindcss.com/docs/transition-duration
-
-Use `duration-*` utilities to set the transition duration for elements. These examples demonstrate different durations applied to buttons.
-
-```html
-<button class="transition duration-150 ease-in-out ...">Button A</button>
-<button class="transition duration-300 ease-in-out ...">Button B</button>
-<button class="transition duration-700 ease-in-out ...">Button C</button>
-```
-
---------------------------------
-
 ### Create new Nuxt project
 
 Source: https://v3.tailwindcss.com/docs/guides/nuxtjs
@@ -782,6 +756,20 @@ Aligns grid items to the start of their inline axis using the justify-items-star
   <div>05</div>
   <div>06</div>
 </div>
+```
+
+--------------------------------
+
+### Apply Transition Duration Utilities
+
+Source: https://v3.tailwindcss.com/docs/transition-duration
+
+Use `duration-*` utilities to set the transition duration for elements. These examples demonstrate different durations applied to buttons.
+
+```html
+<button class="transition duration-150 ease-in-out ...">Button A</button>
+<button class="transition duration-300 ease-in-out ...">Button B</button>
+<button class="transition duration-700 ease-in-out ...">Button C</button>
 ```
 
 --------------------------------
@@ -884,6 +872,18 @@ Apply `translate-x-6` to move an element right by 1.5rem (24px):
 
 --------------------------------
 
+### Create new Gatsby project
+
+Source: https://v3.tailwindcss.com/docs/guides/gatsby
+
+Initialize a new Gatsby project using the Gatsby CLI.
+
+```bash
+gatsby new my-projectcd my-project
+```
+
+--------------------------------
+
 ### Use Arbitrary Transition Duration Value
 
 Source: https://v3.tailwindcss.com/docs/transition-duration
@@ -926,18 +926,6 @@ Use justify-start, justify-center, or justify-end to align items along the start
   <div>02</div>
   <div>03</div>
 </div>
-```
-
---------------------------------
-
-### Create new Gatsby project
-
-Source: https://v3.tailwindcss.com/docs/guides/gatsby
-
-Initialize a new Gatsby project using the Gatsby CLI.
-
-```bash
-gatsby new my-projectcd my-project
 ```
 
 --------------------------------
@@ -1051,32 +1039,6 @@ Pack grid rows against the start of the cross axis using the content-start class
 
 --------------------------------
 
-### Create a new AdonisJS project
-
-Source: https://v3.tailwindcss.com/docs/guides/adonisjs
-
-Use `npm init adonisjs` to scaffold a new AdonisJS web project.
-
-```bash
-npm init adonisjs@latest my-project -- --kit=webcd my-project
-```
-
---------------------------------
-
-### Apply Dynamic Custom Variants with Arbitrary Values in HTML
-
-Source: https://v3.tailwindcss.com/docs/plugins
-
-This HTML example demonstrates using a dynamic variant defined with `matchVariant` and arbitrary values in square bracket notation.
-
-```HTML
-<div class="nth-[3n+1]:bg-blue-500 ...">
-  <!-- ... -->
-</div>
-```
-
---------------------------------
-
 ### Create SolidJS project
 
 Source: https://v3.tailwindcss.com/docs/guides/solidjs
@@ -1100,6 +1062,32 @@ Position grid items using `row-start-*` and `row-end-*` utilities to specify the
   <div class="row-start-2 row-span-2 ...">01</div>
   <div class="row-end-3 row-span-2 ...">02</div>
   <div class="row-start-1 row-end-4 ...">03</div>
+</div>
+```
+
+--------------------------------
+
+### Create a new AdonisJS project
+
+Source: https://v3.tailwindcss.com/docs/guides/adonisjs
+
+Use `npm init adonisjs` to scaffold a new AdonisJS web project.
+
+```bash
+npm init adonisjs@latest my-project -- --kit=webcd my-project
+```
+
+--------------------------------
+
+### Apply Dynamic Custom Variants with Arbitrary Values in HTML
+
+Source: https://v3.tailwindcss.com/docs/plugins
+
+This HTML example demonstrates using a dynamic variant defined with `matchVariant` and arbitrary values in square bracket notation.
+
+```HTML
+<div class="nth-[3n+1]:bg-blue-500 ...">
+  <!-- ... -->
 </div>
 ```
 
@@ -1335,18 +1323,6 @@ Defines the CSS custom properties for a gradient starting with indigo-500.
 
 --------------------------------
 
-### CSS for from-indigo-400 Gradient
-
-Source: https://v3.tailwindcss.com/docs/gradient-color-stops
-
-Defines the CSS custom properties for a gradient starting with indigo-400.
-
-```css
---tw-gradient-from: #818cf8 var(--tw-gradient-from-position); --tw-gradient-to: rgb(129 140 248 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
-```
-
---------------------------------
-
 ### Create Next.js project with TypeScript
 
 Source: https://v3.tailwindcss.com/docs/guides/nextjs
@@ -1355,6 +1331,18 @@ Initialize a new Next.js project with TypeScript and ESLint enabled using Create
 
 ```bash
 npx create-next-app@latest my-project --typescript --eslintcd my-project
+```
+
+--------------------------------
+
+### CSS for from-indigo-400 Gradient
+
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
+
+Defines the CSS custom properties for a gradient starting with indigo-400.
+
+```css
+--tw-gradient-from: #818cf8 var(--tw-gradient-from-position); --tw-gradient-to: rgb(129 140 248 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 ```
 
 --------------------------------
@@ -1454,6 +1442,18 @@ Apply responsive prefixes to grid-cols utilities to target specific screen sizes
 
 --------------------------------
 
+### CSS for from-blue-900 Gradient
+
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
+
+Defines the CSS custom properties for a gradient starting with blue-900.
+
+```css
+--tw-gradient-from: #1e3a8a var(--tw-gradient-from-position); --tw-gradient-to: rgb(30 58 138 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+```
+
+--------------------------------
+
 ### Backdrop Sepia Utilities Reference
 
 Source: https://v3.tailwindcss.com/docs/backdrop-sepia
@@ -1472,18 +1472,6 @@ Quick reference guide for available backdrop sepia utility classes and their cor
 
 ### Description
 Utility classes for controlling whether an element's backdrop should be rendered with a sepia filter effect or in full color.
-```
-
---------------------------------
-
-### CSS for from-blue-900 Gradient
-
-Source: https://v3.tailwindcss.com/docs/gradient-color-stops
-
-Defines the CSS custom properties for a gradient starting with blue-900.
-
-```css
---tw-gradient-from: #1e3a8a var(--tw-gradient-from-position); --tw-gradient-to: rgb(30 58 138 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 ```
 
 --------------------------------
@@ -1552,18 +1540,6 @@ Defines the CSS custom properties for a gradient starting with blue-700.
 
 --------------------------------
 
-### CSS for from-blue-600 Gradient
-
-Source: https://v3.tailwindcss.com/docs/gradient-color-stops
-
-Defines the CSS custom properties for a gradient starting with blue-600.
-
-```css
---tw-gradient-from: #2563eb var(--tw-gradient-from-position); --tw-gradient-to: rgb(37 99 235 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
-```
-
---------------------------------
-
 ### Responsive Design - Breakpoint Variants
 
 Source: https://v3.tailwindcss.com/docs/transition-duration
@@ -1595,6 +1571,18 @@ Use breakpoint variant modifiers to apply different duration values at different
 - Prefix duration classes with breakpoint modifiers
 - Example: `md:duration-150`, `lg:duration-300`
 - Combine with state variants: `md:hover:duration-200`
+```
+
+--------------------------------
+
+### CSS for from-blue-600 Gradient
+
+Source: https://v3.tailwindcss.com/docs/gradient-color-stops
+
+Defines the CSS custom properties for a gradient starting with blue-600.
+
+```css
+--tw-gradient-from: #2563eb var(--tw-gradient-from-position); --tw-gradient-to: rgb(37 99 235 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 ```
 
 --------------------------------
@@ -1731,6 +1719,38 @@ Apply styles when the user hovers over an element using the hover modifier.
 
 --------------------------------
 
+### Configure template paths
+
+Source: https://v3.tailwindcss.com/docs/guides/qwik
+
+Update tailwind.config.js to include paths to all Qwik component and template files.
+
+```javascript
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: ['./src/**/*.{js,ts,jsx,tsx,mdx}'],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}
+
+```
+
+--------------------------------
+
+### Install Webpack Encore
+
+Source: https://v3.tailwindcss.com/docs/guides/symfony
+
+Add the Webpack Encore bundle to manage asset compilation in your Symfony project.
+
+```terminal
+composer require symfony/webpack-encore-bundle
+```
+
+--------------------------------
+
 ### JavaScript for Combined System Preference and Manual Dark Mode
 
 Source: https://v3.tailwindcss.com/docs/dark-mode
@@ -1804,20 +1824,6 @@ meteor create my-projectcd my-project
 
 --------------------------------
 
-### Enable GPU acceleration with transform-gpu
-
-Source: https://v3.tailwindcss.com/docs/rotate
-
-Add transform-gpu to force GPU rendering for better transition performance. Use transform-cpu to revert to CPU rendering if needed.
-
-```html
-<div class="rotate-45 transform-gpu">
-  <!-- ... -->
-</div>
-```
-
---------------------------------
-
 ### Basic container usage with centering and padding
 
 Source: https://v3.tailwindcss.com/docs/container
@@ -1834,6 +1840,41 @@ Use mx-auto to center the container and px-* utilities to add horizontal padding
 <div class="container mx-auto px-4">
   <!-- ... -->
 </div>
+```
+
+--------------------------------
+
+### Enable GPU acceleration with transform-gpu
+
+Source: https://v3.tailwindcss.com/docs/rotate
+
+Add transform-gpu to force GPU rendering for better transition performance. Use transform-cpu to revert to CPU rendering if needed.
+
+```html
+<div class="rotate-45 transform-gpu">
+  <!-- ... -->
+</div>
+```
+
+--------------------------------
+
+### Generated Utilities with Important Flag
+
+Source: https://v3.tailwindcss.com/docs/configuration
+
+Example output showing utilities generated with !important when the important option is enabled.
+
+```css
+.leading-none {
+  line-height: 1 !important;
+}
+.leading-tight {
+  line-height: 1.25 !important;
+}
+.leading-snug {
+  line-height: 1.375 !important;
+}
+/* etc. */
 ```
 
 --------------------------------
@@ -1866,23 +1907,25 @@ You can use variant modifiers to target media queries like responsive breakpoint
 
 --------------------------------
 
-### Generated Utilities with Important Flag
+### Use Presets for Base Configuration
 
 Source: https://v3.tailwindcss.com/docs/configuration
 
-Example output showing utilities generated with !important when the important option is enabled.
+Specify a custom base configuration via presets instead of using Tailwind's defaults, then layer project-specific customizations on top.
 
-```css
-.leading-none {
-  line-height: 1 !important;
+```javascript
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  // ...
+  presets: [
+    require('@acmecorp/base-tailwind-config')
+  ],
+
+  // Project-specific customizations
+  theme: {
+    //...
+  },
 }
-.leading-tight {
-  line-height: 1.25 !important;
-}
-.leading-snug {
-  line-height: 1.375 !important;
-}
-/* etc. */
 ```
 
 --------------------------------
@@ -1911,108 +1954,4 @@ Use responsive variant modifiers to apply `duration-*` utilities at specific scr
 <div class="transition duration-0 md:duration-150">
   <!-- ... -->
 </div>
-```
-
---------------------------------
-
-### Responsive Breakpoints and Media Queries
-
-Source: https://v3.tailwindcss.com/docs/scroll-snap-stop
-
-Apply snap utilities conditionally at different screen sizes using responsive breakpoints. Supports media queries for dark mode, prefers-reduced-motion, and other conditions.
-
-```APIDOC
-## Responsive Breakpoints for Snap Utilities
-
-### Description
-Use variant modifiers to target media queries like responsive breakpoints, dark mode, and motion preferences.
-
-### Available Breakpoint Variants
-- sm: - Small screens and up
-- md: - Medium screens and up
-- lg: - Large screens and up
-- xl: - Extra large screens and up
-- 2xl: - 2X large screens and up
-
-### Media Query Variants
-- dark: - Dark mode
-- prefers-reduced-motion: - Reduced motion preference
-- Other media query modifiers
-
-### Usage Examples
-
-#### Responsive Breakpoint
-Apply snap-normal only at medium screen sizes and above:
-
-```html
-<div class="snap-always md:snap-normal">
-  <!-- Snap always on small screens, snap normal on md and up -->
-</div>
-```
-
-#### Dark Mode
-Apply different snap behavior in dark mode:
-
-```html
-<div class="snap-always dark:snap-normal">
-  <!-- Snap always in light mode, snap normal in dark mode -->
-</div>
-```
-
-#### Reduced Motion
-Respect user motion preferences:
-
-```html
-<div class="snap-always prefers-reduced-motion:snap-normal">
-  <!-- Snap always normally, snap normal when reduced motion is preferred -->
-</div>
-```
-
-### Syntax
-`[breakpoint]:[utility-class]` - Apply the utility class only at the specified breakpoint or larger.
-`[media-query]:[utility-class]` - Apply the utility class only when the media query condition is met.
-```
-
---------------------------------
-
-### Basic Brightness Usage
-
-Source: https://v3.tailwindcss.com/docs/brightness
-
-Learn how to apply brightness utilities to HTML elements. This section demonstrates how to use brightness-* classes to control element brightness and how to remove filters using the filter-none utility.
-
-```APIDOC
-## Basic Brightness Usage
-
-### Changing Element Brightness
-
-Use the `brightness-*` utilities to control an element's brightness.
-
-### Example
-```html
-<div class="brightness-50">
-  <!-- 50% brightness -->
-</div>
-<div class="brightness-100">
-  <!-- Normal brightness -->
-</div>
-<div class="brightness-125">
-  <!-- 125% brightness -->
-</div>
-<div class="brightness-200">
-  <!-- 200% brightness -->
-</div>
-```
-
-### Removing Filters
-
-To remove all filters on an element at once, use the `filter-none` utility:
-
-```html
-<div class="blur-md invert brightness-150 md:filter-none">
-  <!-- Filters removed at medium breakpoint and above -->
-</div>
-```
-
-This is useful for removing filters conditionally, such as on hover or at a particular breakpoint.
 ```
