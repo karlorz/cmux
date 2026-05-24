@@ -1544,6 +1544,22 @@ const url = await ctx.storage.getUrl(storageId);
 
 --------------------------------
 
+### Initialize ConvexClient with deployment URL
+
+Source: https://docs.convex.dev/client/swift
+
+Create a single ConvexClient instance for your application's lifetime, passing your Convex backend deployment URL. The connection is established lazily on first method call.
+
+```Swift
+import ConvexMobile
+
+
+
+let convex = ConvexClient(deploymentUrl: "https://<your domain here>.convex.cloud")
+```
+
+--------------------------------
+
 ### Create ConvexReactClient
 
 Source: https://docs.convex.dev/api/modules/react
@@ -1560,22 +1576,6 @@ import { ConvexReactClient } from "convex/react";
 const address = "https://small-mouse-123.convex.cloud"
 
 const convex = new ConvexReactClient(address);
-```
-
---------------------------------
-
-### Initialize ConvexClient with deployment URL
-
-Source: https://docs.convex.dev/client/swift
-
-Create a single ConvexClient instance for your application's lifetime, passing your Convex backend deployment URL. The connection is established lazily on first method call.
-
-```Swift
-import ConvexMobile
-
-
-
-let convex = ConvexClient(deploymentUrl: "https://<your domain here>.convex.cloud")
 ```
 
 --------------------------------
