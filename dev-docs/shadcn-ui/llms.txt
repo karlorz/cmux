@@ -1,707 +1,1976 @@
-# shadcn/ui
+### registry.json
 
-shadcn/ui is a collection of beautifully designed, accessible, and customizable React components built on top of Radix UI primitives and styled with Tailwind CSS. Unlike traditional component libraries, shadcn/ui takes a unique approach: components are added directly to your project as source code via the CLI, giving you full ownership and the ability to customize every aspect. The library supports React 19 with Tailwind CSS v4 and provides a rich ecosystem of UI components, blocks, and theming options.
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/getting-started.mdx
 
-The project consists of the `shadcn` CLI package (version 4.1.2) for managing components, a comprehensive component registry with multiple visual styles (nova, vega, luma, etc.), and templates for popular frameworks including Next.js, Vite, React Router, TanStack Start, and Astro. Components follow consistent patterns using CSS variables for theming, making it easy to customize colors, typography, and spacing across your entire application while maintaining accessibility standards through proper ARIA attributes and keyboard navigation.
+Here's an example `registry.json` file:
 
-## CLI Commands
-
-### Initialize a New Project
-
-The `init` command creates a new shadcn/ui project or initializes an existing project with the component system. It supports presets for quick configuration and templates for different frameworks.
-
-```bash
-# Create a new Next.js project with default preset
-npx shadcn@latest init --name my-app --preset base-nova
-
-# Create with specific template and preset code
-npx shadcn@latest init --name my-app --preset a2r6bw --template vite
-
-# Create a monorepo project
-npx shadcn@latest init --name my-app --preset base-nova --monorepo
-
-# Initialize existing project with defaults
-npx shadcn@latest init --defaults
-
-# Initialize with force overwrite and component reinstall
-npx shadcn@latest init --preset radix-nova --force --reinstall
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry.json",
+  "name": "acme",
+  "homepage": "https://acme.com",
+  "items": [
+    {
+      "name": "button",
+      "type": "registry:ui",
+      "title": "Button",
+      "description": "A simple button component.",
+      "files": [
+        {
+          "path": "components/ui/button.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    }
+  ]
+}
 ```
 
-### Add Components
+--------------------------------
 
-The `add` command installs components from the registry into your project. Components are copied as source files, allowing full customization.
+### components/ui/registry.json
 
-```bash
-# Add single component
-npx shadcn@latest add button
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/getting-started.mdx
 
-# Add multiple components
-npx shadcn@latest add button card dialog form
+Example of an included `registry.json` file defining UI components like button and input.
 
-# Add from community registry
-npx shadcn@latest add @magicui/shimmer-button
-
-# Add all available components
-npx shadcn@latest add --all
-
-# Preview changes without writing files (dry-run)
-npx shadcn@latest add button --dry-run
-
-# Show diff for a specific file
-npx shadcn@latest add button --diff button.tsx
-
-# View file contents before installing
-npx shadcn@latest add button --view button.tsx
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry.json",
+  "items": [
+    {
+      "name": "button",
+      "type": "registry:ui",
+      "files": [
+        {
+          "path": "button.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "input",
+      "type": "registry:ui",
+      "files": [
+        {
+          "path": "input.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    }
+  ]
+}
 ```
 
-### Search Registries
+--------------------------------
 
-The `search` command performs fuzzy search across component registries to help you find components and blocks.
+### hooks/registry.json
 
-```bash
-# Search shadcn registry for sidebar components
-npx shadcn@latest search @shadcn -q "sidebar"
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/getting-started.mdx
 
-# Search community registry
-npx shadcn@latest search @tailark -q "stats"
+Example of an included `registry.json` file defining hooks like use-toggle and use-media-query.
 
-# List all items from a registry
-npx shadcn@latest search @shadcn
-
-# Search with pagination
-npx shadcn@latest search @shadcn -q "form" --limit 20 --offset 0
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry.json",
+  "items": [
+    {
+      "name": "use-toggle",
+      "type": "registry:hook",
+      "files": [
+        {
+          "path": "use-toggle.ts",
+          "type": "registry:hook"
+        }
+      ]
+    },
+    {
+      "name": "use-media-query",
+      "type": "registry:hook",
+      "files": [
+        {
+          "path": "use-media-query.ts",
+          "type": "registry:hook"
+        }
+      ]
+    }
+  ]
+}
 ```
 
-### Get Component Documentation
+--------------------------------
 
-The `docs` command outputs URLs for component documentation, examples, and API references.
+### server.js
 
-```bash
-# Get docs for single component
-npx shadcn@latest docs button
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/getting-started.mdx
 
-# Get docs for multiple components
-npx shadcn@latest docs button dialog select form
+An Express.js server example demonstrating how to serve the registry data based on `Accept` or `User-Agent` headers, or serve the homepage otherwise.
+
+```javascript
+app.get("/", (req, res) => {
+  res.vary("Accept")
+  res.vary("User-Agent")
+
+  // Check if the client prefers the shadcn vendor type.
+  if (req.accepts("application/vnd.shadcn.v1+json")) {
+    return res.json(registryData)
+  }
+
+  // Optional: Secondary check for the User-Agent.
+  if (req.get("User-Agent") === "shadcn") {
+    return res.json(registryData)
+  }
+
+  // Otherwise, serve your documentation or homepage.
+  res.send(htmlContent)
+})
 ```
 
-### View Project Information
+--------------------------------
 
-The `info` command displays project configuration including framework detection, aliases, Tailwind version, and installed components.
+### Add an item
 
-```bash
-# Display project info
-npx shadcn@latest info
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/getting-started.mdx
 
-# Output as JSON for programmatic use
-npx shadcn@latest info --json
-```
-
-### Build Custom Registry
-
-The `build` command compiles a registry.json file into individual JSON files for distribution.
+Command to install a specific registry item into a project using its URL.
 
 ```bash
-# Build registry with defaults
-npx shadcn@latest build
-
-# Build to custom output directory
-npx shadcn@latest build --output ./dist/registry
+npx shadcn@latest add http://localhost:3000/r/button.json
 ```
 
-## Core Components
+--------------------------------
 
-### Button Component
+### my-custom-starter-template.json
 
-The Button component provides multiple variants (default, destructive, outline, secondary, ghost, link) and sizes (default, xs, sm, lg, icon variants). Icons use the `data-icon` attribute for proper spacing.
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
+
+Example of a universal registry item that installs multiple files, demonstrating how to define multiple file targets.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "my-custom-starter-template",
+  "type": "registry:item",
+  "dependencies": ["better-auth"],
+  "files": [
+    {
+      "path": "/path/to/file-01.json",
+      "type": "registry:file",
+      "target": "~/file-01.json",
+      "content": "..."
+    },
+    {
+      "path": "/path/to/file-02.vue",
+      "type": "registry:file",
+      "target": "~/pages/file-02.vue",
+      "content": "..."
+    }
+  ]
+}
+```
+
+--------------------------------
+
+### Install shadcn runtime dependency
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/getting-started.mdx
+
+Command to install shadcn as a runtime dependency.
+
+```bash
+npm install shadcn
+```
+
+--------------------------------
+
+### Install next-themes
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/dark-mode/next.mdx
+
+Start by installing `next-themes`:
+
+```bash
+npm install next-themes
+```
+
+--------------------------------
+
+### components.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/installation/manual.mdx
+
+Example of a full components.json configuration file for shadcn/ui.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "radix-nova",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/styles/globals.css",
+    "baseColor": "neutral",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "aliases": {
+    "components": "@/components",
+    "utils": "@/lib/utils",
+    "ui": "@/components/ui",
+    "lib": "@/lib",
+    "hooks": "@/hooks"
+  },
+  "iconLibrary": "lucide"
+}
+```
+
+--------------------------------
+
+### Add an item
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/getting-started.mdx
+
+Command to install a specific registry item into a project using its namespace.
+
+```bash
+npx shadcn@latest add @acme/button
+```
+
+--------------------------------
+
+### components.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/installation/manual.mdx
+
+Example of components.json aliases when using package.json#imports.
+
+```json
+{
+  "aliases": {
+    "components": "#components",
+    "utils": "#lib/utils",
+    "ui": "#components/ui",
+    "lib": "#lib",
+    "hooks": "#hooks"
+  }
+}
+```
+
+--------------------------------
+
+### Serve registry catalog
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/getting-started.mdx
+
+Example of a dynamic route handler to serve the entire registry catalog using `loadRegistry`.
+
+```ts
+import { loadRegistry } from "shadcn/registry"
+
+export async function GET() {
+  try {
+    const registry = await loadRegistry()
+
+    return Response.json(registry)
+  } catch (error) {
+    console.error(error)
+
+    return Response.json({ error: "Failed to load registry." }, { status: 500 })
+  }
+}
+```
+
+--------------------------------
+
+### Option B: `package.json#imports`
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/installation/manual.mdx
+
+Choose one of the following alias setups.
+
+```json
+{
+  "imports": {
+    "#components/*": "./src/components/*.tsx",
+    "#lib/*": "./src/lib/*.ts",
+    "#hooks/*": "./src/hooks/*.ts"
+  }
+}
+```
+
+```json
+{
+  "compilerOptions": {
+    "moduleResolution": "bundler",
+    "resolvePackageJsonImports": true
+  }
+}
+```
+
+--------------------------------
+
+### Option A: `tsconfig.json` paths
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/installation/manual.mdx
+
+Choose one of the following alias setups.
+
+```json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"]
+    }
+  }
+}
+```
+
+--------------------------------
+
+### Example: Add alert-dialog component
+
+Source: https://github.com/shadcn-ui/ui/blob/main/packages/shadcn/README.md
+
+Example of using the add command to install the 'alert-dialog' component.
+
+```bash
+npx shadcn add alert-dialog
+```
+
+--------------------------------
+
+### Complex Component Example
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/faq.mdx
+
+An example of a complex component that installs a page, two components, a hook, a format-date utils and a config file.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "hello-world",
+  "title": "Hello World",
+  "type": "registry:block",
+  "description": "A complex hello world component",
+  "files": [
+    {
+      "path": "registry/new-york/hello-world/page.tsx",
+      "type": "registry:page",
+      "target": "app/hello/page.tsx"
+    },
+    {
+      "path": "registry/new-york/hello-world/components/hello-world.tsx",
+      "type": "registry:component"
+    },
+    {
+      "path": "registry/new-york/hello-world/components/formatted-message.tsx",
+      "type": "registry:component"
+    },
+    {
+      "path": "registry/new-york/hello-world/hooks/use-hello.ts",
+      "type": "registry:hook"
+    },
+    {
+      "path": "registry/new-york/hello-world/lib/format-date.ts",
+      "type": "registry:lib"
+    },
+    {
+      "path": "registry/new-york/hello-world/hello.config.ts",
+      "type": "registry:file",
+      "target": "~/hello.config.ts"
+    }
+  ]
+}
+```
+
+--------------------------------
+
+### example-style.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
+
+JSON configuration to install a block from the shadcn/ui registry and override its primitives with custom ones.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "custom-login",
+  "type": "registry:block",
+  "registryDependencies": [
+    "login-01",
+    "https://example.com/r/button.json",
+    "https://example.com/r/input.json",
+    "https://example.com/r/label.json"
+  ]
+}
+```
+
+--------------------------------
+
+### example-item.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
+
+Example demonstrating the use of the 'devDependencies' field to install packages as development dependencies for a registry item.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "custom-item",
+  "type": "registry:item",
+  "devDependencies": ["@types/mdx"],
+  "files": [
+    {
+      "path": "lib/mdx.ts",
+      "content": "...",
+      "type": "registry:lib"
+    }
+  ]
+}
+```
+
+--------------------------------
+
+### .eslintrc.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
+
+Example of a universal registry item for installing a custom ESLint configuration file.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "my-eslint-config",
+  "type": "registry:item",
+  "files": [
+    {
+      "path": "/path/to/your/registry/default/custom-eslint.json",
+      "type": "registry:file",
+      "target": "~/.eslintrc.json",
+      "content": "..."
+    }
+  ]
+}
+```
+
+--------------------------------
+
+### Serve individual registry items
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/getting-started.mdx
+
+Example of a dynamic route handler to serve individual registry items by name using `loadRegistryItem`.
+
+```ts
+import { loadRegistryItem, RegistryItemNotFoundError } from "shadcn/registry"
+
+export async function GET(
+  _request: Request,
+  context: {
+    params: Promise<{
+      name: string
+    }>
+  }
+) {
+  const { name } = await context.params
+
+  try {
+    const item = await loadRegistryItem(name)
+
+    return Response.json(item)
+  } catch (error) {
+    if (error instanceof RegistryItemNotFoundError) {
+      return Response.json(
+        { error: `Registry item "${name}" was not found.` },
+        { status: 404 }
+      )
+    }
+
+    console.error(error)
+
+    return Response.json(
+      { error: "Failed to load registry item." },
+      { status: 500 }
+    )
+  }
+}
+```
+
+--------------------------------
+
+### Installation
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/input.mdx
+
+Install the Input component using the shadcn CLI.
+
+```bash
+npx shadcn@latest add input
+```
+
+--------------------------------
+
+### List items
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/getting-started.mdx
+
+Command to list items from the registry catalog using its URL.
+
+```bash
+npx shadcn@latest list http://localhost:3000/r/registry.json
+```
+
+--------------------------------
+
+### Button Component File Structure
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/getting-started.mdx
+
+Directory structure showing the placement of the `button.tsx` file.
+
+```txt
+components
+└── ui
+    └── button.tsx
+```
+
+--------------------------------
+
+### View an item
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/getting-started.mdx
+
+Command to view a specific registry item by name using its URL.
+
+```bash
+npx shadcn@latest view http://localhost:3000/r/button.json
+```
+
+--------------------------------
+
+### registry.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/getting-started.mdx
+
+Create a `registry.json` file in the root of your project. Add all your registry items to the `items` array. This is the simplest way to define a registry.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry.json",
+  "name": "acme",
+  "homepage": "https://acme.com",
+  "items": [
+    {
+      "name": "button",
+      "type": "registry:ui",
+      "title": "Button",
+      "description": "A simple button component.",
+      "files": [
+        {
+          "path": "components/ui/button.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "hello-world",
+      "type": "registry:block",
+      "title": "Hello World",
+      "description": "A simple hello world component.",
+      "registryDependencies": ["button"],
+      "files": [
+        {
+          "path": "registry/default/hello-world/hello-world.tsx",
+          "type": "registry:component"
+        }
+      ]
+    }
+  ]
+}
+```
+
+--------------------------------
+
+### alias-child.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
+
+Demonstrates using `files[].target` placeholders to install files under user-configured shadcn directories, resolving from `components.json`.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "alias-child",
+  "type": "registry:item",
+  "files": [
+    {
+      "path": "registry/new-york/alias/target-alias-button.tsx",
+      "type": "registry:ui",
+      "target": "@ui/target-alias-button.tsx",
+      "content": "..."
+    },
+    {
+      "path": "registry/new-york/alias/target-alias-helper.ts",
+      "type": "registry:lib",
+      "target": "@lib/target-alias-helper.ts",
+      "content": "..."
+    },
+    {
+      "path": "registry/new-york/alias/prompt-input.tsx",
+      "type": "registry:ui",
+      "target": "@ui/ai/prompt-input.tsx",
+      "content": "..."
+    }
+  ]
+}
+```
+
+--------------------------------
+
+### Add the registry
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/getting-started.mdx
+
+Command to add a registry URL template with a namespace to a project's `components.json` file.
+
+```bash
+npx shadcn@latest registry add @acme=http://localhost:3000/r/{name}.json
+```
+
+--------------------------------
+
+### example.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/changelog/2026-05-package-imports-target-aliases.mdx
+
+Example of a registry item using target aliases in files[].target to install files under configured shadcn directories.
+
+```json
+{
+  "files": [
+    {
+      "path": "registry/default/ai/prompt-input.tsx",
+      "type": "registry:ui",
+      "target": "@ui/ai/prompt-input.tsx"
+    }
+  ]
+}
+```
+
+--------------------------------
+
+### Install from a community registry
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/(root)/new.mdx
+
+Install components from any registry URL using the CLI.
+
+```bash
+npx shadcn@latest add @[registry]/[name]
+```
+
+--------------------------------
+
+### Simple Button Component
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/getting-started.mdx
+
+Example of a simple React Button component in TypeScript.
 
 ```tsx
-import { Button } from "@/components/ui/button"
-import { SearchIcon, ArrowRightIcon } from "lucide-react"
-import { Spinner } from "@/components/ui/spinner"
+import * as React from "react"
 
-// Basic variants
-<Button>Default</Button>
-<Button variant="destructive">Delete</Button>
-<Button variant="outline">Outline</Button>
-<Button variant="secondary">Secondary</Button>
-<Button variant="ghost">Ghost</Button>
-<Button variant="link">Link</Button>
-
-// Sizes
-<Button size="xs">Extra Small</Button>
-<Button size="sm">Small</Button>
-<Button size="lg">Large</Button>
-<Button size="icon"><SearchIcon /></Button>
-
-// With icons (use data-icon attribute)
-<Button>
-  <SearchIcon data-icon="inline-start" />
-  Search
-</Button>
-
-<Button>
-  Next
-  <ArrowRightIcon data-icon="inline-end" />
-</Button>
-
-// Loading state (compose with Spinner)
-<Button disabled>
-  <Spinner data-icon="inline-start" />
-  Saving...
-</Button>
-
-// As child for custom elements
-<Button asChild>
-  <a href="/dashboard">Go to Dashboard</a>
-</Button>
-```
-
-### Dialog Component
-
-The Dialog component creates modal dialogs with proper accessibility. Always include DialogTitle (use `className="sr-only"` if visually hidden).
-
-```tsx
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Field, FieldLabel, FieldGroup } from "@/components/ui/field"
-
-function EditProfileDialog() {
+export function Button(props: React.ComponentProps<"button">) {
   return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button variant="outline">Edit Profile</Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Edit Profile</DialogTitle>
-          <DialogDescription>
-            Make changes to your profile here. Click save when you're done.
-          </DialogDescription>
-        </DialogHeader>
-        <FieldGroup>
-          <Field>
-            <FieldLabel htmlFor="name">Name</FieldLabel>
-            <Input id="name" defaultValue="John Doe" />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="username">Username</FieldLabel>
-            <Input id="username" defaultValue="@johndoe" />
-          </Field>
-        </FieldGroup>
-        <DialogFooter>
-          <Button type="submit">Save changes</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <button
+      {...props}
+      className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white"
+    />
   )
 }
 ```
 
-### Card Component
+--------------------------------
 
-The Card component provides a structured layout with header, content, and footer sections. Use full composition with CardHeader, CardTitle, CardDescription, CardContent, and CardFooter.
+### `docs` command example output
+
+Source: https://github.com/shadcn-ui/ui/blob/main/skills/shadcn/cli.md
+
+Example output showing documentation and example URLs for 'input' and 'button' components.
+
+```text
+base  radix
+
+input
+  docs      https://ui.shadcn.com/docs/components/radix/input
+  examples  https://raw.githubusercontent.com/.../examples/input-example.tsx
+
+button
+  docs      https://ui.shadcn.com/docs/components/radix/button
+  examples  https://raw.githubusercontent.com/.../examples/button-example.tsx
+```
+
+--------------------------------
+
+### Add all available components
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/(root)/new.mdx
+
+Add all available components to your project.
+
+```bash
+npx shadcn@latest add --all
+```
+
+--------------------------------
+
+### Installation
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/skeleton.mdx
+
+Install the Skeleton component using the shadcn/ui CLI.
+
+```bash
+npx shadcn@latest add skeleton
+```
+
+--------------------------------
+
+### Installation
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/table.mdx
+
+Install the Table component using the shadcn CLI.
+
+```bash
+npx shadcn@latest add table
+```
+
+--------------------------------
+
+### Installation
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/navigation-menu.mdx
+
+Install the Navigation Menu component using the shadcn/ui CLI.
+
+```bash
+npx shadcn@latest add navigation-menu
+```
+
+--------------------------------
+
+### Install your custom version
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/namespace.mdx
+
+CLI command to install the custom button resource.
+
+```bash
+npx shadcn@latest add @my-company/custom-button
+```
+
+--------------------------------
+
+### Installation via CLI
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/pagination.mdx
+
+Install the Pagination component using the shadcn CLI.
+
+```bash
+npx shadcn@latest add pagination
+```
+
+--------------------------------
+
+### Installation
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/combobox.mdx
+
+Install the Combobox component using the shadcn CLI.
+
+```bash
+npx shadcn@latest add combobox
+```
+
+--------------------------------
+
+### Directory Structure
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/examples/README.md
+
+The expected directory structure for examples.
+
+```text
+examples
+├── base
+│   ├── button-demo.tsx
+│   └── ...
+├── radix
+│   └── ...
+└── __index__.tsx    # Auto-generated by registry:build
+```
+
+--------------------------------
+
+### Connect the MCP Server
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/(root)/new.mdx
+
+Initialize the shadcn MCP server for your AI assistant.
+
+```bash
+npx shadcn@latest mcp init
+```
+
+--------------------------------
+
+### example-style.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
+
+Custom style from scratch
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "extends": "none",
+  "name": "new-style",
+  "type": "registry:style",
+  "dependencies": ["tailwind-merge", "clsx"],
+  "registryDependencies": [
+    "utils",
+    "https://example.com/r/button.json",
+    "https://example.com/r/input.json",
+    "https://example.com/r/label.json",
+    "https://example.com/r/select.json"
+  ],
+  "cssVars": {
+    "theme": {
+      "font-sans": "Inter, sans-serif"
+    },
+    "light": {
+      "main": "#88aaee",
+      "bg": "#dfe5f2",
+      "border": "#000",
+      "text": "#000",
+      "ring": "#000"
+    },
+    "dark": {
+      "main": "#88aaee",
+      "bg": "#272933",
+      "border": "#000",
+      "text": "#e6e6e6",
+      "ring": "#fff"
+    }
+  }
+}
+```
+
+--------------------------------
+
+### Install dependencies (Manual installation)
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/sonner.mdx
+
+Command to install required dependencies for manual Sonner setup.
+
+```bash
+npm install sonner next-themes
+```
+
+--------------------------------
+
+### Add multiple components
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/(root)/new.mdx
+
+Add multiple components at once using the CLI.
+
+```bash
+npx shadcn@latest add button card input label
+```
+
+--------------------------------
+
+### example-scoped-plugin.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
+
+Shows examples of adding scoped npm plugins and local file-based plugins.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "scoped-plugins",
+  "type": "registry:component",
+  "css": {
+    "@plugin \"@headlessui/tailwindcss\"": {},
+    "@plugin \"tailwindcss/plugin\"": {},
+    "@plugin \"./custom-plugin.js\"": {}
+  }
+}
+```
+
+--------------------------------
+
+### src/styles/globals.css
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/installation/manual.mdx
+
+Add the following to your styles/globals.css file.
+
+```css
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+```
+
+--------------------------------
+
+### Installation Command
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/card.mdx
+
+Install the Card component using the shadcn CLI.
+
+```bash
+npx shadcn@latest add card
+```
+
+--------------------------------
+
+### example-item.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
+
+Example of adding environment variables to a registry item using the `envVars` field.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "custom-item",
+  "type": "registry:item",
+  "envVars": {
+    "NEXT_PUBLIC_APP_URL": "http://localhost:4000",
+    "DATABASE_URL": "postgresql://postgres:postgres@localhost:5432/postgres",
+    "OPENAI_API_KEY": ""
+  }
+}
+```
+
+--------------------------------
+
+### Install Font
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/rtl/start.mdx
+
+Install the Noto Sans Arabic font using Fontsource.
+
+```bash
+npm install @fontsource-variable/noto-sans-arabic
+```
+
+--------------------------------
+
+### `components.json` configuration file
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/changelog/2023-06-new-cli.mdx
+
+Example `components.json` file showing project configuration.
+
+```json
+{
+  "style": "default",
+  "tailwind": {
+    "config": "tailwind.config.ts",
+    "css": "src/app/globals.css",
+    "baseColor": "zinc",
+    "cssVariables": true
+  },
+  "rsc": false,
+  "aliases": {
+    "utils": "~/lib/utils",
+    "components": "~/components"
+  }
+}
+```
+
+--------------------------------
+
+### example-plugin.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
+
+Example of adding Tailwind plugins using the "@plugin" directive.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "custom-plugin",
+  "type": "registry:item",
+  "css": {
+    "@plugin \"@tailwindcss/typography\"": {},
+    "@plugin \"foo\"": {}
+  }
+}
+```
+
+--------------------------------
+
+### Quick Reference
+
+Source: https://github.com/shadcn-ui/ui/blob/main/skills/shadcn/SKILL.md
+
+Common shadcn/ui CLI commands for project initialization.
+
+```bash
+# Create a new project.
+npx shadcn@latest init --name my-app --preset base-nova
+npx shadcn@latest init --name my-app --preset a2r6bw --template vite
+```
+
+--------------------------------
+
+### Add Toaster component (Manual installation)
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/sonner.mdx
+
+Example of adding the Toaster component to your root layout after manual installation.
 
 ```tsx
+import { Toaster } from "@/components/ui/sonner"
+
+export default function RootLayout({ children }) {
+  return (
+    <html lang="en">
+      <head />
+      <body>
+        <Toaster />
+        <main>{children}</main>
+      </body>
+    </html>
+  )
+}
+```
+
+--------------------------------
+
+### Add Toaster component (CLI installation)
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/sonner.mdx
+
+Example of adding the Toaster component to your root layout after CLI installation.
+
+```tsx
+import { Toaster } from "@/components/ui/sonner"
+
+export default function RootLayout({ children }) {
+  return (
+    <html lang="en">
+      <head />
+      <body>
+        <main>{children}</main>
+        <Toaster />
+      </body>
+    </html>
+  )
+}
+```
+
+--------------------------------
+
+### Add dependencies
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/installation/manual.mdx
+
+Add the following dependencies to your project:
+
+```bash
+npm install shadcn class-variance-authority clsx tailwind-merge lucide-react tw-animate-css
+```
+
+--------------------------------
+
+### Using Component Preview
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/examples/README.md
+
+How to use the example in documentation by referencing its name (filename without .tsx).
+
+```tsx
+<ComponentPreview name="button-loading" />
+```
+
+--------------------------------
+
+### .cursor/rules/custom-python.mdc
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
+
+Example of a universal registry item that installs custom Cursor rules for Python, demonstrating an explicit target for files.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "python-rules",
+  "type": "registry:item",
+  "files": [
+    {
+      "path": "/path/to/your/registry/default/custom-python.mdc",
+      "type": "registry:file",
+      "target": "~/.cursor/rules/custom-python.mdc",
+      "content": "..."
+    }
+  ]
+}
+```
+
+--------------------------------
+
+### Import and Use Card Component (shadcn/create)
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/installation/tanstack.mdx
+
+Example of importing and using the Card component in a TanStack Start route file after using shadcn/create.
+
+```tsx
+import { createFileRoute } from "@tanstack/react-router"
+
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 
-function TeamCard() {
+export const Route = createFileRoute("/")({
+  component: App,
+})
+
+function App() {
   return (
-    <Card className="max-w-md">
+    <Card className="max-w-sm">
       <CardHeader>
-        <CardTitle>Team Members</CardTitle>
-        <CardDescription>Invite and manage your team members.</CardDescription>
-        <CardAction>
-          <Badge variant="secondary">Pro Plan</Badge>
-        </CardAction>
+        <CardTitle>Project Overview</CardTitle>
+        <CardDescription>
+          Track progress and recent activity for your TanStack Start app.
+        </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center gap-4">
-            <Avatar>
-              <AvatarImage src="/avatar.png" />
-              <AvatarFallback>JD</AvatarFallback>
-            </Avatar>
-            <div>
-              <p className="font-medium">John Doe</p>
-              <p className="text-sm text-muted-foreground">john@example.com</p>
-            </div>
-          </div>
-        </div>
+        Your design system is ready. Start building your next component.
       </CardContent>
-      <CardFooter>
-        <Button>Invite Member</Button>
-      </CardFooter>
     </Card>
   )
 }
 ```
 
-### Form Fields
+--------------------------------
 
-Forms use FieldGroup and Field components for proper layout and accessibility. Never use raw div with space-y-* for form layout.
+### example-theme.json
 
-```tsx
-import { Field, FieldDescription, FieldGroup, FieldLabel, FieldError } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Button } from "@/components/ui/button"
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
 
-function ContactForm() {
-  return (
-    <form>
-      <FieldGroup>
-        <Field>
-          <FieldLabel htmlFor="email">Email</FieldLabel>
-          <Input id="email" type="email" placeholder="john@example.com" />
-          <FieldDescription>We'll never share your email.</FieldDescription>
-        </Field>
+Custom theme
 
-        <Field>
-          <FieldLabel htmlFor="message">Message</FieldLabel>
-          <Textarea id="message" placeholder="Your message..." />
-        </Field>
-
-        {/* Invalid field state */}
-        <Field data-invalid>
-          <FieldLabel htmlFor="phone">Phone</FieldLabel>
-          <Input id="phone" aria-invalid />
-          <FieldError>Please enter a valid phone number.</FieldError>
-        </Field>
-
-        {/* Disabled field state */}
-        <Field data-disabled>
-          <FieldLabel htmlFor="company">Company</FieldLabel>
-          <Input id="company" disabled defaultValue="Acme Inc." />
-        </Field>
-
-        {/* Horizontal layout for checkboxes */}
-        <Field orientation="horizontal">
-          <Checkbox id="terms" />
-          <FieldLabel htmlFor="terms" className="font-normal">
-            I agree to the terms and conditions
-          </FieldLabel>
-        </Field>
-
-        <Button type="submit">Send Message</Button>
-      </FieldGroup>
-    </form>
-  )
-}
-```
-
-### Select Component
-
-The Select component provides a dropdown with keyboard navigation. Always wrap SelectItems in SelectGroup.
-
-```tsx
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Field, FieldLabel, FieldGroup } from "@/components/ui/field"
-
-function CountrySelect() {
-  return (
-    <FieldGroup>
-      <Field>
-        <FieldLabel>Country</FieldLabel>
-        <Select>
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="Select a country" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectLabel>North America</SelectLabel>
-              <SelectItem value="us">United States</SelectItem>
-              <SelectItem value="ca">Canada</SelectItem>
-              <SelectItem value="mx">Mexico</SelectItem>
-            </SelectGroup>
-            <SelectGroup>
-              <SelectLabel>Europe</SelectLabel>
-              <SelectItem value="uk">United Kingdom</SelectItem>
-              <SelectItem value="fr">France</SelectItem>
-              <SelectItem value="de">Germany</SelectItem>
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-      </Field>
-    </FieldGroup>
-  )
-}
-```
-
-### InputGroup Component
-
-InputGroup combines inputs with addons like buttons, icons, or text. Use InputGroupInput instead of raw Input inside InputGroup.
-
-```tsx
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-  InputGroupTextarea,
-} from "@/components/ui/input-group"
-import { Button } from "@/components/ui/button"
-import { SearchIcon, AtSignIcon, DollarSignIcon } from "lucide-react"
-
-// Search input with button
-<InputGroup>
-  <InputGroupInput placeholder="Search..." />
-  <InputGroupAddon>
-    <Button size="icon">
-      <SearchIcon data-icon="inline-start" />
-    </Button>
-  </InputGroupAddon>
-</InputGroup>
-
-// Input with icon prefix
-<InputGroup>
-  <InputGroupAddon>
-    <AtSignIcon />
-  </InputGroupAddon>
-  <InputGroupInput placeholder="username" />
-</InputGroup>
-
-// Input with text prefix
-<InputGroup>
-  <InputGroupAddon>
-    <DollarSignIcon />
-  </InputGroupAddon>
-  <InputGroupInput type="number" placeholder="0.00" />
-  <InputGroupAddon>USD</InputGroupAddon>
-</InputGroup>
-```
-
-### Tabs Component
-
-The Tabs component organizes content into tabbed sections. TabsTrigger must be inside TabsList.
-
-```tsx
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-
-function SettingsTabs() {
-  return (
-    <Tabs defaultValue="account" className="w-full max-w-lg">
-      <TabsList>
-        <TabsTrigger value="account">Account</TabsTrigger>
-        <TabsTrigger value="password">Password</TabsTrigger>
-        <TabsTrigger value="notifications">Notifications</TabsTrigger>
-      </TabsList>
-      <TabsContent value="account">
-        <Card>
-          <CardHeader>
-            <CardTitle>Account Settings</CardTitle>
-            <CardDescription>Manage your account information.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {/* Account settings form */}
-          </CardContent>
-        </Card>
-      </TabsContent>
-      <TabsContent value="password">
-        <Card>
-          <CardHeader>
-            <CardTitle>Change Password</CardTitle>
-            <CardDescription>Update your password here.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {/* Password form */}
-          </CardContent>
-        </Card>
-      </TabsContent>
-    </Tabs>
-  )
-}
-```
-
-### Alert and Toast
-
-Alert displays inline callouts while toast (via sonner) shows temporary notifications.
-
-```tsx
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { toast } from "sonner"
-import { AlertCircleIcon, CheckCircleIcon, InfoIcon } from "lucide-react"
-
-// Alert component for inline messages
-<Alert>
-  <InfoIcon />
-  <AlertTitle>Heads up!</AlertTitle>
-  <AlertDescription>
-    You can add components using the CLI.
-  </AlertDescription>
-</Alert>
-
-<Alert variant="destructive">
-  <AlertCircleIcon />
-  <AlertTitle>Error</AlertTitle>
-  <AlertDescription>
-    Your session has expired. Please log in again.
-  </AlertDescription>
-</Alert>
-
-// Toast notifications using sonner
-function handleSave() {
-  // Success toast
-  toast.success("Changes saved successfully!")
-
-  // Error toast
-  toast.error("Failed to save changes.")
-
-  // Toast with action
-  toast("File deleted.", {
-    action: {
-      label: "Undo",
-      onClick: () => restoreFile(),
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "custom-theme",
+  "type": "registry:theme",
+  "cssVars": {
+    "light": {
+      "background": "oklch(1 0 0)",
+      "foreground": "oklch(0.141 0.005 285.823)",
+      "primary": "oklch(0.546 0.245 262.881)",
+      "primary-foreground": "oklch(0.97 0.014 254.604)",
+      "ring": "oklch(0.746 0.16 232.661)",
+      "sidebar-primary": "oklch(0.546 0.245 262.881)",
+      "sidebar-primary-foreground": "oklch(0.97 0.014 254.604)",
+      "sidebar-ring": "oklch(0.746 0.16 232.661)"
     },
-  })
-
-  // Promise toast for async operations
-  toast.promise(saveData(), {
-    loading: "Saving...",
-    success: "Data saved!",
-    error: "Could not save.",
-  })
+    "dark": {
+      "background": "oklch(1 0 0)",
+      "foreground": "oklch(0.141 0.005 285.823)",
+      "primary": "oklch(0.707 0.165 254.624)",
+      "primary-foreground": "oklch(0.97 0.014 254.604)",
+      "ring": "oklch(0.707 0.165 254.624)",
+      "sidebar-primary": "oklch(0.707 0.165 254.624)",
+      "sidebar-primary-foreground": "oklch(0.97 0.014 254.604)",
+      "sidebar-ring": "oklch(0.707 0.165 254.624)"
+    }
+  }
 }
 ```
 
-### ToggleGroup Component
+--------------------------------
 
-ToggleGroup provides a set of toggle buttons for selecting between options. Use instead of manually looping Button components with active state.
+### lib/utils.ts
 
-```tsx
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { Field, FieldTitle } from "@/components/ui/field"
-import { BoldIcon, ItalicIcon, UnderlineIcon } from "lucide-react"
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/installation/manual.mdx
 
-// Single selection toggle group
-<ToggleGroup type="single" defaultValue="weekly" spacing={2}>
-  <ToggleGroupItem value="daily">Daily</ToggleGroupItem>
-  <ToggleGroupItem value="weekly">Weekly</ToggleGroupItem>
-  <ToggleGroupItem value="monthly">Monthly</ToggleGroupItem>
-</ToggleGroup>
+Add a cn helper
 
-// Multiple selection with icons
-<ToggleGroup type="multiple" spacing={2}>
-  <ToggleGroupItem value="bold" aria-label="Toggle bold">
-    <BoldIcon />
-  </ToggleGroupItem>
-  <ToggleGroupItem value="italic" aria-label="Toggle italic">
-    <ItalicIcon />
-  </ToggleGroupItem>
-  <ToggleGroupItem value="underline" aria-label="Toggle underline">
-    <UnderlineIcon />
-  </ToggleGroupItem>
-</ToggleGroup>
+```ts
+import { clsx, type ClassValue } from "clsx"
+import { twMerge } from "tailwind-merge"
 
-// With Field for labeled toggle groups
-<Field orientation="horizontal">
-  <FieldTitle id="theme-label">Theme</FieldTitle>
-  <ToggleGroup aria-labelledby="theme-label" type="single" defaultValue="system">
-    <ToggleGroupItem value="light">Light</ToggleGroupItem>
-    <ToggleGroupItem value="dark">Dark</ToggleGroupItem>
-    <ToggleGroupItem value="system">System</ToggleGroupItem>
-  </ToggleGroup>
-</Field>
-```
-
-## Theming and Customization
-
-### CSS Variables
-
-shadcn/ui uses CSS variables for theming. Colors follow the `name` / `name-foreground` convention where base is for backgrounds and `-foreground` is for text.
-
-```css
-/* globals.css - Light mode */
-:root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.965 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.965 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.965 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --radius: 0.625rem;
-}
-
-/* Dark mode */
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  /* ... other dark mode variables */
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
 }
 ```
 
-### Adding Custom Colors
+--------------------------------
 
-Define custom CSS variables and register them with Tailwind for use in components.
+### example-multiple-plugins.json
 
-```css
-/* 1. Define in globals.css */
-:root {
-  --warning: oklch(0.84 0.16 84);
-  --warning-foreground: oklch(0.28 0.07 46);
-}
-.dark {
-  --warning: oklch(0.41 0.11 46);
-  --warning-foreground: oklch(0.99 0.02 95);
-}
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
 
-/* 2. Register with Tailwind v4 */
-@theme inline {
-  --color-warning: var(--warning);
-  --color-warning-foreground: var(--warning-foreground);
+Illustrates adding multiple plugins, noting their automatic grouping and deduplication, along with their npm dependencies.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "multiple-plugins",
+  "type": "registry:item",
+  "dependencies": [
+    "@tailwindcss/typography",
+    "@tailwindcss/forms",
+    "tw-animate-css"
+  ],
+  "css": {
+    "@plugin \"@tailwindcss/typography\"": {},
+    "@plugin \"@tailwindcss/forms\"": {},
+    "@plugin \"tw-animate-css\"": {}
+  }
 }
 ```
 
-```tsx
-// 3. Use in components
-<div className="bg-warning text-warning-foreground rounded-md p-4">
-  Warning message
-</div>
+--------------------------------
 
-// Or add a new button variant in button.tsx
-const buttonVariants = cva("...", {
-  variants: {
-    variant: {
-      warning: "bg-warning text-warning-foreground hover:bg-warning/90",
+### components.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/namespace.mdx
+
+Example of a secure registry setup in components.json, including authentication headers.
+
+```json
+{
+  "@company": {
+    "url": "https://registry.company.com/v1/{name}.json",
+    "headers": {
+      "Authorization": "Bearer ${COMPANY_TOKEN}",
+      "X-Registry-Version": "1.0"
+    }
+  }
+}
+```
+
+--------------------------------
+
+### Search items
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/getting-started.mdx
+
+Command to search items in the namespaced registry by query.
+
+```bash
+npx shadcn@latest search @acme --query button
+```
+
+--------------------------------
+
+### Select a template
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/(root)/monorepo.mdx
+
+Example of template selection after running the init command.
+
+```bash
+? Select a template ›
+❯   Next.js
+    Vite
+    TanStack Start
+    React Router
+    Astro
+```
+
+--------------------------------
+
+### alias-parent.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
+
+Shows how registry dependencies can also utilize target placeholders, with a parent item installing an app component and a hook, and a child item installing a UI component and a helper.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "alias-parent",
+  "type": "registry:item",
+  "registryDependencies": ["https://example.com/r/alias-child.json"],
+  "files": [
+    {
+      "path": "registry/new-york/alias/target-alias-panel.tsx",
+      "type": "registry:component",
+      "target": "@components/target-alias-panel.tsx",
+      "content": "..."
     },
-  },
-})
+    {
+      "path": "registry/new-york/alias/use-target-alias.ts",
+      "type": "registry:hook",
+      "target": "@hooks/use-target-alias.ts",
+      "content": "..."
+    }
+  ]
+}
 ```
 
-### Dark Mode Setup
+--------------------------------
 
-Use next-themes for class-based dark mode toggling in Next.js applications.
+### Initial setup
+
+Source: https://github.com/shadcn-ui/ui/blob/main/packages/shadcn/test/fixtures/frameworks/remix-indie-stack/README.md
+
+Command to run the initial setup script for the project.
+
+```sh
+npm run setup
+```
+
+--------------------------------
+
+### Add TooltipProvider to root (CLI)
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/tooltip.mdx
+
+Example of adding TooltipProvider to `app/layout.tsx` for CLI installation.
 
 ```tsx
-// app/layout.tsx
-import { ThemeProvider } from "next-themes"
+import { TooltipProvider } from "@/components/ui/tooltip"
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en">
       <body>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-          {children}
-        </ThemeProvider>
+        <TooltipProvider>{children}</TooltipProvider>
       </body>
     </html>
   )
 }
+```
 
-// components/mode-toggle.tsx
-import { useTheme } from "next-themes"
-import { Button } from "@/components/ui/button"
-import { MoonIcon, SunIcon } from "lucide-react"
+--------------------------------
 
-export function ModeToggle() {
-  const { setTheme, theme } = useTheme()
+### example-media-import.json
 
-  return (
-    <Button
-      variant="outline"
-      size="icon"
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-    >
-      <SunIcon className="size-4 dark:hidden" />
-      <MoonIcon className="hidden size-4 dark:block" />
-      <span className="sr-only">Toggle theme</span>
-    </Button>
-  )
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
+
+Illustrates importing CSS conditionally using media queries for print and mobile styles.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "responsive-import",
+  "type": "registry:item",
+  "css": {
+    "@import \"print-styles.css\" print": {},
+    "@import url(\"mobile.css\") screen and (max-width: 768px)": {}
+  }
 }
 ```
 
-## Styling Best Practices
+--------------------------------
 
-### Semantic Colors and Utility Classes
+### Scaffold a new project with CLI
 
-Always use semantic color tokens instead of raw Tailwind colors. Use `cn()` for conditional classes.
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/installation/index.mdx
 
-```tsx
-import { cn } from "@/lib/utils"
+Command to initialize a new project using the shadcn CLI with a specified framework template.
 
-// CORRECT: Semantic colors
-<div className="bg-primary text-primary-foreground">Primary</div>
-<div className="bg-muted text-muted-foreground">Muted</div>
-<div className="text-destructive">Error text</div>
-
-// WRONG: Raw colors
-<div className="bg-blue-500 text-white">Primary</div>
-
-// CORRECT: Use cn() for conditional classes
-<div className={cn(
-  "flex items-center rounded-md p-4",
-  isActive ? "bg-primary text-primary-foreground" : "bg-muted"
-)}>
-  Content
-</div>
-
-// WRONG: Manual ternary in className
-<div className={`flex items-center ${isActive ? "bg-primary" : "bg-muted"}`}>
-
-// CORRECT: gap-* for spacing
-<div className="flex flex-col gap-4">
-
-// WRONG: space-y-*
-<div className="space-y-4">
-
-// CORRECT: size-* for equal dimensions
-<Avatar className="size-10">
-
-// WRONG: w-* h-*
-<Avatar className="w-10 h-10">
-
-// CORRECT: truncate shorthand
-<p className="truncate">Long text...</p>
-
-// WRONG: expanded truncate
-<p className="overflow-hidden text-ellipsis whitespace-nowrap">
+```bash
+npx shadcn@latest init -t [framework]
 ```
 
-shadcn/ui is primarily used for building modern web applications with React, from small projects to large-scale enterprise applications. Common use cases include admin dashboards, SaaS products, marketing websites, e-commerce platforms, and developer tools. The component library excels in scenarios where teams need full control over their UI components while maintaining consistent design patterns and accessibility standards. The CLI-based approach makes it particularly suitable for teams that prefer owning their component code rather than depending on external library updates.
+--------------------------------
 
-Integration typically follows a pattern of initializing a project with `npx shadcn@latest init`, adding required components via `npx shadcn@latest add`, and then customizing the theme through CSS variables in the global stylesheet. Components work seamlessly with popular form libraries like React Hook Form and TanStack Form, state management solutions, and server-side rendering frameworks. The registry system also supports community components and custom component registries, enabling teams to share components across multiple projects while maintaining consistent theming through presets.
+### Search items
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/getting-started.mdx
+
+Command to search items in the registry by query using its URL.
+
+```bash
+npx shadcn@latest search http://localhost:3000/r/registry.json --query button
+```
+
+--------------------------------
+
+### `init` command configuration questions
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/changelog/2023-06-new-cli.mdx
+
+Questions asked when running the `init` command to configure `components.json`.
+
+```txt
+Which style would you like to use? › Default
+Which color would you like to use as base color? › Slate
+Where is your global CSS file? › › app/globals.css
+Do you want to use CSS variables for colors? › no / yes
+Where is your tailwind.config.js located? › tailwind.config.js
+Configure the import alias for components: › @/components
+Configure the import alias for utils: › @/lib/utils
+Are you using React Server Components? › no / yes
+```
+
+--------------------------------
+
+### example-import.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
+
+Demonstrates a basic CSS import using "@import \"tailwindcss\"" and a local CSS file.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "custom-import",
+  "type": "registry:component",
+  "css": {
+    "@import \"tailwindcss\"": {},
+    "@import \"./styles/base.css\"": {}
+  }
+}
+```
+
+--------------------------------
+
+### packages/ui/package.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/(root)/monorepo.mdx
+
+Example of a shared UI package's package.json exposing install targets with exports.
+
+```json
+{
+  "name": "@workspace/ui",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#components/*": "./src/components/*.tsx",
+    "#lib/*": "./src/lib/*.ts",
+    "#hooks/*": "./src/hooks/*.ts"
+  },
+  "exports": {
+    "./globals.css": "./src/styles/globals.css",
+    "./components/*": "./src/components/*.tsx",
+    "./lib/*": "./src/lib/*.ts",
+    "./hooks/*": "./src/hooks/*.ts"
+  }
+}
+```
+
+--------------------------------
+
+### View an item
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/getting-started.mdx
+
+Command to view a specific registry item by name using its namespace.
+
+```bash
+npx shadcn@latest view @acme/button
+```
+
+--------------------------------
+
+### Add a single component
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/(root)/new.mdx
+
+Use the CLI to add a single component to your project.
+
+```bash
+npx shadcn@latest add button
+```
+
+--------------------------------
+
+### `diff` command output
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/changelog/2023-06-new-cli.mdx
+
+Example output showing components with updates available.
+
+```txt
+The following components have updates available:
+- button
+  - /path/to/my-app/components/ui/button.tsx
+- toast
+  - /path/to/my-app/components/ui/use-toast.ts
+  - /path/to/my-app/components/ui/toaster.tsx
+```
+
+--------------------------------
+
+### Use useDirection Hook
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/direction.mdx
+
+Example of using the useDirection hook to get the current text direction.
+
+```tsx
+import { useDirection } from "@/components/ui/direction"
+
+function MyComponent() {
+  const direction = useDirection()
+  return <div>Current direction: {direction}</div>
+}
+```
+
+--------------------------------
+
+### example-style.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
+
+Custom colors
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "custom-style",
+  "type": "registry:style",
+  "cssVars": {
+    "light": {
+      "brand": "oklch(0.99 0.00 0)"
+    },
+    "dark": {
+      "brand": "oklch(0.14 0.00 286)"
+    }
+  }
+}
+```
+
+--------------------------------
+
+### example-url-import.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
+
+Shows how to import CSS using the url() syntax for external fonts and local stylesheets.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "font-import",
+  "type": "registry:item",
+  "css": {
+    "@import url(\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap\")": {},
+    "@import url('./local-styles.css')": {}
+  }
+}
+```
+
+--------------------------------
+
+### Unknown Registry Error Example
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/changelog/2025-08-cli-3-mcp.mdx
+
+An example of the CLI displaying a helpful error message when an unknown registry is encountered, guiding the user to define it in components.json.
+
+```txt
+Unknown registry "@acme". Make sure it is defined in components.json as follows:
+{
+  "registries": {
+    "@acme": "[URL_TO_REGISTRY]"
+  }
+}
+```
+
+--------------------------------
+
+### Add a block
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/(root)/new.mdx
+
+Add a specific block to your project using the CLI.
+
+```bash
+npx shadcn@latest add login-03
+```
+
+--------------------------------
+
+### components.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/(root)/components-json.mdx
+
+Example configuration demonstrating multiple registry setups including public, private with authentication, and team-specific with versioning.
+
+```json
+{
+  "registries": {
+    "@shadcn": "https://ui.shadcn.com/r/{name}.json",
+    "@company-ui": {
+      "url": "https://registry.company.com/ui/{name}.json",
+      "headers": {
+        "Authorization": "Bearer ${COMPANY_TOKEN}"
+      }
+    },
+    "@team": {
+      "url": "https://team.company.com/{name}.json",
+      "params": {
+        "team": "frontend",
+        "version": "${REGISTRY_VERSION}"
+      }
+    }
+  }
+}
+```
+
+--------------------------------
+
+### Installation via CLI
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/progress.mdx
+
+Add the progress component using the shadcn CLI.
+
+```bash
+npx shadcn@latest add progress
+```
+
+--------------------------------
+
+### CLI TypeScript Opt-out Prompt
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/changelog/2023-07-javascript.mdx
+
+Example of the CLI prompt when opting out of TypeScript during project setup.
+
+```txt
+Would you like to use TypeScript (recommended)? no
+```
+
+--------------------------------
+
+### `add` command
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/changelog/2023-06-new-cli.mdx
+
+Add UI components to your project.
+
+```bash
+npx shadcn@latest add
+```
+
+--------------------------------
+
+### Get component documentation
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/changelog/2026-03-cli-v4.mdx
+
+Command to retrieve documentation, code, and examples for a UI component.
+
+```bash
+npx shadcn@latest docs combobox
+```
+
+--------------------------------
+
+### Installation
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/select.mdx
+
+Command to add the select component using shadcn CLI.
+
+```bash
+npx shadcn@latest add select
+```
+
+--------------------------------
+
+### example-style.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
+
+Custom style that extends shadcn/ui
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "example-style",
+  "type": "registry:style",
+  "dependencies": ["@tabler/icons-react"],
+  "registryDependencies": [
+    "login-01",
+    "calendar",
+    "https://example.com/r/editor.json"
+  ],
+  "cssVars": {
+    "theme": {
+      "font-sans": "Inter, sans-serif"
+    },
+    "light": {
+      "brand": "20 14.3% 4.1%"
+    },
+    "dark": {
+      "brand": "20 14.3% 4.1%"
+    }
+  }
+}
+```
+
+--------------------------------
+
+### docs property configuration
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/registry-item-json.mdx
+
+Example of defining a custom documentation message to show when installing the registry item via CLI.
+
+```json
+{
+  "docs": "To get an OPENAI_API_KEY, sign up for an account at https://platform.openai.com."
+}
+```
+
+--------------------------------
+
+### Apply a custom theme preset
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/(root)/new.mdx
+
+Apply a custom theme to your project using a preset code.
+
+```bash
+npx shadcn@latest init --preset [CODE]
+```
+
+--------------------------------
+
+### Add namespace with CLI
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/getting-started.mdx
+
+Command to add a custom registry URL template as a namespace using the shadcn CLI.
+
+```bash
+npx shadcn@latest registry add @acme=https://acme.com/r/{name}.json
+```
+
+--------------------------------
+
+### Generated Project Creation Command
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/installation/tanstack.mdx
+
+Example of the `shadcn@latest init` command generated by shadcn/create, including a preset and template.
+
+```bash
+npx shadcn@latest init --preset [CODE] --template start
+```
+
+--------------------------------
+
+### Initialize project
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/(root)/components-json.mdx
+
+Command to create a components.json file.
+
+```bash
+npx shadcn@latest init
+```
+
+--------------------------------
+
+### example-combined.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
+
+Demonstrates a registry item configuration combining both "@import" and "@plugin" directives, showing their relative ordering.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "combined-example",
+  "type": "registry:item",
+  "dependencies": ["@tailwindcss/typography", "tw-animate-css"],
+  "css": {
+    "@import \"tailwindcss\"": {},
+    "@import url(\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap\")": {},
+    "@plugin \"@tailwindcss/typography\"": {},
+    "@plugin \"tw-animate-css\"": {},
+    "@layer base": {
+      "body": {
+        "font-family": "Inter, sans-serif"
+      }
+    },
+    "@utility content-auto": {
+      "content-visibility": "auto"
+    }
+  }
+}
+```
+
+--------------------------------
+
+### Dark Mode Setup with next-themes
+
+Source: https://github.com/shadcn-ui/ui/blob/main/skills/shadcn/customization.md
+
+Example of setting up class-based dark mode toggle using `next-themes` in a Next.js application.
+
+```tsx
+import { ThemeProvider } from "next-themes"
+
+<ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+  {children}
+</ThemeProvider>
+```
+
+--------------------------------
+
+### Popover Usage Example
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/changelog/2026-01-inline-side-styles.mdx
+
+Demonstrates how to use the `side="inline-start"` prop with `PopoverContent`.
+
+```tsx
+<Popover>
+  <PopoverTrigger>Open</PopoverTrigger>
+  <PopoverContent side="inline-start">
+    {/* Opens on the left in LTR, right in RTL */}
+  </PopoverContent>
+</Popover>
+```
