@@ -132,9 +132,16 @@ fi
 
 echo "Cleaning up items..."
 
-# Delete directories in parallel
+# Delete directories in parallel (ignore transient macOS Finder .DS_Store race errors during concurrent deletes)
 if [[ ${#CLEAN_DIRS[@]} -gt 0 ]]; then
-  printf "%s\0" "${CLEAN_DIRS[@]}" | xargs -0 -n 1 -P "$CORES" rm -rf --
+  printf "%s\0" "${CLEAN_DIRS[@]}" | xargs -0 -n 1 -P "$CORES" rm -rf -- || true
+  
+  # Safe sequential retry fallback for any directories that failed to delete (e.g. due to macOS Finder lock race)
+  for dir in "${CLEAN_DIRS[@]}"; do
+    if [[ -d "$dir" ]]; then
+      rm -rf -- "$dir"
+    fi
+  done
 fi
 
 # Truncate or remove files
