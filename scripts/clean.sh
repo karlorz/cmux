@@ -52,6 +52,31 @@ else
   done < <(find "$TARGET" -path './dev-docs' -prune -o -type d -name node_modules -prune -print0)
 fi
 
+# Find Rust target compilation directories
+if command -v fd >/dev/null 2>&1; then
+  while IFS= read -r -d '' dir; do
+    CLEAN_DIRS+=("$dir")
+  done < <(fd -HI -t d -0 --exclude 'dev-docs' '^target$' "$TARGET")
+else
+  while IFS= read -r -d '' dir; do
+    CLEAN_DIRS+=("$dir")
+  done < <(find "$TARGET" -path './dev-docs' -prune -o -type d -name target -prune -print0)
+fi
+
+# Find Next.js build caches (.next, .turbo)
+if command -v fd >/dev/null 2>&1; then
+  while IFS= read -r -d '' dir; do
+    CLEAN_DIRS+=("$dir")
+  done < <(fd -HI -t d -0 --exclude 'dev-docs' '^\.next$' "$TARGET")
+  while IFS= read -r -d '' dir; do
+    CLEAN_DIRS+=("$dir")
+  done < <(fd -HI -t d -0 --exclude 'dev-docs' '^\.turbo$' "$TARGET")
+else
+  while IFS= read -r -d '' dir; do
+    CLEAN_DIRS+=("$dir")
+  done < <(find "$TARGET" -path './dev-docs' -prune -o -type d \( -name ".next" -o -name ".turbo" \) -prune -print0)
+fi
+
 # Find test/build caches (e.g., .pytest_cache)
 if [[ -d "$TARGET/.pytest_cache" ]]; then
   CLEAN_DIRS+=("$TARGET/.pytest_cache")
@@ -95,7 +120,13 @@ else
   # Format total size
   TOTAL_MB=$((TOTAL_KB / 1024))
   echo ""
-  echo "Estimated total space to reclaim: ${TOTAL_MB} MB"
+  if [[ "$TOTAL_MB" -ge 1024 ]]; then
+    # Print in GB if space >= 1 GB
+    TOTAL_GB=$(echo "scale=2; $TOTAL_MB / 1024" | bc 2>/dev/null || echo $((TOTAL_MB / 1024)))
+    echo "Estimated total space to reclaim: ${TOTAL_GB} GB"
+  else
+    echo "Estimated total space to reclaim: ${TOTAL_MB} MB"
+  fi
 fi
 
 if [[ ${#CLEAN_DIRS[@]} -eq 0 && ${#CLEAN_FILES[@]} -eq 0 ]]; then
