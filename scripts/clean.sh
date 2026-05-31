@@ -41,45 +41,15 @@ fi
 declare -a CLEAN_DIRS=()
 declare -a CLEAN_FILES=()
 
-# Find nested node_modules
+# Find directories to clean in a single pass (node_modules, target, .next, .turbo, .pytest_cache)
 if command -v fd >/dev/null 2>&1; then
   while IFS= read -r -d '' dir; do
     CLEAN_DIRS+=("$dir")
-  done < <(fd -HI -t d -0 --exclude 'dev-docs' '^node_modules$' "$TARGET")
+  done < <(fd -HI -t d -0 --exclude 'dev-docs' '^(node_modules|target|\.next|\.turbo|\.pytest_cache)$' "$TARGET")
 else
   while IFS= read -r -d '' dir; do
     CLEAN_DIRS+=("$dir")
-  done < <(find "$TARGET" -path './dev-docs' -prune -o -type d -name node_modules -prune -print0)
-fi
-
-# Find Rust target compilation directories
-if command -v fd >/dev/null 2>&1; then
-  while IFS= read -r -d '' dir; do
-    CLEAN_DIRS+=("$dir")
-  done < <(fd -HI -t d -0 --exclude 'dev-docs' '^target$' "$TARGET")
-else
-  while IFS= read -r -d '' dir; do
-    CLEAN_DIRS+=("$dir")
-  done < <(find "$TARGET" -path './dev-docs' -prune -o -type d -name target -prune -print0)
-fi
-
-# Find Next.js build caches (.next, .turbo)
-if command -v fd >/dev/null 2>&1; then
-  while IFS= read -r -d '' dir; do
-    CLEAN_DIRS+=("$dir")
-  done < <(fd -HI -t d -0 --exclude 'dev-docs' '^\.next$' "$TARGET")
-  while IFS= read -r -d '' dir; do
-    CLEAN_DIRS+=("$dir")
-  done < <(fd -HI -t d -0 --exclude 'dev-docs' '^\.turbo$' "$TARGET")
-else
-  while IFS= read -r -d '' dir; do
-    CLEAN_DIRS+=("$dir")
-  done < <(find "$TARGET" -path './dev-docs' -prune -o -type d \( -name ".next" -o -name ".turbo" \) -prune -print0)
-fi
-
-# Find test/build caches (e.g., .pytest_cache)
-if [[ -d "$TARGET/.pytest_cache" ]]; then
-  CLEAN_DIRS+=("$TARGET/.pytest_cache")
+  done < <(find "$TARGET" -path './dev-docs' -prune -o -type d \( -name node_modules -o -name target -o -name .next -o -name .turbo -o -name .pytest_cache \) -prune -print0)
 fi
 
 # Find log files under logs/
