@@ -255,6 +255,24 @@ setup_ssh_key() {
         SSH_KEY_PATH="$SSH_DIR/$key_name"
         PUB_KEY_PATH="${SSH_KEY_PATH}.pub"
 
+        # Auto-detect existing IdentityFile from SSH config (avoids generating a duplicate key)
+        if [[ ! -f "$SSH_KEY_PATH" ]] && grep -q "^Host ${HOST_ALIAS}$" "$CONFIG_FILE" 2>/dev/null; then
+            local detected_key
+            detected_key=$(awk -v host="$HOST_ALIAS" '
+                $0 ~ "^Host " host "$" { in_block=1; next }
+                /^Host / { in_block=0 }
+                in_block && /IdentityFile/ { print $2; exit }
+            ' "$CONFIG_FILE")
+            # Expand ~/.ssh and $HOME
+            detected_key="${detected_key/#\~/$HOME}"
+            detected_key="${detected_key/#\$HOME/$HOME}"
+            if [[ -n "$detected_key" && -f "$detected_key" && -f "${detected_key}.pub" ]]; then
+                log_info "Detected existing IdentityFile from SSH config: $detected_key"
+                SSH_KEY_PATH="$detected_key"
+                PUB_KEY_PATH="${detected_key}.pub"
+            fi
+        fi
+
         if [[ -f "$SSH_KEY_PATH" ]]; then
             log_warn "Key already exists: $SSH_KEY_PATH"
             log_info "Using existing key (use --key to specify a different one)"
@@ -295,10 +313,12 @@ copy_key_linux() {
         if sshpass -p "$SSH_PASSWORD" ssh $ssh_opts -o PasswordAuthentication=yes \
             "${REMOTE_USER}@${REMOTE_HOST}" "mkdir -p ~/.ssh && chmod 700 ~/.ssh"; then
 
-            # Append public key to authorized_keys
-            if cat "$PUB_KEY_PATH" | sshpass -p "$SSH_PASSWORD" ssh $ssh_opts -o PasswordAuthentication=yes \
-                "${REMOTE_USER}@${REMOTE_HOST}" "cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"; then
-                log_success "Public key copied successfully via sshpass"
+            # Append public key to authorized_keys (dedup: skip if key already present)
+            local pub_key_data
+            pub_key_data=$(cat "$PUB_KEY_PATH")
+            if sshpass -p "$SSH_PASSWORD" ssh $ssh_opts -o PasswordAuthentication=yes \
+                "${REMOTE_USER}@${REMOTE_HOST}" "grep -qF '${pub_key_data}' ~/.ssh/authorized_keys 2>/dev/null && echo KEY_EXISTS || (echo '${pub_key_data}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && echo KEY_ADDED)" 2>/dev/null | grep -qE 'KEY_(EXISTS|ADDED)'; then
+                log_success "Public key already present (dedup) or added successfully"
                 return 0
             fi
         fi
@@ -317,8 +337,10 @@ copy_key_linux() {
         # Fallback: manual copy with interactive prompt
         log_info "ssh-copy-id failed, trying manual copy..."
 
-        if ssh $ssh_opts "${REMOTE_USER}@${REMOTE_HOST}" "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys" < "$PUB_KEY_PATH"; then
-            log_success "Public key copied successfully (manual method)"
+        local pub_key_data
+        pub_key_data=$(cat "$PUB_KEY_PATH")
+        if ssh $ssh_opts "${REMOTE_USER}@${REMOTE_HOST}" "mkdir -p ~/.ssh && chmod 700 ~/.ssh && grep -qF '${pub_key_data}' ~/.ssh/authorized_keys 2>/dev/null && echo KEY_EXISTS || (echo '${pub_key_data}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && echo KEY_ADDED)" 2>/dev/null | grep -qE 'KEY_(EXISTS|ADDED)'; then
+            log_success "Public key already present (dedup) or added successfully (manual method)"
             return 0
         fi
 
@@ -353,13 +375,22 @@ copy_key_windows() {
                 "${REMOTE_USER}@${REMOTE_HOST}" "cmd /c mkdir C:\\Users\\${win_user}\\.ssh 2>nul" 2>/dev/null
         fi
 
-        # Grant write access BEFORE appending, then set final restrictive permissions after.
-        # This handles the case where the file already exists with read-only permissions.
+        # Grant write access, dedup check, append if new, then set final restrictive permissions.
+        # Dedup uses findstr to search for the key fingerprint in the file before appending.
+        local pub_key_type
+        pub_key_type=$(echo "$pub_key" | awk '{print $1}')  # e.g. ssh-ed25519
+        local pub_key_body
+        pub_key_body=$(echo "$pub_key" | awk '{print $2}')  # base64 key data
+        # Use first 40 chars of key body for matching (avoids full-length shell escaping issues)
+        local key_stub
+        key_stub="${pub_key_body:0:40}"
+        local dedup_check="findstr /C:\"${key_stub}\" ${auth_file} >nul 2>&1"
+
         local write_cmd
         if [[ "$is_admin" == "True" ]]; then
-            write_cmd="icacls ${auth_file} /grant:r ${win_user}:F >nul 2>&1 && cmd /c echo ${pub_key} >> ${auth_file} && icacls ${auth_file} /inheritance:r /grant:r SYSTEM:F /grant:r ${win_user}:R >nul 2>&1"
+            write_cmd="icacls ${auth_file} /grant:r ${win_user}:F >nul 2>&1 && (${dedup_check} && echo KEY_EXISTS || (cmd /c echo ${pub_key} >> ${auth_file} && echo KEY_ADDED)) && icacls ${auth_file} /inheritance:r /grant:r SYSTEM:F /grant:r ${win_user}:R >nul 2>&1"
         else
-            write_cmd="icacls C:\\Users\\${win_user}\\.ssh /grant:r ${win_user}:(OI)(CI)F >nul 2>&1 && icacls ${auth_file} /grant:r ${win_user}:F >nul 2>&1 && cmd /c echo ${pub_key} >> ${auth_file} && icacls C:\\Users\\${win_user}\\.ssh /inheritance:r /grant:r ${win_user}:(OI)(CI)RX >nul 2>&1 && icacls ${auth_file} /inheritance:r /grant:r ${win_user}:R >nul 2>&1"
+            write_cmd="icacls C:\\Users\\${win_user}\\.ssh /grant:r ${win_user}:(OI)(CI)F >nul 2>&1 && icacls ${auth_file} /grant:r ${win_user}:F >nul 2>&1 && (${dedup_check} && echo KEY_EXISTS || (cmd /c echo ${pub_key} >> ${auth_file} && echo KEY_ADDED)) && icacls C:\\Users\\${win_user}\\.ssh /inheritance:r /grant:r ${win_user}:(OI)(CI)RX >nul 2>&1 && icacls ${auth_file} /inheritance:r /grant:r ${win_user}:R >nul 2>&1"
         fi
 
         if sshpass -p "$SSH_PASSWORD" ssh $ssh_opts -o PasswordAuthentication=yes \
