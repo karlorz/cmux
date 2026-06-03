@@ -1,802 +1,1158 @@
-# TanStack Router & TanStack Start
+### Start from an example - Basic
 
-TanStack Router is a modern, type-safe router for React and Solid applications that provides end-to-end type safety for routes, params, and loaders. It features schema-driven search params with validation, built-in caching with prefetching and invalidation, nested layouts, transitions, and error boundaries. The router supports both file-based and code-based routing patterns, with automatic route generation and code splitting capabilities.
+Source: https://github.com/tanstack/router/blob/main/docs/start/framework/solid/getting-started.md
 
-TanStack Start is a full-stack framework built on TanStack Router, designed for server rendering, streaming, and production-ready deployments. It provides full-document SSR, streaming data, server functions with type-safe RPCs between client and server, middleware support, and universal deployment to any Vite-compatible hosting provider. Start enables building complete full-stack applications while maintaining the excellent developer experience of TanStack Router.
+Commands to clone, install, and run the Basic example project.
 
----
+```bash
+npx gitpick TanStack/router/tree/main/examples/solid/start-basic start-basic
+cd start-basic
+npm install
+npm run dev
+```
 
-## Creating a Router Instance
+--------------------------------
 
-The `createRouter` function creates the core router instance that manages route matching, navigation, and route transitions. It requires a route tree and supports many configuration options for router-wide settings.
+### Start from an example - Clone a different example manually
 
-```tsx
-import { createRouter, createRootRoute, createRoute } from '@tanstack/react-router'
+Source: https://github.com/tanstack/router/blob/main/docs/start/framework/solid/getting-started.md
 
-// Define root route
-const rootRoute = createRootRoute({
-  component: () => (
-    <div>
-      <nav>
-        <Link to="/">Home</Link>
-        <Link to="/posts">Posts</Link>
-      </nav>
-      <Outlet />
-    </div>
-  ),
-  notFoundComponent: () => <div>404 Not Found</div>,
-})
+Commands to clone, install, and run a different example project by replacing EXAMPLE_SLUG.
 
-// Define child routes
-const indexRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/',
-  component: () => <h1>Welcome Home</h1>,
-})
+```bash
+npx gitpick TanStack/router/tree/main/examples/solid/EXAMPLE_SLUG my-new-project
+cd my-new-project
+npm install
+npm run dev
+```
 
-const postsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/posts',
-  loader: async () => {
-    const res = await fetch('/api/posts')
-    return res.json()
-  },
-  component: PostsComponent,
-})
+--------------------------------
 
-// Build route tree and create router
-const routeTree = rootRoute.addChildren([indexRoute, postsRoute])
+### Start from the Basic example
 
-const router = createRouter({
-  routeTree,
-  defaultPreload: 'intent',
-  defaultStaleTime: 5000,
-})
+Source: https://github.com/tanstack/router/blob/main/docs/start/framework/react/getting-started.md
 
-// Register router types for full type safety
-declare module '@tanstack/react-router' {
-  interface Register {
-    router: typeof router
+Commands to clone and run the Basic example project.
+
+```bash
+npx gitpick TanStack/router/tree/main/examples/react/start-basic start-basic
+cd start-basic
+npm install
+npm run dev
+```
+
+--------------------------------
+
+### Start a new project
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/quickstart/README.md
+
+Command to initialize a new project based on this quickstart example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/quickstart quickstart
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/quickstart-file-based/README.md
+
+Command to initialize a new project using this quickstart example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/quickstart-file-based quickstart-file-based
+```
+
+--------------------------------
+
+### Install Dependencies and Start Dev Server
+
+Source: https://github.com/tanstack/router/blob/main/docs/start/framework/react/tutorial/fetching-external-api.md
+
+Run these commands in the project root to install dependencies and start the development server after project setup.
+
+```bash
+pnpm i
+pnpm dev
+```
+
+--------------------------------
+
+### Setup environment variables
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-basic-authjs/README.md
+
+Command to copy the example environment file for configuration.
+
+```sh
+cp .env.example .env
+```
+
+--------------------------------
+
+### Verify Installation (Solid)
+
+Source: https://github.com/tanstack/router/blob/main/docs/router/quick-start.md
+
+Example package.json dependency entry for TanStack Solid Router.
+
+```json
+{
+  "dependencies": {
+    "@tanstack/solid-router": "^x.x.x"
   }
 }
 ```
 
----
+--------------------------------
 
-## File-Based Routing with createFileRoute
+### Clone a different example manually
 
-The `createFileRoute` function creates file-based route instances that are automatically discovered by the TanStack Router CLI. Routes export a `Route` constant and support loaders, components, and all standard route options.
+Source: https://github.com/tanstack/router/blob/main/docs/start/framework/react/getting-started.md
 
-```tsx
-// src/routes/posts.$postId.tsx
-import { createFileRoute } from '@tanstack/react-router'
+Commands to clone and run any official example by replacing EXAMPLE_SLUG.
 
-export const Route = createFileRoute('/posts/$postId')({
-  // Loader runs before component renders, data is cached
-  loader: async ({ params }) => {
-    const res = await fetch(`/api/posts/${params.postId}`)
-    if (!res.ok) throw new Error('Post not found')
-    return res.json()
-  },
-  // Pending component shows while loader is running (after 1s by default)
-  pendingComponent: () => <div>Loading post...</div>,
-  // Error component renders if loader throws
-  errorComponent: ({ error }) => <div>Error: {error.message}</div>,
-  // Main component receives loader data via hook
-  component: PostComponent,
-})
+```bash
+npx gitpick TanStack/router/tree/main/examples/react/EXAMPLE_SLUG my-new-project
+cd my-new-project
+npm install
+npm run dev
+```
 
-function PostComponent() {
-  const post = Route.useLoaderData()
-  const { postId } = Route.useParams()
+--------------------------------
 
-  return (
-    <article>
-      <h1>{post.title}</h1>
-      <p>Post ID: {postId}</p>
-      <div>{post.content}</div>
-    </article>
-  )
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/quickstart-rspack-file-based/README.md
+
+Command to initialize a new project using this quickstart example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/quickstart-rspack-file-based quickstart-rspack-file-based
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-basic/README.md
+
+Command to initialize a new project using this example as a template.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-basic start-basic
+```
+
+--------------------------------
+
+### Start a new project
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/quickstart-esbuild-file-based/README.md
+
+Command to initialize a new project based on this example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/quickstart-esbuild-file-based quickstart-esbuild-file-based
+```
+
+--------------------------------
+
+### Project Setup Commands
+
+Source: https://github.com/tanstack/router/blob/main/examples/solid/start-convex-better-auth/README.md
+
+Commands to install dependencies, configure environment variables, and start the Convex and development servers.
+
+```shell
+pnpm i
+pnpx convex dev
+pnpx convex env set SITE_URL http://localhost:3000/
+pnpx convex env set BETTER_AUTH_SECRET=$(openssl rand -base64 32)
+pnpx convex dev
+pnpm run dev
+```
+
+--------------------------------
+
+### Run Example Commands
+
+Source: https://github.com/tanstack/router/blob/main/examples/solid/large-file-based/README.md
+
+Commands to install dependencies, generate routes, build the route tree, and type check the example.
+
+```shell
+pnpm install
+```
+
+```shell
+pnpm gen
+```
+
+```shell
+pnpm build
+```
+
+```shell
+pnpm test:types
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-bare/README.md
+
+Command to initialize a new project using this example as a template.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-bare start-bare
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-basic-react-query/README.md
+
+Command to initialize a new project using this example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-basic-react-query start-basic-react-query
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/quickstart-webpack-file-based/README.md
+
+Command to clone this example project using gitpick.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/quickstart-webpack-file-based quickstart-webpack-file-based
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-streaming-data-from-server-functions/README.md
+
+Command to initialize a new project using this example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-streaming-data-from-server-functions start-streaming-data-from-server-functions
+```
+
+--------------------------------
+
+### Run the example
+
+Source: https://github.com/tanstack/router/blob/main/e2e/react-router/scroll-restoration-sandbox-vite/README.md
+
+Commands to install dependencies and start the development server.
+
+```bash
+npm install
+```
+
+```bash
+npm start
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-basic-static/README.md
+
+Command to initialize a new project using this example's structure.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-basic-static start-basic-static
+```
+
+--------------------------------
+
+### Recommended Flat Config setup
+
+Source: https://github.com/tanstack/router/blob/main/docs/start/eslint/eslint-plugin-start.md
+
+Example of how to enable all recommended ESLint rules using the flat config format (eslint.config.js).
+
+```js
+// eslint.config.js
+import pluginStart from '@tanstack/eslint-plugin-start'
+
+export default [
+  pluginStart.configs['flat/recommended'],
+  // Any other config...
+]
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-supabase-basic/README.md
+
+Command to initialize a new project using this example as a template.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-supabase-basic start-supabase-basic
+```
+
+--------------------------------
+
+### Recommended Legacy Config setup
+
+Source: https://github.com/tanstack/router/blob/main/docs/start/eslint/eslint-plugin-start.md
+
+Example of how to enable all recommended ESLint rules using the legacy config format (.eslintrc).
+
+```json
+{
+  "extends": ["plugin:@tanstack/eslint-plugin-start/recommended"]
 }
 ```
 
----
+--------------------------------
 
-## Link Component for Navigation
+### Start a new project based on this example
 
-The `Link` component renders type-safe anchor tags with proper `href` attributes, supporting cmd/ctrl+click, preloading on hover, and active state styling.
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-convex-trellaux/README.md
 
-```tsx
-import { Link } from '@tanstack/react-router'
+Command to initialize a new project using this example as a template.
 
-function Navigation() {
-  return (
-    <nav>
-      {/* Basic link */}
-      <Link to="/about">About</Link>
-
-      {/* Link with path params */}
-      <Link to="/posts/$postId" params={{ postId: '123' }}>
-        View Post
-      </Link>
-
-      {/* Link with search params */}
-      <Link to="/search" search={{ query: 'tanstack', page: 1 }}>
-        Search
-      </Link>
-
-      {/* Link with search param updater function */}
-      <Link to="." search={(prev) => ({ ...prev, page: (prev.page || 1) + 1 })}>
-        Next Page
-      </Link>
-
-      {/* Active styling */}
-      <Link
-        to="/dashboard"
-        activeProps={{ className: 'font-bold text-blue-500' }}
-        inactiveProps={{ className: 'text-gray-500' }}
-      >
-        Dashboard
-      </Link>
-
-      {/* Preload on hover */}
-      <Link to="/expensive-page" preload="intent" preloadDelay={100}>
-        Expensive Page
-      </Link>
-
-      {/* Relative navigation */}
-      <Link from="/posts/$postId" to="..">
-        Back to Posts
-      </Link>
-    </nav>
-  )
-}
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-convex-trellaux start-convex-trellaux
 ```
 
----
+--------------------------------
 
-## useNavigate Hook for Programmatic Navigation
+### Start a new project based on this example
 
-The `useNavigate` hook returns a function for imperative navigation, useful for side effects like form submissions or successful async actions.
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-counter/README.md
 
-```tsx
-import { useNavigate } from '@tanstack/react-router'
+Command to initialize a new project using this example as a template.
 
-function CreatePostForm() {
-  const navigate = useNavigate()
-
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    const formData = new FormData(e.currentTarget)
-
-    const response = await fetch('/api/posts', {
-      method: 'POST',
-      body: JSON.stringify({ title: formData.get('title') }),
-    })
-
-    if (response.ok) {
-      const { id } = await response.json()
-      // Navigate to new post after creation
-      navigate({
-        to: '/posts/$postId',
-        params: { postId: id },
-        replace: true, // Replace current history entry
-      })
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit}>
-      <input name="title" placeholder="Post title" />
-      <button type="submit">Create Post</button>
-    </form>
-  )
-}
-
-// Navigate with search params
-function SearchForm() {
-  const navigate = useNavigate({ from: '/search' })
-
-  const handleSearch = (query: string) => {
-    navigate({
-      search: (prev) => ({ ...prev, query, page: 1 }),
-    })
-  }
-
-  return <input onChange={(e) => handleSearch(e.target.value)} />
-}
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-counter start-counter
 ```
 
----
+--------------------------------
 
-## Data Loading with Route Loaders
+### Start a new project based on this example
 
-Route loaders fetch data before rendering, with built-in SWR caching, stale-while-revalidate patterns, and dependency-based cache invalidation.
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-large/README.md
 
-```tsx
-// src/routes/posts.tsx
-import { createFileRoute } from '@tanstack/react-router'
+Command to initialize a new project using this example as a template.
 
-export const Route = createFileRoute('/posts')({
-  // Define which search params affect the loader cache key
-  loaderDeps: ({ search: { page, limit } }) => ({ page, limit }),
-
-  // Loader receives params, deps, context, and abort signal
-  loader: async ({ deps: { page, limit }, abortController }) => {
-    const res = await fetch(`/api/posts?page=${page}&limit=${limit}`, {
-      signal: abortController.signal,
-    })
-    return res.json()
-  },
-
-  // Control cache freshness (default: 0ms, always revalidate)
-  staleTime: 10_000, // 10 seconds
-
-  // Control how long data stays in cache after unmount
-  gcTime: 300_000, // 5 minutes
-
-  component: PostsComponent,
-})
-
-function PostsComponent() {
-  const { posts, totalPages } = Route.useLoaderData()
-  const { page } = Route.useSearch()
-
-  return (
-    <div>
-      {posts.map((post) => (
-        <div key={post.id}>{post.title}</div>
-      ))}
-      <Link search={(prev) => ({ ...prev, page: page + 1 })}>
-        Next Page
-      </Link>
-    </div>
-  )
-}
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-large start-large
 ```
 
----
+--------------------------------
 
-## Search Params Validation with Zod
+### Start a new project based on this example
 
-TanStack Router provides JSON-first search params with full type safety through validation schemas using Zod, Valibot, or ArkType.
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-clerk-basic/README.md
 
-```tsx
-// src/routes/shop.products.tsx
-import { createFileRoute } from '@tanstack/react-router'
-import { z } from 'zod'
-import { zodValidator, fallback } from '@tanstack/zod-adapter'
+Command to initialize a new project using this example as a template.
 
-const productSearchSchema = z.object({
-  page: fallback(z.number(), 1).default(1),
-  sort: fallback(z.enum(['newest', 'oldest', 'price']), 'newest').default('newest'),
-  category: z.string().optional(),
-  minPrice: z.number().optional(),
-  maxPrice: z.number().optional(),
-})
-
-export const Route = createFileRoute('/shop/products')({
-  // Validate and type search params
-  validateSearch: zodValidator(productSearchSchema),
-
-  // Use validated search params in loader
-  loaderDeps: ({ search }) => ({
-    page: search.page,
-    sort: search.sort,
-    category: search.category,
-  }),
-
-  loader: async ({ deps }) => fetchProducts(deps),
-
-  component: ProductsComponent,
-})
-
-function ProductsComponent() {
-  const { page, sort, category } = Route.useSearch()
-
-  return (
-    <div>
-      <select
-        value={sort}
-        onChange={(e) => (
-          <Link search={(prev) => ({ ...prev, sort: e.target.value })} />
-        )}
-      >
-        <option value="newest">Newest</option>
-        <option value="oldest">Oldest</option>
-        <option value="price">Price</option>
-      </select>
-
-      <Link search={(prev) => ({ ...prev, page: page + 1 })}>
-        Next Page
-      </Link>
-    </div>
-  )
-}
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-clerk-basic start-clerk-basic
 ```
 
----
+--------------------------------
 
-## useSearch Hook for Reading Search Params
+### Start a new project based on this example
 
-The `useSearch` hook provides type-safe access to validated search parameters from anywhere in the component tree.
+Source: https://github.com/tanstack/router/blob/main/examples/react/router-monorepo-react-query/README.md
 
-```tsx
-import { useSearch, getRouteApi } from '@tanstack/react-router'
+Command to initialize a new project using this example as a template.
 
-// Option 1: Use from route directly
-function ProductFilters() {
-  const { sort, category, minPrice, maxPrice } = useSearch({
-    from: '/shop/products',
-  })
-
-  return (
-    <div>
-      <p>Current sort: {sort}</p>
-      <p>Category: {category ?? 'All'}</p>
-      <p>Price range: {minPrice ?? 0} - {maxPrice ?? 'unlimited'}</p>
-    </div>
-  )
-}
-
-// Option 2: Use getRouteApi to avoid circular imports
-const routeApi = getRouteApi('/shop/products')
-
-function ProductSidebar() {
-  const search = routeApi.useSearch()
-  const params = routeApi.useParams()
-  const loaderData = routeApi.useLoaderData()
-
-  return <div>...</div>
-}
-
-// Option 3: Loose search (from any route, partial types)
-function GlobalSearchIndicator() {
-  const search = useSearch({ strict: false })
-  // search is Partial<AllSearchParams>
-
-  return search.query ? <span>Searching: {search.query}</span> : null
-}
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/router-monorepo-react-query router-monorepo-react-query
 ```
 
----
+--------------------------------
 
-## useParams Hook for Path Parameters
+### Start a new project based on this example
 
-The `useParams` hook returns all parsed path parameters from the current route and its parents with full type safety.
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-basic-authjs/README.md
 
-```tsx
-import { useParams, getRouteApi } from '@tanstack/react-router'
+Command to initialize a new project using this example as a template.
 
-// Route: /posts/$postId/comments/$commentId
-function CommentComponent() {
-  // Full type safety when specifying route
-  const { postId, commentId } = useParams({ from: '/posts/$postId/comments/$commentId' })
-
-  return (
-    <div>
-      <p>Post: {postId}</p>
-      <p>Comment: {commentId}</p>
-    </div>
-  )
-}
-
-// Using getRouteApi for code-split components
-const routeApi = getRouteApi('/posts/$postId')
-
-function PostHeader() {
-  const { postId } = routeApi.useParams()
-
-  return <h1>Post #{postId}</h1>
-}
-
-// Select specific param with transformation
-function PostIdDisplay() {
-  const numericId = useParams({
-    from: '/posts/$postId',
-    select: (params) => parseInt(params.postId, 10),
-  })
-
-  return <span>Numeric ID: {numericId}</span>
-}
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-basic-authjs start-basic-authjs
 ```
 
----
+--------------------------------
 
-## useLoaderData Hook for Accessing Loader Data
+### Start a new project based on this example
 
-The `useLoaderData` hook retrieves data returned by the route's loader function with full type inference.
+Source: https://github.com/tanstack/router/blob/main/examples/react/router-monorepo-simple/README.md
 
-```tsx
-import { useLoaderData, getRouteApi } from '@tanstack/react-router'
+Command to initialize a new project using this example as a template.
 
-// Direct usage with from option
-function PostContent() {
-  const post = useLoaderData({ from: '/posts/$postId' })
-  // post is fully typed based on loader return type
-
-  return (
-    <article>
-      <h1>{post.title}</h1>
-      <p>{post.body}</p>
-      <span>By {post.author.name}</span>
-    </article>
-  )
-}
-
-// Using Route object directly (in same file as route definition)
-export const Route = createFileRoute('/posts/$postId')({
-  loader: async ({ params }) => {
-    const post = await fetchPost(params.postId)
-    return { post, comments: await fetchComments(params.postId) }
-  },
-  component: PostPage,
-})
-
-function PostPage() {
-  const { post, comments } = Route.useLoaderData()
-
-  return (
-    <div>
-      <h1>{post.title}</h1>
-      <ul>
-        {comments.map((c) => (
-          <li key={c.id}>{c.text}</li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-// Select specific data to minimize re-renders
-function CommentCount() {
-  const count = useLoaderData({
-    from: '/posts/$postId',
-    select: (data) => data.comments.length,
-  })
-
-  return <span>{count} comments</span>
-}
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/router-monorepo-simple router-monorepo-simple
 ```
 
----
+--------------------------------
 
-## useBlocker Hook for Navigation Blocking
+### Start a new project based on this example
 
-The `useBlocker` hook prevents navigation when certain conditions are met, such as unsaved form changes.
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-basic-auth/README.md
 
-```tsx
-import { useBlocker } from '@tanstack/react-router'
-import { useState } from 'react'
+Command to initialize a new project using this example as a template.
 
-function EditPostForm() {
-  const [isDirty, setIsDirty] = useState(false)
-
-  // Simple blocking without custom UI
-  useBlocker({
-    shouldBlockFn: () => isDirty,
-    enableBeforeUnload: true, // Also block browser refresh/close
-  })
-
-  return (
-    <form onChange={() => setIsDirty(true)}>
-      <textarea name="content" />
-      <button type="submit">Save</button>
-    </form>
-  )
-}
-
-// With custom confirmation UI
-function EditPostFormWithDialog() {
-  const [isDirty, setIsDirty] = useState(false)
-
-  const { proceed, reset, status, next } = useBlocker({
-    shouldBlockFn: () => isDirty,
-    withResolver: true,
-  })
-
-  return (
-    <>
-      <form onChange={() => setIsDirty(true)}>
-        <textarea name="content" />
-        <button type="submit">Save</button>
-      </form>
-
-      {status === 'blocked' && (
-        <dialog open>
-          <p>You have unsaved changes!</p>
-          <p>Navigating to: {next.pathname}</p>
-          <button onClick={proceed}>Leave anyway</button>
-          <button onClick={reset}>Stay on page</button>
-        </dialog>
-      )}
-    </>
-  )
-}
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-basic-auth start-basic-auth
 ```
 
----
+--------------------------------
 
-## useRouter Hook for Router Instance Access
+### Start a new project based on this example
 
-The `useRouter` hook returns the router instance for accessing router methods and state imperatively.
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-i18n-paraglide/README.md
 
-```tsx
-import { useRouter } from '@tanstack/react-router'
+Command to initialize a new project using this example.
 
-function RefreshButton() {
-  const router = useRouter()
-
-  const handleRefresh = () => {
-    // Invalidate all routes and refetch
-    router.invalidate()
-  }
-
-  const handleNavigate = () => {
-    // Programmatic navigation via router
-    router.navigate({
-      to: '/posts',
-      search: { page: 1 },
-    })
-  }
-
-  return (
-    <div>
-      <button onClick={handleRefresh}>Refresh Data</button>
-      <button onClick={handleNavigate}>Go to Posts</button>
-    </div>
-  )
-}
-
-// Access router state (non-reactive, use useRouterState for reactive)
-function RouterInfo() {
-  const router = useRouter()
-
-  // Current location info
-  console.log(router.state.location.pathname)
-  console.log(router.state.location.search)
-
-  // Preload a route
-  const handlePreload = () => {
-    router.preloadRoute({ to: '/expensive-page' })
-  }
-
-  return <button onMouseEnter={handlePreload}>Hover to preload</button>
-}
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-i18n-paraglide start-i18n-paraglide
 ```
 
----
+--------------------------------
 
-## Outlet Component for Nested Routes
+### Start a new project based on this example
 
-The `Outlet` component renders child route components, enabling nested layouts and route hierarchies.
+Source: https://github.com/tanstack/router/blob/main/examples/react/view-transitions/README.md
 
-```tsx
-import { createRootRoute, createRoute, Outlet, Link } from '@tanstack/react-router'
+Command to initialize a new project using this example.
 
-// Root layout with outlet
-const rootRoute = createRootRoute({
-  component: () => (
-    <div className="app">
-      <header>
-        <nav>
-          <Link to="/">Home</Link>
-          <Link to="/dashboard">Dashboard</Link>
-        </nav>
-      </header>
-      <main>
-        <Outlet /> {/* Child routes render here */}
-      </main>
-      <footer>Copyright 2024</footer>
-    </div>
-  ),
-})
-
-// Dashboard layout with nested outlet
-const dashboardRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/dashboard',
-  component: () => (
-    <div className="dashboard">
-      <aside>
-        <Link to="/dashboard/analytics">Analytics</Link>
-        <Link to="/dashboard/settings">Settings</Link>
-      </aside>
-      <section>
-        <Outlet /> {/* Nested dashboard routes render here */}
-      </section>
-    </div>
-  ),
-})
-
-// Nested route under dashboard
-const analyticsRoute = createRoute({
-  getParentRoute: () => dashboardRoute,
-  path: '/analytics',
-  component: () => <h1>Analytics Dashboard</h1>,
-})
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/view-transitions view-transitions
 ```
 
----
+--------------------------------
 
-## Server Functions with createServerFn (TanStack Start)
+### Start a new project based on this example
 
-Server functions enable type-safe RPCs between client and server, running exclusively on the server while callable from anywhere in your application.
+Source: https://github.com/tanstack/router/blob/main/examples/react/basic-default-search-params/README.md
 
-```tsx
-// src/utils/posts.functions.ts
-import { createServerFn } from '@tanstack/react-start'
-import { z } from 'zod'
+Command to initialize a new project using this example.
 
-// Simple server function
-export const getServerTime = createServerFn().handler(async () => {
-  return new Date().toISOString()
-})
-
-// Server function with validation
-const CreatePostSchema = z.object({
-  title: z.string().min(1),
-  content: z.string().min(10),
-})
-
-export const createPost = createServerFn({ method: 'POST' })
-  .inputValidator(CreatePostSchema)
-  .handler(async ({ data }) => {
-    // Access database, environment variables, etc.
-    const post = await db.posts.create({
-      data: { title: data.title, content: data.content },
-    })
-    return post
-  })
-
-// Server function with redirect
-export const requireAuth = createServerFn().handler(async () => {
-  const user = await getCurrentUser()
-
-  if (!user) {
-    throw redirect({ to: '/login' })
-  }
-
-  return user
-})
-
-// Usage in route loader
-export const Route = createFileRoute('/posts')({
-  loader: () => getPosts(),
-})
-
-// Usage in component
-function CreatePostForm() {
-  const handleSubmit = async (formData: FormData) => {
-    const post = await createPost({
-      data: {
-        title: formData.get('title') as string,
-        content: formData.get('content') as string,
-      },
-    })
-    console.log('Created:', post)
-  }
-}
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/basic-default-search-params basic-default-search-params
 ```
 
----
+--------------------------------
 
-## Server Context and Request Handling (TanStack Start)
+### Install the dependencies
 
-TanStack Start provides utilities to access request information and customize responses within server functions.
+Source: https://github.com/tanstack/router/blob/main/examples/solid/start-basic-cloudflare/README.md
 
-```tsx
+Command to install project dependencies.
+
+```bash
+pnpm i
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-material-ui/README.md
+
+Command to initialize a new project using this example as a template.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-material-ui start-material-ui
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/basic/README.md
+
+Command to initialize a new project using this example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/basic basic
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/basic-react-query/README.md
+
+Command to initialize a new project using this example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/basic-react-query basic-react-query
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-trellaux/README.md
+
+Command to initialize a new project using this example as a template.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-trellaux start-trellaux
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/basic-react-query-file-based/README.md
+
+Command to initialize a new project using this example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/basic-react-query-file-based basic-react-query-file-based
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-basic-cloudflare/README.md
+
+Command to initialize a new project using this Cloudflare example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-basic-cloudflare start-basic-cloudflare
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-bun/README.md
+
+Command to initialize a new project using this example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-bun start-bun
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/kitchen-sink-file-based/README.md
+
+Command to initialize a new project using this example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/kitchen-sink-file-based kitchen-sink-file-based
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/with-trpc-react-query/README.md
+
+Command to initialize a new project using this example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/with-trpc-react-query with-trpc-react-query
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-tailwind-v4/README.md
+
+Command to initialize a new project using this example as a template.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-tailwind-v4 start-tailwind-v4
+```
+
+--------------------------------
+
+### Install TanStack Router
+
+Source: https://github.com/tanstack/router/blob/main/docs/router/quick-start.md
+
+Package names for installing TanStack Router in an existing project.
+
+```text
+@tanstack/react-router
+```
+
+```text
+@tanstack/solid-router
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/basic-devtools-panel/README.md
+
+Command to initialize a new project using this example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/basic-devtools-panel basic-devtools-panel
+```
+
+--------------------------------
+
+### Install Dependencies
+
+Source: https://github.com/tanstack/router/blob/main/packages/solid-start/skills/solid-start/SKILL.md
+
+Install necessary npm packages for a TanStack Start project with Solid.
+
+```bash
+npm i @tanstack/solid-start @tanstack/solid-router solid-js
+npm i -D vite vite-plugin-solid typescript
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/deferred-data/README.md
+
+Command to initialize a new project using this example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/deferred-data deferred-data
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/with-trpc/README.md
+
+Command to initialize a new project using this example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/with-trpc with-trpc
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/basic-ssr-file-based/README.md
+
+Command to initialize a new project using this example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/basic-ssr-file-based basic-ssr-file-based
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/kitchen-sink/README.md
+
+Command to initialize a new project using this kitchen sink example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/kitchen-sink kitchen-sink
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/large-file-based/README.md
+
+Command to initialize a new project using this example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/large-file-based large-file-based
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/basic-ssr-streaming-file-based/README.md
+
+Command to initialize a new project using this example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/basic-ssr-streaming-file-based basic-ssr-streaming-file-based
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/with-framer-motion/README.md
+
+Command to initialize a new project using this example's structure.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/with-framer-motion with-framer-motion
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/basic-virtual-file-based/README.md
+
+Command to initialize a new project using this example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/basic-virtual-file-based basic-virtual-file-based
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/basic-non-nested-devtools/README.md
+
+Command to initialize a new project using this example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/basic-non-nested-devtools basic-non-nested-devtools
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/basic-file-based/README.md
+
+Command to initialize a new project using this example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/basic-file-based basic-file-based
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/authenticated-routes/README.md
+
+Command to create a new project using this example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/authenticated-routes authenticated-routes
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/basic-virtual-inside-file-based/README.md
+
+Command to initialize a new project using this example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/basic-virtual-inside-file-based basic-virtual-inside-file-based
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/location-masking/README.md
+
+Command to initialize a new project using this example's structure.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/location-masking location-masking
+```
+
+--------------------------------
+
+### Use the CLI
+
+Source: https://github.com/tanstack/router/blob/main/docs/start/framework/react/getting-started.md
+
+Command to scaffold a new project using the TanStack CLI.
+
+```bash
+npx @tanstack/cli@latest create
+```
+
+--------------------------------
+
+### Cookie Management
+
+Source: https://github.com/tanstack/router/blob/main/packages/start-server-core/skills/start-server-core/SKILL.md
+
+Example of using functions to get, set, and delete cookies within a server function.
+
+```typescript
+// Use @tanstack/<framework>-start for your framework (react, solid, vue)
 import { createServerFn } from '@tanstack/react-start'
 import {
-  getRequest,
-  getRequestHeader,
-  setResponseHeaders,
-  setResponseStatus,
+  getCookies,
+  getCookie,
+  setCookie,
+  deleteCookie,
 } from '@tanstack/react-start/server'
 
-export const getCachedData = createServerFn({ method: 'GET' }).handler(
-  async () => {
-    // Access the incoming request
-    const request = getRequest()
-    console.log('Request URL:', request.url)
+const serverFn = createServerFn({ method: 'POST' }).handler(async () => {
+  const allCookies = getCookies()
+  const token = getCookie('session-token')
 
-    // Read specific headers
-    const authHeader = getRequestHeader('Authorization')
-    const userAgent = getRequestHeader('User-Agent')
-
-    // Set response caching headers
-    setResponseHeaders(
-      new Headers({
-        'Cache-Control': 'public, max-age=300',
-        'CDN-Cache-Control': 'max-age=3600, stale-while-revalidate=600',
-      }),
-    )
-
-    // Set custom status code
-    setResponseStatus(200)
-
-    // Verify authentication
-    if (!authHeader) {
-      setResponseStatus(401)
-      throw new Error('Unauthorized')
-    }
-
-    return { data: 'cached response', timestamp: Date.now() }
-  },
-)
-
-// Form data handling
-export const submitContactForm = createServerFn({ method: 'POST' })
-  .inputValidator((data) => {
-    if (!(data instanceof FormData)) {
-      throw new Error('Expected FormData')
-    }
-    return {
-      name: data.get('name')?.toString() || '',
-      email: data.get('email')?.toString() || '',
-      message: data.get('message')?.toString() || '',
-    }
+  setCookie('preference', 'dark', {
+    httpOnly: true,
+    secure: true,
+    maxAge: 60 * 60 * 24 * 30, // 30 days
+    path: '/',
   })
-  .handler(async ({ data }) => {
-    await sendEmail(data.email, data.name, data.message)
-    return { success: true }
-  })
+
+  deleteCookie('old-cookie')
+})
 ```
 
----
+--------------------------------
 
-## Code Splitting with Lazy Routes
+### Start a new project based on this example
 
-TanStack Router supports automatic and manual code splitting to reduce bundle sizes and improve load performance.
+Source: https://github.com/tanstack/router/blob/main/examples/react/router-monorepo-simple-lazy/README.md
+
+Command to initialize a new project using this example as a template.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/router-monorepo-simple-lazy router-monorepo-simple-lazy
+```
+
+--------------------------------
+
+### Custom Legacy Config setup
+
+Source: https://github.com/tanstack/router/blob/main/docs/start/eslint/eslint-plugin-start.md
+
+Example of how to load the plugin and configure specific rules using the legacy config format (.eslintrc).
+
+```json
+{
+  "plugins": ["@tanstack/eslint-plugin-start"],
+  "rules": {
+    "@tanstack/start/no-client-code-in-server-component": "error",
+    "@tanstack/start/no-async-client-component": "error"
+  }
+}
+```
+
+--------------------------------
+
+### Custom Flat Config setup
+
+Source: https://github.com/tanstack/router/blob/main/docs/start/eslint/eslint-plugin-start.md
+
+Example of how to load the plugin and configure specific rules using the flat config format (eslint.config.js).
+
+```js
+// eslint.config.js
+import pluginStart from '@tanstack/eslint-plugin-start'
+
+export default [
+  {
+    plugins: {
+      '@tanstack/start': pluginStart
+    },
+    rules: {
+      '@tanstack/start/no-client-code-in-server-component': 'error',
+      '@tanstack/start/no-async-client-component': 'error'
+    }
+  },
+  // Any other config...
+]
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/kitchen-sink-react-query/README.md
+
+Command to initialize a new project using this example as a template.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/kitchen-sink-react-query kitchen-sink-react-query
+```
+
+--------------------------------
+
+### Install TanStack Start
+
+Source: https://github.com/tanstack/router/blob/main/packages/react-start/skills/lifecycle/migrate-from-nextjs/SKILL.md
+
+Commands to install necessary TanStack Start and Vite packages.
+
+```bash
+npm i @tanstack/react-start @tanstack/react-router
+npm i -D vite @vitejs/plugin-react
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/kitchen-sink-react-query-file-based/README.md
+
+Command to initialize a new project using this example as a base.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/kitchen-sink-react-query-file-based kitchen-sink-react-query-file-based
+```
+
+--------------------------------
+
+### Create TanStack Start Project
+
+Source: https://github.com/tanstack/router/blob/main/docs/start/framework/react/tutorial/fetching-external-api.md
+
+Use `create-start-app` to initialize a new TanStack Start project. This command will prompt for setup questions.
+
+```bash
+pnpx create-start-app movie-discovery
+cd movie-discovery
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/i18n-paraglide/README.md
+
+To start a new project based on this example, run:
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/i18n-paraglide i18n-paraglide
+```
+
+--------------------------------
+
+### Install Dependencies
+
+Source: https://github.com/tanstack/router/blob/main/packages/vue-start/skills/vue-start/SKILL.md
+
+Install necessary dependencies for a TanStack Start Vue project.
+
+```bash
+npm i @tanstack/vue-start @tanstack/vue-router vue
+npm i -D vite @vitejs/plugin-vue @vitejs/plugin-vue-jsx typescript
+```
+
+--------------------------------
+
+### Install Dependencies
+
+Source: https://github.com/tanstack/router/blob/main/packages/start-client-core/skills/start-core/SKILL.md
+
+Install the necessary TanStack Start, React, and Vite dependencies.
+
+```bash
+npm i @tanstack/react-start @tanstack/react-router react react-dom
+npm i -D vite @vitejs/plugin-react typescript
+```
+
+--------------------------------
+
+### Install Auth0
+
+Source: https://github.com/tanstack/router/blob/main/docs/router/how-to/setup-auth-providers.md
+
+Install the Auth0 React SDK.
+
+```bash
+npm install @auth0/auth0-react
+```
+
+--------------------------------
+
+### Install TanStack Start and Router
+
+Source: https://github.com/tanstack/router/blob/main/docs/start/framework/react/build-from-scratch.md
+
+Install the core TanStack Start and TanStack Router packages required for your application.
+
+```shell
+npm i @tanstack/react-start @tanstack/react-router
+```
+
+--------------------------------
+
+### Run Start Command
+
+Source: https://github.com/tanstack/router/blob/main/docs/start/framework/react/guide/hosting.md
+
+Execute the `start` script defined in `package.json` to launch the application server.
+
+```sh
+npm run start
+```
+
+--------------------------------
+
+### Install Dependencies
+
+Source: https://github.com/tanstack/router/blob/main/packages/react-start/skills/react-start/SKILL.md
+
+Commands to install necessary npm packages for a TanStack Start React project.
+
+```bash
+npm i @tanstack/react-start @tanstack/react-router react react-dom
+npm i -D vite @vitejs/plugin-react typescript @types/react @types/react-dom
+```
+
+--------------------------------
+
+### Install Nitro for TanStack Start Deployment
+
+Source: https://github.com/tanstack/router/blob/main/docs/start/framework/react/guide/hosting.md
+
+Install the `nitro` package to enable deployment of TanStack Start applications to a wide range of hostings.
+
+```bash
+npm install nitro
+```
+
+--------------------------------
+
+### Quick Start Example
+
+Source: https://github.com/tanstack/router/blob/main/docs/start/framework/solid/guide/code-execution-patterns.md
+
+Demonstrates how to set up execution boundaries using `createServerFn`, `createServerOnlyFn`, `createClientOnlyFn`, and `createIsomorphicFn`.
 
 ```tsx
-// Automatic code splitting (vite.config.ts)
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import { tanstackRouter } from '@tanstack/router-plugin/vite'
+import {
+  createServerFn,
+  createServerOnlyFn,
+  createClientOnlyFn,
+  createIsomorphicFn,
+} from '@tanstack/solid-start'
 
-export default defineConfig({
-  plugins: [
-    tanstackRouter({
-      autoCodeSplitting: true, // Automatically splits components
-    }),
-    react(),
-  ],
+// Server function (RPC call)
+const getUsers = createServerFn().handler(async () => {
+  return await db.users.findMany()
 })
 
-// Manual code splitting with .lazy.tsx files
-// src/routes/posts.tsx (critical config)
-import { createFileRoute } from '@tanstack/react-router'
+// Server-only utility (crashes on client)
+const getSecret = createServerOnlyFn(() => process.env.API_SECRET)
 
-export const Route = createFileRoute('/posts')({
-  loader: () => fetchPosts(), // Loaders stay in main bundle
+// Client-only utility (crashes on server)
+const saveToStorage = createClientOnlyFn((data: any) => {
+  localStorage.setItem('data', JSON.stringify(data))
 })
 
-// src/routes/posts.lazy.tsx (lazy-loaded component)
-import { createLazyFileRoute } from '@tanstack/react-router'
-
-export const Route = createLazyFileRoute('/posts')({
-  component: PostsComponent,
-  pendingComponent: () => <div>Loading...</div>,
-  errorComponent: ({ error }) => <div>Error: {error.message}</div>,
-})
-
-function PostsComponent() {
-  const posts = Route.useLoaderData()
-  return <div>{posts.map((p) => <PostCard key={p.id} post={p} />)}</div>
-}
-
-// Code-based lazy loading
-const postsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/posts',
-}).lazy(() => import('./posts.lazy').then((d) => d.Route))
+// Different implementations per environment
+const logger = createIsomorphicFn()
+  .server((msg) => console.log(`[SERVER]: ${msg}`))
+  .client((msg) => console.log(`[CLIENT]: ${msg}`))
 ```
 
----
+--------------------------------
 
-## Summary
+### Verify installation
 
-TanStack Router and TanStack Start provide a comprehensive solution for building type-safe, performant web applications. The router excels at client-side routing with features like nested layouts, type-safe navigation, validated search params, and built-in data loading with SWR caching. Its file-based routing system automatically generates route trees while maintaining full TypeScript support throughout the navigation stack.
+Source: https://github.com/tanstack/router/blob/main/docs/router/how-to/install.md
 
-TanStack Start extends these capabilities to full-stack development, enabling server-side rendering, streaming, and type-safe server functions that bridge the client-server boundary seamlessly. Common integration patterns include combining with TanStack Query for advanced data fetching, using Zod or Valibot for search param validation, implementing authentication flows with route guards and redirects, and leveraging automatic code splitting for optimal bundle sizes. The framework's deployment-agnostic architecture supports any Vite-compatible hosting platform, from serverless functions to traditional Node.js servers.
+Example of how the installed package appears in your package.json dependencies.
+
+```json
+{
+  "dependencies": {
+    "@tanstack/react-router": "^x.x.x"
+  }
+}
+```
+
+--------------------------------
+
+### Start a new project
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-workos/README.md
+
+Command to start a new project based on this example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-workos start-workos
+```
+
+--------------------------------
+
+### Install SolidJS
+
+Source: https://github.com/tanstack/router/blob/main/docs/start/framework/solid/build-from-scratch.md
+
+Install the SolidJS library, which is required for TanStack Start projects.
+
+```shell
+npm i solid-js
+```
+
+--------------------------------
+
+### Convert Middleware (TanStack Start)
+
+Source: https://github.com/tanstack/router/blob/main/packages/react-start/skills/lifecycle/migrate-from-nextjs/SKILL.md
+
+Example of middleware in TanStack Start.
+
+```tsx
+// src/start.ts ", must be manually created
+import { createStart, createMiddleware } from '@tanstack/react-start'
+import { redirect } from '@tanstack/react-router'
+
+const authMiddleware = createMiddleware().server(async ({ next, request }) => {
+  const cookie = request.headers.get('cookie')
+  if (!cookie?.includes('session=')) {
+    throw redirect({ to: '/login' })
+  }
+  return next()
+})
+
+export const startInstance = createStart(() => ({
+  requestMiddleware: [authMiddleware],
+}))
+```
+
+--------------------------------
+
+### Install Netlify Vite Plugin for TanStack Start
+
+Source: https://github.com/tanstack/router/blob/main/docs/start/framework/react/guide/hosting.md
+
+Install the official Netlify Vite plugin for TanStack Start to configure your build for Netlify deployment and enable local dev emulation.
+
+```bash
+npm install --save-dev @netlify/vite-plugin-tanstack-start
+# or...
+pnpm add --save-dev @netlify/vite-plugin-tanstack-start
+# or yarn, bun, etc.
+```
+
+--------------------------------
+
+### Install Supabase
+
+Source: https://github.com/tanstack/router/blob/main/docs/router/how-to/setup-auth-providers.md
+
+Installs the Supabase JavaScript client library.
+
+```bash
+npm install @supabase/supabase-js
+```
