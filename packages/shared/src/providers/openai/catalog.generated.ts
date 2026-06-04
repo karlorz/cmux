@@ -124,7 +124,7 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
     ],
     "hidden": false,
     "isDefault": false,
-    "defaultVariant": "xhigh",
+    "defaultVariant": "medium",
     "variants": [
       {
         "id": "low",
