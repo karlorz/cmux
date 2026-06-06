@@ -76,3 +76,4 @@ apps/www/scripts/pr-review/evals/results/
 .envrc
 *.tsbuildinfo
 .claude/scheduled_tasks.lock
+.claude/dev-loop-debug/
