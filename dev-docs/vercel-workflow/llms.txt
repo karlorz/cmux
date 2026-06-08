@@ -1,629 +1,1378 @@
-# Workflow DevKit
+### Starting a Workflow with Latest Deployment
 
-Workflow DevKit is a durable functions framework for JavaScript/TypeScript that enables writing long-running, stateful application logic on top of stateless compute. The runtime persists progress as an event log and deterministically replays code to reconstruct state after cold starts, failures, or scale events. This allows workflows to survive infrastructure disruptions, scale horizontally, and run for extended periods without the constraints of traditional serverless function timeouts.
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/api-reference/workflow-api/start.mdx
 
-The framework uses a unique execution model with two types of functions: **workflow functions** (marked with `"use workflow"`) that orchestrate logic in a sandboxed VM, and **step functions** (marked with `"use step"`) that execute individual pieces of logic with full Node.js runtime access. The compiler automatically transforms workflow files into separate bundles for different execution contexts, enabling seamless integration with frameworks like Next.js, Nitro, Astro, SvelteKit, and more.
+This example demonstrates how to use the `start` function to initiate a workflow run and specifies `deploymentId: "latest"` to target the most recent deployment for the current environment.
 
-## Core APIs
+```APIDOC
+## Starting a Workflow with Latest Deployment
 
-### Defining a Workflow Function
+### Description
+Initiates a workflow run, targeting the latest deployment for the current environment.
 
-Workflow functions are the orchestrators that coordinate step execution. They run in a sandboxed VM without full Node.js access but can call step functions for side effects.
+### Method
+`start(workflow, args, options)`
 
+### Parameters
+#### Arguments
+- `workflow`: The workflow function to execute.
+- `args`: An array of arguments to pass to the workflow.
+- `options`: An object containing configuration options.
+  - `deploymentId` (string): Set to `"latest"` to automatically resolve the most recent deployment for the current environment.
+
+### Request Example
 ```typescript
-// workflows/order-processing.ts
-import { sleep, createHook, FatalError } from 'workflow';
-
-// Step function with full Node.js access
-async function processPayment(orderId: string, amount: number) {
-  'use step';
-
-  const response = await fetch('https://api.stripe.com/v1/charges', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${process.env.STRIPE_KEY}` },
-    body: JSON.stringify({ amount, currency: 'usd', source: orderId })
-  });
-
-  if (!response.ok) {
-    throw new FatalError('Payment failed permanently');
-  }
-
-  return response.json();
-}
-
-async function sendConfirmationEmail(email: string, orderId: string) {
-  'use step';
-
-  await fetch('https://api.sendgrid.com/v3/mail/send', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${process.env.SENDGRID_KEY}` },
-    body: JSON.stringify({
-      to: email,
-      subject: 'Order Confirmed',
-      text: `Your order ${orderId} has been confirmed!`
-    })
-  });
-}
-
-// Workflow function that orchestrates the steps
-export async function processOrder(orderId: string, email: string, amount: number) {
-  'use workflow';
-
-  console.log(`Processing order: ${orderId}`);
-
-  // Each step is automatically retried on failure
-  const payment = await processPayment(orderId, amount);
-  console.log('Payment processed:', payment.id);
-
-  // Sleep for 5 seconds (persisted, survives restarts)
-  await sleep('5s');
-
-  await sendConfirmationEmail(email, orderId);
-
-  return { orderId, paymentId: payment.id, status: 'completed' };
-}
-```
-
-### Starting a Workflow
-
-The `start()` function initiates a workflow run and returns a `Run` object for tracking and managing the execution.
-
-```typescript
-// app/api/orders/route.ts
-import { start, getRun } from 'workflow/api';
-import { processOrder } from '@/workflows/order-processing';
-
-export async function POST(request: Request) {
-  const { orderId, email, amount } = await request.json();
-
-  // Start the workflow - returns immediately
-  const run = await start(processOrder, [orderId, email, amount]);
-
-  return Response.json({
-    runId: run.runId,
-    message: 'Order processing started'
-  });
-}
-
-export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const runId = url.searchParams.get('runId');
-
-  // Get an existing run by ID
-  const run = getRun(runId!);
-
-  // Check status without blocking
-  const status = await run.status;
-
-  if (status === 'completed') {
-    // Get the return value (blocks until completion)
-    const result = await run.returnValue;
-    return Response.json({ status, result });
-  }
-
-  return Response.json({ status });
-}
-```
-
-### Sleep Function
-
-The `sleep()` function pauses workflow execution for a specified duration. The sleep is persisted, so the workflow can resume after infrastructure restarts.
-
-```typescript
-import { sleep } from 'workflow';
-
-export async function scheduledReminder(userId: string, message: string) {
-  'use workflow';
-
-  // Sleep using duration string (supports ms, s, m, h, d)
-  await sleep('30m');
-  await sendNotification(userId, 'Reminder in 30 minutes!');
-
-  // Sleep until a specific date
-  const eventDate = new Date('2024-12-25T10:00:00Z');
-  await sleep(eventDate);
-  await sendNotification(userId, message);
-
-  // Sleep using milliseconds
-  await sleep(5000);
-
-  return { delivered: true };
-}
-
-async function sendNotification(userId: string, message: string) {
-  'use step';
-  await fetch(`https://api.example.com/notify/${userId}`, {
-    method: 'POST',
-    body: JSON.stringify({ message })
-  });
-}
-```
-
-### Hooks for External Events
-
-Hooks allow workflows to suspend and wait for external events. Use `createHook()` for server-side events or `createWebhook()` for HTTP-triggered events.
-
-```typescript
-import { createHook, createWebhook, resumeHook } from 'workflow';
-
-// Workflow that waits for approval
-export async function documentApproval(docId: string, approverEmail: string) {
-  'use workflow';
-
-  await sendApprovalRequest(docId, approverEmail);
-
-  // Create a hook with a deterministic token
-  using hook = createHook<{ approved: boolean; comments?: string }>({
-    token: `approval:${docId}`,
-    metadata: { docId, approverEmail }
-  });
-
-  console.log('Waiting for approval, token:', hook.token);
-
-  // Workflow suspends here until hook is resumed
-  const decision = await hook;
-
-  if (decision.approved) {
-    await publishDocument(docId);
-    return { status: 'published' };
-  }
-
-  return { status: 'rejected', reason: decision.comments };
-}
-
-// Workflow with public webhook URL
-export async function paymentCallback(orderId: string) {
-  'use workflow';
-
-  const webhook = createWebhook({
-    respondWith: new Response('OK', { status: 200 })
-  });
-
-  // Send webhook URL to payment provider
-  await registerPaymentCallback(orderId, webhook.url);
-
-  // Wait for payment provider to call the webhook
-  const request = await webhook;
-  const payload = await request.json();
-
-  return { orderId, paymentStatus: payload.status };
-}
-
-async function sendApprovalRequest(docId: string, email: string) {
-  'use step';
-  // Send email with approval link
-}
-
-async function publishDocument(docId: string) {
-  'use step';
-  // Publish the document
-}
-
-async function registerPaymentCallback(orderId: string, callbackUrl: string) {
-  'use step';
-  // Register callback with payment provider
-}
-```
-
-### Resuming Hooks from Server Code
-
-Use `resumeHook()` from API routes or server actions to send data to a waiting workflow.
-
-```typescript
-// app/api/approve/route.ts
-import { resumeHook, getHookByToken, HookNotFoundError } from 'workflow/api';
-
-export async function POST(request: Request) {
-  const { token, approved, comments } = await request.json();
-
-  try {
-    // Get hook metadata before resuming (optional)
-    const hook = await getHookByToken(token);
-    console.log('Resuming hook for doc:', hook.metadata?.docId);
-
-    // Resume the workflow with the approval decision
-    await resumeHook(token, { approved, comments });
-
-    return Response.json({ success: true, runId: hook.runId });
-  } catch (error) {
-    if (HookNotFoundError.is(error)) {
-      return Response.json({ error: 'Hook not found or expired' }, { status: 404 });
-    }
-    throw error;
-  }
-}
-```
-
-### Error Handling
-
-Use `FatalError` for non-retryable errors and `RetryableError` for configurable retry behavior.
-
-```typescript
-import { FatalError, RetryableError } from 'workflow';
-
-async function processWithRetry(data: any) {
-  'use step';
-
-  try {
-    const response = await fetch('https://api.example.com/process', {
-      method: 'POST',
-      body: JSON.stringify(data)
-    });
-
-    if (response.status === 429) {
-      const retryAfter = response.headers.get('Retry-After');
-      throw new RetryableError('Rate limited', {
-        retryAfter: retryAfter ? `${retryAfter}s` : '30s'
-      });
-    }
-
-    if (response.status === 400) {
-      throw new FatalError('Invalid request - will not retry');
-    }
-
-    if (!response.ok) {
-      // Regular errors are automatically retried with exponential backoff
-      throw new Error(`Request failed: ${response.status}`);
-    }
-
-    return response.json();
-  } catch (error) {
-    if (error instanceof TypeError) {
-      // Network errors - retry after 5 seconds
-      throw new RetryableError('Network error', { retryAfter: '5s' });
-    }
-    throw error;
-  }
-}
-
-export async function reliableProcessing(items: any[]) {
-  'use workflow';
-
-  const results = [];
-
-  for (const item of items) {
-    try {
-      const result = await processWithRetry(item);
-      results.push({ success: true, data: result });
-    } catch (error) {
-      // FatalError propagates to workflow, allowing graceful handling
-      if (FatalError.is(error)) {
-        results.push({ success: false, error: error.message });
-        continue;
-      }
-      throw error;
-    }
-  }
-
-  return results;
-}
-```
-
-### Streaming Data from Steps
-
-Use `getWritable()` to stream data from step functions that can be read outside the workflow.
-
-```typescript
-import { getWritable, getRun, start } from 'workflow';
-
-async function streamProgress(items: string[]) {
-  'use step';
-
-  const writable = getWritable<{ progress: number; item: string }>();
-  const writer = writable.getWriter();
-
-  for (let i = 0; i < items.length; i++) {
-    await processItem(items[i]);
-    await writer.write({
-      progress: ((i + 1) / items.length) * 100,
-      item: items[i]
-    });
-  }
-
-  await writer.close();
-}
-
-async function processItem(item: string) {
-  // Process logic
-}
-
-export async function batchProcess(items: string[]) {
-  'use workflow';
-  await streamProgress(items);
-  return { processed: items.length };
-}
-
-// Reading the stream from an API route
-export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const runId = url.searchParams.get('runId');
-
-  const run = getRun(runId!);
-  const readable = run.getReadable<{ progress: number; item: string }>();
-
-  return new Response(
-    readable.pipeThrough(new TransformStream({
-      transform(chunk, controller) {
-        controller.enqueue(`data: ${JSON.stringify(chunk)}\n\n`);
-      }
-    })),
-    { headers: { 'Content-Type': 'text/event-stream' } }
-  );
-}
-```
-
-### Run Management
-
-The `Run` class provides methods for monitoring and controlling workflow execution.
-
-```typescript
-import { start, getRun, WorkflowRunFailedError, WorkflowRunCancelledError } from 'workflow/api';
-import { myWorkflow } from '@/workflows/my-workflow';
-
-async function manageWorkflow() {
-  // Start a new workflow
-  const run = await start(myWorkflow, ['arg1', 'arg2']);
-  console.log('Started run:', run.runId);
-
-  // Check if run exists
-  const exists = await run.exists;
-
-  // Get run metadata
-  const workflowName = await run.workflowName;
-  const createdAt = await run.createdAt;
-  const startedAt = await run.startedAt;
-
-  // Poll status
-  const status = await run.status; // 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
-
-  // Cancel a running workflow
-  if (status === 'running') {
-    await run.cancel();
-  }
-
-  // Wake up a sleeping workflow early
-  const result = await run.wakeUp();
-  console.log('Interrupted sleeps:', result.count);
-
-  // Wait for completion and get result
-  try {
-    const returnValue = await run.returnValue;
-    console.log('Workflow completed:', returnValue);
-  } catch (error) {
-    if (WorkflowRunFailedError.is(error)) {
-      console.error('Workflow failed:', error.cause.message);
-    } else if (WorkflowRunCancelledError.is(error)) {
-      console.log('Workflow was cancelled');
-    }
-  }
-}
-
-// Get an existing run by ID
-const existingRun = getRun<{ result: string }>('wrun_01HXYZ...');
-const result = await existingRun.returnValue;
-```
-
-### Next.js Integration
-
-Configure Next.js with the `withWorkflow` wrapper in your next.config.js.
-
-```javascript
-// next.config.js
-import { withWorkflow } from 'workflow/next';
-
-export default withWorkflow({
-  // Your existing Next.js config
-  experimental: {
-    // ...
-  }
-}, {
-  workflows: {
-    // Optional: Enable lazy discovery for faster dev server startup
-    lazyDiscovery: true,
-    // Optional: Configure local development
-    local: {
-      port: 3000,
-      dataDir: '.next/workflow-data'
-    }
-  }
+import { start } from "workflow/api";
+import { myWorkflow } from "./workflows/my-workflow";
+
+const run = await start(myWorkflow, ["arg1", "arg2"], {
+  deploymentId: "latest"
 });
 ```
 
-### AI Integration with Vercel AI SDK
+### Notes
+- Using `deploymentId: "latest"` means the workflow run might execute on a different deployment than the one calling `start()`.
+- Ensure workflow identity, input, and output compatibility across deployments when using this option.
+```
 
-Workflow DevKit integrates seamlessly with the Vercel AI SDK for building durable AI agents.
+--------------------------------
+
+### Install and Run Published @workflow/web Package
+
+Source: https://github.com/vercel/workflow/blob/main/packages/web/README.md
+
+Installs the @workflow/web package and its React dependencies, then starts the Next.js server from the installed package. Ensure React runtime dependencies are provided by the host project. The PORT environment variable can be used to specify the port.
+
+```bash
+mkdir workflow-observability-ui
+cd workflow-observability-ui
+
+npm init -y
+# You must provide React runtime dependencies in your host project.
+npm i @workflow/web react react-dom
+
+# Run Next.js from the installed package (it contains the .next output)
+cd node_modules/@workflow/web
+npx --yes next start -p "${PORT:-3456}"
+```
+
+--------------------------------
+
+### Hono Framework App Boundary Example
+
+Source: https://github.com/vercel/workflow/blob/main/skills/migrating-to-workflow-sdk/references/runtime-targets.md
+
+This example shows how to start a workflow within a Hono framework application. It defines a POST route to initiate the onboarding workflow.
 
 ```typescript
-import { generateText, stepCountIs } from 'ai';
-import z from 'zod';
+import { Hono } from 'hono';
+import { start } from 'workflow/api';
+import { onboardingWorkflow } from '../workflows/onboarding';
 
-async function searchDatabase(query: string) {
-  'use step';
-  // Database search with full Node.js access
-  const results = await db.search(query);
-  return results;
-}
+const app = new Hono();
 
-async function sendEmail(to: string, subject: string, body: string) {
-  'use step';
-  await emailService.send({ to, subject, body });
-  return { sent: true };
-}
+app.post('/api/onboarding/start', async (c) => {
+  const body = (await c.req.json()) as { userId: string };
+  const run = await start(onboardingWorkflow, [body.userId]);
+  return c.json({ runId: run.runId });
+});
 
-export async function aiAssistant(userMessage: string) {
-  'use workflow';
+export default app;
+```
 
-  // AI SDK's generateText works natively in workflows
-  const { text } = await generateText({
-    model: 'anthropic/claude-3-sonnet',
-    prompt: userMessage,
-    tools: {
-      searchDatabase: {
-        description: 'Search the knowledge base',
-        inputSchema: z.object({ query: z.string() }),
-        execute: searchDatabase,
-      },
-      sendEmail: {
-        description: 'Send an email to a user',
-        inputSchema: z.object({
-          to: z.string().email(),
-          subject: z.string(),
-          body: z.string(),
-        }),
-        execute: sendEmail,
-      },
-    },
-    // Allow up to 10 tool calls (no lambda timeout restrictions)
-    stopWhen: stepCountIs(10),
-  });
+--------------------------------
 
-  return { response: text };
+### Create TanStack Start Project
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/getting-started/tanstack-start.mdx
+
+Use the TanStack CLI to create a new project and install the workflow package.
+
+```bash
+npx @tanstack/cli create my-workflow-app
+```
+
+```bash
+cd my-workflow-app
+```
+
+```bash
+npm i workflow
+```
+
+--------------------------------
+
+### Create SvelteKit Project
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/getting-started/sveltekit.mdx
+
+Use this command to create a new SvelteKit project with a minimal setup. Navigate into the created directory and install the workflow package.
+
+```bash
+npx sv create my-workflow-app --template=minimal --types=ts --no-add-ons
+```
+
+```bash
+cd my-workflow-app
+```
+
+```bash
+npm i workflow
+```
+
+--------------------------------
+
+### Start Postgres World in SvelteKit
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/deploying/world/postgres-world.mdx
+
+Create a src/hooks.server.ts file to start the world on server start.
+
+```typescript
+import type { ServerInit } from "@sveltejs/kit";
+
+export const init: ServerInit = async () => {
+  const { getWorld } = await import("workflow/runtime");
+  const world = await getWorld();
+  await world.start?.();
+};
+```
+
+--------------------------------
+
+### Configure Next.js Start Script
+
+Source: https://github.com/vercel/workflow/blob/main/packages/web/README.md
+
+Sets a start script in the host package.json to run the Next.js server from the installed @workflow/web package, allowing port configuration via the PORT environment variable.
+
+```json
+{
+  "scripts": {
+    "start": "cd node_modules/@workflow/web && next start -p $PORT"
+  }
 }
 ```
 
-### WorkflowChatTransport for Resumable Chat
+--------------------------------
 
-Use `WorkflowChatTransport` for building chat interfaces with automatic reconnection support.
+### Build and Start Production Server
+
+Source: https://github.com/vercel/workflow/blob/main/workbench/tanstack-start/README.md
+
+Commands to build the project for production and then start the production server.
+
+```sh
+pnpm build && pnpm start
+```
+
+--------------------------------
+
+### Workflow SDK: Starting a Workflow Run
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/migration-guides/migrating-from-temporal.mdx
+
+Replaces Temporal's Worker and Task Queue setup with a single `start()` call from an API route. This example initiates the `processOrder` workflow.
 
 ```typescript
-// Client-side chat component
-import { useChat } from 'ai/react';
-import { WorkflowChatTransport } from '@workflow/ai';
+import { start } from 'workflow/api';
+import { processOrder } from '@/workflows/order';
 
-const transport = new WorkflowChatTransport({
-  api: '/api/chat',
-  maxConsecutiveErrors: 3,
-  initialStartIndex: -10, // Resume from last 10 messages on reconnect
-  onChatEnd: ({ chatId, chunkIndex }) => {
-    console.log(`Chat ${chatId} ended after ${chunkIndex} chunks`);
-  }
+export async function POST(request: Request) {
+  const { orderId } = (await request.json()) as { orderId: string };
+  const run = await start(processOrder, [orderId]); // [!code highlight]
+  return Response.json({ runId: run.runId });
+}
+```
+
+--------------------------------
+
+### start with StartOptions
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/api-reference/workflow-api/start.mdx
+
+Starts a new workflow run with arguments and StartOptions.
+
+```APIDOC
+## start with StartOptions
+
+### Description
+Starts a new workflow run with arguments and StartOptions.
+
+### Method
+`start`
+
+### Parameters
+#### Path Parameters
+None
+
+#### Query Parameters
+None
+
+#### Request Body
+None
+
+### Request Example
+```typescript
+import { start } from "workflow/api";
+import { myWorkflow } from "./workflows/my-workflow";
+
+const run = await start(myWorkflow, ["arg1", "arg2"], {
+  deploymentId: "custom-deployment-id"
 });
+```
+```
 
-function ChatComponent() {
-  const { messages, input, handleSubmit, setInput } = useChat({
-    transport,
-    id: 'my-chat-session',
+--------------------------------
+
+### Start Postgres World in Next.js
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/deploying/world/postgres-world.mdx
+
+Create an instrumentation.ts file in your project root to start the world on server start.
+
+```typescript
+export async function register() {
+  if (process.env.NEXT_RUNTIME !== "edge") {
+    const { getWorld } = await import("workflow/runtime");
+    const world = await getWorld();
+    await world.start?.();
+  }
+}
+```
+
+--------------------------------
+
+### Setup Tmux Session for Workflow SDK Development
+
+Source: https://github.com/vercel/workflow/blob/main/skills/internal-dev-workbench/SKILL.md
+
+This script initializes a 3-pane tmux session for Workflow SDK development. It configures each pane with specific commands for the Next.js workbench, observability UI, and a scratchpad shell, all managed by portless for worktree-scoped URLs. Ensure prerequisites like tmux and portless are installed, and the repository is bootstrapped.
+
+```bash
+REPO=/path/to/workflow--<worktree-suffix>
+# Session name = basename of the branch (matches portless's subdomain prefix
+# and the statusline's `tmux attach -t <prefix>` indicator). For branch
+# `pgp/foo-bar` this resolves to `foo-bar`.
+SESSION=$(git -C "$REPO" rev-parse --abbrev-ref HEAD)
+SESSION="${SESSION##*/}"
+
+# Create the session and capture the initial pane ID
+PANE_DEV=$(tmux new-session -d -s "$SESSION" -c "$REPO" -P -F '#{pane_id}')
+PANE_OBS=$(tmux split-window -h -t "$PANE_DEV" -c "$REPO" -P -F '#{pane_id}')
+PANE_SH=$(tmux split-window -v -t "$PANE_OBS" -c "$REPO" -P -F '#{pane_id}')	mux select-layout -t "$SESSION" main-vertical
+
+# Pane DEV (left): Next.js turbopack workbench, with manifest exposed for e2e
+tmux send-keys -t "$PANE_DEV" \
+  'cd workbench/nextjs-turbopack && WORKFLOW_PUBLIC_MANIFEST=1 portless run --name turbopack pnpm dev' C-m
+
+# Pane OBS (top-right): observability UI scoped to the workbench app
+tmux send-keys -t "$PANE_OBS" \
+  'cd workbench/nextjs-turbopack && portless run --name workflow-obs sh -c "pnpm workflow web --webPort $PORT --noBrowser"' C-m
+
+# Pane SH (bottom-right): scratchpad at repo root
+tmux send-keys -t "$PANE_SH" 'echo "scratchpad: $(pwd)"' C-m
+
+tmux attach -t "$SESSION"
+```
+
+--------------------------------
+
+### Framework-Agnostic App Boundary Example
+
+Source: https://github.com/vercel/workflow/blob/main/skills/migrating-to-workflow-sdk/references/runtime-targets.md
+
+This example demonstrates starting a workflow from a framework-agnostic API endpoint using plain Request and Response objects. It's suitable when a framework-agnostic approach is required, even if specific frameworks are mentioned elsewhere.
+
+```typescript
+import { start } from 'workflow/api';
+import { onboardingWorkflow } from '../workflows/onboarding';
+
+export async function POST(request: Request) {
+  const body = (await request.json()) as { userId: string };
+  const run = await start(onboardingWorkflow, [body.userId]);
+  return Response.json({ runId: run.runId });
+}
+```
+
+--------------------------------
+
+### Clone Flight Booking App Example
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/ai/index.mdx
+
+Clone the Flight Booking Agent example repository to use as a starting point for building a durable AI agent. This app includes a Next.js chat interface, AI SDK, and Shadcn UI.
+
+```bash
+git clone https://github.com/vercel/workflow-examples -b plain-ai-sdk
+cd workflow-examples/flight-booking-app
+```
+
+--------------------------------
+
+### Local Development Setup with Docker Compose
+
+Source: https://github.com/vercel/workflow/blob/main/packages/world-postgres/README.md
+
+Set up your local development environment using Docker Compose for PostgreSQL. This includes starting the database, running migrations, and exporting necessary environment variables.
+
+```bash
+# Start PostgreSQL database
+docker-compose up -d
+
+# Create and run migrations
+pnpm drizzle-kit generate
+pnpm drizzle-kit migrate
+
+# Set environment variables for local development
+export WORKFLOW_POSTGRES_URL="postgres://world:world@localhost:5432/world"
+export WORKFLOW_TARGET_WORLD="@workflow/world-postgres"
+```
+
+--------------------------------
+
+### Basic Chat Setup Example
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/api-reference/workflow-ai/workflow-chat-transport.mdx
+
+Demonstrates how to integrate WorkflowChatTransport into a React component using the `useChat` hook from `@ai-sdk/react`.
+
+```typescript
+"use client";
+
+import { useChat } from "@ai-sdk/react";
+import { WorkflowChatTransport } from "@workflow/ai";
+import { useState } from "react";
+
+export default function BasicChat() {
+  const [input, setInput] = useState("");
+  const { messages, sendMessage } = useChat({
+    transport: new WorkflowChatTransport(),
   });
 
   return (
     <div>
-      {messages.map(m => (
-        <div key={m.id}>{m.content}</div>
-      ))}
-      <form onSubmit={handleSubmit}>
-        <input value={input} onChange={e => setInput(e.target.value)} />
-        <button type="submit">Send</button>
+      <div className="space-y-4">
+        {messages.map((m) => (
+          <div key={m.id}>
+            <strong>{m.role}:</strong> {m.content}
+          </div>
+        ))}
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          sendMessage({ text: input });
+          setInput("");
+        }}
+      >
+        <input
+          value={input}
+          placeholder="Say something..."
+          onChange={(e) => setInput(e.currentTarget.value)}
+        />
       </form>
     </div>
   );
 }
+
 ```
 
-### Testing with Vitest
+--------------------------------
 
-Use `@workflow/vitest` for testing workflows in isolation with a local world.
+### Install AI SDK v6
 
-```typescript
-// vitest.config.ts
-import { workflow } from '@workflow/vitest';
-import { defineConfig } from 'vitest/config';
+Source: https://github.com/vercel/workflow/blob/main/packages/ai/README.md
 
-export default defineConfig({
-  plugins: [workflow()],
-});
-
-// __tests__/workflows.test.ts
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { start, resumeHook } from 'workflow/api';
-import { waitForHook, waitForSleep, setupWorkflowTests, teardownWorkflowTests } from '@workflow/vitest';
-import { documentApproval } from '@/workflows/approval';
-
-describe('Document Approval Workflow', () => {
-  beforeAll(async () => {
-    await setupWorkflowTests();
-  });
-
-  afterAll(async () => {
-    await teardownWorkflowTests();
-  });
-
-  it('should publish document when approved', async () => {
-    const run = await start(documentApproval, ['doc-123', 'approver@example.com']);
-
-    // Wait for the workflow to create a hook
-    const hook = await waitForHook(run, { timeout: 5000 });
-    expect(hook.token).toBe('approval:doc-123');
-
-    // Resume the hook with approval
-    await resumeHook(hook.token, { approved: true });
-
-    // Wait for completion
-    const result = await run.returnValue;
-    expect(result.status).toBe('published');
-  });
-
-  it('should reject document with comments', async () => {
-    const run = await start(documentApproval, ['doc-456', 'approver@example.com']);
-
-    const hook = await waitForHook(run);
-    await resumeHook(hook.token, {
-      approved: false,
-      comments: 'Needs revision'
-    });
-
-    const result = await run.returnValue;
-    expect(result.status).toBe('rejected');
-    expect(result.reason).toBe('Needs revision');
-  });
-
-  it('should handle sleep correctly', async () => {
-    const run = await start(scheduledWorkflow, []);
-
-    // Wait for workflow to hit sleep
-    const sleepId = await waitForSleep(run);
-
-    // Wake up the workflow early
-    await run.wakeUp({ correlationIds: [sleepId] });
-
-    const result = await run.returnValue;
-    expect(result.completed).toBe(true);
-  });
-});
-```
-
-### CLI Commands
-
-The Workflow CLI provides commands for development and debugging.
+Install the latest AI SDK v6, which is recommended.
 
 ```bash
-# Initialize a new workflow project
-workflow init
-
-# Start the development server
-workflow dev
-
-# Build workflow bundles
-workflow build
-
-# Start a workflow run manually
-workflow start <workflow-name> [args...]
-wf start processOrder '"order-123"' '"user@email.com"' 99.99
-
-# Inspect a running workflow
-workflow inspect <run-id>
-
-# Cancel a workflow run
-workflow cancel <run-id>
-
-# Check workflow health
-workflow health
-
-# Validate workflow configuration
-workflow validate
+npm install ai
 ```
 
-## Summary
+--------------------------------
 
-Workflow DevKit enables building resilient, long-running applications by combining the simplicity of regular async/await code with durable execution guarantees. The framework handles state persistence, automatic retries, and deterministic replay transparently, allowing developers to focus on business logic rather than infrastructure concerns.
+### start with arguments
 
-The key integration patterns include: using `"use workflow"` and `"use step"` directives to define durable functions, employing hooks and webhooks for external event coordination, leveraging the AI SDK integration for building intelligent agents, and utilizing the testing utilities for comprehensive workflow validation. With support for multiple frameworks (Next.js, Nitro, Astro, SvelteKit, NestJS) and seamless Vercel deployment, Workflow DevKit provides a production-ready foundation for building sophisticated stateful applications.
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/api-reference/workflow-api/start.mdx
+
+Starts a new workflow run with provided arguments.
+
+```APIDOC
+## start with arguments
+
+### Description
+Starts a new workflow run with provided arguments.
+
+### Method
+`start`
+
+### Parameters
+#### Path Parameters
+None
+
+#### Query Parameters
+None
+
+#### Request Body
+None
+
+### Request Example
+```typescript
+import { start } from "workflow/api";
+import { userSignupWorkflow } from "./workflows/user-signup";
+
+const run = await start(userSignupWorkflow, ["user@example.com"]);
+```
+```
+
+--------------------------------
+
+### Local E2E Testing Setup for Next.js Turbopack
+
+Source: https://github.com/vercel/workflow/blob/main/AGENTS.md
+
+Steps to set up and run end-to-end tests locally against a Next.js Turbopack application. Requires starting a dev server and then running tests.
+
+```bash
+# Step 1: Start the dev server in background
+# NOTE: WORKFLOW_PUBLIC_MANIFEST=1 is required for e2e tests to access the workflow manifest
+cd workbench/nextjs-turbopack && WORKFLOW_PUBLIC_MANIFEST=1 pnpm dev > /tmp/nextjs-dev.log 2>&1 &
+
+# Step 2: Wait for server to be ready (usually 15-20 seconds)
+sleep 15
+
+# Step 3: Run the e2e tests from the project root
+DEPLOYMENT_URL="http://localhost:3000" APP_NAME="nextjs-turbopack" pnpm vitest run packages/core/e2e/e2e.test.ts
+
+# Step 4: Stop the dev server when done
+pkill -f "pnpm dev"
+
+# To run specific tests, use the -t flag:
+DEPLOYMENT_URL="http://localhost:3000" APP_NAME="nextjs-turbopack" pnpm vitest run packages/core/e2e/e2e.test.ts -t "sleeping"
+```
+
+--------------------------------
+
+### Start Development Server
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/getting-started/astro.mdx
+
+Run this command in your terminal to start the Astro development server.
+
+```bash
+npm run dev
+
+```
+
+--------------------------------
+
+### `start`
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/cookbook/advanced/publishing-libraries.mdx
+
+Starts a workflow run.
+
+```APIDOC
+## `start`
+
+### Description
+Starts a workflow run.
+
+### Usage
+```javascript
+import { start } from '@vercel/workflow'
+
+await start('workflow-name', { input: 'data' })
+```
+```
+
+--------------------------------
+
+### Run Development Server
+
+Source: https://github.com/vercel/workflow/blob/main/workbench/tanstack-start/README.md
+
+Use this command to start the development server for the TanStack Start workbench.
+
+```sh
+pnpm dev
+```
+
+--------------------------------
+
+### Expose HTTP Endpoints with Bun.serve()
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/how-it-works/framework-integrations.mdx
+
+Wire up generated workflow handlers to HTTP endpoints using Bun.serve(). This example shows routing for flow, step, webhook, and a custom workflow start endpoint.
+
+```typescript
+import flow from "./.well-known/workflow/v1/flow.js";
+import step from "./.well-known/workflow/v1/step.js";
+import * as webhook from "./.well-known/workflow/v1/webhook.js";
+
+import { start } from "workflow/api";
+import { handleUserSignup } from "./workflows/user-signup.js";
+
+const server = Bun.serve({
+  port: process.env.PORT,
+  routes: {
+    "/.well-known/workflow/v1/flow": {
+      POST: (req) => flow.POST(req),
+    },
+    "/.well-known/workflow/v1/step": {
+      POST: (req) => step.POST(req),
+    },
+    // webhook exports handlers for GET, POST, DELETE, etc.
+    "/.well-known/workflow/v1/webhook/:token": webhook,
+
+    // Example: Start a workflow
+    "/": {
+      GET: async (req) => {
+        const email = `test-${crypto.randomUUID()}@test.com`;
+        const run = await start(handleUserSignup, [email]);
+        return Response.json({
+          message: "User signup workflow started",
+          runId: run.runId,
+        });
+      },
+    },
+  },
+});
+
+console.log(`Server listening on http://localhost:${server.port}`);
+
+```
+
+--------------------------------
+
+### Vitest Global Setup Script for Dev Server
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/testing/server-based.mdx
+
+This script starts a dev server using Nitro before tests and tears it down afterwards. It logs server events and sets the WORKFLOW_LOCAL_BASE_URL environment variable. Use this for server-based testing scenarios.
+
+```typescript
+import { spawn } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
+import type { ChildProcess } from "node:child_process";
+
+let server: ChildProcess | null = null;
+const PORT = "4000";
+
+function emitSetupLog(event: string, fields: Record<string, unknown> = {}) {
+  console.log(
+    JSON.stringify({
+      scope: "workflow-server-test",
+      event,
+      port: PORT,
+      ...fields,
+    })
+  );
+}
+
+export async function setup() { // [!code highlight]
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+
+  emitSetupLog("server_starting", {
+    command: `npx nitro dev --port ${PORT}`,
+  });
+
+  server = spawn("npx", ["nitro", "dev", "--port", PORT], {
+    stdio: "pipe",
+    detached: false,
+    env: process.env,
+  });
+
+  const ready = await new Promise<boolean>((resolve) => {
+    const timeout = setTimeout(() => resolve(false), 15_000);
+
+    server?.stdout?.on("data", (data) => {
+      const output = data.toString();
+      stdout.push(output);
+      emitSetupLog("server_stdout", { message: output.trim() });
+
+      if (output.includes("listening") || output.includes("ready")) {
+        clearTimeout(timeout);
+        resolve(true);
+      }
+    });
+
+    server?.stderr?.on("data", (data) => {
+      const output = data.toString();
+      stderr.push(output);
+      emitSetupLog("server_stderr", { message: output.trim() });
+    });
+
+    server?.on("error", (error) => {
+      emitSetupLog("server_process_error", {
+        name: error.name,
+        message: error.message,
+      });
+      clearTimeout(timeout);
+      resolve(false);
+    });
+
+    server?.on("exit", (code, signal) => {
+      emitSetupLog("server_exit", { code, signal });
+    });
+  });
+
+  if (!ready) {
+    const recentStdout = stdout.join("").trim().slice(-2000);
+    const recentStderr = stderr.join("").trim().slice(-2000);
+
+    throw new Error(
+      [
+        "Server failed to start within 15 seconds.",
+        `Command: npx nitro dev --port ${PORT}`,
+        `WORKFLOW_LOCAL_BASE_URL: http://localhost:${PORT}`,
+        `Recent stdout:\n${recentStdout || "(empty)"}`,
+        `Recent stderr:\n${recentStderr || "(empty)"}`,
+      ].join("\n\n")
+    );
+  }
+
+  await delay(2_000);
+
+  process.env.WORKFLOW_LOCAL_BASE_URL = `http://localhost:${PORT}`; // [!code highlight]
+
+  emitSetupLog("server_ready", {
+    baseUrl: process.env.WORKFLOW_LOCAL_BASE_URL,
+  });
+}
+
+export async function teardown() { // [!code highlight]
+  if (!server) return;
+
+  emitSetupLog("server_stopping");
+
+  server.kill("SIGTERM");
+  await delay(1_000);
+
+  if (!server.killed) {
+    emitSetupLog("server_force_kill");
+    server.kill("SIGKILL");
+  }
+}
+
+```
+
+--------------------------------
+
+### Start Postgres World in Nitro (Plugin)
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/deploying/world/postgres-world.mdx
+
+Create a plugin to start the world on server initialization.
+
+```typescript
+import { defineNitroPlugin } from "nitro/~internal/runtime/plugin";
+
+export default defineNitroPlugin(async () => {
+  const { getWorld } = await import("workflow/runtime");
+  const world = await getWorld();
+  await world.start?.();
+});
+```
+
+--------------------------------
+
+### Install @workflow/world-postgres
+
+Source: https://github.com/vercel/workflow/blob/main/packages/world-postgres/README.md
+
+Install the package using npm, pnpm, or yarn.
+
+```bash
+npm install @workflow/world-postgres
+# or
+pnpm add @workflow/world-postgres
+# or
+yarn add @workflow/world-postgres
+```
+
+--------------------------------
+
+### Install Workflow SDK
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/migration-guides/migrating-from-inngest.mdx
+
+Install the Workflow SDK using pnpm. Framework integrations are subpath exports of the same package.
+
+```bash
+pnpm add workflow
+```
+
+--------------------------------
+
+### Install and Run Workflow CLI
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/observability/index.mdx
+
+Installs and runs the Workflow CLI temporarily if not already installed. Use this to quickly access CLI commands.
+
+```bash
+npx workflow
+```
+
+--------------------------------
+
+### Create Express Project and Install Dependencies
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/getting-started/express.mdx
+
+Commands to create a new Express project, initialize npm, and install necessary packages including workflow, express, nitro, and rollup. If using TypeScript, also install @types/express.
+
+```bash
+mkdir my-workflow-app
+```
+
+```bash
+cd my-workflow-app
+```
+
+```bash
+npm init --y
+```
+
+```bash
+npm i workflow express nitro rollup
+```
+
+```bash
+npm i -D @types/express
+```
+
+--------------------------------
+
+### Install Workflow Dependencies
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/getting-started/fastify.mdx
+
+Install the necessary packages for workflow, Fastify, and Nitro.
+
+```bash
+npm i workflow fastify nitro rollup
+```
+
+--------------------------------
+
+### Install Vercel Python SDK
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/getting-started/python.mdx
+
+Install the vercel package using pip. This is the first step to using the SDK.
+
+```bash
+pip install vercel
+```
+
+--------------------------------
+
+### Install Workflow Package
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/api-reference/workflow/index.mdx
+
+Install the workflow package using npm.
+
+```bash
+npm i workflow
+```
+
+--------------------------------
+
+### Install AI SDK v5
+
+Source: https://github.com/vercel/workflow/blob/main/packages/ai/README.md
+
+Install AI SDK v5 if you need to use an older version.
+
+```bash
+npm install ai@5
+```
+
+--------------------------------
+
+### Install Workflow and Nitro Packages
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/getting-started/vite.mdx
+
+Install the necessary workflow and nitro packages using npm.
+
+```bash
+npm i workflow nitro
+```
+
+--------------------------------
+
+### Install Workflow SDK Migration Skill
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/migration-guides/index.mdx
+
+Use this command to install the migration skill for the Workflow SDK.
+
+```bash
+npx skills add https://github.com/vercel/workflow --skill migrating-to-workflow-sdk
+```
+
+--------------------------------
+
+### Start a Workflow Run
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/migration-guides/migrating-from-inngest.mdx
+
+Initiate workflows directly using `start()` instead of `inngest.send()`. This eliminates the need for an event bus and registry.
+
+```typescript
+import { start } from 'workflow/api';
+import { processOrder } from '@/workflows/order';
+
+const run = await start(processOrder, [orderId]); // [!code highlight]
+```
+
+--------------------------------
+
+### Install Workflow, Nitro, and Rollup Dependencies
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/getting-started/hono.mdx
+
+Install the necessary npm packages for workflow management, build system, and bundling.
+
+```bash
+npm i workflow nitro rollup
+```
+
+--------------------------------
+
+### Workflow SDK: Spawn Child Workflow
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/migration-guides/migrating-from-temporal.mdx
+
+In Workflow SDK v5, child workflows are spawned by calling `start()` directly from the parent workflow. This example starts a `childWorkflow`.
+
+```typescript
+import { start } from 'workflow/api';
+
+export async function parentWorkflow(item: string) {
+  'use workflow';
+  const child = await start(childWorkflow, [item]); // [!code highlight]
+  return { childRunId: child.runId };
+}
+```
+
+--------------------------------
+
+### Setup PostgreSQL Database with CLI
+
+Source: https://github.com/vercel/workflow/blob/main/packages/world-postgres/README.md
+
+Use the CLI tool to automatically set up your PostgreSQL database. It loads .env files and prioritizes WORKFLOW_POSTGRES_URL, then DATABASE_URL, or defaults to a local instance.
+
+```bash
+pnpm exec workflow-postgres-setup
+# or
+npm exec workflow-postgres-setup
+```
+
+--------------------------------
+
+### Navigate to Project Directory
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/getting-started/astro.mdx
+
+Change into the newly created Astro project directory.
+
+```bash
+cd my-workflow-app
+```
+
+--------------------------------
+
+### Create Fastify Project
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/getting-started/fastify.mdx
+
+Commands to create a new Fastify project, navigate into it, and initialize npm.
+
+```bash
+mkdir my-workflow-app
+```
+
+```bash
+cd my-workflow-app
+```
+
+```bash
+npm init --y
+```
+
+--------------------------------
+
+### start()
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/api-reference/workflow-api/index.mdx
+
+Start/enqueue a new workflow run.
+
+```APIDOC
+## start()
+
+### Description
+Start/enqueue a new workflow run.
+
+### Method
+Not specified (likely a function call within a runtime environment)
+
+### Parameters
+Not specified in the source text.
+
+### Request Example
+Not specified in the source text.
+
+### Response
+Not specified in the source text.
+```
+
+--------------------------------
+
+### Temporal Workflow Activity Proxy
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/migration-guides/migrating-from-temporal.mdx
+
+In Temporal, activities are proxied through a module. This example shows the setup for proxying the `chargePayment` activity.
+
+```typescript
+import * as wf from '@temporalio/workflow';
+import type * as activities from './activities';
+
+const { chargePayment } = wf.proxyActivities<typeof activities>({
+  startToCloseTimeout: '5 minutes',
+});
+
+export async function processOrder(orderId: string) {
+  await chargePayment(orderId);
+  return { orderId, status: 'completed' };
+}
+```
+
+--------------------------------
+
+### Build and Use Workflow CLI for Example App
+
+Source: https://github.com/vercel/workflow/blob/main/CLAUDE.md
+
+Commands to build workflow bundles for the example app and use the workflow CLI directly. The 'wf' command is a shorthand for 'workflow'.
+
+```bash
+# Build workflow bundles for example app
+cd workbench/example && pnpm build
+
+# Use workflow CLI directly
+cd workbench/example && pnpm workflow [command]
+cd workbench/example && pnpm wf [command]  # shorthand
+```
+
+--------------------------------
+
+### Create API Route Handler for Workflow
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/getting-started/vite.mdx
+
+Define a POST API route handler to invoke your workflow. This example shows how to parse JSON input and asynchronously start a workflow.
+
+```typescript
+import { start } from "workflow/api";
+import { defineEventHandler } from "nitro/h3";
+import { handleUserSignup } from "../workflows/user-signup";
+
+export default defineEventHandler(async ({ req }) => {
+  const { email } = await req.json() as { email: string };
+  // Executes asynchronously and doesn't block your app
+  await start(handleUserSignup, [email]);
+  return {
+    message: "User signup workflow started",
+  };
+});
+```
+
+--------------------------------
+
+### Stream Chat Messages
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/ai/chat-session-modeling.mdx
+
+Handles GET requests to stream chat messages for a given workflow run ID. It retrieves the run and its readable stream, optionally starting from a specific index.
+
+```typescript
+import { createUIMessageStreamResponse } from "ai";
+import { getRun } from "workflow/api";
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const { searchParams } = new URL(request.url);
+  const startIndex = searchParams.get("startIndex");
+
+  const run = getRun(id); // [!code highlight]
+  const stream = run.getReadable({ // [!code highlight]
+    startIndex: startIndex ? parseInt(startIndex, 10) : undefined, // [!code highlight]
+  }); // [!code highlight]
+
+  return createUIMessageStreamResponse({ stream });
+}
+```
+
+--------------------------------
+
+### Enter Pre-release Mode
+
+Source: https://github.com/vercel/workflow/blob/main/CLAUDE.md
+
+Enter pre-release mode for the changesets tool. Use 'beta' for beta versions or 'rc' for release candidates.
+
+```bash
+pnpm changeset pre enter beta
+```
+
+```bash
+pnpm changeset pre enter rc
+```
+
+--------------------------------
+
+### Consume Namespaced Streams in an API
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/foundations/streaming.mdx
+
+Access specific namespaced streams using `run.getReadable` within an API route to retrieve data. This example shows how to get the logs stream and return it to the client.
+
+```typescript
+import { start } from "workflow/api";
+import { multiStreamWorkflow } from "./workflows/multi";
+
+type LogEntry = { level: string; message: string };
+type MetricEntry = { cpu: number; memory: number };
+
+export async function POST(request: Request) {
+  const run = await start(multiStreamWorkflow);
+
+  // Access specific named streams // [!code highlight]
+  const logs = run.getReadable<LogEntry>({ namespace: "logs" }); // [!code highlight]
+  const metrics = run.getReadable<MetricEntry>({ namespace: "metrics" }); // [!code highlight]
+
+  // Return the logs stream to the client
+  return new Response(logs, {
+    headers: { "Content-Type": "application/json" }
+  });
+}
+```
+
+--------------------------------
+
+### Create NestJS Project and Install Workflow SDK
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/getting-started/nestjs.mdx
+
+Use the NestJS CLI to create a new project and then install the workflow and @workflow/nest packages.
+
+```bash
+npm i -g @nestjs/cli
+nest new my-workflow-app
+```
+
+```bash
+cd my-workflow-app
+```
+
+```bash
+npm i workflow @workflow/nest
+```
+
+--------------------------------
+
+### Access Run Object Properties
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/foundations/starting-workflows.mdx
+
+The Run object returned by start() provides access to the workflow's status and results. Await async getters like status and returnValue to get their values.
+
+```typescript
+import { start } from "workflow/api";
+import { processOrder } from "./workflows/process-order";
+
+const run = await start(processOrder, [/* orderId */]);
+
+// The run object has properties you can await
+console.log("Run ID:", run.runId);
+
+// Check the workflow status
+const status = await run.status; // "running" | "completed" | "failed"
+
+// Get the workflow's return value (blocks until completion)
+const result = await run.returnValue;
+```
+
+--------------------------------
+
+### PostCSS Configuration for Tailwind CSS
+
+Source: https://github.com/vercel/workflow/blob/main/packages/web-shared/README.md
+
+Example configuration for postcss.config.mjs in a Next.js application to ensure Tailwind CSS classes are correctly processed by PostCSS. This setup is necessary for the styling of components from '@workflow/web-shared' to be applied correctly.
+
+```javascript
+const config = {
+  plugins: ['@tailwindcss/postcss'],
+};
+
+export default config;
+```
+
+--------------------------------
+
+### Create Hono Route Handler for Workflow
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/getting-started/hono.mdx
+
+Create a Hono API route handler to trigger a workflow. This example sets up a POST endpoint that accepts an email, starts the user signup workflow, and returns a confirmation message.
+
+```typescript
+import { Hono } from "hono";
+import { start } from "workflow/api";
+import { handleUserSignup } from "../workflows/user-signup.js";
+
+const app = new Hono();
+
+app.post("/api/signup", async (c) => {
+  const { email } = await c.req.json();
+  await start(handleUserSignup, [email]);
+  return c.json({ message: "User signup workflow started" });
+});
+
+export default app;
+```
+
+--------------------------------
+
+### setupWorkflowTests()
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/api-reference/vitest/index.mdx
+
+Sets up an in-process workflow runtime in each test worker. Imports pre-built bundles, creates a Local World instance with direct handlers, and sets it as the global world. Clears all workflow data on each invocation for full test isolation. Called automatically by the `workflow()` plugin in `setupFiles`. Use directly only for manual setup.
+
+```APIDOC
+## setupWorkflowTests()
+
+### Description
+Sets up an in-process workflow runtime in each test worker. Imports pre-built bundles, creates a Local World instance with direct handlers, and sets it as the global world. Clears all workflow data on each invocation for full test isolation. Called automatically by the `workflow()` plugin in `setupFiles`. Use directly only for manual setup.
+
+### Method
+`setupWorkflowTests()`
+
+### Parameters
+#### Options
+- **options?** (`WorkflowTestOptions`) - Optional - Optional configuration
+
+### Returns
+`Promise<void>`
+```
+
+--------------------------------
+
+### Direct API Calls with Workflow Fetch
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/errors/fetch-in-workflow.mdx
+
+This example demonstrates how to use the fetch step function directly for making custom HTTP requests to external APIs within a workflow. It shows a basic GET request and JSON parsing.
+
+```typescript
+import { fetch } from "workflow";
+
+export async function dataWorkflow() {
+  "use workflow";
+
+  // Use fetch directly for HTTP requests
+  const response = await fetch("https://api.example.com/data"); // [!code highlight] 
+  const data = await response.json();
+
+  return data;
+}
+```
+
+--------------------------------
+
+### Build and run for Node.js
+
+Source: https://github.com/vercel/workflow/blob/main/workbench/express/README.md
+
+Compiles the project and executes the generated server entry point.
+
+```sh
+npm run build
+node .output/server/index.mjs
+```
+
+--------------------------------
+
+### Basic Usage
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/api-reference/workflow-next/with-workflow.mdx
+
+Wrap your `nextConfig` with `withWorkflow` to enable `"use step"` and `"use workflow"` directives.
+
+```APIDOC
+## Basic Usage
+
+### Description
+Wrap your `nextConfig` with `withWorkflow` to enable `"use step"` and `"use workflow"` directives while developing locally or deploying to production.
+
+### Method
+`withWorkflow` is a function that takes your Next.js configuration object and an optional configuration object for workflow options.
+
+### Parameters
+#### `nextConfig` (NextConfig) - Required
+Your existing Next.js configuration object.
+
+#### `workflowConfig` (object) - Optional
+An object to configure workflow options. See the 'Options' section for details.
+
+### Request Example
+```typescript
+import { withWorkflow } from "workflow/next";
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  // ... rest of your Next.js config
+};
+
+const workflowConfig = {}; // Optional configuration
+
+export default withWorkflow(nextConfig, workflowConfig);
+```
+
+### Response
+Returns a modified Next.js configuration object with workflow transformations enabled.
+```
+
+--------------------------------
+
+### Start a Child Workflow from a Step Function
+
+Source: https://github.com/vercel/workflow/blob/main/skills/workflow/SKILL.md
+
+To start child workflows from within a parent workflow, wrap the start() call in a step function. This ensures proper execution context. The start() function returns immediately.
+
+```typescript
+import { start } from "workflow/api";
+
+// Wrap start() in a step function
+async function triggerChild(data: string) {
+  "use step";
+  const run = await start(childWorkflow, [data]);
+  return run.runId;
+}
+
+export async function parentWorkflow() {
+  "use workflow";
+  const childRunId = await triggerChild("some data");  // Fire-and-forget via step
+  await sleep("1h");
+}
+```
+
+--------------------------------
+
+### Pass Workflow Function Directly to start()
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/errors/start-invalid-workflow-function.mdx
+
+Pass the imported workflow function directly to `start()`, not a wrapper callback. Arguments should be provided in the second parameter of `start()`.
+
+```typescript
+import { start } from "workflow/api";
+import { sendReminder } from "./workflows/send-reminder";
+
+export async function POST() {
+  await start(sendReminder, ["hello@example.com"]); // [!code highlight]
+}
+```
+
+--------------------------------
+
+### buildWorkflowTests()
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/api-reference/vitest/index.mdx
+
+Builds workflow and step bundles to disk. Called automatically by the `workflow()` plugin in `globalSetup`. Use directly only for manual setup.
+
+```APIDOC
+## buildWorkflowTests()
+
+### Description
+Builds workflow and step bundles to disk. Called automatically by the `workflow()` plugin in `globalSetup`. Use directly only for manual setup.
+
+### Method
+`buildWorkflowTests()`
+
+### Parameters
+#### Options
+- **options?** (`WorkflowTestOptions`) - Optional - Optional configuration
+
+### Returns
+`Promise<void>`
+```
+
+--------------------------------
+
+### Install @workflow/ai
+
+Source: https://github.com/vercel/workflow/blob/main/packages/ai/README.md
+
+Install the @workflow/ai package using npm.
+
+```bash
+npm install @workflow/ai
+```
+
+--------------------------------
+
+### Enter Pre-release Mode
+
+Source: https://github.com/vercel/workflow/blob/main/AGENTS.md
+
+Initiates pre-release mode for Changesets, typically used for publishing beta versions. Specify the pre-release type (e.g., 'beta').
+
+```bash
+pnpm changeset pre enter beta
+```
+
+--------------------------------
+
+### Build and Preview Production App
+
+Source: https://github.com/vercel/workflow/blob/main/workbench/sveltekit/README.md
+
+Compiles the application into a production-ready build and provides a command to preview the generated output locally.
+
+```shell
+npm run build
+
+npm run preview
+```
+
+--------------------------------
+
+### Run Local Development Server
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/deploying/index.mdx
+
+Start your local development server to run workflows. No additional configuration is needed for the Local World.
+
+```bash
+npm run dev
+```

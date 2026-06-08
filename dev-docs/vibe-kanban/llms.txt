@@ -1,62 +1,467 @@
-# Vibe Kanban
+### Setup Script Examples for Node.js, Python, and Multiple Commands
 
-Vibe Kanban is an AI-powered kanban board designed to manage and orchestrate multiple coding agents working in parallel. It provides a local-first, self-hosted project management platform where AI agents (Claude Code, Codex, Gemini, AMP, and others) operate inside isolated "workspaces" — git-branched sandbox environments scoped to individual tasks or issues. Users create workspaces linked to tasks, fire off prompts to coding agents within sessions, track their progress in real time, and merge or push the resulting changes when complete.
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/settings/projects-repositories.mdx
 
-The system is structured as a Rust backend (Axum HTTP server, SQLite via SQLx), a React/TypeScript frontend, an MCP (Model Context Protocol) server for agent-to-agent orchestration, and an NPX CLI entrypoint that downloads and runs the server. The REST API covers workspace lifecycle, session management, git operations (rebase, merge, push, diff), execution process tracking, configuration of AI executors, MCP server settings, real-time event streaming over SSE, an interactive terminal over WebSocket, and a rich remote issue-tracker integration layer.
-
----
-
-## Installation and Launch
-
-**NPX CLI** — downloads and runs the correct binary for the current platform.
+Use setup scripts to prepare the development environment by installing dependencies, building prerequisites, or preparing the environment. These scripts run once when the workspace starts.
 
 ```bash
-# Launch the browser-based UI (default)
+# Node.js project
+npm install
+```
+
+```bash
+# Python project
+pip install -r requirements.txt
+```
+
+```bash
+# Multiple commands
+npm install && npm run build:deps
+```
+
+```bash
+# Rust project
+cargo fetch
+```
+
+--------------------------------
+
+### Start Caddy with Example Configuration
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/crates/remote/README.md
+
+Run Caddy as a reverse proxy using the provided Caddyfile.example. This command should be run in a separate terminal from the repo root.
+
+```bash
+caddy run --config Caddyfile.example
+```
+
+--------------------------------
+
+### Install and Run Qwen Code CLI
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/agents/qwen-code.mdx
+
+Execute this command to install and run the Qwen Code command-line interface. Ensure you have Node.js and npm installed.
+
+```bash
+npx -y @qwen-code/qwen-code
+```
+
+--------------------------------
+
+### Complete Workflow Example with MCP Tools
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/integrations/vibe-kanban-mcp-server.mdx
+
+This sequence outlines a full project management workflow using various MCP tools for listing organizations, projects, issues, creating new issues, assigning tasks, and starting workspace sessions.
+
+```text
+1. List organisations to find the organisation ID
+2. List projects in the organisation to find the project ID
+3. List issues in the project filtered by status
+4. Create a new issue for "Add user profile page"
+5. Assign a team member to the issue
+6. Start a workspace session for the issue using Amp on the develop branch
+```
+
+--------------------------------
+
+### Install and Run OpenCode
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/agents/opencode.mdx
+
+Execute this command to install and run OpenCode. Follow the on-screen prompts for authentication.
+
+```bash
+npx -y opencode-ai
+```
+
+--------------------------------
+
+### Install Project Dependencies
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/AGENTS.md
+
+Run this command to install all necessary project dependencies before development.
+
+```bash
+pnpm i
+```
+
+--------------------------------
+
+### Setup Session
+
+Source: https://context7.com/bloopai/vibe-kanban/llms.txt
+
+Runs the workspace setup script for a given session.
+
+```APIDOC
+## POST /api/sessions/{id}/setup — Run the workspace setup script
+
+### Description
+Runs the workspace setup script.
+
+### Method
+POST
+
+### Endpoint
+/api/sessions/{id}/setup
+
+### Parameters
+#### Path Parameters
+- **id** (string) - Required - The ID of the session.
+
+### Response
+Returns an ExecutionProcess for the setup script run.
+```
+
+--------------------------------
+
+### Install Dependencies Step
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/AGENTS.md
+
+Instructions for installing project dependencies using npm, with a verification step.
+
+```bash
+Run `npm install` to install required packages.
+
+  <Check>
+  Verify installation by running `npm list`.
+  </Check>
+```
+
+--------------------------------
+
+### Install Caddy using Homebrew
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/mobile-testing.md
+
+Installs the Caddy web server using the Homebrew package manager. Ensure Homebrew is installed before running this command.
+
+```bash
+brew install caddy
+```
+
+--------------------------------
+
+### Install Web Companion Package
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/core-features/testing-your-application.mdx
+
+Install the `vibe-kanban-web-companion` package using npm. This is required for precise component selection within the preview.
+
+```bash
+npm install vibe-kanban-web-companion
+```
+
+--------------------------------
+
+### Start Local Development Server
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/README.md
+
+Run this command at the root of your documentation project to start a local development server. Ensure your docs.json is present.
+
+```bash
+mint dev
+```
+
+--------------------------------
+
+### Install and Launch CCR UI
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/agents/ccr.mdx
+
+Use npx to install and launch the CCR local UI for configuring providers and models. No separate installation is required.
+
+```bash
+npx -y @musistudio/claude-code-router ui
+```
+
+--------------------------------
+
+### Install and Run Gemini CLI
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/agents/gemini-cli.mdx
+
+Execute this command to install and run the Gemini CLI. Follow the on-screen instructions for authentication.
+
+```bash
+npx -y @google/gemini-cli
+```
+
+--------------------------------
+
+### Run Workspace Setup Script
+
+Source: https://context7.com/bloopai/vibe-kanban/llms.txt
+
+Executes the workspace setup script for a given session. This endpoint returns an ExecutionProcess object representing the setup run.
+
+```bash
+curl -X POST http://localhost:3000/api/sessions/sess-uuid-.../setup
+```
+
+--------------------------------
+
+### Install GitHub Copilot CLI
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/agents/github-copilot.mdx
+
+Run this command to install the GitHub Copilot CLI globally on your system.
+
+```bash
+npx -y @github/copilot
+```
+
+--------------------------------
+
+### Install Cursor Agent CLI
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/agents/cursor-cli.mdx
+
+Use this command to download and install the Cursor Agent CLI. Verify the installation by running `cursor-agent --version`.
+
+```bash
+curl https://cursor.com/install -fsS | bash
+```
+
+--------------------------------
+
+### Install Mintlify CLI
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/README.md
+
+Install the Mintlify CLI globally to preview documentation changes locally. This command is run in your terminal.
+
+```bash
+npm i -g mint
+```
+
+--------------------------------
+
+### Start Docker Compose Services
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/self-hosting/local-development.mdx
+
+Start the Vibe Kanban development stack using Docker Compose from the `crates/remote` directory. This command builds the images and starts all necessary services, including PostgreSQL, ElectricSQL, Remote Server, and Relay Server.
+
+```bash
+cd crates/remote
+docker compose --env-file .env.remote -f docker-compose.yml up --build
+```
+
+--------------------------------
+
+### Install Docker on Ubuntu/Debian
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/self-hosting/deploy-docker.mdx
+
+Installs Docker and adds the current user to the docker group. Log out and back in for changes to take effect.
+
+```bash
+# Install Docker (Ubuntu/Debian)
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+
+# Log out and back in for group changes to take effect
+```
+
+--------------------------------
+
+### Install OpenAI Codex
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/agents/openai-codex.mdx
+
+Run this command to install the OpenAI Codex CLI. Ensure Node.js and npm are installed.
+
+```bash
+npx -y @openai/codex
+```
+
+--------------------------------
+
+### Install Caddy on Debian/Ubuntu
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/crates/remote/README.md
+
+Install Caddy using apt on Debian or Ubuntu systems.
+
+```bash
+# Debian/Ubuntu
+sudo apt install caddy
+```
+
+--------------------------------
+
+### Start Vibe Kanban Application
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/agents/amp.mdx
+
+Run this command to start the Vibe Kanban application after Amp has been set up and authenticated. Amp can then be selected for task attempts.
+
+```bash
 npx vibe-kanban
-
-# Launch the Tauri desktop app
-npx vibe-kanban --desktop
-
-# Run the MCP server in global mode
-npx vibe-kanban mcp --mode global
-
-# Run the MCP server in orchestrator mode (scoped to a single workspace)
-npx vibe-kanban mcp --mode orchestrator
-
-# Run the review CLI tool
-npx vibe-kanban review
 ```
 
-Environment variables recognised by the binary:
+--------------------------------
 
-| Variable | Purpose |
-|---|---|
-| `VIBE_BACKEND_URL` | Override the backend base URL |
-| `MCP_HOST` / `HOST` | Override the MCP server host |
-| `MCP_PORT` / `PORT` / `BACKEND_PORT` | Override the port |
-| `VIBE_KANBAN_DEBUG` | Enable verbose/debug output |
+### Install and Run Amp Agent
 
----
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/agents/amp.mdx
 
-## REST API — Base Path `/api`
+Execute this command to install and run the Amp agent. Follow the on-screen prompts for authentication.
 
-All REST endpoints return a uniform JSON envelope:
-
-```json
-{ "success": true, "data": <payload> }
-{ "success": false, "message": "Error description" }
+```bash
+npx -y @sourcegraph/amp
 ```
 
----
+--------------------------------
 
-### `GET /api/info` — Get system info
+### Run Development Server
 
-Returns the running version, current configuration, login status, available executor profiles, executor capabilities, and environment info.
+Source: https://github.com/bloopai/vibe-kanban/blob/main/AGENTS.md
+
+Starts the backend and web app with auto-assigned ports for local development.
+
+```bash
+pnpm run dev
+```
+
+--------------------------------
+
+### Example MCP Task Creation
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/core-features/creating-tasks.mdx
+
+Use this example to create multiple tasks programmatically from a project description using an MCP client. The client automatically generates structured tasks based on the provided requirements.
+
+```text
+I need to implement user authentication with:
+- Email/password registration
+- Login with session management  
+- Password reset functionality
+- Email verification
+- Protected route middleware
+
+Please create individual tasks for each component.
+```
+
+--------------------------------
+
+### Install Node.js and package with package managers
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/AGENTS.md
+
+Use these commands to install Node.js and a package globally depending on your operating system.
+
+```bash
+brew install node
+npm install -g package-name
+```
+
+```powershell
+choco install nodejs
+npm install -g package-name
+```
+
+```bash
+sudo apt install nodejs npm
+npm install -g package-name
+```
+
+--------------------------------
+
+### Install Caddy on macOS
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/crates/remote/README.md
+
+Install Caddy using Homebrew on macOS.
+
+```bash
+# macOS
+brew install caddy
+```
+
+--------------------------------
+
+### Install Additional Development Tools
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/README.md
+
+Installs essential Rust-based development tools: `cargo-watch` for live reloading and `sqlx-cli` for database management.
+
+```bash
+cargo install cargo-watch
+ cargo install sqlx-cli
+```
+
+--------------------------------
+
+### Create and start a coding agent in a workspace
+
+Source: https://context7.com/bloopai/vibe-kanban/llms.txt
+
+This endpoint creates a workspace and immediately starts a coding agent. It requires a name, repositories, executor configuration, a prompt for the agent, and optionally attachment IDs. The response includes details of the created workspace, session, and the initial execution process.
+
+```bash
+curl -X POST http://localhost:3000/api/workspaces/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Fix login bug",
+    "repos": [{ "repo_id": "repo-uuid-ப்படாத", "target_branch": "main" }],
+    "executor_config": {
+      "executor": "CLAUDE_CODE",
+      "variant": null,
+      "model_id": null,
+      "permission_policy": "auto_edit"
+    },
+    "prompt": "The login button on the homepage is broken. Investigate and fix it.",
+    "attachment_ids": []
+  }'
+```
+
+--------------------------------
+
+### Local Web App Development
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/AGENTS.md
+
+Starts the local web application in development mode.
+
+```bash
+pnpm run local-web:dev
+```
+
+--------------------------------
+
+### Manually Start Remote Service with Docker Compose
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/crates/remote/README.md
+
+Manually start the remote service, database, and Electric using Docker Compose. Ensure the .env.remote file is configured.
+
+```bash
+cd crates/remote
+docker compose --env-file .env.remote up --build
+```
+
+--------------------------------
+
+### Get System Info
+
+Source: https://context7.com/bloopai/vibe-kanban/llms.txt
+
+Retrieve system information including version, configuration, login status, and environment details using a GET request to /api/info. The response is typically parsed with jq.
 
 ```bash
 curl http://localhost:3000/api/info | jq .
+```
 
-# Response
+```json
 {
   "success": true,
   "data": {
@@ -83,36 +488,656 @@ curl http://localhost:3000/api/info | jq .
 }
 ```
 
----
+--------------------------------
 
-### `PUT /api/config` — Update configuration
+### Start Workspace Session Configuration
 
-```bash
-curl -X PUT http://localhost:3000/api/config \
-  -H "Content-Type: application/json" \
-  -d '{
-    "git_branch_prefix": "feat/",
-    "relay_enabled": true,
-    "host_nickname": "my-machine",
-    "analytics_enabled": true,
-    "editor": "CURSOR",
-    "executor_profile": "CLAUDE_CODE",
-    "disclaimer_acknowledged": true,
-    "onboarding_acknowledged": true
-  }'
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/integrations/vibe-kanban-mcp-server.mdx
 
-# Response
-{ "success": true, "data": { /* updated config */ } }
+This JSON object defines the parameters for starting a workspace session, including the issue name, coding agent, and repository information.
+
+```json
+{
+  "name": "User registration with email validation",
+  "executor": "claude-code",
+  "repositories": [
+    {
+      "repo_id": "987fcdeb-51a2-3d4e-b678-426614174001",
+      "branch": "main"
+    }
+  ],
+  "issue_id": "123e4567-e89b-12d3-a456-426614174000"
+}
 ```
 
----
+--------------------------------
 
-### `GET /api/config/mcp-config?executor=CLAUDE_CODE` — Get MCP server config
+### Create workspace and start a coding agent
+
+Source: https://context7.com/bloopai/vibe-kanban/llms.txt
+
+Creates a new workspace and immediately starts a coding agent to address a specific prompt.
+
+```APIDOC
+## POST /api/workspaces/start — Create workspace and start a coding agent
+
+### Description
+Creates a new workspace and starts a coding agent to address a specific prompt. The response includes details about the created workspace, session, and the initial execution process.
+
+### Method
+POST
+
+### Endpoint
+/api/workspaces/start
+
+### Request Body
+- **name** (string) - Required - The name of the workspace.
+- **repos** (array) - Required - A list of repositories to associate with the workspace.
+  - **repo_id** (string) - Required - The ID of the repository.
+  - **target_branch** (string) - Required - The target branch for the repository.
+- **executor_config** (object) - Required - Configuration for the executor.
+  - **executor** (string) - Required - The type of executor (e.g., "CLAUDE_CODE").
+  - **variant** (string | null) - Optional - The executor variant.
+  - **model_id** (string | null) - Optional - The model ID to use.
+  - **permission_policy** (string) - Required - The permission policy for the executor (e.g., "auto_edit").
+- **prompt** (string) - Required - The prompt for the coding agent.
+- **attachment_ids** (array) - Optional - A list of attachment IDs.
+
+### Request Example
+```json
+{
+  "name": "Fix login bug",
+  "repos": [{ "repo_id": "repo-uuid-.", "target_branch": "main" }],
+  "executor_config": {
+    "executor": "CLAUDE_CODE",
+    "variant": null,
+    "model_id": null,
+    "permission_policy": "auto_edit"
+  },
+  "prompt": "The login button on the homepage is broken. Investigate and fix it.",
+  "attachment_ids": []
+}
+```
+
+### Response
+#### Success Response (200)
+- **success** (boolean) - Indicates if the operation was successful.
+- **data** (object) - Contains the workspace, session, and execution process details.
+  - **workspace** (object) - Details of the created workspace.
+  - **session** (object) - Details of the created session.
+  - **execution_process** (object) - Details of the initial execution process.
+
+### Response Example
+```json
+{
+  "success": true,
+  "data": {
+    "workspace": { "id": "550e8400-.", "branch": "vibe/fix-login-bug", ... },
+    "session": { "id": "sess-uuid-.", ... },
+    "execution_process": { "id": "exec-uuid-.", "status": "running", ... }
+  }
+}
+```
+```
+
+--------------------------------
+
+### Run Remote Development Server
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/crates/remote/AGENTS.md
+
+Starts the remote development server for Vibe Kanban. Ensure you are in the repository root.
+
+```bash
+# (from the repo root)
+pnpm run remote:dev
+```
+
+--------------------------------
+
+### Install Claude Code Agent
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/agents/claude-code.mdx
+
+Run this command to install the Claude Code agent globally. Follow the on-screen prompts for authentication.
+
+```bash
+npx -y @anthropic-ai/claude-code
+```
+
+--------------------------------
+
+### Start Remote Service Development
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/crates/remote/README.md
+
+Run the remote service in development mode from the repository root.
+
+```bash
+pnpm run remote:dev
+```
+
+--------------------------------
+
+### Code Formatting Script Examples
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/settings/projects-repositories.mdx
+
+Automate code formatting and linting as part of cleanup scripts to maintain consistent code style. Examples include Prettier, ESLint, Black, Ruff, and Go fmt.
+
+```bash
+# JavaScript/TypeScript (Prettier)
+npx prettier --write .
+```
+
+```bash
+# JavaScript/TypeScript (ESLint)
+npx eslint --fix .
+```
+
+```bash
+# Rust (cargo fmt)
+cargo fmt
+```
+
+```bash
+# Rust (Clippy)
+cargo clippy --fix --allow-dirty
+```
+
+```bash
+# Python (Black)
+black .
+```
+
+```bash
+# Python (Ruff)
+ruff check --fix .
+```
+
+```bash
+# Go
+go fmt ./...
+```
+
+--------------------------------
+
+### Example: Rebase Onto Main Branch
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/core-features/resolving-rebase-conflicts.mdx
+
+This example demonstrates rebasing your work onto the 'main' branch when it was accidentally based on 'develop'. It uses a specific commit hash to identify the point before your work began.
+
+```bash
+# Find the last commit before your work started (e.g., in the git log)
+# Then rebase only your commits onto main
+git rebase 64d504c94d076070d17affd3f84be63b34515445 --onto main
+```
+
+--------------------------------
+
+### Start Full Remote Service Development
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/crates/remote/README.md
+
+Run the full remote service stack, including relay and local attachment storage, in development mode.
+
+```bash
+pnpm run remote:dev:full
+```
+
+--------------------------------
+
+### Advanced configuration object
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/AGENTS.md
+
+An example of a JavaScript configuration object for advanced settings.
+
+```javascript
+const config = {
+  performance: { cache: true, timeout: 30000 },
+  security: { encryption: 'AES-256' }
+};
+```
+
+--------------------------------
+
+### Start Development Server
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/mobile-testing.md
+
+In development mode, if API calls fail, ensure the Docker environment is running using this command. This is necessary for the Vite dev server.
+
+```bash
+pnpm remote:dev
+```
+
+--------------------------------
+
+### Parameter Fields
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/AGENTS.md
+
+Examples of how to document parameter fields for API requests, including path, body, query, and header parameters.
+
+```APIDOC
+## Parameter Fields
+
+Example of parameter documentation:
+
+<ParamField path="user_id" type="string" required>
+Unique identifier for the user. Must be a valid UUID v4 format.
+</ParamField>
+
+<ParamField body="email" type="string" required>
+User's email address. Must be valid and unique within the system.
+</ParamField>
+
+<ParamField query="limit" type="integer" default="10">
+Maximum number of results to return. Range: 1-100.
+</ParamField>
+
+<ParamField header="Authorisation" type="string" required>
+Bearer token for API authentication. Format: `Bearer YOUR_API_KEY`
+</ParamField>
+```
+
+--------------------------------
+
+### Bootstrap Local Authentication Credentials
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/self-hosting/deploy-docker.mdx
+
+Sets up local authentication with a single admin email and password for initial self-hosted setup.
+
+```env
+SELF_HOST_LOCAL_AUTH_EMAIL=admin@example.com
+SELF_HOST_LOCAL_AUTH_PASSWORD=replace_with_a_strong_password
+```
+
+--------------------------------
+
+### Self-hosted Video Player Configuration
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/CLAUDE.md
+
+Example of configuring an HTML5 video player for self-hosted video content, including controls and aspect ratio.
+
+```html
+<video
+  controls
+  className="w-full aspect-video rounded-xl"
+  src="link-to-your-video.com">
+</video>
+```
+
+--------------------------------
+
+### JSON Response Example
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/AGENTS.md
+
+Example of a successful JSON response from an API, detailing user information.
+
+```json
+{
+  "id": "user_123",
+  "name": "John Doe",
+  "email": "john@example.com",
+  "created_at": "2024-01-15T10:30:00Z"
+}
+```
+
+--------------------------------
+
+### MCP Tool: Start Workspace
+
+Source: https://context7.com/bloopai/vibe-kanban/llms.txt
+
+Use the `start_workspace` tool to create a new workspace and initiate a coding agent session. Specify the workspace name, prompt, executor, and optionally repositories and issue ID.
+
+```json
+{
+  "tool": "start_workspace",
+  "arguments": {
+    "name": "Fix login button",
+    "prompt": "The login button on /dashboard is broken. Investigate and fix it.",
+    "executor": "CLAUDE_CODE",
+    "repositories": [
+      { "repo_id": "repo-uuid-...", "branch": "main" }
+    ],
+    "issue_id": "issue-uuid-..."
+  }
+}
+```
+
+--------------------------------
+
+### Install Droid CLI (Windows)
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/agents/droid.mdx
+
+Installs the Droid CLI using an Invoke-RestMethod command for Windows systems.
+
+```powershell
+irm https://app.factory.ai/cli/windows | iex
+```
+
+--------------------------------
+
+### Launch Vibe Kanban Desktop App
+
+Source: https://context7.com/bloopai/vibe-kanban/llms.txt
+
+Use the NPX CLI with the --desktop flag to launch the Tauri desktop application.
+
+```bash
+npx vibe-kanban --desktop
+```
+
+--------------------------------
+
+### Configure Environment Step
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/AGENTS.md
+
+Instructions for configuring environment variables by creating a .env file, including a warning about API key security.
+
+```bash
+Create a .env file with your API credentials.
+
+  ```bash
+  API_KEY=your_api_key_here
+  ```
+
+  <Warning>
+  Never commit API keys to version control.
+  </Warning>
+```
+
+--------------------------------
+
+### Install Droid CLI (macOS/Linux)
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/agents/droid.mdx
+
+Installs the Droid CLI using a curl command for macOS and Linux systems.
+
+```bash
+curl -fsSL https://app.factory.ai/cli | sh
+```
+
+--------------------------------
+
+### Run Relay Test Client
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/scripts/relay-test-client/README.md
+
+Execute this command from the repository root to start a local HTTP server for the relay test client. Access the client via the specified URL in your browser.
+
+```bash
+python3 -m http.server 8787 --directory scripts/relay-test-client
+```
+
+--------------------------------
+
+### Install Azure DevOps Extension
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/integrations/azure-repos-integration.mdx
+
+Installs the Azure DevOps extension for the Azure CLI, which is required for repository and pull request commands.
+
+```bash
+az extension add --name azure-devops
+```
+
+--------------------------------
+
+### Build Web App
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/README.md
+
+Compiles the web application assets. Navigate to the `packages/local-web` directory before running.
+
+```bash
+cd packages/local-web
+pnpm run build
+```
+
+--------------------------------
+
+### cURL Request Example
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/AGENTS.md
+
+Example of a cURL command for making a POST request to an API endpoint, including headers and data payload.
+
+```bash
+curl -X POST 'https://api.example.com/users' \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "John Doe", "email": "john@example.com"}'
+```
+
+--------------------------------
+
+### MCP Tool: start_workspace
+
+Source: https://context7.com/bloopai/vibe-kanban/llms.txt
+
+Creates a new workspace and immediately starts a coding agent session within it. Requires a name, prompt, executor, and optionally repositories and an issue ID.
+
+```APIDOC
+## MCP Tool: start_workspace
+
+### Description
+Create a new workspace and immediately start a coding agent session.
+
+### Request Body
+```json
+{
+  "tool": "start_workspace",
+  "arguments": {
+    "name": "string",
+    "prompt": "string",
+    "executor": "string",
+    "repositories": [
+      {
+        "repo_id": "string",
+        "branch": "string"
+      }
+    ],
+    "issue_id": "string"
+  }
+}
+```
+
+### Response
+#### Success Response (200)
+- **workspace_id** (string) - The ID of the newly created workspace.
+
+### Response Example
+```json
+{
+  "workspace_id": "550e8400-..."
+}
+```
+```
+
+--------------------------------
+
+### Connect Desktop Client to Local Server
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/self-hosting/local-development.mdx
+
+Configure the desktop client to connect to your locally running Vibe Kanban Cloud instance. Set the `VK_SHARED_API_BASE` environment variable to point to your local server.
+
+```bash
+# In a new terminal, from the repository root
+export VK_SHARED_API_BASE=http://localhost:3000
+
+pnpm install
+pnpm run dev
+```
+
+--------------------------------
+
+### Perform Signed GET Request
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/scripts/relay-test-client/index.html
+
+Executes a GET request to a specified path on the relay server, including authentication headers with a signature. Verifies the server's response signature.
+
+```javascript
+async function signedGetJson(
+  sessionPrefix,
+  path,
+  signingSessionId,
+  browserPrivateKey,
+  serverPublicKey,
+) {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const nonce = randomNonce();
+  const bodyHash = await sha256Base64(new Uint8Array(0));
+  const message = `v1|${timestamp}|GET|${path}|${signingSessionId}|${nonce}|${bodyHash}`;
+  const signatureBytes = await ed25519Sign(browserPrivateKey, encoder.encode(message));
+  const requestSignatureB64 = bytesToBase64(signatureBytes);
+  const response = await fetch(`${sessionPrefix}${path}`, {
+    method: "GET",
+    headers: {
+      "x-vk-sig-session": signingSessionId,
+      "x-vk-sig-ts": String(timestamp),
+      "x-vk-sig-nonce": nonce,
+      "x-vk-sig-signature": requestSignatureB64,
+    },
+  });
+  const responseBytes = new Uint8Array(await response.arrayBuffer());
+  const text = decoder.decode(responseBytes);
+  await verifySignedRelayResponse(
+    response,
+    responseBytes,
+    path,
+    signingSessionId,
+    nonce,
+    serverPublicKey,
+  );
+  let json = null;
+  if (text) {
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = null;
+    }
+  }
+  return { response, text, json };
+}
+```
+
+--------------------------------
+
+### Run Dev Mode with Vite
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/mobile-testing.md
+
+Start the development environment using Vite for hot reloading. This involves running the backend in Docker, the frontend with Vite, and Caddy for proxying.
+
+```bash
+# Terminal 1 — Docker backends (no frontend build needed)
+PUBLIC_BASE_URL=https://$TS_HOSTNAME:3001 \
+pnpm remote:dev
+
+# Terminal 2 — Vite dev server (hot reload)
+VITE_RELAY_API_BASE_URL=https://$TS_HOSTNAME:8443 \
+pnpm --filter @vibe/remote-web dev
+
+# Terminal 3 — Caddy (dev config)
+caddy run --config Caddyfile.dev
+
+# Terminal 4 (optional) — Local desktop client
+VK_SHARED_API_BASE=https://$TS_HOSTNAME:3001 \
+VK_SHARED_RELAY_API_BASE=https://$TS_HOSTNAME:8443 \
+pnpm run dev
+```
+
+--------------------------------
+
+### Docker Compose Deployment Commands
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/self-hosting/deploy-docker.mdx
+
+Commands to build and start the Vibe Kanban services in production using Docker Compose. It utilizes an environment file for configuration and starts services in detached mode.
+
+```bash
+cd crates/remote
+
+# Build and start all services
+docker compose --env-file ../../.env.remote -f docker-compose.prod.yml up -d --build
+
+# View logs
+docker compose -f docker-compose.prod.yml logs -f
+
+```
+
+--------------------------------
+
+### Create a workspace
+
+Source: https://context7.com/bloopai/vibe-kanban/llms.txt
+
+Use this endpoint to create a new workspace. It requires a name and a list of repositories with their target branches. Optionally, linked issues can be provided.
+
+```bash
+curl -X POST http://localhost:3000/api/workspaces \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Implement user dashboard",
+    "repos": [
+      { "repo_id": "repo-uuid-ப்படாத", "target_branch": "main" }
+    ],
+    "linked_issue": {
+      "remote_project_id": "proj-uuid-ப்படாத",
+      "issue_id": "issue-uuid-ப்படாத"
+    }
+  }'
+```
+
+--------------------------------
+
+### Vibe Kanban CLI Help and Version
+
+Source: https://github.com/bloopai/vibe-kanban/blob/main/npx-cli/README.md
+
+Access help information and check the version for Vibe Kanban and its subcommands using these npx commands.
+
+```bash
+npx vibe-kanban --help
+```
+
+```bash
+npx vibe-kanban --version
+```
+
+```bash
+npx vibe-kanban review --help
+```
+
+```bash
+npx vibe-kanban mcp --help
+```
+
+--------------------------------
+
+### Get MCP Server Configuration
+
+Source: https://context7.com/bloopai/vibe-kanban/llms.txt
+
+Retrieve the MCP server configuration for a specific executor by making a GET request to /api/config/mcp-config with an executor query parameter. This endpoint returns details about server paths and configurations.
 
 ```bash
 curl "http://localhost:3000/api/config/mcp-config?executor=CLAUDE_CODE" | jq .
+```
 
-# Response
+```json
 {
   "success": true,
   "data": {
@@ -130,489 +1155,41 @@ curl "http://localhost:3000/api/config/mcp-config?executor=CLAUDE_CODE" | jq .
 }
 ```
 
----
+--------------------------------
 
-### `POST /api/config/mcp-config?executor=CLAUDE_CODE` — Update MCP servers
+### Restart Electric Service with Environment File
 
-```bash
-curl -X POST "http://localhost:3000/api/config/mcp-config?executor=CLAUDE_CODE" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "servers": {
-      "vibe-kanban": {
-        "command": "npx",
-        "args": ["-y", "vibe-kanban@latest", "mcp"]
-      },
-      "filesystem": {
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user"]
-      }
-    }
-  }'
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/self-hosting/local-development.mdx
 
-# Response: { "success": true, "data": "Added 2 MCP server(s)" }
-```
-
----
-
-### `GET /api/config/agents/check-availability?executor=CLAUDE_CODE` — Check agent availability
+Restarts the Electric service, applying environment variables from a specified file. Use this if ElectricSQL fails to connect after initial setup.
 
 ```bash
-curl "http://localhost:3000/api/config/agents/check-availability?executor=CLAUDE_CODE"
-
-# Response
-{ "success": true, "data": { "type": "available" } }
-# or
-{ "success": true, "data": { "type": "not_installed", "install_url": "..." } }
+docker compose --env-file .env.remote -f docker-compose.yml restart electric
 ```
 
----
+--------------------------------
 
-### `GET /api/workspaces` — List all workspaces
+### Vibe Kanban CCR Model String Examples
 
-```bash
-curl http://localhost:3000/api/workspaces | jq '.data[] | {id, branch, name, archived}'
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/agents/ccr.mdx
 
-# Response
-{
-  "success": true,
-  "data": [
-    {
-      "id": "550e8400-...",
-      "branch": "vibe/fix-auth-bug",
-      "name": "Fix authentication bug",
-      "archived": false,
-      "pinned": false,
-      "container_ref": "/home/user/.vibe-kanban/workspaces/550e8400-...",
-      "created_at": "2024-12-01T10:00:00Z",
-      "updated_at": "2024-12-01T10:05:00Z"
-    }
-  ]
-}
+Examples of model strings to target specific CCR providers and models within Vibe Kanban agent configurations. Leave empty to use CCR's default routing.
+
+```text
+openrouter,moonshotai/kimi-k2-0905
 ```
 
----
-
-### `POST /api/workspaces` — Create a workspace
-
-```bash
-curl -X POST http://localhost:3000/api/workspaces \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Implement user dashboard",
-    "repos": [
-      { "repo_id": "repo-uuid-...", "target_branch": "main" }
-    ],
-    "linked_issue": {
-      "remote_project_id": "proj-uuid-...",
-      "issue_id": "issue-uuid-..."
-    }
-  }'
+```text
+deepseek,deepseek-chat
 ```
 
----
+--------------------------------
 
-### `POST /api/workspaces/start` — Create workspace and start a coding agent
+### Configure Claude Desktop Integration
 
-```bash
-curl -X POST http://localhost:3000/api/workspaces/start \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Fix login bug",
-    "repos": [{ "repo_id": "repo-uuid-...", "target_branch": "main" }],
-    "executor_config": {
-      "executor": "CLAUDE_CODE",
-      "variant": null,
-      "model_id": null,
-      "permission_policy": "auto_edit"
-    },
-    "prompt": "The login button on the homepage is broken. Investigate and fix it.",
-    "attachment_ids": []
-  }'
+Source: https://context7.com/bloopai/vibe-kanban/llms.txt
 
-# Response includes workspace and the first execution_process
-{
-  "success": true,
-  "data": {
-    "workspace": { "id": "550e8400-...", "branch": "vibe/fix-login-bug", ... },
-    "session": { "id": "sess-uuid-...", ... },
-    "execution_process": { "id": "exec-uuid-...", "status": "running", ... }
-  }
-}
-```
-
----
-
-### `GET /api/workspaces/{id}` — Get a workspace
-
-```bash
-curl http://localhost:3000/api/workspaces/550e8400-...
-```
-
----
-
-### `PUT /api/workspaces/{id}` — Update a workspace
-
-```bash
-curl -X PUT http://localhost:3000/api/workspaces/550e8400-... \
-  -H "Content-Type: application/json" \
-  -d '{ "archived": true, "name": "Archived: old feature" }'
-```
-
----
-
-### `DELETE /api/workspaces/{id}?delete_remote=true&delete_branches=false` — Delete a workspace
-
-```bash
-curl -X DELETE "http://localhost:3000/api/workspaces/550e8400-...?delete_remote=true&delete_branches=true"
-# Returns 204 on success
-```
-
----
-
-### `GET /api/workspaces/{id}/git/status` — Get branch status
-
-Returns commit counts, uncommitted changes, merge status, rebase state, and conflict info.
-
-```bash
-curl http://localhost:3000/api/workspaces/550e8400-.../git/status | jq .
-
-# Response
-{
-  "success": true,
-  "data": [
-    {
-      "repo_id": "repo-uuid-...",
-      "repo_name": "my-app",
-      "commits_ahead": 3,
-      "commits_behind": 0,
-      "has_uncommitted_changes": false,
-      "head_oid": "abc1234...",
-      "target_branch_name": "main",
-      "remote_commits_behind": 0,
-      "is_rebase_in_progress": false,
-      "conflicted_files": [],
-      "merges": []
-    }
-  ]
-}
-```
-
----
-
-### `POST /api/workspaces/{id}/git/push` — Push workspace branch
-
-```bash
-curl -X POST http://localhost:3000/api/workspaces/550e8400-.../git/push \
-  -H "Content-Type: application/json" \
-  -d '{ "repo_id": "repo-uuid-..." }'
-
-# On conflict:
-{ "success": false, "data": { "type": "force_push_required" } }
-```
-
----
-
-### `POST /api/workspaces/{id}/git/rebase` — Rebase workspace branch
-
-```bash
-curl -X POST http://localhost:3000/api/workspaces/550e8400-.../git/rebase \
-  -H "Content-Type: application/json" \
-  -d '{
-    "repo_id": "repo-uuid-...",
-    "new_base_branch": "main"
-  }'
-
-# On merge conflicts:
-{
-  "success": false,
-  "data": {
-    "type": "merge_conflicts",
-    "conflicted_files": ["src/auth.ts", "src/routes.ts"],
-    "op": "rebase",
-    "target_branch": "main"
-  }
-}
-```
-
----
-
-### `POST /api/workspaces/{id}/git/merge` — Merge workspace branch into target
-
-```bash
-curl -X POST http://localhost:3000/api/workspaces/550e8400-.../git/merge \
-  -H "Content-Type: application/json" \
-  -d '{ "repo_id": "repo-uuid-..." }'
-```
-
----
-
-### `GET /api/workspaces/{id}/git/diff/ws` — Stream diff over WebSocket
-
-```javascript
-const ws = new WebSocket('ws://localhost:3000/api/workspaces/550e8400-.../git/diff/ws');
-ws.onmessage = (event) => {
-  const msg = JSON.parse(event.data);
-  if (msg.type === 'json_patch') {
-    // Apply JSON Patch to diff state
-    applyPatch(diffState, msg.patch);
-  } else if (msg.type === 'ready') {
-    console.log('Initial diff loaded');
-  }
-};
-```
-
----
-
-### `GET /api/sessions?workspace_id={id}` — List sessions
-
-```bash
-curl "http://localhost:3000/api/sessions?workspace_id=550e8400-..."
-
-# Response
-{
-  "success": true,
-  "data": [
-    {
-      "id": "sess-uuid-...",
-      "workspace_id": "550e8400-...",
-      "name": "Initial implementation",
-      "executor": "CLAUDE_CODE",
-      "created_at": "2024-12-01T10:00:00Z"
-    }
-  ]
-}
-```
-
----
-
-### `POST /api/sessions` — Create a session
-
-```bash
-curl -X POST http://localhost:3000/api/sessions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "workspace_id": "550e8400-...",
-    "executor": "CLAUDE_CODE",
-    "name": "Attempt 2"
-  }'
-```
-
----
-
-### `POST /api/sessions/{id}/follow-up` — Run a coding agent turn in a session
-
-This is the primary way to send a prompt to an AI coding agent. It creates and starts an `ExecutionProcess`.
-
-```bash
-curl -X POST http://localhost:3000/api/sessions/sess-uuid-.../follow-up \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "Now add unit tests for the authentication module.",
-    "executor_config": {
-      "executor": "CLAUDE_CODE",
-      "variant": null,
-      "model_id": null,
-      "permission_policy": "auto_edit"
-    },
-    "retry_process_id": null,
-    "force_when_dirty": false,
-    "perform_git_reset": false
-  }'
-
-# Response
-{
-  "success": true,
-  "data": {
-    "id": "exec-uuid-...",
-    "session_id": "sess-uuid-...",
-    "status": "running",
-    "run_reason": "coding_agent",
-    "created_at": "2024-12-01T10:10:00Z"
-  }
-}
-```
-
----
-
-### `POST /api/sessions/{id}/reset` — Reset session to a prior process state
-
-```bash
-curl -X POST http://localhost:3000/api/sessions/sess-uuid-.../reset \
-  -H "Content-Type: application/json" \
-  -d '{
-    "process_id": "exec-uuid-...",
-    "force_when_dirty": false,
-    "perform_git_reset": true
-  }'
-```
-
----
-
-### `POST /api/sessions/{id}/setup` — Run the workspace setup script
-
-```bash
-curl -X POST http://localhost:3000/api/sessions/sess-uuid-.../setup
-
-# Returns an ExecutionProcess for the setup script run
-```
-
----
-
-### `GET /api/execution-processes/{id}` — Get execution process status
-
-```bash
-curl http://localhost:3000/api/execution-processes/exec-uuid-...
-
-{
-  "success": true,
-  "data": {
-    "id": "exec-uuid-...",
-    "session_id": "sess-uuid-...",
-    "status": "completed",   // "running" | "completed" | "failed" | "killed"
-    "run_reason": "coding_agent",
-    "executor_profile": { "executor": "CLAUDE_CODE" },
-    "created_at": "...",
-    "updated_at": "..."
-  }
-}
-```
-
----
-
-### `GET /api/events` — Server-Sent Events stream
-
-Stream all live workspace, session, and execution-process events.
-
-```javascript
-const es = new EventSource('http://localhost:3000/api/events');
-es.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  console.log(data); // { type: "workspace_updated", payload: {...} }
-};
-```
-
----
-
-### `GET /api/terminal/ws?workspace_id={id}&cols=220&rows=50` — Interactive terminal (WebSocket)
-
-Binary-safe PTY session multiplexed as base64-encoded JSON messages.
-
-```javascript
-const ws = new WebSocket(
-  'ws://localhost:3000/api/terminal/ws?workspace_id=550e8400-...&cols=220&rows=50'
-);
-
-// Send input
-ws.send(JSON.stringify({ type: 'input', data: btoa('ls -la\n') }));
-
-// Resize
-ws.send(JSON.stringify({ type: 'resize', cols: 250, rows: 60 }));
-
-// Receive output
-ws.onmessage = (event) => {
-  const msg = JSON.parse(event.data);
-  if (msg.type === 'output') {
-    process.stdout.write(atob(msg.data));
-  } else if (msg.type === 'error') {
-    console.error(msg.message);
-  }
-};
-```
-
----
-
-### `GET /api/remote/issues?project_id={id}` — List remote issues
-
-```bash
-curl "http://localhost:3000/api/remote/issues?project_id=proj-uuid-..."
-
-{
-  "success": true,
-  "data": {
-    "issues": [
-      {
-        "id": "issue-uuid-...",
-        "title": "Fix authentication bug",
-        "simple_id": "PROJ-42",
-        "status_id": "status-uuid-...",
-        "priority": 2,
-        "project_id": "proj-uuid-...",
-        "created_at": "2024-12-01T09:00:00Z"
-      }
-    ],
-    "total_count": 1,
-    "limit": 50,
-    "offset": 0
-  }
-}
-```
-
----
-
-### `POST /api/remote/issues` — Create a remote issue
-
-```bash
-curl -X POST http://localhost:3000/api/remote/issues \
-  -H "Content-Type: application/json" \
-  -d '{
-    "project_id": "proj-uuid-...",
-    "status_id": "status-uuid-...",
-    "title": "Add dark mode support",
-    "description": "Users have requested a dark mode option.",
-    "priority": 2,
-    "sort_order": 0.0,
-    "extension_metadata": {}
-  }'
-```
-
----
-
-### `PATCH /api/remote/issues/{id}` — Update a remote issue
-
-```bash
-curl -X PATCH http://localhost:3000/api/remote/issues/issue-uuid-... \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "Add dark mode support (v2)",
-    "status_id": "done-status-uuid-..."
-  }'
-```
-
----
-
-### `POST /api/remote/issues/search` — Search issues
-
-```bash
-curl -X POST http://localhost:3000/api/remote/issues/search \
-  -H "Content-Type: application/json" \
-  -d '{
-    "project_id": "proj-uuid-...",
-    "search": "auth",
-    "priority": 1,
-    "limit": 20,
-    "offset": 0,
-    "sort_field": "updated_at",
-    "sort_direction": "desc"
-  }'
-```
-
----
-
-## MCP Server
-
-Vibe Kanban ships a Model Context Protocol (MCP) server (`vibe-kanban-mcp`) that exposes tools to AI coding agents, enabling fully automated or orchestrated workflows.
-
-### Launch modes
-
-| Mode | Command | Tools available |
-|---|---|---|
-| `global` | `npx vibe-kanban mcp --mode global` | All tools: workspaces, sessions, issues, repos, organizations, tags, relationships |
-| `orchestrator` | `npx vibe-kanban mcp --mode orchestrator` | Scoped subset: `get_context`, `create_session`, `list_sessions`, `update_session`, `run_session_prompt`, `get_execution`, `update_workspace` |
-
-### Claude Desktop integration
-
-Add to `~/.claude/claude_desktop_config.json`:
+Add this configuration to `~/.claude/claude_desktop_config.json` to integrate Vibe Kanban as an MCP server.
 
 ```json
 {
@@ -625,184 +1202,142 @@ Add to `~/.claude/claude_desktop_config.json`:
 }
 ```
 
-### MCP Tool: `start_workspace`
+--------------------------------
 
-Create a new workspace and immediately start a coding agent session.
+### Get a workspace
 
-```json
-{
-  "tool": "start_workspace",
-  "arguments": {
-    "name": "Fix login button",
-    "prompt": "The login button on /dashboard is broken. Investigate and fix it.",
-    "executor": "CLAUDE_CODE",
-    "repositories": [
-      { "repo_id": "repo-uuid-...", "branch": "main" }
-    ],
-    "issue_id": "issue-uuid-..."
-  }
-}
+Source: https://context7.com/bloopai/vibe-kanban/llms.txt
 
-// Response
-{ "workspace_id": "550e8400-..." }
+Retrieves the details of a specific workspace by its ID.
+
+```APIDOC
+## GET /api/workspaces/{id} — Get a workspace
+
+### Description
+Retrieves the details of a specific workspace identified by its unique ID.
+
+### Method
+GET
+
+### Endpoint
+/api/workspaces/{id}
+
+### Parameters
+#### Path Parameters
+- **id** (string) - Required - The ID of the workspace to retrieve.
 ```
 
-### MCP Tool: `run_session_prompt`
+--------------------------------
 
-Send a prompt to an existing session's coding agent and return the execution process immediately (non-blocking).
+### Configure Vibe Kanban Environment Variables
 
-```json
-{
-  "tool": "run_session_prompt",
-  "arguments": {
-    "session_id": "sess-uuid-...",
-    "prompt": "Add unit tests for the auth module."
-  }
-}
+Source: https://github.com/bloopai/vibe-kanban/blob/main/docs/self-hosting/deploy-docker.mdx
 
-// Response
-{
-  "session_id": "sess-uuid-...",
-  "execution_id": "exec-uuid-...",
-  "execution": { "id": "exec-uuid-...", "status": "running", ... }
-}
+Sets up the .env.remote file with required secrets, domain, authentication details, and optional configurations for email and attachments.
+
+```env
+# Required secrets
+VIBEKANBAN_REMOTE_JWT_SECRET=<your_generated_jwt_secret>
+ELECTRIC_ROLE_PASSWORD=<secure_password_for_electric>
+DB_PASSWORD=<secure_database_password>
+
+# Your domain
+DOMAIN=your-domain.com
+
+# Relay API base URL (required if you enable relay/tunnel)
+VITE_RELAY_API_BASE_URL=https://relay.your-domain.com
+
+# Authentication — configure at least one provider, or set bootstrap local auth credentials.
+GITHUB_OAUTH_CLIENT_ID=your_github_client_id
+GITHUB_OAUTH_CLIENT_SECRET=your_github_client_secret
+GOOGLE_OAUTH_CLIENT_ID=
+GOOGLE_OAUTH_CLIENT_SECRET=
+SELF_HOST_LOCAL_AUTH_EMAIL=
+SELF_HOST_LOCAL_AUTH_PASSWORD=
+
+# Email (optional — leave empty to disable invitation emails)
+LOOPS_EMAIL_API_KEY=
+
+# Loops transactional email template IDs (optional — defaults are the upstream templates).
+# Override these with your own Loops account template IDs if using a custom Loops account.
+LOOPS_INVITE_TEMPLATE_ID=cmhvy2wgs3s13z70i1pxakij9
+LOOPS_REVIEW_READY_TEMPLATE_ID=cmj47k5ge16990iylued9by17
+LOOPS_REVIEW_FAILED_TEMPLATE_ID=cmj49ougk1c8s0iznavijdqpo
+
+# Attachments (optional — only set when you want issue attachments enabled)
+AZURE_STORAGE_ACCOUNT_NAME=
+AZURE_STORAGE_ACCOUNT_KEY=
+AZURE_STORAGE_CONTAINER_NAME=issue-attachments
+AZURE_STORAGE_ENDPOINT_URL=
+AZURE_STORAGE_PUBLIC_ENDPOINT_URL=
 ```
 
-### MCP Tool: `get_execution`
+--------------------------------
 
-Poll execution status to know when the agent has finished.
+### Get Execution Process Status
 
-```json
-{
-  "tool": "get_execution",
-  "arguments": {
-    "execution_id": "exec-uuid-..."
-  }
-}
+Source: https://context7.com/bloopai/vibe-kanban/llms.txt
 
-// Response
-{
-  "execution_id": "exec-uuid-...",
-  "session_id": "sess-uuid-...",
-  "status": "completed",
-  "is_finished": true,
-  "execution": { ... }
-}
+Retrieves the status of a specific execution process.
+
+```APIDOC
+## GET /api/execution-processes/{id} — Get execution process status
+
+### Description
+Retrieves the status of a specific execution process.
+
+### Method
+GET
+
+### Endpoint
+/api/execution-processes/{id}
+
+### Parameters
+#### Path Parameters
+- **id** (string) - Required - The ID of the execution process.
+
+### Response
+#### Success Response (200)
+- **success** (boolean) - Indicates if the operation was successful.
+- **data** (object) - Contains the execution process details.
+  - **id** (string) - The ID of the execution process.
+  - **session_id** (string) - The ID of the session.
+  - **status** (string) - The status of the process (e.g., "completed", "running", "failed", "killed").
+  - **run_reason** (string) - The reason for the run.
+  - **executor_profile** (object) - Profile of the executor.
+    - **executor** (string) - The executor used.
+  - **created_at** (string) - The timestamp when the process was created.
+  - **updated_at** (string) - The timestamp when the process was last updated.
 ```
 
-### MCP Tool: `list_workspaces`
+--------------------------------
 
-```json
-{
-  "tool": "list_workspaces",
-  "arguments": {
-    "archived": false,
-    "pinned": false,
-    "name_search": "auth",
-    "limit": 10,
-    "offset": 0
-  }
-}
+### Example Component Styling
 
-// Response
-{
-  "workspaces": [
-    {
-      "id": "550e8400-...",
-      "branch": "vibe/fix-auth",
-      "name": "Fix auth bug",
-      "archived": false,
-      "pinned": false,
-      "created_at": "2024-12-01T10:00:00Z",
-      "updated_at": "2024-12-01T10:05:00Z"
-    }
-  ],
-  "total_count": 1,
-  "returned_count": 1,
-  "limit": 10,
-  "offset": 0
-}
+Source: https://github.com/bloopai/vibe-kanban/blob/main/packages/local-web/AGENTS.md
+
+Illustrates how to apply the new design system's utility classes for input fields, buttons, and containers. Ensure all styles are scoped within the `.new-design` class.
+
+```tsx
+className="px-base bg-secondary rounded border text-base text-normal placeholder:text-low focus:outline-none focus:ring-1 focus:ring-brand"
 ```
 
-### MCP Tool: `create_issue` / `list_issues` / `update_issue` / `delete_issue`
-
-Issue management tools for the connected remote project tracker.
-
-```json
-// Create
-{
-  "tool": "create_issue",
-  "arguments": {
-    "title": "Implement dark mode",
-    "description": "Add a dark mode toggle to the settings page. See @design-guidelines for specs.",
-    "priority": "high"
-  }
-}
-
-// List with filters
-{
-  "tool": "list_issues",
-  "arguments": {
-    "status": "In Progress",
-    "priority": "urgent",
-    "sort_field": "updated_at",
-    "sort_direction": "desc",
-    "limit": 25
-  }
-}
-
-// Update
-{
-  "tool": "update_issue",
-  "arguments": {
-    "issue_id": "issue-uuid-...",
-    "status": "Done",
-    "title": "Implement dark mode (complete)"
-  }
-}
+```tsx
+className="flex items-center justify-center bg-secondary rounded border text-low hover:text-normal"
 ```
 
-### MCP Tool: `get_context`
-
-Retrieve the current workspace context (available only when the MCP server is running inside a workspace directory).
-
-```json
-{ "tool": "get_context", "arguments": {} }
-
-// Response
-{
-  "workspace_id": "550e8400-...",
-  "workspace_branch": "vibe/fix-auth",
-  "workspace_repos": [
-    { "repo_id": "repo-uuid-...", "repo_name": "my-app", "target_branch": "main" }
-  ],
-  "project_id": "proj-uuid-...",
-  "organization_id": "org-uuid-...",
-  "issue_id": "issue-uuid-..."
-}
+```tsx
+className="w-64 bg-secondary shrink-0 p-base"
 ```
 
----
+--------------------------------
 
-## Configuration Reference
+### Get a workspace by ID
 
-The application configuration is stored in `~/.vibe-kanban/config.json`. Key fields:
+Source: https://context7.com/bloopai/vibe-kanban/llms.txt
 
-| Field | Type | Description |
-|---|---|---|
-| `git_branch_prefix` | `string` | Prefix for all workspace branches (e.g. `"vibe/"`) |
-| `relay_enabled` | `bool` | Enable the remote relay for cross-machine access |
-| `host_nickname` | `string?` | Friendly name for this host shown in the relay |
-| `editor` | `string` | Preferred editor: `"CURSOR"`, `"VSCODE"`, `"WINDSURF"`, etc. |
-| `executor_profile` | `string` | Default AI agent: `"CLAUDE_CODE"`, `"CODEX"`, `"GEMINI"`, `"AMP"`, etc. |
-| `analytics_enabled` | `bool` | Opt-in usage analytics |
-| `disclaimer_acknowledged` | `bool` | Onboarding disclaimer acceptance |
-| `onboarding_acknowledged` | `bool` | Onboarding completion flag |
+Retrieve details of a specific workspace using its unique identifier.
 
----
-
-## Summary
-
-Vibe Kanban's primary use case is parallel AI-agent task management: a developer breaks down a feature or bug fix into issues, creates one workspace per issue (each on its own git branch), and fires off an initial prompt to a coding agent. The system tracks agent progress in real time through the SSE `/api/events` stream, surfaces git diff output over WebSocket, and allows follow-up prompts or retries within the same session. When the agent finishes, the developer can review the diff, push the branch, and open or merge a pull request — all from within the UI.
-
-The MCP server unlocks a second integration pattern: using Vibe Kanban as an orchestration layer for meta-agents. An outer AI (e.g., Claude in orchestrator mode) connects via MCP, reads project context with `get_context`, creates child sessions with `create_session`, delegates coding tasks with `run_session_prompt`, polls completion with `get_execution`, and updates remote issues with `update_issue`. This creates fully autonomous pipelines where a planning agent dispatches multiple coding agents in parallel and assembles results without human intervention. The separation of `global` and `orchestrator` MCP modes ensures that workspace-scoped agents cannot accidentally modify unrelated workspaces or administrative settings.
+```bash
+curl http://localhost:3000/api/workspaces/550e8400-...
+```
