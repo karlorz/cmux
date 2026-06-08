@@ -193,13 +193,13 @@ When working on PVE-LXC sandbox features, use `apps/edge-router-pvelxc/`. Deploy
 cd apps/edge-router-pvelxc && bun run deploy
 ```
 
-## External Knowledge Sharing (Obsidian + GitHub)
-This repository requires structured external knowledge sharing for major technical direction updates.
+## External Knowledge Sharing (SkillWiki + GitHub)
+This legacy file must not define a separate knowledge target. Use the active repository memory in `CLAUDE.md` / `AGENTS.md`.
 
 ### Default Target
-- Local-first vault path: `~/Documents/obsidian_vault`.
-- Trends project notes path: `5️⃣-Projects/GitHub/trends/`.
-- If local vault is unavailable, use `obsidian-gh-knowledge` configured default repository (config-driven fallback).
+- Resolve the current SkillWiki vault with `skillwiki path`; do not hard-code a vault path in this legacy memory file.
+- cmux project workspace: `<resolved-vault>/projects/cmux/`.
+- If `skillwiki path` cannot resolve a current vault, run `skillwiki doctor` and report the failure instead of falling back to legacy Obsidian vaults or repositories.
 
 ### When To Update Shared Knowledge
 Update notes when any of the following changes land:
