@@ -55,10 +55,10 @@ interface ModelListResponse {
 }
 
 interface JsonRpcResponse {
-  jsonrpc: string;
-  id: number;
+  id?: number;
   result?: unknown;
   error?: { code: number; message: string };
+  method?: string;
 }
 
 const DRY_RUN = process.argv.includes("--dry-run");
@@ -74,98 +74,205 @@ function verbose(msg: string) {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isJsonRpcError(
+  value: unknown,
+): value is { code: number; message: string } {
+  return (
+    isRecord(value) &&
+    typeof value.code === "number" &&
+    typeof value.message === "string"
+  );
+}
+
+function isJsonRpcResponse(value: unknown): value is JsonRpcResponse {
+  return (
+    isRecord(value) &&
+    (typeof value.id === "number" || value.id === undefined) &&
+    (value.error === undefined || isJsonRpcError(value.error)) &&
+    (typeof value.method === "string" || value.method === undefined)
+  );
+}
+
+function isReasoningEffortOption(
+  value: unknown,
+): value is ReasoningEffortOption {
+  return (
+    isRecord(value) &&
+    typeof value.reasoningEffort === "string" &&
+    typeof value.description === "string"
+  );
+}
+
+function isCodexModel(value: unknown): value is CodexModel {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.model === "string" &&
+    typeof value.displayName === "string" &&
+    typeof value.description === "string" &&
+    typeof value.hidden === "boolean" &&
+    typeof value.isDefault === "boolean" &&
+    typeof value.defaultReasoningEffort === "string" &&
+    Array.isArray(value.supportedReasoningEfforts) &&
+    value.supportedReasoningEfforts.every(isReasoningEffortOption) &&
+    (value.inputModalities === undefined ||
+      (Array.isArray(value.inputModalities) &&
+        value.inputModalities.every(
+          (modality) => typeof modality === "string",
+        ))) &&
+    (value.upgrade === undefined ||
+      value.upgrade === null ||
+      typeof value.upgrade === "string")
+  );
+}
+
+function isModelListResponse(value: unknown): value is ModelListResponse {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.data) &&
+    value.data.every(isCodexModel) &&
+    (value.nextCursor === undefined ||
+      value.nextCursor === null ||
+      typeof value.nextCursor === "string")
+  );
+}
+
 async function fetchModelsFromAppServer(): Promise<CodexModel[]> {
   return new Promise((resolve, reject) => {
     const proc = spawn("codex", ["app-server"], {
       stdio: ["pipe", "pipe", "pipe"],
     });
 
-    let stdout = "";
+    let stdoutBuffer = "";
     let stderr = "";
     let resolved = false;
 
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        finishWithError(new Error("Timeout waiting for codex app-server"));
+      }
+    }, 15000);
+
+    function finishWithError(error: Error) {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timeout);
+      proc.kill("SIGTERM");
+      reject(error);
+    }
+
+    function finishWithModels(models: CodexModel[]) {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timeout);
+      proc.kill("SIGTERM");
+      resolve(models);
+    }
+
+    function writeMessage(message: unknown) {
+      if (!proc.stdin.writable) {
+        finishWithError(
+          new Error("codex app-server stdin closed unexpectedly"),
+        );
+        return;
+      }
+      proc.stdin.write(JSON.stringify(message) + "\n");
+    }
+
+    function handleResponse(resp: JsonRpcResponse) {
+      if (resp.error) {
+        finishWithError(
+          new Error(`codex app-server error: ${resp.error.message}`),
+        );
+        return;
+      }
+
+      if (resp.id === 1) {
+        writeMessage({ method: "initialized" });
+        writeMessage({
+          id: 2,
+          method: "model/list",
+          params: { includeHidden: true },
+        });
+        return;
+      }
+
+      if (resp.id === 2) {
+        if (!isModelListResponse(resp.result)) {
+          finishWithError(
+            new Error(
+              "codex app-server returned an invalid model/list response",
+            ),
+          );
+          return;
+        }
+        finishWithModels(resp.result.data);
+      }
+    }
+
+    function handleStdoutLine(line: string) {
+      if (!line.trim()) return;
+      try {
+        const parsed = JSON.parse(line) as unknown;
+        if (!isJsonRpcResponse(parsed)) {
+          verbose(
+            `Ignoring unrecognized app-server line: ${line.substring(0, 100)}`,
+          );
+          return;
+        }
+        handleResponse(parsed);
+      } catch (err) {
+        verbose(
+          `Ignoring non-JSON app-server line: ${line.substring(0, 100)} (${String(err)})`,
+        );
+      }
+    }
+
     proc.stdout.on("data", (data: Buffer) => {
-      stdout += data.toString();
-      verbose(`stdout chunk: ${data.toString().substring(0, 100)}...`);
+      const chunk = data.toString();
+      stdoutBuffer += chunk;
+      verbose(`stdout chunk: ${chunk.substring(0, 100)}...`);
+
+      const lines = stdoutBuffer.split("\n");
+      stdoutBuffer = lines.pop() ?? "";
+      for (const line of lines) {
+        handleStdoutLine(line);
+      }
     });
 
     proc.stderr.on("data", (data: Buffer) => {
       stderr += data.toString();
     });
 
-    // Send JSON-RPC messages
-    const initializeMsg = JSON.stringify({
-      jsonrpc: "2.0",
+    const initializeMsg = {
       id: 1,
       method: "initialize",
       params: {
         clientInfo: { name: "cmux-sync", version: "1.0" },
+        capabilities: null,
       },
-    });
-
-    const modelListMsg = JSON.stringify({
-      jsonrpc: "2.0",
-      id: 2,
-      method: "model/list",
-      params: { includeHidden: true },
-    });
-
-    // Write initialize, wait, then model/list
-    proc.stdin.write(initializeMsg + "\n");
-
-    setTimeout(() => {
-      proc.stdin.write(modelListMsg + "\n");
-
-      // Give it time to respond, then kill
-      setTimeout(() => {
-        if (!resolved) {
-          proc.kill("SIGTERM");
-        }
-      }, 3000);
-    }, 1000);
+    };
 
     proc.on("close", () => {
       if (resolved) return;
-      resolved = true;
-
-      // Parse JSON-RPC responses from stdout
-      const lines = stdout.split("\n").filter((l) => l.trim());
-      verbose(`Got ${lines.length} response lines`);
-
-      for (const line of lines) {
-        try {
-          const resp = JSON.parse(line) as JsonRpcResponse;
-          if (resp.id === 2 && resp.result) {
-            const modelList = resp.result as ModelListResponse;
-            resolve(modelList.data);
-            return;
-          }
-          if (resp.error) {
-            verbose(`JSON-RPC error: ${resp.error.message}`);
-          }
-        } catch {
-          // Not JSON, skip
-        }
-      }
-
-      reject(new Error(`Failed to get model list. stderr: ${stderr}`));
+      handleStdoutLine(stdoutBuffer);
+      if (resolved) return;
+      finishWithError(new Error(`Failed to get model list. stderr: ${stderr}`));
     });
 
     proc.on("error", (err) => {
-      if (!resolved) {
-        resolved = true;
-        reject(err);
-      }
+      finishWithError(err);
     });
 
-    // Timeout safety
-    setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        proc.kill("SIGKILL");
-        reject(new Error("Timeout waiting for codex app-server"));
-      }
-    }, 15000);
+    proc.stdin.on("error", (err) => {
+      finishWithError(err);
+    });
+
+    writeMessage(initializeMsg);
   });
 }
 
@@ -181,7 +288,9 @@ function generateCatalogFile(models: CodexModel[]): string {
     if (m.isDefault) tags.push("default");
     if (m.hidden) tags.push("hidden");
     if (m.upgrade) tags.push("upgradeable");
-    if (m.supportedReasoningEfforts.some((e) => e.reasoningEffort === "xhigh")) {
+    if (
+      m.supportedReasoningEfforts.some((e) => e.reasoningEffort === "xhigh")
+    ) {
       tags.push("reasoning");
     }
 
@@ -275,14 +384,16 @@ async function main() {
 
     if (VERBOSE) {
       for (const m of models) {
-        console.log(`  - ${m.model} (${m.displayName})${m.hidden ? " [hidden]" : ""}`);
+        console.log(
+          `  - ${m.model} (${m.displayName})${m.hidden ? " [hidden]" : ""}`,
+        );
       }
     }
 
     const catalogCode = generateCatalogFile(models);
     const outputPath = path.join(
       import.meta.dirname,
-      "../packages/shared/src/providers/openai/catalog.generated.ts"
+      "../packages/shared/src/providers/openai/catalog.generated.ts",
     );
 
     if (DRY_RUN) {
