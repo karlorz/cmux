@@ -265,11 +265,29 @@ bash -lc 'source /etc/profile.d/nvm.sh && nvm --version'
 EOF
 
 # Install Bun
-RUN curl -fsSL https://bun.sh/install | bash && \
-  mv /root/.bun/bin/bun /usr/local/bin/ && \
-  ln -s /usr/local/bin/bun /usr/local/bin/bunx && \
-  bun --version && \
-  bunx --version
+RUN bash <<'EOF'
+set -euxo pipefail
+for attempt in 1 2 3; do
+  if curl -fSL --retry 6 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 600 \
+      -o /tmp/bun-install.sh https://bun.sh/install \
+    && bash /tmp/bun-install.sh; then
+    break
+  fi
+
+  if [ "$attempt" -eq 3 ]; then
+    echo "bun install failed after ${attempt} attempts" >&2
+    exit 1
+  fi
+
+  echo "bun install failed on attempt ${attempt}, retrying in 15 seconds..." >&2
+  sleep 15
+done
+rm -f /tmp/bun-install.sh
+mv /root/.bun/bin/bun /usr/local/bin/
+ln -sf /usr/local/bin/bun /usr/local/bin/bunx
+bun --version
+bunx --version
+EOF
 
 # Install IDE (coder, openvscode, or manaflow based on IDE_PROVIDER build arg)
 RUN --mount=type=secret,id=github_token,required=false <<'EOF'
@@ -789,7 +807,9 @@ if [ -z "${UV_VERSION_RAW}" ]; then
   UV_VERSION_RAW="$(github-curl -fsSL https://api.github.com/repos/astral-sh/uv/releases/latest | jq -r '.tag_name')"
 fi
 UV_VERSION="$(printf '%s' "${UV_VERSION_RAW}" | tr -d ' \t\r\n')"
-github-curl -fsSL "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-${UV_ASSET_SUFFIX}.tar.gz" -o /tmp/uv.tar.gz
+github-curl -fSL --retry 6 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 600 \
+  "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-${UV_ASSET_SUFFIX}.tar.gz" \
+  -o /tmp/uv.tar.gz
 tar -xzf /tmp/uv.tar.gz -C /tmp
 install -m 0755 /tmp/uv-${UV_ASSET_SUFFIX}/uv /usr/local/bin/uv
 install -m 0755 /tmp/uv-${UV_ASSET_SUFFIX}/uvx /usr/local/bin/uvx
@@ -871,11 +891,29 @@ bash -lc 'source /etc/profile.d/nvm.sh && nvm --version'
 EOF
 
 # Install Bun natively (since runtime is x86_64, we can't copy from ARM64 builder)
-RUN curl -fsSL https://bun.sh/install | bash && \
-  mv /root/.bun/bin/bun /usr/local/bin/ && \
-  ln -s /usr/local/bin/bun /usr/local/bin/bunx && \
-  bun --version && \
-  bunx --version
+RUN bash <<'EOF'
+set -euxo pipefail
+for attempt in 1 2 3; do
+  if curl -fSL --retry 6 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 600 \
+      -o /tmp/bun-install.sh https://bun.sh/install \
+    && bash /tmp/bun-install.sh; then
+    break
+  fi
+
+  if [ "$attempt" -eq 3 ]; then
+    echo "bun install failed after ${attempt} attempts" >&2
+    exit 1
+  fi
+
+  echo "bun install failed on attempt ${attempt}, retrying in 15 seconds..." >&2
+  sleep 15
+done
+rm -f /tmp/bun-install.sh
+mv /root/.bun/bin/bun /usr/local/bin/
+ln -sf /usr/local/bin/bun /usr/local/bin/bunx
+bun --version
+bunx --version
+EOF
 
 ENV PATH="/usr/local/bin:$PATH"
 ENV BUN_INSTALL_CACHE_DIR=/cmux/node_modules/.bun
