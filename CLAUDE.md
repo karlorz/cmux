@@ -325,9 +325,11 @@ Message types: `handoff`, `request`, `status`
 
 ## External Knowledge Sharing
 
-- Update shared Obsidian/GitHub notes for major architecture, governance, workflow, API, or workspace-isolation changes.
-- Use the local-first vault at `~/Documents/obsidian_vault`.
-- If the local vault is unavailable, use the `obsidian-gh-knowledge` fallback configured in the environment.
+- Update shared SkillWiki/GitHub notes for major architecture, governance, workflow, API, workspace-isolation, runtime, or sandbox-provider changes.
+- Resolve the current SkillWiki vault with `skillwiki path`; do not hard-code or infer the vault path in repository memory.
+- Do not use legacy Obsidian vault paths as the active cmux knowledge base.
+- Write cmux project work under `<resolved-vault>/projects/cmux/` and typed cross-project knowledge under the appropriate SkillWiki Layer 2 directory (`concepts/`, `queries/`, `comparisons/`, or `entities/`) with `provenance_projects: ["[[cmux]]"]` when relevant.
+- If `skillwiki path` cannot resolve a current vault, run `skillwiki doctor` and report the failure instead of falling back to a legacy vault or repository.
 - Include the date, a concise decision summary, affected repo-relative paths, and related PR or commit IDs.
 - Never include secrets or credentials in shared notes, and keep volatile TODOs out of long-lived knowledge documents.
 - Do not turn this file into a phase ledger, migration queue, mockup dump, or large architecture diagram.
