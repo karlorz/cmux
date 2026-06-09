@@ -660,14 +660,25 @@ pnpm release --dry
 
 --------------------------------
 
-### Build for production
+### Programmatic Vite Build Example
 
-Source: https://github.com/vitejs/vite/blob/main/packages/create-vite/template-qwik/README.md
+Source: https://github.com/vitejs/vite/blob/main/docs/guide/api-javascript.md
 
-Command to build the application for production.
+Illustrates how to use the `build` function with an `InlineConfig` object to configure the build process, specifying root and base paths.
 
-```bash
-npm run build
+```javascript
+import path from 'node:path'
+import { build } from 'vite'
+
+await build({
+  root: path.resolve(import.meta.dirname, './project'),
+  base: '/foo/',
+  build: {
+    rolldownOptions: {
+      // ...
+    },
+  },
+})
 ```
 
 --------------------------------
@@ -715,37 +726,14 @@ createServer()
 
 --------------------------------
 
-### Programmatic Vite Build Example
+### Build for production
 
-Source: https://github.com/vitejs/vite/blob/main/docs/guide/api-javascript.md
+Source: https://github.com/vitejs/vite/blob/main/packages/create-vite/template-qwik/README.md
 
-Illustrates how to use the `build` function with an `InlineConfig` object to configure the build process, specifying root and base paths.
+Command to build the application for production.
 
-```javascript
-import path from 'node:path'
-import { build } from 'vite'
-
-await build({
-  root: path.resolve(import.meta.dirname, './project'),
-  base: '/foo/',
-  build: {
-    rolldownOptions: {
-      // ...
-    },
-  },
-})
-```
-
---------------------------------
-
-### Install Terser
-
-Source: https://github.com/vitejs/vite/blob/main/packages/plugin-legacy/README.md
-
-Command to install Terser, which is required by plugin-legacy for minification.
-
-```sh
-npm add -D terser
+```bash
+npm run build
 ```
 
 --------------------------------
@@ -758,6 +746,18 @@ Command to build the application.
 
 ```bash
 $ npm run build
+```
+
+--------------------------------
+
+### Install Terser
+
+Source: https://github.com/vitejs/vite/blob/main/packages/plugin-legacy/README.md
+
+Command to install Terser, which is required by plugin-legacy for minification.
+
+```sh
+npm add -D terser
 ```
 
 --------------------------------
@@ -784,18 +784,6 @@ Example of an entry file (`lib/main.js`) exporting components for library users.
 import Foo from './Foo.vue'
 import Bar from './Bar.vue'
 export { Foo, Bar }
-```
-
---------------------------------
-
-### Install Cloudflare Vite Plugin
-
-Source: https://github.com/vitejs/vite/blob/main/docs/guide/static-deploy.md
-
-Command to install the Cloudflare Vite plugin as a development dependency.
-
-```bash
-npm install --save-dev @cloudflare/vite-plugin
 ```
 
 --------------------------------
@@ -830,6 +818,30 @@ export default defineConfig({
 
 --------------------------------
 
+### Install Cloudflare Vite Plugin
+
+Source: https://github.com/vitejs/vite/blob/main/docs/guide/static-deploy.md
+
+Command to install the Cloudflare Vite plugin as a development dependency.
+
+```bash
+npm install --save-dev @cloudflare/vite-plugin
+```
+
+--------------------------------
+
+### Install esbuild for CSS Minification
+
+Source: https://github.com/vitejs/vite/blob/main/docs/config/build-options.md
+
+Install esbuild as a development dependency to use it as the CSS minifier when `build.cssMinify` is set to `'esbuild'`.
+
+```sh
+npm add -D esbuild
+```
+
+--------------------------------
+
 ### Accessing Environments from the Server
 
 Source: https://github.com/vitejs/vite/blob/main/docs/guide/api-environment-instances.md
@@ -847,18 +859,6 @@ console.log(server.environments.ssr.moduleGraph)
 
 --------------------------------
 
-### Install esbuild for CSS Minification
-
-Source: https://github.com/vitejs/vite/blob/main/docs/config/build-options.md
-
-Install esbuild as a development dependency to use it as the CSS minifier when `build.cssMinify` is set to `'esbuild'`.
-
-```sh
-npm add -D esbuild
-```
-
---------------------------------
-
 ### Example .env file
 
 Source: https://github.com/vitejs/vite/blob/main/docs/guide/env-and-mode.md
@@ -868,60 +868,6 @@ An example `.env` file showing a `VITE_` prefixed variable and a non-prefixed va
 ```env
 VITE_SOME_KEY=123
 DB_PASSWORD=foobar
-```
-
---------------------------------
-
-### Creating and using FetchableDevEnvironment
-
-Source: https://github.com/vitejs/vite/blob/main/docs/guide/api-environment-frameworks.md
-
-This example demonstrates how to create a `FetchableDevEnvironment` using `createFetchableDevEnvironment` and implement its `handleRequest` method. It also shows how to dispatch a fetch request using `dispatchFetch` on the created environment.
-
-```typescript
-import {
-  createServer,
-  createFetchableDevEnvironment,
-  isFetchableDevEnvironment,
-} from 'vite'
-
-const server = await createServer({
-  server: { middlewareMode: true },
-  appType: 'custom',
-  environments: {
-    custom: {
-      dev: {
-        createEnvironment(name, config) {
-          return createFetchableDevEnvironment(name, config, {
-            handleRequest(request: Request): Promise<Response> | Response {
-              // handle Request and return a Response
-            },
-          })
-        },
-      },
-    },
-  },
-})
-
-// Any consumer of the environment API can now call `dispatchFetch`
-if (isFetchableDevEnvironment(server.environments.custom)) {
-  const response: Response = await server.environments.custom.dispatchFetch(
-    new Request('http://example.com/request-to-handle'),
-  )
-}
-```
-
---------------------------------
-
-### Install Minifiers for Vite Build
-
-Source: https://github.com/vitejs/vite/blob/main/docs/config/build-options.md
-
-Install esbuild or Terser as development dependencies if you intend to use them as minifiers for your Vite build process.
-
-```sh
-npm add -D esbuild
-npm add -D terser
 ```
 
 --------------------------------
@@ -942,6 +888,19 @@ Example of the specific HTML tags to include for the `views/foo.js` entry point 
 
 --------------------------------
 
+### Install Minifiers for Vite Build
+
+Source: https://github.com/vitejs/vite/blob/main/docs/config/build-options.md
+
+Install esbuild or Terser as development dependencies if you intend to use them as minifiers for your Vite build process.
+
+```sh
+npm add -D esbuild
+npm add -D terser
+```
+
+--------------------------------
+
 ### Vite build command output
 
 Source: https://github.com/vitejs/vite/blob/main/docs/guide/build.md
@@ -953,21 +912,6 @@ $ vite build
 building for production...
 dist/my-lib.js      0.08 kB / gzip: 0.07 kB
 dist/my-lib.umd.cjs 0.30 kB / gzip: 0.16 kB
-```
-
---------------------------------
-
-### External Svelte Store Example
-
-Source: https://github.com/vitejs/vite/blob/main/packages/create-vite/template-svelte/README.md
-
-An example of a simple external Svelte store that can be used to retain state across HMR updates.
-
-```js
-// store.js
-// An extremely simple external store
-import { writable } from 'svelte/store'
-export default writable(0)
 ```
 
 --------------------------------
@@ -994,6 +938,21 @@ This HTML example demonstrates how Vite processes assets referenced by `<link>` 
 
 --------------------------------
 
+### External Svelte Store Example
+
+Source: https://github.com/vitejs/vite/blob/main/packages/create-vite/template-svelte/README.md
+
+An example of a simple external Svelte store that can be used to retain state across HMR updates.
+
+```js
+// store.js
+// An extremely simple external store
+import { writable } from 'svelte/store'
+export default writable(0)
+```
+
+--------------------------------
+
 ### Install trusted cert via CLI on macOS
 
 Source: https://github.com/vitejs/vite/blob/main/docs/guide/troubleshooting.md
@@ -1002,6 +961,53 @@ Command to install a trusted SSL certificate via the command line on macOS.
 
 ```shell
 security add-trusted-cert -d -r trustRoot -k ~/Library/Keychains/login.keychain-db your-cert.cer
+```
+
+--------------------------------
+
+### Manual DevEnvironment Communication with Virtual Module
+
+Source: https://github.com/vitejs/vite/blob/main/docs/guide/api-environment-frameworks.md
+
+This snippet demonstrates setting up manual communication with a `DevEnvironment` using a virtual module when the code runs in the same runtime as user modules. It shows how to create a Vite server, define a virtual entrypoint, and handle requests.
+
+```ts
+// code using the Vite's APIs
+import { createServer } from 'vite'
+
+const server = createServer({
+  plugins: [
+    // a plugin that handles `virtual:entrypoint`
+    {
+      name: 'virtual-module',
+      /* plugin implementation */
+    },
+  ],
+})
+const ssrEnvironment = server.environment.ssr
+const input = {}
+
+// use exposed functions by each environment factories that runs the code
+// check for each environment factories what they provide
+if (ssrEnvironment instanceof CustomDevEnvironment) {
+  ssrEnvironment.runEntrypoint('virtual:entrypoint')
+} else {
+  throw new Error(`Unsupported runtime for ${ssrEnvironment.name}`)
+}
+
+// -------------------------------------
+// virtual:entrypoint
+const { createHandler } = await import('./entrypoint.js')
+const handler = createHandler(input)
+const response = handler(new Request('http://example.com/'))
+
+// -------------------------------------
+// ./entrypoint.js
+export function createHandler(input) {
+  return function handler(req) {
+    return new Response('hello')
+  }
+}
 ```
 
 --------------------------------
