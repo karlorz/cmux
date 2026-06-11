@@ -64,6 +64,18 @@ console.log(tmp.extra) // "extra data"
 
 --------------------------------
 
+### Initialize AGENTS.md in TUI (Bash)
+
+Source: https://github.com/anomalyco/opencode/blob/dev/packages/web/src/content/docs/tui.mdx
+
+Starts a guided setup process for creating or updating the 'AGENTS.md' file, defining project rules.
+
+```bash
+/init
+```
+
+--------------------------------
+
 ### Install dependencies (Linux)
 
 Source: https://github.com/anomalyco/opencode/blob/dev/packages/docs/ai-tools/cursor.mdx
@@ -208,6 +220,30 @@ npm install -g package-name
 
 --------------------------------
 
+### Install OpenCode using Node.js package managers
+
+Source: https://github.com/anomalyco/opencode/blob/dev/packages/web/src/content/docs/index.mdx
+
+Install OpenCode using npm, Bun, pnpm, or Yarn.
+
+```bash
+npm install -g opencode-ai
+```
+
+```bash
+bun install -g opencode-ai
+```
+
+```bash
+pnpm install -g opencode-ai
+```
+
+```bash
+yarn global add opencode-ai
+```
+
+--------------------------------
+
 ### Install OpenCode on Arch Linux
 
 Source: https://github.com/anomalyco/opencode/blob/dev/packages/web/src/content/docs/index.mdx
@@ -248,18 +284,6 @@ npm install @opencode-ai/sdk
 
 --------------------------------
 
-### Example Request-context Call
-
-Source: https://github.com/anomalyco/opencode/blob/dev/specs/v2/api.html
-
-An example of a GET request to retrieve a file system tree, specifying a path, directory, and workspace.
-
-```HTTP
-GET /api/fs/tree?path=.&directory=/repo/app&workspace=ws_123
-```
-
---------------------------------
-
 ### Required YAML frontmatter
 
 Source: https://github.com/anomalyco/opencode/blob/dev/packages/docs/ai-tools/cursor.mdx
@@ -283,6 +307,26 @@ Command to install the Mintlify CLI globally using npm.
 
 ```bash
 npm i -g mint
+```
+
+--------------------------------
+
+### OpenAPI Configuration Examples
+
+Source: https://github.com/anomalyco/opencode/blob/dev/packages/docs/essentials/settings.mdx
+
+Examples demonstrating different ways to configure the 'openapi' property.
+
+```json
+"openapi": "https://example.com/openapi.json"
+```
+
+```json
+"openapi": "/openapi.json"
+```
+
+```json
+"openapi": ["https://example.com/openapi1.json", "/openapi2.json", "/openapi3.json"]
 ```
 
 --------------------------------
@@ -374,26 +418,6 @@ description: "Concise description for SEO and navigation"
 
 --------------------------------
 
-### OpenAPI Configuration Examples
-
-Source: https://github.com/anomalyco/opencode/blob/dev/packages/docs/essentials/settings.mdx
-
-Examples demonstrating different ways to configure the 'openapi' property.
-
-```json
-"openapi": "https://example.com/openapi.json"
-```
-
-```json
-"openapi": "/openapi.json"
-```
-
-```json
-"openapi": ["https://example.com/openapi1.json", "/openapi2.json", "/openapi3.json"]
-```
-
---------------------------------
-
 ### Start OpenCode web interface
 
 Source: https://github.com/anomalyco/opencode/blob/dev/packages/web/src/content/docs/cli.mdx
@@ -443,18 +467,6 @@ opencode import https://opncd.ai/s/abc123
 
 --------------------------------
 
-### Install a plugin (alias)
-
-Source: https://github.com/anomalyco/opencode/blob/dev/packages/web/src/content/docs/cli.mdx
-
-Use the alias to install a plugin.
-
-```bash
-opencode plug <module>
-```
-
---------------------------------
-
 ### Start TUI with optional project
 
 Source: https://github.com/anomalyco/opencode/blob/dev/packages/web/src/content/docs/cli.mdx
@@ -463,6 +475,18 @@ Start the OpenCode TUI, optionally specifying a project path.
 
 ```bash
 opencode [project]
+```
+
+--------------------------------
+
+### Install a plugin (alias)
+
+Source: https://github.com/anomalyco/opencode/blob/dev/packages/web/src/content/docs/cli.mdx
+
+Use the alias to install a plugin.
+
+```bash
+opencode plug <module>
 ```
 
 --------------------------------
@@ -527,42 +551,6 @@ Run the /init command to analyze your project and create AGENTS.md.
 
 --------------------------------
 
-### Install OpenCode using Node.js package managers
-
-Source: https://github.com/anomalyco/opencode/blob/dev/packages/web/src/content/docs/index.mdx
-
-Install OpenCode using npm, Bun, pnpm, or Yarn.
-
-```bash
-npm install -g opencode-ai
-```
-
-```bash
-bun install -g opencode-ai
-```
-
-```bash
-pnpm install -g opencode-ai
-```
-
-```bash
-yarn global add opencode-ai
-```
-
---------------------------------
-
-### Install Claude Code globally
-
-Source: https://github.com/anomalyco/opencode/blob/dev/packages/docs/ai-tools/claude-code.mdx
-
-Command to install the Claude Code CLI tool using npm.
-
-```bash
-npm install -g @anthropic-ai/claude-code
-```
-
---------------------------------
-
 ### Run Development Server
 
 Source: https://github.com/anomalyco/opencode/blob/dev/packages/docs/README.md
@@ -584,6 +572,30 @@ Example of asking OpenCode to explain a part of the codebase.
 ```txt
 @packages/functions/src/api/index.ts
 How is authentication handled in @packages/functions/src/api/index.ts
+```
+
+--------------------------------
+
+### Install Claude Code globally
+
+Source: https://github.com/anomalyco/opencode/blob/dev/packages/docs/ai-tools/claude-code.mdx
+
+Command to install the Claude Code CLI tool using npm.
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+--------------------------------
+
+### Example Request-context Call
+
+Source: https://github.com/anomalyco/opencode/blob/dev/specs/v2/api.html
+
+An example of a GET request to retrieve a file system tree, specifying a path, directory, and workspace.
+
+```HTTP
+GET /api/fs/tree?path=.&directory=/repo/app&workspace=ws_123
 ```
 
 --------------------------------
@@ -617,6 +629,20 @@ description: "Concise description for SEO and navigation"
 
 --------------------------------
 
+### Describe the feature in Plan mode
+
+Source: https://github.com/anomalyco/opencode/blob/dev/packages/web/src/content/docs/index.mdx
+
+Example of describing a new feature to OpenCode in Plan mode.
+
+```txt
+When a user deletes a note, we'd like to flag it as deleted in the database.
+Then create a screen that shows all the recently deleted notes.
+From this screen, the user can undelete a note or permanently delete it.
+```
+
+--------------------------------
+
 ### Partial Service Stub Example
 
 Source: https://github.com/anomalyco/opencode/blob/dev/packages/opencode/test/AGENTS.md
@@ -630,20 +656,6 @@ import { Account } from "@/account/account"
 const failingAccountLayer = Layer.mock(Account.Service, {
   orgsByAccount: () => Effect.fail(new Account.AccountServiceError({ message: "simulated upstream failure" })),
 })
-```
-
---------------------------------
-
-### Describe the feature in Plan mode
-
-Source: https://github.com/anomalyco/opencode/blob/dev/packages/web/src/content/docs/index.mdx
-
-Example of describing a new feature to OpenCode in Plan mode.
-
-```txt
-When a user deletes a note, we'd like to flag it as deleted in the database.
-Then create a screen that shows all the recently deleted notes.
-From this screen, the user can undelete a note or permanently delete it.
 ```
 
 --------------------------------
@@ -704,20 +716,6 @@ const pathInfo = await client.path.get()
 
 --------------------------------
 
-### tmpdir with config file
-
-Source: https://github.com/anomalyco/opencode/blob/dev/packages/opencode/test/AGENTS.md
-
-Example of creating a temporary directory with a pre-configured `opencode.json` file.
-
-```typescript
-await using tmp = await tmpdir({
-  config: { model: "test/model", username: "testuser" },
-})
-```
-
---------------------------------
-
 ### Create and manage sessions
 
 Source: https://github.com/anomalyco/opencode/blob/dev/packages/web/src/content/docs/sdk.mdx
@@ -748,6 +746,20 @@ await client.session.prompt({
     noReply: true,
     parts: [{ type: "text", text: "You are a helpful assistant." }],
   },
+})
+```
+
+--------------------------------
+
+### tmpdir with config file
+
+Source: https://github.com/anomalyco/opencode/blob/dev/packages/opencode/test/AGENTS.md
+
+Example of creating a temporary directory with a pre-configured `opencode.json` file.
+
+```typescript
+await using tmp = await tmpdir({
+  config: { model: "test/model", username: "testuser" },
 })
 ```
 
@@ -797,6 +809,18 @@ const currentProject = await client.project.current()
 
 --------------------------------
 
+### Connect to LLM provider
+
+Source: https://github.com/anomalyco/opencode/blob/dev/packages/web/src/content/docs/index.mdx
+
+Run the /connect command in the TUI to configure an LLM provider.
+
+```txt
+/connect
+```
+
+--------------------------------
+
 ### Code group with multiple languages
 
 Source: https://github.com/anomalyco/opencode/blob/dev/packages/docs/ai-tools/cursor.mdx
@@ -822,18 +846,6 @@ curl -X GET '/api/endpoint' \
 
 --------------------------------
 
-### Connect to LLM provider
-
-Source: https://github.com/anomalyco/opencode/blob/dev/packages/web/src/content/docs/index.mdx
-
-Run the /connect command in the TUI to configure an LLM provider.
-
-```txt
-/connect
-```
-
---------------------------------
-
 ### tmpdir with custom cleanup
 
 Source: https://github.com/anomalyco/opencode/blob/dev/packages/opencode/test/AGENTS.md
@@ -852,6 +864,18 @@ await using tmp = await tmpdir({
     await fs.rm(path.join(dir, "special"), { recursive: true })
   },
 })
+```
+
+--------------------------------
+
+### Switch to Plan mode
+
+Source: https://github.com/anomalyco/opencode/blob/dev/packages/web/src/content/docs/index.mdx
+
+Command to switch OpenCode to Plan mode using the Tab key.
+
+```bash
+<TAB>
 ```
 
 --------------------------------
@@ -920,18 +944,6 @@ Example content for the CLAUDE.md file, used to train Claude Code on documentati
 
 --------------------------------
 
-### Switch to Plan mode
-
-Source: https://github.com/anomalyco/opencode/blob/dev/packages/web/src/content/docs/index.mdx
-
-Command to switch OpenCode to Plan mode using the Tab key.
-
-```bash
-<TAB>
-```
-
---------------------------------
-
 ### Using TestInstance with it.instance
 
 Source: https://github.com/anomalyco/opencode/blob/dev/packages/opencode/test/AGENTS.md
@@ -951,6 +963,18 @@ it.instance("uses the temp directory", () =>
 
 --------------------------------
 
+### Create Starlight Project
+
+Source: https://github.com/anomalyco/opencode/blob/dev/packages/web/README.md
+
+Command to initialize a new Astro project using the Starlight template.
+
+```bash
+npm create astro@latest -- --template starlight
+```
+
+--------------------------------
+
 ### Agent Browser Snapshot Interactive Elements
 
 Source: https://github.com/anomalyco/opencode/blob/dev/packages/app/AGENTS.md
@@ -959,6 +983,19 @@ Get interactive elements with references (@e1, @e2) using `agent-browser`.
 
 ```shell
 agent-browser snapshot -i
+```
+
+--------------------------------
+
+### Provide feedback or add details to the plan
+
+Source: https://github.com/anomalyco/opencode/blob/dev/packages/web/src/content/docs/index.mdx
+
+Example of providing feedback or additional details to OpenCode's plan, including referencing an image.
+
+```txt
+We'd like to design this new screen using a design I've used before.
+[Image #1] Take a look at this image and use it as a reference.
 ```
 
 --------------------------------
@@ -1042,27 +1079,37 @@ variables:
 
 --------------------------------
 
-### Provide feedback or add details to the plan
+### GET /zen/go/v1/models
 
-Source: https://github.com/anomalyco/opencode/blob/dev/packages/web/src/content/docs/index.mdx
+Source: https://github.com/anomalyco/opencode/blob/dev/packages/web/src/content/docs/go.mdx
 
-Example of providing feedback or additional details to OpenCode's plan, including referencing an image.
+This endpoint allows you to retrieve a comprehensive list of all available Go models and their associated metadata. It provides details necessary for configuring models in your OpenCode setup.
 
-```txt
-We'd like to design this new screen using a design I've used before.
-[Image #1] Take a look at this image and use it as a reference.
+```APIDOC
+## GET /zen/go/v1/models
+
+### Description
+This endpoint allows you to retrieve a comprehensive list of all available Go models and their associated metadata. It provides details necessary for configuring models in your OpenCode setup.
+
+### Method
+GET
+
+### Endpoint
+https://opencode.ai/zen/go/v1/models
 ```
 
 --------------------------------
 
-### Create Starlight Project
+### Directly ask OpenCode to make changes
 
-Source: https://github.com/anomalyco/opencode/blob/dev/packages/web/README.md
+Source: https://github.com/anomalyco/opencode/blob/dev/packages/web/src/content/docs/index.mdx
 
-Command to initialize a new Astro project using the Starlight template.
+Example of asking OpenCode to make straightforward changes without a prior plan review, referencing specific files.
 
-```bash
-npm create astro@latest -- --template starlight
+```txt
+We need to add authentication to the /settings route. Take a look at how this is
+handled in the /notes route in @packages/functions/src/notes.ts and implement
+the same logic in @packages/functions/src/settings.ts
 ```
 
 --------------------------------
@@ -1090,20 +1137,6 @@ yield *
     "session never became busy",
   )
 yield * prompt.cancel(chat.id)
-```
-
---------------------------------
-
-### Directly ask OpenCode to make changes
-
-Source: https://github.com/anomalyco/opencode/blob/dev/packages/web/src/content/docs/index.mdx
-
-Example of asking OpenCode to make straightforward changes without a prior plan review, referencing specific files.
-
-```txt
-We need to add authentication to the /settings route. Take a look at how this is
-handled in the /notes route in @packages/functions/src/notes.ts and implement
-the same logic in @packages/functions/src/settings.ts
 ```
 
 --------------------------------
@@ -1141,90 +1174,4 @@ describe("getUser", () => {
     }).pipe(Effect.provide(HttpRecorder.http("users/get-one"))),
   )
 })
-```
-
---------------------------------
-
-### Full `opencode.json` Configuration Example
-
-Source: https://github.com/anomalyco/opencode/blob/dev/packages/core/src/plugin/skill/customize-opencode.md
-
-This snippet shows a comprehensive example of the `opencode.json` configuration file, illustrating various settings for models, skills, agents, commands, providers, plugins, and permissions.
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "username": "string",
-  "model": "provider/model-id",
-  "small_model": "provider/model-id",
-  "default_agent": "agent-name",
-  "shell": "/bin/zsh",
-  "logLevel": "DEBUG" | "INFO" | "WARN" | "ERROR",
-  "share": "manual" | "auto" | "disabled",
-  "autoupdate": true | false | "notify",
-  "snapshot": true,
-  "instructions": ["AGENTS.md", "docs/style.md"],
-
-  "skills": {
-    "paths": [".opencode/skills", "/abs/path/to/skills"],
-    "urls": ["https://example.com/.well-known/skills/"]
-  },
-
-  "agent": {
-    "my-agent": {
-      "model": "anthropic/claude-sonnet-4-6",
-      "mode": "subagent",
-      "description": "...",
-      "permission": { "edit": "deny" }
-    }
-  },
-
-  "command": {
-    "deploy": { "description": "...", "prompt": "..." }
-  },
-
-  "provider": {
-    "anthropic": { "options": { "apiKey": "..." } }
-  },
-  "disabled_providers": ["openai"],
-  "enabled_providers": ["anthropic"],
-
-  "mcp": {
-    "playwright": {
-      "type": "local",
-      "command": ["npx", "-y", "@playwright/mcp"],
-      "enabled": true,
-      "env": {}
-    },
-    "remote-thing": {
-      "type": "remote",
-      "url": "https://...",
-      "headers": { "Authorization": "Bearer ..." }
-    }
-  },
-
-  "plugin": [
-    "opencode-gemini-auth",
-    "opencode-foo@1.2.3",
-    "./local-plugin.ts",
-    ["opencode-bar", { "option": "value" }]
-  ],
-
-  "permission": {
-    "edit": "deny",
-    "bash": { "git *": "allow", "*": "ask" }
-  },
-
-  "formatter": false,
-  "lsp": false,
-
-  "experimental": {
-    "primary_tools": ["edit"],
-    "mcp_timeout": 30000
-  },
-
-  "tool_output": { "max_lines": 200, "max_bytes": 8192 },
-
-  "compaction": { "auto": true, "tail_turns": 15 }
-}
 ```
