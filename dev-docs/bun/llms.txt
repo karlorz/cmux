@@ -49,6 +49,28 @@ bun test test/js/bun/secrets.test.ts
 
 --------------------------------
 
+### Install Settings Inheritance Example
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/test/configuration.mdx
+
+Example `bunfig.toml` demonstrating how `[install]` settings are inherited by `bun test`.
+
+```toml
+[install]
+# These settings are inherited by bun test
+registry = "https://npm.company.com/"
+exact = true
+prefer = "offline"
+
+[test]
+# Test-specific configuration
+coverage = true
+timeout = 10000
+
+```
+
+--------------------------------
+
 ### Install dependencies and run development server
 
 Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/solidstart.mdx
@@ -115,19 +137,6 @@ This JSON snippet shows how to add a 'start' script to your package.json file, w
 
 --------------------------------
 
-### Install figlet package and types
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
-
-Installs the `figlet` package and its TypeScript type declarations.
-
-```bash
-bun add figlet
-bun add -d @types/figlet # TypeScript users only
-```
-
---------------------------------
-
 ### Example package.json with non-npm dependencies
 
 Source: https://github.com/oven-sh/bun/blob/main/docs/pm/cli/install.mdx
@@ -145,6 +154,23 @@ Demonstrates installing dependencies from Git, GitHub, and local/remote tarballs
     "bun-types": "npm:@types/bun"
   }
 }
+```
+
+--------------------------------
+
+### Configure global installation behavior
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/pm/cli/add.mdx
+
+Example `bunfig.toml` configuration for global installation paths.
+
+```toml
+[install]
+# where `bun add --global` installs packages
+globalDir = "~/.bun/install/global"
+
+# where globally-installed package bins are linked
+globalBinDir = "~/.bun/bin"
 ```
 
 --------------------------------
@@ -231,18 +257,6 @@ apt-get install -y \
 
 --------------------------------
 
-### React Project Template Examples
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/snippets/cli/init.mdx
-
-Examples of initializing React projects with different configurations using the `--react` option, shown as a single command line.
-
-```bash
-bun init --react bun init --react=tailwind bun init --react=shadcn
-```
-
---------------------------------
-
 ### GitHub Actions (Auto-Setup)
 
 Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/secrets-ci-setup.md
@@ -252,6 +266,18 @@ Example of running Bun secrets tests in GitHub Actions with automatic setup.
 ```yaml
 - name: Run secrets tests (auto-setup)
   run: bun test test/js/bun/secrets.test.ts
+```
+
+--------------------------------
+
+### React Project Template Examples
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/snippets/cli/init.mdx
+
+Examples of initializing React projects with different configurations using the `--react` option, shown as a single command line.
+
+```bash
+bun init --react bun init --react=tailwind bun init --react=shadcn
 ```
 
 --------------------------------
@@ -282,22 +308,6 @@ steps:
 
 --------------------------------
 
-### Define an HTTP route and start a server
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/elysia.mdx
-
-Example of defining a simple GET route and starting an Elysia server on port 8080.
-
-```ts
-import { Elysia } from "elysia";
-
-const app = new Elysia().get("/", () => "Hello Elysia").listen(8080);
-
-console.log(`🦊 Elysia is running at on port ${app.server?.port}...`);
-```
-
---------------------------------
-
 ### Run the initial Bun app
 
 Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
@@ -311,6 +321,22 @@ bun run index.ts
 
 ```txt
 Hello via Bun!
+```
+
+--------------------------------
+
+### Define an HTTP route and start a server
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/elysia.mdx
+
+Example of defining a simple GET route and starting an Elysia server on port 8080.
+
+```ts
+import { Elysia } from "elysia";
+
+const app = new Elysia().get("/", () => "Hello Elysia").listen(8080);
+
+console.log(`🦊 Elysia is running at on port ${app.server?.port}...`);
 ```
 
 --------------------------------
@@ -371,24 +397,6 @@ jobs:
 
 --------------------------------
 
-### Set credential with unrestricted access for CI
-
-Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/secrets-ci-setup.md
-
-Example of using allowUnrestrictedAccess: true for Bun.secrets.set in CI environments on macOS.
-
-```ts
-// For CI environments where user interaction is not possible
-await Bun.secrets.set({
-  service: "ci-deployment", 
-  name: "api-key",
-  value: process.env.API_KEY,
-  allowUnrestrictedAccess: true // Bypass macOS keychain user prompts
-});
-```
-
---------------------------------
-
 ### Initialize a new project with Blank template
 
 Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
@@ -408,6 +416,24 @@ bun init my-app
 - index.ts
 - tsconfig.json (for editor autocomplete)
 - README.md
+```
+
+--------------------------------
+
+### Set credential with unrestricted access for CI
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/secrets-ci-setup.md
+
+Example of using allowUnrestrictedAccess: true for Bun.secrets.set in CI environments on macOS.
+
+```ts
+// For CI environments where user interaction is not possible
+await Bun.secrets.set({
+  service: "ci-deployment", 
+  name: "api-key",
+  value: process.env.API_KEY,
+  allowUnrestrictedAccess: true // Bypass macOS keychain user prompts
+});
 ```
 
 --------------------------------
@@ -460,24 +486,14 @@ Creates a basic HTML file to be served by the Bun server.
 
 --------------------------------
 
-### Install Settings Inheritance Example
+### Basic Example: Build Command (CLI)
 
-Source: https://github.com/oven-sh/bun/blob/main/docs/test/configuration.mdx
+Source: https://github.com/oven-sh/bun/blob/main/docs/bundler/index.mdx
 
-Example `bunfig.toml` demonstrating how `[install]` settings are inherited by `bun test`.
+Building the basic example using Bun's CLI.
 
-```toml
-[install]
-# These settings are inherited by bun test
-registry = "https://npm.company.com/"
-exact = true
-prefer = "offline"
-
-[test]
-# Test-specific configuration
-coverage = true
-timeout = 10000
-
+```bash
+bun build ./index.tsx --outdir ./out
 ```
 
 --------------------------------
@@ -490,18 +506,6 @@ Example of executing a command-line tool installed globally.
 
 ```bash
 cowsay "Bun!"
-```
-
---------------------------------
-
-### Basic Example: Build Command (CLI)
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/bundler/index.mdx
-
-Building the basic example using Bun's CLI.
-
-```bash
-bun build ./index.tsx --outdir ./out
 ```
 
 --------------------------------
@@ -568,22 +572,6 @@ FORCE_KEYRING_SETUP=1 bun test test/js/bun/secrets.test.ts
 
 --------------------------------
 
-### Run the HTTP server
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
-
-Runs the updated `index.ts` file to start the HTTP server.
-
-```bash
-bun run index.ts
-```
-
-```txt
-Listening on http://localhost:3000
-```
-
---------------------------------
-
 ### cowsay output example
 
 Source: https://github.com/oven-sh/bun/blob/main/docs/pm/cli/add.mdx
@@ -599,6 +587,22 @@ Example output from the globally installed `cowsay` command.
             (__)\       )\/\
                 ||----w |
                 ||     ||
+```
+
+--------------------------------
+
+### Run the HTTP server
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
+
+Runs the updated `index.ts` file to start the HTTP server.
+
+```bash
+bun run index.ts
+```
+
+```txt
+Listening on http://localhost:3000
 ```
 
 --------------------------------
@@ -644,38 +648,15 @@ bun --bun run dev
 
 --------------------------------
 
-### Configure global installation behavior
+### Install figlet package and types
 
-Source: https://github.com/oven-sh/bun/blob/main/docs/pm/cli/add.mdx
+Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
 
-Example `bunfig.toml` configuration for global installation paths.
-
-```toml
-[install]
-# where `bun add --global` installs packages
-globalDir = "~/.bun/install/global"
-
-# where globally-installed package bins are linked
-globalBinDir = "~/.bun/bin"
-```
-
---------------------------------
-
-### Install dependencies for filtered packages
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/pm/filter.mdx
-
-Examples of using `bun install` with `--filter` to install dependencies for specific packages in a monorepo.
+Installs the `figlet` package and its TypeScript type declarations.
 
 ```bash
-# Install dependencies for all workspaces except `pkg-c`
-bun install --filter '!pkg-c'
-
-# Install dependencies for packages in `./packages` (`pkg-a`, `pkg-b`, `pkg-c`)
-bun install --filter './packages/*'
-
-# Save as above, but exclude the root package.json
-bun install --filter '!./' --filter './packages/*'
+bun add figlet
+bun add -d @types/figlet # TypeScript users only
 ```
 
 --------------------------------
@@ -695,6 +676,25 @@ const server = Bun.serve({
 });
 
 console.log(`Listening on ${server.url}`);
+```
+
+--------------------------------
+
+### Install dependencies for filtered packages
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/pm/filter.mdx
+
+Examples of using `bun install` with `--filter` to install dependencies for specific packages in a monorepo.
+
+```bash
+# Install dependencies for all workspaces except `pkg-c`
+bun install --filter '!pkg-c'
+
+# Install dependencies for packages in `./packages` (`pkg-a`, `pkg-b`, `pkg-c`)
+bun install --filter './packages/*'
+
+# Save as above, but exclude the root package.json
+bun install --filter '!./' --filter './packages/*'
 ```
 
 --------------------------------
@@ -746,6 +746,19 @@ bun run build:local run script.ts          # debug build with local WebKit
 
 --------------------------------
 
+### Start development server
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/sveltekit.mdx
+
+Navigate into the project directory and start the SvelteKit development server using Bun.
+
+```sh
+cd my-app
+bun --bun run dev
+```
+
+--------------------------------
+
 ### Use Setup and Teardown
 
 Source: https://github.com/oven-sh/bun/blob/main/docs/test/writing-tests.mdx
@@ -768,19 +781,6 @@ afterEach(() => {
 test("should update user profile", () => {
   // Use testUser in test
 });
-```
-
---------------------------------
-
-### Start development server
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/sveltekit.mdx
-
-Navigate into the project directory and start the SvelteKit development server using Bun.
-
-```sh
-cd my-app
-bun --bun run dev
 ```
 
 --------------------------------
@@ -854,18 +854,6 @@ await Bun.build({
 
 --------------------------------
 
-### Install Bun TypeScript types
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
-
-Installs `@types/bun` as a development dependency to resolve TypeScript errors.
-
-```bash
-bun add -d @types/bun
-```
-
---------------------------------
-
 ### Initialize Bun Project
 
 Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/gel.mdx
@@ -876,6 +864,18 @@ Create a new directory and initialize a Bun project.
 mkdir my-edgedb-app
 cd my-edgedb-app
 bun init -y
+```
+
+--------------------------------
+
+### Install Bun TypeScript types
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
+
+Installs `@types/bun` as a development dependency to resolve TypeScript errors.
+
+```bash
+bun add -d @types/bun
 ```
 
 --------------------------------
@@ -972,18 +972,6 @@ deno run -A ./chat-server.deno.mjs
 
 --------------------------------
 
-### Ordered list start number with leading zeros
-
-Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/md/spec.txt
-
-Example of an ordered list with a start number containing leading zeros.
-
-```markdown
-003. ok
-```
-
---------------------------------
-
 ### Initialize a SolidStart app
 
 Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/solidstart.mdx
@@ -1017,6 +1005,18 @@ bun create solid my-app --solidstart --ts
 
 --------------------------------
 
+### Ordered list start number with leading zeros
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/md/spec.txt
+
+Example of an ordered list with a start number containing leading zeros.
+
+```markdown
+003. ok
+```
+
+--------------------------------
+
 ### Valid ordered list start number
 
 Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/md/spec.txt
@@ -1025,30 +1025,6 @@ Example of an ordered list with a valid start number (nine digits or less).
 
 ```markdown
 123456789. ok
-```
-
---------------------------------
-
-### Install Bun (Native)
-
-Source: https://github.com/oven-sh/bun/blob/main/CONTRIBUTING.md
-
-Install a release build of Bun using the native installer script.
-
-```bash
-$ curl -fsSL https://bun.com/install | bash
-```
-
---------------------------------
-
-### Start development server with bunx
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/vite.mdx
-
-Run the Vite development server using `bunx` with the `--bun` flag.
-
-```bash
-bunx --bun vite
 ```
 
 --------------------------------
@@ -1065,6 +1041,18 @@ iex "& {$(irm https://bun.sh/install.ps1)} -Version 1.3.3"
 
 --------------------------------
 
+### Install Bun (Native)
+
+Source: https://github.com/oven-sh/bun/blob/main/CONTRIBUTING.md
+
+Install a release build of Bun using the native installer script.
+
+```bash
+$ curl -fsSL https://bun.com/install | bash
+```
+
+--------------------------------
+
 ### Invalid ordered list start number (negative)
 
 Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/md/spec.txt
@@ -1077,13 +1065,24 @@ Example of an ordered list with an invalid negative start number, which is not p
 
 --------------------------------
 
-### Install ccache (openSUSE)
+### Start development server with bunx
 
-Source: https://github.com/oven-sh/bun/blob/main/CONTRIBUTING.md
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/vite.mdx
 
-Install ccache on openSUSE using zypper.
+Run the Vite development server using `bunx` with the `--bun` flag.
 
 ```bash
-# For openSUSE
-$ sudo zypper install ccache
+bunx --bun vite
+```
+
+--------------------------------
+
+### Create a new Vite project
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/vite.mdx
+
+Initialize a new Vite project using Bun's `create` command.
+
+```bash
+bun create vite my-app
 ```
