@@ -364,18 +364,6 @@ SSR_HOST=0.0.0.0 pnpm --dir examples/lit/ssr run dev
 
 --------------------------------
 
-### Install Lit Query with bun
-
-Source: https://github.com/tanstack/query/blob/main/docs/framework/lit/installation.md
-
-Use bun to install the Lit Query adapter, TanStack Query Core, and Lit.
-
-```bash
-bun add @tanstack/lit-query @tanstack/query-core lit
-```
-
---------------------------------
-
 ### Install Solid Query Devtools
 
 Source: https://github.com/tanstack/query/blob/main/docs/framework/solid/devtools.md
@@ -396,6 +384,18 @@ yarn add @tanstack/solid-query-devtools
 
 ```bash
 bun add @tanstack/solid-query-devtools
+```
+
+--------------------------------
+
+### Install Lit Query with bun
+
+Source: https://github.com/tanstack/query/blob/main/docs/framework/lit/installation.md
+
+Use bun to install the Lit Query adapter, TanStack Query Core, and Lit.
+
+```bash
+bun add @tanstack/lit-query @tanstack/query-core lit
 ```
 
 --------------------------------
@@ -671,22 +671,6 @@ bun add @tanstack/svelte-query-devtools
 
 --------------------------------
 
-### Local Development Setup for @tanstack/lit-query
-
-Source: https://github.com/tanstack/query/blob/main/packages/lit-query/README.md
-
-These commands are for setting up and building the @tanstack/lit-query package during local development within the repository.
-
-```bash
-pnpm install
-```
-
-```bash
-pnpm --dir packages/lit-query run build
-```
-
---------------------------------
-
 ### Install React Query Devtools
 
 Source: https://github.com/tanstack/query/blob/main/docs/framework/react/devtools.md
@@ -707,6 +691,22 @@ yarn add @tanstack/react-query-devtools
 
 ```bash
 bun add @tanstack/react-query-devtools
+```
+
+--------------------------------
+
+### Local Development Setup for @tanstack/lit-query
+
+Source: https://github.com/tanstack/query/blob/main/packages/lit-query/README.md
+
+These commands are for setting up and building the @tanstack/lit-query package during local development within the repository.
+
+```bash
+pnpm install
+```
+
+```bash
+pnpm --dir packages/lit-query run build
 ```
 
 --------------------------------
@@ -860,6 +860,18 @@ pnpm dev
 
 --------------------------------
 
+### Run Development Server for TanStack Query
+
+Source: https://github.com/tanstack/query/blob/main/CONTRIBUTING.md
+
+Starts the development server in watch mode, allowing for live reloading during general development.
+
+```bash
+pnpm run watch
+```
+
+--------------------------------
+
 ### Install TanStack Angular Query
 
 Source: https://github.com/tanstack/query/blob/main/docs/framework/angular/installation.md
@@ -880,18 +892,6 @@ yarn add @tanstack/angular-query-experimental
 
 ```bash
 bun add @tanstack/angular-query-experimental
-```
-
---------------------------------
-
-### Run Development Server for TanStack Query
-
-Source: https://github.com/tanstack/query/blob/main/CONTRIBUTING.md
-
-Starts the development server in watch mode, allowing for live reloading during general development.
-
-```bash
-pnpm run watch
 ```
 
 --------------------------------
@@ -1021,6 +1021,30 @@ npm init solid@latest my-app
 
 --------------------------------
 
+### Install Svelte Query with NPM, pnpm, yarn, or bun
+
+Source: https://github.com/tanstack/query/blob/main/docs/framework/svelte/installation.md
+
+Use these commands to add the @tanstack/svelte-query package to your project using your preferred package manager.
+
+```bash
+npm i @tanstack/svelte-query
+```
+
+```bash
+pnpm add @tanstack/svelte-query
+```
+
+```bash
+yarn add @tanstack/svelte-query
+```
+
+```bash
+bun add @tanstack/svelte-query
+```
+
+--------------------------------
+
 ### Invalidate Queries by Prefix in TanStack Query
 
 Source: https://github.com/tanstack/query/blob/main/docs/framework/react/guides/query-invalidation.md
@@ -1044,30 +1068,6 @@ const todoListQuery = useQuery({
   queryKey: ['todos', { page: 1 }],
   queryFn: fetchTodoList,
 })
-```
-
---------------------------------
-
-### Install Svelte Query with NPM, pnpm, yarn, or bun
-
-Source: https://github.com/tanstack/query/blob/main/docs/framework/svelte/installation.md
-
-Use these commands to add the @tanstack/svelte-query package to your project using your preferred package manager.
-
-```bash
-npm i @tanstack/svelte-query
-```
-
-```bash
-pnpm add @tanstack/svelte-query
-```
-
-```bash
-yarn add @tanstack/svelte-query
-```
-
-```bash
-bun add @tanstack/svelte-query
 ```
 
 --------------------------------
@@ -1335,6 +1335,18 @@ npm create astro@latest -- --template minimal
 
 --------------------------------
 
+### Start Development Server with Angular CLI
+
+Source: https://github.com/tanstack/query/blob/main/integrations/angular-cli-20/README.md
+
+Use this command to launch a local development server, making the application accessible in a browser and enabling automatic reloads on file changes.
+
+```bash
+ng serve
+```
+
+--------------------------------
+
 ### Creating a new Svelte project
 
 Source: https://github.com/tanstack/query/blob/main/examples/svelte/load-more-infinite-scroll/README.md
@@ -1347,18 +1359,6 @@ npm create svelte@latest
 
 # create a new project in my-app
 npm create svelte@latest my-app
-```
-
---------------------------------
-
-### Start Development Server with Angular CLI
-
-Source: https://github.com/tanstack/query/blob/main/integrations/angular-cli-20/README.md
-
-Use this command to launch a local development server, making the application accessible in a browser and enabling automatic reloads on file changes.
-
-```bash
-ng serve
 ```
 
 --------------------------------
@@ -1638,6 +1638,22 @@ customElements.define('todos-view', TodosView)
 
 --------------------------------
 
+### Define Vue Props in Script Setup
+
+Source: https://github.com/tanstack/query/blob/main/docs/framework/vue/reactivity.md
+
+This snippet shows how to define component props using `defineProps` in a Vue 3 `<script setup>` block. It sets up a `userId` prop of type string.
+
+```vue
+<script setup lang="ts">
+const props = defineProps<{
+  userId: string
+}>()
+</script>
+```
+
+--------------------------------
+
 ### Create a new Svelte project using npm
 
 Source: https://github.com/tanstack/query/blob/main/examples/svelte/basic/README.md
@@ -1652,22 +1668,6 @@ npm create svelte@latest
 ```bash
 # create a new project in my-app
 npm create svelte@latest my-app
-```
-
---------------------------------
-
-### Define Vue Props in Script Setup
-
-Source: https://github.com/tanstack/query/blob/main/docs/framework/vue/reactivity.md
-
-This snippet shows how to define component props using `defineProps` in a Vue 3 `<script setup>` block. It sets up a `userId` prop of type string.
-
-```vue
-<script setup lang="ts">
-const props = defineProps<{
-  userId: string
-}>()
-</script>
 ```
 
 --------------------------------
@@ -1776,37 +1776,6 @@ mutateAsync: MutationObserverResult<TData, TError, TVariables, TOnMutateResult>[
 
 --------------------------------
 
-### MutationResultAccessor mutateAsync Property
-
-Source: https://github.com/tanstack/query/blob/main/docs/framework/lit/reference/type-aliases/MutationResultAccessor.md
-
-Starts the mutation and returns the observer promise. Rejects if no `QueryClient` can be resolved.
-
-```ts
-mutateAsync: MutationObserverResult<TData, TError, TVariables, TOnMutateResult>["mutate"];
-```
-
---------------------------------
-
-### Initialize broadcastQueryClient with QueryClient
-
-Source: https://github.com/tanstack/query/blob/main/docs/framework/react/plugins/broadcastQueryClient.md
-
-This snippet demonstrates how to import and initialize `broadcastQueryClient` with a `QueryClient` instance, optionally specifying a `broadcastChannel` name for communication between tabs.
-
-```tsx
-import { broadcastQueryClient } from '@tanstack/query-broadcast-client-experimental'
-
-const queryClient = new QueryClient()
-
-broadcastQueryClient({
-  queryClient,
-  broadcastChannel: 'my-app',
-})
-```
-
---------------------------------
-
 ### Build application for production
 
 Source: https://github.com/tanstack/query/blob/main/examples/vue/nuxt3/README.md
@@ -1815,6 +1784,18 @@ Execute this command to build the Nuxt 3 application for production deployment.
 
 ```bash
 pnpm build
+```
+
+--------------------------------
+
+### MutationResultAccessor mutateAsync Property
+
+Source: https://github.com/tanstack/query/blob/main/docs/framework/lit/reference/type-aliases/MutationResultAccessor.md
+
+Starts the mutation and returns the observer promise. Rejects if no `QueryClient` can be resolved.
+
+```ts
+mutateAsync: MutationObserverResult<TData, TError, TVariables, TOnMutateResult>["mutate"];
 ```
 
 --------------------------------
@@ -2013,6 +1994,33 @@ const usersMessages = useQueries(() => ({
 
 --------------------------------
 
+### Defining Query Functions with useQuery in Solid
+
+Source: https://github.com/tanstack/query/blob/main/docs/framework/solid/guides/query-functions.md
+
+Illustrates different patterns for providing a `queryFn` to `useQuery`, including async functions and accessing `queryKey` parameters directly.
+
+```tsx
+useQuery(() => ({ queryKey: ['todos'], queryFn: fetchAllTodos }))
+useQuery(() => ({
+  queryKey: ['todos', todoId],
+  queryFn: () => fetchTodoById(todoId),
+}))
+useQuery(() => ({
+  queryKey: ['todos', todoId],
+  queryFn: async () => {
+    const data = await fetchTodoById(todoId)
+    return data
+  },
+}))
+useQuery(() => ({
+  queryKey: ['todos', todoId],
+  queryFn: ({ queryKey }) => fetchTodoById(queryKey[1]),
+}))
+```
+
+--------------------------------
+
 ### Correct queryKey reference in invalidateQueries (TypeScript/TSX)
 
 Source: https://github.com/tanstack/query/blob/main/docs/eslint/prefer-query-options.md
@@ -2057,33 +2065,6 @@ function Component({ id }) {
   const queryClient = useQueryClient()
   return queryClient.getQueryData(todoOptions(id).queryKey)
 }
-```
-
---------------------------------
-
-### Defining Query Functions with useQuery in Solid
-
-Source: https://github.com/tanstack/query/blob/main/docs/framework/solid/guides/query-functions.md
-
-Illustrates different patterns for providing a `queryFn` to `useQuery`, including async functions and accessing `queryKey` parameters directly.
-
-```tsx
-useQuery(() => ({ queryKey: ['todos'], queryFn: fetchAllTodos }))
-useQuery(() => ({
-  queryKey: ['todos', todoId],
-  queryFn: () => fetchTodoById(todoId),
-}))
-useQuery(() => ({
-  queryKey: ['todos', todoId],
-  queryFn: async () => {
-    const data = await fetchTodoById(todoId)
-    return data
-  },
-}))
-useQuery(() => ({
-  queryKey: ['todos', todoId],
-  queryFn: ({ queryKey }) => fetchTodoById(queryKey[1]),
-}))
 ```
 
 --------------------------------
@@ -2180,18 +2161,6 @@ class TodosView extends LitElement {
 
 --------------------------------
 
-### Get Mutation Defaults with QueryClient
-
-Source: https://github.com/tanstack/query/blob/main/docs/reference/QueryClient.md
-
-Use this method to retrieve default options previously set for a specific mutation key.
-
-```tsx
-const defaultOptions = queryClient.getMutationDefaults(['addPost'])
-```
-
---------------------------------
-
 ### Using createInfiniteQueryController in a LitElement (TypeScript)
 
 Source: https://github.com/tanstack/query/blob/main/docs/framework/lit/reference/functions/createInfiniteQueryController.md
@@ -2224,6 +2193,18 @@ class ProjectsView extends LitElement {
 
 --------------------------------
 
+### Get Mutation Defaults with QueryClient
+
+Source: https://github.com/tanstack/query/blob/main/docs/reference/QueryClient.md
+
+Use this method to retrieve default options previously set for a specific mutation key.
+
+```tsx
+const defaultOptions = queryClient.getMutationDefaults(['addPost'])
+```
+
+--------------------------------
+
 ### Get Current Online State
 
 Source: https://github.com/tanstack/query/blob/main/docs/reference/onlineManager.md
@@ -2232,4 +2213,28 @@ Retrieve the current online status managed by `onlineManager` to check if the ap
 
 ```tsx
 const isOnline = onlineManager.isOnline()
+```
+
+--------------------------------
+
+### Install Vue Query using a package manager
+
+Source: https://github.com/tanstack/query/blob/main/docs/framework/vue/installation.md
+
+Use one of these commands to add Vue Query to your project's dependencies.
+
+```bash
+npm i @tanstack/vue-query
+```
+
+```bash
+pnpm add @tanstack/vue-query
+```
+
+```bash
+yarn add @tanstack/vue-query
+```
+
+```bash
+bun add @tanstack/vue-query
 ```
