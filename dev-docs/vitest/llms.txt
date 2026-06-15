@@ -545,6 +545,18 @@ yarn add -D vitest @vitest/browser-playwright
 
 --------------------------------
 
+### Install Playwright Provider with pnpm
+
+Source: https://main.vitest.dev/guide/browser
+
+Install Vitest and the Playwright browser provider using pnpm. Recommended for CI and faster local testing.
+
+```bash
+pnpm add -D vitest @vitest/browser-playwright
+```
+
+--------------------------------
+
 ### Istanbul Coverage Instrumentation Example
 
 Source: https://main.vitest.dev/guide/coverage
@@ -576,18 +588,6 @@ export function getUsername(id) {
 
 globalThis.__VITEST_COVERAGE__ ||= {}
 globalThis.__VITEST_COVERAGE__[filename] = coverage
-```
-
---------------------------------
-
-### Install Playwright Provider with pnpm
-
-Source: https://main.vitest.dev/guide/browser
-
-Install Vitest and the Playwright browser provider using pnpm. Recommended for CI and faster local testing.
-
-```bash
-pnpm add -D vitest @vitest/browser-playwright
 ```
 
 --------------------------------

@@ -308,18 +308,6 @@ Advanced configuration example including mermaid diagrams, syntax highlighting t
 
 --------------------------------
 
-### Install AI Elements Message Component
-
-Source: https://github.com/vercel/streamdown/blob/main/apps/website/content/docs/getting-started.mdx
-
-Install the message component from the AI Elements library.
-
-```bash
-npx ai-elements@latest add message
-```
-
---------------------------------
-
 ### Install Streamdown
 
 Source: https://github.com/vercel/streamdown/blob/main/skills/streamdown/SKILL.md
@@ -328,6 +316,18 @@ Install the core Streamdown package using npm.
 
 ```bash
 npm install streamdown
+```
+
+--------------------------------
+
+### Install AI Elements Message Component
+
+Source: https://github.com/vercel/streamdown/blob/main/apps/website/content/docs/getting-started.mdx
+
+Install the message component from the AI Elements library.
+
+```bash
+npx ai-elements@latest add message
 ```
 
 --------------------------------
@@ -1062,6 +1062,18 @@ pnpm build
 
 --------------------------------
 
+### Configure Next.js for Shiki
+
+Source: https://github.com/vercel/streamdown/blob/main/skills/streamdown/references/plugins.md
+
+Add shiki to transpilePackages in next.config.js if warnings occur.
+
+```js
+transpilePackages: ['shiki'],
+```
+
+--------------------------------
+
 ### Strikethrough with Punctuation
 
 Source: https://github.com/vercel/streamdown/blob/main/apps/website/content/docs/plugins/cjk.mdx
@@ -1072,18 +1084,6 @@ Examples of strikethrough formatting correctly with various CJK punctuation mark
 ~~削除されたテキスト（括弧付き）。~~この文は正しいです。
 ~~删除的文字（带括号）。~~这个句子是正确的。
 ~~이 텍스트(괄호 포함)~~를 삭제합니다.
-```
-
---------------------------------
-
-### Configure Next.js for Shiki
-
-Source: https://github.com/vercel/streamdown/blob/main/skills/streamdown/references/plugins.md
-
-Add shiki to transpilePackages in next.config.js if warnings occur.
-
-```js
-transpilePackages: ['shiki'],
 ```
 
 --------------------------------
@@ -1217,14 +1217,14 @@ const postprocessHandler: RemendHandler = {
 
 --------------------------------
 
-### Run tests
+### Create a changeset
 
 Source: https://github.com/vercel/streamdown/blob/main/CONTRIBUTING.md
 
-Execute the test suite to verify project integrity.
+Generate a changeset to track versioning and changelog updates for your changes.
 
 ```bash
-pnpm test
+pnpm changeset
 ```
 
 --------------------------------
@@ -1241,14 +1241,14 @@ Check out https://example.com。这是一个链接。
 
 --------------------------------
 
-### Create a changeset
+### Run tests
 
 Source: https://github.com/vercel/streamdown/blob/main/CONTRIBUTING.md
 
-Generate a changeset to track versioning and changelog updates for your changes.
+Execute the test suite to verify project integrity.
 
 ```bash
-pnpm changeset
+pnpm test
 ```
 
 --------------------------------

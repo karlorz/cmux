@@ -243,6 +243,25 @@ export async function register() {
 
 --------------------------------
 
+### Framework-Agnostic App Boundary Example
+
+Source: https://github.com/vercel/workflow/blob/main/skills/migrating-to-workflow-sdk/references/runtime-targets.md
+
+This example demonstrates starting a workflow from a framework-agnostic API endpoint using plain Request and Response objects. It's suitable when a framework-agnostic approach is required, even if specific frameworks are mentioned elsewhere.
+
+```typescript
+import { start } from 'workflow/api';
+import { onboardingWorkflow } from '../workflows/onboarding';
+
+export async function POST(request: Request) {
+  const body = (await request.json()) as { userId: string };
+  const run = await start(onboardingWorkflow, [body.userId]);
+  return Response.json({ runId: run.runId });
+}
+```
+
+--------------------------------
+
 ### Setup Tmux Session for Workflow SDK Development
 
 Source: https://github.com/vercel/workflow/blob/main/skills/internal-dev-workbench/SKILL.md
@@ -274,25 +293,6 @@ tmux send-keys -t "$PANE_OBS" \
 tmux send-keys -t "$PANE_SH" 'echo "scratchpad: $(pwd)"' C-m
 
 tmux attach -t "$SESSION"
-```
-
---------------------------------
-
-### Framework-Agnostic App Boundary Example
-
-Source: https://github.com/vercel/workflow/blob/main/skills/migrating-to-workflow-sdk/references/runtime-targets.md
-
-This example demonstrates starting a workflow from a framework-agnostic API endpoint using plain Request and Response objects. It's suitable when a framework-agnostic approach is required, even if specific frameworks are mentioned elsewhere.
-
-```typescript
-import { start } from 'workflow/api';
-import { onboardingWorkflow } from '../workflows/onboarding';
-
-export async function POST(request: Request) {
-  const body = (await request.json()) as { userId: string };
-  const run = await start(onboardingWorkflow, [body.userId]);
-  return Response.json({ runId: run.runId });
-}
 ```
 
 --------------------------------
