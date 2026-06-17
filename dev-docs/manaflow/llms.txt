@@ -938,6 +938,20 @@ cmux computer start --from=setup-complete -w $WS_ID
 
 --------------------------------
 
+### Best Practices for AI Agents: Taking Screenshots
+
+Source: https://github.com/manaflow-ai/manaflow/blob/main/apps/devbox/README.md
+
+Demonstrates how to take screenshots at different stages of an automated process for debugging and visual verification.
+
+```bash
+cmux computer screenshot --output=/tmp/before.png -w $WS_ID
+cmux computer click @e1 -w $WS_ID
+cmux computer screenshot --output=/tmp/after.png -w $WS_ID
+```
+
+--------------------------------
+
 ### Install Manaflow CLI using Bun or npm
 
 Source: https://github.com/manaflow-ai/manaflow/blob/main/README.md
@@ -954,20 +968,6 @@ npx cmux@latest
 # or to install globally
 bun add -g cmux@latest
 npm install -g cmux@latest
-```
-
---------------------------------
-
-### Best Practices for AI Agents: Taking Screenshots
-
-Source: https://github.com/manaflow-ai/manaflow/blob/main/apps/devbox/README.md
-
-Demonstrates how to take screenshots at different stages of an automated process for debugging and visual verification.
-
-```bash
-cmux computer screenshot --output=/tmp/before.png -w $WS_ID
-cmux computer click @e1 -w $WS_ID
-cmux computer screenshot --output=/tmp/after.png -w $WS_ID
 ```
 
 --------------------------------
@@ -1055,19 +1055,6 @@ npm i hono zod @hono/zod-openapi
 
 --------------------------------
 
-### Verify cmux devbox CLI installation
-
-Source: https://github.com/manaflow-ai/manaflow/blob/main/packages/cmux-devbox/internal/README.md
-
-Verifies that the cmux devbox CLI has been successfully installed and is accessible from the command line by checking its help message and version.
-
-```bash
-cmux --help
-cmux version
-```
-
---------------------------------
-
 ### Start and Execute Commands on a New VM
 
 Source: https://github.com/manaflow-ai/manaflow/blob/main/packages/cmux-devbox/npm/cmux/llms.txt
@@ -1078,6 +1065,19 @@ Demonstrates creating a new VM, executing development commands within it, and th
 cmux start ./my-app
 cmux exec cmux_abc123 "npm install && npm run dev"
 cmux code cmux_abc123
+```
+
+--------------------------------
+
+### Verify cmux devbox CLI installation
+
+Source: https://github.com/manaflow-ai/manaflow/blob/main/packages/cmux-devbox/internal/README.md
+
+Verifies that the cmux devbox CLI has been successfully installed and is accessible from the command line by checking its help message and version.
+
+```bash
+cmux --help
+cmux version
 ```
 
 --------------------------------

@@ -1183,6 +1183,23 @@ npm i -D typed-htmx
 
 --------------------------------
 
+### Hello World application with Hono on Bun
+
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/bun.md
+
+Basic Hono application that responds with 'Hello Bun!' on GET requests to the root path.
+
+```ts
+import { Hono } from 'hono'
+
+const app = new Hono()
+app.get('/', (c) => c.text('Hello Bun!'))
+
+export default app
+```
+
+--------------------------------
+
 ### Handle HEAD requests with a GET route
 
 Source: https://github.com/honojs/website/blob/main/docs/guides/best-practices.md
@@ -1201,23 +1218,6 @@ app.get('/api/users', async (c) => {
 // - Same headers as GET (including X-Total-Count)
 // - Status 200
 // - No body (null)
-```
-
---------------------------------
-
-### Hello World application with Hono on Bun
-
-Source: https://github.com/honojs/website/blob/main/docs/getting-started/bun.md
-
-Basic Hono application that responds with 'Hello Bun!' on GET requests to the root path.
-
-```ts
-import { Hono } from 'hono'
-
-const app = new Hono()
-app.get('/', (c) => c.text('Hello Bun!'))
-
-export default app
 ```
 
 --------------------------------
@@ -1870,6 +1870,19 @@ app.get('/', (c) => {
 
 --------------------------------
 
+### Create project directory
+
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/service-worker.md
+
+Initialize a new project directory for the Hono Service Worker application.
+
+```sh
+mkdir my-app
+cd my-app
+```
+
+--------------------------------
+
 ### Create Hono Next.js project
 
 Source: https://github.com/honojs/website/blob/main/docs/getting-started/nextjs.md
@@ -1894,19 +1907,6 @@ bun create hono@latest my-app
 
 ```sh
 deno init --npm hono my-app
-```
-
---------------------------------
-
-### Create project directory
-
-Source: https://github.com/honojs/website/blob/main/docs/getting-started/service-worker.md
-
-Initialize a new project directory for the Hono Service Worker application.
-
-```sh
-mkdir my-app
-cd my-app
 ```
 
 --------------------------------
@@ -2402,22 +2402,6 @@ app.get('/', (c) => {
 
 --------------------------------
 
-### Initialize Hono project for Lambda@Edge with npm
-
-Source: https://github.com/honojs/website/blob/main/docs/getting-started/lambda-edge.md
-
-Set up a new Hono project with CDK and TypeScript using npm. Creates project structure with lambda directory for handler code.
-
-```sh
-mkdir my-app
-cd my-app
-cdk init app -l typescript
-npm i hono
-mkdir lambda
-```
-
---------------------------------
-
 ### Get current router name with getRouterName()
 
 Source: https://github.com/honojs/website/blob/main/docs/helpers/dev.md
@@ -2430,4 +2414,20 @@ const app = new Hono()
 // ...
 
 console.log(getRouterName(app))
+```
+
+--------------------------------
+
+### Initialize Hono project for Lambda@Edge with npm
+
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/lambda-edge.md
+
+Set up a new Hono project with CDK and TypeScript using npm. Creates project structure with lambda directory for handler code.
+
+```sh
+mkdir my-app
+cd my-app
+cdk init app -l typescript
+npm i hono
+mkdir lambda
 ```
