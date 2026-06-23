@@ -67,12 +67,17 @@ function extractNetworkingUrls(instance: PveLxcInstance) {
 }
 
 const VNC_AUTH_TOKEN_PATH = "/root/.worker-auth-token";
-const VNC_TOKEN_FETCH_ATTEMPTS = 6;
+const VNC_TOKEN_FETCH_ATTEMPTS = 3;
 const VNC_TOKEN_FETCH_DELAY_MS = 1_000;
+const VNC_TOKEN_EXEC_TIMEOUT_MS = 5_000;
+const VNC_TOKEN_POLL_EXEC_TIMEOUT_MS = 3_000;
 
-async function fetchVncAuthToken(instance: PveLxcInstance): Promise<string | null> {
+async function fetchVncAuthToken(
+  instance: PveLxcInstance,
+  timeoutMs: number = VNC_TOKEN_EXEC_TIMEOUT_MS,
+): Promise<string | null> {
   try {
-    const result = await instance.exec(`cat ${VNC_AUTH_TOKEN_PATH}`, { timeoutMs: 10_000 });
+    const result = await instance.exec(`cat ${VNC_AUTH_TOKEN_PATH}`, { timeoutMs });
     if (result.exit_code === 0 && result.stdout.trim()) {
       return result.stdout.trim();
     }
@@ -110,6 +115,31 @@ export function vncUrlWithToken(
 }
 
 /**
+ * Extract networking URLs and fetch the VNC auth token in parallel,
+ * returning the token-appended VNC URL along with the other service URLs.
+ */
+async function extractNetworkingUrlsWithAuth(
+  instance: PveLxcInstance,
+  tokenFetcher: (instance: PveLxcInstance) => Promise<string | null>,
+): Promise<{
+  vscodeUrl: string | undefined;
+  workerUrl: string | undefined;
+  vncUrl: string | undefined;
+  xtermUrl: string | undefined;
+}> {
+  const [urls, authToken] = await Promise.all([
+    Promise.resolve(extractNetworkingUrls(instance)),
+    tokenFetcher(instance),
+  ]);
+  return {
+    vscodeUrl: urls.vscodeUrl,
+    workerUrl: urls.workerUrl,
+    vncUrl: vncUrlWithToken(urls.vncUrl, authToken),
+    xtermUrl: urls.xtermUrl,
+  };
+}
+
+/**
  * Start a new PVE LXC container instance.
  */
 export const startInstance = internalAction({
@@ -130,16 +160,17 @@ export const startInstance = internalAction({
         metadata: args.metadata,
       });
 
-      const { vscodeUrl, workerUrl, vncUrl, xtermUrl } = extractNetworkingUrls(instance);
-
-      const authToken = await waitForVncAuthToken(instance);
+      const { vscodeUrl, workerUrl, vncUrl, xtermUrl } = await extractNetworkingUrlsWithAuth(
+        instance,
+        waitForVncAuthToken,
+      );
 
       return {
         instanceId: instance.id,
         status: "running",
         vscodeUrl,
         workerUrl,
-        vncUrl: vncUrlWithToken(vncUrl, authToken),
+        vncUrl,
         xtermUrl,
       };
     } catch (error) {
@@ -160,16 +191,17 @@ export const getInstance = internalAction({
     try {
       const client = getPveLxcClient();
       const instance = await client.instances.get({ instanceId: args.instanceId });
-      const { vscodeUrl, workerUrl, vncUrl, xtermUrl } = extractNetworkingUrls(instance);
-
-      const authToken = await fetchVncAuthToken(instance);
+      const { vscodeUrl, workerUrl, vncUrl, xtermUrl } = await extractNetworkingUrlsWithAuth(
+        instance,
+        (i) => fetchVncAuthToken(i, VNC_TOKEN_POLL_EXEC_TIMEOUT_MS),
+      );
 
       return {
         instanceId: args.instanceId,
         status: instance.status === "running" ? "running" : "stopped",
         vscodeUrl,
         workerUrl,
-        vncUrl: vncUrlWithToken(vncUrl, authToken),
+        vncUrl,
         xtermUrl,
       };
     } catch (err) {
@@ -290,9 +322,10 @@ export const resumeInstance = internalAction({
       const instance = await client.instances.get({ instanceId: args.instanceId });
       await instance.resume();
 
-      const { vscodeUrl, workerUrl, vncUrl, xtermUrl } = extractNetworkingUrls(instance);
-
-      const authToken = await fetchVncAuthToken(instance);
+      const { vscodeUrl, workerUrl, vncUrl, xtermUrl } = await extractNetworkingUrlsWithAuth(
+        instance,
+        waitForVncAuthToken,
+      );
 
       return {
         resumed: true,
@@ -300,7 +333,7 @@ export const resumeInstance = internalAction({
         status: "running",
         vscodeUrl,
         workerUrl,
-        vncUrl: vncUrlWithToken(vncUrl, authToken),
+        vncUrl,
         xtermUrl,
       };
     } catch (error) {
