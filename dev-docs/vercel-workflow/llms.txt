@@ -168,25 +168,6 @@ pnpm build && pnpm start
 
 --------------------------------
 
-### Workflow SDK: Starting a Workflow Run
-
-Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/migration-guides/migrating-from-temporal.mdx
-
-Replaces Temporal's Worker and Task Queue setup with a single `start()` call from an API route. This example initiates the `processOrder` workflow.
-
-```typescript
-import { start } from 'workflow/api';
-import { processOrder } from '@/workflows/order';
-
-export async function POST(request: Request) {
-  const { orderId } = (await request.json()) as { orderId: string };
-  const run = await start(processOrder, [orderId]); // [!code highlight]
-  return Response.json({ runId: run.runId });
-}
-```
-
---------------------------------
-
 ### start with StartOptions
 
 Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/api-reference/workflow-api/start.mdx
@@ -221,6 +202,25 @@ const run = await start(myWorkflow, ["arg1", "arg2"], {
   deploymentId: "custom-deployment-id"
 });
 ```
+```
+
+--------------------------------
+
+### Workflow SDK: Starting a Workflow Run
+
+Source: https://github.com/vercel/workflow/blob/main/docs/content/docs/v5/migration-guides/migrating-from-temporal.mdx
+
+Replaces Temporal's Worker and Task Queue setup with a single `start()` call from an API route. This example initiates the `processOrder` workflow.
+
+```typescript
+import { start } from 'workflow/api';
+import { processOrder } from '@/workflows/order';
+
+export async function POST(request: Request) {
+  const { orderId } = (await request.json()) as { orderId: string };
+  const run = await start(processOrder, [orderId]); // [!code highlight]
+  return Response.json({ runId: run.runId });
+}
 ```
 
 --------------------------------
