@@ -938,6 +938,20 @@ cmux computer start --from=setup-complete -w $WS_ID
 
 --------------------------------
 
+### Best Practices for AI Agents: Taking Screenshots
+
+Source: https://github.com/manaflow-ai/manaflow/blob/main/apps/devbox/README.md
+
+Demonstrates how to take screenshots at different stages of an automated process for debugging and visual verification.
+
+```bash
+cmux computer screenshot --output=/tmp/before.png -w $WS_ID
+cmux computer click @e1 -w $WS_ID
+cmux computer screenshot --output=/tmp/after.png -w $WS_ID
+```
+
+--------------------------------
+
 ### Install Manaflow CLI using Bun or npm
 
 Source: https://github.com/manaflow-ai/manaflow/blob/main/README.md
@@ -954,20 +968,6 @@ npx cmux@latest
 # or to install globally
 bun add -g cmux@latest
 npm install -g cmux@latest
-```
-
---------------------------------
-
-### Best Practices for AI Agents: Taking Screenshots
-
-Source: https://github.com/manaflow-ai/manaflow/blob/main/apps/devbox/README.md
-
-Demonstrates how to take screenshots at different stages of an automated process for debugging and visual verification.
-
-```bash
-cmux computer screenshot --output=/tmp/before.png -w $WS_ID
-cmux computer click @e1 -w $WS_ID
-cmux computer screenshot --output=/tmp/after.png -w $WS_ID
 ```
 
 --------------------------------
@@ -1516,6 +1516,54 @@ go tool cover -html=coverage.out -o coverage.html
 
 --------------------------------
 
+### Get Sandbox Status
+
+Source: https://context7.com/manaflow-ai/manaflow/llms.txt
+
+Retrieves the current operational status and relevant URLs for a specified sandbox instance.
+
+```APIDOC
+## GET /api/sandboxes/{id}/status
+
+### Description
+Retrieves the current status and URLs for a running sandbox instance.
+
+### Method
+GET
+
+### Endpoint
+/api/sandboxes/{id}/status
+
+### Parameters
+#### Path Parameters
+- **id** (string) - Required - The unique identifier of the sandbox instance.
+
+#### Query Parameters
+None
+
+#### Request Body
+None
+
+### Response
+#### Success Response (200)
+- **running** (boolean) - Indicates if the sandbox is currently running.
+- **vscodeUrl** (string) - The URL to access the VS Code workspace if running.
+- **workerUrl** (string) - The URL for the sandbox worker if running.
+- **provider** (string) - The provider of the sandbox (e.g., "morph").
+
+#### Response Example
+```json
+{
+  "running": true,
+  "vscodeUrl": "https://port-39378-morphvm-abc123.http.cloud.morph.so",
+  "workerUrl": "https://port-39377-morphvm-abc123.http.cloud.morph.so",
+  "provider": "morph"
+}
+```
+```
+
+--------------------------------
+
 ### Start a Sandbox Environment
 
 Source: https://context7.com/manaflow-ai/manaflow/llms.txt
@@ -1587,54 +1635,6 @@ None
   "workerUrl": "https://port-39377-morphvm-abc123.http.cloud.morph.so",
   "provider": "morph",
   "vscodePersisted": true
-}
-```
-```
-
---------------------------------
-
-### Get Sandbox Status
-
-Source: https://context7.com/manaflow-ai/manaflow/llms.txt
-
-Retrieves the current operational status and relevant URLs for a specified sandbox instance.
-
-```APIDOC
-## GET /api/sandboxes/{id}/status
-
-### Description
-Retrieves the current status and URLs for a running sandbox instance.
-
-### Method
-GET
-
-### Endpoint
-/api/sandboxes/{id}/status
-
-### Parameters
-#### Path Parameters
-- **id** (string) - Required - The unique identifier of the sandbox instance.
-
-#### Query Parameters
-None
-
-#### Request Body
-None
-
-### Response
-#### Success Response (200)
-- **running** (boolean) - Indicates if the sandbox is currently running.
-- **vscodeUrl** (string) - The URL to access the VS Code workspace if running.
-- **workerUrl** (string) - The URL for the sandbox worker if running.
-- **provider** (string) - The provider of the sandbox (e.g., "morph").
-
-#### Response Example
-```json
-{
-  "running": true,
-  "vscodeUrl": "https://port-39378-morphvm-abc123.http.cloud.morph.so",
-  "workerUrl": "https://port-39377-morphvm-abc123.http.cloud.morph.so",
-  "provider": "morph"
 }
 ```
 ```
