@@ -193,28 +193,6 @@ test
 
 --------------------------------
 
-### example-style.json
-
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
-
-JSON configuration to install a block from the shadcn/ui registry and override its primitives with custom ones.
-
-```json
-{
-  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
-  "name": "custom-login",
-  "type": "registry:block",
-  "registryDependencies": [
-    "login-01",
-    "https://example.com/r/button.json",
-    "https://example.com/r/input.json",
-    "https://example.com/r/label.json"
-  ]
-}
-```
-
---------------------------------
-
 ### example-item.json
 
 Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
@@ -233,6 +211,28 @@ Example demonstrating the use of the 'devDependencies' field to install packages
       "content": "...",
       "type": "registry:lib"
     }
+  ]
+}
+```
+
+--------------------------------
+
+### example-style.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
+
+JSON configuration to install a block from the shadcn/ui registry and override its primitives with custom ones.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "custom-login",
+  "type": "registry:block",
+  "registryDependencies": [
+    "login-01",
+    "https://example.com/r/button.json",
+    "https://example.com/r/input.json",
+    "https://example.com/r/label.json"
   ]
 }
 ```
@@ -323,14 +323,14 @@ This configuration illustrates a secure registry setup for operators, including 
 
 --------------------------------
 
-### Get Documentation URLs for Shadcn UI Components
+### Using Component Preview
 
-Source: https://github.com/shadcn-ui/ui/blob/main/skills/shadcn/SKILL.md
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/examples/README.md
 
-Use this command to retrieve the documentation, examples, and API reference URLs for specified Shadcn UI components. Always run this before working with a component to ensure correct API usage.
+How to use the example in documentation by referencing its name (filename without .tsx).
 
-```bash
-npx shadcn@latest docs button dialog select
+```tsx
+<ComponentPreview name="button-loading" />
 ```
 
 --------------------------------
@@ -347,26 +347,26 @@ npm run setup
 
 --------------------------------
 
-### Get shadcn/ui Component Documentation URLs with CLI
+### Get Component Documentation URLs with shadcn CLI
+
+Source: https://github.com/shadcn-ui/ui/blob/main/skills/shadcn/SKILL.md
+
+Use this command to retrieve documentation, examples, and API reference URLs for specified shadcn-ui components. Always run this before working with components to ensure correct API usage.
+
+```bash
+npx shadcn@latest docs button dialog select
+```
+
+--------------------------------
+
+### Get Component Documentation URLs with shadcn CLI
 
 Source: https://github.com/shadcn-ui/ui/blob/main/skills/shadcn/cli.md
 
-This command outputs URLs for documentation, examples, and API references for specified shadcn/ui components. Fetch the URLs to access the actual content.
+Outputs resolved URLs for documentation, examples, and API references for specified components. Accepts one or more component names.
 
 ```bash
 npx shadcn@latest docs <components...> [options]
-```
-
-```text
-base  radix
-
-input
-  docs      https://ui.shadcn.com/docs/components/radix/input
-  examples  https://raw.githubusercontent.com/.../examples/input-example.tsx
-
-button
-  docs      https://ui.shadcn.com/docs/components/radix/button
-  examples  https://raw.githubusercontent.com/.../examples/button-example.tsx
 ```
 
 --------------------------------
@@ -487,18 +487,6 @@ npm install @fontsource-variable/noto-sans-arabic
 
 --------------------------------
 
-### Installation - Command Line Interface
-
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/label.mdx
-
-Install the Label component using the shadcn/ui CLI.
-
-```bash
-npx shadcn@latest add label
-```
-
---------------------------------
-
 ### Installation
 
 Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/combobox.mdx
@@ -507,6 +495,18 @@ Install the Combobox component using the shadcn CLI.
 
 ```bash
 npx shadcn@latest add combobox
+```
+
+--------------------------------
+
+### Get Current shadcn/ui Project Context (Shell)
+
+Source: https://github.com/shadcn-ui/ui/blob/main/skills/shadcn/SKILL.md
+
+Run this command to retrieve the current shadcn/ui project configuration and installed components in JSON format. Ensure you use the project's package manager (npx, pnpm dlx, or bunx) as specified in the project's setup.
+
+```shell
+!`npx shadcn@latest info --json`
 ```
 
 --------------------------------
@@ -523,26 +523,14 @@ npx shadcn@latest mcp init
 
 --------------------------------
 
-### Installation
+### Installation - Command Line Interface
 
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/navigation-menu.mdx
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/label.mdx
 
-Install the Navigation Menu component using the shadcn/ui CLI.
-
-```bash
-npx shadcn@latest add navigation-menu
-```
-
---------------------------------
-
-### Installation via CLI
-
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/pagination.mdx
-
-Install the Pagination component using the shadcn CLI.
+Install the Label component using the shadcn/ui CLI.
 
 ```bash
-npx shadcn@latest add pagination
+npx shadcn@latest add label
 ```
 
 --------------------------------
@@ -591,6 +579,42 @@ Custom style from scratch
 
 --------------------------------
 
+### Installation
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/navigation-menu.mdx
+
+Install the Navigation Menu component using the shadcn/ui CLI.
+
+```bash
+npx shadcn@latest add navigation-menu
+```
+
+--------------------------------
+
+### Installation via CLI
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/pagination.mdx
+
+Install the Pagination component using the shadcn CLI.
+
+```bash
+npx shadcn@latest add pagination
+```
+
+--------------------------------
+
+### Run Documentation Website Locally
+
+Source: https://github.com/shadcn-ui/ui/blob/main/CONTRIBUTING.md
+
+Starts the development server for the v4 workspace to view documentation locally.
+
+```bash
+pnpm --filter=v4 dev
+```
+
+--------------------------------
+
 ### Add Toaster component (Manual installation)
 
 Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/sonner.mdx
@@ -615,14 +639,14 @@ export default function RootLayout({ children }) {
 
 --------------------------------
 
-### Run Documentation Website Locally
+### Add multiple components
 
-Source: https://github.com/shadcn-ui/ui/blob/main/CONTRIBUTING.md
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/(root)/new.mdx
 
-Starts the development server for the v4 workspace to view documentation locally.
+Add multiple components at once using the CLI.
 
 ```bash
-pnpm --filter=v4 dev
+npx shadcn@latest add button card input label
 ```
 
 --------------------------------
@@ -647,30 +671,6 @@ export default function RootLayout({ children }) {
     </html>
   )
 }
-```
-
---------------------------------
-
-### Add multiple components
-
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/(root)/new.mdx
-
-Add multiple components at once using the CLI.
-
-```bash
-npx shadcn@latest add button card input label
-```
-
---------------------------------
-
-### Installation - Command Line Interface
-
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/switch.mdx
-
-Install the Switch component using the shadcn CLI.
-
-```bash
-npx shadcn@latest add switch
 ```
 
 --------------------------------
@@ -811,6 +811,18 @@ Add the following to your styles/globals.css file.
 
 --------------------------------
 
+### Installation - Command Line Interface
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/switch.mdx
+
+Install the Switch component using the shadcn CLI.
+
+```bash
+npx shadcn@latest add switch
+```
+
+--------------------------------
+
 ### .cursor/rules/custom-python.mdc
 
 Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
@@ -835,14 +847,41 @@ Example of a universal registry item that installs custom Cursor rules for Pytho
 
 --------------------------------
 
-### Initialize or Create Project with shadcn CLI
+### shadcn init Command Usage and Options
 
-Source: https://github.com/shadcn-ui/ui/blob/main/skills/shadcn/cli.md
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/(root)/cli.mdx
 
-Use this command to initialize shadcn/ui in an existing project or create a new one. Optionally install components in the same step.
+Displays the full command-line usage, arguments, and available options for the `shadcn init` command.
 
 ```bash
-npx shadcn@latest init [components...] [options]
+Usage: shadcn init [options] [components...]
+
+initialize your project and install dependencies
+
+Arguments:
+  components                 names, url or local path to component
+
+Options:
+  -t, --template <template>  the template to use. (next, vite, start, react-router, laravel, astro)
+  -b, --base <base>          the component library to use. (radix, base)
+  -p, --preset [name]        use a preset configuration
+  -y, --yes                  skip confirmation prompt. (default: true)
+  -d, --defaults             use default configuration: --template=next --preset=nova (default: false)
+  -f, --force                force overwrite of existing configuration. (default: false)
+  -c, --cwd <cwd>            the working directory. defaults to the current directory.
+  -n, --name <name>          the name for the new project.
+  -s, --silent               mute output. (default: false)
+  --css-variables            use css variables for theming. (default: true)
+  --no-css-variables         do not use css variables for theming.
+  --monorepo                 scaffold a monorepo project.
+  --no-monorepo              skip the monorepo prompt.
+  --rtl                      enable RTL support.
+  --no-rtl                   disable RTL support.
+  --pointer                  enable pointer cursor for buttons.
+  --no-pointer               disable pointer cursor for buttons.
+  --reinstall                re-install existing UI components.
+  --no-reinstall             do not re-install existing UI components.
+  -h, --help                 display help for command
 ```
 
 --------------------------------
@@ -889,45 +928,6 @@ Example of adding environment variables to a registry item using the `envVars` f
 
 --------------------------------
 
-### shadcn init Command Usage and Options
-
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/(root)/cli.mdx
-
-Displays the full command-line usage, arguments, and available options for the `shadcn init` command.
-
-```bash
-Usage: shadcn init [options] [components...]
-
-initialize your project and install dependencies
-
-Arguments:
-  components                 names, url or local path to component
-
-Options:
-  -t, --template <template>  the template to use. (next, vite, start, react-router, laravel, astro)
-  -b, --base <base>          the component library to use. (radix, base)
-  -p, --preset [name]        use a preset configuration
-  -y, --yes                  skip confirmation prompt. (default: true)
-  -d, --defaults             use default configuration: --template=next --preset=nova (default: false)
-  -f, --force                force overwrite of existing configuration. (default: false)
-  -c, --cwd <cwd>            the working directory. defaults to the current directory.
-  -n, --name <name>          the name for the new project.
-  -s, --silent               mute output. (default: false)
-  --css-variables            use css variables for theming. (default: true)
-  --no-css-variables         do not use css variables for theming.
-  --monorepo                 scaffold a monorepo project.
-  --no-monorepo              skip the monorepo prompt.
-  --rtl                      enable RTL support.
-  --no-rtl                   disable RTL support.
-  --pointer                  enable pointer cursor for buttons.
-  --no-pointer               disable pointer cursor for buttons.
-  --reinstall                re-install existing UI components.
-  --no-reinstall             do not re-install existing UI components.
-  -h, --help                 display help for command
-```
-
---------------------------------
-
 ### `components.json` configuration file
 
 Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/changelog/2023-06-new-cli.mdx
@@ -949,6 +949,18 @@ Example `components.json` file showing project configuration.
     "components": "~/components"
   }
 }
+```
+
+--------------------------------
+
+### Add dependencies
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/installation/manual.mdx
+
+Add the following dependencies to your project:
+
+```bash
+npm install shadcn class-variance-authority clsx tailwind-merge lucide-react tw-animate-css
 ```
 
 --------------------------------
@@ -1020,57 +1032,30 @@ Example demonstrating the use of the 'meta' field to attach arbitrary metadata t
 
 --------------------------------
 
-### Add dependencies
+### View Specific Component Details Examples
 
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/installation/manual.mdx
+Source: https://github.com/shadcn-ui/ui/blob/main/skills/shadcn/cli.md
 
-Add the following dependencies to your project:
+Examples demonstrating how to view details for a shadcn component using its name or a full path.
 
 ```bash
-npm install shadcn class-variance-authority clsx tailwind-merge lucide-react tw-animate-css
+npx shadcn@latest view @shadcn/button
+```
+
+```bash
+npx shadcn@latest view owner/repo/item
 ```
 
 --------------------------------
 
-### Install Multiple Resources with Override
+### Get List of Installed shadcn/ui Components
 
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/namespace.mdx
+Source: https://github.com/shadcn-ui/ui/blob/main/skills/shadcn/cli.md
 
-When installing multiple resources, the last resolved resource with conflicting files will override previous ones. In this example, `login-form.ts` from `@custom/login-form` will override the one from `@acme/auth`.
+Run this command to retrieve a list of currently installed shadcn/ui components in your project. This is useful for the smart merge workflow when updating components.
 
 ```bash
-npx shadcn@latest add @acme/auth @custom/login-form
-```
-
---------------------------------
-
-### alias-parent.json
-
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
-
-Shows how registry dependencies can also utilize target placeholders, with a parent item installing an app component and a hook, and a child item installing a UI component and a helper.
-
-```json
-{
-  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
-  "name": "alias-parent",
-  "type": "registry:item",
-  "registryDependencies": ["https://example.com/r/alias-child.json"],
-  "files": [
-    {
-      "path": "registry/new-york/alias/target-alias-panel.tsx",
-      "type": "registry:component",
-      "target": "@components/target-alias-panel.tsx",
-      "content": "..."
-    },
-    {
-      "path": "registry/new-york/alias/use-target-alias.ts",
-      "type": "registry:hook",
-      "target": "@hooks/use-target-alias.ts",
-      "content": "..."
-    }
-  ]
-}
+npx shadcn@latest info
 ```
 
 --------------------------------
@@ -1113,14 +1098,14 @@ Custom theme
 
 --------------------------------
 
-### Get Installed Components for Smart Merge
+### Install Multiple Resources with Override
 
-Source: https://github.com/shadcn-ui/ui/blob/main/skills/shadcn/cli.md
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/namespace.mdx
 
-After merging a preset, use this command to retrieve a list of installed components, which is essential for performing a smart merge workflow to update components individually.
+When installing multiple resources, the last resolved resource with conflicting files will override previous ones. In this example, `login-form.ts` from `@custom/login-form` will override the one from `@acme/auth`.
 
 ```bash
-npx shadcn@latest info
+npx shadcn@latest add @acme/auth @custom/login-form
 ```
 
 --------------------------------
@@ -1137,6 +1122,71 @@ import { twMerge } from "tailwind-merge"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
+}
+```
+
+--------------------------------
+
+### alias-parent.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
+
+Shows how registry dependencies can also utilize target placeholders, with a parent item installing an app component and a hook, and a child item installing a UI component and a helper.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "alias-parent",
+  "type": "registry:item",
+  "registryDependencies": ["https://example.com/r/alias-child.json"],
+  "files": [
+    {
+      "path": "registry/new-york/alias/target-alias-panel.tsx",
+      "type": "registry:component",
+      "target": "@components/target-alias-panel.tsx",
+      "content": "..."
+    },
+    {
+      "path": "registry/new-york/alias/use-target-alias.ts",
+      "type": "registry:hook",
+      "target": "@hooks/use-target-alias.ts",
+      "content": "..."
+    }
+  ]
+}
+```
+
+--------------------------------
+
+### Initialize or Create a Project with shadcn CLI
+
+Source: https://github.com/shadcn-ui/ui/blob/main/skills/shadcn/cli.md
+
+Initializes shadcn/ui in an existing project or creates a new one. Optionally installs components during initialization.
+
+```bash
+npx shadcn@latest init [components...] [options]
+```
+
+--------------------------------
+
+### Add TooltipProvider to root (CLI)
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/tooltip.mdx
+
+Example of adding TooltipProvider to `app/layout.tsx` for CLI installation.
+
+```tsx
+import { TooltipProvider } from "@/components/ui/tooltip"
+
+export default function RootLayout({ children }) {
+  return (
+    <html lang="en">
+      <body>
+        <TooltipProvider>{children}</TooltipProvider>
+      </body>
+    </html>
+  )
 }
 ```
 
@@ -1163,28 +1213,6 @@ Illustrates adding multiple plugins, noting their automatic grouping and dedupli
     "@plugin \"@tailwindcss/forms\"": {},
     "@plugin \"tw-animate-css\"": {}
   }
-}
-```
-
---------------------------------
-
-### Add TooltipProvider to root (CLI)
-
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/tooltip.mdx
-
-Example of adding TooltipProvider to `app/layout.tsx` for CLI installation.
-
-```tsx
-import { TooltipProvider } from "@/components/ui/tooltip"
-
-export default function RootLayout({ children }) {
-  return (
-    <html lang="en">
-      <body>
-        <TooltipProvider>{children}</TooltipProvider>
-      </body>
-    </html>
-  )
 }
 ```
 
@@ -1234,26 +1262,6 @@ Example of a shared UI package's package.json exposing install targets with expo
 
 --------------------------------
 
-### example-media-import.json
-
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
-
-Illustrates importing CSS conditionally using media queries for print and mobile styles.
-
-```json
-{
-  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
-  "name": "responsive-import",
-  "type": "registry:item",
-  "css": {
-    "@import \"print-styles.css\" print": {},
-    "@import url(\"mobile.css\") screen and (max-width: 768px)": {}
-  }
-}
-```
-
---------------------------------
-
 ### Use useDirection Hook
 
 Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/direction.mdx
@@ -1282,6 +1290,26 @@ Unknown registry "@acme". Make sure it is defined in components.json as follows:
 {
   "registries": {
     "@acme": "[URL_TO_REGISTRY]"
+  }
+}
+```
+
+--------------------------------
+
+### example-media-import.json
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
+
+Illustrates importing CSS conditionally using media queries for print and mobile styles.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "responsive-import",
+  "type": "registry:item",
+  "css": {
+    "@import \"print-styles.css\" print": {},
+    "@import url(\"mobile.css\") screen and (max-width: 768px)": {}
   }
 }
 ```
@@ -1348,6 +1376,30 @@ Example configuration demonstrating multiple registry setups including public, p
 
 --------------------------------
 
+### CLI TypeScript Opt-out Prompt
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/changelog/2023-07-javascript.mdx
+
+Example of the CLI prompt when opting out of TypeScript during project setup.
+
+```txt
+Would you like to use TypeScript (recommended)? no
+```
+
+--------------------------------
+
+### Get component documentation
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/changelog/2026-03-cli-v4.mdx
+
+Command to retrieve documentation, code, and examples for a UI component.
+
+```bash
+npx shadcn@latest docs combobox
+```
+
+--------------------------------
+
 ### example-import.json
 
 Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/examples.mdx
@@ -1368,14 +1420,14 @@ Demonstrates a basic CSS import using "@import \"tailwindcss\"" and a local CSS 
 
 --------------------------------
 
-### CLI TypeScript Opt-out Prompt
+### Generated Project Creation Command
 
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/changelog/2023-07-javascript.mdx
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/installation/tanstack.mdx
 
-Example of the CLI prompt when opting out of TypeScript during project setup.
+Example of the `shadcn@latest init` command generated by shadcn/create, including a preset and template.
 
-```txt
-Would you like to use TypeScript (recommended)? no
+```bash
+npx shadcn@latest init --preset [CODE] --template start
 ```
 
 --------------------------------
@@ -1388,30 +1440,6 @@ Use the CLI to add a single component to your project.
 
 ```bash
 npx shadcn@latest add button
-```
-
---------------------------------
-
-### Get component documentation
-
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/changelog/2026-03-cli-v4.mdx
-
-Command to retrieve documentation, code, and examples for a UI component.
-
-```bash
-npx shadcn@latest docs combobox
-```
-
---------------------------------
-
-### Generated Project Creation Command
-
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/installation/tanstack.mdx
-
-Example of the `shadcn@latest init` command generated by shadcn/create, including a preset and template.
-
-```bash
-npx shadcn@latest init --preset [CODE] --template start
 ```
 
 --------------------------------
@@ -1449,14 +1477,19 @@ import { ThemeProvider } from "next-themes"
 
 --------------------------------
 
-### Initialize a shadcn Project
+### Popover Usage Example
 
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/(root)/cli.mdx
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/changelog/2026-01-inline-side-styles.mdx
 
-Initializes the project by installing dependencies, adding the `cn` utility, and configuring CSS variables.
+Demonstrates how to use the `side="inline-start"` prop with `PopoverContent`.
 
-```bash
-npx shadcn@latest init
+```tsx
+<Popover>
+  <PopoverTrigger>Open</PopoverTrigger>
+  <PopoverContent side="inline-start">
+    {/* Opens on the left in LTR, right in RTL */}
+  </PopoverContent>
+</Popover>
 ```
 
 --------------------------------
@@ -1485,31 +1518,14 @@ Custom colors
 
 --------------------------------
 
-### Popover Usage Example
+### Initialize a shadcn Project
 
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/changelog/2026-01-inline-side-styles.mdx
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/(root)/cli.mdx
 
-Demonstrates how to use the `side="inline-start"` prop with `PopoverContent`.
-
-```tsx
-<Popover>
-  <PopoverTrigger>Open</PopoverTrigger>
-  <PopoverContent side="inline-start">
-    {/* Opens on the left in LTR, right in RTL */}
-  </PopoverContent>
-</Popover>
-```
-
---------------------------------
-
-### Install Component from GitHub Registry
-
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/namespace.mdx
-
-Use this command to install a component directly from a public GitHub repository without requiring a `components.json` configuration.
+Initializes the project by installing dependencies, adding the `cn` utility, and configuring CSS variables.
 
 ```bash
-npx shadcn@latest add acme/ui/button
+npx shadcn@latest init
 ```
 
 --------------------------------
@@ -1536,6 +1552,18 @@ function App() {
     </div>
   )
 }
+```
+
+--------------------------------
+
+### Install Component from GitHub Registry
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/registry/namespace.mdx
+
+Use this command to install a component directly from a public GitHub repository without requiring a `components.json` configuration.
+
+```bash
+npx shadcn@latest add acme/ui/button
 ```
 
 --------------------------------
@@ -1624,14 +1652,19 @@ npx shadcn@latest add progress
 
 --------------------------------
 
-### Retrieve shadcn/ui Project Information (Shell)
+### New Example File Content
 
-Source: https://github.com/shadcn-ui/ui/blob/main/skills/shadcn/SKILL.md
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/examples/README.md
 
-Executes the shadcn CLI to fetch the current project's configuration and installed components, outputting the result in JSON format. This command provides a snapshot of the project's shadcn/ui setup.
+Example content for a new .tsx file in examples/base or examples/radix.
 
-```shell
-!`npx shadcn@latest info --json`
+```tsx
+// examples/base/button-loading.tsx
+import { Button } from "@/styles/base-nova/ui/button"
+
+export function ButtonLoading() {
+  return <Button disabled>Loading...</Button>
+}
 ```
 
 --------------------------------
@@ -1660,23 +1693,6 @@ npx shadcn@latest add select
 
 --------------------------------
 
-### New Example File Content
-
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/examples/README.md
-
-Example content for a new .tsx file in examples/base or examples/radix.
-
-```tsx
-// examples/base/button-loading.tsx
-import { Button } from "@/styles/base-nova/ui/button"
-
-export function ButtonLoading() {
-  return <Button disabled>Loading...</Button>
-}
-```
-
---------------------------------
-
 ### Manual Installation Dependencies
 
 Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/aspect-ratio.mdx
@@ -1685,6 +1701,30 @@ Install the required dependencies for manual installation of the Aspect Ratio co
 
 ```bash
 npm install @base-ui/react
+```
+
+--------------------------------
+
+### Installation
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/command.mdx
+
+Install the `cmdk` dependency manually.
+
+```bash
+npm install cmdk
+```
+
+--------------------------------
+
+### Create New shadcn/ui Project with Base Nova Preset
+
+Source: https://github.com/shadcn-ui/ui/blob/main/skills/shadcn/SKILL.md
+
+Initialize a new shadcn/ui project named 'my-app' using the 'base-nova' preset.
+
+```bash
+npx shadcn@latest init --name my-app --preset base-nova
 ```
 
 --------------------------------
@@ -1722,30 +1762,6 @@ Custom style that extends shadcn/ui
 
 --------------------------------
 
-### Apply a custom theme preset
-
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/(root)/new.mdx
-
-Apply a custom theme to your project using a preset code.
-
-```bash
-npx shadcn@latest init --preset [CODE]
-```
-
---------------------------------
-
-### Installation
-
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/command.mdx
-
-Install the `cmdk` dependency manually.
-
-```bash
-npm install cmdk
-```
-
---------------------------------
-
 ### Directory Structure
 
 Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/examples/README.md
@@ -1764,14 +1780,14 @@ examples
 
 --------------------------------
 
-### Initialize project
+### Apply a custom theme preset
 
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/(root)/components-json.mdx
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/(root)/new.mdx
 
-Command to create a components.json file.
+Apply a custom theme to your project using a preset code.
 
 ```bash
-npx shadcn@latest init
+npx shadcn@latest init --preset [CODE]
 ```
 
 --------------------------------
@@ -1784,6 +1800,44 @@ Install Tabs using the shadcn/ui CLI.
 
 ```bash
 npx shadcn@latest add tabs
+```
+
+--------------------------------
+
+### Create TanStack Start Project
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/installation/tanstack.mdx
+
+Command to create a new TanStack Start project using the TanStack CLI. This step can be skipped if you already have a project.
+
+```bash
+npx @tanstack/cli@latest create
+```
+
+--------------------------------
+
+### Initialize project
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/(root)/components-json.mdx
+
+Command to create a components.json file.
+
+```bash
+npx shadcn@latest init
+```
+
+--------------------------------
+
+### ItemMedia Image Example
+
+Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/item.mdx
+
+Example of using ItemMedia with variant='image'.
+
+```tsx
+<ItemMedia variant="image">
+  <img src="..." alt="..." />
+</ItemMedia>
 ```
 
 --------------------------------
@@ -1819,44 +1873,6 @@ Demonstrates a registry item configuration combining both "@import" and "@plugin
 
 --------------------------------
 
-### Create TanStack Start Project
-
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/installation/tanstack.mdx
-
-Command to create a new TanStack Start project using the TanStack CLI. This step can be skipped if you already have a project.
-
-```bash
-npx @tanstack/cli@latest create
-```
-
---------------------------------
-
-### ItemMedia Image Example
-
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/item.mdx
-
-Example of using ItemMedia with variant='image'.
-
-```tsx
-<ItemMedia variant="image">
-  <img src="..." alt="..." />
-</ItemMedia>
-```
-
---------------------------------
-
-### Create Project
-
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/rtl/start.mdx
-
-Create a new project using the `--rtl` flag and the `start` template.
-
-```bash
-npx shadcn@latest create --template start --rtl
-```
-
---------------------------------
-
 ### ItemMedia Icon Example
 
 Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/item.mdx
@@ -1867,28 +1883,4 @@ Example of using ItemMedia with variant='icon'.
 <ItemMedia variant="icon">
   <Icon />
 </ItemMedia>
-```
-
---------------------------------
-
-### Install @types/node
-
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/installation/vite.mdx
-
-Install the TypeScript type definitions for Node.js.
-
-```bash
-npm install -D @types/node
-```
-
---------------------------------
-
-### Installation
-
-Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/content/docs/components/base/command.mdx
-
-Add the Command component using the shadcn/ui CLI.
-
-```bash
-npx shadcn@latest add command
 ```
