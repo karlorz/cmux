@@ -54,54 +54,30 @@ $ deno add -D npm:vite
 
 --------------------------------
 
-### Create Vite Project
+### Scaffolding Your First Vite Project
 
 Source: https://github.com/vitejs/vite/blob/main/docs/guide/index.md
 
-Commands to scaffold a new Vite project using different package managers, with an example for a Vue template.
+Commands to scaffold a new Vite project using different package managers.
 
 ```bash
-# npm 7+, extra double-dash is needed:
-$ npm create vite@latest my-vue-app -- --template vue
+$ npm create vite@latest
 ```
 
 ```bash
-$ yarn create vite my-vue-app --template vue
+$ yarn create vite
 ```
 
 ```bash
-$ pnpm create vite my-vue-app --template vue
+$ pnpm create vite
 ```
 
 ```bash
-$ bun create vite my-vue-app --template vue
+$ bun create vite
 ```
 
 ```bash
-$ deno init --npm vite my-vue-app --template vue
-```
-
---------------------------------
-
-### `preview` Example Usage
-
-Source: https://github.com/vitejs/vite/blob/main/docs/guide/api-javascript.md
-
-Demonstrates how to use the `preview` function to start a preview server with custom port and auto-open settings, then print URLs and bind CLI shortcuts.
-
-```ts
-import { preview } from 'vite'
-
-const previewServer = await preview({
-  // any valid user config options, plus `mode` and `configFile`
-  preview: {
-    port: 8080,
-    open: true,
-  },
-})
-
-previewServer.printUrls()
-previewServer.bindCLIShortcuts({ print: true })
+$ deno init --npm vite
 ```
 
 --------------------------------
@@ -134,30 +110,31 @@ $ deno run -A npm:vite
 
 --------------------------------
 
-### Scaffolding Your First Vite Project
+### Create Vite Project
 
 Source: https://github.com/vitejs/vite/blob/main/docs/guide/index.md
 
-Commands to scaffold a new Vite project using different package managers.
+Commands to scaffold a new Vite project using different package managers, with an example for a Vue template.
 
 ```bash
-$ npm create vite@latest
+# npm 7+, extra double-dash is needed:
+$ npm create vite@latest my-vue-app -- --template vue
 ```
 
 ```bash
-$ yarn create vite
+$ yarn create vite my-vue-app --template vue
 ```
 
 ```bash
-$ pnpm create vite
+$ pnpm create vite my-vue-app --template vue
 ```
 
 ```bash
-$ bun create vite
+$ bun create vite my-vue-app --template vue
 ```
 
 ```bash
-$ deno init --npm vite
+$ deno init --npm vite my-vue-app --template vue
 ```
 
 --------------------------------
@@ -198,6 +175,29 @@ export default defineConfig({
 
 --------------------------------
 
+### Programmatic Vite Preview Server Example
+
+Source: https://github.com/vitejs/vite/blob/main/docs/guide/api-javascript.md
+
+Shows how to programmatically start a Vite preview server, configure its port and auto-opening, and interact with the `PreviewServer` instance to print URLs and bind CLI shortcuts.
+
+```typescript
+import { preview } from 'vite'
+
+const previewServer = await preview({
+  // any valid user config options, plus `mode` and `configFile`
+  preview: {
+    port: 8080,
+    open: true,
+  },
+})
+
+previewServer.printUrls()
+previewServer.bindCLIShortcuts({ print: true })
+```
+
+--------------------------------
+
 ### Default npm Scripts
 
 Source: https://github.com/vitejs/vite/blob/main/docs/guide/index.md
@@ -230,27 +230,6 @@ export * from './slash.js'
 
 --------------------------------
 
-### Configuring Server Warmup
-
-Source: https://github.com/vitejs/vite/blob/main/docs/guide/performance.md
-
-Example `vite.config.js` configuration to warm up frequently used client files, preventing request waterfalls.
-
-```js
-export default defineConfig({
-  server: {
-    warmup: {
-      clientFiles: [
-        './src/components/BigComponent.vue',
-        './src/utils/big-utils.js'
-      ]
-    }
-  }
-})
-```
-
---------------------------------
-
 ### Install specific commit
 
 Source: https://github.com/vitejs/vite/blob/main/docs/guide/index.md
@@ -275,6 +254,27 @@ $ bun add -D https://pkg.pr.new/vite@SHA
 
 --------------------------------
 
+### Configuring Server Warmup
+
+Source: https://github.com/vitejs/vite/blob/main/docs/guide/performance.md
+
+Example `vite.config.js` configuration to warm up frequently used client files, preventing request waterfalls.
+
+```js
+export default defineConfig({
+  server: {
+    warmup: {
+      clientFiles: [
+        './src/components/BigComponent.vue',
+        './src/utils/big-utils.js'
+      ]
+    }
+  }
+})
+```
+
+--------------------------------
+
 ### Netlify CLI Installation
 
 Source: https://github.com/vitejs/vite/blob/main/docs/guide/static-deploy.md
@@ -283,31 +283,6 @@ Command to install the Netlify CLI globally.
 
 ```bash
 npm install -g netlify-cli
-```
-
---------------------------------
-
-### listen
-
-Source: https://github.com/vitejs/vite/blob/main/docs/guide/api-javascript.md
-
-Start the server.
-
-```APIDOC
-## listen
-
-### Description
-Start the server.
-
-### Method Signature
-listen(port?: number, isRestart?: boolean): Promise<ViteDevServer>
-
-### Parameters
-- **port** (number) - Optional - The port to listen on.
-- **isRestart** (boolean) - Optional - Indicates if the server is being restarted.
-
-### Returns
-- **Promise<ViteDevServer>** - A promise that resolves to the ViteDevServer instance once the server is listening.
 ```
 
 --------------------------------
@@ -354,30 +329,27 @@ Example of configuring the preview server's port in package.json.
 
 --------------------------------
 
-### Install SWC Plugin for Decorators
+### listen(port, isRestart)
 
-Source: https://github.com/vitejs/vite/blob/main/docs/guide/migration.md
+Source: https://github.com/vitejs/vite/blob/main/docs/guide/api-javascript.md
 
-Commands to install the SWC plugin and core for lowering native decorators.
+Start the server.
 
-```bash
-$ npm install -D @rollup/plugin-swc @swc/core
-```
+```APIDOC
+## Method: listen(port?: number, isRestart?: boolean)
 
-```bash
-$ yarn add -D @rollup/plugin-swc @swc/core
-```
+### Description
+Start the server.
 
-```bash
-$ pnpm add -D @rollup/plugin-swc @swc/core
-```
+### Signature
+listen(port?: number, isRestart?: boolean): Promise<ViteDevServer>
 
-```bash
-$ bun add -D @rollup/plugin-swc @swc/core
-```
+### Parameters
+- **port** (number) - Optional - The port number for the server to listen on.
+- **isRestart** (boolean) - Optional - Indicates if the server is being restarted.
 
-```bash
-$ deno add -D npm:@rollup/plugin-swc npm:@swc/core
+### Returns
+Promise<ViteDevServer> - A promise that resolves to the `ViteDevServer` instance once the server is listening.
 ```
 
 --------------------------------
@@ -429,50 +401,40 @@ import { core, emeriti } from './_data/team'
 
 --------------------------------
 
-### Install CSS Pre-processors for Vite
+### Entry file exports
 
-Source: https://github.com/vitejs/vite/blob/main/docs/guide/features.md
+Source: https://github.com/vitejs/vite/blob/main/docs/guide/build.md
 
-Install the necessary packages for Sass, Less, or Stylus to enable built-in support for these pre-processors in Vite projects.
+Example of an entry file (`lib/main.js`) exporting components for library users.
 
-```bash
-npm add -D sass-embedded # or sass
-```
-
-```bash
-npm add -D less
-```
-
-```bash
-npm add -D stylus
+```js
+import Foo from './Foo.vue'
+import Bar from './Bar.vue'
+export { Foo, Bar }
 ```
 
 --------------------------------
 
-### Install Babel Plugin for Decorators
+### Install Cloudflare Vite Plugin
 
-Source: https://github.com/vitejs/vite/blob/main/docs/guide/migration.md
+Source: https://github.com/vitejs/vite/blob/main/docs/guide/static-deploy.md
 
-Commands to install the Babel plugin and decorator proposal plugin for lowering native decorators.
+Command to install the Cloudflare Vite plugin as a development dependency.
 
 ```bash
-$ npm install -D @rolldown/plugin-babel @babel/plugin-proposal-decorators
+npm install --save-dev @cloudflare/vite-plugin
 ```
 
-```bash
-$ yarn add -D @rolldown/plugin-babel @babel/plugin-proposal-decorators
-```
+--------------------------------
 
-```bash
-$ pnpm add -D @rolldown/plugin-babel @babel/plugin-proposal-decorators
-```
+### Install esbuild for CSS Minification
 
-```bash
-$ bun add -D @rolldown/plugin-babel @babel/plugin-proposal-decorators
-```
+Source: https://github.com/vitejs/vite/blob/main/docs/config/build-options.md
 
-```bash
-$ deno add -D npm:@rolldown/plugin-babel npm:@babel/plugin-proposal-decorators
+Install esbuild as a development dependency to use it for CSS minification when `build.cssMinify` is set to 'esbuild'.
+
+```sh
+npm add -D esbuild
 ```
 
 --------------------------------
@@ -528,14 +490,93 @@ export default {
 
 --------------------------------
 
-### Preview command
+### Vite Dev Server Usage
 
-Source: https://github.com/vitejs/vite/blob/main/docs/guide/static-deploy.md
+Source: https://github.com/vitejs/vite/blob/main/docs/guide/cli.md
 
-Command to test the built application locally.
+Basic usage for starting the Vite development server.
 
 ```bash
-$ npm run preview
+vite [root]
+```
+
+--------------------------------
+
+### Example HTML Output for 'views/foo.js' Entry Point
+
+Source: https://github.com/vitejs/vite/blob/main/docs/guide/backend-integration.md
+
+Shows the recommended HTML tags to include for the `views/foo.js` entry point in a production build, demonstrating stylesheet links, script module, and optional module preload.
+
+```html
+<link rel="stylesheet" href="assets/foo-5UjPuW-k.css" />
+<link rel="stylesheet" href="assets/shared-ChJ_j-JJ.css" />
+<script type="module" src="assets/foo-BRBmoGS9.js"></script>
+<!-- optional -->
+<link rel="modulepreload" href="assets/shared-B7PI925R.js" />
+```
+
+--------------------------------
+
+### Example HTML Output for 'views/bar.js' Entry Point
+
+Source: https://github.com/vitejs/vite/blob/main/docs/guide/backend-integration.md
+
+Shows the recommended HTML tags to include for the `views/bar.js` entry point in a production build, demonstrating stylesheet links, script module, and optional module preload.
+
+```html
+<link rel="stylesheet" href="assets/shared-ChJ_j-JJ.css" />
+<script type="module" src="assets/bar-gkvgaI9m.js"></script>
+<!-- optional -->
+<link rel="modulepreload" href="assets/shared-B7PI925R.js" />
+```
+
+--------------------------------
+
+### preview
+
+Source: https://github.com/vitejs/vite/blob/main/docs/guide/api-javascript.md
+
+The `preview` function starts a local server to preview the built application. It accepts an optional inline configuration to customize the server behavior.
+
+```APIDOC
+## preview(inlineConfig?: InlineConfig)
+
+### Description
+The `preview` function starts a local server to preview the built application. It accepts an optional inline configuration to customize the server behavior.
+
+### Method
+function
+
+### Parameters
+#### Function Parameters
+- **inlineConfig** (InlineConfig) - Optional - Configuration options for the preview server, including `mode` and `configFile`.
+
+### Response
+#### Success Response
+- **Promise<PreviewServer>** - A promise that resolves to a `PreviewServer` instance.
+```
+
+--------------------------------
+
+### Vite HTML Entry Point Example
+
+Source: https://github.com/vitejs/vite/blob/main/docs/guide/features.md
+
+This snippet demonstrates a basic HTML file serving as an entry point in a Vite project, referencing a favicon, stylesheet, image, and JavaScript module.
+
+```html
+<!doctype html>
+<html>
+  <head>
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <img src="/src/images/logo.svg" alt="logo" />
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
 ```
 
 --------------------------------
@@ -556,56 +597,6 @@ test('should work', async () => {
 
 --------------------------------
 
-### preview
-
-Source: https://github.com/vitejs/vite/blob/main/docs/guide/api-javascript.md
-
-Asynchronously starts a Vite preview server with optional inline configuration, returning a `PreviewServer` instance that allows interaction with the server.
-
-```APIDOC
-## preview
-
-### Description
-Asynchronously starts a Vite preview server with optional inline configuration, returning a `PreviewServer` instance that allows interaction with the server.
-
-### Type Signature
-```ts
-async function preview(inlineConfig?: InlineConfig): Promise<PreviewServer>
-```
-
-### Parameters
-#### Path Parameters
-- No Path Parameters
-
-#### Query Parameters
-- No Query Parameters
-
-#### Request Body
-- No Request Body
-
-### Arguments
-- **inlineConfig** (InlineConfig) - Optional - Any valid user config options, plus `mode` and `configFile`.
-
-### Response
-#### Success Response (Promise<PreviewServer>)
-A promise that resolves to a `PreviewServer` instance.
-
-#### Response Example
-```ts
-const previewServer = await preview({
-  preview: {
-    port: 8080,
-    open: true,
-  },
-})
-
-previewServer.printUrls()
-previewServer.bindCLIShortcuts({ print: true })
-```
-```
-
---------------------------------
-
 ### Using pnpm overrides for local Vite testing
 
 Source: https://github.com/vitejs/vite/blob/main/CONTRIBUTING.md
@@ -620,14 +611,14 @@ overrides:
 
 --------------------------------
 
-### Netlify CLI Site Initialization
+### Preview command
 
 Source: https://github.com/vitejs/vite/blob/main/docs/guide/static-deploy.md
 
-Command to create a new Netlify site using the CLI.
+Command to test the built application locally.
 
 ```bash
-netlify init
+$ npm run preview
 ```
 
 --------------------------------
@@ -656,18 +647,6 @@ pnpm release
 
 ```bash
 pnpm release --dry
-```
-
---------------------------------
-
-### Build for production
-
-Source: https://github.com/vitejs/vite/blob/main/packages/create-vite/template-qwik/README.md
-
-Command to build the application for production.
-
-```bash
-npm run build
 ```
 
 --------------------------------
@@ -715,25 +694,26 @@ createServer()
 
 --------------------------------
 
-### Programmatic Vite Build Example
+### Netlify CLI Site Initialization
 
-Source: https://github.com/vitejs/vite/blob/main/docs/guide/api-javascript.md
+Source: https://github.com/vitejs/vite/blob/main/docs/guide/static-deploy.md
 
-Illustrates how to use the `build` function with an `InlineConfig` object to configure the build process, specifying root and base paths.
+Command to create a new Netlify site using the CLI.
 
-```javascript
-import path from 'node:path'
-import { build } from 'vite'
+```bash
+netlify init
+```
 
-await build({
-  root: path.resolve(import.meta.dirname, './project'),
-  base: '/foo/',
-  build: {
-    rolldownOptions: {
-      // ...
-    },
-  },
-})
+--------------------------------
+
+### Build for production
+
+Source: https://github.com/vitejs/vite/blob/main/packages/create-vite/template-qwik/README.md
+
+Command to build the application for production.
+
+```bash
+npm run build
 ```
 
 --------------------------------
@@ -774,28 +754,28 @@ npm run dev
 
 --------------------------------
 
-### Entry file exports
+### Example .env file
 
-Source: https://github.com/vitejs/vite/blob/main/docs/guide/build.md
+Source: https://github.com/vitejs/vite/blob/main/docs/guide/env-and-mode.md
 
-Example of an entry file (`lib/main.js`) exporting components for library users.
+An example `.env` file showing a `VITE_` prefixed variable and a non-prefixed variable.
 
-```js
-import Foo from './Foo.vue'
-import Bar from './Bar.vue'
-export { Foo, Bar }
+```env
+VITE_SOME_KEY=123
+DB_PASSWORD=foobar
 ```
 
 --------------------------------
 
-### Install Cloudflare Vite Plugin
+### Install Minifiers for Vite Build
 
-Source: https://github.com/vitejs/vite/blob/main/docs/guide/static-deploy.md
+Source: https://github.com/vitejs/vite/blob/main/docs/config/build-options.md
 
-Command to install the Cloudflare Vite plugin as a development dependency.
+Install `esbuild` or `terser` as development dependencies to use them as minifiers with Vite's `build.minify` option.
 
-```bash
-npm install --save-dev @cloudflare/vite-plugin
+```sh
+npm add -D esbuild
+npm add -D terser
 ```
 
 --------------------------------
@@ -847,97 +827,54 @@ console.log(server.environments.ssr.moduleGraph)
 
 --------------------------------
 
-### Install esbuild for CSS Minification
+### External Svelte Store Example
 
-Source: https://github.com/vitejs/vite/blob/main/docs/config/build-options.md
+Source: https://github.com/vitejs/vite/blob/main/packages/create-vite/template-svelte/README.md
 
-Install esbuild as a development dependency to use it as the CSS minifier when `build.cssMinify` is set to `'esbuild'`.
+An example of a simple external Svelte store that can be used to retain state across HMR updates.
 
-```sh
-npm add -D esbuild
+```js
+// store.js
+// An extremely simple external store
+import { writable } from 'svelte/store'
+export default writable(0)
 ```
 
 --------------------------------
 
-### Example .env file
+### Install CSS Pre-processors for Vite
 
-Source: https://github.com/vitejs/vite/blob/main/docs/guide/env-and-mode.md
+Source: https://github.com/vitejs/vite/blob/main/docs/guide/features.md
 
-An example `.env` file showing a `VITE_` prefixed variable and a non-prefixed variable.
+Vite provides built-in support for Sass, Less, and Stylus. Install the corresponding pre-processor package as a development dependency.
 
-```env
-VITE_SOME_KEY=123
-DB_PASSWORD=foobar
+```bash
+# .scss and .sass
+npm add -D sass-embedded # or sass
+
+# .less
+npm add -D less
+
+# .styl and .stylus
+npm add -D stylus
 ```
 
 --------------------------------
 
-### Creating and using FetchableDevEnvironment
+### Dependency Notation and Example
 
-Source: https://github.com/vitejs/vite/blob/main/docs/guide/api-environment-frameworks.md
+Source: https://github.com/vitejs/vite/blob/main/playground/ssr/src/forked-deadlock/README.md
 
-This example demonstrates how to create a `FetchableDevEnvironment` using `createFetchableDevEnvironment` and implement its `handleRequest` method. It also shows how to dispatch a fetch request using `dispatchFetch` on the created environment.
+Defines the notation for module dependencies and waiting states, followed by an example illustrating a forked deadlock scenario.
 
-```typescript
-import {
-  createServer,
-  createFetchableDevEnvironment,
-  isFetchableDevEnvironment,
-} from 'vite'
+```text
+A -> B means: B is imported by A and B has A in its stack
+A ... B means: A is waiting for B to ssrLoadModule()
 
-const server = await createServer({
-  server: { middlewareMode: true },
-  appType: 'custom',
-  environments: {
-    custom: {
-      dev: {
-        createEnvironment(name, config) {
-          return createFetchableDevEnvironment(name, config, {
-            handleRequest(request: Request): Promise<Response> | Response {
-              // handle Request and return a Response
-            },
-          })
-        },
-      },
-    },
-  },
-})
-
-// Any consumer of the environment API can now call `dispatchFetch`
-if (isFetchableDevEnvironment(server.environments.custom)) {
-  const response: Response = await server.environments.custom.dispatchFetch(
-    new Request('http://example.com/request-to-handle'),
-  )
-}
-```
-
---------------------------------
-
-### Install Minifiers for Vite Build
-
-Source: https://github.com/vitejs/vite/blob/main/docs/config/build-options.md
-
-Install esbuild or Terser as development dependencies if you intend to use them as minifiers for your Vite build process.
-
-```sh
-npm add -D esbuild
-npm add -D terser
-```
-
---------------------------------
-
-### HTML Tags for 'views/foo.js' Entry Point
-
-Source: https://github.com/vitejs/vite/blob/main/docs/guide/backend-integration.md
-
-Example of the specific HTML tags to include for the `views/foo.js` entry point in a production build, demonstrating stylesheet, script, and optional module preload links.
-
-```html
-<link rel="stylesheet" href="assets/foo-5UjPuW-k.css" />
-<link rel="stylesheet" href="assets/shared-ChJ_j-JJ.css" />
-<script type="module" src="assets/foo-BRBmoGS9.js"></script>
-<!-- optional -->
-<link rel="modulepreload" href="assets/shared-B7PI925R.js" />
+H -> X ... Y
+H -> X -> Y ... B
+H -> A ... B
+H -> A -> B ... X
 ```
 
 --------------------------------
@@ -957,81 +894,48 @@ dist/my-lib.umd.cjs 0.30 kB / gzip: 0.16 kB
 
 --------------------------------
 
-### External Svelte Store Example
+### Plugin-side Application Communication Example
 
-Source: https://github.com/vitejs/vite/blob/main/packages/create-vite/template-svelte/README.md
+Source: https://github.com/vitejs/vite/blob/main/docs/guide/api-environment-plugins.md
 
-An example of a simple external Svelte store that can be used to retain state across HMR updates.
+Example of a plugin communicating with application instances using `environment.hot.on` to listen for messages and `environment.hot.send` to broadcast messages.
 
 ```js
-// store.js
-// An extremely simple external store
-import { writable } from 'svelte/store'
-export default writable(0)
+configureServer(server) {
+  server.environments.ssr.hot.on('my:greetings', (data, client) => {
+    // do something with the data,
+    // and optionally send a response to that application instance
+    client.send('my:foo:reply', `Hello from server! You said: ${data}`)
+  })
+
+  // broadcast a message to all application instances
+  server.environments.ssr.hot.send('my:foo', 'Hello from server!')
+}
 ```
 
 --------------------------------
 
-### Vite HTML File with Asset References
+### Custom Environment Instance Example
 
-Source: https://github.com/vitejs/vite/blob/main/docs/guide/features.md
+Source: https://github.com/vitejs/vite/blob/main/docs/guide/api-environment.md
 
-This HTML example demonstrates how Vite processes assets referenced by `<link>` and `<script>` tags. Vite automatically handles bundling and optimization for these assets.
+An example demonstrating how to use `customEnvironment` from `vite-environment-provider` to define a custom SSR environment with specific build output directories.
 
-```html
-<!doctype html>
-<html>
-  <head>
-    <link rel="icon" href="/favicon.ico" />
-    <link rel="stylesheet" href="/src/styles.css" />
-  </head>
-  <body>
-    <img src="/src/images/logo.svg" alt="logo" />
-    <script type="module" src="/src/main.js"></script>
-  </body>
-</html>
-```
+```js
+import { customEnvironment } from 'vite-environment-provider'
 
---------------------------------
-
-### Install trusted cert via CLI on macOS
-
-Source: https://github.com/vitejs/vite/blob/main/docs/guide/troubleshooting.md
-
-Command to install a trusted SSL certificate via the command line on macOS.
-
-```shell
-security add-trusted-cert -d -r trustRoot -k ~/Library/Keychains/login.keychain-db your-cert.cer
-```
-
---------------------------------
-
-### Start Node.js Inspector for Dev Server
-
-Source: https://github.com/vitejs/vite/blob/main/docs/guide/troubleshooting.md
-
-Command to start the Vite development server with the Node.js inspector enabled for CPU profiling.
-
-```bash
-vite --profile --open
-```
-
---------------------------------
-
-### Dependency Notation and Example
-
-Source: https://github.com/vitejs/vite/blob/main/playground/ssr/src/forked-deadlock/README.md
-
-Defines the notation for module dependencies and waiting states, followed by an example illustrating a forked deadlock scenario.
-
-```text
-A -> B means: B is imported by A and B has A in its stack
-A ... B means: A is waiting for B to ssrLoadModule()
-
-H -> X ... Y
-H -> X -> Y ... B
-H -> A ... B
-H -> A -> B ... X
+export default {
+  build: {
+    outDir: '/dist/client',
+  },
+  environments: {
+    ssr: customEnvironment({
+      build: {
+        outDir: '/dist/ssr',
+      },
+    }),
+  },
+}
 ```
 
 --------------------------------
@@ -1060,6 +964,109 @@ experimental: {
 
 --------------------------------
 
+### Install SWC Plugins for Native Decorator Lowering (Bash)
+
+Source: https://github.com/vitejs/vite/blob/main/docs/guide/migration.md
+
+Install the required SWC plugins and the Rollup SWC plugin to enable lowering of native decorators in your project.
+
+```bash
+$ npm install -D @rollup/plugin-swc @swc/core
+```
+
+```bash
+$ yarn add -D @rollup/plugin-swc @swc/core
+```
+
+```bash
+$ pnpm add -D @rollup/plugin-swc @swc/core
+```
+
+```bash
+$ bun add -D @rollup/plugin-swc @swc/core
+```
+
+```bash
+$ deno add -D npm:@rollup/plugin-swc npm:@swc/core
+```
+
+--------------------------------
+
+### Manual DevEnvironment Communication with Virtual Module
+
+Source: https://github.com/vitejs/vite/blob/main/docs/guide/api-environment-frameworks.md
+
+This snippet demonstrates setting up manual communication with a `DevEnvironment` using a virtual module when the code runs in the same runtime as user modules. It shows how to create a Vite server, define a virtual entrypoint, and handle requests.
+
+```ts
+// code using the Vite's APIs
+import { createServer } from 'vite'
+
+const server = createServer({
+  plugins: [
+    // a plugin that handles `virtual:entrypoint`
+    {
+      name: 'virtual-module',
+      /* plugin implementation */
+    },
+  ],
+})
+const ssrEnvironment = server.environment.ssr
+const input = {}
+
+// use exposed functions by each environment factories that runs the code
+// check for each environment factories what they provide
+if (ssrEnvironment instanceof CustomDevEnvironment) {
+  ssrEnvironment.runEntrypoint('virtual:entrypoint')
+} else {
+  throw new Error(`Unsupported runtime for ${ssrEnvironment.name}`)
+}
+
+// -------------------------------------
+// virtual:entrypoint
+const { createHandler } = await import('./entrypoint.js')
+const handler = createHandler(input)
+const response = handler(new Request('http://example.com/'))
+
+// -------------------------------------
+// ./entrypoint.js
+export function createHandler(input) {
+  return function handler(req) {
+    return new Response('hello')
+  }
+}
+```
+
+--------------------------------
+
+### Install Babel Plugins for Native Decorator Lowering (Bash)
+
+Source: https://github.com/vitejs/vite/blob/main/docs/guide/migration.md
+
+Install the required Babel plugins and the Rolldown Babel plugin to enable lowering of native decorators in your project.
+
+```bash
+$ npm install -D @rolldown/plugin-babel @babel/plugin-proposal-decorators
+```
+
+```bash
+$ yarn add -D @rolldown/plugin-babel @babel/plugin-proposal-decorators
+```
+
+```bash
+$ pnpm add -D @rolldown/plugin-babel @babel/plugin-proposal-decorators
+```
+
+```bash
+$ bun add -D @rolldown/plugin-babel @babel/plugin-proposal-decorators
+```
+
+```bash
+$ deno add -D npm:@rolldown/plugin-babel npm:@babel/plugin-proposal-decorators
+```
+
+--------------------------------
+
 ### Advanced `experimental.renderBuiltUrl` with asset types
 
 Source: https://github.com/vitejs/vite/blob/main/docs/guide/build.md
@@ -1084,5 +1091,30 @@ experimental: {
     }
   },
 },
+}
+```
+
+--------------------------------
+
+### package.json with CSS export
+
+Source: https://github.com/vitejs/vite/blob/main/docs/guide/build.md
+
+Example `package.json` showing how to export a bundled CSS file for users to import, alongside JS modules.
+
+```json
+{
+  "name": "my-lib",
+  "type": "module",
+  "files": ["dist"],
+  "main": "./dist/my-lib.umd.cjs",
+  "module": "./dist/my-lib.js",
+  "exports": {
+    ".": {
+      "import": "./dist/my-lib.js",
+      "require": "./dist/my-lib.umd.cjs"
+    },
+    "./style.css": "./dist/my-lib.css"
+  }
 }
 ```
