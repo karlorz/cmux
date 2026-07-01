@@ -22,6 +22,22 @@ z.string().transform((val) => val.length);
 
 --------------------------------
 
+### Install Zod Stable Version
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/home.md
+
+Install the stable version of Zod using various package managers.
+
+```shell
+npm install zod       # npm
+deno add npm:zod      # deno
+yarn add zod          # yarn
+bun add zod           # bun
+pnpm add zod          # pnpm
+```
+
+--------------------------------
+
 ### Installation
 
 Source: https://github.com/colinhacks/zod/blob/main/README.md
@@ -52,6 +68,20 @@ Example of adding Zod as a peer dependency in package.json.
 
 --------------------------------
 
+### .register() Method
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/packages/mini.mdx
+
+Example of registering a schema in a registry using the .register() method.
+
+```ts
+const myReg = z.registry<{title: string}>();
+
+z.string().register(myReg, { title: "My cool string schema" });
+```
+
+--------------------------------
+
 ### Dev Server
 
 Source: https://github.com/colinhacks/zod/blob/main/CONTRIBUTING.md
@@ -78,32 +108,18 @@ mySchema.clone(mySchema._zod.def);
 
 --------------------------------
 
-### .register() Method
+### Install Zod Canary Version
 
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/packages/mini.mdx
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/home.md
 
-Example of registering a schema in a registry using the .register() method.
+Install the canary version of Zod, which is published on every commit, using various package managers.
 
-```ts
-const myReg = z.registry<{title: string}>();
-
-z.string().register(myReg, { title: "My cool string schema" });
-```
-
---------------------------------
-
-### Install Zod
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/README.md
-
-Commands to install the stable version of Zod using various package managers.
-
-```sh
-npm install zod       # npm
-deno add npm:zod      # deno
-yarn add zod          # yarn
-bun add zod           # bun
-pnpm add zod          # pnpm
+```shell
+npm install zod@canary       # npm
+deno add npm:zod@canary      # deno
+yarn add zod@canary          # yarn
+bun add zod@canary           # bun
+pnpm add zod@canary          # pnpm
 ```
 
 --------------------------------
@@ -116,6 +132,20 @@ Example of importing the Zod 4 core package using its permalink subpath.
 
 ```ts
 import * as z4 from "zod/v4/core";
+```
+
+--------------------------------
+
+### .brand() Method
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/packages/mini.mdx
+
+Example of branding a schema using the .brand() method.
+
+```ts
+import * as z from "zod/mini"
+
+const USD = z.string().brand("USD");
 ```
 
 --------------------------------
@@ -137,16 +167,22 @@ const Recipe = z.object({
 
 --------------------------------
 
-### .brand() Method
+### Peer and Dev Dependency Configuration
 
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/packages/mini.mdx
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/library-authors.mdx
 
-Example of branding a schema using the .brand() method.
+Example of adding Zod as both a peer and dev dependency in package.json for development purposes.
 
-```ts
-import * as z from "zod/mini"
-
-const USD = z.string().brand("USD");
+```json
+// package.json
+{
+  "peerDependencies": {
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "zod": "^4.0.0"
+  }
+}
 ```
 
 --------------------------------
@@ -177,22 +213,15 @@ const Player = z.object({
 
 --------------------------------
 
-### Peer and Dev Dependency Configuration
+### Normalized URL example
 
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/library-authors.mdx
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
 
-Example of adding Zod as both a peer and dev dependency in package.json for development purposes.
+Demonstrates the output of `new URL().href` for a complex URL, showing normalization.
 
-```json
-// package.json
-{
-  "peerDependencies": {
-    "zod": "^4.0.0"
-  },
-  "devDependencies": {
-    "zod": "^4.0.0"
-  }
-}
+```ts
+new URL("HTTP://ExAmPle.com:80/./a/../b?X=1#f oo").href
+// => "http://example.com/b?X=1#f%20oo"
 ```
 
 --------------------------------
@@ -210,34 +239,6 @@ schema.parse("tuna");    // => "tuna"
 schema.parse(42);        // => "42"
 schema.parse(true);      // => "true"
 schema.parse(null);      // => "null"
-```
-
---------------------------------
-
-### Normalized URL example
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
-
-Demonstrates the output of `new URL().href` for a complex URL, showing normalization.
-
-```ts
-new URL("HTTP://ExAmPle.com:80/./a/../b?X=1#f oo").href
-// => "http://example.com/b?X=1#f%20oo"
-```
-
---------------------------------
-
-### String coercion examples
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/README.md
-
-Further examples of `z.coerce.string()` showing how different types like numbers, booleans, undefined, and null are coerced.
-
-```ts
-schema.parse(12); // => "12"
-schema.parse(true); // => "true"
-schema.parse(undefined); // => "undefined"
-schema.parse(null); // => "null"
 ```
 
 --------------------------------
@@ -264,18 +265,16 @@ z.string().check(z.normalize()); // normalize unicode characters
 
 --------------------------------
 
-### Install Zod Canary Version
+### Creating a ZodError Instance
 
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/README.md
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/ERROR_HANDLING.md
 
-Commands to install the canary version of Zod, which is published on every commit, using various package managers.
+Example of how to manually create a new instance of ZodError.
 
-```sh
-npm install zod@canary       # npm
-deno add npm:zod@canary      # deno
-yarn add zod@canary          # yarn
-bun add zod@canary           # bun
-pnpm add zod@canary          # pnpm
+```ts
+import * as z from "zod";
+
+const myError = new z.ZodError([]);
 ```
 
 --------------------------------
@@ -292,21 +291,6 @@ const stringArray = z.array(z.string()); // or z.string().array()
 
 ```ts
 const stringArray = z.array(z.string());
-```
-
---------------------------------
-
-### Set Constraints
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/README.md
-
-Examples of applying constraints like nonempty, min, max, and size to a set schema.
-
-```ts
-z.set(z.string()).nonempty(); // must contain at least one item
-z.set(z.string()).min(5); // must contain 5 or more items
-z.set(z.string()).max(5); // must contain 5 or fewer items
-z.set(z.string()).size(5); // must contain 5 items exactly
 ```
 
 --------------------------------
@@ -361,18 +345,6 @@ z.file().min(1).max(1024 * 1024).mime("image/png");
 
 --------------------------------
 
-### Simple Boolean Schema Parse
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/packages/mini.mdx
-
-Example of parsing a boolean schema with Zod Mini to demonstrate bundle size.
-
-```ts
-z.boolean().parse(true)
-```
-
---------------------------------
-
 ### Make a schema nullable (Zod)
 
 Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
@@ -381,6 +353,18 @@ Example of making a schema nullable using Zod.
 
 ```ts
 z.nullable(z.literal("yoda")); // or z.literal("yoda").nullable()
+```
+
+--------------------------------
+
+### Simple Boolean Schema Parse
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/packages/mini.mdx
+
+Example of parsing a boolean schema with Zod Mini to demonstrate bundle size.
+
+```ts
+z.boolean().parse(true)
 ```
 
 --------------------------------
@@ -422,63 +406,40 @@ export function walk(_schema: z.$ZodType) {
 
 --------------------------------
 
-### Old transformer syntax (not available)
+### Define a catchall schema (Zod Mini)
 
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/MIGRATION.md
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
 
-Examples of the old transformer syntax that is no longer available in Zod 3.
+Example of using `z.catchall()` to validate unrecognized keys with a specific schema in Zod Mini.
 
-```typescript
-# not available
-z.transformer(A, B, func);
-A.transform(B, func)
-```
-
---------------------------------
-
-### Accessing ZodError Issues
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/README.md
-
-Example of using `safeParse` and accessing the `issues` array within a `ZodError` object to get detailed validation problem information.
-
-```typescript
-const result = z
-  .object({
+```ts
+const DogWithStrings = z.catchall(
+  z.object({
     name: z.string(),
-  })
-  .safeParse({ name: 12 });
+    age: z.number().optional(),
+  }),
+  z.string()
+);
 
-if (!result.success) {
-  result.error.issues;
-  /* [
-      {
-        "code": "invalid_type",
-        "expected": "string",
-        "received": "number",
-        "path": [ "name" ],
-        "message": "Expected string, received number"
-      }
-  ] */
-}
+DogWithStrings.parse({ name: "Yeller", extraKey: "extraValue" }); // ✅
+DogWithStrings.parse({ name: "Yeller", extraKey: 42 }); // ❌
 ```
 
 --------------------------------
 
-### Widen peer dependency for Zod 3 and Zod 4
+### Demonstrate TypeScript Structural Typing
 
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/library-authors.mdx
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/home.md
 
-Example of `package.json` showing how to widen the `peerDependencies` to support both Zod 3 (from `3.25.0`) and Zod 4.
+This example illustrates TypeScript's structural typing, where types with identical structures are considered compatible, even if nominally different.
 
-```json
-// package.json
-{
-  // ...
-  "peerDependencies": {
-    "zod": "^3.25.0 || ^4.0.0"
-  }
-}
+```ts
+type Cat = { name: string };
+type Dog = { name: string };
+
+const petCat = (cat: Cat) => {};
+const fido: Dog = { name: "fido" };
+petCat(fido); // works fine
 ```
 
 --------------------------------
@@ -522,25 +483,6 @@ myRegistry.clear(); // wipe registry
 
 --------------------------------
 
-### Enable TypeScript Strict Mode
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/index.mdx
-
-Configuration snippet for `tsconfig.json` to enable TypeScript's strict mode, which is a best practice and required for Zod.
-
-```ts
-// tsconfig.json
-{
-  // ...
-  "compilerOptions": {
-    // ...
-    "strict": true
-  }
-}
-```
-
---------------------------------
-
 ### Make a schema nullish (Zod)
 
 Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
@@ -553,18 +495,16 @@ const nullishYoda = z.nullish(z.literal("yoda"));
 
 --------------------------------
 
-### Recipe schema example for .pick/.omit
+### Old transformer syntax (not available)
 
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/README.md
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/MIGRATION.md
 
-A base Zod object schema for a Recipe, used to demonstrate `.pick` and `.omit`.
+Examples of the old transformer syntax that is no longer available in Zod 3.
 
-```ts
-const Recipe = z.object({
-  id: z.string(),
-  name: z.string(),
-  ingredients: z.array(z.string()),
-});
+```typescript
+# not available
+z.transformer(A, B, func);
+A.transform(B, func)
 ```
 
 --------------------------------
@@ -587,23 +527,87 @@ z.string()
 
 --------------------------------
 
-### Catchall schema for unknown keys (valid example)
+### Widen peer dependency for Zod 3 and Zod 4
 
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/README.md
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/library-authors.mdx
 
-Demonstrates using `.catchall()` to validate unknown keys against a specified schema, showing a valid case where an extra key matches the catchall schema.
+Example of `package.json` showing how to widen the `peerDependencies` to support both Zod 3 (from `3.25.0`) and Zod 4.
+
+```json
+// package.json
+{
+  // ...
+  "peerDependencies": {
+    "zod": "^3.25.0 || ^4.0.0"
+  }
+}
+```
+
+--------------------------------
+
+### Set Constraints (Zod Mini)
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
+
+Examples of applying size constraints to a Zod set schema using Zod Mini's `check` method.
 
 ```ts
-const person = z
-  .object({
-    name: z.string(),
-  })
-  .catchall(z.number());
+z.set(z.string()).check(z.minSize(5)); // must contain 5 or more items
+z.set(z.string()).check(z.maxSize(5)); // must contain 5 or fewer items
+z.set(z.string()).check(z.size(5)); // must contain 5 items exactly
+```
 
-person.parse({
-  name: "bob dylan",
-  validExtraKey: 61, // works fine
-});
+--------------------------------
+
+### Library code for Zod and Zod Mini compatibility
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/library-authors.mdx
+
+Example of library code importing from `zod/v4/core` to ensure compatibility with both Zod and Zod Mini.
+
+```ts
+// library code
+import * as z4 from "zod/v4/core";
+
+export function acceptObjectSchema<T extends z4.$ZodObject>(schema: T){
+  // parse data
+  z4.parse(schema, { /* somedata */});
+  // inspect internals
+  schema._zod.def.shape;
+}
+```
+
+--------------------------------
+
+### Enable TypeScript Strict Mode
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/index.mdx
+
+Configuration snippet for `tsconfig.json` to enable TypeScript's strict mode, which is a best practice and required for Zod.
+
+```ts
+// tsconfig.json
+{
+  // ...
+  "compilerOptions": {
+    // ...
+    "strict": true
+  }
+}
+```
+
+--------------------------------
+
+### Set Constraints (Zod)
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
+
+Examples of applying size constraints to a Zod set schema using Zod's built-in methods.
+
+```ts
+z.set(z.string()).min(5); // must contain 5 or more items
+z.set(z.string()).max(5); // must contain 5 or fewer items
+z.set(z.string()).size(5); // must contain 5 items exactly
 ```
 
 --------------------------------
@@ -625,6 +629,58 @@ const Activity = z.object({
     return z.nullable(z.array(Activity));
   }
 });
+```
+
+--------------------------------
+
+### Object Schema Parse
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/packages/mini.mdx
+
+Example of parsing an object schema with Zod Mini to demonstrate bundle size for more complex types.
+
+```ts
+const schema = z.object({ a: z.string(), b: z.number(), c: z.boolean() });
+
+schema.parse({
+  a: "asdf",
+  b: 123,
+  c: true
+});
+```
+
+--------------------------------
+
+### TypeScript Discriminated Union Type Example
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
+
+A TypeScript example demonstrating how discriminated unions enable type narrowing based on a shared key.
+
+```ts
+type MyResult =
+  | { status: "success"; data: string }
+  | { status: "failed"; error: string };
+
+function handleResult(result: MyResult){
+  if(result.status === "success"){
+    result.data; // string
+  } else {
+    result.error; // string
+  }
+}
+```
+
+--------------------------------
+
+### Locale error map customization (precedence example)
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/error-customization.mdx
+
+Example of a locale error map set via z.config() for demonstrating error precedence.
+
+```ts
+z.config(z.locales.en());
 ```
 
 --------------------------------
@@ -654,24 +710,33 @@ console.log(data.name);
 
 --------------------------------
 
-### TypeScript Discriminated Union Type Example
+### Define an object with optional properties (Zod Mini)
 
 Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
 
-A TypeScript example demonstrating how discriminated unions enable type narrowing based on a shared key.
+Example of making object properties optional using Zod Mini.
 
 ```ts
-type MyResult =
-  | { status: "success"; data: string }
-  | { status: "failed"; error: string };
+const Dog = z.object({
+  name: z.string(),
+  age: z.optional(z.number())
+});
 
-function handleResult(result: MyResult){
-  if(result.status === "success"){
-    result.data; // string
-  } else {
-    result.error; // string
-  }
-}
+Dog.parse({ name: "Yeller" }); // ✅
+```
+
+--------------------------------
+
+### Global error map customization (precedence example)
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/error-customization.mdx
+
+Example of a global error map set via z.config() for demonstrating error precedence.
+
+```ts
+z.config({
+  customError: (iss) => "My custom error"
+});
 ```
 
 --------------------------------
@@ -712,32 +777,6 @@ if ("_zod" in schema) {
 
 --------------------------------
 
-### Locale error map customization (precedence example)
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/error-customization.mdx
-
-Example of a locale error map set via z.config() for demonstrating error precedence.
-
-```ts
-z.config(z.locales.en());
-```
-
---------------------------------
-
-### Global error map customization (precedence example)
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/error-customization.mdx
-
-Example of a global error map set via z.config() for demonstrating error precedence.
-
-```ts
-z.config({
-  customError: (iss) => "My custom error"
-});
-```
-
---------------------------------
-
 ### User code demonstrating Zod and Zod Mini usage
 
 Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/library-authors.mdx
@@ -759,28 +798,6 @@ acceptObjectSchema(zm.object({ name: zm.string() }))
 
 --------------------------------
 
-### Implementing a Function Schema
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/README.md
-
-Example of using the `.implement()` method to create a function that automatically validates its inputs and outputs based on the schema.
-
-```ts
-const trimmedLength = z
-  .function()
-  .args(z.string()) // accepts an arbitrary number of arguments
-  .returns(z.number())
-  .implement((x) => {
-    // TypeScript knows x is a string!
-    return x.trim().length;
-  });
-
-trimmedLength("sandwich"); // => 8
-trimmedLength(" asdf "); // => 4
-```
-
---------------------------------
-
 ### Define never type
 
 Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
@@ -793,14 +810,40 @@ z.never(); // inferred type: `never`
 
 --------------------------------
 
-### Using .spa() Alias
+### Constraining the inferred output type of the input schema
 
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/README.md
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/library-authors.mdx
 
-Example of using the `.spa` alias for `safeParseAsync` for convenience.
+Example of how to constrain the inferred output type of the input schema, ensuring type compatibility.
 
-```typescript
-await stringSchema.spa("billie");
+```ts
+
+import * as z4 from "zod/v4/core";
+
+// only accepts string schemas
+function inferSchema<T extends z4.$ZodType<string>>(schema: T) {
+  return schema;
+}
+
+inferSchema(z.string()); // ✅ 
+
+inferSchema(z.number()); 
+// ❌ The types of '_zod.output' are incompatible between these types. 
+// // Type 'number' is not assignable to type 'string'
+```
+
+--------------------------------
+
+### Define unknown and any types
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
+
+Examples of defining 'any' and 'unknown' types in Zod.
+
+```ts
+// allows any values
+z.any(); // inferred type: `any`
+z.unknown(); // inferred type: `unknown`
 ```
 
 --------------------------------
@@ -813,35 +856,6 @@ How to import Zod Mini.
 
 ```ts
 import * as z from "zod/mini";
-```
-
---------------------------------
-
-### Date-Specific Validations
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/README.md
-
-Examples of using `min` and `max` methods for date validation.
-
-```ts
-z.date().min(new Date("1900-01-01"), { message: "Too old" });
-z.date().max(new Date(), { message: "Too young!" });
-```
-
---------------------------------
-
-### Catchall schema for unknown keys (invalid example)
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/README.md
-
-Demonstrates using `.catchall()` to validate unknown keys against a specified schema, showing an invalid case where an extra key does not match the catchall schema, leading to a `ZodError`.
-
-```ts
-person.parse({
-  name: "bob dylan",
-  validExtraKey: false, // fails
-});
-// => throws ZodError
 ```
 
 --------------------------------
@@ -861,20 +875,6 @@ type Schema = z3.ZodTypeAny | z4.$ZodType;
 function acceptUserSchema(schema: z3.ZodTypeAny | z4.$ZodType) {
   // ...
 }
-```
-
---------------------------------
-
-### Define unknown and any types
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
-
-Examples of defining 'any' and 'unknown' types in Zod.
-
-```ts
-// allows any values
-z.any(); // inferred type: `any`
-z.unknown(); // inferred type: `unknown`
 ```
 
 --------------------------------
@@ -900,6 +900,36 @@ pnpm dev:play
 pnpm lint
 pnpm format
 pnpm fix
+```
+
+--------------------------------
+
+### Asynchronous transforms
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
+
+Example of defining and using an asynchronous transform to fetch data from a database.
+
+```typescript
+const idToUser = z
+  .string()
+  .transform(async (id) => {
+    // fetch user from database
+    return db.getUserById(id); 
+  });
+
+const user = await idToUser.parseAsync("abc123");
+```
+
+```typescript
+const idToUser = z.pipe(
+  z.string(),
+  z.transform(async (id) => {
+    // fetch user from database
+    return db.getUserById(id); 
+  }));
+
+const user = await idToUser.parse("abc123");
 ```
 
 --------------------------------
@@ -936,21 +966,6 @@ parseData("sup", z.string());
 
 --------------------------------
 
-### Describing a schema
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/README.md
-
-Example of using `.describe()` to add a description property to a Zod schema.
-
-```ts
-const documentedString = z
-  .string()
-  .describe("A useful bit of text, if you know what to do with it.");
-documentedString.description; // A useful bit of text…
-```
-
---------------------------------
-
 ### .describe() method (Zod)
 
 Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/metadata.mdx
@@ -967,34 +982,38 @@ emailSchema.meta({ description: "An email address" });
 
 --------------------------------
 
-### Async transforms
+### Object schemas
 
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/README.md
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/json-schema.mdx
 
-Example of an asynchronous transform using `async/await` to fetch user data.
+Example of `z.object()` schema conversion in 'input' mode, where `additionalProperties` is not set.
 
 ```ts
-const IdToUser = z
-  .string()
-  .uuid()
-  .transform(async (id) => {
-    return await getUserById(id);
-  });
+import * as z from "zod";
+
+const schema = z.object({
+  name: z.string(),
+  age: z.number()
+});
+
+z.toJSONSchema(schema, { io: "input" });
+// => {
+//   type: 'object',
+//   properties: { name: { type: 'string' }, age: { type: 'number' } },
+//   required: [ 'name', 'age' ],
+// }
 ```
 
 --------------------------------
 
-### Asynchronous refinement example
+### GUID Validation
 
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/README.md
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
 
-Illustrates how to define an asynchronous refinement function for a Zod schema.
+Validating any UUID-like identifier that does not strictly adhere to RFC 9562/4122 constraints.
 
 ```typescript
-const userId = z.string().refine(async (id) => {
-  // verify that ID exists in database
-  return true;
-});
+z.guid();
 ```
 
 --------------------------------
@@ -1008,26 +1027,6 @@ Commands to build Zod documentation for production, requiring a GITHUB_TOKEN.
 ```sh
 export GITHUB_TOKEN=your_token_here # persists in shell session
 pnpm run --filter=@zod/docs build
-```
-
---------------------------------
-
-### Validating with instanceof
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/README.md
-
-Example of using `z.instanceof` to validate if an input is an instance of a specific class.
-
-```ts
-class Test {
-  name: string;
-}
-
-const TestSchema = z.instanceof(Test);
-
-const blob: any = "whatever";
-TestSchema.parse(new Test()); // passes
-TestSchema.parse(blob); // throws
 ```
 
 --------------------------------
@@ -1067,85 +1066,31 @@ schema.parse({
 
 --------------------------------
 
-### Date Validation
+### z.prettifyError() usage
 
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/README.md
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/error-formatting.mdx
 
-Example of `z.string().date()` method, which validates strings in `YYYY-MM-DD` format.
+Shows how to use z.prettifyError() to get a human-readable string representation of the error.
 
 ```ts
-const date = z.string().date();
-
-date.parse("2020-01-01"); // pass
-date.parse("2020-1-1"); // fail
-date.parse("2020-01-32"); // fail
+const pretty = z.prettifyError(result.error);
 ```
 
 --------------------------------
 
-### Creating a simple string schema
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/README.md
-
-Demonstrates creating a string schema, parsing values, and safe parsing to handle validation outcomes without throwing errors.
-
-```ts
-import { z } from "zod";
-
-// creating a schema for strings
-const mySchema = z.string();
-
-// parsing
-mySchema.parse("tuna"); // => "tuna"
-mySchema.parse(12); // => throws ZodError
-
-// "safe" parsing (doesn't throw error if validation fails)
-mySchema.safeParse("tuna"); // => { success: true; data: "tuna" }
-mySchema.safeParse(12); // => { success: false; error: ZodError }
-```
-
---------------------------------
-
-### Coercing to string
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/README.md
-
-Example of using `z.coerce.string()` to convert various inputs to a string during parsing.
-
-```ts
-const schema = z.coerce.string();
-schema.parse("tuna"); // => "tuna"
-schema.parse(12); // => "12"
-```
-
---------------------------------
-
-### Asynchronous transforms
+### Define a loose object schema
 
 Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
 
-Example of defining and using an asynchronous transform to fetch data from a database.
+Example of using `z.looseObject` to allow unknown keys to pass through.
 
-```typescript
-const idToUser = z
-  .string()
-  .transform(async (id) => {
-    // fetch user from database
-    return db.getUserById(id); 
-  });
+```ts
+const LooseDog = z.looseObject({
+  name: z.string(),
+});
 
-const user = await idToUser.parseAsync("abc123");
-```
-
-```typescript
-const idToUser = z.pipe(
-  z.string(),
-  z.transform(async (id) => {
-    // fetch user from database
-    return db.getUserById(id); 
-  }));
-
-const user = await idToUser.parse("abc123");
+LooseDog.parse({ name: "Yeller", extraKey: true });
+// => { name: "Yeller", extraKey: true }
 ```
 
 --------------------------------
@@ -1166,16 +1111,22 @@ b.parse(undefined); // => "  tuna  "
 
 --------------------------------
 
-### Creating a ZodError Instance
+### Custom format error output
 
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/ERROR_HANDLING.md
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
 
-Example of how to manually create a new instance of ZodError.
+Example of the error produced by a custom string format validation.
 
 ```ts
-import * as z from "zod";
-
-const myError = new z.ZodError([]);
+myFormat.parse("invalid input!");
+// ZodError: [
+//   {
+//     "code": "invalid_format",
+//     "format": "cool-id",
+//     "path": [],
+//     "message": "Invalid cool-id"
+//   }
+// ]
 ```
 
 --------------------------------
@@ -1194,47 +1145,81 @@ const myRegistry = z.registry<{ description: string }>();
 
 --------------------------------
 
-### Define a catchall schema (Zod Mini)
+### ISO time validation - no offsets
 
 Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
 
-Example of using `z.catchall()` to validate unrecognized keys with a specific schema in Zod Mini.
+Examples of invalid ISO time strings due to offsets.
 
 ```ts
-const DogWithStrings = z.catchall(
-  z.object({
-    name: z.string(),
-    age: z.number().optional(),
-  }),
-  z.string()
-);
-
-DogWithStrings.parse({ name: "Yeller", extraKey: "extraValue" }); // ✅
-DogWithStrings.parse({ name: "Yeller", extraKey: 42 }); // ❌
+time.parse("03:15:00Z"); // ❌ (no `Z` allowed)
+time.parse("03:15:00+02:00"); // ❌ (no offsets allowed)
 ```
 
 --------------------------------
 
-### Object schemas
+### Per-parse error customization
 
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/json-schema.mdx
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/error-customization.mdx
 
-Example of `z.object()` schema conversion in 'input' mode, where `additionalProperties` is not set.
+Example of passing a custom error map directly into the .parse() method.
 
 ```ts
-import * as z from "zod";
-
-const schema = z.object({
-  name: z.string(),
-  age: z.number()
+z.string().parse(12, {
+  error: (iss) => "My custom error"
 });
+```
 
-z.toJSONSchema(schema, { io: "input" });
-// => {
-//   type: 'object',
-//   properties: { name: { type: 'string' }, age: { type: 'number' } },
-//   required: [ 'name', 'age' ],
-// }
+--------------------------------
+
+### Discriminating Zod Checks
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/packages/core.mdx
+
+Example of using a switch statement on ._zod.def.check to discriminate between different $ZodChecks.
+
+```ts
+const check = {} as z.$ZodChecks;
+const def = check._zod.def;
+
+switch (def.check) {
+  case "less_than":
+  case "greater_than":
+    // ...
+    break;
+}
+```
+
+--------------------------------
+
+### Common String Validations
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
+
+Examples of common string validation methods in Zod and Zod Mini.
+
+```typescript
+z.string().max(5);
+z.string().min(5);
+z.string().length(5);
+z.string().regex(/^[a-z]+$/);
+z.string().startsWith("aaa");
+z.string().endsWith("zzz");
+z.string().includes("---");
+z.string().uppercase();
+z.string().lowercase();
+```
+
+```typescript
+z.string().check(z.maxLength(5));
+z.string().check(z.minLength(5));
+z.string().check(z.length(5));
+z.string().check(z.regex(/^[a-z]+$/));
+z.string().check(z.startsWith("aaa"));
+z.string().check(z.endsWith("zzz"));
+z.string().check(z.includes("---"));
+z.string().check(z.uppercase());
+z.string().check(z.lowercase());
 ```
 
 --------------------------------
@@ -1274,26 +1259,17 @@ schema.parse({
 
 --------------------------------
 
-### GUID Validation
+### Async Codec Definition
 
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/codecs.mdx
 
-Validating any UUID-like identifier that does not strictly adhere to RFC 9562/4122 constraints.
-
-```typescript
-z.guid();
-```
-
---------------------------------
-
-### Retrieving Zod Enum Options
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/README.md
-
-How to get the list of options as a tuple using the `.options` property.
+Example of defining an asynchronous codec with `decode` and `encode` functions that return Promises.
 
 ```ts
-FishEnum.options; // ["Salmon", "Tuna", "Trout"];
+const asyncCodec = z.codec(z.string(), z.number(), {
+  decode: async (str) => Number(str),
+  encode: async (num) => num.toString()
+});
 ```
 
 --------------------------------
@@ -1319,6 +1295,34 @@ z.parse(schema, 0);   // => 0
 z.parse(schema, -1);  // ❌ throws
 z.parse(schema, 101); // ❌ throws
 z.parse(schema, null); // => null
+```
+
+--------------------------------
+
+### Inverting a Codec
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/codecs.mdx
+
+Example of using `z.invertCodec()` to create a codec that reverses the input and output schemas and transformations.
+
+```typescript
+const dateToString = z.invertCodec(stringToDate);
+
+dateToString.decode(new Date("2024-01-15T10:30:00.000Z"));
+// => string
+
+dateToString.encode("2024-01-15T10:30:00.000Z");
+// => Date
+```
+
+```typescript
+const dateToString = z.invertCodec(stringToDate);
+
+z.decode(dateToString, new Date("2024-01-15T10:30:00.000Z"));
+// => string
+
+z.encode(dateToString, "2024-01-15T10:30:00.000Z");
+// => Date
 ```
 
 --------------------------------
@@ -1355,14 +1359,21 @@ pnpm dev:play
 
 --------------------------------
 
-### z.prettifyError() usage
+### Defining a Codec
 
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/error-formatting.mdx
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/codecs.mdx
 
-Shows how to use z.prettifyError() to get a human-readable string representation of the error.
+Example of defining a codec to transform an ISO date string to a Date object and vice-versa.
 
-```ts
-const pretty = z.prettifyError(result.error);
+```typescript
+const stringToDate = z.codec(
+  z.iso.datetime(),  // input schema: ISO date string
+  z.date(),          // output schema: Date object
+  {
+    decode: (isoString) => new Date(isoString), // ISO string → Date
+    encode: (date) => date.toISOString(),       // Date → ISO string
+  }
+);
 ```
 
 --------------------------------
@@ -1383,52 +1394,40 @@ z.string().check(z.minLength(5), z.maxLength(10), z.trim());
 
 --------------------------------
 
-### Define a loose object schema
+### z.flattenError() usage
 
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/error-formatting.mdx
 
-Example of using `z.looseObject` to allow unknown keys to pass through.
+Shows how to use z.flattenError() to get a shallow error object with formErrors and fieldErrors.
 
 ```ts
-const LooseDog = z.looseObject({
-  name: z.string(),
-});
+const flattened = z.flattenError(result.error);
+// { errors: string[], properties: { [key: string]: string[] } }
 
-LooseDog.parse({ name: "Yeller", extraKey: true });
-// => { name: "Yeller", extraKey: true }
+{
+  formErrors: [ 'Unrecognized key: "extraKey"' ],
+  fieldErrors: {
+    username: [ 'Invalid input: expected string, received number' ],
+    favoriteNumbers: [ 'Invalid input: expected number, received string' ]
+  }
+}
 ```
 
 --------------------------------
 
-### Custom format error output
+### Handling errors with .safeParse()
 
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/basics.mdx
 
-Example of the error produced by a custom string format validation.
-
-```ts
-myFormat.parse("invalid input!");
-// ZodError: [
-//   {
-//     "code": "invalid_format",
-//     "format": "cool-id",
-//     "path": [],
-//     "message": "Invalid cool-id"
-//   }
-// ]
-```
-
---------------------------------
-
-### ISO time validation - no offsets
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
-
-Examples of invalid ISO time strings due to offsets.
+Using .safeParse() to get a result object instead of throwing an error.
 
 ```ts
-time.parse("03:15:00Z"); // ❌ (no `Z` allowed)
-time.parse("03:15:00+02:00"); // ❌ (no offsets allowed)
+const result = Player.safeParse({ username: 42, xp: "100" });
+if (!result.success) {
+  result.error;   // ZodError instance
+} else {
+  result.data;    // { username: string; xp: number }
+}
 ```
 
 --------------------------------
@@ -1447,6 +1446,92 @@ const emailSchema = z.email().check(
     description: "Please enter a valid email address",
   })
 );
+```
+
+--------------------------------
+
+### Define a strict object schema
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
+
+Example of using `z.strictObject` to throw an error when unknown keys are found.
+
+```ts
+const StrictDog = z.strictObject({
+  name: z.string(),
+});
+
+StrictDog.parse({ name: "Yeller", extraKey: true });
+// ❌ throws
+```
+
+--------------------------------
+
+### Define an object with optional properties (Zod)
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
+
+Example of making object properties optional using Zod.
+
+```ts
+const Dog = z.object({
+  name: z.string(),
+  age: z.number().optional(),
+});
+
+Dog.parse({ name: "Yeller" }); // ✅
+```
+
+--------------------------------
+
+### Configure Docsify Site Settings
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/index.html
+
+This snippet defines the `window.$docsify` object, which configures various aspects of the Docsify documentation site, such as the homepage, navigation levels, repository link, router mode, and lists of external links.
+
+```javascript
+window.$docsify = {
+  // Vercel no longer serves root-level README.md from static deployments.
+  homepage: "home.md",
+  subMaxLevel: 1,
+  maxLevel: 3,
+  auto2top: true,
+  repo: "colinhacks/zod",
+  routerMode: "history",
+  crossOriginLinks: [
+    "https://github.com/colinhacks/zod/actions?query=branch%3Amain",
+    "https://opensource.org/licenses/MIT",
+    "https://www.npmjs.com/package/zod",
+    "https://discord.gg/KaSRdyX2vc",
+    "https://discord.gg/RcG33DQJdf",
+    "https://github.com/colinhacks/zod/issues/new",
+    "https://twitter.com/colinhacks",
+    "https://trpc.io/",
+    "https://zod.dev/",
+    "https://deno.land/x/zod",
+    "https://zod.dev/blog/clerk-fellowship",
+    "https://go.clerk.com/hqN4rp7",
+    "https://go.clerk.com/Qgor5NQ",
+    "https://go.clerk.com/PKHrcwh"
+  ],
+  noCompileLinks: [
+    "https://github.com/colinhacks/zod/actions?query=branch%3Amain",
+    "https://opensource.org/licenses/MIT",
+    "https://www.npmjs.com/package/zod",
+    "https://discord.gg/KaSRdyX2vc",
+    "https://discord.gg/RcG33DQJdf",
+    "https://github.com/colinhacks/zod/issues/new",
+    "https://twitter.com/colinhacks",
+    "https://trpc.io/",
+    "https://zod.dev/",
+    "https://deno.land/x/zod",
+    "https://zod.dev/blog/clerk-fellowship",
+    "https://go.clerk.com/hqN4rp7",
+    "https://go.clerk.com/Qgor5NQ",
+    "https://go.clerk.com/PKHrcwh"
+  ]
+};
 ```
 
 --------------------------------
@@ -1484,63 +1569,14 @@ const UniqueStringArray = z.array(z.string()).superRefine((val, ctx) => {
 
 --------------------------------
 
-### Common String Validations
+### Extract inner schema from ZodNullable (Zod)
 
 Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
 
-Examples of common string validation methods in Zod and Zod Mini.
-
-```typescript
-z.string().max(5);
-z.string().min(5);
-z.string().length(5);
-z.string().regex(/^[a-z]+$/);
-z.string().startsWith("aaa");
-z.string().endsWith("zzz");
-z.string().includes("---");
-z.string().uppercase();
-z.string().lowercase();
-```
-
-```typescript
-z.string().check(z.maxLength(5));
-z.string().check(z.minLength(5));
-z.string().check(z.length(5));
-z.string().check(z.regex(/^[a-z]+$/));
-z.string().check(z.startsWith("aaa"));
-z.string().check(z.endsWith("zzz"));
-z.string().check(z.includes("---"));
-z.string().check(z.uppercase());
-z.string().check(z.lowercase());
-```
-
---------------------------------
-
-### Basic Union
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/README.md
-
-Demonstrates how to create a basic union type using z.union and parse values.
+Example of extracting the inner schema from a ZodNullable instance in Zod.
 
 ```ts
-const stringOrNumber = z.union([z.string(), z.number()]);
-
-stringOrNumber.parse("foo"); // passes
-stringOrNumber.parse(14); // passes
-```
-
---------------------------------
-
-### Array length constraints
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/README.md
-
-Examples of using `.min()`, `.max()`, and `.length()` to specify array size constraints.
-
-```ts
-z.string().array().min(5); // must contain 5 or more items
-z.string().array().max(5); // must contain 5 or fewer items
-z.string().array().length(5); // must contain 5 items exactly
+nullableYoda.unwrap(); // ZodLiteral<"yoda">
 ```
 
 --------------------------------
@@ -1569,21 +1605,6 @@ z.email({ pattern: z.regexes.unicodeEmail });
 
 --------------------------------
 
-### Customizing String Error Messages
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/README.md
-
-Example of customizing common error messages when defining a string schema.
-
-```ts
-const name = z.string({
-  required_error: "Name is required",
-  invalid_type_error: "Name must be a string"
-});
-```
-
---------------------------------
-
 ### Using a Codec for Decoding and Encoding
 
 Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/codecs.mdx
@@ -1608,45 +1629,20 @@ z.encode(stringToDate, new Date("2024-01-15T10:30:00.000Z"))
 
 --------------------------------
 
-### Async Codec Definition
+### Enum with String TypeScript Enum
 
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/codecs.mdx
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
 
-Example of defining an asynchronous codec with `decode` and `encode` functions that return Promises.
+Example of using `z.enum` with an externally declared TypeScript string enum.
 
 ```ts
-const asyncCodec = z.codec(z.string(), z.number(), {
-  decode: async (str) => Number(str),
-  encode: async (num) => num.toString()
-});
-```
+enum Fish {
+  Salmon = "Salmon",
+  Tuna = "Tuna",
+  Trout = "Trout",
+}
 
---------------------------------
-
-### Inverting a Codec
-
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/codecs.mdx
-
-Example of using `z.invertCodec()` to create a codec that reverses the input and output schemas and transformations.
-
-```typescript
-const dateToString = z.invertCodec(stringToDate);
-
-dateToString.decode(new Date("2024-01-15T10:30:00.000Z"));
-// => string
-
-dateToString.encode("2024-01-15T10:30:00.000Z");
-// => Date
-```
-
-```typescript
-const dateToString = z.invertCodec(stringToDate);
-
-z.decode(dateToString, new Date("2024-01-15T10:30:00.000Z"));
-// => string
-
-z.encode(dateToString, "2024-01-15T10:30:00.000Z");
-// => Date
+const FishEnum = z.enum(Fish);
 ```
 
 --------------------------------
@@ -1687,19 +1683,107 @@ z.parse(randomDefault, undefined); // => 0.7223408162401552
 
 --------------------------------
 
-### Defining a Codec
+### Handling cycles with $ref
 
-Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/codecs.mdx
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/json-schema.mdx
 
-Example of defining a codec to transform an ISO date string to a Date object and vice-versa.
+Example of a self-referencing schema and how toJSONSchema represents cycles using $ref by default.
 
-```typescript
-const stringToDate = z.codec(
-  z.iso.datetime(),  // input schema: ISO date string
-  z.date(),          // output schema: Date object
-  {
-    decode: (isoString) => new Date(isoString), // ISO string → Date
-    encode: (date) => date.toISOString(),       // Date → ISO string
+```ts
+const User = z.object({
+  name: z.string(),
+  get friend() {
+    return User;
   }
-);
+});
+
+z.toJSONSchema(User);
+// => {
+//   type: 'object',
+//   properties: { name: { type: 'string' }, friend: { '$ref': '#' } },
+//   required: [ 'name', 'friend' ],
+//   additionalProperties: false,
+// }
+```
+
+--------------------------------
+
+### Unrepresentable Zod Types
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/json-schema.mdx
+
+Examples of Zod types that do not have a direct JSON Schema analog and cannot be reasonably represented.
+
+```ts
+z.bigint(); // ❌
+z.int64(); // ❌
+z.symbol(); // ❌
+z.undefined(); // ❌
+z.void(); // ❌
+z.date(); // ❌
+z.map(); // ❌
+z.set(); // ❌
+z.transform(); // ❌
+z.nan(); // ❌
+z.custom(); // ❌
+```
+
+--------------------------------
+
+### Array-specific validations
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs/content/api.mdx
+
+Examples of array-specific validations like min, max, and length using Zod and Zod Mini.
+
+```ts
+z.array(z.string()).min(5); // must contain 5 or more items
+z.array(z.string()).max(5); // must contain 5 or fewer items
+z.array(z.string()).length(5); // must contain 5 items exactly
+```
+
+```ts
+z.array(z.string()).check(z.minLength(5)); // must contain 5 or more items
+z.array(z.string()).check(z.maxLength(5)); // must contain 5 or fewer items
+z.array(z.string()).check(z.length(5)); // must contain 5 items exactly
+```
+
+--------------------------------
+
+### Implement Dark Theme Toggling with System Preference
+
+Source: https://github.com/colinhacks/zod/blob/main/packages/docs-v3/index.html
+
+This JavaScript code provides functions to check and toggle the dark theme based on the user's system preferences. It applies the 'dark' class to the body and sets a 'data-theme' attribute on the document's root element.
+
+```javascript
+localStorage.removeItem("dark-theme");
+function checkDark() {
+  return (
+    // localStorage.getItem("dark-theme") === "true" ??
+    window.matchMedia("(prefers-color-scheme: dark)").matches ?? false
+  );
+}
+let isDark = checkDark();
+toggleDarkTheme(isDark);
+window
+  .matchMedia("(prefers-color-scheme: dark)")
+  .addEventListener("change", (e) => toggleDarkTheme(e.matches()));
+// document.querySelector(".theme-btn").addEventListener("click", () => {
+//   const isDark = checkDark();
+//   console.log("isDark", isDark);
+//   toggleDarkTheme(!isDark);
+// });
+function toggleDarkTheme(isDark) {
+  if (isDark) {
+    document.body.classList.add("dark");
+  } else {
+    document.body.classList.remove("dark");
+  }
+  document.documentElement.setAttribute(
+    "data-theme",
+    isDark ? "dark" : "light"
+  );
+  // localStorage.setItem("dark-theme", isDark ? "true" : "false");
+}
 ```
