@@ -1,8 +1,8 @@
-### package.json with bun-create setup logic
+### Local Template `package.json` with Setup Logic
 
 Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/templating/create.mdx
 
-Example `package.json` demonstrating `preinstall`, `postinstall`, and `start` scripts within the `bun-create` section for local templates.
+Example `package.json` demonstrating the `bun-create` section for defining pre- and post-installation scripts and a start command.
 
 ```json
 {
@@ -23,14 +23,145 @@ Example `package.json` demonstrating `preinstall`, `postinstall`, and `start` sc
 
 --------------------------------
 
-### Run the start script
+### Global Test Setup Script Example
 
-Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
+Source: https://github.com/oven-sh/bun/blob/main/docs/test/configuration.mdx
 
-Command to execute the 'start' script defined in package.json using Bun.
+An example TypeScript script (`test-setup.ts`) demonstrating global `beforeAll` and `afterAll` hooks for test environment setup and cleanup.
+
+```ts
+// Global test setup
+import { beforeAll, afterAll } from "bun:test";
+
+beforeAll(() => {
+  // Set up test database
+  setupTestDatabase();
+});
+
+afterAll(() => {
+  // Clean up
+  cleanupTestDatabase();
+});
+```
+
+--------------------------------
+
+### Configure Bun Install with bunfig.toml
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/pm/cli/install.mdx
+
+This `bunfig.toml` example shows the default settings for `bun install`, controlling dependency types, lockfile behavior, and the package linker strategy.
+
+```toml
+[install]
+
+# whether to install optionalDependencies
+optional = true
+
+# whether to install devDependencies
+dev = true
+
+# whether to install peerDependencies
+peer = true
+
+# equivalent to `--production` flag
+production = false
+
+# equivalent to `--save-text-lockfile` flag
+saveTextLockfile = false
+
+# equivalent to `--frozen-lockfile` flag
+frozenLockfile = false
+
+# equivalent to `--dry-run` flag
+dryRun = false
+
+# equivalent to `--concurrent-scripts` flag
+concurrentScripts = 16 # (cpu count or GOMAXPROCS) x2
+
+# installation strategy: "hoisted" or "isolated"
+# default depends on lockfile configVersion and workspaces:
+# - configVersion = 1: "isolated" if using workspaces, otherwise "hoisted"
+# - configVersion = 0: "hoisted"
+linker = "hoisted"
+
+
+# minimum age config
+minimumReleaseAge = 259200 # seconds
+minimumReleaseAgeExcludes = ["@types/node", "typescript"]
+```
+
+--------------------------------
+
+### Render Build and Start Commands for Bun
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/deployment/render.mdx
+
+Specifies the build and start commands for a Bun application deployed on Render. `bun install` installs dependencies, and `bun app.ts` starts the application.
+
+```sh
+bun install
+```
+
+```sh
+bun app.ts
+```
+
+--------------------------------
+
+### Setup commands
+
+Source: https://github.com/oven-sh/bun/blob/main/packages/bun-lambda/README.md
+
+Commands to clone the repository, set up sparse checkout, install dependencies, and publish the layer.
+
+```sh
+git clone --filter=blob:none --sparse https://github.com/oven-sh/bun.git
+git -C bun sparse-checkout set packages/bun-lambda
+cd bun/packages/bun-lambda
+bun install
+bun run publish-layer
+```
+
+--------------------------------
+
+### Bun PM PKG Get, Set, Delete, and Fix Examples
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/pm/cli/pm.mdx
+
+Provides examples for managing `package.json` data, including retrieving properties, setting new values, deleting existing ones, and automatically fixing common issues.
 
 ```bash
-bun run start
+# get
+bun pm pkg get name                               # single property
+bun pm pkg get name version                       # multiple properties
+bun pm pkg get                                    # entire package.json
+bun pm pkg get scripts.build                      # nested property
+
+# set
+bun pm pkg set name="my-package"                  # simple property
+bun pm pkg set scripts.test="jest" version=2.0.0  # multiple properties
+bun pm pkg set {"private":"true"} --json          # JSON values with --json flag
+
+# delete
+bun pm pkg delete description                     # single property
+bun pm pkg delete scripts.test contributors[0]    # multiple/nested
+
+# fix
+bun pm pkg fix                                    # auto-fix common issues
+```
+
+--------------------------------
+
+### Install SolidStart Project Dependencies
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/solidstart.mdx
+
+Navigate into the newly created project directory and install its dependencies using `bun install`.
+
+```sh
+cd my-app
+bun install
 ```
 
 --------------------------------
@@ -49,102 +180,216 @@ bun test test/js/bun/secrets.test.ts
 
 --------------------------------
 
-### Install dependencies and run development server
+### Implement Bun Plugin Builder Methods
 
-Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/solidstart.mdx
+Source: https://github.com/oven-sh/bun/blob/main/docs/bundler/esbuild.mdx
 
-After initializing the project, navigate into the new directory (`my-app`), install the project dependencies using `bun install`, and then start the development server with `bun dev`. The server will typically run on `http://localhost:3000/`.
+This example demonstrates how to implement `onStart`, `onResolve`, `onLoad`, and `onEnd` hooks within a Bun plugin's setup function to interact with the bundling process.
 
-```sh
-cd my-app
-bun install
+```typescript
+import type { BunPlugin } from "bun";
+const myPlugin: BunPlugin = {
+  name: "my-plugin",
+  setup(builder) {
+    builder.onStart(() => {
+      /* called when the bundle starts */
+    });
+    builder.onResolve(
+      {
+        /* onResolve.options */
+      },
+      args => {
+        return {
+          /* onResolve.results */
+        };
+      },
+    );
+    builder.onLoad(
+      {
+        /* onLoad.options */
+      },
+      args => {
+        return {
+          /* onLoad.results */
+        };
+      },
+    );
+    builder.onEnd(result => {
+      /* called when the bundle is complete */
+    });
+  },
+};
 ```
 
+--------------------------------
+
+### Example `package.json` scripts definition
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/index.mdx
+
+Illustrates how to define `scripts` in a `package.json` file, with examples for cleaning a `dist` directory and starting a development server.
+
+```json
+{
+  // ... other fields
+  "scripts": {
+    "clean": "rm -rf dist && echo 'Done.'",
+    "dev": "bun server.ts"
+  }
+}
+```
+
+--------------------------------
+
+### Setup and run Bun's test suite
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/project/building-windows.mdx
+
+Install test dependencies, then run the entire test suite or individual test files using `bun run test` or `bun-debug test`.
+
+```ps1
+# Setup
+bun i --cwd packages\bun-internal-test
+
+# Run the entire test suite with reporter
+# the package.json script "test" uses "build/debug/bun-debug.exe" by default
+bun run test
+
+# Run an individual test file:
+bun-debug test node\fs
+bun-debug test "C:\bun\test\js\bun\resolve\import-meta.test.js"
+```
+
+--------------------------------
+
+### Benchmark setup commands
+
+Source: https://github.com/oven-sh/bun/blob/main/bench/test/README.md
+
+Commands to navigate to the benchmark directory and install dependencies for Vitest, then set up the test suites.
+
 ```sh
-bun dev
+cd bench/test
+bun install                       # for vitest
+bun parallel/setup.ts
+bun isolate-cache/setup.ts
+```
+
+--------------------------------
+
+### Install Bun and dependencies in GitHub Actions
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/install/cicd.mdx
+
+Use the `setup-bun` action to install Bun and then run `bun install` to manage project dependencies within a GitHub Actions workflow.
+
+```yaml
+title: my-workflow
+jobs:
+  my-job:
+    title: my-job
+    runs-on: ubuntu-latest
+    steps:
+      # ...
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+
+      # run any `bun` or `bunx` command
+      - run: bun install
+```
+
+--------------------------------
+
+### Start the TanStack Start dev server with Bun
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/tanstack-start.mdx
+
+Navigate to the project directory and start the Vite development server using Bun.
+
+```sh
+cd my-tanstack-app
+bun --bun run dev
+```
+
+--------------------------------
+
+### Initialize a Remix Project with Bun
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/remix.mdx
+
+Use `bun create remix` to scaffold a new Remix application, handling project setup and dependency installation. The output shows the interactive prompts and successful initialization.
+
+```sh
+bun create remix
 ```
 
 ```txt
-$ vinxi dev
-vinxi v0.5.8
-vinxi starting dev server
+ remix   v1.19.3 💿 Let's build a better website...
 
-  ➜ Local:    http://localhost:3000/
-  ➜ Network:  use --host to expose
+   dir   Where should we create your new project?
+         ./my-app
+
+      ◼  Using basic template See https://remix.run/docs/en/main/guides/templates#templates for more
+      ✔  Template copied
+
+   git   Initialize a new git repository?
+         Yes
+
+  deps   Install dependencies with bun?
+         Yes
+
+      ✔  Dependencies installed
+      ✔  Git initialized
+
+  done   That's it!
+         Enter your project directory using cd ./my-app
+         Check out README.md for development and deploy instructions.
 ```
 
 --------------------------------
 
-### Basic Usage
+### Install Bun (Native)
 
-Source: https://github.com/oven-sh/bun/blob/main/docs/pm/cli/install.mdx
+Source: https://github.com/oven-sh/bun/blob/main/CONTRIBUTING.md
 
-Examples of installing packages, specific versions, and tags.
+Install a release build of Bun using the native installer script.
 
 ```bash
-bun install react
-bun install react@19.1.1 # specific version
-bun install react@latest # specific tag
+$ curl -fsSL https://bun.com/install | bash
 ```
 
 --------------------------------
 
-### Add start script to package.json
+### Configure Bun Test Inheritance with bunfig.toml
 
-Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
+Source: https://github.com/oven-sh/bun/blob/main/docs/test/configuration.mdx
 
-This JSON snippet shows how to add a 'start' script to your package.json file, which executes 'bun run index.ts'.
+This `bunfig.toml` example demonstrates how `bun test` inherits network and installation settings from the `[install]` section, such as registry and package preferences, and shows basic test-specific configurations.
 
-```json
-{
-  "name": "quickstart",
-  "module": "index.ts",
-  "type": "module",
-  "private": true,
-  "scripts": {
-    "start": "bun run index.ts"
-  },
-  "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  }
-}
+```toml
+[install]
+# These settings are inherited by bun test
+registry = "https://npm.company.com/"
+exact = true
+prefer = "offline"
+
+[test]
+# Test-specific configuration
+coverage = true
+timeout = 10000
 ```
 
 --------------------------------
 
-### Install figlet package and types
+### Install Bun using the install script
 
-Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
+Source: https://github.com/oven-sh/bun/blob/main/README.md
 
-Installs the `figlet` package and its TypeScript type declarations.
+This is the recommended method for installing Bun on Linux and macOS systems.
 
-```bash
-bun add figlet
-bun add -d @types/figlet # TypeScript users only
-```
-
---------------------------------
-
-### Example package.json with non-npm dependencies
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/pm/cli/install.mdx
-
-Demonstrates installing dependencies from Git, GitHub, and local/remote tarballs.
-
-```json
-{
-  "dependencies": {
-    "dayjs": "git+https://github.com/iamkun/dayjs.git",
-    "lodash": "git+ssh://github.com/lodash/lodash.git#4.17.21",
-    "moment": "git@github.com:moment/moment.git",
-    "zod": "github:colinhacks/zod",
-    "react": "https://registry.npmjs.org/react/-/react-18.2.0.tgz",
-    "bun-types": "npm:@types/bun"
-  }
-}
+```sh
+# with install script (recommended)
+curl -fsSL https://bun.com/install | bash
 ```
 
 --------------------------------
@@ -167,51 +412,37 @@ Example of running Bun secrets tests in GitHub Actions with explicit installatio
 
 --------------------------------
 
-### Basic Setup
+### Putting it all together
 
-Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/http/server.mdx
+Source: https://github.com/oven-sh/bun/blob/main/packages/bun-uws/misc/READMORE.md
 
-Example demonstrating how to set up a basic HTTP server with Bun.serve, including static, dynamic, and method-specific routes, as well as file serving and redirects.
+A complete example demonstrating route definition, listening on a port, and running the event loop with `App.run`.
 
-```ts
-const server = Bun.serve({
-  // `routes` requires Bun v1.2.3+
-  routes: {
-    // Static routes
-    "/api/status": new Response("OK"),
+```c++
+int main() {
+    uWS::App().get("/*", [](auto *res, auto *req) {
+        res->end("Hello World!");
+    }).listen(9001, [](auto *listenSocket) {
+        if (listenSocket) {
+            std::cout << "Listening for connections..." << std::endl;
+        }
+    }).run();
 
-    // Dynamic routes
-    "/users/:id": req => {
-      return new Response(`Hello User ${req.params.id}!`);
-    },
+    std::cout << "Shoot! We failed to listen and the App fell through, exiting now!" << std::endl;
+}
+```
 
-    // Per-HTTP method handlers
-    "/api/posts": {
-      GET: () => new Response("List posts"),
-      POST: async req => {
-        const body = await req.json();
-        return Response.json({ created: true, ...body });
-      },
-    },
+--------------------------------
 
-    // Wildcard route for all routes that start with "/api/" and aren't otherwise matched
-    "/api/*": Response.json({ message: "Not found" }, { status: 404 }),
+### Define install configuration section in bunfig.toml
 
-    // Redirect from /blog/hello to /blog/hello/world
-    "/blog/hello": Response.redirect("/blog/hello/world"),
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/bunfig.mdx
 
-    // Serve a file by lazily loading it into memory
-    "/favicon.ico": Bun.file("./favicon.ico"),
-  },
+This snippet shows the basic structure for configuring `bun install` behavior within the `bunfig.toml` file. Specific installation options are defined within this section.
 
-  // (optional) fallback for unmatched routes:
-  // Required if Bun's version < 1.2.3
-  fetch(req) {
-    return new Response("Not Found", { status: 404 });
-  },
-});
-
-console.log(`Server running at ${server.url}`);
+```toml
+[install]
+# configuration here
 ```
 
 --------------------------------
@@ -231,14 +462,15 @@ apt-get install -y \
 
 --------------------------------
 
-### React Project Template Examples
+### Navigate to project and install dependencies
 
-Source: https://github.com/oven-sh/bun/blob/main/docs/snippets/cli/init.mdx
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/hono.mdx
 
-Examples of initializing React projects with different configurations using the `--react` option, shown as a single command line.
+Change into the newly created project directory and install its dependencies using Bun.
 
-```bash
-bun init --react bun init --react=tailwind bun init --react=shadcn
+```sh
+cd myapp
+bun install
 ```
 
 --------------------------------
@@ -256,14 +488,16 @@ Example of running Bun secrets tests in GitHub Actions with automatic setup.
 
 --------------------------------
 
-### Initialize a new project
+### Initialize a new Bun project
 
-Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/prisma-postgres.mdx
 
-Initializes a new Bun project named 'my-app'.
+Use `mkdir` and `bun init` to set up a new project directory.
 
 ```bash
-bun init my-app
+mkdir prisma-postgres-app
+cd prisma-postgres-app
+bun init
 ```
 
 --------------------------------
@@ -282,47 +516,29 @@ steps:
 
 --------------------------------
 
-### Define an HTTP route and start a server
+### Initialize Bun Project and Install Neon Serverless Driver
 
-Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/elysia.mdx
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/neon-serverless-postgres.mdx
 
-Example of defining a simple GET route and starting an Elysia server on port 8080.
+Use these commands to create a new project directory, initialize it with Bun, and add the Neon serverless driver as a dependency.
 
-```ts
-import { Elysia } from "elysia";
-
-const app = new Elysia().get("/", () => "Hello Elysia").listen(8080);
-
-console.log(`🦊 Elysia is running at on port ${app.server?.port}...`);
+```sh
+mkdir bun-neon-postgres
+cd bun-neon-postgres
+bun init -y
+bun add @neondatabase/serverless
 ```
 
 --------------------------------
 
-### Run the initial Bun app
+### Install
 
-Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
+Source: https://github.com/oven-sh/bun/blob/main/test/js/node/test/fixtures/postject-copy/node_modules/postject/README.markdown
 
-Navigates into the project directory and runs the default `index.ts` file.
+Command to install postject globally.
 
-```bash
-cd my-app
-bun run index.ts
-```
-
-```txt
-Hello via Bun!
-```
-
---------------------------------
-
-### React Project Initialization Example
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/snippets/cli/init.mdx
-
-Example of initializing a basic React project.
-
-```bash
-bun init --react
+```sh
+npm i -g postject
 ```
 
 --------------------------------
@@ -346,27 +562,83 @@ RUN bun test test/js/bun/secrets.test.ts
 
 --------------------------------
 
-### Basic Bun setup in GitHub Actions
+### Qwik App Initialization Output with Bun
 
-Source: https://github.com/oven-sh/bun/blob/main/docs/guides/runtime/cicd.mdx
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/qwik.mdx
 
-This snippet shows how to use the `setup-bun` action and run basic `bun` commands like `bun install`, `bun index.ts`, and `bun run build`.
+This output shows the interactive prompts and successful creation of a new Qwik project using `bun create qwik`, including dependency installation with Bun.
 
-```yaml
-name: my-workflow
-jobs:
-  my-job:
-    name: my-job
-    runs-on: ubuntu-latest
-    steps:
-      # ...
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+```txt
+      ............
+    .::: :--------:.
+   .::::  .:-------:.
+  .:::::.   .:-------.
+  ::::::.     .:------.
+ ::::::.        :-----:
+ ::::::.       .:-----.
+  :::::::.     .-----.
+   ::::::::..   ---:.
+    .:::::::::. :-:.
+     ..::::::::::::
+             ...::::
 
-      # run any `bun` or `bunx` command
-      - run: bun install
-      - run: bun index.ts
-      - run: bun run build
+
+┌  Let's create a  Qwik App  ✨ (v1.2.10)
+│
+◇  Where would you like to create your new project? (Use '.' or './' for current directory)
+│  ./my-app
+│
+●  Creating new project in  /path/to/my-app  ... 🐇
+│
+◇  Select a starter
+│  Basic App
+│
+◇  Would you like to install bun dependencies?
+│  Yes
+│
+◇  Initialize a new git repository?
+│  No
+│
+◇  Finishing the install. Wanna hear a joke?
+│  Yes
+│
+○  ────────────────────────────────────────────────────────╮
+│                                                          │
+│  How do you know if there’s an elephant under your bed?  │
+│  Your head hits the ceiling!                             │
+│                                                          │
+├──────────────────────────────────────────────────────────╯
+│
+◇  App Created 🐰
+│
+◇  Installed bun dependencies 📋
+│
+○  Result ─────────────────────────────────────────────╮
+│                                                      │
+│  Success!  Project created in my-app directory       │
+│                                                      │
+│  Integrations? Add Netlify, Cloudflare, Tailwind...  │
+│  bun qwik add                                        │
+│
+│  Relevant docs:
+│  https://qwik.dev/docs/getting-started/
+│
+│  Questions? Start the conversation at:
+│  https://qwik.dev/chat
+│  https://twitter.com/QwikDev
+│
+│  Presentations, Podcasts and Videos:
+│  https://qwik.dev/media/
+│
+│  Next steps:
+│  cd my-app
+│  bun start
+│                                                      │
+│                                                      │
+├──────────────────────────────────────────────────────╯
+│
+└  Happy coding! 🎉
+
 ```
 
 --------------------------------
@@ -389,29 +661,6 @@ await Bun.secrets.set({
 
 --------------------------------
 
-### Initialize a new project with Blank template
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
-
-Initializes a new Bun project named 'my-app' and selects the 'Blank' template, showing the created files.
-
-```bash
-bun init my-app
-```
-
-```txt
-✓ Select a project template: Blank
-
-- .gitignore
-- CLAUDE.md
-- .cursor/rules/use-bun-instead-of-node-vite-npm-pnpm.mdc -> CLAUDE.md
-- index.ts
-- tsconfig.json (for editor autocomplete)
-- README.md
-```
-
---------------------------------
-
 ### Delete credential with empty string
 
 Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/secrets-ci-setup.md
@@ -422,6 +671,18 @@ Examples showing how to delete a credential using Bun.secrets.delete or by setti
 // These are equivalent:
 await Bun.secrets.delete({ service: "myapp", name: "token" });
 await Bun.secrets.set({ service: "myapp", name: "token", value: "" });
+```
+
+--------------------------------
+
+### Run Bun with an HTML Entry Point
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/bundler/html-static.mdx
+
+Use the `bun` command to start the development server, pointing it directly to an HTML file for automatic bundling and serving.
+
+```bash
+bun ./index.html
 ```
 
 --------------------------------
@@ -438,124 +699,6 @@ bun-1234566 --version
 
 --------------------------------
 
-### Create index.html
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
-
-Creates a basic HTML file to be served by the Bun server.
-
-```html
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bun</title>
-  </head>
-  <body>
-    <h1>Bun!</h1>
-  </body>
-</html>
-```
-
---------------------------------
-
-### Install Settings Inheritance Example
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/test/configuration.mdx
-
-Example `bunfig.toml` demonstrating how `[install]` settings are inherited by `bun test`.
-
-```toml
-[install]
-# These settings are inherited by bun test
-registry = "https://npm.company.com/"
-exact = true
-prefer = "offline"
-
-[test]
-# Test-specific configuration
-coverage = true
-timeout = 10000
-
-```
-
---------------------------------
-
-### Use a globally installed package
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/pm/cli/install.mdx
-
-Example of executing a command-line tool installed globally.
-
-```bash
-cowsay "Bun!"
-```
-
---------------------------------
-
-### Basic Example: Build Command (CLI)
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/bundler/index.mdx
-
-Building the basic example using Bun's CLI.
-
-```bash
-bun build ./index.tsx --outdir ./out
-```
-
---------------------------------
-
-### Accept All Defaults Example
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/snippets/cli/init.mdx
-
-Example of initializing a project by accepting all default prompts.
-
-```bash
-bun init -y
-```
-
---------------------------------
-
-### GitHub Actions Workflow with bun install
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/pm/cli/install.mdx
-
-Example GitHub Actions workflow to install Bun and project dependencies using `bun install`.
-
-```yaml
-name: bun-types
-jobs:
-  build:
-    name: build-app
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-      - name: Install bun
-        uses: oven-sh/setup-bun@v2
-      - name: Install dependencies
-        run: bun install
-      - name: Build app
-        run: bun run build
-```
-
---------------------------------
-
-### Navigate and install dependencies
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/vite.mdx
-
-Change into the project directory and install dependencies using Bun.
-
-```bash
-cd my-app
-bun install
-```
-
---------------------------------
-
 ### Force Keyring Setup
 
 Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/secrets-ci-setup.md
@@ -564,41 +707,6 @@ Command to force the automatic keyring setup using an environment variable.
 
 ```bash
 FORCE_KEYRING_SETUP=1 bun test test/js/bun/secrets.test.ts
-```
-
---------------------------------
-
-### Run the HTTP server
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
-
-Runs the updated `index.ts` file to start the HTTP server.
-
-```bash
-bun run index.ts
-```
-
-```txt
-Listening on http://localhost:3000
-```
-
---------------------------------
-
-### cowsay output example
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/pm/cli/add.mdx
-
-Example output from the globally installed `cowsay` command.
-
-```txt
- ______
-< Bun! >
- ------
-        \   ^__^
-         \  (oo)\_______
-            (__)\       )\/\
-                ||----w |
-                ||     ||
 ```
 
 --------------------------------
@@ -615,335 +723,41 @@ bun test test/js/bun/secrets.test.ts
 
 --------------------------------
 
-### Setup commands
-
-Source: https://github.com/oven-sh/bun/blob/main/packages/bun-lambda/README.md
-
-Commands to clone the repository, set up sparse checkout, install dependencies, and publish the layer.
-
-```sh
-git clone --filter=blob:none --sparse https://github.com/oven-sh/bun.git
-git -C bun sparse-checkout set packages/bun-lambda
-cd bun/packages/bun-lambda
-bun install
-bun run publish-layer
-```
-
---------------------------------
-
-### Start the dev server
+### Add Nitro to your TanStack Start project
 
 Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/tanstack-start.mdx
 
-Change to the project directory and run the dev server with Bun.
+Install Nitro as a dependency to enable deployment of your TanStack Start app to various platforms.
 
 ```sh
-cd my-tanstack-app
-bun --bun run dev
+bun add nitro
 ```
 
 --------------------------------
 
-### Configure global installation behavior
+### Initialize Bun Project and Install StricJS
 
-Source: https://github.com/oven-sh/bun/blob/main/docs/pm/cli/add.mdx
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/stric.mdx
 
-Example `bunfig.toml` configuration for global installation paths.
-
-```toml
-[install]
-# where `bun add --global` installs packages
-globalDir = "~/.bun/install/global"
-
-# where globally-installed package bins are linked
-globalBinDir = "~/.bun/bin"
-```
-
---------------------------------
-
-### Install dependencies for filtered packages
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/pm/filter.mdx
-
-Examples of using `bun install` with `--filter` to install dependencies for specific packages in a monorepo.
+Use these commands to set up a new Bun project and add the necessary StricJS router and utility packages.
 
 ```bash
-# Install dependencies for all workspaces except `pkg-c`
-bun install --filter '!pkg-c'
-
-# Install dependencies for packages in `./packages` (`pkg-a`, `pkg-b`, `pkg-c`)
-bun install --filter './packages/*'
-
-# Save as above, but exclude the root package.json
-bun install --filter '!./' --filter './packages/*'
-```
-
---------------------------------
-
-### Create a minimal HTTP server
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
-
-Replaces `index.ts` content with code to create an HTTP server listening on port 3000.
-
-```ts
-const server = Bun.serve({
-  port: 3000,
-  routes: {
-    "/": () => new Response('Bun!')
-  }
-});
-
-console.log(`Listening on ${server.url}`);
-```
-
---------------------------------
-
-### pnpm-workspace.yaml Example
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/pm/cli/install.mdx
-
-Example of a pnpm workspace configuration file, showing packages and catalog definitions.
-
-```yaml
-packages:
-  - "apps/*"
-  - "packages/*"
-
-catalog:
-  react: ^18.0.0
-  typescript: ^5.0.0
-
-catalogs:
-  build:
-    webpack: ^5.0.0
-    babel: ^7.0.0
-```
-
---------------------------------
-
-### Advanced Bun Build and Execution Examples (Shell)
-
-Source: https://github.com/oven-sh/bun/blob/main/AGENTS.md
-
-These examples demonstrate building Bun with different profiles (debug, release, local WebKit) and immediately executing commands or scripts with the built executable. Trailing arguments are passed to the built executable.
-
-```sh
-bun bd test foo.test.ts                    # debug build + quiet debug logs
-```
-
-```sh
-bun run build test foo.test.ts             # debug build
-```
-
-```sh
-bun run build:release -p 'Bun.version'     # release build
-```
-
-```sh
-bun run build:local run script.ts          # debug build with local WebKit
-```
-
---------------------------------
-
-### Use Setup and Teardown
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/test/writing-tests.mdx
-
-Example demonstrating the use of `beforeEach` and `afterEach` for test setup and teardown.
-
-```ts
-import { beforeEach, afterEach, test } from "bun:test";
-
-let testUser;
-
-beforeEach(() => {
-  testUser = createTestUser();
-});
-
-afterEach(() => {
-  cleanupTestUser(testUser);
-});
-
-test("should update user profile", () => {
-  // Use testUser in test
-});
+mkdir myapp
+cd myapp
+bun init
+bun add @stricjs/router @stricjs/utils
 ```
 
 --------------------------------
 
 ### Start development server
 
-Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/sveltekit.mdx
+Source: https://github.com/oven-sh/bun/blob/main/src/runtime/cli/init/README2.default.md
 
-Navigate into the project directory and start the SvelteKit development server using Bun.
-
-```sh
-cd my-app
-bun --bun run dev
-```
-
---------------------------------
-
-### Serve HTML file from root
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
-
-Modifies `index.ts` to import `index.html` and serve it from the root `/` route.
-
-```ts
-import figlet from 'figlet';
-import index from './index.html'; // [!code ++]
-
-const server = Bun.serve({
-  port: 3000,
-  routes: {
-    "/": index, // [!code ++]
-    "/figlet": () => {
-      const body = figlet.textSync('Bun!');
-      return new Response(body);
-    }
-  }
-});
-
-console.log(`Listening on ${server.url}`);
-```
-
---------------------------------
-
-### Build and run the application
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/tanstack-start.mdx
-
-Commands to build the application and start the server.
-
-```sh
-bun run build
-bun run start
-```
-
---------------------------------
-
-### Defining workspaces in package.json
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/guides/install/from-npm-install-to-bun-install.mdx
-
-Example of how to define workspaces in a package.json file.
-
-```json
-{
-  "name": "my-app",
-  "workspaces": ["packages/*", "apps/*"]
-}
-```
-
---------------------------------
-
-### Basic Example: Build Command (JavaScript)
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/bundler/index.mdx
-
-Building the basic example using Bun's JavaScript API.
-
-```typescript
-await Bun.build({
-  entrypoints: ["./index.tsx"],
-  outdir: "./out",
-});
-```
-
---------------------------------
-
-### Install Bun TypeScript types
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
-
-Installs `@types/bun` as a development dependency to resolve TypeScript errors.
+Command to start the development server for the project.
 
 ```bash
-bun add -d @types/bun
-```
-
---------------------------------
-
-### Initialize Bun Project
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/gel.mdx
-
-Create a new directory and initialize a Bun project.
-
-```sh
-mkdir my-edgedb-app
-cd my-edgedb-app
-bun init -y
-```
-
---------------------------------
-
-### Install dependencies for specific packages using --filter
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/pm/cli/install.mdx
-
-Examples of using the `--filter` flag to install dependencies for a subset of packages in a monorepo.
-
-```bash
-# Install dependencies for all workspaces except `pkg-c`
-bun install --filter '!pkg-c'
-
-# Install dependencies for only `pkg-a` in `./packages/pkg-a`
-bun install --filter './packages/pkg-a'
-```
-
---------------------------------
-
-### Start the dev server
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/nextjs.mdx
-
-Change to the project directory and run the dev server with Bun.
-
-```sh
-cd my-bun-app
-bun --bun run dev
-```
-
---------------------------------
-
-### Quickstart
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/shell.mdx
-
-Demonstrates using Bun Shell to pipe a fetch response as stdin to `cat` and then `wc -c`.
-
-```ts
-import { $ } from "bun";
-
-const response = await fetch("https://example.com");
-
-// Use Response as stdin.
-await $`cat < ${response} | wc -c`; // 1256
-```
-
---------------------------------
-
-### Start a server (`Bun.listen()`)
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/networking/tcp.mdx
-
-Basic example of starting a TCP server with Bun.listen, defining socket event handlers.
-
-```typescript
-Bun.listen({
-  hostname: "localhost",
-  port: 8080,
-  socket: {
-    data(socket, data) {}, // message received from client
-    open(socket) {}, // socket opened
-    close(socket, error) {}, // socket closed
-    drain(socket) {}, // socket ready for more data
-    error(socket, error) {}, // error handler
-  },
-});
+bun dev
 ```
 
 --------------------------------
@@ -960,14 +774,40 @@ Example of an ordered list with a start number beginning with 0.
 
 --------------------------------
 
-### Run in Deno (`Deno.serve`)
+### Start SvelteKit Development Server with Bun
 
-Source: https://github.com/oven-sh/bun/blob/main/bench/websocket-server/README.md
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/sveltekit.mdx
 
-Command to start the websocket server using Deno.
+Navigate into the project directory and start the SvelteKit development server using Bun as the runtime.
 
-```bash
-deno run -A ./chat-server.deno.mjs
+```sh
+cd my-app
+bun --bun run dev
+```
+
+--------------------------------
+
+### Install Bun and run commands in GitHub Actions
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/runtime/cicd.mdx
+
+This workflow demonstrates how to use `oven-sh/setup-bun@v2` to install Bun and then execute various Bun commands like `bun install`, `bun index.ts`, and `bun run build`.
+
+```yaml
+name: my-workflow
+jobs:
+  my-job:
+    name: my-job
+    runs-on: ubuntu-latest
+    steps:
+      # ...
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2 # [!code ++]
+
+      # run any `bun` or `bunx` command
+      - run: bun install # [!code ++]
+      - run: bun index.ts # [!code ++]
+      - run: bun run build # [!code ++]
 ```
 
 --------------------------------
@@ -984,39 +824,6 @@ Example of an ordered list with a start number containing leading zeros.
 
 --------------------------------
 
-### Initialize a SolidStart app
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/solidstart.mdx
-
-Initialize a SolidStart app using `bun create solid` with the `--solidstart` and `--ts` flags. When prompted, select the `basic` template for a minimal starter app. The output shows the project creation details and next steps.
-
-```sh
-bun create solid my-app --solidstart --ts
-```
-
-```txt
-┌
- Create-Solid v0.6.11
-│
-◇  Project Name
-│  my-app
-│
-◇  Which template would you like to use?
-│  basic
-│
-◇  Project created 🎉
-│
-◇  To get started, run: ─╮
-│                        │
-│  cd my-app             │
-│  bun install           │
-│  bun dev               │
-│                        │
-├────────────────────────╯
-```
-
---------------------------------
-
 ### Valid ordered list start number
 
 Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/md/spec.txt
@@ -1029,38 +836,63 @@ Example of an ordered list with a valid start number (nine digits or less).
 
 --------------------------------
 
-### Install Bun (Native)
+### Basic HTTP Server Setup with Bun.serve
 
-Source: https://github.com/oven-sh/bun/blob/main/CONTRIBUTING.md
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/http/server.mdx
 
-Install a release build of Bun using the native installer script.
+This snippet demonstrates how to configure a basic HTTP server using `Bun.serve` to handle different types of routes, including static responses, dynamic parameters, HTTP method-specific handlers, wildcard paths, redirects, and serving files.
 
-```bash
-$ curl -fsSL https://bun.com/install | bash
+```ts
+const server = Bun.serve({
+  // `routes` requires Bun v1.2.3+
+  routes: {
+    // Static routes
+    "/api/status": new Response("OK"),
+
+    // Dynamic routes
+    "/users/:id": req => {
+      return new Response(`Hello User ${req.params.id}!`);
+    },
+
+    // Per-HTTP method handlers
+    "/api/posts": {
+      GET: () => new Response("List posts"),
+      POST: async req => {
+        const body = await req.json();
+        return Response.json({ created: true, ...body });
+      }
+    },
+
+    // Wildcard route for all routes that start with "/api/" and aren't otherwise matched
+    "/api/*": Response.json({ message: "Not found" }, { status: 404 }),
+
+    // Redirect from /blog/hello to /blog/hello/world
+    "/blog/hello": Response.redirect("/blog/hello/world"),
+
+    // Serve a file by lazily loading it into memory
+    "/favicon.ico": Bun.file("./favicon.ico")
+  },
+
+  // (optional) fallback for unmatched routes:
+  // Required if Bun's version < 1.2.3
+  fetch(req) {
+    return new Response("Not Found", { status: 404 });
+  }
+});
+
+console.log(`Server running at ${server.url}`);
 ```
 
 --------------------------------
 
-### Start development server with bunx
+### Run Mintlify Development Server
 
-Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/vite.mdx
+Source: https://github.com/oven-sh/bun/blob/main/docs/README.md
 
-Run the Vite development server using `bunx` with the `--bun` flag.
+Execute this command to start the local development server for the documentation, which will be served at http://localhost:3000.
 
 ```bash
-bunx --bun vite
-```
-
---------------------------------
-
-### Install a specific version (Windows)
-
-Source: https://github.com/oven-sh/bun/blob/main/docs/guides/util/upgrade.mdx
-
-Use the install script to get a particular Bun version on Windows.
-
-```powershell
-iex "& {$(irm https://bun.sh/install.ps1)} -Version 1.3.3"
+mint dev
 ```
 
 --------------------------------
@@ -1077,6 +909,449 @@ Example of an ordered list with an invalid negative start number, which is not p
 
 --------------------------------
 
+### Defining a GET route
+
+Source: https://github.com/oven-sh/bun/blob/main/packages/bun-uws/misc/READMORE.md
+
+Example of attaching behavior to a URL route using the `get` method with `uWS::App`.
+
+```c++
+uWS::App().get("/hello", [](auto *res, auto *req) {
+    res->end("Hello World!");
+});
+```
+
+--------------------------------
+
+### Invalid ordered list start number (too many digits)
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/md/spec.txt
+
+Example of an ordered list with an invalid start number (more than nine digits), which is not parsed as a list.
+
+```markdown
+1234567890. not ok
+```
+
+--------------------------------
+
+### Vite project creation output
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/vite.mdx
+
+Example output after running `bun create vite my-app` and selecting options.
+
+```txt
+✔ Select a framework: › React
+✔ Select a variant: › TypeScript + SWC
+Scaffolding project in /path/to/my-app...
+```
+
+--------------------------------
+
+### Initialize a new Bun project
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/prisma.mdx
+
+Use `bun init` to create a new project directory and initialize it.
+
+```bash
+mkdir prisma-app
+cd prisma-app
+bun init
+```
+
+--------------------------------
+
+### Windows library attribution example
+
+Source: https://github.com/oven-sh/bun/blob/main/scripts/verify-baseline-static/CLAUDE.md
+
+Example showing how to allowlist symbols attributed to a specific Windows library when PDB records are unavailable.
+
+```text
+<lib:lolhtml.lib>  [AVX, AVX2]
+```
+
+--------------------------------
+
+### Build-then-Exec Examples for Bun
+
+Source: https://github.com/oven-sh/bun/blob/main/CLAUDE.md
+
+Demonstrates various build-then-exec commands for Bun, including debug builds, release builds, and local WebKit builds, passing arguments directly to the built executable.
+
+```sh
+bun bd test foo.test.ts
+```
+
+```sh
+bun run build test foo.test.ts
+```
+
+```sh
+bun run build:release -p 'Bun.version'
+```
+
+```sh
+bun run build:local run script.ts
+```
+
+--------------------------------
+
+### Rust v0 mangling example
+
+Source: https://github.com/oven-sh/bun/blob/main/scripts/verify-baseline-static/CLAUDE.md
+
+Example showing how the tool reports a Rust symbol and how to allowlist it using the canonicalized <rust-hash> placeholder.
+
+```text
+# Tool reports:
+  _RNvMNtNtNtNtCs5QMN7YRSXc3_6memchr4arch6x86_644avx26memchrNtB2_3One13find_raw_avx2  [AVX, AVX2]
+# Allowlist as:
+  _RNvMNtNtNtNt<rust-hash>6memchr4arch6x86_644avx26memchrNtB2_3One13find_raw_avx2  [AVX, AVX2]
+```
+
+--------------------------------
+
+### Create a new TanStack Start app with Bun
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/tanstack-start.mdx
+
+Use the interactive CLI to initialize a new TanStack Start project.
+
+```sh
+bunx @tanstack/cli create my-tanstack-app
+```
+
+--------------------------------
+
+### Verification Output Example
+
+Source: https://github.com/oven-sh/bun/blob/main/scripts/verify-baseline-static/CLAUDE.md
+
+An example of the output generated by the baseline static verification tool, showing violations, allowlisted symbols, and stale entries.
+
+```text
+VIOLATIONS (would SIGILL on Nehalem):
+
+  _ZN7simdutf7haswell14implementation17some_new_functionEPKcm  [AVX, AVX2]  (42 insns)
+    0x0000a1b2c3  Vpbroadcastb  (AVX2)
+    0x0000a1b2d7  Vpshufb  (AVX)
+    0x0000a1b2ee  Vpcmpeqb  (AVX)
+    ... 39 more
+
+ALLOWLISTED (suppressed, runtime-dispatched):
+  ...
+  -- 550 symbols, 18234 instructions total
+
+STALE ALLOWLIST ENTRIES (no matching symbol found 
+
+  _ZN7simdutf7haswell14implementation13old_gone_funcEPKcm
+
+SUMMARY:
+  violations:  1 symbols, 42 instructions
+  allowlisted: 550 symbols
+  stale allowlist entries: 1
+  FAIL
+```
+
+--------------------------------
+
+### Initialize a Hono project using create-hono
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/hono.mdx
+
+Use the `create-hono` CLI tool to scaffold a new Hono project, selecting Bun as the template.
+
+```sh
+bun create hono myapp
+```
+
+--------------------------------
+
+### bunx Command Examples
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/snippets/cli/bunx.mdx
+
+Illustrates common use cases for `bunx`, including running migrations, formatting files, specifying package versions, handling differing binary/package names, and forcing Bun execution.
+
+```bash
+# Run Prisma migrations
+bunx prisma migrate
+```
+
+```bash
+# Format a file with Prettier
+bunx prettier foo.js
+```
+
+```bash
+# Run a specific version of a package
+bunx uglify-js@3.14.0 app.js
+```
+
+```bash
+# Use --package when binary name differs from package name
+bunx -p @angular/cli ng new my-app
+```
+
+```bash
+# Force running with Bun instead of Node.js, even if the executable contains a Node shebang
+bunx --bun vite dev foo.js
+```
+
+--------------------------------
+
+### Define an HTTP route and start an Elysia server
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/elysia.mdx
+
+This snippet demonstrates how to import Elysia, define a GET route for the root path, and start the server on port 8080, logging the server's port.
+
+```ts
+import { Elysia } from "elysia";
+
+const app = new Elysia().get("/", () => "Hello Elysia").listen(8080);
+
+console.log(`🦊 Elysia is running at on port ${app.server?.port}...`);
+```
+
+--------------------------------
+
+### Script Profiling
+
+Source: https://github.com/oven-sh/bun/blob/main/packages/bun-inspector-protocol/README.md
+
+Example demonstrating how to start and stop script profiling and handle profiling updates and completion.
+
+```typescript
+// Start script profiling with sampling
+await inspector.send("ScriptProfiler.startTracking", { includeSamples: true });
+
+// Listen for profiling updates
+inspector.on("ScriptProfiler.trackingUpdate", event => {
+  console.log("Profiling event:", event);
+});
+
+// Stop profiling to get complete data
+inspector.on("ScriptProfiler.trackingComplete", data => {
+  if (data.samples) {
+    // Process stack traces
+    console.log(`Collected ${data.samples.stackTraces.length} stack traces`);
+  }
+});
+
+await inspector.send("ScriptProfiler.stopTracking");
+```
+
+--------------------------------
+
+### Run in Deno (`Deno.serve`)
+
+Source: https://github.com/oven-sh/bun/blob/main/bench/websocket-server/README.md
+
+Command to start the websocket server using Deno.
+
+```bash
+deno run -A ./chat-server.deno.mjs
+```
+
+--------------------------------
+
+### Initialize a Qwik App with Bun
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/qwik.mdx
+
+Use `bun create qwik` to scaffold a new Qwik project. The `create-qwik` package automatically detects Bun and installs dependencies using it.
+
+```sh
+bun create qwik
+```
+
+--------------------------------
+
+### Memory Profiling
+
+Source: https://github.com/oven-sh/bun/blob/main/packages/bun-inspector-protocol/README.md
+
+Example demonstrating how to start and stop heap tracking and listen for garbage collection events.
+
+```typescript
+// Start heap tracking
+await inspector.send("Heap.enable");
+await inspector.send("Heap.startTracking");
+
+// Listen for GC events
+inspector.on("Heap.garbageCollected", ({ collection }) => {
+  console.log(
+    `GC completed: ${collection.type} (${collection.endTime - collection.startTime}ms)`,
+  );
+});
+
+// ... perform operations to analyze ...
+
+// Get heap snapshot
+const { snapshotData } = await inspector.send("Heap.stopTracking");
+// Process snapshotData to find memory leaks
+```
+
+--------------------------------
+
+### Starting an HTTP Server with Bun.serve
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/bun-apis.mdx
+
+Use `Bun.serve` to create an HTTP server that listens for incoming requests and returns a `Response` object.
+
+```typescript
+Bun.serve({
+  fetch(req: Request) {
+    return new Response("Success!");
+  },
+});
+```
+
+--------------------------------
+
+### Initialize a new Bun project
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/upstash.mdx
+
+Creates a new Bun project directory and navigates into it using `bun init`.
+
+```sh
+bun init bun-upstash-redis
+cd bun-upstash-redis
+```
+
+--------------------------------
+
+### Benchmark against a local Bun H3 server
+
+Source: https://github.com/oven-sh/bun/blob/main/packages/h3blast/README.md
+
+Example of starting a Bun test server and then using h3blast to benchmark it.
+
+```sh
+bun test-server.js 3443 &
+./h3blast -t 2 -c 4 -m 32 -d 10 https://127.0.0.1:3443/
+```
+
+--------------------------------
+
+### Basic Routing with Bun.serve()
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/http/routing.mdx
+
+This example illustrates how to configure basic static routes within `Bun.serve()` using the `routes` property, along with a `fetch` handler for requests that do not match any defined route. Each route handler receives a `BunRequest` and must return a `Response` or `Promise<Response>`.
+
+```typescript
+Bun.serve({
+  routes: {
+    "/": () => new Response("Home"),
+    "/api": () => Response.json({ success: true }),
+    "/users": async () => Response.json({ users: [] }),
+  },
+  fetch() {
+    return new Response("Unmatched route");
+  },
+});
+```
+
+--------------------------------
+
+### WWW Autolink Example
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/md/spec-permissive-autolinks.txt
+
+Demonstrates a permissive WWW autolink, which starts with 'www.' and is implicitly converted to an HTTP URL.
+
+```markdown
+www.google.com/search?q=Markdown
+```
+
+```html
+<p><a href="http://www.google.com/search?q=Markdown">www.google.com/search?q=Markdown</a></p>
+```
+
+--------------------------------
+
+### Listening on a port
+
+Source: https://github.com/oven-sh/bun/blob/main/packages/bun-uws/misc/READMORE.md
+
+Example of how to start listening for new connections on a specified port using `App.listen`.
+
+```c++
+App.listen(port, [](auto *listenSocket) {
+    /* listenSocket is either nullptr or us_listen_socket */
+})
+```
+
+--------------------------------
+
+### CSRF Protection Example with Bun.serve()
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/csrf.mdx
+
+This example shows a complete `Bun.serve()` setup for CSRF protection. It generates a unique token for each session when rendering a form and verifies the token upon form submission, using a session ID to bind the token to the user.
+
+```ts
+const SECRET = process.env.CSRF_SECRET || "my-secret";
+
+// Resolve the requester's session identifier from a session cookie. Returns
+// null when the visitor has no session yet — never fall back to a shared
+// placeholder, or every session-less visitor would share one token binding.
+function getSessionId(req: Request): string | null {
+  return req.headers.get("cookie")?.match(/(?:^|;\s*)session=([^;]+)/)?.[1] ?? null;
+}
+
+const server = Bun.serve({
+  routes: {
+    "/form": req => {
+      // Create a per-visitor session before issuing the form so the token is
+      // bound to this visitor and no one else.
+      let sessionId = getSessionId(req);
+      const headers = new Headers({ "Content-Type": "text/html" });
+      if (!sessionId) {
+        sessionId = crypto.randomUUID();
+        headers.append("Set-Cookie", `session=${sessionId}; HttpOnly; SameSite=Lax; Path=/`);
+      }
+
+      const token = Bun.CSRF.generate(SECRET, { sessionId });
+
+      return new Response(
+        `<form method="POST" action="/submit">
+          <input type="hidden" name="_csrf" value="${token}" />
+          <input type="text" name="message" />
+          <button type="submit">Send</button>
+        </form>`,
+        { headers },
+      );
+    },
+
+    "/submit": {
+      POST: async req => {
+        const sessionId = getSessionId(req);
+        const formData = await req.formData();
+        const csrfToken = formData.get("_csrf");
+
+        if (!sessionId || typeof csrfToken !== "string" || !Bun.CSRF.verify(csrfToken, { secret: SECRET, sessionId })) {
+          return new Response("Invalid CSRF token", { status: 403 });
+        }
+
+        return new Response("OK");
+      },
+    },
+  },
+});
+
+console.log(`Listening on ${server.url}`);
+```
+
+--------------------------------
+
 ### Install ccache (openSUSE)
 
 Source: https://github.com/oven-sh/bun/blob/main/CONTRIBUTING.md
@@ -1086,4 +1361,383 @@ Install ccache on openSUSE using zypper.
 ```bash
 # For openSUSE
 $ sudo zypper install ccache
+```
+
+--------------------------------
+
+### Example usage of onGC
+
+Source: https://github.com/oven-sh/bun/blob/main/test/napi/node-napi-tests/test/common/README.md
+
+Demonstrates how to install a garbage collection listener using the onGC function.
+
+```js
+require('../common');
+const { onGC } = require('../common/gc');
+
+onGC({}, { ongc() { console.log('collected'); } });
+```
+
+--------------------------------
+
+### Initialize Gel project with CLI
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/gel.mdx
+
+Run this command in your project root to initialize a Gel instance and create the `gel.toml` configuration file.
+
+```sh
+gel project init
+```
+
+--------------------------------
+
+### Basic HTML block of type 6
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/md/spec.txt
+
+A simple example of an HTML block starting with <table> (type 6) and its parsed output.
+
+```markdown+html
+<table>
+  <tr>
+    <td>
+           hi
+    </td>
+  </tr>
+</table>
+
+okay.
+```
+
+```markdown+html
+<table>
+  <tr>
+    <td>
+           hi
+    </td>
+  </tr>
+</table>
+<p>okay.</p>
+```
+
+--------------------------------
+
+### Bun Development Server Output
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/bundler/html-static.mdx
+
+Example output from Bun's development server after starting, showing the version, readiness status, and local server URL.
+
+```text
+Bun v1.3.3
+ready in 6.62ms
+→ http://localhost:3000/
+Press h + Enter to show shortcuts
+```
+
+--------------------------------
+
+### Example Output: Postgres Version
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/neon-serverless-postgres.mdx
+
+This is an example of the output printed to the console when the Bun application successfully queries the Neon Postgres database.
+
+```txt
+PostgreSQL 16.2 on x86_64-pc-linux-gnu, compiled by gcc (Debian 10.2.1-6) 10.2.1 20210110, 64-bit
+```
+
+--------------------------------
+
+### API Server Setup and Teardown Hooks
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/test/lifecycle.mdx
+
+Start and stop an API server using `beforeAll` and `afterAll` hooks to ensure a clean server instance for the test suite.
+
+```ts
+import { beforeAll, afterAll } from "bun:test";
+import { startServer, stopServer } from "./server";
+
+let server;
+
+beforeAll(async () => {
+  // Start test server
+  server = await startServer({
+    port: 3001,
+    env: "test",
+  });
+});
+
+afterAll(async () => {
+  // Stop test server
+  await stopServer(server);
+});
+```
+
+--------------------------------
+
+### Check outdated dependencies using glob patterns with Bun
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/pm/cli/outdated.mdx
+
+Use glob patterns with `bun outdated` to filter dependencies. This example checks all packages starting with 'eslint'.
+
+```sh
+bun outdated 'eslint*'
+```
+
+```txt
+| Package                        | Current | Update | Latest     |
+| ------------------------------ | ------- | ------ | ---------- |
+| eslint (dev)                   | 8.57.1  | 8.57.1 | 9.20.0     |
+| eslint-plugin-security (dev)   | 2.1.1   | 2.1.1  | 3.0.1      |
+| eslint-plugin-sonarjs (dev)    | 0.23.0  | 0.23.0 | 3.0.1      |
+
+```
+
+--------------------------------
+
+### Get Nanoseconds Since Process Start with Bun.nanoseconds()
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/utils.mdx
+
+Use `Bun.nanoseconds()` for high-precision timing and benchmarking, returning the number of nanoseconds since the current Bun process began.
+
+```ts
+Bun.nanoseconds();
+// => 7288958
+```
+
+--------------------------------
+
+### Example YAML Configuration File
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/runtime/import-yaml.mdx
+
+A sample YAML file defining database, server, and feature configurations.
+
+```yaml
+database:
+  host: localhost
+  port: 5432
+  name: myapp
+
+server:
+  port: 3000
+  timeout: 30
+
+features:
+  auth: true
+  rateLimit: true
+```
+
+--------------------------------
+
+### Retrieve archive data as Uint8Array or Blob, with and without gzip
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/archive.mdx
+
+Demonstrates how to get the archive's raw data as a Uint8Array or Blob, showing both uncompressed and gzip-compressed examples.
+
+```ts
+const archive = new Bun.Archive({ "hello.txt": "Hello, World!" });
+
+// As Uint8Array
+const bytes = await archive.bytes();
+
+// As Blob
+const blob = await archive.blob();
+```
+
+```ts
+// With gzip compression (set at construction)
+const gzipped = new Bun.Archive({ "hello.txt": "Hello, World!" }, { compress: "gzip" });
+const gzippedBytes = await gzipped.bytes();
+const gzippedBlob = await gzipped.blob();
+```
+
+--------------------------------
+
+### Create a SvelteKit Project with Bun
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/sveltekit.mdx
+
+Use the SvelteKit CLI with `bunx` to initialize a new SvelteKit project, answering prompts for template, TypeScript, and package manager.
+
+```sh
+bunx sv create my-app
+```
+
+--------------------------------
+
+### Initialize Bun.Image with Options
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/runtime/image.mdx
+
+Illustrates initializing Bun.Image with an `options` object to configure parameters such as `maxPixels` for security against decompression bombs and `autoOrient` for applying EXIF orientation.
+
+```ts
+new Bun.Image(input, {
+  // Reject if width*height > this. Checked after reading the header,
+  // before allocating the pixel buffer. Default matches Sharp (~268 MP).
+  maxPixels: 4096 * 4096,
+  // Apply JPEG EXIF Orientation before any other op. Default: true.
+  autoOrient: true,
+});
+```
+
+--------------------------------
+
+### Content not forming a list item due to indentation
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/md/spec.txt
+
+Example where content starting with three spaces of indentation does not form a list item when a list marker is prepended.
+
+```markdown
+   foo
+
+bar
+```
+
+--------------------------------
+
+### Execute Start Script with Bun
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
+
+Use this command to run the "start" script defined in your `package.json` file via Bun.
+
+```bash
+bun run start
+```
+
+--------------------------------
+
+### Common Bun CLI Commands
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/index.mdx
+
+Examples of various `bun` command-line tool functionalities, including running scripts, installing packages, bundling projects, running tests, and executing packages.
+
+```bash
+bun run start                 # run the `start` script
+bun install <pkg>             # install a package
+bun build ./index.tsx         # bundle a project for browsers
+bun test                      # run tests
+bunx cowsay 'Hello, world!'   # execute a package
+```
+
+--------------------------------
+
+### Run initial `index.ts` with `bun run`
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/quickstart.mdx
+
+Navigate into your project directory and execute the default `index.ts` file generated by `bun init` to see its output.
+
+```bash
+cd my-app
+bun run index.ts
+```
+
+```txt
+Hello via Bun!
+```
+
+--------------------------------
+
+### Initialize Prisma schema with SQLite provider
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/prisma.mdx
+
+Use `bunx prisma init` to set up Prisma with SQLite as the datasource provider and generate the initial schema file.
+
+```bash
+bunx --bun prisma init --datasource-provider sqlite
+```
+
+--------------------------------
+
+### Define entrypoints using Bun CLI
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/bundler/index.mdx
+
+Use the `bun build` command followed by the entrypoint path to build your application from the command line.
+
+```bash
+bun build ./index.ts
+```
+
+--------------------------------
+
+### Example package.json for bun update --latest
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/pm/cli/update.mdx
+
+Illustrates a `package.json` dependency entry to demonstrate the effect of `bun update --latest` versus a regular `bun update`.
+
+```json
+{
+  "dependencies": {
+    "react": "^17.0.2"
+  }
+}
+```
+
+--------------------------------
+
+### HTML block with div and nested markdown
+
+Source: https://github.com/oven-sh/bun/blob/main/test/js/bun/md/spec.txt
+
+An example of an HTML block starting with <div> (type 6) containing markdown content, demonstrating that the content within the block is treated as raw HTML.
+
+```markdown+html
+ <div>
+  *hello*
+         <foo><a>
+```
+
+```markdown+html
+ <div>
+  *hello*
+         <foo><a>
+```
+
+--------------------------------
+
+### Example systemd Service File for Bun Application
+
+Source: https://github.com/oven-sh/bun/blob/main/docs/guides/ecosystem/systemd.mdx
+
+A template systemd service file to run a Bun application as a daemon, configured to start after network availability and restart on failure. Replace `YOUR_USER` with the desired user.
+
+```ini
+[Unit]
+# describe the app
+Description=My App
+# start the app after the network is available
+After=network.target
+
+[Service]
+# usually you'll use 'simple'
+# one of https://www.freedesktop.org/software/systemd/man/systemd.service.html#Type=
+Type=simple
+# which user to use when starting the app
+User=YOUR_USER
+# path to your application's root directory
+WorkingDirectory=/home/YOUR_USER/path/to/my-app
+# the command to start the app
+# requires absolute paths
+ExecStart=/home/YOUR_USER/.bun/bin/bun run index.ts
+# restart policy
+# one of {no|on-success|on-failure|on-abnormal|on-watchdog|on-abort|always}
+Restart=always
+
+[Install]
+# start the app automatically
+WantedBy=multi-user.target
 ```
