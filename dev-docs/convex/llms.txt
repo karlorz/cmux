@@ -1,27 +1,25 @@
-### Clone and Install Convex Tutorial Project
+### Setup Script for bun with Convex Dev
 
-Source: https://docs.convex.dev/tutorial
+Source: https://docs.convex.dev/ai/overview
 
-Clones the example Convex tutorial repository from GitHub and installs its Node.js dependencies. This is the initial setup step required to begin the tutorial.
+This script uses bun to install dependencies and start a Convex development server, suitable for background agents. It requires full internet access to download the Convex binary.
 
 ```bash
-git clone https://github.com/get-convex/convex-tutorial.git
+bun i
 
-cd convex-tutorial
-
-npm install
+bun x convex dev --once
 ```
 
 --------------------------------
 
-### Create TanStack Start app with Convex template
+### Run Example App with Component Type Checking
 
-Source: https://docs.convex.dev/quickstart/tanstack-start
+Source: https://docs.convex.dev/components/authoring
 
-Quick setup command to scaffold a new TanStack Start project with Convex pre-configured.
+Starts the development server for the example app, optionally performing type checking on integrated components. This command should be run after component codegen and package build.
 
 ```bash
-npm create convex@latest -- -t tanstack-start
+npx convex dev --typecheck-components # optionally type-check the components
 ```
 
 --------------------------------
@@ -40,6 +38,64 @@ cd rag
 npm run setup
 
 npm run example
+```
+
+--------------------------------
+
+### Create TanStack Start app with Convex template
+
+Source: https://docs.convex.dev/quickstart/tanstack-start
+
+Quick setup command to scaffold a new TanStack Start project with Convex pre-configured.
+
+```bash
+npm create convex@latest -- -t tanstack-start
+```
+
+--------------------------------
+
+### Install AuthKit TanStack Start SDK
+
+Source: https://docs.convex.dev/auth/authkit/add-to-app
+
+Install the AuthKit SDK for TanStack React Start using npm.
+
+```bash
+npm install @workos/authkit-tanstack-react-start
+```
+
+--------------------------------
+
+### Clone Convex Tutorial Project and Install Dependencies
+
+Source: https://docs.convex.dev/tutorial/overview
+
+Clone the example project from GitHub and install its dependencies using npm. Ensure Node.js 18+ and Git are installed.
+
+```bash
+git clone https://github.com/get-convex/convex-tutorial.git
+
+cd convex-tutorial
+
+npm install
+```
+
+--------------------------------
+
+### Setup Script for npm with Convex Dev
+
+Source: https://docs.convex.dev/ai/overview
+
+Use this script to install dependencies and start a Convex development server in a way that's suitable for background agents. It includes an optional step to set environment variables from a file.
+
+```bash
+npm i
+
+# npx convex init # allows setting environment variables before pushing
+
+# npx convex env set --from-file ./path/to/.env.agent (optional)
+
+npx convex dev --once
 ```
 
 --------------------------------
@@ -84,43 +140,103 @@ npm create convex@latest
 
 --------------------------------
 
-### Start Development Server
+### Install Convex Client and Server
 
-Source: https://docs.convex.dev/auth/authkit
+Source: https://docs.convex.dev/quickstart/swift
 
-Navigate to your project directory and run this command to start the development server, which initiates the Convex+WorkOS onboarding.
+Install the Convex client and server libraries using npm. This is a prerequisite for starting the Convex dev deployment.
 
 ```bash
-cd my-app  # or whatever you name the directory
+npm init -y
 
-npm run dev
+npm install convex
 ```
 
 --------------------------------
 
-### Install AuthKit TanStack Start SDK
+### Basic HTTP Router Setup
 
-Source: https://docs.convex.dev/auth/authkit/add-to-app
+Source: https://docs.convex.dev/functions/http-actions
 
-npm command to install the WorkOS AuthKit SDK for TanStack Start applications.
+Sets up a basic HTTP router with a single GET route at the root path. This is the entry point for HTTP actions.
 
-```Bash
-npm install @workos/authkit-tanstack-react-start
+```typescript
+import {
+  httpRouter,
+} from "convex/server";
 
+import {
+  httpAction,
+} from "./_generated/server";
+
+
+
+const http = httpRouter();
+
+
+
+http.route({
+  path: "/",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    return new Response(`Hello from ${request.url}`);
+  }),
+});
+
+export default http;
 ```
 
 --------------------------------
 
-### Setup Convex Agent Mode with bun
+### Basic HTTP Router Setup
 
-Source: https://docs.convex.dev/ai
+Source: https://docs.convex.dev/functions/http-actions
 
-Initialize dependencies and start Convex dev server in Agent Mode using bun package manager. The CONVEX_AGENT_MODE=anonymous flag limits permissions while allowing codegen and testing.
+This snippet shows how to set up a basic HTTP router and define a simple GET route at the root path.
+
+```APIDOC
+## GET /
+
+### Description
+Handles GET requests to the root path.
+
+### Method
+GET
+
+### Endpoint
+/
+
+### Handler
+```typescript
+import { httpRouter } from "convex/server";
+import { httpAction } from "./_generated/server";
+
+const http = httpRouter();
+
+http.route({
+  path: "/",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    return new Response(`Hello from ${request.url}`);
+  }),
+});
+
+export default http;
+```
+```
+
+--------------------------------
+
+### Setup Script for Cloud Codex with Convex
+
+Source: https://docs.convex.dev/ai/using-codex
+
+This script is suitable for setting up Codex in cloud environments like ChatGPT. It installs dependencies and starts a local Convex backend for agent mode.
 
 ```bash
-bun i
+npm i
 
-CONVEX_AGENT_MODE=anonymous bun x convex dev --once
+npx convex dev --once
 ```
 
 --------------------------------
@@ -143,26 +259,16 @@ npm run dev
 
 --------------------------------
 
-### Create TanStack Start app
+### Install Project Dependencies
 
-Source: https://docs.convex.dev/quickstart/tanstack-start
+Source: https://docs.convex.dev/chef/migration-guide
 
-Initialize a new TanStack Start application using the official create-start-app command.
-
-```bash
-npx create-start-app@latest
-```
-
---------------------------------
-
-### Install Convex TanStack Query Adapter
-
-Source: https://docs.convex.dev/client/tanstack/tanstack-query
-
-Install the `@convex-dev/react-query` library using npm.
+Navigate to your project folder and install all necessary dependencies using npm.
 
 ```bash
-npm i @convex-dev/react-query
+cd ~/<app folder>
+
+npm i
 ```
 
 --------------------------------
@@ -179,6 +285,42 @@ cd my-app && npm install convex convex-svelte
 
 --------------------------------
 
+### Start MCP Server
+
+Source: https://docs.convex.dev/cli/reference/mcp
+
+Starts the Model Context Protocol server for Convex, enabling AI tool integration.
+
+```bash
+npx convex mcp start [options]
+```
+
+--------------------------------
+
+### Create TanStack Start app
+
+Source: https://docs.convex.dev/quickstart/tanstack-start
+
+Initialize a new TanStack Start application using the official create-start-app command.
+
+```bash
+npx create-start-app@latest
+```
+
+--------------------------------
+
+### Starting a Frontend Dev Server with `npx convex dev`
+
+Source: https://docs.convex.dev/cli/reference/dev
+
+Use the `--start` option to run a long-running command, such as a frontend development server, alongside `npx convex dev`. The command inherits stdin/stdout for interaction.
+
+```bash
+npx convex dev --start 'vite --open'
+```
+
+--------------------------------
+
 ### Install Convex and Nuxt module
 
 Source: https://docs.convex.dev/quickstart/nuxt
@@ -191,16 +333,14 @@ cd my-nuxt-app && npm install convex && npx nuxi module add convex-nuxt
 
 --------------------------------
 
-### Install Convex Client and Server Libraries
+### Start the React Native App
 
-Source: https://docs.convex.dev/quickstart/android
+Source: https://docs.convex.dev/quickstart/react-native
 
-Initialize a new npm project and install the convex package, which includes both client and server libraries.
+Run this command to start your React Native application.
 
 ```bash
-npm init -y
-
-npm install convex
+npm start
 ```
 
 --------------------------------
@@ -217,88 +357,78 @@ npm install convex @convex-dev/react-query @tanstack/react-router-ssr-query @tan
 
 --------------------------------
 
-### Basic HTTP Router Setup
+### Common Android Imports
 
-Source: https://docs.convex.dev/functions/http-actions
+Source: https://docs.convex.dev/quickstart/android
 
-Create an HTTP router and define a simple GET endpoint that returns a response. Export the router as default from convex/http.ts.
+Example import declarations for common Android Jetpack Compose and Activity components used in the quickstart.
 
-```TypeScript
-import { httpRouter } from "convex/server";
+```kotlin
+import android.os.Bundle
 
-import { httpAction } from "./_generated/server";
+import androidx.activity.ComponentActivity
 
+import androidx.activity.compose.setContent
 
+import androidx.activity.enableEdgeToEdge
 
-const http = httpRouter();
+import androidx.compose.foundation.layout.fillMaxSize
 
+import androidx.compose.foundation.layout.padding
 
+import androidx.compose.foundation.lazy.LazyColumn
 
-http.route({
-
-  path: "/",
-
-  method: "GET",
-
-  handler: httpAction(async (ctx, request) => {
-
-    return new Response(`Hello from ${request.url}`);
-
-  }),
-
-});
-
-export default http;
+import androidx.compose.foundation.lazy.items
 ```
 
 --------------------------------
 
-### Generate Example App Code and Deploy with Convex CLI
+### Install Convex React Query Adapter
 
-Source: https://docs.convex.dev/components/authoring
+Source: https://docs.convex.dev/client/tanstack/tanstack-query
 
-Command to generate code for the example application and deploy it, with an optional flag to type-check components.
+Install the adapter library using npm. This is the first step to enable Convex integration with TanStack Query.
 
 ```bash
-npx convex dev --typecheck-components # optionally type-check the components
+npm i @convex-dev/react-query
 ```
 
 --------------------------------
 
-### Start a Local Convex Development Deployment
+### Install Test Dependencies
 
-Source: https://docs.convex.dev/cli/local-deployments
+Source: https://docs.convex.dev/testing/convex-test
 
-Use this command to start a local Convex deployment for an existing project. The --once flag ensures it runs a single time.
+Install Vitest, convex-test, and @edge-runtime/vm for testing Convex functions.
 
 ```bash
-npx convex dev --local --once
+npm install --save-dev convex-test vitest @edge-runtime/vm
 ```
 
 --------------------------------
 
-### Setup Convex Agent Mode with npm
+### Install Convex Library
 
-Source: https://docs.convex.dev/ai
+Source: https://docs.convex.dev/quickstart/remix
 
-Initialize dependencies and start Convex dev server in Agent Mode for remote coding agents. The CONVEX_AGENT_MODE=anonymous flag limits permissions while allowing codegen and testing.
+Install the Convex package into your Remix application.
 
 ```bash
-npm i
-
-CONVEX_AGENT_MODE=anonymous npx convex dev --once
+cd my-remix-app && npm install convex
 ```
 
 --------------------------------
 
-### Navigate to app folder
+### Start Convex Application in Dev Mode
 
-Source: https://docs.convex.dev/chef
+Source: https://docs.convex.dev/auth/authkit
 
-Change directory into your downloaded and renamed app folder to begin setup.
+After creating a new project, run this command to start the application in development mode, which initiates the Convex+WorkOS onboarding flow.
 
 ```bash
-cd ~/<app folder>
+cd my-app
+
+npm run dev
 ```
 
 --------------------------------
@@ -311,44 +441,6 @@ Installs the `convex` package for interacting with Convex and `dotenv` for loadi
 
 ```bash
 npm install convex dotenv
-```
-
---------------------------------
-
-### Start React Native App
-
-Source: https://docs.convex.dev/quickstart/react-native
-
-Run `npm start` to launch the Expo development server and view your React Native application on a device or emulator.
-
-```bash
-npm start
-```
-
---------------------------------
-
-### Install npm dependencies
-
-Source: https://docs.convex.dev/chef
-
-Install all project dependencies required for the Convex app to run.
-
-```bash
-npm i
-```
-
---------------------------------
-
-### Install dependencies for Convex Chef project
-
-Source: https://docs.convex.dev/chef/migration-guide
-
-Navigate to your app folder and install all required Node.js dependencies using npm.
-
-```bash
-cd ~/<app folder>
-
-npm i
 ```
 
 --------------------------------
@@ -385,6 +477,80 @@ This example shows the structure of an audit log entry for a 'push_config' actio
 
 --------------------------------
 
+### Setup ConvexQueryClient and QueryClient
+
+Source: https://docs.convex.dev/client/tanstack/tanstack-query
+
+Configure Convex and TanStack Query clients in your main application file. This setup ensures live updates by connecting Convex to TanStack Query.
+
+```typescript
+import { ConvexQueryClient } from "@convex-dev/react-query";
+
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+import { ConvexProvider, ConvexReactClient } from "convex/react";
+
+import ReactDOM from "react-dom/client";
+
+import App from "./App";
+
+import "./index.css";
+
+
+
+const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL);
+
+const convexQueryClient = new ConvexQueryClient(convex);
+
+const queryClient = new QueryClient({
+
+  defaultOptions: {
+
+    queries: {
+
+      queryKeyHashFn: convexQueryClient.hashFn(),
+
+      queryFn: convexQueryClient.queryFn(),
+
+    },
+
+  },
+
+});
+
+convexQueryClient.connect(queryClient);
+
+
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+
+  <ConvexProvider client={convex}>
+
+    <QueryClientProvider client={queryClient}>
+
+      <App />
+
+    </QueryClientProvider>
+
+  </ConvexProvider>,
+
+);
+```
+
+--------------------------------
+
+### Start Convex MCP Server
+
+Source: https://docs.convex.dev/ai/convex-mcp-server
+
+Add this command to your MCP server's configuration to start the Convex MCP server.
+
+```bash
+npx -y convex@latest mcp start
+```
+
+--------------------------------
+
 ### Install Convex client and server libraries
 
 Source: https://docs.convex.dev/quickstart/rust
@@ -397,80 +563,47 @@ npm init -y && npm install convex && cargo add convex tokio dotenvy
 
 --------------------------------
 
-### Conductor deployment creation setup
-
-Source: https://docs.convex.dev/production/multiple-deployments
-
-Conductor.json setup command that creates a dev deployment with team, project, user, and workspace name in the reference. Replace my-team and my-project with your actual slugs.
-
-```json
-{
-  "scripts": {
-    "setup": "npm ci && npx convex deployment create --type=dev my-team:my-project:dev/$USER-conductor/$CONDUCTOR_WORKSPACE_NAME --select"
-  }
-}
-```
-
---------------------------------
-
-### Install Convex library in Remix
-
-Source: https://docs.convex.dev/quickstart/remix
-
-Navigate into your newly created Remix project directory and install the official Convex npm package.
-
-```bash
-cd my-remix-app && npm install convex
-```
-
---------------------------------
-
-### Cursor local worktrees deployment creation setup
-
-Source: https://docs.convex.dev/production/multiple-deployments
-
-Worktrees.json setup command for Cursor that creates a dev deployment with team, project, user, and directory name in the reference. Replace my-team and my-project with your actual slugs.
-
-```json
-{
-  "setup-worktree": [
-    "npm ci",
-    "npx convex deployment create --type=dev my-team:my-project:dev/$USER-cursor/$(basename \"$PWD\") --select"
-  ]
-}
-```
-
---------------------------------
-
-### Codex app deployment creation setup
-
-Source: https://docs.convex.dev/production/multiple-deployments
-
-Setup script for Codex app environments that creates a dev deployment with team, project, and user-specific reference. Replace my-team and my-project with your actual slugs.
-
-```bash
-npm ci && npx convex deployment create --type=dev my-team:my-project:dev/$USER-codex/$(basename "$(dirname "$CODEX_WORKTREE_PATH")") --select
-```
-
---------------------------------
-
-### Install Convex Client and Server Libraries
-
-Source: https://docs.convex.dev/quickstart/python
-
-Installs the Convex npm package for backend development and the Convex Python client library along with python-dotenv for environment variables.
-
-```bash
-cd my-app && npm init -y && npm install convex && venv/bin/pip install convex python-dotenv
-```
-
---------------------------------
-
-### Install AuthKit and Convex WorkOS Integration
+### Install AuthKit Next.js SDK
 
 Source: https://docs.convex.dev/auth/authkit/add-to-app
 
-Install the required npm packages for AuthKit React SDK and Convex WorkOS integration.
+This command installs the necessary AuthKit Next.js SDK and the Convex WorkOS integration package. Run this in your project's terminal to add the dependencies.
+
+```bash
+npm install @workos-inc/authkit-nextjs @convex-dev/workos
+```
+
+--------------------------------
+
+### Install Clerk Next.js SDK
+
+Source: https://docs.convex.dev/auth/clerk
+
+Install the Clerk Next.js SDK in your project by running the following npm command in a new terminal window.
+
+```bash
+npm install @clerk/nextjs
+```
+
+--------------------------------
+
+### Initialize a new npm project
+
+Source: https://docs.convex.dev/quickstart/script-tag
+
+Use `mkdir` and `npm init` to set up a new project directory.
+
+```bash
+mkdir my-project && cd my-project && npm init -y
+```
+
+--------------------------------
+
+### Install AuthKit React SDK and Convex WorkOS Package
+
+Source: https://docs.convex.dev/auth/authkit/add-to-app
+
+Install the necessary AuthKit React SDK and the Convex WorkOS integration package using npm.
 
 ```bash
 npm install @workos-inc/authkit-react @convex-dev/workos
@@ -490,14 +623,730 @@ bun add convex
 
 --------------------------------
 
-### Install Clerk Next.js SDK
+### Install Convex Client and Server Libraries
+
+Source: https://docs.convex.dev/quickstart/python
+
+Installs the Convex npm package for backend development and the Convex Python client library along with python-dotenv for environment variables.
+
+```bash
+cd my-app && npm init -y && npm install convex && venv/bin/pip install convex python-dotenv
+```
+
+--------------------------------
+
+### Set up Convex development deployment
+
+Source: https://docs.convex.dev/quickstart/bun
+
+Run this command to log in, create a Convex project, and sync your backend functions with the dev deployment.
+
+```bash
+bunx convex dev
+```
+
+--------------------------------
+
+### Install Convex Agent Skills
+
+Source: https://docs.convex.dev/ai/agent-skills
+
+Use the `npx skills` CLI to add Convex agent skills to your project. You can choose specific skills or install all of them.
+
+```bash
+npx skills add get-convex/agent-skills
+```
+
+```bash
+npx skills add get-convex/agent-skills --all
+```
+
+--------------------------------
+
+### Open Specific Deployment by Name
+
+Source: https://docs.convex.dev/cli/reference/dashboard
+
+Example of opening a dashboard for a deployment identified by its name.
+
+```bash
+npx convex dashboard --deployment joyful-capybara-123
+```
+
+--------------------------------
+
+### Example Current Storage Usage Event
+
+Source: https://docs.convex.dev/production/integrations/log-streams
+
+An example of a `current_storage_usage` event, showing the schema for reporting storage statistics. This event is useful for monitoring and calculating billing costs.
+
+```json
+{
+
+  "topic": "current_storage_usage",
+
+  "timestamp": 1715973841548,
+
+  "total_document_size_bytes": 104857600,
+
+  "total_index_size_bytes": 10485760,
+
+  "total_vector_storage_bytes": 5242880,
+
+  "total_text_storage_bytes": 1048576,
+
+  "total_file_storage_bytes": 52428800,
+
+  "total_backup_storage_bytes": 209715200,
+
+  "total_system_table_document_size_bytes": {
+
+    "_storage": 1048576,
+
+    "_scheduled_functions": 2097152
+
+  }
+
+}
+```
+
+--------------------------------
+
+### Create Dev Deployment and Select
+
+Source: https://docs.convex.dev/cli/reference/deployment
+
+Creates a new development deployment and selects it for use. This updates `.env.local`.
+
+```bash
+npx convex deployment create dev/my-new-feature --type dev --select
+```
+
+--------------------------------
+
+### Query Function to Get Data from Database
+
+Source: https://docs.convex.dev/functions/query-functions
+
+An example of an asynchronous query function that uses the `ctx.db.get()` method to fetch a document from the 'tasks' table by its ID. Requires `async/await`.
+
+```typescript
+import { query } from "./_generated/server";
+
+import { v } from "convex/values";
+
+
+
+export const getTask = query({
+
+  args: { id: v.id("tasks") },
+
+  handler: async (ctx, args) => {
+
+    return await ctx.db.get("tasks", args.id);
+
+  },
+
+});
+```
+
+--------------------------------
+
+### Project Token Example
+
+Source: https://docs.convex.dev/cli/deploy-key-types
+
+Illustrates the format of a project token, which grants full control over a project to a Convex CLI.
+
+```text
+project:team-slug:project-slug|eyJ2...0=
+```
+
+--------------------------------
+
+### GET /getMessagesByAuthor - Retrieve Messages by Author
+
+Source: https://docs.convex.dev/api/classes/server.HttpRouter
+
+Example HTTP action that retrieves messages filtered by author. This endpoint demonstrates importing HTTP action handlers from separate files.
+
+```APIDOC
+## GET /getMessagesByAuthor
+
+### Description
+Retrieves messages filtered by a specific author. This endpoint demonstrates the pattern of importing HTTP action handlers from separate module files.
+
+### Method
+GET
+
+### Endpoint
+/getMessagesByAuthor
+
+### Implementation Pattern
+```javascript
+// In convex/http.js
+import { getMessagesByAuthor } from "./getMessagesByAuthor";
+
+http.route({
+  path: "/getMessagesByAuthor",
+  method: "GET",
+  handler: getMessagesByAuthor,
+});
+
+// Handler is defined in convex/getMessagesByAuthor.js
+```
+
+### Notes
+- Handler is imported from a separate file (getMessagesByAuthor.js)
+- Demonstrates modular organization of HTTP action handlers
+- Actual query parameters and response format depend on the imported handler implementation
+```
+
+--------------------------------
+
+### Initial Query Result
+
+Source: https://docs.convex.dev/understanding/overview
+
+This is an example of the initial data returned by the `getAllOpenTasks` query when no tasks have been completed.
+
+```json
+[
+
+  { _id: "e4g", title: "Grocery shopping", complete: false },
+
+  { _id: "u9v", title: "Plant new flowers", complete: false },
+
+];
+```
+
+--------------------------------
+
+### `useSmoothText` with Conditional Streaming
+
+Source: https://docs.convex.dev/agents/streaming
+
+This example shows how to conditionally start streaming text immediately based on a message's status. It's useful for mixed streaming and non-streaming messages.
+
+```typescript
+import { useSmoothText, type UIMessage } from "@convex-dev/agent/react";
+
+
+
+function Message({ message }: { message: UIMessage }) {
+
+  const [visibleText] = useSmoothText(message.text, {
+
+    startStreaming: message.status === "streaming",
+
+  });
+
+  return <div>{visibleText}</div>;
+
+}
+```
+
+--------------------------------
+
+### Install and Use NPM Packages in Mutations
+
+Source: https://docs.convex.dev/functions/mutation-functions
+
+Mutations can import and utilize packages from node_modules. Ensure the package is supported by the Convex runtime. This example uses `@faker-js/faker` to generate random data.
+
+```bash
+npm install @faker-js/faker
+```
+
+```typescript
+import { faker } from "@faker-js/faker";
+
+import { mutation } from "./_generated/server";
+
+
+
+export const randomName = mutation({
+  args: {},
+  handler: async (ctx) => {
+    faker.seed();
+    await ctx.db.insert("tasks", { text: "Greet " + faker.person.fullName() });
+  },
+});
+```
+
+--------------------------------
+
+### Scaffold a New Convex Project with Codex
+
+Source: https://docs.convex.dev/ai/using-codex
+
+Use this sequence to let Codex create a new Convex project from scratch. It handles package installation, Convex AI file setup, and local backend provisioning.
+
+```bash
+npm create convex@latest my-app
+
+cd my-app
+
+npx convex ai-files install
+
+codex
+```
+
+--------------------------------
+
+### Basic Usage of `npx convex dev`
+
+Source: https://docs.convex.dev/cli/reference/dev
+
+Run this command in your project directory to start the Convex development server. It configures the project if necessary, pushes code, and watches for changes.
+
+```bash
+npx convex dev [options]
+```
+
+--------------------------------
+
+### Initialize Convex Client and MainActivity
+
+Source: https://docs.convex.dev/quickstart/android
+
+Initialize the ConvexClient with your Convex deployment URL and set up the MainActivity to display the Tasks Composable.
+
+```kotlin
+val client: ConvexClient by lazy { ConvexClient($YOUR_CONVEX_URL) }
+
+
+
+class MainActivity : ComponentActivity() {
+
+  override fun onCreate(savedInstanceState: Bundle?) {
+
+      super.onCreate(savedInstanceState)
+
+      enableEdgeToEdge()
+
+      setContent {
+
+          ConvexQuickstartTheme {
+
+              Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+
+                  Tasks(
+
+                      modifier = Modifier.padding(innerPadding)
+
+                  )
+
+              }
+
+          }
+
+      }
+
+  }
+
+}
+```
+
+--------------------------------
+
+### GET ctx.storage.getUrl
+
+Source: https://docs.convex.dev/api/interfaces/server.StorageActionWriter
+
+Get the URL for a file in storage by its `Id<"_storage">`. The GET response includes a standard HTTP Digest header with a sha256 checksum.
+
+```APIDOC
+## GET ctx.storage.getUrl
+
+### Description
+Get the URL for a file in storage by its `Id<"_storage">`. The GET response includes a standard HTTP Digest header with a sha256 checksum.
+
+### Method
+GET
+
+### Endpoint
+ctx.storage.getUrl
+
+### Parameters
+#### Path Parameters
+- **storageId** (GenericId<"_storage">) - Required - The `Id<"_storage">` of the file to fetch from Convex storage.
+
+### Request Example
+```javascript
+const url = await ctx.storage.getUrl(storageId);
+```
+
+### Response
+#### Success Response (200)
+- A URL which fetches the file via an HTTP GET, or `null` if the file no longer exists.
+
+#### Response Example
+```json
+"https://example.com/file_url"
+```
+```
+
+--------------------------------
+
+### Install Convex
+
+Source: https://docs.convex.dev/understanding/workflow
+
+Install the Convex npm dependency to your React application.
+
+```bash
+npm i convex
+```
+
+--------------------------------
+
+### Install Convex Libraries
+
+Source: https://docs.convex.dev/quickstart/vue
+
+Install the necessary Convex packages for your Vue project.
+
+```bash
+cd my-vue-app && npm install convex convex-vue
+```
+
+--------------------------------
+
+### Development Deploy Key Example
+
+Source: https://docs.convex.dev/cli/deploy-key-types
+
+Shows the format of a development deploy key, used to provide an agent with full access to a single deployment for development purposes.
+
+```text
+dev:joyful-jaguar-123|eyJ2...0=
+```
+
+--------------------------------
+
+### Create a new Bun project directory
+
+Source: https://docs.convex.dev/quickstart/bun
+
+Use this command to initialize a new Bun project in a dedicated directory.
+
+```bash
+mkdir my-project && cd my-project && bun init -y
+```
+
+--------------------------------
+
+### Create Deploy Key Command
+
+Source: https://docs.convex.dev/cli/deploy-key-types
+
+Demonstrates the command-line syntax for creating a new deploy key, including optional arguments for specifying the deployment and saving the key to an environment file.
+
+```bash
+npx convex deployment token create <name> [--deployment <ref>] [--save-env [path]]
+```
+
+--------------------------------
+
+### Create Deploy Key and Capture Output
+
+Source: https://docs.convex.dev/cli/deploy-key-types
+
+Example of creating a deploy key named 'my-token' and capturing the generated key into a shell variable using command substitution.
+
+```bash
+KEY=$(npx convex deployment token create my-token)
+```
+
+--------------------------------
+
+### Install Clerk React SDK
 
 Source: https://docs.convex.dev/auth/clerk
 
-Install the Clerk Next.js SDK to integrate Clerk's authentication functionalities into your Next.js application.
+Install the necessary Clerk SDK package for React applications.
 
 ```bash
-npm install @clerk/nextjs
+npm install @clerk/react
+```
+
+--------------------------------
+
+### Deploy to Preview and Run a Function
+
+Source: https://docs.convex.dev/cli/overview
+
+Deploy to a preview environment and then immediately run a specific Convex function, similar to `npx convex dev --run`.
+
+```bash
+npx convex deploy --preview-run myFunction
+```
+
+--------------------------------
+
+### Install Convex Agent Component
+
+Source: https://docs.convex.dev/agents/getting-started
+
+Install the Convex Agent component package using npm.
+
+```bash
+npm install @convex-dev/agent
+```
+
+--------------------------------
+
+### Create sample data file
+
+Source: https://docs.convex.dev/quickstart/tanstack-start
+
+Create a JSONL file with sample task data to import into the Convex database. Each line is a separate JSON object.
+
+```jsonl
+{"text": "Buy groceries", "isCompleted": true}
+{"text": "Go for a swim", "isCompleted": true}
+{"text": "Integrate Convex", "isCompleted": false}
+```
+
+--------------------------------
+
+### Get latest timestamp
+
+Source: https://docs.convex.dev/llms.txt
+
+Get the latest timestamp for queries. This is useful for ensuring you are querying the most up-to-date data.
+
+```APIDOC
+## GET /public-deployment-api/public-get-query-ts.md
+
+### Description
+Get the latest timestamp for queries. This is useful for ensuring you are querying the most up-to-date data.
+
+### Method
+GET
+
+### Endpoint
+/public-deployment-api/public-get-query-ts
+```
+
+--------------------------------
+
+### Install Faker NPM Package
+
+Source: https://docs.convex.dev/functions/query-functions
+
+Installs the @faker-js/faker NPM package, which can be used within Convex query functions.
+
+```bash
+npm install @faker-js/faker
+```
+
+--------------------------------
+
+### Create a Convex Deploy Key
+
+Source: https://docs.convex.dev/cli/reference/deployment
+
+Demonstrates creating a new deploy key for Convex deployments. Keys can be printed to stdout, saved to a local environment file, or saved to a custom environment file.
+
+```bash
+npx convex deployment token create my-token
+```
+
+```bash
+npx convex deployment token create my-token --save-env
+```
+
+```bash
+npx convex deployment token create ci-token --save-env .env.production
+```
+
+```bash
+npx convex deployment token create ci-token --deployment prod
+```
+
+--------------------------------
+
+### Install Convex package
+
+Source: https://docs.convex.dev/client/nextjs/pages-router/quickstart
+
+Install the convex package to enable Convex client and server functionality in your React app.
+
+```bash
+cd my-app && npm install convex
+```
+
+--------------------------------
+
+### Create a new Nuxt application
+
+Source: https://docs.convex.dev/quickstart/nuxt
+
+Initializes a new Nuxt project using the official CLI.
+
+```bash
+npm create nuxt@latest my-nuxt-app
+```
+
+--------------------------------
+
+### Create sample data file
+
+Source: https://docs.convex.dev/client/nextjs/pages-router/quickstart
+
+Create a sampleData.jsonl file with task objects containing text and completion status for import into the database.
+
+```jsonl
+{"text": "Buy groceries", "isCompleted": true}
+
+{"text": "Go for a swim", "isCompleted": true}
+
+{"text": "Integrate Convex", "isCompleted": false}
+```
+
+--------------------------------
+
+### Conductor Setup Command
+
+Source: https://docs.convex.dev/cli/agent-mode
+
+Add this command to the `scripts.setup` field in your project's `conductor.json` file to automate per-agent deployment creation.
+
+```json
+{
+
+  "scripts": {
+
+    "setup": "npm ci && npx convex deployment create --type=dev my-team:my-project:dev/$USER-conductor/$CONDUCTOR_WORKSPACE_NAME --select"
+
+  }
+
+}
+```
+
+--------------------------------
+
+### Cursor Local Worktrees Setup
+
+Source: https://docs.convex.dev/cli/agent-mode
+
+Include these commands in the `.cursor/worktrees.json` file to set up a unique development deployment for each Cursor local worktree.
+
+```json
+{
+
+  "setup-worktree": [
+
+    "npm ci",
+
+    "npx convex deployment create --type=dev my-team:my-project:dev/$USER-cursor/$(basename "$PWD") --select"
+
+  ]
+
+}
+```
+
+--------------------------------
+
+### Create a Preview Deployment
+
+Source: https://docs.convex.dev/production/multiple-deployments
+
+Use this command to create a preview deployment with a specific name. It will reuse an existing deployment if one with the same name exists.
+
+```bash
+npx convex deploy --preview-name="my-preview-deployment-name"
+```
+
+--------------------------------
+
+### Convex Array Validator Example
+
+Source: https://www.convex.dev/llms.txt
+
+Example of defining a mutation with an array argument validator. The array can contain strings or numbers.
+
+```typescript
+import { mutation } from "./_generated/server";
+import { v } from "convex/values";
+
+export default mutation({
+args: {
+    simpleArray: v.array(v.union(v.string(), v.number())),
+},
+handler: async (ctx, args) => {
+    //...
+},
+});
+```
+
+--------------------------------
+
+### Initialize ConvexClient and subscribe to updates
+
+Source: https://docs.convex.dev/api/classes/browser.ConvexClient
+
+Initializes a new ConvexClient instance with a Convex deployment URL and demonstrates how to subscribe to real-time updates for a query using the `onUpdate` method.
+
+```javascript
+const client = new ConvexClient("https://happy-otter-123.convex.cloud");
+
+const unsubscribe = client.onUpdate(api.messages.list, {}, (messages) => {
+  console.log(messages[0].body);
+});
+```
+
+--------------------------------
+
+### Install Convex CLI
+
+Source: https://docs.convex.dev/cli/overview
+
+Install the Convex CLI globally using npm. This command is required before using any other Convex CLI commands.
+
+```bash
+npm install convex
+```
+
+--------------------------------
+
+### Execute query (GET)
+
+Source: https://docs.convex.dev/llms.txt
+
+Execute a query function via a GET request. This is suitable for simple queries without complex arguments.
+
+```APIDOC
+## GET /public-deployment-api/public-query-get.md
+
+### Description
+Execute a query function via a GET request. This is suitable for simple queries without complex arguments.
+
+### Method
+GET
+
+### Endpoint
+/public-deployment-api/public-query-get
+
+### Parameters
+#### Query Parameters
+- **functionName** (string) - Required - The name of the query function to execute.
+- **args** (string) - Optional - Arguments to pass to the query function, typically as a JSON string.
+```
+
+--------------------------------
+
+### Deploy Convex Application
+
+Source: https://docs.convex.dev/auth/authkit
+
+Run the Convex development server to automatically sync your environment configurations to your backend.
+
+```bash
+npx convex dev
 ```
 
 --------------------------------
@@ -548,487 +1397,39 @@ info:
 
 --------------------------------
 
-### Initialize a new npm project
+### Create New Convex Project
 
-Source: https://docs.convex.dev/quickstart/script-tag
+Source: https://docs.convex.dev/auth/authkit
 
-Use `mkdir` and `npm init` to set up a new project directory.
-
-```bash
-mkdir my-project && cd my-project && npm init -y
-```
-
---------------------------------
-
-### GET /projects/:project_id/list_preview_deploy_keys
-
-Source: https://docs.convex.dev/management-api/list-preview-deploy-keys
-
-Lists all preview deploy keys for the specified project.
-
-```APIDOC
-## GET /projects/:project_id/list_preview_deploy_keys
-
-### Description
-Lists all preview deploy keys for the specified project.
-
-### Method
-GET
-
-### Endpoint
-/projects/:project_id/list_preview_deploy_keys
-
-### Parameters
-#### Path Parameters
-- **project_id** (string) - Required - The ID of the project.
-
-### Response
-#### Success Response (200)
-```
-
---------------------------------
-
-### Install AuthKit Next.js SDK
-
-Source: https://docs.convex.dev/auth/authkit/add-to-app
-
-This command installs the necessary npm packages for integrating WorkOS AuthKit with a Next.js application, including `@workos-inc/authkit-nextjs` and `@convex-dev/workos`.
+Use this command to start a new project with Convex. It will prompt you to select a framework and authentication option, including AuthKit.
 
 ```bash
-npm install @workos-inc/authkit-nextjs @convex-dev/workos
+npm create convex@latest
 ```
 
 --------------------------------
 
-### Install Clerk React SDK
+### Initialize ConvexClient in Swift
 
-Source: https://docs.convex.dev/auth/clerk
+Source: https://docs.convex.dev/client/swift/overview
 
-Install the necessary Clerk React SDK package into your project to use Clerk's authentication components and hooks.
+Create an instance of the ConvexClient by providing your Convex backend deployment URL. It's recommended to use a single instance for the application's lifetime.
 
-```bash
-npm install @clerk/react
+```swift
+import ConvexMobile
+
+
+
+let convex = ConvexClient(deploymentUrl: "https://<your domain here>.convex.cloud")
 ```
 
 --------------------------------
 
-### Set up Convex development deployment
-
-Source: https://docs.convex.dev/quickstart/bun
-
-Run this command to log in, create a Convex project, and sync your backend functions with the dev deployment.
-
-```bash
-bunx convex dev
-```
-
---------------------------------
-
-### current_storage_usage Event Example
-
-Source: https://docs.convex.dev/production/integrations/log-streams
-
-Example JSON structure for a storage usage event showing document, index, vector, text, file, and backup storage metrics. Use this format to parse incoming storage events from Convex deployments.
-
-```json
-{
-  "topic": "current_storage_usage",
-  "timestamp": 1715973841548,
-  "total_document_size_bytes": 104857600,
-  "total_index_size_bytes": 10485760,
-  "total_vector_storage_bytes": 5242880,
-  "total_text_storage_bytes": 1048576,
-  "total_file_storage_bytes": 52428800,
-  "total_backup_storage_bytes": 209715200,
-  "total_system_table_document_size_bytes": {
-    "_storage": 1048576,
-    "_scheduled_functions": 2097152
-  }
-}
-```
-
---------------------------------
-
-### Use an NPM Package in a Convex Query
-
-Source: https://docs.convex.dev/functions/query-functions
-
-This example shows how to import and use an installed NPM package, like `faker.js`, within a Convex query function to generate data.
-
-```typescript
-import { query } from "./_generated/server";
-import { faker } from "@faker-js/faker";
-
-export const randomName = query({
-  args: {},
-  handler: () => {
-    faker.seed();
-    return faker.person.fullName();
-  }
-});
-```
-
---------------------------------
-
-### GET /getMessagesByAuthor - Retrieve Messages by Author
-
-Source: https://docs.convex.dev/api/classes/server.HttpRouter
-
-Example HTTP action that retrieves messages filtered by author. This endpoint demonstrates importing HTTP action handlers from separate files.
-
-```APIDOC
-## GET /getMessagesByAuthor
-
-### Description
-Retrieves messages filtered by a specific author. This endpoint demonstrates the pattern of importing HTTP action handlers from separate module files.
-
-### Method
-GET
-
-### Endpoint
-/getMessagesByAuthor
-
-### Implementation Pattern
-```javascript
-// In convex/http.js
-import { getMessagesByAuthor } from "./getMessagesByAuthor";
-
-http.route({
-  path: "/getMessagesByAuthor",
-  method: "GET",
-  handler: getMessagesByAuthor,
-});
-
-// Handler is defined in convex/getMessagesByAuthor.js
-```
-
-### Notes
-- Handler is imported from a separate file (getMessagesByAuthor.js)
-- Demonstrates modular organization of HTTP action handlers
-- Actual query parameters and response format depend on the imported handler implementation
-```
-
---------------------------------
-
-### Initialize Git repository
-
-Source: https://docs.convex.dev/chef
-
-Set up Git version control for your project; the downloaded code includes a .gitignore file.
-
-```bash
-git init
-```
-
-```bash
-git add --all
-```
-
-```bash
-git commit -m "Initial commit"
-```
-
---------------------------------
-
-### `useSmoothText` with Conditional Streaming
-
-Source: https://docs.convex.dev/agents/streaming
-
-This example shows how to conditionally start streaming text immediately based on a message's status. It's useful for mixed streaming and non-streaming messages.
-
-```typescript
-import { useSmoothText, type UIMessage } from "@convex-dev/agent/react";
-
-
-
-function Message({ message }: { message: UIMessage }) {
-
-  const [visibleText] = useSmoothText(message.text, {
-
-    startStreaming: message.status === "streaming",
-
-  });
-
-  return <div>{visibleText}</div>;
-
-}
-```
-
---------------------------------
-
-### Define an internal query to get a user
-
-Source: https://docs.convex.dev/api/modules/server
-
-This example demonstrates how to define an internal query using `internalQuery` to fetch user data by `userId`. Internal queries are only callable from other Convex functions, typically via `ctx.runQuery`.
-
-```javascript
-import { internalQuery } from "./_generated/server";
-import { v } from "convex/values";
-
-// Only callable from other Convex functions:
-export const getUser = internalQuery({
-  args: { userId: v.id("users") },
-  returns: v.union(
-    v.object({
-      _id: v.id("users"),
-      _creationTime: v.number(),
-      name: v.string(),
-      email: v.string(),
-    }),
-    v.null(),
-  ),
-  handler: async (ctx, args) => {
-    return await ctx.db.get("users", args.userId);
-  },
-});
-```
-
---------------------------------
-
-### Initialize Convex Data Import
-
-Source: https://docs.convex.dev/database/import-export/import
-
-Starts the Convex data import process. Use `--help` to view all available options.
-
-```shell
-npx convex import
-```
-
---------------------------------
-
-### Convex: Using Math.random() and Date.now() in Mutations
-
-Source: https://docs.convex.dev/functions/runtimes
-
-This example demonstrates the deterministic behavior of `Math.random()` and `Date.now()` within Convex mutations. `globalRand` and `globalNow` are frozen at deploy time, while `Date.now()` is frozen at function execution start and `Math.random()` generates new values per call.
-
-```javascript
-const globalRand = Math.random(); // `globalRand` does not change between runs.
-
-const globalNow = Date.now(); // `globalNow` is the time when Convex functions were deployed.
-
-
-
-export const updateSomething = mutation({
-
-  args: {},
-
-  handler: () => {
-
-    const now1 = Date.now(); // `now1` is the time when the function execution started.
-
-    const rand1 = Math.random(); // `rand1` has a new value for each function run.
-
-    // implementation
-
-    const now2 = Date.now(); // `now2` === `now1`
-
-    const rand2 = Math.random(); // `rand1` !== `rand2`
-
-  },
-
-});
-```
-
---------------------------------
-
-### Create a new Bun project directory
-
-Source: https://docs.convex.dev/quickstart/bun
-
-Use this command to initialize a new Bun project in a dedicated directory.
-
-```bash
-mkdir my-project && cd my-project && bun init -y
-```
-
---------------------------------
-
-### Install Convex Agent Skills with npx CLI
-
-Source: https://docs.convex.dev/ai/agent-skills
-
-Use npx skills to selectively install individual Convex skills or install all available skills at once. Skills are installed into .agents/skills/ and automatically picked up by compatible agents.
-
-```bash
-# Choose which skills to install
-
-npx skills add get-convex/agent-skills
-
-
-
-# Or install all of them at once
-
-npx skills add get-convex/agent-skills --all
-```
-
---------------------------------
-
-### GET ctx.storage.getUrl
-
-Source: https://docs.convex.dev/api/interfaces/server.StorageActionWriter
-
-Get the URL for a file in storage by its `Id<"_storage">`. The GET response includes a standard HTTP Digest header with a sha256 checksum.
-
-```APIDOC
-## GET ctx.storage.getUrl
-
-### Description
-Get the URL for a file in storage by its `Id<"_storage">`. The GET response includes a standard HTTP Digest header with a sha256 checksum.
-
-### Method
-GET
-
-### Endpoint
-ctx.storage.getUrl
-
-### Parameters
-#### Path Parameters
-- **storageId** (GenericId<"_storage">) - Required - The `Id<"_storage">` of the file to fetch from Convex storage.
-
-### Request Example
-```javascript
-const url = await ctx.storage.getUrl(storageId);
-```
-
-### Response
-#### Success Response (200)
-- A URL which fetches the file via an HTTP GET, or `null` if the file no longer exists.
-
-#### Response Example
-```json
-"https://example.com/file_url"
-```
-```
-
---------------------------------
-
-### Create a new Remix project
-
-Source: https://docs.convex.dev/quickstart/remix
-
-Use the Remix CLI to initialize a new Remix application with a specified project name.
-
-```bash
-npx create-remix@latest my-remix-app
-```
-
---------------------------------
-
-### GET /deployments/:deployment_name/custom_domains
-
-Source: https://docs.convex.dev/management-api/list-custom-domains
-
-Get all custom domains configured for a deployment.
-
-```APIDOC
-## GET /deployments/:deployment_name/custom_domains
-
-### Description
-Get all custom domains configured for a deployment.
-
-### Method
-GET
-
-### Endpoint
-/deployments/:deployment_name/custom_domains
-
-### Parameters
-#### Path Parameters
-- **deployment_name** (string) - Required - The name of the deployment.
-
-### Response
-#### Success Response (200)
-
-```
-
---------------------------------
-
-### Create sample data file
-
-Source: https://docs.convex.dev/quickstart/tanstack-start
-
-Create a JSONL file with sample task data to import into the Convex database. Each line is a separate JSON object.
-
-```jsonl
-{"text": "Buy groceries", "isCompleted": true}
-{"text": "Go for a swim", "isCompleted": true}
-{"text": "Integrate Convex", "isCompleted": false}
-```
-
---------------------------------
-
-### Create a new Nuxt application
-
-Source: https://docs.convex.dev/quickstart/nuxt
-
-Initializes a new Nuxt project using the official CLI.
-
-```bash
-npm create nuxt@latest my-nuxt-app
-```
-
---------------------------------
-
-### Install Convex Agent Component
-
-Source: https://docs.convex.dev/agents/getting-started
-
-Install the Convex Agent component package using npm.
-
-```bash
-npm install @convex-dev/agent
-```
-
---------------------------------
-
-### Create sample data file
-
-Source: https://docs.convex.dev/client/nextjs/pages-router/quickstart
-
-Create a sampleData.jsonl file with task objects containing text and completion status for import into the database.
-
-```jsonl
-{"text": "Buy groceries", "isCompleted": true}
-
-{"text": "Go for a swim", "isCompleted": true}
-
-{"text": "Integrate Convex", "isCompleted": false}
-```
-
---------------------------------
-
-### Create Vue project with npm
-
-Source: https://docs.convex.dev/quickstart/vue
-
-Initialize a new Vue project using the official create-vue tool. Choose TypeScript support and decline other optional features to follow this quickstart.
-
-```bash
-npm create vue@latest my-vue-app
-```
-
---------------------------------
-
-### Install Convex and convex-vue packages
-
-Source: https://docs.convex.dev/quickstart/vue
-
-Install the required Convex client libraries in your Vue project directory.
-
-```bash
-cd my-vue-app && npm install convex convex-vue
-```
-
---------------------------------
-
-### Install Convex Component via npm
+### Install Agent Component
 
 Source: https://docs.convex.dev/components/using
 
-Use npm to install a Convex Component package as a dependency in your project.
+Install the Convex Agent component using npm. This is the first step to integrating new features into your Convex application.
 
 ```bash
 npm i @convex-dev/agent
@@ -1036,110 +1437,53 @@ npm i @convex-dev/agent
 
 --------------------------------
 
-### Install Convex package
+### Start MCP Server for a Single Project
 
-Source: https://docs.convex.dev/client/nextjs/pages-router/quickstart
+Source: https://docs.convex.dev/ai/convex-mcp-server
 
-Install the convex package to enable Convex client and server functionality in your React app.
+Run the MCP server for a single project by specifying the project directory.
 
 ```bash
-cd my-app && npm install convex
+npx -y convex@latest mcp start --project-dir /path/to/project
 ```
 
 --------------------------------
 
-### Initialize ConvexClient and subscribe to updates
+### Install Convex Helpers npm package
 
-Source: https://docs.convex.dev/api/classes/browser.ConvexClient
+Source: https://docs.convex.dev/client/open-api
 
-Initializes a new ConvexClient instance with a Convex deployment URL and demonstrates how to subscribe to real-time updates for a query using the `onUpdate` method.
+Install the `convex-helpers` package, which provides a CLI command for generating an OpenAPI specification from your Convex deployment.
 
-```javascript
-const client = new ConvexClient("https://happy-otter-123.convex.cloud");
+```bash
+npm install convex-helpers
+```
 
-const unsubscribe = client.onUpdate(api.messages.list, {}, (messages) => {
-  console.log(messages[0].body);
+--------------------------------
+
+### Configure Start Middleware with AuthKit
+
+Source: https://docs.convex.dev/auth/authkit/add-to-app
+
+Integrate AuthKit middleware into your TanStack Start application by updating src/start.ts. This is required for managing authentication sessions.
+
+```typescript
+import { createStart } from '@tanstack/react-start';
+
+import { authkitMiddleware } from '@workos/authkit-tanstack-react-start';
+
+
+
+export const startInstance = createStart(() => {
+
+  return {
+
+    requestMiddleware: [authkitMiddleware()],
+
+  };
+
 });
-```
 
---------------------------------
-
-### Install Convex npm package
-
-Source: https://docs.convex.dev/understanding/workflow
-
-Installs the Convex client library as a dependency in your project, enabling interaction with Convex services.
-
-```bash
-npm i convex
-```
-
---------------------------------
-
-### Seed Dev Deployments with Sample Data
-
-Source: https://docs.convex.dev/database/import-export/import
-
-Examples for populating a development deployment using either a full backup ZIP file or by importing a single table from a JSONL/CSV file.
-
-```shell
-# full backup - exported from prod or another dev deployment.
-
-npx convex import seed_data.zip
-```
-
-```shell
-# Import single table from jsonl/csv
-
-npx convex import --table <table name> data.jsonl
-```
-
---------------------------------
-
-### Install Convex CLI
-
-Source: https://docs.convex.dev/cli
-
-Install the Convex CLI package via npm to access all command-line tools for project management.
-
-```bash
-npm install convex
-```
-
---------------------------------
-
-### Run Convex Chef app locally
-
-Source: https://docs.convex.dev/chef/migration-guide
-
-Start your Convex application locally. Follow any prompts to log in to Convex from your machine.
-
-```bash
-npm run dev
-```
-
---------------------------------
-
-### Install Convex Test Dependencies
-
-Source: https://docs.convex.dev/testing/convex-test
-
-Install the required packages for testing Convex functions with Vitest, including 'convex-test', 'vitest', and '@edge-runtime/vm'.
-
-```bash
-npm install --save-dev convex-test vitest @edge-runtime/vm
-```
-
---------------------------------
-
-### Install an NPM Package for Convex Functions
-
-Source: https://docs.convex.dev/functions/query-functions
-
-Use this command to install an NPM package, such as `@faker-js/faker`, for use within your Convex functions.
-
-```bash
-npm install @faker-js/faker
 ```
 
 --------------------------------
@@ -1156,6 +1500,65 @@ npx create-next-app@latest my-app --js
 
 --------------------------------
 
+### Example Query Returning Null
+
+Source: https://www.convex.dev/llms.txt
+
+An example of a Convex query that explicitly returns a null value. This demonstrates the use of `v.null()` in schema definitions.
+
+```typescript
+export const exampleQuery = query({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx, args) => {
+      console.log("This query returns a null value");
+      return null;
+  },
+});
+```
+
+--------------------------------
+
+### Preview Deploy Key Example
+
+Source: https://docs.convex.dev/cli/deploy-key-types
+
+A preview deploy key is used to deploy code to a preview branch, modifying the behavior of the standard `npx convex deploy` command. This key format includes team and project slugs.
+
+```text
+preview:team-slug:project-slug|eyJ2...0=
+```
+
+--------------------------------
+
+### Example Document Structures for Union Types
+
+Source: https://docs.convex.dev/database/schemas
+
+Provides examples of document structures that conform to the union type defined previously, showing both a StringDocument and a NumberDocument.
+
+```json
+{
+
+  "kind": "StringDocument",
+
+  "value": "abc"
+
+}
+```
+
+```json
+{
+
+  "kind": "NumberDocument",
+
+  "value": 123
+
+}
+```
+
+--------------------------------
+
 ### Create SvelteKit App
 
 Source: https://docs.convex.dev/quickstart/svelte
@@ -1168,14 +1571,42 @@ npx sv@latest create my-app
 
 --------------------------------
 
-### Create a new React app with Vite
+### Install ESLint Plugins for .eslintrc.js
 
-Source: https://docs.convex.dev/quickstart/react
+Source: https://docs.convex.dev/eslint
 
-Use `npm create vite` to initialize a new React project with TypeScript.
+Install the TypeScript ESLint plugin and Convex ESLint plugin as development dependencies for projects using the deprecated `.eslintrc.js` format.
+
+```npm
+npm i @typescript-eslint/eslint-plugin @convex-dev/eslint-plugin --save-dev
+```
+
+--------------------------------
+
+### Scaffold a New Convex Project Manually
+
+Source: https://docs.convex.dev/ai/using-conductor
+
+Use these commands to manually scaffold a new Convex project before pointing Conductor at it. This sequence is an alternative to letting the Conductor agent handle the initial setup.
 
 ```bash
-npm create vite@latest my-app -- --template react-ts
+npm create convex@latest my-app
+
+cd my-app
+
+npx convex ai-files install
+```
+
+--------------------------------
+
+### Install Convex ESLint Plugin for ESLint 9
+
+Source: https://docs.convex.dev/eslint
+
+Install the Convex ESLint plugin as a development dependency for projects using ESLint 9 (flat config).
+
+```npm
+npm i @convex-dev/eslint-plugin --save-dev
 ```
 
 --------------------------------
@@ -1208,18 +1639,6 @@ Initializes the Convex client in `src/routes/+layout.svelte` using `setupConvex`
 
 --------------------------------
 
-### Create Convex deployment with options
-
-Source: https://docs.convex.dev/production/multiple-deployments
-
-Creates a dev deployment with a descriptive reference, US region, 7-day expiration, and --select flag to use it for subsequent npx convex commands.
-
-```bash
-npx convex deployment create dev/james/feature-payment-integration --type=dev --region us --expiration "in 7 days" --select
-```
-
---------------------------------
-
 ### Create a new Cargo project
 
 Source: https://docs.convex.dev/quickstart/rust
@@ -1234,51 +1653,153 @@ cd my_app
 
 --------------------------------
 
-### Install Convex Helpers npm package
+### StorageReader.getUrl
 
-Source: https://docs.convex.dev/client/open-api
+Source: https://docs.convex.dev/api/interfaces/server.StorageReader
 
-Install the `convex-helpers` package, which provides a CLI command for generating an OpenAPI specification from your Convex deployment.
+Get the URL for a file in storage by its `Id<"_storage">`. The GET response includes a standard HTTP Digest header with a sha256 checksum.
 
-```bash
-npm install convex-helpers
+```APIDOC
+## StorageReader.getUrl
+
+### Description
+Get the URL for a file in storage by its `Id<"_storage">`. The GET response includes a standard HTTP Digest header with a sha256 checksum.
+
+### Parameters
+#### Request Body
+- **storageId** (GenericId<"_storage">) - Required - The `Id<"_storage">` of the file to fetch from Convex storage.
+
+### Request Example
+```javascript
+const url = await ctx.storage.getUrl(storageId);
+```
+
+### Response
+#### Success Response (200)
+- **url** (string | null) - A URL which fetches the file via an HTTP GET, or `null` if the file no longer exists.
+
+#### Response Example
+```json
+"https://example.com/file_url_123"
+```
 ```
 
 --------------------------------
 
-### GET /query
+### Initialize ConvexClient Instance
 
-Source: https://docs.convex.dev/public-deployment-api/public-query-get
+Source: https://docs.convex.dev/client/android/overview
 
-Execute a query function via GET request. This endpoint allows clients to invoke query functions and retrieve the results.
+Create an instance of `ConvexClient` by providing your Convex backend deployment URL. It's recommended to reuse this instance throughout your application's lifecycle.
+
+```kotlin
+package com.example.convexapp
+
+
+
+import dev.convex.android.ConvexClient
+
+
+
+val convex = ConvexClient("https://<your domain here>.convex.cloud")
+```
+
+--------------------------------
+
+### List Environment Variables with Authorization
+
+Source: https://docs.convex.dev/deployment-platform-api
+
+Demonstrates how to fetch environment variables for a deployment using the Deployment Management API. Ensure you have a valid Convex deployment token and include it in the Authorization header.
+
+```javascript
+const token = "ey...0=";
+
+const response = await fetch(
+
+  "https://happy-otter-123.convex.cloud/api/v1/list_environment_variables",
+
+  {
+
+    headers: {
+
+      Authorization: `Convex ${token}`,
+
+    },
+
+  },
+
+);
+
+console.log(await response.json());
+```
+
+--------------------------------
+
+### Audit Log Event Schema (Push Config Example)
+
+Source: https://docs.convex.dev/production/integrations/log-streams
+
+An example of an 'audit_log' event, specifically for a 'push_config' action. These events track changes to your Convex deployment.
+
+```json
+{
+
+  "topic": "audit_log",
+
+  "timestamp": 1714421999886,
+
+  "audit_log_action": "push_config",
+
+  "audit_log_metadata": "{\"auth\":{\"added\":[],\"removed\":[]},\"crons\":{\"added\":[],\"deleted\":[],\"updated\":[]},..."
+
+}
+```
+
+--------------------------------
+
+### GET ctx.storage.getUrl (Deprecated)
+
+Source: https://docs.convex.dev/api/interfaces/server.StorageActionWriter
+
+Deprecated: Get the URL for a file in storage by its `StorageId`. Passing a string is deprecated, use `storage.getUrl(Id<"_storage">)` instead.
 
 ```APIDOC
-## GET /query
+## GET ctx.storage.getUrl (Deprecated)
 
 ### Description
-Execute a query function via GET request.
+Deprecated: Get the URL for a file in storage by its `StorageId`. Passing a string is deprecated, use `storage.getUrl(Id<"_storage">)` instead.
 
 ### Method
 GET
 
 ### Endpoint
-/query
+ctx.storage.getUrl
+
+### Parameters
+#### Path Parameters
+- **storageId** (T extends string) - Required - The `StorageId` of the file to fetch from Convex storage.
 
 ### Response
 #### Success Response (200)
-Query executed successfully.
+- A url which fetches the file via an HTTP GET, or `null` if it no longer exists.
+
+#### Response Example
+```json
+"https://example.com/file_url"
+```
 ```
 
 --------------------------------
 
-### Deploy and run a preview function
+### Deploy to Preview, Recreating if Exists
 
-Source: https://docs.convex.dev/cli
+Source: https://docs.convex.dev/cli/reference/deploy
 
-Deploy Convex functions and execute a specific function after deployment using the --preview-run option.
+Deploy to a preview environment, deleting and recreating it if a deployment with the same name already exists. This ensures a clean state for the preview.
 
 ```bash
-npx convex deploy --preview-run myFunction
+npx convex deploy --preview-create "my-feature-branch"
 ```
 
 --------------------------------
@@ -1295,17 +1816,33 @@ mkdir my-project && cd my-project && npm init -y && npm pkg set type="module"
 
 --------------------------------
 
-### Example NumberDocument for Union Type
+### Convex Object Type Example and Validation
 
-Source: https://docs.convex.dev/database/schemas
+Source: https://docs.convex.dev/database/types
 
-An example document conforming to the 'NumberDocument' type defined in a union schema, with a 'kind' literal and a number 'value'.
+Provides an example of a plain JavaScript object and its validation method for Convex. Objects must not have custom prototypes and have entry limits.
 
-```json
-{
-  "kind": "NumberDocument",
-  "value": 123
-}
+```javascript
+{a: "abc"}
+```
+
+```javascript
+v.object({property: value})
+```
+
+--------------------------------
+
+### Seed Preview Deployments
+
+Source: https://docs.convex.dev/database/import-export/import
+
+Seed preview deployments with sample data, often used in CI/CD pipelines like Vercel. This example seeds data from a zip file committed to the repository.
+
+```bash
+npx convex deploy --cmd 'npm run build' &&
+if [ "$VERCEL_ENV" == "preview" ]; then
+	npx convex import --preview-name "$VERCEL_GIT_COMMIT_REF" seed_data.zip;
+fi
 ```
 
 --------------------------------
@@ -1354,387 +1891,12 @@ await Bun.sleep(1000);
 
 --------------------------------
 
-### Example StringDocument for Union Type
+### Install Convex AI Files for Existing Projects
 
-Source: https://docs.convex.dev/database/schemas
+Source: https://docs.convex.dev/ai/using-codex
 
-An example document conforming to the 'StringDocument' type defined in a union schema, with a 'kind' literal and a string 'value'.
+Run this command in an existing Convex project to integrate Codex. It installs Convex Agent Skills and updates your AGENTS.md file.
 
-```json
-{
-  "kind": "StringDocument",
-  "value": "abc"
-}
-```
-
---------------------------------
-
-### Convex Client Initialization Parameters
-
-Source: https://docs.convex.dev/api/classes/browser.ConvexHttpClient
-
-Details the parameters required and optional for configuring a Convex client instance.
-
-```APIDOC
-## Convex Client Initialization Parameters
-
-### Description
-This section describes the parameters used to initialize a Convex client. These parameters configure the client's connection to the Convex deployment, logging behavior, and authentication.
-
-### Parameters
-- **address** (string) - Required - The url of your Convex deployment, often provided by an environment variable. E.g. `https://small-mouse-123.convex.cloud`.
-- **options?** (Object) - Optional - An object of options.
-    - **skipConvexDeploymentUrlCheck** (boolean) - Optional - Skip validating that the Convex deployment URL looks like `https://happy-animal-123.convex.cloud` or localhost. This can be useful if running a self-hosted Convex backend that uses a different URL.
-    - **logger** (object | boolean) - Optional - A logger or a boolean. If not provided, logs to the console. You can construct your own logger to customize logging to log elsewhere or not log at all, or use `false` as a shorthand for a no-op logger. A logger is an object with 4 methods: log(), warn(), error(), and logVerbose(). These methods can receive multiple arguments of any types, like console.log().
-    - **auth** (string) - Optional - A JWT containing identity claims accessible in Convex functions. This identity may expire so it may be necessary to call `setAuth()` later, but for short-lived clients it's convenient to specify this value here.
-    - **fetch** (function) - Optional - A custom fetch implementation to use for all HTTP requests made by this client.
-```
-
---------------------------------
-
-### take
-
-Source: https://docs.convex.dev/api/interfaces/server.OrderedQuery
-
-Execute the query and return the first `n` results.
-
-```APIDOC
-## take
-
-### Description
-Execute the query and return the first `n` results.
-
-### Method
-SDK Method
-
-### Endpoint
-N/A
-
-### Parameters
-- **n** (number) - Required - The number of items to take.
-
-### Request Body
-N/A
-
-### Request Example
-N/A
-
-### Response
-#### Success Response (200)
-- **Result** (Promise<DocumentByInfo<TableInfo>[]>) - An array of the first `n` results of the query (or less if the query doesn't have `n` results).
-
-#### Response Example
-N/A
-```
-
---------------------------------
-
-### Convex Imports and Setup
-
-Source: https://www.convex.dev/llms.txt
-
-This snippet shows the necessary imports for defining Convex functions and integrating with OpenAI. It sets up the Convex API and the OpenAI client.
-
-```typescript
-import {
-  query,
-  mutation,
-  internalQuery,
-  internalMutation,
-  internalAction,
-} from "./_generated/server";
-import { v } from "convex/values";
-import OpenAI from "openai";
-import { internal } from "./_generated/api";
-```
-
---------------------------------
-
-### Install ESLint Plugins for .eslintrc.js
-
-Source: https://docs.convex.dev/eslint
-
-Install the TypeScript ESLint plugin and Convex ESLint plugin as development dependencies for projects using the deprecated `.eslintrc.js` format.
-
-```npm
-npm i @typescript-eslint/eslint-plugin @convex-dev/eslint-plugin --save-dev
-```
-
---------------------------------
-
-### Install Convex ESLint Plugin for ESLint 9
-
-Source: https://docs.convex.dev/eslint
-
-Install the Convex ESLint plugin as a development dependency for projects using ESLint 9 (flat config).
-
-```npm
-npm i @convex-dev/eslint-plugin --save-dev
-```
-
---------------------------------
-
-### Configure Convex Components in convex.config.ts
-
-Source: https://docs.convex.dev/components/using
-
-Define and install Convex Components in your application's configuration file. You can install multiple instances of the same component with different names.
-
-```typescript
-import { defineApp } from "convex/server";
-import agent from "@convex-dev/agent/convex.config.js";
-
-const app = defineApp();
-
-app.use(agent);
-app.use(agent, { name: "agent2" });
-//... Add other components here
-
-export default app;
-```
-
---------------------------------
-
-### Create and configure ConvexReactClient
-
-Source: https://docs.convex.dev/client/react
-
-Initialize a ConvexReactClient instance with your Convex backend deployment URL. This client maintains the connection to your backend.
-
-```typescript
-import { ConvexProvider, ConvexReactClient } from "convex/react";
-
-
-
-const convex = new ConvexReactClient("https://<your domain here>.convex.cloud");
-```
-
---------------------------------
-
-### StorageReader.getUrl
-
-Source: https://docs.convex.dev/api/interfaces/server.StorageReader
-
-Get the URL for a file in storage by its `Id<"_storage">`. The GET response includes a standard HTTP Digest header with a sha256 checksum.
-
-```APIDOC
-## StorageReader.getUrl
-
-### Description
-Get the URL for a file in storage by its `Id<"_storage">`. The GET response includes a standard HTTP Digest header with a sha256 checksum.
-
-### Parameters
-#### Request Body
-- **storageId** (GenericId<"_storage">) - Required - The `Id<"_storage">` of the file to fetch from Convex storage.
-
-### Request Example
-```javascript
-const url = await ctx.storage.getUrl(storageId);
-```
-
-### Response
-#### Success Response (200)
-- **url** (string | null) - A URL which fetches the file via an HTTP GET, or `null` if the file no longer exists.
-
-#### Response Example
-```json
-"https://example.com/file_url_123"
-```
-```
-
---------------------------------
-
-### Create ConvexReactClient
-
-Source: https://docs.convex.dev/api/modules/react
-
-Initialize a Convex client with your deployment URL, typically loaded from an environment variable.
-
-```JavaScript
-import { ConvexReactClient } from "convex/react";
-
-
-
-// typically loaded from an environment variable
-
-const address = "https://small-mouse-123.convex.cloud"
-
-const convex = new ConvexReactClient(address);
-```
-
---------------------------------
-
-### Initialize ConvexClient with deployment URL
-
-Source: https://docs.convex.dev/client/swift
-
-Create a single ConvexClient instance for your application's lifetime, passing your Convex backend deployment URL. The connection is established lazily on first method call.
-
-```Swift
-import ConvexMobile
-
-
-
-let convex = ConvexClient(deploymentUrl: "https://<your domain here>.convex.cloud")
-```
-
---------------------------------
-
-### GET ctx.storage.getUrl (Deprecated)
-
-Source: https://docs.convex.dev/api/interfaces/server.StorageActionWriter
-
-Deprecated: Get the URL for a file in storage by its `StorageId`. Passing a string is deprecated, use `storage.getUrl(Id<"_storage">)` instead.
-
-```APIDOC
-## GET ctx.storage.getUrl (Deprecated)
-
-### Description
-Deprecated: Get the URL for a file in storage by its `StorageId`. Passing a string is deprecated, use `storage.getUrl(Id<"_storage">)` instead.
-
-### Method
-GET
-
-### Endpoint
-ctx.storage.getUrl
-
-### Parameters
-#### Path Parameters
-- **storageId** (T extends string) - Required - The `StorageId` of the file to fetch from Convex storage.
-
-### Response
-#### Success Response (200)
-- A url which fetches the file via an HTTP GET, or `null` if it no longer exists.
-
-#### Response Example
-```json
-"https://example.com/file_url"
-```
-```
-
---------------------------------
-
-### Instantiate a Class-Based Convex Client
-
-Source: https://docs.convex.dev/components/authoring
-
-Demonstrates the basic pattern for instantiating a class-based client for a Convex component, passing the component reference and configuration options.
-
-```javascript
-import Foo from "@convex-dev/foo";
-
-import { components } from "./_generated/server.js";
-
-
-
-const foo = new Foo(components.foo, {
-
-  maxShards: 10,
-
-});
-```
-
---------------------------------
-
-### Connect MainActivity to Convex Client and UI
-
-Source: https://docs.convex.dev/quickstart/android
-
-Initialize ConvexClient with your deployment URL and set the content of MainActivity to display the Tasks Composable.
-
-```kotlin
-val client: ConvexClient by lazy { ConvexClient($YOUR_CONVEX_URL) }
-
-
-
-class MainActivity : ComponentActivity() {
-
-  override fun onCreate(savedInstanceState: Bundle?) {
-
-      super.onCreate(savedInstanceState)
-
-      enableEdgeToEdge()
-
-      setContent {
-
-          ConvexQuickstartTheme {
-
-              Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-
-                  Tasks(
-
-                      modifier = Modifier.padding(innerPadding)
-
-                  )
-
-              }
-
-          }
-
-      }
-
-  }
-
-}
-```
-
---------------------------------
-
-### Convex Object Type Example and Validation
-
-Source: https://docs.convex.dev/database/types
-
-Provides an example of a plain JavaScript object and its validation method for Convex. Objects must not have custom prototypes and have entry limits.
-
-```javascript
-{a: "abc"}
-```
-
-```javascript
-v.object({property: value})
-```
-
---------------------------------
-
-### GET ctx.storage.getMetadata (Deprecated)
-
-Source: https://docs.convex.dev/api/interfaces/server.StorageActionWriter
-
-Deprecated: Get metadata for a file. Use `ctx.db.system.get("_storage", storageId)` instead, which returns equivalent metadata from the `_storage` system table.
-
-```APIDOC
-## GET ctx.storage.getMetadata (Deprecated)
-
-### Description
-Deprecated: Get metadata for a file. Use `ctx.db.system.get("_storage", storageId)` instead, which returns equivalent metadata from the `_storage` system table (with a slightly different shape).
-
-### Method
-GET
-
-### Endpoint
-ctx.storage.getMetadata
-
-### Parameters
-#### Path Parameters
-- **storageId** (GenericId<"_storage">) - Required - The `Id<"_storage">` of the file.
-
-### Request Example
-```javascript
-const metadata = await ctx.storage.getMetadata(storageId);
-```
-
-### Response
-#### Success Response (200)
-- A `FileMetadata` object if found or `null` if not found.
-
-#### Response Example
-```json
-{
-  "_id": "string",
-  "_creationTime": 1678886400000,
-  "sha256": "string",
-  "size": 1024,
-  "contentType": "image/jpeg"
-}
-```
+```bash
+npx convex ai-files install
 ```
