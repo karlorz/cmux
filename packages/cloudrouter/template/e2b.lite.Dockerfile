@@ -153,10 +153,13 @@ COPY worker/start-services-lite.sh /usr/local/bin/start-services-lite.sh
 RUN chmod +x /usr/local/bin/start-services-lite.sh
 
 # Install Go for building worker daemon
-RUN wget -q https://go.dev/dl/go1.24.2.linux-amd64.tar.gz \
-    && tar -C /usr/local -xzf go1.24.2.linux-amd64.tar.gz \
-    && rm go1.24.2.linux-amd64.tar.gz
-ENV PATH="/usr/local/go/bin:$PATH"
+RUN wget -q https://go.dev/dl/go1.24.12.linux-amd64.tar.gz \
+    && tar -C /usr/local -xzf go1.24.12.linux-amd64.tar.gz \
+    && rm go1.24.12.linux-amd64.tar.gz \
+    && ln -sf /usr/local/go/bin/go /usr/local/bin/go \
+    && ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt \
+    && go version
+ENV PATH="/usr/local/go/bin:/usr/local/bin:$PATH"
 
 # Build Go worker daemon (standalone binary, no internal dependencies)
 RUN mkdir -p /tmp/worker-build/cmd
@@ -165,7 +168,7 @@ COPY go.sum /tmp/worker-build/go.sum
 COPY cmd/worker /tmp/worker-build/cmd/worker/
 RUN cd /tmp/worker-build && \
     go mod download && \
-    go build -ldflags="-s -w" -o /usr/local/bin/worker-daemon ./cmd/worker && \
+    CGO_ENABLED=0 go build -ldflags="-s -w" -o /usr/local/bin/worker-daemon ./cmd/worker && \
     rm -rf /tmp/worker-build
 
 # Install JupyterLab + basic data science packages
