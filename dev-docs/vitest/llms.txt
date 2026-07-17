@@ -44,33 +44,44 @@ afterEach(() => {
 
 --------------------------------
 
-### Complex Fixture Setup and Cleanup
+### Global Setup with Named Exports
 
-Source: https://main.vitest.dev/guide/test-context
+Source: https://main.vitest.dev/config/globalsetup
 
-This example shows how to set up and clean up more complex fixtures, such as a database connection and test user, using `onCleanup` for both file-scoped and test-scoped fixtures.
+Use named `setup` and `teardown` functions for global setup and cleanup. The `setup` function receives the test project.
 
-```typescript
-const test = baseTest
-  .extend('database', { scope: 'file' }, async ({}, { onCleanup }) => {
-    const db = await createDatabase()
-    await db.connect()
+```js
+export function setup(project) {
+  console.log('setup')
+}
 
-    onCleanup(async () => {
-      await db.disconnect()
-    })
+export function teardown() {
+  console.log('teardown')
+}
+```
 
-    return db
-  })
-  .extend('user', async ({ database }, { onCleanup }) => {
-    const user = await database.createTestUser()
+--------------------------------
 
-    onCleanup(async () => {
-      await database.deleteUser(user.id)
-    })
+### Install Preview Provider
 
-    return user
-  })
+Source: https://main.vitest.dev/guide/browser
+
+Install the preview provider for local testing and visual inspection.
+
+```npm
+npm install -D vitest @vitest/browser-preview
+```
+
+```yarn
+yarn add -D vitest @vitest/browser-preview
+```
+
+```pnpm
+pnpm add -D vitest @vitest/browser-preview
+```
+
+```bun
+bun add -D vitest @vitest/browser-preview
 ```
 
 --------------------------------
@@ -99,72 +110,6 @@ for (const testModule of testModules) {
 
 --------------------------------
 
-### Global Setup with Named Exports
-
-Source: https://main.vitest.dev/config/globalsetup
-
-Use named `setup` and `teardown` functions for global setup and cleanup. The `setup` function receives the test project.
-
-```js
-export function setup(project) {
-  console.log('setup')
-}
-
-export function teardown() {
-  console.log('teardown')
-}
-```
-
---------------------------------
-
-### Manual Installation of Preview Provider with bun
-
-Source: https://main.vitest.dev/guide/browser
-
-Install Vitest and the browser preview provider manually using bun.
-
-```bash
-bun add -D vitest @vitest/browser-preview
-```
-
---------------------------------
-
-### Manual Installation of Preview Provider with yarn
-
-Source: https://main.vitest.dev/guide/browser
-
-Install Vitest and the browser preview provider manually using yarn.
-
-```bash
-yarn add -D vitest @vitest/browser-preview
-```
-
---------------------------------
-
-### Manual Installation of Preview Provider with npm
-
-Source: https://main.vitest.dev/guide/browser
-
-Install Vitest and the browser preview provider manually using npm.
-
-```bash
-npm install -D vitest @vitest/browser-preview
-```
-
---------------------------------
-
-### Manual Installation of Preview Provider with pnpm
-
-Source: https://main.vitest.dev/guide/browser
-
-Install Vitest and the browser preview provider manually using pnpm.
-
-```bash
-pnpm add -D vitest @vitest/browser-preview
-```
-
---------------------------------
-
 ### Global Setup with Default Export
 
 Source: https://main.vitest.dev/config/globalsetup
@@ -179,50 +124,6 @@ export default function setup(project) {
     console.log('teardown')
   }
 }
-```
-
---------------------------------
-
-### One-Time Setup with beforeAll/afterAll
-
-Source: https://main.vitest.dev/guide/learn/setup-teardown
-
-Employ `beforeAll` for expensive, one-time setup (e.g., database connection) before any tests run, and `afterAll` for cleanup after all tests in the file have completed.
-
-```javascript
-import { afterAll, beforeAll, expect, test } from 'vitest'
-
-let db
-
-beforeAll(async () => {
-  db = await connectToDatabase()
-})
-
-afterAll(async () => {
-  await db.close()
-})
-
-test('can query users', async () => {
-  const users = await db.query('SELECT * FROM users')
-  expect(users.length).toBeGreaterThan(0)
-})
-
-test('can query products', async () => {
-  const products = await db.query('SELECT * FROM products')
-  expect(products.length).toBeGreaterThan(0)
-})
-```
-
---------------------------------
-
-### Install Vitest with bun
-
-Source: https://main.vitest.dev/guide
-
-Install Vitest as a development dependency using bun.
-
-```bash
-bun add -D vitest
 ```
 
 --------------------------------
@@ -272,6 +173,18 @@ export function plugin(): Plugin {
 
 --------------------------------
 
+### Install Vitest UI
+
+Source: https://main.vitest.dev/guide/ui
+
+Install the optional UI package as a development dependency.
+
+```bash
+npm i -D @vitest/ui
+```
+
+--------------------------------
+
 ### Example DOM structure
 
 Source: https://main.vitest.dev/api/browser/locators
@@ -290,6 +203,53 @@ This is an example HTML structure used to demonstrate `getByRole` functionality.
 </label>
 <br/>
 <button>Submit</button>
+```
+
+--------------------------------
+
+### toMatchTextContent Usage Examples
+
+Source: https://main.vitest.dev/api/browser/assertions
+
+Examples demonstrating partial, case-insensitive, and full text content matching.
+
+```html
+<span data-testid="text-content">Text Content</span>
+```
+
+```ts
+const element = getByTestId('text-content')
+
+await expect.element(element).toMatchTextContent('Content')
+// to match the whole content
+await expect.element(element).toMatchTextContent(/^Text Content$/)
+// to use case-insensitive match
+await expect.element(element).toMatchTextContent(/content$/i)
+await expect.element(element).not.toMatchTextContent('content')
+```
+
+--------------------------------
+
+### Initialize Browser Mode
+
+Source: https://main.vitest.dev/guide/browser
+
+Use the CLI to automatically install dependencies and configure browser mode.
+
+```npm
+npx vitest init browser
+```
+
+```yarn
+yarn exec vitest init browser
+```
+
+```pnpm
+pnpx vitest init browser
+```
+
+```bun
+bunx vitest init browser
 ```
 
 --------------------------------
@@ -317,162 +277,18 @@ export default sdk
 
 --------------------------------
 
-### Install Vitest with pnpm
-
-Source: https://main.vitest.dev/guide
-
-Install Vitest as a development dependency using pnpm.
-
-```bash
-pnpm add -D vitest
-```
-
---------------------------------
-
-### Install Istanbul Coverage Package
+### Install coverage provider dependencies
 
 Source: https://main.vitest.dev/guide/coverage
 
-Install the Istanbul coverage support package using npm.
-
-```bash
-npm i -D @vitest/coverage-istanbul
-```
-
---------------------------------
-
-### Install Vitest UI
-
-Source: https://main.vitest.dev/guide/ui
-
-Install the Vitest UI package as a development dependency.
-
-```bash
-npm i -D @vitest/ui
-```
-
---------------------------------
-
-### Install Playwright Provider with bun
-
-Source: https://main.vitest.dev/guide/browser
-
-Install Vitest and the Playwright browser provider using bun. Recommended for CI and faster local testing.
-
-```bash
-bun add -D vitest @vitest/browser-playwright
-```
-
---------------------------------
-
-### Install Vitest with npm
-
-Source: https://main.vitest.dev/guide
-
-Install Vitest as a development dependency using npm.
-
-```bash
-npm install -D vitest
-```
-
---------------------------------
-
-### sequence.setupFiles Configuration
-
-Source: https://main.vitest.dev/config/sequence
-
-Configure the order in which setup files are executed. Options include running them in a list (sequential) or in parallel.
-
-```APIDOC
-## sequence.setupFiles
-
-### Description
-Changes the order in which setup files are executed.
-
-* `list` will run setup files in the order they are defined
-* `parallel` will run setup files in parallel
-
-### Type
-`'list' | 'parallel'`
-
-### Default
-`'parallel'`
-
-### CLI
-`--sequence.setupFiles=<value>`
-```
-
---------------------------------
-
-### Install Vitest with yarn
-
-Source: https://main.vitest.dev/guide
-
-Install Vitest as a development dependency using yarn.
-
-```bash
-yarn add -D vitest
-```
-
---------------------------------
-
-### Custom Matcher Setup with Domain Adapters
-
-Source: https://main.vitest.dev/guide/snapshot
-
-Register custom snapshot matchers using `expect.extend` and Vitest's snapshot composables. This example shows how to set up matchers for both file-based and inline snapshots with a custom adapter.
-
-```typescript
-import { expect, Snaphsots } from 'vitest'
-
-expect.extend({
-  toMatchMyDomainSnapshot(received: unknown) {
-    return Snaphsots.toMatchDomainSnapshot.call(this, myAdapter, received)
-  },
-  toMatchMyDomainInlineSnapshot(received: unknown, inlineSnapshot?: string) {
-    return Snaphsots.toMatchDomainInlineSnapshot.call(
-      this,
-      myAdapter,
-      received,
-      inlineSnapshot,
-    )
-  },
-})
-```
-
-```typescript
-expect(value).toMatchMyDomainSnapshot()
-expect(value).toMatchMyDomainInlineSnapshot(`key=value`)
-```
-
---------------------------------
-
-### Configure Setup Files in Vitest
-
-Source: https://main.vitest.dev/guide/learn/setup-teardown
-
-Specify setup files in `vitest.config.js` to run code before every test file. This is ideal for global configurations, polyfills, or custom matchers.
-
-```javascript
-import { defineConfig } from 'vitest/config'
-
-export default defineConfig({
-  test: {
-    setupFiles: ['./test/setup.js'],
-  },
-})
-```
-
---------------------------------
-
-### Install V8 Coverage Package
-
-Source: https://main.vitest.dev/guide/coverage
-
-Install the V8 coverage support package using npm.
+Install the necessary package for the chosen coverage provider.
 
 ```bash
 npm i -D @vitest/coverage-v8
+```
+
+```bash
+npm i -D @vitest/coverage-istanbul
 ```
 
 --------------------------------
@@ -521,73 +337,141 @@ export default defineConfig({
 
 --------------------------------
 
-### Install WebdriverIO Provider with bun
+### Install WebdriverIO Provider
 
 Source: https://main.vitest.dev/guide/browser
 
-Install Vitest and the WebdriverIO browser provider using bun. Allows running tests locally using the WebDriver protocol.
+Install the WebdriverIO provider to run tests using the WebDriver protocol.
 
-```bash
+```npm
+npm install -D vitest @vitest/browser-webdriverio
+```
+
+```yarn
+yarn add -D vitest @vitest/browser-webdriverio
+```
+
+```pnpm
+pnpm add -D vitest @vitest/browser-webdriverio
+```
+
+```bun
 bun add -D vitest @vitest/browser-webdriverio
 ```
 
 --------------------------------
 
-### Install Playwright Provider with yarn
+### toMatchScreenshot argument resolution examples
+
+Source: https://main.vitest.dev/config/browser/expect
+
+Examples showing how the 'arg' property is derived from the filename passed to toMatchScreenshot.
+
+```ts
+test('calls `onClick`', () => {
+  expect(locator).toMatchScreenshot()
+  // arg = "calls-onclick-1"
+})
+
+expect(locator).toMatchScreenshot('foo/bar/baz.png')
+// arg = "foo/bar/baz"
+
+expect(locator).toMatchScreenshot('../foo/bar/baz.png')
+// arg = "foo/bar/baz"
+```
+
+--------------------------------
+
+### Create a Vitest instance
+
+Source: https://main.vitest.dev/guide/advanced
+
+Initializes a Vitest instance without starting tests or validating installed packages.
+
+```ts
+function createVitest(
+  options: CliOptions,
+  viteOverrides: ViteUserConfig = {},
+  vitestOptions: VitestOptions = {},
+): Promise<Vitest>
+```
+
+```js
+import { createVitest } from 'vitest/node'
+
+const vitest = await createVitest('test', {
+  watch: false,
+})
+```
+
+--------------------------------
+
+### Install Playwright Provider
 
 Source: https://main.vitest.dev/guide/browser
 
-Install Vitest and the Playwright browser provider using yarn. Recommended for CI and faster local testing.
+Install the Playwright provider for robust browser testing and parallel execution support.
 
-```bash
+```npm
+npm install -D vitest @vitest/browser-playwright
+```
+
+```yarn
 yarn add -D vitest @vitest/browser-playwright
 ```
 
---------------------------------
+```pnpm
+pnpm add -D vitest @vitest/browser-playwright
+```
 
-### Istanbul Coverage Instrumentation Example
-
-Source: https://main.vitest.dev/guide/coverage
-
-Illustrates how Istanbul instruments JavaScript files by adding counters for branches and functions. This is a simplified example.
-
-```js
-// Simplified example of branch and function coverage counters
-const coverage = { // [!code ++]
-  branches: { 1: [0, 0] }, // [!code ++]
-  functions: { 1: 0 }, // [!code ++]
-} // [!code ++]
-
-export function getUsername(id) {
-  // Function coverage increased when this is invoked  // [!code ++]
-  coverage.functions['1']++ // [!code ++]
-
-  if (id == null) {
-    // Branch coverage increased when this is invoked  // [!code ++]
-    coverage.branches['1'][0]++ // [!code ++]
-
-    throw new Error('User ID is required')
-  }
-  // Implicit else coverage increased when if-statement condition not met  // [!code ++]
-  coverage.branches['1'][1]++ // [!code ++]
-
-  return database.getUser(id)
-}
-
-globalThis.__VITEST_COVERAGE__ ||= {}
-globalThis.__VITEST_COVERAGE__[filename] = coverage
+```bun
+bun add -D vitest @vitest/browser-playwright
 ```
 
 --------------------------------
 
-### Install Playwright Provider with pnpm
+### Configuring inline dependencies
 
-Source: https://main.vitest.dev/guide/browser
+Source: https://main.vitest.dev/guide/migration
 
-Install Vitest and the Playwright browser provider using pnpm. Recommended for CI and faster local testing.
+Example configuration for inlining external libraries to ensure they are mocked correctly.
 
-```bash
-pnpm add -D vitest @vitest/browser-playwright
+```text
+server.deps.inline: ["lib-name"]
+```
+
+--------------------------------
+
+### Configure setupFiles in vitest.config.js
+
+Source: https://main.vitest.dev/guide/learn/setup-teardown
+
+Define the path to your setup files within the Vitest configuration object.
+
+```javascript
+import { defineConfig } from 'vitest/config'
+
+export default defineConfig({
+  test: {
+    setupFiles: ['./test/setup.js'],
+  },
+})
+```
+
+--------------------------------
+
+### Define logic in a setup file
+
+Source: https://main.vitest.dev/guide/learn/setup-teardown
+
+Implement global test logic such as extending matchers that should be available in all test files.
+
+```javascript
+// This runs before every test file
+import { expect } from 'vitest'
+import { customMatchers } from './custom-matchers.js'
+
+expect.extend(customMatchers)
 ```
 
 --------------------------------
@@ -627,116 +511,53 @@ export function teardown() {
 
 --------------------------------
 
-### Install WebdriverIO Provider with npm
+### Package Manager Integration
 
-Source: https://main.vitest.dev/guide/browser
+Source: https://main.vitest.dev/guide/cli
 
-Install Vitest and the WebdriverIO browser provider using npm. Allows running tests locally using the WebDriver protocol.
-
-```bash
-npm install -D vitest @vitest/browser-webdriverio
-```
-
---------------------------------
-
-### Run Vitest with UI
-
-Source: https://main.vitest.dev/guide/ui
-
-Start Vitest with the --ui flag to launch the interactive UI.
+Examples of triggering autocompletion via different package managers.
 
 ```bash
-vitest --ui
+npm vitest <Tab>
 ```
-
---------------------------------
-
-### Install Playwright Provider with npm
-
-Source: https://main.vitest.dev/guide/browser
-
-Install Vitest and the Playwright browser provider using npm. Recommended for CI and faster local testing.
 
 ```bash
-npm install -D vitest @vitest/browser-playwright
+npm exec vitest <Tab>
 ```
-
---------------------------------
-
-### Custom Runner Example
-
-Source: https://main.vitest.dev/api/advanced/runner
-
-Example implementation of a custom Vitest runner class, demonstrating how to extend the base `TestRunner` and implement specific methods like `onAfterRunFiles`.
-
-```APIDOC
-## Custom Runner Example
-
-### Description
-This example shows how to create a custom runner by extending `TestRunner` and implementing the `VitestTestRunner` interface. It demonstrates initializing the `config` property and overriding lifecycle methods.
-
-### Class
-```ts
-import type { RunnerTestFile, SerializedConfig, TestRunner, VitestTestRunner } from 'vitest'
-
-class CustomRunner extends TestRunner implements VitestTestRunner {
-  public config: SerializedConfig
-
-  constructor(config: SerializedConfig) {
-    this.config = config
-  }
-
-  onAfterRunFiles(files: RunnerTestFile[]) {
-    console.log('finished running', files)
-  }
-}
-
-export default CustomRunner
-```
-
-### Usage
-To use a custom runner, specify its path in the Vitest configuration file using the `runner` option.
-```
-
---------------------------------
-
-### Install Browser OpenTelemetry Packages
-
-Source: https://main.vitest.dev/guide/open-telemetry
-
-Install the necessary OpenTelemetry packages for browser tracing. This includes the web trace provider and an exporter.
-
-```shell
-npm i @opentelemetry/sdk-trace-web @opentelemetry/exporter-trace-otlp-proto
-```
-
---------------------------------
-
-### Render Hook Example
-
-Source: https://main.vitest.dev/api/browser/react
-
-A basic example of rendering a custom hook using `renderHook`. It asserts the initial state returned by the hook.
-
-```jsx
-import { renderHook } from 'vitest-browser-react'
-
-test('returns logged in user', async () => {
-  const { result } = await renderHook(() => useLoggedInUser())
-  expect(result.current).toEqual({ name: 'Alice' })
-})
-```
-
---------------------------------
-
-### Install WebdriverIO Provider with yarn
-
-Source: https://main.vitest.dev/guide/browser
-
-Install Vitest and the WebdriverIO browser provider using yarn. Allows running tests locally using the WebDriver protocol.
 
 ```bash
-yarn add -D vitest @vitest/browser-webdriverio
+pnpm vitest <Tab>
+```
+
+```bash
+yarn vitest <Tab>
+```
+
+```bash
+bun vitest <Tab>
+```
+
+--------------------------------
+
+### TAP Flat Report Output Example
+
+Source: https://main.vitest.dev/guide/reporters
+
+A sample output demonstrating the structure of a TAP flat report.
+
+```bash
+TAP version 13
+1..2
+not ok 1 - __tests__/test-file-1.test.ts > first test file > 2 + 2 should equal 4 # time=11.00ms
+    ---
+    error:
+        name: "AssertionError"
+        message: "expected 5 to be 4 // Object.is equality"
+    at: "/root-directory/__tests__/test-file-1.test.ts:20:28"
+    actual: "5"
+    expected: "4"
+    ...
+ok 2 - __tests__/test-file-1.test.ts > first test file > 4 - 2 should equal 2 # time=0.00ms
 ```
 
 --------------------------------
@@ -790,14 +611,46 @@ test('ratio works', () => {
 
 --------------------------------
 
-### Install WebdriverIO Provider with pnpm
+### Verbose reporter output examples
 
-Source: https://main.vitest.dev/guide/browser
+Source: https://main.vitest.dev/guide/reporters
 
-Install Vitest and the WebdriverIO browser provider using pnpm. Allows running tests locally using the WebDriver protocol.
+Example terminal output for the verbose reporter, including task location.
 
 ```bash
-pnpm add -D vitest @vitest/browser-webdriverio
+✓ __tests__/file1.test.ts > first test file > 2 + 2 should equal 4 1ms
+✓ __tests__/file1.test.ts > first test file > 4 - 2 should equal 2 1ms
+✓ __tests__/file2.test.ts > second test file > 1 + 1 should equal 2 1ms
+✓ __tests__/file2.test.ts > second test file > 2 - 1 should equal 1 1ms
+
+ Test Files  2 passed (2)
+      Tests  4 passed (4)
+   Start at  12:34:32
+   Duration  1.26s (transform 35ms, setup 1ms, collect 90ms, tests 1.47s, environment 0ms, prepare 267ms)
+```
+
+```bash
+✓ __tests__/file1.test.ts:2 > first test file > 2 + 2 should equal 4 1ms
+✓ __tests__/file1.test.ts:3 > first test file > 4 - 2 should equal 2 1ms
+✓ __tests__/file2.test.ts:2 > second test file > 1 + 1 should equal 2 1ms
+✓ __tests__/file2.test.ts:3 > second test file > 2 - 1 should equal 1 1ms
+
+ Test Files  2 passed (2)
+      Tests  4 passed (4)
+   Start at  12:34:32
+   Duration  1.26s (transform 35ms, setup 1ms, collect 90ms, tests 1.47s, environment 0ms, prepare 267ms)
+```
+
+--------------------------------
+
+### Install Browser OpenTelemetry Packages
+
+Source: https://main.vitest.dev/guide/open-telemetry
+
+Install the necessary OpenTelemetry packages for browser tracing. This includes the web trace provider and an exporter.
+
+```shell
+npm i @opentelemetry/sdk-trace-web @opentelemetry/exporter-trace-otlp-proto
 ```
 
 --------------------------------
@@ -818,37 +671,104 @@ $ npm i -D jsdom
 
 --------------------------------
 
-### Conditionally Run Setup Logic with Tags
+### Render Hook Example
 
-Source: https://main.vitest.dev/guide/test-tags
+Source: https://main.vitest.dev/api/browser/react
 
-Use `TestRunner.matchesTags` within `beforeAll` to execute setup logic only when tests matching specific tags are included by the `--tags-filter` CLI option. This helps avoid running expensive operations unnecessarily.
+A basic example of rendering a custom hook using `renderHook`. It asserts the initial state returned by the hook.
 
-```typescript
-import { beforeAll, TestRunner } from 'vitest'
+```jsx
+import { renderHook } from 'vitest-browser-react'
 
-beforeAll(async () => {
-  // Seed database when "vitest --tags-filter db" is used
-  if (TestRunner.matchesTags(['db'])) {
-    await seedDatabase()
-  }
+test('returns logged in user', async () => {
+  const { result } = await renderHook(() => useLoggedInUser())
+  expect(result.current).toEqual({ name: 'Alice' })
 })
 ```
 
 --------------------------------
 
-### Extend Expect API in Setup File
+### Setup Shell Autocompletions
 
-Source: https://main.vitest.dev/guide/learn/setup-teardown
+Source: https://main.vitest.dev/guide/cli
 
-Import and extend Vitest's `expect` object within a setup file to add custom matchers globally for all tests.
+Add this command to your shell configuration file to enable permanent autocompletions.
 
-```javascript
-// This runs before every test file
-import { expect } from 'vitest'
-import { customMatchers } from './custom-matchers.js'
+```bash
+# Add to ~/.zshrc for permanent autocompletions (same can be done for other shells)
+source <(vitest complete zsh)
+```
 
-expect.extend(customMatchers)
+--------------------------------
+
+### Launch Vitest UI
+
+Source: https://main.vitest.dev/guide/ui
+
+Start the test runner with the UI enabled using the --ui flag.
+
+```bash
+vitest --ui
+```
+
+--------------------------------
+
+### toHaveValue Usage Examples
+
+Source: https://main.vitest.dev/api/browser/assertions
+
+Examples demonstrating value verification for various form elements including inputs and selects.
+
+```html
+<input type="text" value="text" data-testid="input-text" />
+<input type="number" value="5" data-testid="input-number" />
+<input type="text" data-testid="input-empty" />
+<select multiple data-testid="select-number">
+  <option value="first">First Value</option>
+  <option value="second" selected>Second Value</option>
+  <option value="third" selected>Third Value</option>
+</select>
+```
+
+```ts
+const textInput = getByTestId('input-text')
+const numberInput = getByTestId('input-number')
+const emptyInput = getByTestId('input-empty')
+const selectInput = getByTestId('select-number')
+
+await expect.element(textInput).toHaveValue('text')
+await expect.element(numberInput).toHaveValue(5)
+await expect.element(emptyInput).not.toHaveValue()
+await expect.element(selectInput).toHaveValue(['second', 'third'])
+```
+
+--------------------------------
+
+### Example TAP Report Output
+
+Source: https://main.vitest.dev/guide/reporters
+
+A sample structure of the TAP output generated by the reporter.
+
+```bash
+TAP version 13
+1..1
+not ok 1 - __tests__/test-file-1.test.ts # time=14.00ms {
+    1..1
+    not ok 1 - first test file # time=13.00ms {
+        1..2
+        not ok 1 - 2 + 2 should equal 4 # time=11.00ms
+            ---
+            error:
+                name: "AssertionError"
+                message: "expected 5 to be 4 // Object.is equality"
+            at: "/root-directory/__tests__/test-file-1.test.ts:20:28"
+            actual: "5"
+            expected: "4"
+            ...
+        ok 2 - 4 - 2 should equal 2 # time=1.00ms
+    }
+}
 ```
 
 --------------------------------
@@ -894,28 +814,59 @@ afterEach(() => server.resetHandlers())
 
 --------------------------------
 
-### createVitest API
+### Use beforeAll and afterAll for one-time setup
+
+Source: https://main.vitest.dev/guide/learn/setup-teardown
+
+Use these hooks for expensive operations like database connections or server startup that should only run once per test file.
+
+```js
+import { afterAll, beforeAll, expect, test } from 'vitest'
+
+let db
+
+beforeAll(async () => {
+  db = await connectToDatabase()
+})
+
+afterAll(async () => {
+  await db.close()
+})
+
+test('can query users', async () => {
+  const users = await db.query('SELECT * FROM users')
+  expect(users.length).toBeGreaterThan(0)
+})
+
+test('can query products', async () => {
+  const products = await db.query('SELECT * FROM products')
+  expect(products.length).toBeGreaterThan(0)
+})
+```
+
+--------------------------------
+
+### createVitest
 
 Source: https://main.vitest.dev/guide/advanced
 
-Creates a Vitest instance without starting tests or validating installed packages. It returns the same `Vitest` instance as `startVitest`.
+Creates a Vitest instance without starting tests or validating installed packages.
 
 ```APIDOC
-## createVitest
+## createVitest(options, viteOverrides, vitestOptions)
 
 ### Description
-Creates a Vitest instance. It returns the same `Vitest` instance as `startVitest`, but it does not start tests and does not validate installed packages.
+Creates a Vitest instance. It returns the same Vitest instance as startVitest, but it does not start tests or validate installed packages.
 
-### Method
-`createVitest(mode: VitestRunMode, options: CliOptions, viteOverrides: ViteUserConfig = {}, vitestOptions: VitestOptions = {}): Promise<Vitest>`
+### Signature
+`function createVitest(options: CliOptions, viteOverrides: ViteUserConfig = {}, vitestOptions: VitestOptions = {}): Promise<Vitest>`
 
 ### Parameters
-- **mode** (VitestRunMode) - Required - The mode to create Vitest in (e.g., 'test').
-- **options** (CliOptions) - Required - CLI arguments.
-- **viteOverrides** (ViteUserConfig) - Optional - Complete Vite config, which takes precedence over other user-defined options.
-- **vitestOptions** (VitestOptions) - Optional - Vitest specific options.
+- **options** (CliOptions) - Required - Configuration options for the CLI.
+- **viteOverrides** (ViteUserConfig) - Optional - Overrides for the Vite configuration.
+- **vitestOptions** (VitestOptions) - Optional - Specific options for Vitest.
 
-### Request Example
+### Example
 ```js
 import { createVitest } from 'vitest/node'
 
@@ -923,6 +874,192 @@ const vitest = await createVitest('test', {
   watch: false,
 })
 ```
+```
+
+--------------------------------
+
+### HTML Elements for Role Testing
+
+Source: https://main.vitest.dev/api/browser/assertions
+
+Example HTML elements used to demonstrate role assertions.
+
+```html
+<button data-testid="button">Continue</button>
+<div role="button" data-testid="button-explicit">Continue</button>
+<button role="switch button" data-testid="button-explicit-multiple">Continue</button>
+<a href="/about" data-testid="link">About</a>
+<a data-testid="link-invalid">Invalid link<a/>
+```
+
+--------------------------------
+
+### Get Root Project
+
+Source: https://main.vitest.dev/api/advanced/vitest
+
+Retrieves the root test project, which is primarily used for global configuration setup.
+
+```ts
+function getRootProject(): TestProject
+```
+
+--------------------------------
+
+### Setup userEvent Instance
+
+Source: https://main.vitest.dev/api/browser/interactivity
+
+Use `userEvent.setup()` to create a new instance if you need to manage keyboard state across multiple interactions. The default instance is created once.
+
+```typescript
+function setup(): UserEvent
+```
+
+--------------------------------
+
+### Framework-specific browser mode configurations
+
+Source: https://main.vitest.dev/guide/browser
+
+Examples of integrating browser mode with common frontend frameworks.
+
+```ts
+import { defineConfig } from 'vitest/config'
+import react from '@vitejs/plugin-react'
+import { playwright } from '@vitest/browser-playwright'
+
+export default defineConfig({
+  plugins: [react()],
+  test: {
+    browser: {
+      enabled: true,
+      provider: playwright(),
+      instances: [
+        { browser: 'chromium' },
+      ],
+    }
+  }
+})
+```
+
+```ts
+import { defineConfig } from 'vitest/config'
+import { playwright } from '@vitest/browser-playwright'
+import vue from '@vitejs/plugin-vue'
+
+export default defineConfig({
+  plugins: [vue()],
+  test: {
+    browser: {
+      enabled: true,
+      provider: playwright(),
+      instances: [
+        { browser: 'chromium' },
+      ],
+    }
+  }
+})
+```
+
+```ts
+import { defineConfig } from 'vitest/config'
+import { svelte } from '@sveltejs/vite-plugin-svelte'
+import { playwright } from '@vitest/browser-playwright'
+
+export default defineConfig({
+  plugins: [svelte()],
+  test: {
+    browser: {
+      enabled: true,
+      provider: playwright(),
+      instances: [
+        { browser: 'chromium' },
+      ],
+    }
+  }
+})
+```
+
+```ts
+import { defineConfig } from 'vitest/config'
+import solidPlugin from 'vite-plugin-solid'
+import { playwright } from '@vitest/browser-playwright'
+
+export default defineConfig({
+  plugins: [solidPlugin()],
+  test: {
+    browser: {
+      enabled: true,
+      provider: playwright(),
+      instances: [
+        { browser: 'chromium' },
+      ],
+    }
+  }
+})
+```
+
+```ts
+import { defineConfig } from 'vitest/config'
+import marko from '@marko/vite'
+import { playwright } from '@vitest/browser-playwright'
+
+export default defineConfig({
+  plugins: [marko()],
+  test: {
+    browser: {
+      enabled: true,
+      provider: playwright(),
+      instances: [
+        { browser: 'chromium' },
+      ],
+    }
+  }
+})
+```
+
+```ts
+import { defineConfig } from 'vitest/config'
+import { qwikVite } from '@builder.io/qwik/optimizer'
+import { playwright } from '@vitest/browser-playwright'
+
+// optional, run the tests in SSR mode
+import { testSSR } from 'vitest-browser-qwik/ssr-plugin'
+
+export default defineConfig({
+  plugins: [testSSR(), qwikVite()],
+  test: {
+    browser: {
+      enabled: true,
+      provider: playwright(),
+      instances: [{ browser: 'chromium' }]
+    },
+  },
+})
+```
+
+--------------------------------
+
+### User Event Setup
+
+Source: https://main.vitest.dev/api/browser/interactivity
+
+The `userEvent.setup()` function creates a new user event instance. This is particularly useful for maintaining keyboard state across multiple interactions, ensuring correct behavior for key presses and releases.
+
+```APIDOC
+## userEvent.setup
+
+### Description
+Creates a new user event instance. This is useful if you need to keep the state of keyboard to press and release buttons correctly.
+
+### Method
+`function setup(): UserEvent`
+
+### Notes
+- Unlike `@testing-library/user-event`, the default `userEvent` instance from `vitest/browser` is created once.
+- With `playwright` and `webdriverio` providers, interactions can persist between tests. Vitest resets keyboard state automatically before each test, but pointer state is not reset.
+- To ensure a neutral hover state, use `userEvent.unhover(document.body)` in a `beforeEach` hook.
 ```
 
 --------------------------------
@@ -970,6 +1107,37 @@ afterEach(() => server.resetHandlers())
 
 --------------------------------
 
+### Define fixtures with test.extend
+
+Source: https://main.vitest.dev/guide/learn/setup-teardown
+
+Create reusable fixtures that handle setup and cleanup automatically, with support for dependencies between fixtures.
+
+```js
+import { test as baseTest } from 'vitest'
+
+export const test = baseTest
+  .extend('db', async ({}, { onCleanup }) => {
+    const db = await createDatabase()
+    onCleanup(() => db.close())
+    return db
+  })
+  .extend('user', async ({ db }) => {
+    return await db.createUser({ name: 'Alice' })
+  })
+```
+
+```js
+import { expect } from 'vitest'
+import { test } from './my-test.js'
+
+test('user is created', ({ db, user }) => {
+  expect(user.name).toBe('Alice')
+})
+```
+
+--------------------------------
+
 ### Logging Console Output During Collection
 
 Source: https://main.vitest.dev/api/advanced/test-suite
@@ -992,254 +1160,81 @@ describe('suite', () => {
 
 --------------------------------
 
-### Playwright server Docker Compose configuration
+### Custom Matcher Setup with Domain Adapters
 
-Source: https://main.vitest.dev/config/browser/playwright
+Source: https://main.vitest.dev/guide/snapshot
 
-Example Docker Compose configuration to start a Playwright server. Ensure the image and command are correctly set for your needs.
+Register custom snapshot matchers using `expect.extend` and Vitest's snapshot composables. This example shows how to set up matchers for both file-based and inline snapshots with a custom adapter.
 
-```yaml
-services:
-  playwright:
-    image: mcr.microsoft.com/playwright:v1.58.1-noble
-    command: /bin/sh -c "npx -y playwright@1.58.1 run-server --port 6677 --host 0.0.0.0"
-    init: true
-    ipc: host
-    user: pwuser
-    ports:
-      - '6677:6677'
-```
+```typescript
+import { expect, Snaphsots } from 'vitest'
 
---------------------------------
-
-### Render Qwik Component with Vitest Browser
-
-Source: https://main.vitest.dev/guide/browser
-
-Example of rendering a Qwik component using `vitest-browser-qwik` and performing interactions.
-
-```tsx
-import { render } from 'vitest-browser-qwik'
-import Greeting from './greeting'
-
-test('greeting appears on click', async () => {
-  // renderSSR and renderHook are also available
-  const screen = render(<Greeting />)
-
-  const button = screen.getByRole('button')
-  await button.click()
-  const greeting = screen.getByText(/hello world/iu)
-
-  await expect.element(greeting).toBeInTheDocument()
+expect.extend({
+  toMatchMyDomainSnapshot(received: unknown) {
+    return Snaphsots.toMatchDomainSnapshot.call(this, myAdapter, received)
+  },
+  toMatchMyDomainInlineSnapshot(received: unknown, inlineSnapshot?: string) {
+    return Snaphsots.toMatchDomainInlineSnapshot.call(
+      this,
+      myAdapter,
+      received,
+      inlineSnapshot,
+    )
+  },
 })
 ```
 
---------------------------------
-
-### Setup userEvent Instance
-
-Source: https://main.vitest.dev/api/browser/interactivity
-
-Use `userEvent.setup()` to create a new instance if you need to manage keyboard state across multiple interactions. The default instance is created once.
-
 ```typescript
-function setup(): UserEvent
+expect(value).toMatchMyDomainSnapshot()
+expect(value).toMatchMyDomainInlineSnapshot(`key=value`)
 ```
 
 --------------------------------
 
-### User Event Setup
+### Initialize browser configuration
 
-Source: https://main.vitest.dev/api/browser/interactivity
+Source: https://main.vitest.dev/guide/cli
 
-The `userEvent.setup()` function creates a new user event instance. This is particularly useful for maintaining keyboard state across multiple interactions, ensuring correct behavior for key presses and releases.
+Initialize the project configuration for browser testing.
 
-```APIDOC
-## userEvent.setup
-
-### Description
-Creates a new user event instance. This is useful if you need to keep the state of keyboard to press and release buttons correctly.
-
-### Method
-`function setup(): UserEvent`
-
-### Notes
-- Unlike `@testing-library/user-event`, the default `userEvent` instance from `vitest/browser` is created once.
-- With `playwright` and `webdriverio` providers, interactions can persist between tests. Vitest resets keyboard state automatically before each test, but pointer state is not reset.
-- To ensure a neutral hover state, use `userEvent.unhover(document.body)` in a `beforeEach` hook.
+```bash
+vitest init browser
 ```
 
 --------------------------------
 
-### GitHub Actions Workflow for Updating Screenshots
+### Install Chrome for WebdriverIO in CI
 
 Source: https://main.vitest.dev/guide/browser/visual-regression-testing
 
-This workflow is designed to be manually triggered. It runs on feature branches, prevents concurrent runs, and commits updated screenshots with co-authorship credit. It includes steps for checkout, Git configuration, Node.js setup, dependency installation, Playwright browser installation, running the visual regression test, checking for changes, committing, pushing, and generating a summary.
+Uses a reusable action to set up a specific version of Chrome for WebdriverIO tests.
 
 ```yaml
-name: Update Visual Regression Screenshots
-
-on:
-  workflow_dispatch: # manual trigger only
-
-env:
-  AUTHOR_NAME: 'github-actions[bot]'
-  AUTHOR_EMAIL: '41898282+github-actions[bot]@users.noreply.github.com'
-  COMMIT_MESSAGE: |
-    test: update visual regression screenshots
-
-    Co-authored-by: ${{ github.actor }} <${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com>
-
-jobs:
-  update-screenshots:
-    runs-on: ubuntu-24.04
-
-    # safety first: don't run on main
-    if: github.ref_name != github.event.repository.default_branch
-
-    # one at a time per branch
-    concurrency:
-      group: visual-regression-screenshots@${{ github.ref_name }}
-      cancel-in-progress: true
-
-    permissions:
-      contents: write # needs to push changes
-
-    steps:
-      - name: Checkout selected branch
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref_name }}
-          # use PAT if triggering other workflows
-          # token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Configure Git
-        run: |
-          git config --global user.name "${{ env.AUTHOR_NAME }}"
-          git config --global user.email "${{ env.AUTHOR_EMAIL }}"
-
-      # your setup steps here (node, pnpm, whatever)
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install Playwright Browsers
-        run: npx --no playwright install --with-deps --only-shell
-
-      # the magic happens below 🪄
-      - name: Update Visual Regression Screenshots
-        run: npm run test:visual --update
-
-      # check what changed
-      - name: Check for changes
-        id: check_changes
-        run: |
-          CHANGED_FILES=$(git status --porcelain | awk '{print $2}')
-          if [ "${CHANGED_FILES:+x}" ]; then
-            echo "changes=true" >> $GITHUB_OUTPUT
-            echo "Changes detected"
-
-            # save the list for the summary
-            echo "changed_files<<EOF" >> $GITHUB_OUTPUT
-            echo "$CHANGED_FILES" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
-            echo "changed_count=$(echo "$CHANGED_FILES" | wc -l)" >> $GITHUB_OUTPUT
-          else
-            echo "changes=false" >> $GITHUB_OUTPUT
-            echo "No changes detected"
-          fi
-
-      # commit if there are changes
-      - name: Commit changes
-        if: steps.check_changes.outputs.changes == 'true'
-        run: |
-          git add -A
-          git commit -m "${{ env.COMMIT_MESSAGE }}"
-
-      - name: Push changes
-        if: steps.check_changes.outputs.changes == 'true'
-        run: git push origin ${{ github.ref_name }}
-
-      # pretty summary for humans
-      - name: Summary
-        run: |
-          if [[ "${{ steps.check_changes.outputs.changes }}" == "true" ]]; then
-            echo "### 📸 Visual Regression Screenshots Updated" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Successfully updated **${{ steps.check_changes.outputs.changed_count }}** screenshot(s) on 
-`${{ github.ref_name }}
-`" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "#### Changed Files:" >> $GITHUB_STEP_SUMMARY
-            echo "
-```
-" >> $GITHUB_STEP_SUMMARY
-            echo "${{ steps.check_changes.outputs.changed_files }}" >> $GITHUB_STEP_SUMMARY
-            echo "
-```
-" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "✅ The updated screenshots have been committed and pushed. Your visual regression baseline is now up to date!" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "### ℹ️ No Screenshot Updates Required" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "The visual regression test command ran successfully but no screenshots needed updating." >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "All screenshots are already up to date! 🎉" >> $GITHUB_STEP_SUMMARY
-          fi
+# ...the rest of the workflow
+- uses: browser-actions/setup-chrome@v1
+  with:
+    chrome-version: 120
 ```
 
 --------------------------------
 
-### start
+### start(filters?: string[])
 
 Source: https://main.vitest.dev/api/advanced/vitest
 
-Initializes reporters, the coverage provider, and runs tests. Accepts string filters for matching test files.
+Initializes reporters and the coverage provider, then executes tests based on optional string filters.
 
 ```APIDOC
-## start
+## start(filters?: string[])
 
 ### Description
-Initializes reporters, the coverage provider, and runs tests. This method accepts string filters to match the test files.
-
-### Method
-```ts
-function start(filters?: string[]): Promise<TestRunResult>
-```
+Initializes reporters, the coverage provider, and runs tests. This method accepts string filters to match test files, mirroring the CLI filtering behavior.
 
 ### Parameters
-#### Query Parameters
-- **filters** (string[]) - Optional - Filters to match the test files.
-```
+- **filters** (string[]) - Optional - A list of string filters to match specific test files.
 
---------------------------------
-
-### Initialize Vitest Browser Mode with npm
-
-Source: https://main.vitest.dev/guide/browser
-
-Use this command to install necessary dependencies and set up browser configuration for Vitest.
-
-```bash
-npx vitest init browser
-```
-
---------------------------------
-
-### Initialize Vitest Browser Mode with bun
-
-Source: https://main.vitest.dev/guide/browser
-
-Use this command to install necessary dependencies and set up browser configuration for Vitest.
-
-```bash
-bunx vitest init browser
+### Returns
+- **Promise<TestRunResult>** - A promise that resolves with the test run results.
 ```
 
 --------------------------------
@@ -1274,143 +1269,186 @@ export default new MyReporter()
 
 --------------------------------
 
-### Initialize Vitest Browser Mode with pnpm
+### Default reporter output examples
 
-Source: https://main.vitest.dev/guide/browser
+Source: https://main.vitest.dev/guide/reporters
 
-Use this command to install necessary dependencies and set up browser configuration for Vitest.
+Example terminal output for the default reporter during and after test execution.
 
 ```bash
-pnpx vitest init browser
+ ✓ test/example-1.test.ts (5 tests | 1 skipped) 306ms
+ ✓ test/example-2.test.ts (5 tests | 1 skipped) 307ms
+
+ ❯ test/example-3.test.ts 3/5
+ ❯ test/example-4.test.ts 1/5
+
+ Test Files 2 passed (4)
+      Tests 10 passed | 3 skipped (65)
+   Start at 11:01:36
+   Duration 2.00s
+```
+
+```bash
+ ✓ test/example-1.test.ts (5 tests | 1 skipped) 306ms
+ ✓ test/example-2.test.ts (5 tests | 1 skipped) 307ms
+ ✓ test/example-3.test.ts (5 tests | 1 skipped) 307ms
+ ✓ test/example-4.test.ts (5 tests | 1 skipped) 307ms
+
+ Test Files  4 passed (4)
+      Tests  16 passed | 4 skipped (20)
+   Start at  12:34:32
+   Duration  1.26s (transform 35ms, setup 1ms, collect 90ms, tests 1.47s, environment 0ms, prepare 267ms)
+```
+
+```bash
+✓ __tests__/file1.test.ts (2) 725ms
+   ✓ first test file (2) 725ms
+     ✓ 2 + 2 should equal 4
+     ✓ 4 - 2 should equal 2
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  12:34:32
+   Duration  1.26s (transform 35ms, setup 1ms, collect 90ms, tests 1.47s, environment 0ms, prepare 267ms)
 ```
 
 --------------------------------
 
-### Initialize Vitest Browser Mode with yarn
+### Initialize and run tests with start
 
-Source: https://main.vitest.dev/guide/browser
+Source: https://main.vitest.dev/api/advanced/vitest
 
-Use this command to install necessary dependencies and set up browser configuration for Vitest.
+Initializes reporters and coverage providers while executing tests matching the provided filters. Do not use this method if vitest.standalone() is invoked.
 
-```bash
-yarn exec vitest init browser
+```ts
+function start(filters?: string[]): Promise<TestRunResult>
 ```
 
 --------------------------------
 
-### Setup Chrome for WebdriverIO in CI
+### Pre-allocate data to reduce GC noise
+
+Source: https://main.vitest.dev/guide/benchmarking
+
+Use setup hooks to pre-allocate data, preventing excessive garbage collection during benchmark iterations.
+
+```ts
+test('sorting', async ({ bench }) => {
+  const original = Array.from({ length: 10000 }, () => Math.random())
+  let data: number[]
+
+  // BAD: allocates a new array every iteration, GC adds noise
+  await bench('sort', () => {
+    const data = Array.from({ length: 10000 }, () => Math.random())
+    data.sort()
+  }).run()
+
+  // GOOD: pre-allocate, copy in beforeEach
+  await bench(
+    'sort',
+    () => { data.sort() },
+    {
+      beforeEach() {
+        data = [...original]
+      },
+    },
+  ).run()
+})
+```
+
+--------------------------------
+
+### Install Playwright browsers in CI
 
 Source: https://main.vitest.dev/guide/browser/visual-regression-testing
 
-This YAML snippet demonstrates setting up Chrome using the browser-actions/setup-chrome action for WebdriverIO tests in a CI environment.
+Installs necessary browser binaries and dependencies in a GitHub Actions workflow.
 
 ```yaml
 # ...the rest of the workflow
-- uses: browser-actions/setup-chrome@v1
-  with:
-    chrome-version: 120
+- name: Install Playwright Browsers
+  run: npx --no playwright install --with-deps --only-shell
 ```
 
 --------------------------------
 
-### GitHub Actions Example for Vitest Sharding
+### toMatchScreenshot Usage Examples
+
+Source: https://main.vitest.dev/api/browser/assertions
+
+Demonstrates various ways to invoke toMatchScreenshot, including basic usage, custom naming, and configuration options.
+
+```ts
+// basic usage, auto-generates screenshot name
+await expect.element(getByTestId('button')).toMatchScreenshot()
+
+// with custom name
+await expect.element(getByTestId('button')).toMatchScreenshot('fancy-button')
+
+// with options
+await expect.element(getByTestId('button')).toMatchScreenshot({
+  comparatorName: 'pixelmatch',
+  comparatorOptions: {
+    allowedMismatchedPixelRatio: 0.01,
+  },
+})
+
+// with both name and options
+await expect.element(getByTestId('button')).toMatchScreenshot('fancy-button', {
+  comparatorName: 'pixelmatch',
+  comparatorOptions: {
+    allowedMismatchedPixelRatio: 0.01,
+  },
+})
+```
+
+--------------------------------
+
+### Instantiating a Custom Logger
+
+Source: https://main.vitest.dev/guide/advanced
+
+Demonstrates how to import and initialize a new Logger instance using standard process streams.
+
+```ts
+import { Logger } from 'vitest/node'
+
+const logger = new Logger(process.stdout, process.stderr)
+```
+
+--------------------------------
+
+### toHaveAccessibleName Usage Examples
+
+Source: https://main.vitest.dev/api/browser/assertions
+
+Examples of asserting accessible names on various elements using the expect.element API.
+
+```javascript
+await expect.element(getByTestId('img-alt')).toHaveAccessibleName('Test alt')
+await expect.element(getByTestId('img-empty-alt')).not.toHaveAccessibleName()
+await expect.element(getByTestId('svg-title')).toHaveAccessibleName('Test title')
+await expect.element(getByTestId('button-img-alt')).toHaveAccessibleName()
+await expect.element(getByTestId('img-paragraph')).not.toHaveAccessibleName()
+await expect.element(getByTestId('svg-button')).toHaveAccessibleName()
+await expect.element(getByTestId('svg-without-title')).not.toHaveAccessibleName()
+await expect.element(getByTestId('input-title')).toHaveAccessibleName()
+```
+
+--------------------------------
+
+### Compare test run durations with module caching
 
 Source: https://main.vitest.dev/guide/improving-performance
 
-This GitHub Actions workflow demonstrates how to set up test sharding across different operating systems and shard indices. It includes steps for checking out code, setting up Node.js and pnpm, running tests with sharding, uploading artifacts, and merging reports.
+Example output showing the performance difference between an initial run and a subsequent run with cached modules.
 
-```yaml
-name: Tests
-on:
-  push:
-    branches:
-      - main
-jobs:
-  tests:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        shardIndex: [1, 2, 3, 4]
-        shardTotal: [4]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
+```shell
+# the first run
+Duration  8.75s (transform 4.02s, setup 629ms, import 5.52s, tests 2.52s, environment 0ms, prepare 3ms)
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
-
-      - name: Install dependencies
-        run: pnpm i
-
-      - name: Run tests
-        run: pnpm run test --reporter=blob --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
-        env:
-          VITEST_BLOB_LABEL: ${{ matrix.os }}
-
-      - name: Upload Vitest results GitHub Actions Artifacts
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: vitest-results-${{ matrix.os }}-${{ matrix.shardIndex }}
-          path: .vitest
-          include-hidden-files: true
-          retention-days: 1
-
-  merge-reports:
-    if: ${{ !cancelled() }}
-    needs: [tests]
-
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
-
-      - name: Install dependencies
-        run: pnpm i
-
-      - name: Download Vitest results from GitHub Actions Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: .vitest
-          merge-multiple: true
-
-      - name: Merge reports
-        run: npx vitest --merge-reports
-```
-
---------------------------------
-
-### Rendering Marko Components with @marko/testing-library
-
-Source: https://main.vitest.dev/guide/browser
-
-Example of rendering a Marko component using the `@marko/testing-library` package. It shows how to pass props and assert the rendered output, including snapshot testing.
-
-```ts
-// based on @testing-library/marko API
-// https://testing-library.com/docs/marko-testing-library/api
-
-import { render, screen } from '@marko/testing-library'
-import Greeting from './greeting.marko'
-
-test('renders a message', async () => {
-  const { baseElement } = await render(Greeting, { name: 'Marko' })
-  const screen = page.elementLocator(baseElement)
-  await expect.element(screen.getByText(/Marko/)).toBeInTheDocument()
-  expect(container.firstChild).toMatchInlineSnapshot(
-    `
-    <h1>Hello, Marko!</h1>
-  `
-  )
-})
+# the second run
+Duration  5.90s (transform 842ms, setup 543ms, import 2.35s, tests 2.94s, environment 0ms, prepare 3ms)
 ```
 
 --------------------------------
@@ -1459,6 +1497,20 @@ None
 
 --------------------------------
 
+### ReferenceError Example for Missing CommonJS Globals
+
+Source: https://main.vitest.dev/config/injectcjsglobals
+
+An example of the error thrown when attempting to access CommonJS variables in an ES module while injectCjsGlobals is disabled.
+
+```text
+ReferenceError: __dirname is not defined
+
+"__dirname" is a CommonJS variable that is not available in ES modules, and "injectCjsGlobals" is disabled. If this module is meant to be an ES module, use "import.meta.dirname" instead of "__dirname". If it is meant to be a CommonJS module, use the ".cjs" file extension, set "type": "commonjs" in the nearest package.json, or externalize it with "server.deps.external".
+```
+
+--------------------------------
+
 ### Asynchronous Render Example
 
 Source: https://main.vitest.dev/api/browser/react
@@ -1473,182 +1525,29 @@ const screen = await render(<Component />) // [!code ++]
 
 --------------------------------
 
-### Async Rejects toThrow Example
+### startVitest(cliFilters, options, viteOverrides, vitestOptions)
 
-Source: https://main.vitest.dev/api/expect
+Source: https://main.vitest.dev/guide/advanced
 
-Use `rejects.toThrow()` to assert that an asynchronous operation throws an error. This example demonstrates catching a rejected promise.
+Starts the Vitest test runner programmatically. Returns a Promise that resolves to a Vitest instance.
 
-```typescript
-test('expect rejects toThrow', async ({ expect }) => {
-  const promise = Promise.reject(new Error('Test'))
-  await expect(promise).rejects.toThrow()
-})
-```
+```APIDOC
+## startVitest
 
---------------------------------
+### Description
+Starts running Vitest tests using the Node API. This function is primarily intended for library authors.
 
-### Detecting Async Leaks Example
+### Signature
+`startVitest(cliFilters: string[] = [], options: CliOptions = {}, viteOverrides?: ViteUserConfig, vitestOptions?: VitestOptions): Promise<Vitest>`
 
-Source: https://main.vitest.dev/config/detectasyncleaks
+### Parameters
+- **cliFilters** (string[]) - Optional - A list of strings; Vitest will only run tests that contain at least one of these strings in their file path.
+- **options** (CliOptions) - Optional - CLI arguments to override test configuration options.
+- **viteOverrides** (ViteUserConfig) - Optional - Complete Vite configuration that takes precedence over user-defined options.
+- **vitestOptions** (VitestOptions) - Optional - Additional Vitest-specific configuration options.
 
-This output shows an example of an asynchronous leak detected by Vitest, specifically a `setTimeout` that executes after the test has finished.
-
-```sh
-⎯⎯⎯⎯⎯⎯⎯⎯ Async Leaks 1 ⎯⎯⎯⎯⎯⎯⎯⎯
-
-Timeout leaking in test/checkout-screen.test.tsx
- 26|
- 27|
- 28|
-   |
- 29|
- 30|
-
-```
-
---------------------------------
-
-### Example TAP Flat Report Output
-
-Source: https://main.vitest.dev/guide/reporters
-
-An example of the output generated by the TAP flat reporter, showing test results in a flat TAP format.
-
-```bash
-TAP version 13
-1..2
-not ok 1 - __tests__/test-file-1.test.ts > first test file > 2 + 2 should equal 4 # time=11.00ms
-    ---
-    error:
-        name: "AssertionError"
-        message: "expected 5 to be 4 // Object.is equality"
-    at: "/root-directory/__tests__/test-file-1.test.ts:20:28"
-    actual: "5"
-    expected: "4"
-    ...
-ok 2 - __tests__/test-file-1.test.ts > first test file > 4 - 2 should equal 2 # time=0.00ms
-```
-
---------------------------------
-
-### Basic Snapshot Test Example
-
-Source: https://main.vitest.dev/guide/snapshot
-
-Demonstrates a basic snapshot test for user data using `toMatchKvSnapshot`. The actual output will be saved in a snapshot file.
-
-```typescript
-import { expect, test } from 'vitest'
-
-test('user data', () => {
-  const user = { name: 'Alice', score: '42' }
-  expect(user).toMatchKvSnapshot()
-})
-```
-
---------------------------------
-
-### Install Playwright Browsers in CI
-
-Source: https://main.vitest.dev/guide/browser/visual-regression-testing
-
-This YAML snippet shows how to install Playwright browsers as a step in a GitHub Actions workflow before running visual regression tests.
-
-```yaml
-# ...the rest of the workflow
-- name: Install Playwright Browsers
-  run: npx --no playwright install --with-deps --only-shell
-```
-
---------------------------------
-
-### Configure Multiple Projects with Names
-
-Source: https://main.vitest.dev/config/name
-
-This example demonstrates how to configure multiple projects within Vitest, each with a distinct name to differentiate them in the terminal output.
-
-```javascript
-import { defineConfig } from 'vitest/config'
-
-export default defineConfig({
-  test: {
-    projects: [
-      {
-        name: 'unit',
-        include: ['./test/*.unit.test.js'],
-      },
-      {
-        name: 'e2e',
-        include: ['./test/*.e2e.test.js'],
-      },
-    ],
-  },
-})
-```
-
---------------------------------
-
-### Vitest Config with Default and Custom Project Names
-
-Source: https://main.vitest.dev/guide/browser/multiple-setups
-
-Example Vitest configuration demonstrating how project names are assigned, both automatically for default browser instances and manually for custom configurations.
-
-```typescript
-export default defineConfig({
-  test: {
-    browser: {
-      instances: [
-        // name: chromium
-        { browser: 'chromium' },
-        // name: custom
-        { browser: 'firefox', name: 'custom' },
-      ]
-    }
-  }
-})
-```
-
-```typescript
-export default defineConfig({
-  test: {
-    name: 'custom',
-    browser: {
-      instances: [
-        // name: custom (chromium)
-        { browser: 'chromium' },
-        // name: manual
-        { browser: 'firefox', name: 'manual' },
-      ]
-    }
-  }
-})
-```
-
---------------------------------
-
-### Example JUnit XML Report Structure
-
-Source: https://main.vitest.dev/guide/reporters
-
-This is an example of the XML output generated by the JUnit reporter. It shows the nested structure of test suites, test cases, and failures.
-
-```xml
-<?xml version="1.0" encoding="UTF-8" ?>
-<testsuites name="vitest tests" tests="2" failures="1" errors="0" time="0.503">
-    <testsuite name="__tests__/test-file-1.test.ts" timestamp="2023-10-19T17:41:58.580Z" hostname="My-Computer.local" tests="2" failures="1" errors="0" skipped="0" time="0.013">
-        <testcase classname="__tests__/test-file-1.test.ts" name="first test file &gt; 2 + 2 should equal 4" time="0.01">
-            <failure message="expected 5 to be 4 // Object.is equality" type="AssertionError">
-AssertionError: expected 5 to be 4 // Object.is equality
- ❯ __tests__/test-file-1.test.ts:20:28
-            </failure>
-        </testcase>
-        <testcase classname="__tests__/test-file-1.test.ts" name="first test file &gt; 4 - 2 should equal 2" time="0">
-        </testcase>
-    </testsuite>
-</testsuites>
+### Returns
+- **Promise<Vitest>** - A promise that resolves to a Vitest instance if tests can be started.
 ```
 
 --------------------------------
@@ -1678,55 +1577,43 @@ export default <Environment>{
 
 --------------------------------
 
-### Retriable Assertion Example
+### Handle Newly Added Files in Watcher
 
-Source: https://main.vitest.dev/api/browser/assertions
+Source: https://main.vitest.dev/guide/advanced/tests
 
-Use `expect.element` with `page.getBy*` locators for retriable DOM assertions. This example checks for an error banner with specific text content, retrying until the condition is met.
+This example shows how to handle newly added files by checking if they match any project glob patterns and then creating and running their specifications. This is an alternative to `getModuleSpecifications` when a file is newly created.
 
 ```typescript
-import { expect, test } from 'vitest'
-import { page } from 'vitest/browser'
+watcher.on('add', async (file) => {
+  const specifications = []
+  for (const project of vitest.projects) {
+    if (project.matchesGlobPattern(file)) {
+      specifications.push(project.createSpecification(file))
+    }
+  }
 
-test('error banner is rendered', async () => {
-  triggerError()
-
-  // This creates a locator that will try to find the element
-  // when any of its methods are called.
-  // This call by itself doesn't check the existence of the element.
-  const banner = page.getByRole('alert', {
-    name: /error/i,
-  })
-
-  // Vitest provides `expect.element` with built-in retry-ability
-  // It will repeatedly check that the element exists in the DOM and that
-  // the content of `element.textContent` is equal to "Error!"
-  // until all the conditions are met
-  await expect.element(banner).toHaveTextContent('Error!')
+  if (specifications.length) {
+    await vitest.rerunTestSpecifications(specifications)
+  }
 })
 ```
 
 --------------------------------
 
-### Initial ARIA Snapshot Generation
+### Create CLI Instance
 
-Source: https://main.vitest.dev/guide/browser/aria-snapshots
+Source: https://main.vitest.dev/guide/advanced
 
-This example shows the initial HTML of a shopping cart and the ARIA snapshot generated by Vitest with the `--update` flag.
+Initializes a CAC instance with all Vitest commands and options registered.
 
-```html
-<h1>Your Cart</h1>
-<ul aria-label="Cart Items">
-  <li>Wireless Headphones — $79.99</li>
-</ul>
-<button>Checkout</button>
+```ts
+function createCLI(options?: CliParseOptions): CAC
 ```
 
-```yaml
-- heading "Your Cart" [level=1]
-- list "Cart Items":
-    - listitem: Wireless Headphones — $79.99
-- button "Checkout"
+```ts
+import { createCLI } from 'vitest/node'
+
+const cli = createCLI()
 ```
 
 --------------------------------
@@ -1763,78 +1650,227 @@ page.getByText('Hello USA').elements() // ✅ []
 
 --------------------------------
 
-### CLI: Configure Test Sequence Options
+### Basic Snapshot Test Example
 
-Source: https://main.vitest.dev/config/sequence
+Source: https://main.vitest.dev/guide/snapshot
 
-Provides an example of how to set sequence options like shuffle and seed using the Vitest CLI.
-
-```sh
-npx vitest --sequence.shuffle --sequence.seed=1000
-```
-
---------------------------------
-
-### Implement Vitest Reporter with onTestRunStart
-
-Source: https://main.vitest.dev/api/advanced/reporters
-
-Shows a basic implementation of a Vitest reporter focusing on the onTestRunStart method to log the number of test files scheduled to run. Requires importing types from 'vitest/node'.
+Demonstrates a basic snapshot test for user data using `toMatchKvSnapshot`. The actual output will be saved in a snapshot file.
 
 ```typescript
-import type { Reporter, TestSpecification } from 'vitest/node'
+import { expect, test } from 'vitest'
 
-class MyReporter implements Reporter {
-  onTestRunStart(specifications: TestSpecification[]) {
-    console.log(specifications.length, 'test files will run')
-  }
-}
-
-export default new MyReporter()
+test('user data', () => {
+  const user = { name: 'Alice', score: '42' }
+  expect(user).toMatchKvSnapshot()
+})
 ```
 
 --------------------------------
 
-### startVitest API
+### HTML Elements for toBeChecked
 
-Source: https://main.vitest.dev/guide/advanced
+Source: https://main.vitest.dev/api/browser/assertions
 
-Starts Vitest tests programmatically. It returns a Vitest instance if tests can be started. If watch mode is not enabled, Vitest will call the `close` method automatically. If watch mode is enabled and the terminal supports TTY, Vitest will register console shortcuts.
+Example HTML elements that can be tested with toBeChecked.
+
+```html
+<input type="checkbox" checked data-testid="input-checkbox-checked" />
+<input type="checkbox" data-testid="input-checkbox-unchecked" />
+<div role="checkbox" aria-checked="true" data-testid="aria-checkbox-checked" />
+<div
+  role="checkbox"
+  aria-checked="false"
+  data-testid="aria-checkbox-unchecked"
+/>
+
+<input type="radio" checked value="foo" data-testid="input-radio-checked" />
+<input type="radio" value="foo" data-testid="input-radio-unchecked" />
+<div role="radio" aria-checked="true" data-testid="aria-radio-checked" />
+<div role="radio" aria-checked="false" data-testid="aria-radio-unchecked" />
+<div role="switch" aria-checked="true" data-testid="aria-switch-checked" />
+<div role="switch" aria-checked="false" data-testid="aria-switch-unchecked" />
+```
+
+--------------------------------
+
+### toBeRequired Usage Examples
+
+Source: https://main.vitest.dev/api/browser/assertions
+
+Assertions verifying the required state of various elements.
+
+```ts
+await expect.element(getByTestId('required-input')).toBeRequired()
+await expect.element(getByTestId('aria-required-input')).toBeRequired()
+await expect.element(getByTestId('conflicted-input')).toBeRequired()
+await expect.element(getByTestId('aria-not-required-input')).not.toBeRequired()
+await expect.element(getByTestId('optional-input')).not.toBeRequired()
+await expect.element(getByTestId('unsupported-type')).not.toBeRequired()
+await expect.element(getByTestId('select')).toBeRequired()
+await expect.element(getByTestId('textarea')).toBeRequired()
+await expect.element(getByTestId('supported-role')).not.toBeRequired()
+await expect.element(getByTestId('supported-role-aria')).toBeRequired()
+```
+
+--------------------------------
+
+### Implement Custom Reporter Interface
+
+Source: https://main.vitest.dev/guide/advanced/reporters
+
+Create a custom reporter from scratch by implementing the Reporter interface. This example logs test module collection and test states.
+
+```javascript
+import type { Reporter } from 'vitest/node'
+
+export default class CustomReporter implements Reporter {
+  onTestModuleCollected(testModule) {
+    console.log(testModule.moduleId, 'is finished')
+
+    for (const test of testModule.children.allTests()) {
+      console.log(test.name, test.result().state)
+    }
+  }
+}
+```
+
+--------------------------------
+
+### cancelCurrentRun
+
+Source: https://main.vitest.dev/api/advanced/vitest
+
+Gracefully cancels all ongoing tests and prevents scheduled tests from starting.
 
 ```APIDOC
-## startVitest
+## cancelCurrentRun
+
+### Signature
+`function cancelCurrentRun(reason: CancelReason): Promise<void>`
 
 ### Description
-Starts Vitest tests programmatically. Returns a `Vitest` instance if tests can be started. Automatically calls `close` if not in watch mode. Registers console shortcuts in watch mode if the terminal supports TTY.
-
-### Method
-`startVitest(mode: VitestRunMode, cliFilters: string[] = [], options: CliOptions = {}, viteOverrides?: ViteUserConfig, vitestOptions?: VitestOptions): Promise<Vitest>`
-
-### Parameters
-- **mode** (VitestRunMode) - Required - The mode to run Vitest in (e.g., 'test').
-- **cliFilters** (string[]) - Optional - A list of filters. Vitest will run only tests whose file path contains at least one of these strings.
-- **options** (CliOptions) - Optional - CLI arguments that will override any test config options.
-- **viteOverrides** (ViteUserConfig) - Optional - Complete Vite config, which takes precedence over other user-defined options.
-- **vitestOptions** (VitestOptions) - Optional - Vitest specific options.
-
-### Request Example
-```js
-import { startVitest } from 'vitest/node'
-
-const vitest = await startVitest('test')
-await vitest.close()
+This method will gracefully cancel all ongoing tests. It will stop the on-going tests and will not run tests that were scheduled to run but haven't started yet.
 ```
 
-### Response
-#### Success Response (Vitest Instance)
-- **state.getTestModules** (Array<TestModule>) - Returns an array of `TestModule` objects containing test results.
+--------------------------------
 
-#### Response Example
+### Basic expect.poll Usage
+
+Source: https://main.vitest.dev/api/expect
+
+Example of using expect.poll to wait for an element to appear in the document.
+
 ```ts
-import type { TestModule } from 'vitest/node'
+import { expect, test } from 'vitest'
 
-const vitest = await startVitest('test')
+test('element exists', async () => {
+  asyncInjectElement()
 
-console.log(vitest.state.getTestModules()) // [TestModule]
+  await expect.poll(() => document.querySelector('.element')).toBeTruthy()
+})
 ```
+
+--------------------------------
+
+### Example JSON Report Output
+
+Source: https://main.vitest.dev/guide/reporters
+
+A sample structure of the JSON output generated by the reporter.
+
+```json
+{
+  "numTotalTestSuites": 4,
+  "numPassedTestSuites": 2,
+  "numFailedTestSuites": 1,
+  "numPendingTestSuites": 1,
+  "numTotalTests": 4,
+  "numPassedTests": 1,
+  "numFailedTests": 1,
+  "numPendingTests": 1,
+  "numTodoTests": 1,
+  "startTime": 1697737019307,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "",
+            "first test file"
+          ],
+          "fullName": " first test file 2 + 2 should equal 4",
+          "status": "failed",
+          "title": "2 + 2 should equal 4",
+          "duration": 9,
+          "failureMessages": [
+            "expected 5 to be 4 // Object.is equality"
+          ],
+          "location": {
+            "line": 20,
+            "column": 28
+          },
+          "meta": {}
+        }
+      ],
+      "startTime": 1697737019787,
+      "endTime": 1697737019797,
+      "status": "failed",
+      "message": "",
+      "name": "/root-directory/__tests__/test-file-1.test.ts"
+    }
+  ],
+  "coverageMap": {}
+}
+```
+
+--------------------------------
+
+### JUnit XML Output Example
+
+Source: https://main.vitest.dev/guide/reporters
+
+A sample of the XML structure generated by the JUnit reporter.
+
+```xml
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="2" failures="1" errors="0" time="0.503">
+    <testsuite name="__tests__/test-file-1.test.ts" timestamp="2023-10-19T17:41:58.580Z" hostname="My-Computer.local" tests="2" failures="1" errors="0" skipped="0" time="0.013">
+        <testcase classname="__tests__/test-file-1.test.ts" name="first test file &gt; 2 + 2 should equal 4" time="0.01">
+            <failure message="expected 5 to be 4 // Object.is equality" type="AssertionError">
+AssertionError: expected 5 to be 4 // Object.is equality
+ ❯ __tests__/test-file-1.test.ts:20:28
+            </failure>
+        </testcase>
+        <testcase classname="__tests__/test-file-1.test.ts" name="first test file &gt; 4 - 2 should equal 2" time="0">
+        </testcase>
+    </testsuite>
+</testsuites>
+```
+
+--------------------------------
+
+### Configure Multiple Projects with Names
+
+Source: https://main.vitest.dev/config/name
+
+This example demonstrates how to configure multiple projects within Vitest, each with a distinct name to differentiate them in the terminal output.
+
+```javascript
+import { defineConfig } from 'vitest/config'
+
+export default defineConfig({
+  test: {
+    projects: [
+      {
+        name: 'unit',
+        include: ['./test/*.unit.test.js'],
+      },
+      {
+        name: 'e2e',
+        include: ['./test/*.e2e.test.js'],
+      },
+    ],
+  },
+})
 ```

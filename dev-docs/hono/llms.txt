@@ -2,7 +2,7 @@
 
 Source: https://github.com/honojs/website/blob/main/docs/getting-started/webassembly-wasi.md
 
-After initial project setup, install all dependencies and initialize a TypeScript configuration file using various package managers.
+Commands to install project dependencies and initialize TypeScript configuration after the initial project setup.
 
 ```sh
 npm i
@@ -16,27 +16,11 @@ yarn tsc --init
 
 ```sh
 pnpm i
-pnpm exec --init
+pnpm exec tsc --init
 ```
 
 ```sh
 bun i
-```
-
---------------------------------
-
-### Basic Hono Application Setup
-
-Source: https://github.com/honojs/website/blob/main/index.md
-
-This snippet demonstrates how to create a simple Hono application, define a root route, and return a text response. It serves as a minimal 'Hello World' example for Hono.
-
-```JavaScript
-import { Hono } from 'hono'
-const app = new Hono()
-app.get('/', (c) => c.text('Hello Hono!'))
-
-export default app
 ```
 
 --------------------------------
@@ -150,6 +134,19 @@ ws.addEventListener('open', () => {
 
 --------------------------------
 
+### Navigate and install dependencies for a Bun project
+
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/bun.md
+
+After creating a new project, change into the project directory and install its dependencies.
+
+```sh
+cd my-app
+bun install
+```
+
+--------------------------------
+
 ### Install dependencies
 
 Source: https://github.com/honojs/website/blob/main/docs/getting-started/nextjs.md
@@ -219,30 +216,43 @@ bun add -D vite
 
 --------------------------------
 
-### GET / (Using ConnInfo Helper)
+### Run development server
 
-Source: https://github.com/honojs/website/blob/main/docs/helpers/conninfo.md
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/cloudflare-workers-vite.md
 
-This example demonstrates how to integrate the `getConnInfo` helper within a Hono GET route to retrieve and display the client's remote IP address.
+Start the local development server.
 
-```APIDOC
-## GET /
+```sh
+npm run dev
+```
 
-### Description
-Retrieves the client's remote IP address using the `getConnInfo` helper function and returns it as plain text. This demonstrates how to access connection-specific details within a Hono route.
+```sh
+yarn dev
+```
 
-### Method
-GET
+```sh
+pnpm dev
+```
 
-### Endpoint
-/
+```sh
+bun run dev
+```
 
-### Response
-#### Success Response (200)
-- **text** (string) - The client's remote IP address, formatted as "Your remote address is [IP_ADDRESS]".
+--------------------------------
 
-#### Response Example
-Your remote address is 192.168.1.1
+### Create a basic Hono application in TypeScript
+
+Source: https://github.com/honojs/website/blob/main/docs/index.md
+
+Initialize a Hono instance and define a simple GET route. This example uses standard TypeScript syntax and exports the app for use in various runtimes.
+
+```typescript
+import { Hono } from 'hono'
+const app = new Hono()
+
+app.get('/', (c) => c.text('Hono!'))
+
+export default app
 ```
 
 --------------------------------
@@ -293,6 +303,18 @@ npm install stripe
 
 --------------------------------
 
+### Install Prisma CLI
+
+Source: https://github.com/honojs/website/blob/main/examples/prisma.md
+
+Install Prisma as a development dependency in your Hono project.
+
+```bash
+npm i prisma --save-dev
+```
+
+--------------------------------
+
 ### Setup Hono project with bun
 
 Source: https://github.com/honojs/website/blob/main/docs/getting-started/ali-function-compute.md
@@ -306,18 +328,6 @@ bun add hono hono-alibaba-cloud-fc3-adapter
 bun add -D esbuild @serverless-devs/s
 mkdir src
 touch src/index.ts
-```
-
---------------------------------
-
-### Install Prisma CLI
-
-Source: https://github.com/honojs/website/blob/main/examples/prisma.md
-
-Install Prisma as a development dependency in your Hono project.
-
-```bash
-npm i prisma --save-dev
 ```
 
 --------------------------------
@@ -362,18 +372,6 @@ bun add @stytch/react @stytch/vanilla-js
 
 --------------------------------
 
-### Initialize Deno project with Hono
-
-Source: https://github.com/honojs/website/blob/main/docs/getting-started/deno.md
-
-Create a new Deno project with Hono using the starter template. No explicit Hono installation is required.
-
-```sh
-deno init --npm hono --template=deno my-app
-```
-
---------------------------------
-
 ### Navigate and Install Dependencies
 
 Source: https://github.com/honojs/website/blob/main/docs/getting-started/google-cloud-run.md
@@ -387,19 +385,14 @@ npm i
 
 --------------------------------
 
-### Setup Hono project with npm
+### Initialize Deno project with Hono
 
-Source: https://github.com/honojs/website/blob/main/docs/getting-started/ali-function-compute.md
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/deno.md
 
-Initialize a new Hono project with required dependencies and directory structure using npm.
+Create a new Deno project with Hono using the starter template. No explicit Hono installation is required.
 
 ```sh
-mkdir my-app
-cd my-app
-npm i hono hono-alibaba-cloud-fc3-adapter
-npm i -D @serverless-devs/s esbuild
-mkdir src
-touch src/index.ts
+deno init --npm hono --template=deno my-app
 ```
 
 --------------------------------
@@ -428,6 +421,60 @@ bun add apitally
 
 --------------------------------
 
+### Setup Hono project with npm
+
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/ali-function-compute.md
+
+Initialize a new Hono project with required dependencies and directory structure using npm.
+
+```sh
+mkdir my-app
+cd my-app
+npm i hono hono-alibaba-cloud-fc3-adapter
+npm i -D @serverless-devs/s esbuild
+mkdir src
+touch src/index.ts
+```
+
+--------------------------------
+
+### Install InferDI and Hono middleware
+
+Source: https://github.com/honojs/website/blob/main/examples/inferdi.md
+
+Install the core InferDI package and its Hono-specific middleware using npm.
+
+```bash
+npm install @inferdi/inferdi @inferdi/hono
+```
+
+--------------------------------
+
+### Install Prisma Accelerate Extension
+
+Source: https://github.com/honojs/website/blob/main/examples/prisma.md
+
+Install the Prisma extension required for Prisma Postgres integration.
+
+```bash
+npm i @prisma/extension-accelerate
+```
+
+--------------------------------
+
+### Install dependencies with yarn
+
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/service-worker.md
+
+Install Hono and Vite as development dependencies using yarn.
+
+```sh
+yarn add hono
+yarn add -D vite
+```
+
+--------------------------------
+
 ### showRoutes() console output example
 
 Source: https://github.com/honojs/website/blob/main/docs/helpers/dev.md
@@ -438,6 +485,18 @@ Example output displayed in the console when showRoutes() is called on an applic
 GET   /v1/posts
 GET   /v1/posts/:id
 POST  /v1/posts
+```
+
+--------------------------------
+
+### Install Hono and Auth.js packages
+
+Source: https://github.com/honojs/website/blob/main/examples/hono-authjs.md
+
+Install the required dependencies for Hono authentication with Auth.js core library.
+
+```bash
+npm install hono @hono/auth-js @auth/core
 ```
 
 --------------------------------
@@ -466,67 +525,14 @@ bun run start
 
 --------------------------------
 
-### Install Prisma Accelerate Extension
-
-Source: https://github.com/honojs/website/blob/main/examples/prisma.md
-
-Install the Prisma extension required for Prisma Postgres integration.
-
-```bash
-npm i @prisma/extension-accelerate
-```
-
---------------------------------
-
-### Install Hono and Auth.js packages
-
-Source: https://github.com/honojs/website/blob/main/examples/hono-authjs.md
-
-Install the required dependencies for Hono authentication with Auth.js core library.
-
-```bash
-npm install hono @hono/auth-js @auth/core
-```
-
---------------------------------
-
-### Install dependencies with yarn
+### Start development server with yarn
 
 Source: https://github.com/honojs/website/blob/main/docs/getting-started/service-worker.md
 
-Install Hono and Vite as development dependencies using yarn.
+Run the Vite development server using yarn.
 
 ```sh
-yarn add hono
-yarn add -D vite
-```
-
---------------------------------
-
-### Quick Start: Create Hono Project
-
-Source: https://github.com/honojs/website/blob/main/docs/index.md
-
-Use these commands to quickly scaffold a new Hono project with your preferred package manager or runtime.
-
-```sh
-npm create hono@latest
-```
-
-```sh
-yarn create hono
-```
-
-```sh
-pnpm create hono@latest
-```
-
-```sh
-bun create hono@latest
-```
-
-```sh
-deno init --npm hono@latest
+yarn dev
 ```
 
 --------------------------------
@@ -577,18 +583,6 @@ touch src/index.ts
 
 --------------------------------
 
-### Start development server with yarn
-
-Source: https://github.com/honojs/website/blob/main/docs/getting-started/service-worker.md
-
-Run the Vite development server using yarn.
-
-```sh
-yarn dev
-```
-
---------------------------------
-
 ### Install Scalar Hono API Reference
 
 Source: https://github.com/honojs/website/blob/main/examples/scalar.md
@@ -597,6 +591,53 @@ Install the necessary package to integrate Scalar API Reference with Hono.
 
 ```bash
 npm install @scalar/hono-api-reference
+```
+
+--------------------------------
+
+### Start development server with pnpm
+
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/service-worker.md
+
+Run the Vite development server using pnpm.
+
+```sh
+pnpm run dev
+```
+
+--------------------------------
+
+### Install dependencies with pnpm
+
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/service-worker.md
+
+Install Hono and Vite as development dependencies using pnpm.
+
+```sh
+pnpm add hono
+pnpm add -D vite
+```
+
+--------------------------------
+
+### Language Detection Client Examples
+
+Source: https://github.com/honojs/website/blob/main/docs/middleware/builtin/language.md
+
+Examples of how clients can specify language preference via path, query parameter, cookie, or Accept-Language header.
+
+```shell
+# Via path
+curl http://localhost:8787/ar/home
+
+# Via query parameter
+curl http://localhost:8787/?lang=ar
+
+# Via cookie
+curl -H 'Cookie: language=ja' http://localhost:8787/
+
+# Via header
+curl -H 'Accept-Language: ar,en;q=0.9' http://localhost:8787/
 ```
 
 --------------------------------
@@ -625,65 +666,6 @@ bun run dev
 
 --------------------------------
 
-### Start development server with pnpm
-
-Source: https://github.com/honojs/website/blob/main/docs/getting-started/service-worker.md
-
-Run the Vite development server using pnpm.
-
-```sh
-pnpm run dev
-```
-
---------------------------------
-
-### Language Detection Client Examples
-
-Source: https://github.com/honojs/website/blob/main/docs/middleware/builtin/language.md
-
-Examples of how clients can specify language preference via path, query parameter, cookie, or Accept-Language header.
-
-```shell
-# Via path
-curl http://localhost:8787/ar/home
-
-# Via query parameter
-curl http://localhost:8787/?lang=ar
-
-# Via cookie
-curl -H 'Cookie: language=ja' http://localhost:8787/
-
-# Via header
-curl -H 'Accept-Language: ar,en;q=0.9' http://localhost:8787/
-```
-
---------------------------------
-
-### Create a new Pylon project with npm
-
-Source: https://github.com/honojs/website/blob/main/examples/pylon.md
-
-Use this command to initialize a new Pylon project with a basic structure. The example uses the Bun runtime.
-
-```bash
-npm create pylon my-pylon@latest
-```
-
---------------------------------
-
-### Install dependencies with pnpm
-
-Source: https://github.com/honojs/website/blob/main/docs/getting-started/service-worker.md
-
-Install Hono and Vite as development dependencies using pnpm.
-
-```sh
-pnpm add hono
-pnpm add -D vite
-```
-
---------------------------------
-
 ### Install dependencies with npm
 
 Source: https://github.com/honojs/website/blob/main/docs/getting-started/service-worker.md
@@ -705,23 +687,6 @@ Install Valibot and its JSON schema converter for use as the validation library.
 
 ```bash
 npm install valibot @valibot/to-json-schema
-```
-
---------------------------------
-
-### Create new Hono project with Bun
-
-Source: https://github.com/honojs/website/blob/main/docs/getting-started/bun.md
-
-Initialize a new Hono project using the bun create command with the hono template, then install dependencies.
-
-```sh
-bun create hono@latest my-app
-```
-
-```sh
-cd my-app
-bun install
 ```
 
 --------------------------------
@@ -777,58 +742,22 @@ bun add valibot
 
 --------------------------------
 
-### Run Netlify Development Server
+### Project Directory Structure for Static Assets
 
-Source: https://github.com/honojs/website/blob/main/docs/getting-started/netlify.md
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/cloudflare-workers.md
 
-Start the local development server using the Netlify CLI to test your Hono Edge Function.
+Example layout showing where to place static files relative to the source and configuration files.
 
-```sh
-netlify dev
-```
-
---------------------------------
-
-### Create a Basic Hono GET Endpoint
-
-Source: https://github.com/honojs/website/blob/main/docs/concepts/stacks.md
-
-Demonstrates how to set up a simple GET endpoint in Hono that returns a JSON response.
-
-```ts
-import { Hono } from 'hono'
-
-const app = new Hono()
-
-app.get('/hello', (c) => {
-  return c.json({
-    message: `Hello!`,
-  })
-})
-```
-
---------------------------------
-
-### Install Standard Schema Validator Middleware
-
-Source: https://github.com/honojs/website/blob/main/docs/guides/validation.md
-
-Install the `@hono/standard-validator` package using your preferred package manager.
-
-```sh
-npm i @hono/standard-validator
-```
-
-```sh
-yarn add @hono/standard-validator
-```
-
-```sh
-pnpm add @hono/standard-validator
-```
-
-```sh
-bun add @hono/standard-validator
+```text
+.
+├── package.json
+├── public
+│   ├── favicon.ico
+│   └── static
+│       └── hello.txt
+├── src
+│   └── index.ts
+└── wrangler.jsonc
 ```
 
 --------------------------------
@@ -841,6 +770,18 @@ Initialize Prisma in your project with a Prisma Postgres database instance. This
 
 ```bash
 npx prisma@latest init --db
+```
+
+--------------------------------
+
+### Run Netlify Development Server
+
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/netlify.md
+
+Start the local development server using the Netlify CLI to test your Hono Edge Function.
+
+```sh
+netlify dev
 ```
 
 --------------------------------
@@ -979,6 +920,80 @@ supabase functions serve --no-verify-jwt # start the Functions watcher
 
 --------------------------------
 
+### Run a Hono application with Bun
+
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/bun.md
+
+Execute the 'dev' script defined in `package.json` to start the Hono application.
+
+```sh
+bun run dev
+```
+
+--------------------------------
+
+### Interactive counter example using hono/jsx/dom
+
+Source: https://github.com/honojs/website/blob/main/docs/guides/jsx-dom.md
+
+A complete example showing how to use useState and render to create an interactive counter in the browser.
+
+```tsx
+import { useState } from 'hono/jsx'
+import { render } from 'hono/jsx/dom'
+
+function Counter() {
+  const [count, setCount] = useState(0)
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={() => setCount(count + 1)}>Increment</button>
+    </div>
+  )
+}
+
+function App() {
+  return (
+    <html>
+      <body>
+        <Counter />
+      </body>
+    </html>
+  )
+}
+
+const root = document.getElementById('root')
+render(<App />, root)
+```
+
+--------------------------------
+
+### Define REST API endpoints in Hono
+
+Source: https://github.com/honojs/website/blob/main/docs/guides/testing.md
+
+Example Hono application with GET and POST endpoints returning text and JSON responses with custom headers.
+
+```typescript
+app.get('/posts', (c) => {
+  return c.text('Many posts')
+})
+
+app.post('/posts', (c) => {
+  return c.json(
+    {
+      message: 'Created',
+    },
+    201,
+    {
+      'X-Custom': 'Thank you',
+    }
+  )
+})
+```
+
+--------------------------------
+
 ### Initialize App with initApp Option
 
 Source: https://github.com/honojs/website/blob/main/docs/helpers/factory.md
@@ -1021,6 +1036,26 @@ app.post('/posts', (c) => {
 
 --------------------------------
 
+### Configure Cloudflare bindings
+
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/cloudflare-workers-vite.md
+
+Example configuration for environment variables in wrangler.jsonc.
+
+```jsonc
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "my-app",
+  "compatibility_date": "2025-08-03",
+  "main": "./src/index.tsx",
+  "vars": {
+    "MY_NAME": "Hono",
+  },
+}
+```
+
+--------------------------------
+
 ### Setup Pretty JSON Middleware
 
 Source: https://github.com/honojs/website/blob/main/docs/middleware/builtin/pretty-json.md
@@ -1033,67 +1068,6 @@ const app = new Hono()
 app.use(prettyJSON()) // With options: prettyJSON({ space: 4 })
 app.get('/', (c) => {
   return c.json({ message: 'Hono!' })
-})
-```
-
---------------------------------
-
-### Apply Multiple Hono SSG Plugins
-
-Source: https://github.com/honojs/website/blob/main/docs/helpers/ssg.md
-
-This example demonstrates how to apply a combination of basic and advanced custom plugins, including the `sitemapPlugin`, to the `toSSG` function.
-
-```ts
-import app from './index'
-import { toSSG } from 'hono/ssg'
-import { sitemapPlugin } from './plugins'
-
-toSSG(app, fs, {
-  plugins: [
-    getOnlyPlugin,
-    statusFilterPlugin,
-    logFilesPlugin,
-    sitemapPlugin('https://example.com'),
-  ],
-})
-```
-
---------------------------------
-
-### Run Deno development server
-
-Source: https://github.com/honojs/website/blob/main/docs/getting-started/deno.md
-
-Start the development server using the task runner. Accesses the application at http://localhost:8000 by default.
-
-```sh
-deno task start
-```
-
---------------------------------
-
-### Define REST API endpoints in Hono
-
-Source: https://github.com/honojs/website/blob/main/docs/guides/testing.md
-
-Example Hono application with GET and POST endpoints returning text and JSON responses with custom headers.
-
-```typescript
-app.get('/posts', (c) => {
-  return c.text('Many posts')
-})
-
-app.post('/posts', (c) => {
-  return c.json(
-    {
-      message: 'Created',
-    },
-    201,
-    {
-      'X-Custom': 'Thank you',
-    }
-  )
 })
 ```
 
@@ -1171,6 +1145,30 @@ bun add @neondatabase/serverless
 
 --------------------------------
 
+### Run Deno development server
+
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/deno.md
+
+Start the development server using the task runner. Accesses the application at http://localhost:8000 by default.
+
+```sh
+deno task start
+```
+
+--------------------------------
+
+### Create a new Pylon project with npm
+
+Source: https://github.com/honojs/website/blob/main/examples/pylon.md
+
+Use this command to initialize a new Pylon project with a basic structure. The example uses the Bun runtime.
+
+```bash
+npm create pylon my-pylon@latest
+```
+
+--------------------------------
+
 ### Install typed-htmx package
 
 Source: https://github.com/honojs/website/blob/main/examples/htmx.md
@@ -1179,6 +1177,41 @@ Install the typed-htmx package as a development dependency.
 
 ```sh
 npm i -D typed-htmx
+```
+
+--------------------------------
+
+### KV creation output example
+
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/cloudflare-pages.md
+
+The output format provided by wrangler when creating a KV namespace.
+
+```text
+{ binding = "MY_KV", preview_id = "abcdef" }
+```
+
+--------------------------------
+
+### Create a Hello World application
+
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/cloudflare-pages.md
+
+Define the main application entry point using Hono and a custom renderer.
+
+```tsx
+import { Hono } from 'hono'
+import { renderer } from './renderer'
+
+const app = new Hono()
+
+app.get('*', renderer)
+
+app.get('/', (c) => {
+  return c.render(<h1>Hello, Cloudflare Pages!</h1>)
+})
+
+export default app
 ```
 
 --------------------------------
@@ -1205,23 +1238,6 @@ app.get('/api/users', async (c) => {
 
 --------------------------------
 
-### Hello World application with Hono on Bun
-
-Source: https://github.com/honojs/website/blob/main/docs/getting-started/bun.md
-
-Basic Hono application that responds with 'Hello Bun!' on GET requests to the root path.
-
-```ts
-import { Hono } from 'hono'
-
-const app = new Hono()
-app.get('/', (c) => c.text('Hello Bun!'))
-
-export default app
-```
-
---------------------------------
-
 ### Run Hono Development Server
 
 Source: https://github.com/honojs/website/blob/main/docs/getting-started/google-cloud-run.md
@@ -1230,19 +1246,6 @@ Starts the Hono application in development mode, typically accessible on localho
 
 ```sh
 npm run dev
-```
-
---------------------------------
-
-### Import Hono Factory Helpers
-
-Source: https://github.com/honojs/website/blob/main/docs/helpers/factory.md
-
-Import necessary functions from 'hono' and 'hono/factory' to start using the helper utilities.
-
-```ts
-import { Hono } from 'hono'
-import { createFactory, createMiddleware } from 'hono/factory'
 ```
 
 --------------------------------
@@ -1271,6 +1274,63 @@ export default {
     return new Response('Hello World')
   },
 }
+```
+
+--------------------------------
+
+### Install Zod Validator Middleware
+
+Source: https://github.com/honojs/website/blob/main/docs/guides/validation.md
+
+Install the `@hono/zod-validator` package using your preferred package manager.
+
+```sh
+npm i @hono/zod-validator
+```
+
+```sh
+yarn add @hono/zod-validator
+```
+
+```sh
+pnpm add @hono/zod-validator
+```
+
+```sh
+bun add @hono/zod-validator
+```
+
+--------------------------------
+
+### Import Hono Factory Helpers
+
+Source: https://github.com/honojs/website/blob/main/docs/helpers/factory.md
+
+Import necessary functions from 'hono' and 'hono/factory' to start using the helper utilities.
+
+```ts
+import { Hono } from 'hono'
+import { createFactory, createMiddleware } from 'hono/factory'
+```
+
+--------------------------------
+
+### Hello World application with fire() adapter
+
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/fastly.md
+
+Basic Hono application for Fastly Compute using the fire() adapter from @fastly/hono-fastly-compute. Use Hono from 'hono' (not 'hono/quick') when fire() is at the top level, as it builds the router during initialization.
+
+```ts
+// src/index.ts
+import { Hono } from 'hono'
+import { fire } from '@fastly/hono-fastly-compute'
+
+const app = new Hono()
+
+app.get('/', (c) => c.text('Hello Fastly!'))
+
+fire(app)
 ```
 
 --------------------------------
@@ -1315,46 +1375,14 @@ new Response('Thank you for coming', {
 
 --------------------------------
 
-### Install Zod Validator Middleware
+### Create a new Hono project with Bun
 
-Source: https://github.com/honojs/website/blob/main/docs/guides/validation.md
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/bun.md
 
-Install the `@hono/zod-validator` package using your preferred package manager.
-
-```sh
-npm i @hono/zod-validator
-```
+Use this command to initialize a new Hono project using the official Hono Bun starter template.
 
 ```sh
-yarn add @hono/zod-validator
-```
-
-```sh
-pnpm add @hono/zod-validator
-```
-
-```sh
-bun add @hono/zod-validator
-```
-
---------------------------------
-
-### Hello World application with fire() adapter
-
-Source: https://github.com/honojs/website/blob/main/docs/getting-started/fastly.md
-
-Basic Hono application for Fastly Compute using the fire() adapter from @fastly/hono-fastly-compute. Use Hono from 'hono' (not 'hono/quick') when fire() is at the top level, as it builds the router during initialization.
-
-```ts
-// src/index.ts
-import { Hono } from 'hono'
-import { fire } from '@fastly/hono-fastly-compute'
-
-const app = new Hono()
-
-app.get('/', (c) => c.text('Hello Fastly!'))
-
-fire(app)
+bun create hono@latest my-app
 ```
 
 --------------------------------
@@ -1379,6 +1407,30 @@ pnpm add arktype
 
 ```sh
 bun add arktype
+```
+
+--------------------------------
+
+### Install Standard Schema Validator Middleware
+
+Source: https://github.com/honojs/website/blob/main/docs/guides/validation.md
+
+Install the `@hono/standard-validator` package using your preferred package manager.
+
+```sh
+npm i @hono/standard-validator
+```
+
+```sh
+yarn add @hono/standard-validator
+```
+
+```sh
+pnpm add @hono/standard-validator
+```
+
+```sh
+bun add @hono/standard-validator
 ```
 
 --------------------------------
@@ -1447,45 +1499,6 @@ deno init --npm hono my-app
 
 --------------------------------
 
-### PatternRouter Bundle Size Example
-
-Source: https://github.com/honojs/website/blob/main/docs/concepts/routers.md
-
-Console output demonstrating the minimal bundle size achieved when using only PatternRouter. An application with PatternRouter is under 15KB uncompressed and 5.38KB gzipped.
-
-```console
-$ npx wrangler deploy --minify ./src/index.ts
- ⛅️ wrangler 3.20.0
--------------------
-Total Upload: 14.68 KiB / gzip: 5.38 KiB
-```
-
---------------------------------
-
-### Install Cloudflare Workers types
-
-Source: https://github.com/honojs/website/blob/main/docs/getting-started/cloudflare-workers.md
-
-Install @cloudflare/workers-types as a dev dependency to enable TypeScript type support for Cloudflare Workers APIs.
-
-```sh
-npm i --save-dev @cloudflare/workers-types
-```
-
-```sh
-yarn add -D @cloudflare/workers-types
-```
-
-```sh
-pnpm add -D @cloudflare/workers-types
-```
-
-```sh
-bun add --dev @cloudflare/workers-types
-```
-
---------------------------------
-
 ### method - Get Request HTTP Method
 
 Source: https://github.com/honojs/website/blob/main/docs/api/request.md
@@ -1518,65 +1531,6 @@ app.get('/about/me', async (c) => {
 
 --------------------------------
 
-### Initialize Hono WASI Project
-
-Source: https://github.com/honojs/website/blob/main/docs/getting-started/webassembly-wasi.md
-
-Create a new project directory, initialize it, and install Hono along with WASI-related development dependencies and a bundler using various package managers.
-
-```sh
-mkdir my-app
-cd my-app
-npm init
-npm i hono
-npm i -D @bytecodealliance/jco @bytecodealliance/componentize-js @bytecodealliance/jco-std
-npm i -D rolldown
-```
-
-```sh
-mkdir my-app
-cd my-app
-npm init
-yarn add hono
-yarn add -D @bytecodealliance/jco @bytecodealliance/componentize-js @bytecodealliance/jco-std
-yarn add -D rolldown
-G
-```
-
-```sh
-mkdir my-app
-cd my-app
-pnpm init --init-type module
-pnpm add hono
-pnpm add -D @bytecodealliance/jco @bytecodealliance/componentize-js @bytecodealliance/jco-std
-pnpm add -D rolldown
-```
-
-```sh
-mkdir my-app
-cd my-app
-npm init
-bun add hono
-bun add -D @bytecodealliance/jco @bytecodealliance/componentize-js @bytecodealliance/jco-std
-```
-
---------------------------------
-
-### Basic Hono Route for IDE Performance Example
-
-Source: https://github.com/honojs/website/blob/main/docs/guides/rpc.md
-
-A simple Hono route illustrating how complex type instantiations can occur, potentially affecting IDE performance.
-
-```ts
-// app.ts
-export const app = new Hono().get('foo/:id', (c) =>
-  c.json({ ok: true }, 200)
-)
-```
-
---------------------------------
-
 ### Test GET request with app.request
 
 Source: https://github.com/honojs/website/blob/main/docs/guides/testing.md
@@ -1591,6 +1545,21 @@ describe('Example', () => {
     expect(await res.text()).toBe('Many posts')
   })
 })
+```
+
+--------------------------------
+
+### PatternRouter Bundle Size Example
+
+Source: https://github.com/honojs/website/blob/main/docs/concepts/routers.md
+
+Console output demonstrating the minimal bundle size achieved when using only PatternRouter. An application with PatternRouter is under 15KB uncompressed and 5.38KB gzipped.
+
+```console
+$ npx wrangler deploy --minify ./src/index.ts
+ ⛅️ wrangler 3.20.0
+-------------------
+Total Upload: 14.68 KiB / gzip: 5.38 KiB
 ```
 
 --------------------------------
@@ -1615,6 +1584,21 @@ pnpm add zod
 
 ```sh
 bun add zod
+```
+
+--------------------------------
+
+### Basic Hono Route for IDE Performance Example
+
+Source: https://github.com/honojs/website/blob/main/docs/guides/rpc.md
+
+A simple Hono route illustrating how complex type instantiations can occur, potentially affecting IDE performance.
+
+```ts
+// app.ts
+export const app = new Hono().get('foo/:id', (c) =>
+  c.json({ ok: true }, 200)
+)
 ```
 
 --------------------------------
@@ -1667,6 +1651,34 @@ touch lambda/index.ts
 
 --------------------------------
 
+### Scaffold a Hono project with different package managers
+
+Source: https://github.com/honojs/website/blob/main/docs/index.md
+
+Run the creation command for your preferred environment. These commands initialize a new project with the latest Hono version.
+
+```sh
+npm create hono@latest
+```
+
+```sh
+yarn create hono
+```
+
+```sh
+pnpm create hono@latest
+```
+
+```sh
+bun create hono@latest
+```
+
+```sh
+deno init --npm hono@latest
+```
+
+--------------------------------
+
 ### Test GET request with app.request()
 
 Source: https://github.com/honojs/website/blob/main/docs/api/hono.md
@@ -1682,14 +1694,25 @@ test('GET /hello is ok', async () => {
 
 --------------------------------
 
-### Create Hono Project
+### Apply Multiple Hono SSG Plugins
 
-Source: https://github.com/honojs/website/blob/main/docs/getting-started/google-cloud-run.md
+Source: https://github.com/honojs/website/blob/main/docs/helpers/ssg.md
 
-Initializes a new Hono project named 'my-app' using the `create-hono` command.
+This example demonstrates how to apply a combination of basic and advanced custom plugins, including the `sitemapPlugin`, to the `toSSG` function.
 
-```sh
-npm create hono@latest my-app
+```ts
+import app from './index'
+import { toSSG } from 'hono/ssg'
+import { sitemapPlugin } from './plugins'
+
+toSSG(app, fs, {
+  plugins: [
+    getOnlyPlugin,
+    statusFilterPlugin,
+    logFilesPlugin,
+    sitemapPlugin('https://example.com'),
+  ],
+})
 ```
 
 --------------------------------
@@ -1726,6 +1749,36 @@ brew install azure-functions-core-tools@4
 
 --------------------------------
 
+### Get Full Request URL with c.req.url
+
+Source: https://github.com/honojs/website/blob/main/docs/api/request.md
+
+Use 'c.req.url' to get the complete URL string of the incoming request. This includes the protocol, host, path, and query parameters.
+
+```ts
+import { Hono } from 'hono'
+const app = new Hono()
+// ---cut---
+app.get('/about/me', async (c) => {
+  const url = c.req.url // `http://localhost:8787/about/me`
+  // ...
+})
+```
+
+--------------------------------
+
+### Create Hono Project
+
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/google-cloud-run.md
+
+Initializes a new Hono project named 'my-app' using the `create-hono` command.
+
+```sh
+npm create hono@latest my-app
+```
+
+--------------------------------
+
 ### Create a Basic Hono Node.js Server
 
 Source: https://github.com/honojs/website/blob/main/docs/getting-started/nodejs.md
@@ -1744,18 +1797,18 @@ serve(app)
 
 --------------------------------
 
-### Get Full Request URL with c.req.url
+### Get Request Method with c.req.method
 
 Source: https://github.com/honojs/website/blob/main/docs/api/request.md
 
-Use 'c.req.url' to get the complete URL string of the incoming request. This includes the protocol, host, path, and query parameters.
+Access 'c.req.method' to retrieve the HTTP method (e.g., 'GET', 'POST') of the incoming request. This is useful for conditional logic based on the request type.
 
 ```ts
 import { Hono } from 'hono'
 const app = new Hono()
 // ---cut---
 app.get('/about/me', async (c) => {
-  const url = c.req.url // `http://localhost:8787/about/me`
+  const method = c.req.method // `GET`
   // ...
 })
 ```
@@ -1802,40 +1855,6 @@ app.on('GET', ['/hello', '/ja/hello', '/en/hello'], (c) =>
 
 --------------------------------
 
-### Get Request Method with c.req.method
-
-Source: https://github.com/honojs/website/blob/main/docs/api/request.md
-
-Access 'c.req.method' to retrieve the HTTP method (e.g., 'GET', 'POST') of the incoming request. This is useful for conditional logic based on the request type.
-
-```ts
-import { Hono } from 'hono'
-const app = new Hono()
-// ---cut---
-app.get('/about/me', async (c) => {
-  const method = c.req.method // `GET`
-  // ...
-})
-```
-
---------------------------------
-
-### Initialize Hono project for Lambda@Edge with bun
-
-Source: https://github.com/honojs/website/blob/main/docs/getting-started/lambda-edge.md
-
-Set up a new Hono project with CDK and TypeScript using bun. Creates project structure with lambda directory for handler code.
-
-```sh
-mkdir my-app
-cd my-app
-cdk init app -l typescript
-bun add hono
-mkdir lambda
-```
-
---------------------------------
-
 ### Handle POST and DELETE requests in Hono
 
 Source: https://github.com/honojs/website/blob/main/docs/getting-started/basic.md
@@ -1865,6 +1884,114 @@ app.get('/', (c) => {
   const userAgent = c.req.header('User-Agent')
   //      ^?
   return c.text(`Your user agent is ${userAgent}`)
+})
+```
+
+--------------------------------
+
+### Initialize Hono project for Lambda@Edge with bun
+
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/lambda-edge.md
+
+Set up a new Hono project with CDK and TypeScript using bun. Creates project structure with lambda directory for handler code.
+
+```sh
+mkdir my-app
+cd my-app
+cdk init app -l typescript
+bun add hono
+mkdir lambda
+```
+
+--------------------------------
+
+### Initialize wrangler configuration
+
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/cloudflare-pages.md
+
+Create the wrangler.toml file to manage local Cloudflare Bindings.
+
+```sh
+touch wrangler.toml
+```
+
+--------------------------------
+
+### Add Hono to an existing Bun project
+
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/bun.md
+
+Install the Hono dependency into an existing Bun project.
+
+```sh
+bun add hono
+```
+
+--------------------------------
+
+### Basic Hono 'Hello World' application for Bun
+
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/bun.md
+
+This script defines a simple Hono application that responds with 'Hello Bun!' on the root path. Place it in `src/index.ts` for the `bun run dev` command.
+
+```ts
+import { Hono } from 'hono'
+
+const app = new Hono()
+app.get('/', (c) => c.text('Hello Bun!'))
+
+export default app
+```
+
+--------------------------------
+
+### Get querystring parameters in Hono
+
+Source: https://github.com/honojs/website/blob/main/docs/api/request.md
+
+Retrieve individual querystring parameters or all parameters as an object from the request.
+
+```ts
+import { Hono } from 'hono'
+const app = new Hono()
+// ---cut---
+// Query params
+app.get('/search', async (c) => {
+  const query = c.req.query('q')
+  //     ^?
+})
+
+// Get all params at once
+app.get('/search', async (c) => {
+  const { q, limit, offset } = c.req.query()
+  //      ^?
+})
+```
+
+--------------------------------
+
+### Get path parameters in Hono
+
+Source: https://github.com/honojs/website/blob/main/docs/api/request.md
+
+Retrieve individual path parameters or all parameters as an object from the request.
+
+```ts
+import { Hono } from 'hono'
+const app = new Hono()
+// ---cut---
+// Captured params
+app.get('/entry/:id', async (c) => {
+  const id = c.req.param('id')
+  //    ^?
+  // ...
+})
+
+// Get all params at once
+app.get('/entry/:id/comment/:commentId', async (c) => {
+  const { id, commentId } = c.req.param()
+  //      ^?
 })
 ```
 
@@ -1907,6 +2034,30 @@ Initialize a new project directory for the Hono Service Worker application.
 ```sh
 mkdir my-app
 cd my-app
+```
+
+--------------------------------
+
+### Install Cloudflare Workers Types
+
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/cloudflare-workers.md
+
+Add @cloudflare/workers-types to your dev dependencies for TypeScript support in the Workers environment.
+
+```sh
+npm i --save-dev @cloudflare/workers-types
+```
+
+```sh
+yarn add -D @cloudflare/workers-types
+```
+
+```sh
+pnpm add -D @cloudflare/workers-types
+```
+
+```sh
+bun add --dev @cloudflare/workers-types
 ```
 
 --------------------------------
@@ -1957,31 +2108,6 @@ Returns a Response object with the appropriate status code, headers, and body.
 
 --------------------------------
 
-### Get querystring parameters in Hono
-
-Source: https://github.com/honojs/website/blob/main/docs/api/request.md
-
-Retrieve individual querystring parameters or all parameters as an object from the request.
-
-```ts
-import { Hono } from 'hono'
-const app = new Hono()
-// ---cut---
-// Query params
-app.get('/search', async (c) => {
-  const query = c.req.query('q')
-  //     ^?
-})
-
-// Get all params at once
-app.get('/search', async (c) => {
-  const { q, limit, offset } = c.req.query()
-  //      ^?
-})
-```
-
---------------------------------
-
 ### Serve precompressed static files
 
 Source: https://github.com/honojs/website/blob/main/docs/getting-started/deno.md
@@ -1995,32 +2121,6 @@ app.get(
     precompressed: true,
   })
 )
-```
-
---------------------------------
-
-### Get path parameters in Hono
-
-Source: https://github.com/honojs/website/blob/main/docs/api/request.md
-
-Retrieve individual path parameters or all parameters as an object from the request.
-
-```ts
-import { Hono } from 'hono'
-const app = new Hono()
-// ---cut---
-// Captured params
-app.get('/entry/:id', async (c) => {
-  const id = c.req.param('id')
-  //    ^?
-  // ...
-})
-
-// Get all params at once
-app.get('/entry/:id/comment/:commentId', async (c) => {
-  const { id, commentId } = c.req.param()
-  //      ^?
-})
 ```
 
 --------------------------------
@@ -2040,21 +2140,6 @@ Example `package.json` scripts for local development, Cloudflare deployment, typ
     "better-auth-gen-schema": "pnpm dlx @better-auth/cli@latest generate --config ./better-auth.config.ts --output ./src/db/schema.ts"
   }
 }
-```
-
---------------------------------
-
-### Basic CSRF protection setup
-
-Source: https://github.com/honojs/website/blob/main/docs/middleware/builtin/csrf.md
-
-Enable default CSRF validation that checks both Origin and Sec-Fetch-Site headers.
-
-```typescript
-const app = new Hono()
-
-// Default: both origin and sec-fetch-site validation
-app.use(csrf())
 ```
 
 --------------------------------
@@ -2097,6 +2182,21 @@ export type AuthType = {
   user: typeof auth.$Infer.Session.user | null
   session: typeof auth.$Infer.Session.session | null
 }
+```
+
+--------------------------------
+
+### Basic CSRF protection setup
+
+Source: https://github.com/honojs/website/blob/main/docs/middleware/builtin/csrf.md
+
+Enable default CSRF validation that checks both Origin and Sec-Fetch-Site headers.
+
+```typescript
+const app = new Hono()
+
+// Default: both origin and sec-fetch-site validation
+app.use(csrf())
 ```
 
 --------------------------------
@@ -2165,14 +2265,41 @@ app.get('/about/me', async (c) => {
 
 --------------------------------
 
-### Configure static file serving in wrangler.toml
+### Basic Usage of Server-Timing Middleware in Hono
 
-Source: https://github.com/honojs/website/blob/main/docs/getting-started/cloudflare-workers.md
+Source: https://github.com/honojs/website/blob/main/docs/middleware/builtin/timing.md
 
-Enable static file serving by specifying the assets directory in wrangler.toml. Files in the public directory will be served at their relative paths.
+Demonstrates how to apply the timing middleware, add custom metrics, and time asynchronous operations using startTime, endTime, and wrapTime.
 
-```toml
-assets = { directory = "public" }
+```js
+// Specify the variable types to infer the `c.get('metric')`:
+type Variables = TimingVariables
+
+const app = new Hono<{ Variables: Variables }>()
+
+// add the middleware to your router
+app.use(timing());
+
+app.get('/', async (c) => {
+
+  // add custom metrics
+  setMetric(c, 'region', 'europe-west3')
+
+  // add custom metrics with timing, must be in milliseconds
+  setMetric(c, 'custom', 23.8, 'My custom Metric')
+
+  // start a new timer
+  startTime(c, 'db');
+  const data = await db.findMany(...);
+
+  // end the timer
+  endTime(c, 'db');
+
+  // ...or you can also just wrap a Promise using this function:
+  const data = await wrapTime(c, 'db', db.findMany(...));
+
+  return c.json({ response: data });
+});
 ```
 
 --------------------------------
@@ -2240,45 +2367,6 @@ app.get('/api/hello', (c) => {
 
 --------------------------------
 
-### Basic Usage of Server-Timing Middleware in Hono
-
-Source: https://github.com/honojs/website/blob/main/docs/middleware/builtin/timing.md
-
-Demonstrates how to apply the timing middleware, add custom metrics, and time asynchronous operations using startTime, endTime, and wrapTime.
-
-```js
-// Specify the variable types to infer the `c.get('metric')`:
-type Variables = TimingVariables
-
-const app = new Hono<{ Variables: Variables }>()
-
-// add the middleware to your router
-app.use(timing());
-
-app.get('/', async (c) => {
-
-  // add custom metrics
-  setMetric(c, 'region', 'europe-west3')
-
-  // add custom metrics with timing, must be in milliseconds
-  setMetric(c, 'custom', 23.8, 'My custom Metric')
-
-  // start a new timer
-  startTime(c, 'db');
-  const data = await db.findMany(...);
-
-  // end the timer
-  endTime(c, 'db');
-
-  // ...or you can also just wrap a Promise using this function:
-  const data = await wrapTime(c, 'db', db.findMany(...));
-
-  return c.json({ response: data });
-});
-```
-
---------------------------------
-
 ### Get multiple querystring parameters in Hono
 
 Source: https://github.com/honojs/website/blob/main/docs/api/request.md
@@ -2299,135 +2387,28 @@ app.get('/search', async (c) => {
 
 --------------------------------
 
-### Build Commands for Package Managers
+### Initialize Hono project
 
-Source: https://github.com/honojs/website/blob/main/docs/getting-started/nodejs.md
+Source: https://github.com/honojs/website/blob/main/docs/getting-started/cloudflare-workers-vite.md
 
-Run the build script using npm, yarn, pnpm, or bun. Choose the command matching your project's package manager.
-
-```shell
-npm run build
-```
-
-```shell
-yarn run build
-```
-
-```shell
-pnpm run build
-```
-
-```shell
-bun run build
-```
-
---------------------------------
-
-### JSON Response With Pretty Print
-
-Source: https://github.com/honojs/website/blob/main/docs/middleware/builtin/pretty-json.md
-
-Example of a prettified JSON response when the pretty query parameter is added to the URL.
-
-```javascript
-// GET /?pretty
-{
-  "project": {
-    "name": "Hono",
-    "repository": "https://github.com/honojs/hono"
-  }
-}
-```
-
---------------------------------
-
-### Centralized Env Definition with factory.createApp() (Solution)
-
-Source: https://github.com/honojs/website/blob/main/docs/helpers/factory.md
-
-Demonstrates how `createFactory()` and `createApp()` allow you to define the `Env` type in a single place, reducing redundancy.
-
-```ts
-import { createFactory } from 'hono/factory'
-
-// ...
-
-// Set the `Env` to `createFactory()`
-const factory = createFactory<Env>()
-
-const app = factory.createApp()
-
-// factory also has `createMiddleware()`
-const mw = factory.createMiddleware(async (c, next) => {
-  await next()
-})
-```
-
---------------------------------
-
-### JSON Response Without Pretty Print
-
-Source: https://github.com/honojs/website/blob/main/docs/middleware/builtin/pretty-json.md
-
-Example of a standard JSON response without the pretty query parameter.
-
-```javascript
-// GET /
-{"project":{"name":"Hono","repository":"https://github.com/honojs/hono"}}
-```
-
---------------------------------
-
-### Basic Language Detection Setup
-
-Source: https://github.com/honojs/website/blob/main/docs/middleware/builtin/language.md
-
-Initialize language detector with supported languages and fallback. Detects from query string, cookie, and header by default, then stores result in context.
-
-```typescript
-const app = new Hono()
-
-app.use(
-  languageDetector({
-    supportedLanguages: ['en', 'ar', 'ja'], // Must include fallback
-    fallbackLanguage: 'en', // Required
-  })
-)
-
-app.get('/', (c) => {
-  const lang = c.get('language')
-  return c.text(`Hello! Your language is ${lang}`)
-})
-```
-
---------------------------------
-
-### Initialize Hono project for Lambda@Edge with npm
-
-Source: https://github.com/honojs/website/blob/main/docs/getting-started/lambda-edge.md
-
-Set up a new Hono project with CDK and TypeScript using npm. Creates project structure with lambda directory for handler code.
+Use the create-hono command to scaffold a new project with the cloudflare-workers+vite template.
 
 ```sh
-mkdir my-app
-cd my-app
-cdk init app -l typescript
-npm i hono
-mkdir lambda
+npm create hono@latest my-app
 ```
 
---------------------------------
+```sh
+yarn create hono my-app
+```
 
-### Get current router name with getRouterName()
+```sh
+pnpm create hono my-app
+```
 
-Source: https://github.com/honojs/website/blob/main/docs/helpers/dev.md
+```sh
+bun create hono@latest my-app
+```
 
-Retrieve the name of the currently active router in your Hono application for debugging purposes.
-
-```typescript
-const app = new Hono()
-
-// ...
-
-console.log(getRouterName(app))
+```sh
+deno init --npm hono my-app
 ```
