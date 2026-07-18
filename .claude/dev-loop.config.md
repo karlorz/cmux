@@ -1,15 +1,38 @@
 # Dev Loop — cmux
 
+## Identity
+
+```yaml
 slug: cmux
-vault: /Users/karlchow/wiki
 release_branch: main
+```
 
-memory_layer: none
+## PRD layer
 
+```yaml
 prd_layer: superpowers
 prd_pipeline: tdd-first
 
+prd_backends:
+  superpowers:
+    capabilities: [brainstorm, spec, plan, execute, review, subagent_dispatch]
+    skills:
+      brainstorm: superpowers:brainstorming
+      plan: superpowers:writing-plans
+      execute: superpowers:subagent-driven-development
+      execute_fallback: superpowers:executing-plans
+      review: simplify:simplify
+```
+
+## Execution disciplines
+
+```yaml
 prd_disciplines:
+  - skill: superpowers:using-git-worktrees
+    when: execute
+    mode: mandatory
+    include_paths:
+      - "**"
   - skill: superpowers:test-driven-development
     when: execute
     mode: mandatory
@@ -28,7 +51,11 @@ prd_disciplines:
   - skill: superpowers:systematic-debugging
     when: failure
     mode: reactive
+```
 
+## Critical paths
+
+```yaml
 critical_paths:
   sandbox_lifecycle:
     code:
@@ -69,20 +96,17 @@ critical_paths:
     vault:
       - cmux
     history_pins:
-      - "devsh manages sandbox lifecycle and publishing is handled separately from the terminal cmux project."
+      - "devsh manages sandbox lifecycle and publishing is separate from the terminal cmux project."
+```
 
+## Fact checking
+
+```yaml
 fact_check:
   enabled: true
   source_order:
     - local_repo
-    - context7
     - vault_query
-    - web_search
-  web_tools:
-    primary: mcp__grok_search__web_search
-    deep_fetch: mcp__grok_search__web_fetch
-    site_map: mcp__grok_search__web_map
-    plan_first: mcp__grok_search__plan_intent
   triggers:
     - version claims
     - deprecation notices
@@ -91,34 +115,32 @@ fact_check:
     - provider API changes
   evidence_contract:
     require_sources_used_section: true
-    cite_session_id: true
+```
 
+## Idle deep research
+
+```yaml
 idle_deep_research:
   enabled: true
-  skill: deep-research
-  trigger:
-    when: idle_after_mechanical_scan
-    if: no_p2_or_higher_findings
-    cooldown: every_3rd_idle_cycle
-    max_per_day: 4
   topic_seeds:
     - sandbox provider lifecycle reliability
     - Convex and Hono API validation drift
     - agent dashboard browser regressions
     - devsh CLI release and sandbox orchestration quality
     - PVE LXC and Morph snapshot maintenance
-  topic_selection:
-    bias_toward: critical_paths
-    skip_if_recent_query_page_exists: 14d
-  output_mode: vault
+  bias_toward: critical_paths
+  cooldown_cycles: 3
+  max_per_day: 4
+  skip_if_recent_query_page_exists: 14
   budget:
     web_searches: 3
     deep_fetches: 3
     context7_calls: 3
-  followups:
-    on_finding: schema_compatible_vault_queue
-    p_score_default: P3
+```
 
+## Investigation and preflight
+
+```yaml
 investigate:
   max_items: 5
   topic_seeds: []
@@ -131,16 +153,20 @@ preflight:
   unattended_not_ready_behavior: skip
   defaults:
     compatibility_policy: "Platform compatibility changes are additive unless explicitly scoped otherwise."
+```
 
+## Browser verification
+
+```yaml
 browser_verification:
   enabled: true
   trigger:
-    - apps/client/**/*.tsx
-    - apps/client/**/*.ts
-    - apps/client/**/*.css
-    - apps/www/app/**/*.tsx
-    - apps/www/app/**/*.ts
-    - apps/www/lib/routes/**/*.ts
+    - "apps/client/**/*.tsx"
+    - "apps/client/**/*.ts"
+    - "apps/client/**/*.css"
+    - "apps/www/app/**/*.tsx"
+    - "apps/www/app/**/*.ts"
+    - "apps/www/lib/routes/**/*.ts"
   prerequisites:
     - "curl -fsS http://localhost:5173 >/dev/null"
   driver: playwright-cli
@@ -153,33 +179,43 @@ browser_verification:
     - list_console_messages
     - evaluate_script
   e2e_fallback: bun run test
+```
 
+## Reactive debugging
+
+```yaml
 reactive_debugging:
   enabled: true
   auto_retry_attempts: 2
   evidence_dir: .claude/dev-loop-debug/
   evidence_capture:
-    - "bun run check 2>&1 | tee {evidence_dir}/{cycle}-check.log"
     - "git diff > {evidence_dir}/{cycle}-diff.patch"
     - "git log --oneline -5 > {evidence_dir}/{cycle}-commits.log"
-  fact_check_tool: mcp__grok_search__web_search
   escalate_after:
     consecutive_idle_cycles: 3
     same_error_signature: true
   escalation_action: surface_p1_finding
+```
 
+## Code review
+
+```yaml
 code_review:
   parallel: true
   codex:
     enabled_in_normal: false
     enabled_in_high: false
     agent: dev-loop:codex-review-worker
+```
 
+## Knowledge layer
+
+```yaml
 knowledge_layer: skillwiki
 
 knowledge_backends:
   skillwiki:
-    vault: /Users/karlchow/wiki
+    vault: auto
     cli_entry: skillwiki
   none:
     work_dir: .claude/dev-loop-work/
@@ -191,38 +227,66 @@ vault_sync:
   lock_timeout_seconds: 30
   retry_budget: 3
   presync_skill: auto-detect
+```
 
+## Interview
+
+```yaml
 interview:
   setup:
     skill: setup-dev-loop
     glossary: grill-with-docs
   work_item:
-    default: native
     upgrade: grill-with-docs
-    source: mattpocock/skills
-    install: "npx skills@latest add mattpocock/skills --skill grill-with-docs -a claude-code -g -y"
     trigger: auto
     goal_override: never
+```
 
+## Code layout
+
+```yaml
 cli_src: packages/devsh/
 cli_test: packages/devsh/
 skills_glob: ""
 cli_entry_override: ""
+```
 
-e2e_scripts:
-  - bun run test
+## E2E
 
+```yaml
+e2e_scripts: []
+```
+
+## Release and deploy
+
+```yaml
 bump_script: ""
 publish_via: none
 deploy_script: ""
 manifests_count: 0
 remote_hosts: []
+```
 
-ci_configured: true
+## CI behavior
+
+```yaml
+ci_configured: false
 ci_discovery: runtime
+```
 
+Existing GitHub Actions still validate pushed branches and PRs. Dev-loop CI auto-merge is deliberately disabled because cmux requires explicit user approval before every merge.
+
+## Repository overrides
+
+```yaml
 notes:
-  canonical_policy: AGENTS.md
-  repo_target: "Primary upstream manaflow-ai/manaflow, fork karlorz/cmux."
-  ci_note: "Existing checks.yml/tests.yml workflows are present; branch protection required checks were not detected via GitHub API."
-  dev_cycle: "After code changes, stage and commit directly; pre-commit hook runs bun check."
+  canonical_policy: "CLAUDE.md (also exposed through the AGENTS.md symlink)"
+  repo_target: "Primary upstream manaflow-ai/manaflow; fork karlorz/cmux. The terminal cmux project is a separate workspace."
+  worktree_policy: "Before execute, reuse existing isolation or create an isolated feature-branch worktree via superpowers:using-git-worktrees; never nest worktrees."
+  package_manager: "Use bun install and bun run test; never substitute npm or bare bun test."
+  git_policy: "Never commit or push directly to main/master. Push feature branches only."
+  task_sandbox_pr_policy: "When CMUX_TASK_RUN_JWT is set and CMUX_IS_ORCHESTRATION_HEAD is not set, do not run gh pr create; cmux owns the task PR."
+  merge_policy: "Never enable auto-merge or merge a PR without explicit user approval. Preserve branches after merge."
+  dev_cycle: "Commit normally so the pre-commit hook runs bun check; do not run bun check manually before commit and never use --no-verify."
+  review_policy: "Run simplify:simplify as the required base code-review gate for code changes."
+```
