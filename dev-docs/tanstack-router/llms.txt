@@ -43,6 +43,18 @@ npm run dev
 
 --------------------------------
 
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/quickstart-file-based/README.md
+
+Command to initialize a new project using this quickstart example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/quickstart-file-based quickstart-file-based
+```
+
+--------------------------------
+
 ### Start a new project
 
 Source: https://github.com/tanstack/router/blob/main/examples/react/quickstart/README.md
@@ -55,14 +67,15 @@ npx gitpick TanStack/router/tree/main/examples/react/quickstart quickstart
 
 --------------------------------
 
-### Start a new project based on this example
+### Install Dependencies and Start Dev Server
 
-Source: https://github.com/tanstack/router/blob/main/examples/react/quickstart-file-based/README.md
+Source: https://github.com/tanstack/router/blob/main/docs/start/framework/react/tutorial/fetching-external-api.md
 
-Command to initialize a new project using this quickstart example.
+Run these commands in the project root to install dependencies and start the development server after project setup.
 
-```sh
-npx gitpick TanStack/router/tree/main/examples/react/quickstart-file-based quickstart-file-based
+```bash
+pnpm i
+pnpm dev
 ```
 
 --------------------------------
@@ -79,19 +92,6 @@ Example package.json dependency entry for TanStack Solid Router.
     "@tanstack/solid-router": "^x.x.x"
   }
 }
-```
-
---------------------------------
-
-### Install Dependencies and Start Dev Server
-
-Source: https://github.com/tanstack/router/blob/main/docs/start/framework/react/tutorial/fetching-external-api.md
-
-Run these commands in the project root to install dependencies and start the development server after project setup.
-
-```bash
-pnpm i
-pnpm dev
 ```
 
 --------------------------------
@@ -208,6 +208,19 @@ pnpm run dev
 
 --------------------------------
 
+### Run an example application
+
+Source: https://github.com/tanstack/router/blob/main/CONTRIBUTING.md
+
+Navigate to a specific example directory to start its local development server.
+
+```sh
+cd examples/react/basic
+pnpm dev
+```
+
+--------------------------------
+
 ### Run Example Commands
 
 Source: https://github.com/tanstack/router/blob/main/examples/solid/large-file-based/README.md
@@ -228,18 +241,6 @@ pnpm build
 
 ```shell
 pnpm test:types
-```
-
---------------------------------
-
-### Start a new project based on this example
-
-Source: https://github.com/tanstack/router/blob/main/examples/react/start-basic-react-query/README.md
-
-Command to initialize a new project using this example.
-
-```sh
-npx gitpick TanStack/router/tree/main/examples/react/start-basic-react-query start-basic-react-query
 ```
 
 --------------------------------
@@ -268,6 +269,18 @@ npx gitpick TanStack/router/tree/main/examples/react/quickstart-webpack-file-bas
 
 --------------------------------
 
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-basic-react-query/README.md
+
+Command to initialize a new project using this example.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-basic-react-query start-basic-react-query
+```
+
+--------------------------------
+
 ### Install dependencies and start development server
 
 Source: https://github.com/tanstack/router/blob/main/docs/start/framework/react/tutorial/reading-writing-file.md
@@ -277,36 +290,6 @@ Installs project dependencies using pnpm and then starts the development server,
 ```bash
 pnpm i
 pnpm dev
-```
-
---------------------------------
-
-### Start a new project based on this example
-
-Source: https://github.com/tanstack/router/blob/main/examples/react/start-streaming-data-from-server-functions/README.md
-
-Command to initialize a new project using this example.
-
-```sh
-npx gitpick TanStack/router/tree/main/examples/react/start-streaming-data-from-server-functions start-streaming-data-from-server-functions
-```
-
---------------------------------
-
-### Recommended Flat Config setup
-
-Source: https://github.com/tanstack/router/blob/main/docs/start/eslint/eslint-plugin-start.md
-
-Example of how to enable all recommended ESLint rules using the flat config format (eslint.config.js).
-
-```js
-// eslint.config.js
-import pluginStart from '@tanstack/eslint-plugin-start'
-
-export default [
-  pluginStart.configs['flat/recommended'],
-  // Any other config...
-]
 ```
 
 --------------------------------
@@ -327,16 +310,14 @@ npm start
 
 --------------------------------
 
-### Recommended Legacy Config setup
+### Start a new project based on this example
 
-Source: https://github.com/tanstack/router/blob/main/docs/start/eslint/eslint-plugin-start.md
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-streaming-data-from-server-functions/README.md
 
-Example of how to enable all recommended ESLint rules using the legacy config format (.eslintrc).
+Command to initialize a new project using this example.
 
-```json
-{
-  "extends": ["plugin:@tanstack/eslint-plugin-start/recommended"]
-}
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-streaming-data-from-server-functions start-streaming-data-from-server-functions
 ```
 
 --------------------------------
@@ -349,6 +330,18 @@ Command to initialize a new project using this example's structure.
 
 ```sh
 npx gitpick TanStack/router/tree/main/examples/react/start-basic-static start-basic-static
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-supabase-basic/README.md
+
+Command to initialize a new project using this example as a template.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-supabase-basic start-supabase-basic
 ```
 
 --------------------------------
@@ -373,18 +366,6 @@ Command to initialize a new project using this example as a template.
 
 ```sh
 npx gitpick TanStack/router/tree/main/examples/react/start-counter start-counter
-```
-
---------------------------------
-
-### Start a new project based on this example
-
-Source: https://github.com/tanstack/router/blob/main/examples/react/start-supabase-basic/README.md
-
-Command to initialize a new project using this example as a template.
-
-```sh
-npx gitpick TanStack/router/tree/main/examples/react/start-supabase-basic start-supabase-basic
 ```
 
 --------------------------------
@@ -451,24 +432,24 @@ npx gitpick TanStack/router/tree/main/examples/react/router-monorepo-simple rout
 
 ### Start a new project based on this example
 
-Source: https://github.com/tanstack/router/blob/main/examples/react/start-basic-auth/README.md
-
-Command to initialize a new project using this example as a template.
-
-```sh
-npx gitpick TanStack/router/tree/main/examples/react/start-basic-auth start-basic-auth
-```
-
---------------------------------
-
-### Start a new project based on this example
-
 Source: https://github.com/tanstack/router/blob/main/examples/react/start-i18n-paraglide/README.md
 
 Command to initialize a new project using this example.
 
 ```sh
 npx gitpick TanStack/router/tree/main/examples/react/start-i18n-paraglide start-i18n-paraglide
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/start-basic-auth/README.md
+
+Command to initialize a new project using this example as a template.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/start-basic-auth start-basic-auth
 ```
 
 --------------------------------
@@ -487,18 +468,6 @@ npx gitpick TanStack/router/tree/main/examples/react/view-transitions view-trans
 
 ### Start a new project based on this example
 
-Source: https://github.com/tanstack/router/blob/main/examples/react/basic-default-search-params/README.md
-
-Command to initialize a new project using this example.
-
-```sh
-npx gitpick TanStack/router/tree/main/examples/react/basic-default-search-params basic-default-search-params
-```
-
---------------------------------
-
-### Start a new project based on this example
-
 Source: https://github.com/tanstack/router/blob/main/examples/react/start-material-ui/README.md
 
 Command to initialize a new project using this example as a template.
@@ -509,14 +478,14 @@ npx gitpick TanStack/router/tree/main/examples/react/start-material-ui start-mat
 
 --------------------------------
 
-### Install the dependencies
+### Start a new project based on this example
 
-Source: https://github.com/tanstack/router/blob/main/examples/solid/start-basic-cloudflare/README.md
+Source: https://github.com/tanstack/router/blob/main/examples/react/basic-default-search-params/README.md
 
-Command to install project dependencies.
+Command to initialize a new project using this example.
 
-```bash
-pnpm i
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/basic-default-search-params basic-default-search-params
 ```
 
 --------------------------------
@@ -541,6 +510,18 @@ Command to initialize a new project using this example as a template.
 
 ```sh
 npx gitpick TanStack/router/tree/main/examples/react/start-trellaux start-trellaux
+```
+
+--------------------------------
+
+### Install the dependencies
+
+Source: https://github.com/tanstack/router/blob/main/examples/solid/start-basic-cloudflare/README.md
+
+Command to install project dependencies.
+
+```bash
+pnpm i
 ```
 
 --------------------------------
@@ -641,22 +622,6 @@ npx gitpick TanStack/router/tree/main/examples/react/start-tailwind-v4 start-tai
 
 --------------------------------
 
-### Install TanStack Router
-
-Source: https://github.com/tanstack/router/blob/main/docs/router/quick-start.md
-
-Package names for installing TanStack Router in an existing project.
-
-```text
-@tanstack/react-router
-```
-
-```text
-@tanstack/solid-router
-```
-
---------------------------------
-
 ### Start a new project based on this example
 
 Source: https://github.com/tanstack/router/blob/main/examples/react/basic-devtools-panel/README.md
@@ -677,6 +642,22 @@ Command to initialize a new project using this example.
 
 ```sh
 npx gitpick TanStack/router/tree/main/examples/react/deferred-data deferred-data
+```
+
+--------------------------------
+
+### Install TanStack Router
+
+Source: https://github.com/tanstack/router/blob/main/docs/router/quick-start.md
+
+Package names for installing TanStack Router in an existing project.
+
+```text
+@tanstack/react-router
+```
+
+```text
+@tanstack/solid-router
 ```
 
 --------------------------------
@@ -743,24 +724,24 @@ npx gitpick TanStack/router/tree/main/examples/react/basic-ssr-streaming-file-ba
 
 ### Start a new project based on this example
 
-Source: https://github.com/tanstack/router/blob/main/examples/react/with-framer-motion/README.md
-
-Command to initialize a new project using this example's structure.
-
-```sh
-npx gitpick TanStack/router/tree/main/examples/react/with-framer-motion with-framer-motion
-```
-
---------------------------------
-
-### Start a new project based on this example
-
 Source: https://github.com/tanstack/router/blob/main/examples/react/basic-non-nested-devtools/README.md
 
 Command to initialize a new project using this example.
 
 ```sh
 npx gitpick TanStack/router/tree/main/examples/react/basic-non-nested-devtools basic-non-nested-devtools
+```
+
+--------------------------------
+
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/with-framer-motion/README.md
+
+Command to initialize a new project using this example's structure.
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/with-framer-motion with-framer-motion
 ```
 
 --------------------------------
@@ -801,18 +782,6 @@ npx gitpick TanStack/router/tree/main/examples/react/basic-virtual-inside-file-b
 
 --------------------------------
 
-### Navigate and Test Changes in Example Apps
-
-Source: https://github.com/tanstack/router/blob/main/AGENTS.md
-
-Change directory into an example application and start its development server to test local changes.
-
-```bash
-cd examples/react/basic && pnpm dev
-```
-
---------------------------------
-
 ### Start a new project based on this example
 
 Source: https://github.com/tanstack/router/blob/main/examples/react/search-validator-adapters/README.md
@@ -825,6 +794,18 @@ npx gitpick TanStack/router/tree/main/examples/react/search-validator-adapters s
 
 --------------------------------
 
+### Navigate and Test Changes in Example Apps
+
+Source: https://github.com/tanstack/router/blob/main/AGENTS.md
+
+Change directory into an example application and start its development server to test local changes.
+
+```bash
+cd examples/react/basic && pnpm dev
+```
+
+--------------------------------
+
 ### Use the CLI
 
 Source: https://github.com/tanstack/router/blob/main/docs/start/framework/react/getting-started.md
@@ -833,6 +814,38 @@ Command to scaffold a new project using the TanStack CLI.
 
 ```bash
 npx @tanstack/cli@latest create
+```
+
+--------------------------------
+
+### Recommended Legacy Config setup
+
+Source: https://github.com/tanstack/router/blob/main/docs/start/eslint/eslint-plugin-start.md
+
+Example of how to enable all recommended ESLint rules using the legacy config format (.eslintrc).
+
+```json
+{
+  "extends": ["plugin:@tanstack/eslint-plugin-start/recommended"]
+}
+```
+
+--------------------------------
+
+### Recommended Flat Config setup
+
+Source: https://github.com/tanstack/router/blob/main/docs/start/eslint/eslint-plugin-start.md
+
+Example of how to enable all recommended ESLint rules using the flat config format (eslint.config.js).
+
+```js
+// eslint.config.js
+import pluginStart from '@tanstack/eslint-plugin-start'
+
+export default [
+  pluginStart.configs['flat/recommended'],
+  // Any other config...
+]
 ```
 
 --------------------------------
@@ -927,6 +940,18 @@ npx gitpick TanStack/router/tree/main/examples/react/kitchen-sink-react-query-fi
 
 --------------------------------
 
+### Start a new project based on this example
+
+Source: https://github.com/tanstack/router/blob/main/examples/react/i18n-paraglide/README.md
+
+To start a new project based on this example, run:
+
+```sh
+npx gitpick TanStack/router/tree/main/examples/react/i18n-paraglide i18n-paraglide
+```
+
+--------------------------------
+
 ### Use the CLI
 
 Source: https://github.com/tanstack/router/blob/main/docs/start/framework/solid/getting-started.md
@@ -948,18 +973,6 @@ Use `create-start-app` to initialize a new TanStack Start project. This command 
 ```bash
 pnpx create-start-app movie-discovery
 cd movie-discovery
-```
-
---------------------------------
-
-### Start a new project based on this example
-
-Source: https://github.com/tanstack/router/blob/main/examples/react/i18n-paraglide/README.md
-
-To start a new project based on this example, run:
-
-```sh
-npx gitpick TanStack/router/tree/main/examples/react/i18n-paraglide i18n-paraglide
 ```
 
 --------------------------------
@@ -1002,6 +1015,18 @@ npm i @tanstack/react-start @tanstack/react-router
 
 --------------------------------
 
+### Install Core TanStack Start Dependencies
+
+Source: https://github.com/tanstack/router/blob/main/docs/start/framework/solid/build-from-scratch.md
+
+Install the main TanStack Start and TanStack Router packages for SolidJS as project dependencies.
+
+```shell
+npm i @tanstack/solid-start @tanstack/solid-router
+```
+
+--------------------------------
+
 ### Install TanStack Start Dependencies
 
 Source: https://github.com/tanstack/router/blob/main/packages/react-start/skills/lifecycle/migrate-from-nextjs/SKILL.md
@@ -1011,30 +1036,6 @@ Installs the necessary TanStack Start and React Router packages, along with Vite
 ```bash
 npm i @tanstack/react-start @tanstack/react-router
 npm i -D vite @vitejs/plugin-react
-```
-
---------------------------------
-
-### Install Nitro for TanStack Start Deployment
-
-Source: https://github.com/tanstack/router/blob/main/docs/start/framework/react/guide/hosting.md
-
-Install the `nitro` package to enable deployment of TanStack Start applications to a wide range of hostings.
-
-```bash
-npm install nitro
-```
-
---------------------------------
-
-### Install Auth0
-
-Source: https://github.com/tanstack/router/blob/main/docs/router/how-to/setup-auth-providers.md
-
-Install the Auth0 React SDK.
-
-```bash
-npm install @auth0/auth0-react
 ```
 
 --------------------------------
@@ -1055,6 +1056,18 @@ Example of how the installed package appears in your package.json dependencies.
 
 --------------------------------
 
+### Install Auth0
+
+Source: https://github.com/tanstack/router/blob/main/docs/router/how-to/setup-auth-providers.md
+
+Install the Auth0 React SDK.
+
+```bash
+npm install @auth0/auth0-react
+```
+
+--------------------------------
+
 ### Install TanStack Solid Start Dependencies
 
 Source: https://github.com/tanstack/router/blob/main/packages/solid-start/skills/solid-start/SKILL.md
@@ -1068,14 +1081,15 @@ npm i -D vite vite-plugin-solid typescript
 
 --------------------------------
 
-### Run Start Command
+### Install TanStack Start React Dependencies
 
-Source: https://github.com/tanstack/router/blob/main/docs/start/framework/react/guide/hosting.md
+Source: https://github.com/tanstack/router/blob/main/packages/react-start/skills/react-start/SKILL.md
 
-Execute the `start` script defined in `package.json` to launch the application server.
+Install the necessary packages for a TanStack Start project with React, including core libraries and development dependencies for Vite and TypeScript.
 
-```sh
-npm run start
+```bash
+npm i @tanstack/react-start @tanstack/react-router react react-dom
+npm i -D vite @vitejs/plugin-react typescript @types/react @types/react-dom
 ```
 
 --------------------------------
@@ -1115,25 +1129,12 @@ const logger = createIsomorphicFn()
 
 --------------------------------
 
-### Start a new project
+### Install Supabase
 
-Source: https://github.com/tanstack/router/blob/main/examples/react/start-workos/README.md
+Source: https://github.com/tanstack/router/blob/main/docs/router/how-to/setup-auth-providers.md
 
-Command to start a new project based on this example.
-
-```sh
-npx gitpick TanStack/router/tree/main/examples/react/start-workos start-workos
-```
-
---------------------------------
-
-### Install TanStack Start React Dependencies
-
-Source: https://github.com/tanstack/router/blob/main/packages/react-start/skills/react-start/SKILL.md
-
-Install the necessary packages for a TanStack Start project with React, including core libraries and development dependencies for Vite and TypeScript.
+Installs the Supabase JavaScript client library.
 
 ```bash
-npm i @tanstack/react-start @tanstack/react-router react react-dom
-npm i -D vite @vitejs/plugin-react typescript @types/react @types/react-dom
+npm install @supabase/supabase-js
 ```
