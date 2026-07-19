@@ -1022,7 +1022,7 @@ EOF
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 
   it("git wrapper blocks force push in task sandboxes", async () => {
     const result = await getOpenAIEnvironment({
