@@ -51,7 +51,10 @@ RUN jq -r '.dependencies | keys[] | select(startswith("@cmux") | not)' \
 # =============================================================================
 # Stage 2: Build native Rust module
 # =============================================================================
-FROM rust:1.86-slim-bookworm AS rust-builder
+# 1.97 satisfies recent crate MSRVs (e.g. kstring 2.0.4 needs rustc >= 1.96).
+# Cargo.lock under native/core is gitignored, so Docker resolves from crates.io and
+# must re-pin known-bad latest versions below.
+FROM rust:1.97-slim-bookworm AS rust-builder
 
 WORKDIR /app
 
@@ -76,13 +79,15 @@ COPY apps/server/native/core/.cargo ./apps/server/native/core/.cargo
 # Build native module
 WORKDIR /app/apps/server/native/core
 RUN npm install @napi-rs/cli
-# Pin crates that still need older-compatible versions even with Rust 1.86
-# - home 0.5.12 requires Rust 1.88
+# Pin crates that break when Cargo.lock is absent and crates.io resolves "latest":
 # - human_format 1.2.1 uses unstable let-chains feature
 # - unicode-segmentation 1.13.0 uses unstable unsigned_is_multiple_of feature
+# - home/kstring: keep MSRV-safe pins so older builders remain usable if the
+#   base image is temporarily rolled back
 RUN cargo update home --precise 0.5.11 && \
     cargo update human_format --precise 1.1.0 && \
-    cargo update unicode-segmentation --precise 1.12.0
+    cargo update unicode-segmentation --precise 1.12.0 && \
+    cargo update kstring --precise 2.0.2
 RUN npx napi build --platform --release
 
 # Verify native module was built successfully (supports both x64 and arm64)
