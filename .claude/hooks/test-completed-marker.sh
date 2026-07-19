@@ -8,8 +8,15 @@
 #   bash .claude/hooks/test-completed-marker.sh
 #
 # Expected: all tests PASS
+#
+# NOTE (2026-07-20): Claude continue-loop hooks are deprecated/unwired from
+# .claude/settings.json. This suite uses CMUX_ALLOW_DEPRECATED_CLAUDE_AUTOPILOT=1
+# for legacy coverage. See .claude/hooks/DEPRECATED.md.
 
 set -uo pipefail
+
+# Opt into deprecated Claude continue-loop scripts for legacy unit coverage.
+export CMUX_ALLOW_DEPRECATED_CLAUDE_AUTOPILOT=1
 
 unset AUTOPILOT_DELAY AUTOPILOT_IDLE_THRESHOLD AUTOPILOT_MAX_TURNS AUTOPILOT_MONITORING_THRESHOLD
 unset CMUX_AUTOPILOT_DELAY CMUX_AUTOPILOT_IDLE_THRESHOLD CMUX_AUTOPILOT_MAX_TURNS CMUX_AUTOPILOT_MONITORING_THRESHOLD

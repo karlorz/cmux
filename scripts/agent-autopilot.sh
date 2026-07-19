@@ -39,6 +39,10 @@ Notes:
   - Codex autopilot relies on the managed ~/.codex home Stop and SessionStart hooks installed by scripts/install-codex-home-hooks.sh.
   - If the target workspace provides `.codex/hooks/autopilot-stop.sh` or `.codex/hooks/session-start.sh`, those repo-local wrappers override the managed home fallback.
   - For Claude Code and OpenCode, this relies on their own permission/config defaults.
+  - DEPRECATED (2026-07-20): Claude in-process Stop-hook continue-loop
+    (.claude/hooks/autopilot-keep-running.sh) is unwired. This script still
+    drives Claude via an external multi-invoke loop; it no longer depends on
+    Claude Stop hooks. See .claude/hooks/DEPRECATED.md.
 EOF
 }
 
@@ -280,10 +284,11 @@ if [[ "$default_hook_max_turns" -lt 1 ]]; then
 fi
 hook_max_turns="$(first_set "${AUTOPILOT_MAX_TURNS:-}" "${CMUX_AUTOPILOT_MAX_TURNS:-}" "${CLAUDE_AUTOPILOT_MAX_TURNS:-}" "$default_hook_max_turns")"
 
-# For Claude tool: export env vars for autopilot-keep-running hook integration
+# Claude: external multi-invoke loop only.
+# In-process Stop-hook continue-loop is deprecated/unwired (.claude/hooks/DEPRECATED.md).
+# Keep legacy env exports for any residual local re-enable experiments.
 if [[ "$TOOL" = "claude" ]]; then
-  # Explicitly enable the hook for this run. Ordinary sessions stay disabled
-  # unless AUTOPILOT_KEEP_RUNNING_DISABLED=0 is set.
+  echo "note: Claude Stop-hook continue-loop is deprecated; using external agent-autopilot loop only." >&2
   export AUTOPILOT_KEEP_RUNNING_DISABLED=0
   export AUTOPILOT_STOP_FILE="$STOP_FILE"
   export CLAUDE_AUTOPILOT_STOP_FILE="$STOP_FILE"

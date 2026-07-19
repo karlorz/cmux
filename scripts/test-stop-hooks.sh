@@ -4,11 +4,18 @@
 #
 # Usage: ./scripts/test-stop-hooks.sh
 #
+# NOTE (2026-07-20): Claude continue-loop hooks are deprecated/unwired from
+# .claude/settings.json. This suite exercises legacy script behavior with an
+# explicit opt-in flag. See .claude/hooks/DEPRECATED.md.
+#
 # Each test simulates the hook execution flow by calling the actual hook scripts
 # with crafted input JSON and environment variables, then verifying side effects
 # (flag files, debug log entries, exit codes).
 
 set -euo pipefail
+
+# Opt into deprecated Claude continue-loop scripts for legacy unit coverage.
+export CMUX_ALLOW_DEPRECATED_CLAUDE_AUTOPILOT=1
 
 unset AUTOPILOT_DELAY AUTOPILOT_IDLE_THRESHOLD AUTOPILOT_MAX_TURNS AUTOPILOT_MONITORING_THRESHOLD
 unset CMUX_AUTOPILOT_DELAY CMUX_AUTOPILOT_IDLE_THRESHOLD CMUX_AUTOPILOT_MAX_TURNS CMUX_AUTOPILOT_MONITORING_THRESHOLD

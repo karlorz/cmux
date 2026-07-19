@@ -1,6 +1,8 @@
 #!/bin/bash
 # Session activity capture script
-# Called by session-start hook (on start) and autopilot-keep-running hook (on end)
+# Called by session-start hook (on start) and autopilot-keep-running hook (on end).
+# NOTE (2026-07-20): Claude wrappers that invoked this are deprecated/unwired.
+# See .claude/hooks/DEPRECATED.md. Codex and other providers may still call it.
 # Captures git commits, PRs, and file changes for the session activity dashboard
 
 set -euo pipefail

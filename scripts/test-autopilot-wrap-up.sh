@@ -4,9 +4,16 @@
 #
 # Usage: ./scripts/test-autopilot-wrap-up.sh
 #
+# NOTE (2026-07-20): Claude continue-loop hooks are deprecated/unwired from
+# .claude/settings.json. This suite exercises legacy script behavior with an
+# explicit opt-in flag. See .claude/hooks/DEPRECATED.md.
+#
 # Extends the pattern from test-stop-hooks.sh.
 
 set -euo pipefail
+
+# Opt into deprecated Claude continue-loop scripts for legacy unit coverage.
+export CMUX_ALLOW_DEPRECATED_CLAUDE_AUTOPILOT=1
 
 unset AUTOPILOT_DELAY AUTOPILOT_IDLE_THRESHOLD AUTOPILOT_MAX_TURNS AUTOPILOT_MONITORING_THRESHOLD
 unset CMUX_AUTOPILOT_DELAY CMUX_AUTOPILOT_IDLE_THRESHOLD CMUX_AUTOPILOT_MAX_TURNS CMUX_AUTOPILOT_MONITORING_THRESHOLD
@@ -18,7 +25,7 @@ AUTOPILOT_HOOK="$HOOKS_DIR/autopilot-keep-running.sh"
 
 source "$SCRIPT_DIR/lib/autopilot-test-helpers.sh"
 
-echo "=== Autopilot Wrap-Up Phase Tests ==="
+echo "=== Autopilot Wrap-Up Phase Tests (legacy / deprecated Claude continue-loop) ==="
 
 cleanup_session() {
   local sid="$1"
