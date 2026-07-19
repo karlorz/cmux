@@ -11,7 +11,9 @@ export type CodexReasoningEffort =
   | "high"
   | "medium"
   | "low"
-  | "minimal";
+  | "minimal"
+  | "max"
+  | "ultra";
 
 interface CodexModelSpec {
   model: string;
@@ -81,13 +83,33 @@ function codexWithEfforts(
 
 // Spec array preserves exact ordering of the original CODEX_AGENT_CONFIGS export
 const CODEX_MODEL_SPECS: CodexModelSpec[] = [
+  // gpt-5.6 family (catalog.generated from codex app-server sync)
+  // luna: low/medium/high/xhigh/max; sol/terra also expose ultra
+  ...codexWithEfforts("gpt-5.6-sol", [
+    "xhigh",
+    "high",
+    "medium",
+    "low",
+    "max",
+    "ultra",
+  ]),
+  ...codexWithEfforts("gpt-5.6-terra", [
+    "xhigh",
+    "high",
+    "medium",
+    "low",
+    "max",
+    "ultra",
+  ]),
+  ...codexWithEfforts("gpt-5.6-luna", ["xhigh", "high", "medium", "low", "max"]),
   // gpt-5.5 family (xhigh, high, medium, low, base) - frontier model
   ...codexWithEfforts("gpt-5.5"),
   // gpt-5.4 family (xhigh, high, medium, low, base) - flagship frontier model
   ...codexWithEfforts("gpt-5.4"),
   // gpt-5.4-mini family (xhigh, high, medium, low, base) - low-cost fast model
   ...codexWithEfforts("gpt-5.4-mini"),
-  // gpt-5.3-codex family (xhigh, high, medium, low, base)
+  // gpt-5.3-codex family (xhigh, high, medium, low, base) — runtime-discovered
+  // (no longer in static CODEX catalog after gpt-5.6 app-server sync)
   ...codexWithEfforts("gpt-5.3-codex"),
   // gpt-5.2-codex family (xhigh, high, medium, low, base)
   ...codexWithEfforts("gpt-5.2-codex"),
