@@ -1,4 +1,8 @@
 #!/bin/bash
+# Claude provider note (2026-07-20):
+# Claude Code Stop/SessionStart continue-loop hooks are deprecated and no longer
+# registered in .claude/settings.json. See .claude/hooks/DEPRECATED.md.
+# This script still manages leftover /tmp state and remains fully active for Codex.
 set -euo pipefail
 
 PROVIDER="${AUTOPILOT_PROVIDER:-claude}"
@@ -14,6 +18,8 @@ case "$PROVIDER" in
   claude)
     STATE_PREFIX="claude-autopilot"
     CURRENT_SESSION_FILE="/tmp/claude-current-session-id"
+    echo "WARNING: Claude autopilot continue-loop is DEPRECATED and unwired from .claude/settings.json." >&2
+    echo "See .claude/hooks/DEPRECATED.md. Commands only affect leftover /tmp state." >&2
     ;;
   codex)
     STATE_PREFIX="codex-autopilot"

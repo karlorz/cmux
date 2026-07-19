@@ -1,5 +1,14 @@
 #!/bin/bash
+# DEPRECATED (2026-07-20): Claude Code SessionStart bootstrap for autopilot state.
+# No longer registered in .claude/settings.json. See .claude/hooks/DEPRECATED.md.
+# Kept for reference and legacy tests only. Do not re-wire without an explicit decision.
 set -euo pipefail
+
+if [ "${CMUX_ALLOW_DEPRECATED_CLAUDE_AUTOPILOT:-0}" != "1" ]; then
+  echo "DEPRECATED: Claude session-start autopilot bootstrap is disabled." >&2
+  echo "See .claude/hooks/DEPRECATED.md (set CMUX_ALLOW_DEPRECATED_CLAUDE_AUTOPILOT=1 to force)." >&2
+  exit 0
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"

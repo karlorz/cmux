@@ -1,4 +1,8 @@
 #!/bin/bash
+# Shared SessionStart core used by provider wrappers.
+# Claude wrapper (.claude/hooks/session-start.sh) is DEPRECATED and unwired
+# from .claude/settings.json as of 2026-07-20. Codex and other providers may
+# still use this core. See .claude/hooks/DEPRECATED.md.
 set -euo pipefail
 
 PROVIDER="${CMUX_HOOK_PROVIDER:-generic}"
