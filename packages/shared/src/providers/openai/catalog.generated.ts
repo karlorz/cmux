@@ -21,7 +21,7 @@ export interface CodexModelEntry extends AgentCatalogEntry {
 export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
   {
     "name": "codex/gpt-5.2",
-    "displayName": "gpt-5.2",
+    "displayName": "GPT-5.2",
     "description": "Optimized for professional work and long-running agents.",
     "vendor": "openai",
     "requiredApiKeys": [
@@ -30,7 +30,6 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
     ],
     "tier": "paid",
     "tags": [
-      "upgradeable",
       "reasoning"
     ],
     "hidden": false,
@@ -58,52 +57,6 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
         "description": "Extra high reasoning for complex problems"
       }
     ],
-    "upgrade": "gpt-5.4",
-    "inputModalities": [
-      "text",
-      "image"
-    ]
-  },
-  {
-    "name": "codex/gpt-5.3-codex",
-    "displayName": "gpt-5.3-codex",
-    "description": "Coding-optimized model.",
-    "vendor": "openai",
-    "requiredApiKeys": [
-      "OPENAI_API_KEY",
-      "CODEX_AUTH_JSON"
-    ],
-    "tier": "paid",
-    "tags": [
-      "upgradeable",
-      "reasoning"
-    ],
-    "hidden": false,
-    "isDefault": false,
-    "defaultVariant": "medium",
-    "variants": [
-      {
-        "id": "low",
-        "displayName": "Low",
-        "description": "Fast responses with lighter reasoning"
-      },
-      {
-        "id": "medium",
-        "displayName": "Medium",
-        "description": "Balances speed and reasoning depth for everyday tasks"
-      },
-      {
-        "id": "high",
-        "displayName": "High",
-        "description": "Greater reasoning depth for complex problems"
-      },
-      {
-        "id": "xhigh",
-        "displayName": "Extra High",
-        "description": "Extra high reasoning depth for complex problems"
-      }
-    ],
-    "upgrade": "gpt-5.4",
     "inputModalities": [
       "text",
       "image"
@@ -111,7 +64,7 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
   },
   {
     "name": "codex/gpt-5.4",
-    "displayName": "gpt-5.4",
+    "displayName": "GPT-5.4",
     "description": "Strong model for everyday coding.",
     "vendor": "openai",
     "requiredApiKeys": [
@@ -206,11 +159,10 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
     ],
     "tier": "paid",
     "tags": [
-      "default",
       "reasoning"
     ],
     "hidden": false,
-    "isDefault": true,
+    "isDefault": false,
     "defaultVariant": "medium",
     "variants": [
       {
@@ -232,6 +184,161 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
         "id": "xhigh",
         "displayName": "Extra High",
         "description": "Extra high reasoning depth for complex problems"
+      }
+    ],
+    "inputModalities": [
+      "text",
+      "image"
+    ]
+  },
+  {
+    "name": "codex/gpt-5.6-luna",
+    "displayName": "GPT-5.6-Luna",
+    "description": "Fast and affordable agentic coding model.",
+    "vendor": "openai",
+    "requiredApiKeys": [
+      "OPENAI_API_KEY",
+      "CODEX_AUTH_JSON"
+    ],
+    "tier": "paid",
+    "tags": [
+      "reasoning"
+    ],
+    "hidden": false,
+    "isDefault": false,
+    "defaultVariant": "medium",
+    "variants": [
+      {
+        "id": "low",
+        "displayName": "Low",
+        "description": "Fast responses with lighter reasoning"
+      },
+      {
+        "id": "medium",
+        "displayName": "Medium",
+        "description": "Balances speed and reasoning depth for everyday tasks"
+      },
+      {
+        "id": "high",
+        "displayName": "High",
+        "description": "Greater reasoning depth for complex problems"
+      },
+      {
+        "id": "xhigh",
+        "displayName": "Extra High",
+        "description": "Extra high reasoning depth for complex problems"
+      },
+      {
+        "id": "max",
+        "displayName": "Max",
+        "description": "Maximum reasoning depth for the hardest problems"
+      }
+    ],
+    "inputModalities": [
+      "text",
+      "image"
+    ]
+  },
+  {
+    "name": "codex/gpt-5.6-sol",
+    "displayName": "GPT-5.6-Sol",
+    "description": "Latest frontier agentic coding model.",
+    "vendor": "openai",
+    "requiredApiKeys": [
+      "OPENAI_API_KEY",
+      "CODEX_AUTH_JSON"
+    ],
+    "tier": "paid",
+    "tags": [
+      "default",
+      "reasoning"
+    ],
+    "hidden": false,
+    "isDefault": true,
+    "defaultVariant": "low",
+    "variants": [
+      {
+        "id": "low",
+        "displayName": "Low",
+        "description": "Fast responses with lighter reasoning"
+      },
+      {
+        "id": "medium",
+        "displayName": "Medium",
+        "description": "Balances speed and reasoning depth for everyday tasks"
+      },
+      {
+        "id": "high",
+        "displayName": "High",
+        "description": "Greater reasoning depth for complex problems"
+      },
+      {
+        "id": "xhigh",
+        "displayName": "Extra High",
+        "description": "Extra high reasoning depth for complex problems"
+      },
+      {
+        "id": "max",
+        "displayName": "Max",
+        "description": "Maximum reasoning depth for the hardest problems"
+      },
+      {
+        "id": "ultra",
+        "displayName": "Ultra",
+        "description": "Maximum reasoning with automatic task delegation"
+      }
+    ],
+    "inputModalities": [
+      "text",
+      "image"
+    ]
+  },
+  {
+    "name": "codex/gpt-5.6-terra",
+    "displayName": "GPT-5.6-Terra",
+    "description": "Balanced agentic coding model for everyday work.",
+    "vendor": "openai",
+    "requiredApiKeys": [
+      "OPENAI_API_KEY",
+      "CODEX_AUTH_JSON"
+    ],
+    "tier": "paid",
+    "tags": [
+      "reasoning"
+    ],
+    "hidden": false,
+    "isDefault": false,
+    "defaultVariant": "medium",
+    "variants": [
+      {
+        "id": "low",
+        "displayName": "Low",
+        "description": "Fast responses with lighter reasoning"
+      },
+      {
+        "id": "medium",
+        "displayName": "Medium",
+        "description": "Balances speed and reasoning depth for everyday tasks"
+      },
+      {
+        "id": "high",
+        "displayName": "High",
+        "description": "Greater reasoning depth for complex problems"
+      },
+      {
+        "id": "xhigh",
+        "displayName": "Extra High",
+        "description": "Extra high reasoning depth for complex problems"
+      },
+      {
+        "id": "max",
+        "displayName": "Max",
+        "description": "Maximum reasoning depth for the hardest problems"
+      },
+      {
+        "id": "ultra",
+        "displayName": "Ultra",
+        "description": "Maximum reasoning with automatic task delegation"
       }
     ],
     "inputModalities": [
