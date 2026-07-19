@@ -16,13 +16,17 @@ import { AGENT_CONFIGS, type AgentConfig } from "./agentConfig";
  * These models are discovered at runtime via Convex modelDiscovery.
  */
 
-// Codex base models in the static catalog (from app-server)
-// Note: These use variants internally (xhigh/high/medium/low), not suffixes
+// Codex base models in the static catalog (from app-server catalog.generated)
+// Note: These use variants internally (xhigh/high/medium/low/max/ultra), not suffixes.
+// Keep in sync with packages/shared/src/providers/openai/catalog.generated.ts
+// (CODEX_VISIBLE_MODELS) after `bun run scripts/sync-codex-models.ts`.
 const CODEX_CATALOG_BASE_MODELS = new Set([
+  "codex/gpt-5.6-sol",
+  "codex/gpt-5.6-terra",
+  "codex/gpt-5.6-luna",
   "codex/gpt-5.5",
   "codex/gpt-5.4",
   "codex/gpt-5.4-mini",
-  "codex/gpt-5.3-codex",
   "codex/gpt-5.2",
 ]);
 
@@ -36,7 +40,15 @@ const CODEX_CUSTOM_API_ONLY = new Set([
 // Codex configs use suffix naming (e.g., gpt-5.4-xhigh) but catalog uses
 // base models with variants (e.g., gpt-5.4 with xhigh variant).
 // These suffixed configs exist for CLI execution but don't need separate catalog entries.
-const CODEX_REASONING_SUFFIXES = ["-xhigh", "-high", "-medium", "-low"];
+const CODEX_REASONING_SUFFIXES = [
+  "-xhigh",
+  "-high",
+  "-medium",
+  "-low",
+  "-minimal",
+  "-max",
+  "-ultra",
+];
 function isCodexSuffixedConfig(name: string): boolean {
   if (!name.startsWith("codex/")) return false;
   return CODEX_REASONING_SUFFIXES.some((suffix) => name.endsWith(suffix));
