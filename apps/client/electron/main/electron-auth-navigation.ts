@@ -74,6 +74,9 @@ export function isOAuthProviderUrl(rawUrl: string): boolean {
  * http://localhost:5173/handler/oauth-callback?x=1
  *   → http://localhost:5173/#/handler/oauth-callback?x=1
  *
+ * Query string is kept on the hash path so TanStack hash history + StackHandler
+ * receive the OAuth code (location.pathname + location.search).
+ *
  * Returns null when no rewrite is needed.
  */
 export function rewriteHandlerPathToHash(rawUrl: string): string | null {
@@ -84,9 +87,21 @@ export function rewriteHandlerPathToHash(rawUrl: string): string | null {
     return null;
   }
 
-  // Already hash-routed
+  // Already hash-routed (optionally normalize query-on-search → query-in-hash)
   if (url.hash.startsWith("#/handler")) {
-    return null;
+    // e.g. http://host/#/handler/x with ?code= on the outer search is unusual;
+    // leave as-is if already hash-only.
+    if (!url.search) {
+      return null;
+    }
+    // Rare: path empty, search on origin, hash has path — merge search into hash
+    const hashBody = url.hash.slice(1); // drop leading #
+    if (hashBody.includes("?")) {
+      return null;
+    }
+    const rewritten = new URL(url.origin);
+    rewritten.hash = `${hashBody}${url.search}`;
+    return rewritten.toString();
   }
 
   if (!url.pathname.startsWith("/handler")) {

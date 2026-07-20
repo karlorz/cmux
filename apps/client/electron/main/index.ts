@@ -1193,6 +1193,23 @@ function openAuthWindow(startUrl: string): void {
     return null;
   };
 
+  const tryHandoffFromAuthUrl = (
+    url: string,
+    source: string,
+    event?: Electron.Event
+  ): boolean => {
+    const decision = classifyAuthWindowNavigation(url, { spaOrigins });
+    const handoffUrl = resolveAuthCallbackHandoff(url, decision);
+    if (!handoffUrl) {
+      return false;
+    }
+    event?.preventDefault();
+    mainLog("[auth-nav] auth callback → main", { url: handoffUrl, source });
+    void loadMainWindowAuthCallback(handoffUrl);
+    closeAuthWindow();
+    return true;
+  };
+
   const handleAuthNav = (
     event: Electron.Event,
     url: string,
@@ -1204,12 +1221,7 @@ function openAuthWindow(startUrl: string): void {
     const decision = classifyAuthWindowNavigation(url, { spaOrigins });
     mainLog("[auth-nav] auth will-navigate", { url, decision: decision.action });
 
-    const handoffUrl = resolveAuthCallbackHandoff(url, decision);
-    if (handoffUrl) {
-      event.preventDefault();
-      mainLog("[auth-nav] auth callback → main", { url: handoffUrl });
-      void loadMainWindowAuthCallback(handoffUrl);
-      closeAuthWindow();
+    if (tryHandoffFromAuthUrl(url, "will-navigate", event)) {
       return;
     }
 
@@ -1225,9 +1237,46 @@ function openAuthWindow(startUrl: string): void {
   win.webContents.on("will-navigate", (event, url) => {
     handleAuthNav(event, url, true);
   });
-  win.webContents.on("will-redirect", (event, url) => {
-    handleAuthNav(event, url, true);
+  // Some OAuth redirects only surface on will-redirect / did-navigate.
+  win.webContents.on(
+    "will-redirect",
+    (event, url, _isInPlace, isMainFrame) => {
+      if (isMainFrame === false) {
+        return;
+      }
+      handleAuthNav(event, url, true);
+    }
+  );
+  win.webContents.on("did-navigate", (_event, url) => {
+    mainLog("[auth-nav] auth did-navigate", { url });
+    void tryHandoffFromAuthUrl(url, "did-navigate");
   });
+  win.webContents.on("did-navigate-in-page", (_event, url, isMainFrame) => {
+    if (!isMainFrame) {
+      return;
+    }
+    mainLog("[auth-nav] auth did-navigate-in-page", { url });
+    void tryHandoffFromAuthUrl(url, "did-navigate-in-page");
+  });
+  win.webContents.on(
+    "did-fail-load",
+    (
+      _event,
+      errorCode,
+      errorDescription,
+      validatedURL,
+      isMainFrame
+    ) => {
+      if (!isMainFrame) {
+        return;
+      }
+      mainWarn("[auth-nav] auth did-fail-load", {
+        errorCode,
+        errorDescription,
+        validatedURL,
+      });
+    }
+  );
 
   win.webContents.setWindowOpenHandler((details) => {
     const targetUrl = normalizeBrowserUrl(details.url);

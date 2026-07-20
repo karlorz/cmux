@@ -22,12 +22,20 @@ describe("rewriteHandlerPathToHash", () => {
     );
   });
 
-  it("returns null when already hash-routed", () => {
+  it("returns null when already hash-routed with query in hash", () => {
     expect(
       rewriteHandlerPathToHash(
         "http://localhost:5173/#/handler/oauth-callback?code=1"
       )
     ).toBeNull();
+  });
+
+  it("merges outer search into hash when hash path lacks query", () => {
+    expect(
+      rewriteHandlerPathToHash(
+        "http://localhost:5173/?code=1#/handler/oauth-callback"
+      )
+    ).toBe("http://localhost:5173/#/handler/oauth-callback?code=1");
   });
 
   it("returns null for non-handler SPA paths", () => {
