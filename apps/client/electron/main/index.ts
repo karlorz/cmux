@@ -1460,6 +1460,9 @@ function createWindow(): void {
       void shell.openExternal(targetUrl);
       return { action: "deny" };
     }
+    // mainWindow may be null/destroyed by the time this deferred popup
+    // handler runs (TS18047); deny rather than crash on webContents access.
+    if (!mainWindow || mainWindow.isDestroyed()) return { action: "deny" };
     applyAuthNavDecision(decision, mainWindow.webContents, "main");
     return { action: "deny" };
   });
