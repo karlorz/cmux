@@ -106,6 +106,16 @@ describe("classifyMainWindowNavigation", () => {
       action: "external",
       url: "https://docs.example.com/guide",
     });
+    // Non-allow decisions reaching applyAuthNavDecision must be external/auth-window/rewrite-hash
+    // (the main setWindowOpenHandler denies popups on a null/destroyed mainWindow per TS18047).
+    expect(
+      classifyMainWindowNavigation("https://example.com/path?q=2", {
+        spaOrigins: SPA,
+      })
+    ).toEqual({
+      action: "external",
+      url: "https://example.com/path?q=2",
+    });
   });
 
   it("allows non-http schemes", () => {
