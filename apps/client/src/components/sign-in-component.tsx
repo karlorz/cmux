@@ -2,6 +2,7 @@
 
 import { isElectron } from "@/lib/electron";
 import { getElectronBridge } from "@/lib/electron";
+import { env } from "@/client-env";
 import { WWW_ORIGIN } from "@/lib/wwwOrigin";
 import { SignIn, useUser } from "@stackframe/react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -13,15 +14,33 @@ type SignInState =
   | { kind: "awaiting-browser"; sessionId: string }
   | { kind: "embedded" };
 
+type ProtocolStatus =
+  | {
+      ok: true;
+      scheme: string;
+      isPackaged: boolean;
+      isDefaultProtocolClient: boolean;
+      defaultApp: boolean;
+    }
+  | { ok: false; scheme?: string; error: string };
+
+/** Product display name (packaged app is cmux-next; scheme may be cmux-dev in dev). */
+const APP_DISPLAY_NAME = "cmux-next";
+
+function resolveDeeplinkScheme(status: ProtocolStatus | null): string {
+  if (status && "scheme" in status && status.scheme) {
+    return status.scheme;
+  }
+  return env.NEXT_PUBLIC_CMUX_PROTOCOL ?? "cmux-next";
+}
+
 export function SignInComponent() {
   const user = useUser({ or: "return-null" });
   const showSignIn = !user;
   const [state, setState] = useState<SignInState>({ kind: "idle" });
-  const [protocolStatus, setProtocolStatus] = useState<
-    | { ok: true; isPackaged: boolean; isDefaultProtocolClient: boolean }
-    | { ok: false; error: string }
-    | null
-  >(null);
+  const [protocolStatus, setProtocolStatus] = useState<ProtocolStatus | null>(
+    null
+  );
 
   // Track the current session to prevent stale callbacks
   const currentSessionRef = useRef<string | null>(null);
@@ -34,16 +53,23 @@ export function SignInComponent() {
     bridge.app
       .getProtocolStatus()
       .then((res) => {
-        setProtocolStatus(res);
+        setProtocolStatus(res as ProtocolStatus);
       })
       .catch((error: unknown) => {
         console.error("[SignIn] Failed to get protocol status:", error);
         setProtocolStatus({
           ok: false,
+          scheme: env.NEXT_PUBLIC_CMUX_PROTOCOL ?? "cmux-next",
           error: error instanceof Error ? error.message : String(error),
         });
       });
   }, []);
+
+  const deeplinkScheme = useMemo(
+    () => resolveDeeplinkScheme(protocolStatus),
+    [protocolStatus]
+  );
+  const deeplinkLabel = `${deeplinkScheme}://`;
 
   const browserSignInSupported = useMemo(() => {
     if (!isElectron) return true;
@@ -51,6 +77,10 @@ export function SignInComponent() {
     if (!protocolStatus.ok) return true;
     return protocolStatus.isDefaultProtocolClient;
   }, [protocolStatus]);
+
+  const isUnpackagedDev =
+    protocolStatus?.ok === true &&
+    (!protocolStatus.isPackaged || protocolStatus.defaultApp);
 
   // GitHub Desktop pattern: generate session ID, store it, open browser
   const handleSignInWithBrowser = useCallback(() => {
@@ -147,8 +177,8 @@ export function SignInComponent() {
                     </h2>
                     <p className="text-sm text-neutral-600 dark:text-neutral-400 leading-relaxed">
                       {isAwaitingBrowser
-                        ? "Complete sign-in in your browser. Click \"Open Manaflow\" after signing in to return here."
-                        : "Your browser will redirect you back to Manaflow once you've signed in. If your browser asks for permission to launch Manaflow, please allow it."}
+                        ? `Complete sign-in in your browser. Click "Open ${APP_DISPLAY_NAME}" after signing in to return here.`
+                        : `Your browser will redirect you back to ${APP_DISPLAY_NAME} once you've signed in. If your browser asks for permission to launch ${APP_DISPLAY_NAME}, please allow it.`}
                     </p>
                   </div>
 
@@ -156,9 +186,16 @@ export function SignInComponent() {
                   {!browserSignInSupported && !isAwaitingBrowser && (
                     <div className="w-full p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
                       <p className="text-xs text-amber-800 dark:text-amber-200">
-                        The <code className="font-mono">manaflow://</code>{" "}
-                        deeplink is not registered. Restart Manaflow to
-                        re-register, or use embedded sign-in.
+                        The{" "}
+                        <code className="font-mono">{deeplinkLabel}</code>{" "}
+                        deeplink is not registered
+                        {isUnpackagedDev
+                          ? " (common in unpackaged Electron dev — browser return often fails)"
+                          : ""}
+                        .{" "}
+                        {isUnpackagedDev
+                          ? "Use embedded sign-in below."
+                          : `Restart ${APP_DISPLAY_NAME} to re-register, or use embedded sign-in.`}
                       </p>
                     </div>
                   )}

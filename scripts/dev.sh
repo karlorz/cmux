@@ -495,8 +495,14 @@ if [ ! -d "node_modules" ] || [ "$FORCE_INSTALL" = "true" ]; then
 fi
 
 # Build Rust N-API addon (required) - runs in parallel with Docker build
-echo -e "${GREEN}Building native Rust addon...${NC}"
-(cd "$APP_DIR/apps/server/native/core" && bunx napi build --platform) || exit 1
+NATIVE_CORE_DIR="$APP_DIR/apps/server/native/core"
+NATIVE_NODE_GLOB=("$NATIVE_CORE_DIR"/cmux_native_core.*.node)
+if [ "${SKIP_NATIVE_BUILD:-}" = "true" ] && [ -e "${NATIVE_NODE_GLOB[0]}" ]; then
+    echo -e "${YELLOW}Skipping native Rust addon rebuild (SKIP_NATIVE_BUILD=true, using existing .node)${NC}"
+else
+    echo -e "${GREEN}Building native Rust addon...${NC}"
+    (cd "$NATIVE_CORE_DIR" && bunx napi build --platform) || exit 1
+fi
 
 # Wait for Docker build to complete if it was started
 if [ -n "$DOCKER_BUILD_PID" ]; then

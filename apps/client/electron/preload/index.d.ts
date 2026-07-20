@@ -50,8 +50,14 @@ declare global {
       app: {
         getProtocolStatus: () =>
           Promise<
-            | { ok: true; isPackaged: boolean; isDefaultProtocolClient: boolean }
-            | { ok: false; error: string }
+            | {
+                ok: true;
+                scheme: string;
+                isPackaged: boolean;
+                isDefaultProtocolClient: boolean;
+                defaultApp: boolean;
+              }
+            | { ok: false; scheme?: string; error: string }
           >;
       };
       mcpHostConfig: {

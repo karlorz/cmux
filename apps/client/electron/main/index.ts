@@ -927,13 +927,17 @@ function registerAppIpcHandlers(): void {
 
       return {
         ok: true as const,
+        scheme: cmuxProtocol,
         isPackaged: app.isPackaged,
         isDefaultProtocolClient,
+        // unpackaged electron-vite often fails OS default-handler check even after setAsDefault
+        defaultApp: process.defaultApp === true,
       };
     } catch (error) {
       mainWarn("Failed to get protocol status", error);
       return {
         ok: false as const,
+        scheme: env.NEXT_PUBLIC_CMUX_PROTOCOL,
         error: error instanceof Error ? error.message : String(error),
       };
     }
