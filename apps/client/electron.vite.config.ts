@@ -133,6 +133,9 @@ export default defineConfig({
       "process.env.NODE_ENV": JSON.stringify(
         isProduction ? "production" : "development"
       ),
+      // Pass through shell ON_TRACE=1 for VNC recovery / other debug call-site traces
+      "import.meta.env.ON_TRACE": JSON.stringify(process.env.ON_TRACE ?? ""),
+      "process.env.ON_TRACE": JSON.stringify(process.env.ON_TRACE ?? ""),
       global: "globalThis",
     },
     build: {

@@ -1,7 +1,9 @@
 import type { PersistentIframeStatus } from "@/components/persistent-iframe";
 import { PersistentWebView } from "@/components/persistent-webview";
 import { WorkspaceLoadingIndicator } from "@/components/workspace-loading-indicator";
+import { Button } from "@/components/ui/button";
 import { useVncClipboardBridge } from "@/hooks/useVncClipboardBridge";
+import { useVncPreviewRecovery } from "@/hooks/useVncPreviewRecovery";
 import { addBrowserReloadListener } from "@/lib/browser-reload-events";
 import { persistentIframeManager } from "@/lib/persistentIframeManager";
 import { getTaskRunBrowserPersistKey } from "@/lib/persistent-webview-keys";
@@ -13,6 +15,7 @@ import {
   resolveBrowserPreviewUrl,
   resolveBrowserPreviewWebsocketUrl,
 } from "@/lib/toProxyWorkspaceUrl";
+import { RFB_TIMEOUT_ERROR_MESSAGE } from "@/lib/vnc-preview-recovery";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { api } from "@cmux/convex/api";
 import {
@@ -92,6 +95,18 @@ function BrowserComponent() {
     enabled: isVncIframe,
   });
 
+  const {
+    recovery,
+    forcedStatus: rfbForcedStatus,
+    onIframeLoad: onRfbIframeLoad,
+    retry: retryRfb,
+    enabled: rfbRecoveryEnabled,
+    isBusy: rfbBusy,
+  } = useVncPreviewRecovery({
+    persistKey,
+    browserUrl,
+  });
+
   const hasBrowserView = Boolean(browserUrl);
   const isSupportedProvider =
     vscodeInfo?.provider === "morph" || vscodeInfo?.provider === "pve-lxc";
@@ -114,7 +129,8 @@ function BrowserComponent() {
 
   const onLoad = useCallback(() => {
     console.log(`Browser preview loaded for task run ${taskRunId}`);
-  }, [taskRunId]);
+    onRfbIframeLoad();
+  }, [onRfbIframeLoad, taskRunId]);
 
   const onError = useCallback(
     (error: Error) => {
@@ -145,8 +161,12 @@ function BrowserComponent() {
         });
         return;
       }
-      const reloaded = persistentIframeManager.reloadIframe(persistKey);
-      if (!reloaded) return;
+      if (rfbRecoveryEnabled) {
+        retryRfb();
+      } else {
+        const reloaded = persistentIframeManager.reloadIframe(persistKey);
+        if (!reloaded) return;
+      }
       requestAnimationFrame(() => {
         if (
           previousFocus instanceof HTMLElement &&
@@ -156,21 +176,73 @@ function BrowserComponent() {
         }
       });
     });
-  }, [persistKey, taskRunId, useDirectVncFallback]);
+  }, [
+    persistKey,
+    rfbRecoveryEnabled,
+    retryRfb,
+    taskRunId,
+    useDirectVncFallback,
+  ]);
 
-  const loadingFallback = useMemo(
-    () => <WorkspaceLoadingIndicator variant="browser" status="loading" />,
-    []
-  );
+  const loadingFallback = useMemo(() => {
+    const remounting = recovery.phase === "remounting";
+    return (
+      <WorkspaceLoadingIndicator
+        variant="browser"
+        status="loading"
+        loadingTitle={
+          remounting
+            ? "Reconnecting remote desktop"
+            : "Launching browser preview"
+        }
+        loadingDescription={
+          remounting
+            ? `Retrying VNC session (attempt ${recovery.autoRemountCount})…`
+            : rfbRecoveryEnabled
+              ? "Waiting for the remote desktop session to become ready…"
+              : undefined
+        }
+      />
+    );
+  }, [
+    recovery.autoRemountCount,
+    recovery.phase,
+    rfbRecoveryEnabled,
+  ]);
+
   const errorFallback = useMemo(
-    () => <WorkspaceLoadingIndicator variant="browser" status="error" />,
-    []
+    () => (
+      <WorkspaceLoadingIndicator
+        variant="browser"
+        status="error"
+        errorTitle="Remote desktop did not connect"
+        errorDescription={
+          recovery.errorMessage ?? RFB_TIMEOUT_ERROR_MESSAGE
+        }
+        action={
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="pointer-events-auto mt-2"
+            onClick={() => {
+              retryRfb();
+            }}
+          >
+            Retry connection
+          </Button>
+        }
+      />
+    ),
+    [recovery.errorMessage, retryRfb]
   );
 
   const hasBrowserConnection = Boolean(vncWebsocketUrl || browserUrl);
   const isBrowserBusy = useDirectVncFallback
     ? !hasBrowserConnection || vncStatus !== "connected"
-    : !hasBrowserConnection || browserStatus !== "loaded";
+    : rfbRecoveryEnabled
+      ? rfbBusy
+      : !hasBrowserConnection || browserStatus !== "loaded";
 
   return (
     <div className="flex flex-col grow bg-neutral-50 dark:bg-black">
@@ -192,6 +264,7 @@ function BrowserComponent() {
               onLoad={onLoad}
               onError={onError}
               onStatusChange={setBrowserStatus}
+              forcedStatus={rfbForcedStatus}
               fallback={loadingFallback}
               fallbackClassName="bg-neutral-50 dark:bg-black"
               errorFallback={errorFallback}
