@@ -34,7 +34,7 @@ describe("computeSetAsDefaultProtocolClientCall", () => {
       scheme: "manaflow",
       defaultApp: true,
       execPath: "/Electron",
-      argv: ["/Electron", "--inspect=0", "apps/client", "manaflow://auth-callback?a=b"],
+      argv: ["/Electron", "--inspect=0", "apps/client", "cmux-dev://auth-callback?a=b"],
     });
     expect(call).toEqual({
       kind: "withArgs",
@@ -49,7 +49,7 @@ describe("computeSetAsDefaultProtocolClientCall", () => {
       scheme: "manaflow",
       defaultApp: true,
       execPath: "/Electron",
-      argv: ["/Electron", "--inspect=0", "manaflow://auth-callback?a=b"],
+      argv: ["/Electron", "--inspect=0", "cmux-dev://auth-callback?a=b"],
     });
     expect(call).toEqual({ kind: "simple", scheme: "manaflow" });
   });

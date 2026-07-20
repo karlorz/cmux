@@ -31,6 +31,9 @@ import type { LiveDiffPanelProps } from "./LiveDiffPanel";
 import type { TestResultsPanelProps } from "./TestResultsPanel";
 import { shouldUseServerIframePreflight } from "@/hooks/useIframePreflight";
 import { useVncClipboardBridge } from "@/hooks/useVncClipboardBridge";
+import { useVncPreviewRecovery } from "@/hooks/useVncPreviewRecovery";
+import { RFB_TIMEOUT_ERROR_MESSAGE } from "@/lib/vnc-preview-recovery";
+import { Button } from "@/components/ui/button";
 
 const PANEL_DRAG_START_EVENT = "cmux:panel-drag-start";
 const PANEL_DRAG_END_EVENT = "cmux:panel-drag-end";
@@ -249,8 +252,22 @@ function BrowserPanelContent({
     enabled: isVncIframe,
   });
 
+  const {
+    recovery,
+    forcedStatus: rfbForcedStatus,
+    onIframeLoad: onRfbIframeLoad,
+    retry: retryRfb,
+    enabled: rfbRecoveryEnabled,
+    isBusy: rfbBusy,
+  } = useVncPreviewRecovery({
+    persistKey: browserPersistKey,
+    browserUrl,
+  });
+
+  const ariaBusy = rfbRecoveryEnabled ? rfbBusy : isBrowserBusy;
+
   return (
-    <div className={clsx("relative flex-1", isExpanded && "h-full")} aria-busy={isBrowserBusy}>
+    <div className={clsx("relative flex-1", isExpanded && "h-full")} aria-busy={ariaBusy}>
       <PersistentWebView
           key={browserPersistKey}
           persistKey={browserPersistKey}
@@ -261,10 +278,51 @@ function BrowserPanelContent({
           allow={TASK_RUN_IFRAME_ALLOW}
           sandbox={TASK_RUN_IFRAME_SANDBOX}
           retainOnUnmount
+          onLoad={onRfbIframeLoad}
           onStatusChange={setBrowserStatus}
-          fallback={<WorkspaceLoadingIndicator variant="browser" status="loading" />}
+          forcedStatus={rfbForcedStatus}
+          fallback={
+            <WorkspaceLoadingIndicator
+              variant="browser"
+              status="loading"
+              loadingTitle={
+                recovery.phase === "remounting"
+                  ? "Reconnecting remote desktop"
+                  : undefined
+              }
+              loadingDescription={
+                recovery.phase === "remounting"
+                  ? `Retrying VNC session (attempt ${recovery.autoRemountCount})…`
+                  : rfbRecoveryEnabled
+                    ? "Waiting for the remote desktop session to become ready…"
+                    : undefined
+              }
+            />
+          }
           fallbackClassName="bg-neutral-50 dark:bg-black"
-          errorFallback={<WorkspaceLoadingIndicator variant="browser" status="error" />}
+          errorFallback={
+            <WorkspaceLoadingIndicator
+              variant="browser"
+              status="error"
+              errorTitle="Remote desktop did not connect"
+              errorDescription={
+                recovery.errorMessage ?? RFB_TIMEOUT_ERROR_MESSAGE
+              }
+              action={
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="pointer-events-auto mt-2"
+                  onClick={() => {
+                    retryRfb();
+                  }}
+                >
+                  Retry connection
+                </Button>
+              }
+            />
+          }
           errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
           loadTimeoutMs={45_000}
           isExpanded={isExpanded}

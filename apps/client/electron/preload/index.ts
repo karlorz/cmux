@@ -219,10 +219,12 @@ const cmuxAPI = {
       ipcRenderer.invoke("cmux:app:get-protocol-status") as Promise<
         | {
             ok: true;
+            scheme: string;
             isPackaged: boolean;
             isDefaultProtocolClient: boolean;
+            defaultApp: boolean;
           }
-        | { ok: false; error: string }
+        | { ok: false; scheme?: string; error: string }
       >,
   },
   machine: {

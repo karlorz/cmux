@@ -65,6 +65,14 @@ import {
 } from "./stack-auth-cookies";
 import { computeSetAsDefaultProtocolClientCall } from "./protocol-registration";
 import {
+  buildSpaOrigins,
+  classifyAuthWindowNavigation,
+  classifyMainWindowNavigation,
+  isSpaAuthCallback,
+  isSpaOrigin,
+  type AuthNavDecision,
+} from "./electron-auth-navigation";
+import {
   MCP_HOST_CONFIG_IPC_CHANNELS,
   readClaudeJsonConfig,
   readCodexTomlConfig,
@@ -122,6 +130,8 @@ const LOG_ROTATION: LogRotationOptions = {
 let rendererLoaded = false;
 let pendingProtocolUrl: string | null = null;
 let mainWindow: BrowserWindow | null = null;
+/** Dedicated OAuth window (shared partition so Stack cookies land for SPA). */
+let authWindow: BrowserWindow | null = null;
 let previewReloadMenuItem: MenuItem | null = null;
 let previewBackMenuItem: MenuItem | null = null;
 let previewForwardMenuItem: MenuItem | null = null;
@@ -927,13 +937,17 @@ function registerAppIpcHandlers(): void {
 
       return {
         ok: true as const,
+        scheme: cmuxProtocol,
         isPackaged: app.isPackaged,
         isDefaultProtocolClient,
+        // unpackaged electron-vite often fails OS default-handler check even after setAsDefault
+        defaultApp: process.defaultApp === true,
       };
     } catch (error) {
       mainWarn("Failed to get protocol status", error);
       return {
         ok: false as const,
+        scheme: env.NEXT_PUBLIC_CMUX_PROTOCOL,
         error: error instanceof Error ? error.message : String(error),
       };
     }
@@ -1072,6 +1086,275 @@ async function handleOrQueueProtocolUrl(url: string) {
   }
 }
 
+function getSpaOrigins(): string[] {
+  return buildSpaOrigins({
+    appHost: APP_HOST,
+    electronRendererUrl: process.env["ELECTRON_RENDERER_URL"] ?? null,
+  });
+}
+
+function getMainWindowSpaHomeUrl(): string {
+  if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
+    return process.env["ELECTRON_RENDERER_URL"];
+  }
+  return `https://${APP_HOST}/index-electron.html`;
+}
+
+function closeAuthWindow(): void {
+  if (!authWindow || authWindow.isDestroyed()) {
+    authWindow = null;
+    return;
+  }
+  try {
+    authWindow.close();
+  } catch {
+    // ignore
+  }
+  authWindow = null;
+}
+
+/**
+ * Apply a navigation decision for a main-frame load on the given webContents.
+ * Returns true if the default navigation should be cancelled.
+ */
+function applyAuthNavDecision(
+  decision: AuthNavDecision,
+  webContents: Electron.WebContents,
+  context: "main" | "auth"
+): boolean {
+  switch (decision.action) {
+    case "allow":
+      return false;
+    case "rewrite-hash": {
+      mainLog("[auth-nav] rewrite-hash", { context, url: decision.url });
+      void webContents.loadURL(decision.url);
+      return true;
+    }
+    case "auth-window": {
+      mainLog("[auth-nav] open auth-window", { url: decision.url });
+      openAuthWindow(decision.url);
+      return true;
+    }
+    case "external": {
+      mainLog("[auth-nav] open external", { context, url: decision.url });
+      void shell.openExternal(normalizeBrowserUrl(decision.url));
+      return true;
+    }
+    default: {
+      const _exhaustive: never = decision;
+      return _exhaustive;
+    }
+  }
+}
+
+function openAuthWindow(startUrl: string): void {
+  if (authWindow && !authWindow.isDestroyed()) {
+    mainLog("[auth-nav] reusing auth window", { url: startUrl });
+    void authWindow.loadURL(startUrl);
+    authWindow.focus();
+    return;
+  }
+
+  const spaOrigins = getSpaOrigins();
+  authWindow = new BrowserWindow({
+    width: 520,
+    height: 720,
+    show: true,
+    autoHideMenuBar: true,
+    title: "Sign in",
+    webPreferences: {
+      // Same partition as main so Stack cookies are visible to the SPA.
+      partition: PARTITION,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  });
+
+  const win = authWindow;
+  win.on("closed", () => {
+    if (authWindow === win) {
+      authWindow = null;
+    }
+  });
+
+  /** SPA OAuth callback → main window URL, or null if not a handoff. */
+  const resolveAuthCallbackHandoff = (
+    url: string,
+    decision: AuthNavDecision
+  ): string | null => {
+    if (decision.action === "rewrite-hash") {
+      return decision.url;
+    }
+    // Hash-routed SPA callbacks classify as allow; path-form already rewrite-hash.
+    if (decision.action === "allow" && isSpaAuthCallback(url, spaOrigins)) {
+      return url;
+    }
+    return null;
+  };
+
+  const tryHandoffFromAuthUrl = (
+    url: string,
+    source: string,
+    event?: Electron.Event
+  ): boolean => {
+    const decision = classifyAuthWindowNavigation(url, { spaOrigins });
+    const handoffUrl = resolveAuthCallbackHandoff(url, decision);
+    if (!handoffUrl) {
+      return false;
+    }
+    event?.preventDefault();
+    mainLog("[auth-nav] auth callback → main", { url: handoffUrl, source });
+    void loadMainWindowAuthCallback(handoffUrl);
+    closeAuthWindow();
+    return true;
+  };
+
+  const handleAuthNav = (
+    event: Electron.Event,
+    url: string,
+    isMainFrame?: boolean
+  ) => {
+    if (isMainFrame === false) {
+      return;
+    }
+    const decision = classifyAuthWindowNavigation(url, { spaOrigins });
+    mainLog("[auth-nav] auth will-navigate", { url, decision: decision.action });
+
+    if (tryHandoffFromAuthUrl(url, "will-navigate", event)) {
+      return;
+    }
+
+    if (decision.action === "allow") {
+      return;
+    }
+
+    if (applyAuthNavDecision(decision, win.webContents, "auth")) {
+      event.preventDefault();
+    }
+  };
+
+  win.webContents.on("will-navigate", (event, url) => {
+    handleAuthNav(event, url, true);
+  });
+  // Some OAuth redirects only surface on will-redirect / did-navigate.
+  win.webContents.on(
+    "will-redirect",
+    (event, url, _isInPlace, isMainFrame) => {
+      if (isMainFrame === false) {
+        return;
+      }
+      handleAuthNav(event, url, true);
+    }
+  );
+  win.webContents.on("did-navigate", (_event, url) => {
+    mainLog("[auth-nav] auth did-navigate", { url });
+    void tryHandoffFromAuthUrl(url, "did-navigate");
+  });
+  win.webContents.on("did-navigate-in-page", (_event, url, isMainFrame) => {
+    if (!isMainFrame) {
+      return;
+    }
+    mainLog("[auth-nav] auth did-navigate-in-page", { url });
+    void tryHandoffFromAuthUrl(url, "did-navigate-in-page");
+  });
+  win.webContents.on(
+    "did-fail-load",
+    (
+      _event,
+      errorCode,
+      errorDescription,
+      validatedURL,
+      isMainFrame
+    ) => {
+      if (!isMainFrame) {
+        return;
+      }
+      mainWarn("[auth-nav] auth did-fail-load", {
+        errorCode,
+        errorDescription,
+        validatedURL,
+      });
+    }
+  );
+
+  win.webContents.setWindowOpenHandler((details) => {
+    const targetUrl = normalizeBrowserUrl(details.url);
+    const decision = classifyAuthWindowNavigation(targetUrl, { spaOrigins });
+    const handoffUrl = resolveAuthCallbackHandoff(targetUrl, decision);
+    if (handoffUrl) {
+      void loadMainWindowAuthCallback(handoffUrl);
+      closeAuthWindow();
+      return { action: "deny" };
+    }
+    if (decision.action === "allow") {
+      void win.webContents.loadURL(targetUrl);
+      return { action: "deny" };
+    }
+    applyAuthNavDecision(decision, win.webContents, "auth");
+    return { action: "deny" };
+  });
+
+  mainLog("[auth-nav] creating auth window", { url: startUrl });
+  void win.loadURL(startUrl);
+}
+
+async function loadMainWindowAuthCallback(url: string): Promise<void> {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    mainWarn("[auth-nav] no main window for auth callback", { url });
+    return;
+  }
+  try {
+    await mainWindow.loadURL(url);
+    mainWindow.focus();
+  } catch (error) {
+    mainWarn("[auth-nav] failed to load auth callback on main", {
+      url,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    // Fallback: reload SPA home so user can retry / session may still sync via cookies
+    try {
+      await mainWindow.loadURL(getMainWindowSpaHomeUrl());
+      mainWindow.focus();
+    } catch {
+      // ignore
+    }
+  }
+}
+
+function attachMainWindowAuthNavigationGuards(window: BrowserWindow): void {
+  const spaOrigins = getSpaOrigins();
+  const contents = window.webContents;
+
+  const onNavigate = (
+    event: Electron.Event,
+    url: string,
+    isMainFrame?: boolean
+  ) => {
+    if (isMainFrame === false) {
+      return;
+    }
+    const decision = classifyMainWindowNavigation(url, { spaOrigins });
+    if (decision.action === "allow") {
+      return;
+    }
+    mainLog("[auth-nav] main will-navigate", {
+      url,
+      decision: decision.action,
+    });
+    if (applyAuthNavDecision(decision, contents, "main")) {
+      event.preventDefault();
+    }
+  };
+
+  contents.on("will-navigate", (event, url) => {
+    onNavigate(event, url, true);
+  });
+  contents.on("will-redirect", (event, url) => {
+    onNavigate(event, url, true);
+  });
+}
+
 function createWindow(): void {
   const windowOptions: BrowserWindowConstructorOptions = {
     width: 1200,
@@ -1160,9 +1443,24 @@ function createWindow(): void {
     mainLog("did-navigate", { url });
   });
 
+  // Phase A/B/C1: keep SPA in main window; OAuth goes to dedicated auth window;
+  // path /handler/* rewrites to hash router form.
+  attachMainWindowAuthNavigationGuards(mainWindow);
+
   mainWindow.webContents.setWindowOpenHandler((details) => {
     const targetUrl = normalizeBrowserUrl(details.url);
-    shell.openExternal(targetUrl);
+    const spaOrigins = getSpaOrigins();
+    const decision = classifyMainWindowNavigation(targetUrl, { spaOrigins });
+    // Always deny popups: SPA stays in main, OAuth uses auth window, else external.
+    if (decision.action === "allow" && isSpaOrigin(targetUrl, spaOrigins)) {
+      void mainWindow?.loadURL(targetUrl);
+      return { action: "deny" };
+    }
+    if (decision.action === "allow") {
+      void shell.openExternal(targetUrl);
+      return { action: "deny" };
+    }
+    applyAuthNavDecision(decision, mainWindow.webContents, "main");
     return { action: "deny" };
   });
 

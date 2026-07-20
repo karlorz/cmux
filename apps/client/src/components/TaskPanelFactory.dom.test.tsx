@@ -120,9 +120,15 @@ describe("TaskPanelFactory", () => {
       );
     });
 
-    expect(receivedProps).toHaveLength(2);
-    expect(receivedProps[0]?.isFocusEligible).toBe(true);
-    expect(receivedProps[1]?.isFocusEligible).toBe(false);
+    // Browser panel may re-render once as VNC RFB recovery arms; assert by key.
+    const workspaceProps = receivedProps.find(
+      (props) => props.persistKey === "workspace-key"
+    );
+    const browserProps = receivedProps.find(
+      (props) => props.persistKey === "browser-key"
+    );
+    expect(workspaceProps?.isFocusEligible).toBe(true);
+    expect(browserProps?.isFocusEligible).toBe(false);
 
     await act(async () => {
       root.unmount();

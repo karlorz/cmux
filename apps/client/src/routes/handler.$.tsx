@@ -8,8 +8,11 @@ export const Route = createFileRoute("/handler/$")({
 
 function HandlerComponent() {
   const location = useLocation();
+  // Hash history: OAuth query lands on location.search (or sometimes in the
+  // hash fragment). Stack needs path + query to exchange the code.
+  const handlerLocation = `${location.pathname}${location.search}`;
 
   return (
-    <StackHandler app={stackClientApp} location={location.pathname} fullPage />
+    <StackHandler app={stackClientApp} location={handlerLocation} fullPage />
   );
 }

@@ -69,11 +69,22 @@
   }
 
   /**
+   * Message types for RFB readiness — must match apps/client vnc-preview-recovery.ts
+   * so the parent can remount / surface errors instead of a black canvas.
+   */
+  var RFB_READY_MESSAGE_TYPE = 'vnc-rfb-ready';
+  var RFB_TIMEOUT_MESSAGE_TYPE = 'vnc-rfb-timeout';
+
+  /**
    * Wait for RFB instance to be available, then call callback.
    * RFB is only created after VNC connection is established.
+   *
+   * @param {function} callback - Called with RFB when ready
+   * @param {number} [maxRetries=120] - Attempts at 100ms (~12s default; longer than clipboard-only)
+   * @param {function} [onTimeout] - Called with retry count when RFB never appears
    */
-  function withRfbInstance(callback, maxRetries) {
-    maxRetries = maxRetries || 50; // 5 seconds max
+  function withRfbInstance(callback, maxRetries, onTimeout) {
+    maxRetries = maxRetries || 120; // 12 seconds max (matches parent RFB wait)
     var retries = 0;
 
     function tryGetRfb() {
@@ -87,10 +98,31 @@
         setTimeout(tryGetRfb, 100);
       } else {
         console.warn('[VNC Clipboard Bridge] RFB instance not available after ' + maxRetries + ' retries');
+        if (typeof onTimeout === 'function') {
+          onTimeout(retries);
+        }
       }
     }
 
     tryGetRfb();
+  }
+
+  function postToParent(payload) {
+    if (window.parent && window.parent !== window) {
+      try {
+        window.parent.postMessage(payload, '*');
+      } catch (err) {
+        console.warn('[VNC Clipboard Bridge] postMessage failed', err);
+      }
+    }
+  }
+
+  function notifyParentRfbReady() {
+    postToParent({ type: RFB_READY_MESSAGE_TYPE });
+  }
+
+  function notifyParentRfbTimeout(retries) {
+    postToParent({ type: RFB_TIMEOUT_MESSAGE_TYPE, retries: retries });
   }
 
   /**
@@ -379,8 +411,17 @@
     console.log('[VNC Clipboard Bridge] Clipboard sync listener attached to RFB');
   }
 
-  // Attach clipboard listener once RFB is available
-  withRfbInstance(setupClipboardListener);
+  // Attach clipboard listener once RFB is available, and notify parent of readiness.
+  // Parent (cmux Browser tab) keeps a loading overlay until RFB is ready; on timeout
+  // it remounts the webview and eventually surfaces an error instead of a black pane.
+  withRfbInstance(
+    function (rfb) {
+      setupClipboardListener(rfb);
+      notifyParentRfbReady();
+    },
+    120,
+    notifyParentRfbTimeout
+  );
 
   // Log initialization (debug)
   console.log('[VNC Clipboard Bridge] Initialized with keyboard listener and clipboard sync');
