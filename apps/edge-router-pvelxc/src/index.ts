@@ -3,6 +3,7 @@
 
 // VS Code server port for PVE-LXC sandboxes
 const VSCODE_PORT = "39378";
+const VNC_PORT = "39380";
 
 // Regex to match http:// URLs pointing to the PVE-LXC public domain.
 // Used to rewrite insecure URLs to https:// in VS Code responses.
@@ -668,6 +669,10 @@ export default {
 
     const [, port, instanceId] = pvelxcMatch;
 
+    if (port === VNC_PORT) {
+      return fetch(request);
+    }
+
     // Serve the service worker file
     if (url.pathname === "/proxy-sw.js") {
       return new Response(SERVICE_WORKER_JS, {
@@ -709,16 +714,6 @@ export default {
     // WebSocket upgrades
     const upgradeHeader = request.headers.get("Upgrade");
     if (upgradeHeader?.toLowerCase() === "websocket") {
-      // VNC (port 39380): Pass through directly to CF Tunnel without Worker proxy
-      // The Worker's WebSocket proxy adds latency and doesn't support proper keepalive,
-      // causing disconnections from external networks due to CF's 100s idle timeout.
-      // CF Tunnel handles WebSocket keepalive correctly at the protocol level.
-      const VNC_PORT = "39380";
-      if (port === VNC_PORT) {
-        // Pass through to CF Tunnel - it will handle the WebSocket upgrade
-        return fetch(request);
-      }
-
       // Other WebSockets (VS Code, xterm): proxy through the Worker
       // Fetch the upstream WebSocket (use outbound which has X-Cmux-Proxied header)
       const upstreamResponse = await fetch(outbound);
