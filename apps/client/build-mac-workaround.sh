@@ -28,6 +28,10 @@ set +a  # Turn off auto-export
 ensure_native_core_built() {
   local native_dir="$ROOT_DIR/apps/server/native/core"
   echo "Ensuring native Rust addon (.node) is built..."
+  if [ "${SKIP_NATIVE_BUILD:-}" = "true" ] && ls "$native_dir"/*.node >/dev/null 2>&1; then
+    echo "SKIP_NATIVE_BUILD=true: reusing existing native .node binary (skip napi rebuild)"
+    return 0
+  fi
   if ls "$native_dir"/*.node >/dev/null 2>&1; then
     echo "Existing native binary detected; rebuilding for consistency..."
   else
