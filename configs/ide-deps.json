@@ -3,12 +3,12 @@
     {
       "publisher": "anthropic",
       "name": "claude-code",
-      "version": "2.1.216"
+      "version": "2.1.217"
     },
     {
       "publisher": "openai",
       "name": "chatgpt",
-      "version": "26.715.31925"
+      "version": "26.715.61943"
     },
     {
       "publisher": "ms-vscode",
@@ -27,13 +27,13 @@
     }
   ],
   "packages": {
-    "@openai/codex": "0.144.6",
+    "@openai/codex": "0.145.0",
     "@anthropic-ai/claude-code": "2.1.89",
     "@google/gemini-cli": "0.51.0",
     "opencode-ai": "1.18.4",
     "codebuff": "1.0.684",
     "@devcontainers/cli": "0.87.0",
-    "@sourcegraph/amp": "0.0.1784593083-g0c0855",
+    "@sourcegraph/amp": "0.0.1784651282-gd826ef",
     "devsh": "0.1.23"
   }
 }
