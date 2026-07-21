@@ -8,6 +8,7 @@
     "builtin": true
   },
   "ignorePatterns": [
+    ".worktrees/**",
     "dist",
     "**/dist",
     "**/out",

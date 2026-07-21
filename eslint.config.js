@@ -58,6 +58,8 @@ export default tseslint.config(
     'crates/**',
     // Reference documentation from external projects
     'dev-docs/**',
+    // Local git worktrees (sibling checkouts under .worktrees/)
+    '.worktrees/**',
   ]),
 
   // Base configs for all TypeScript files

@@ -1888,10 +1888,17 @@ with open(vnc_html_path, "r") as f:
     html = f.read()
 
 script_tag = f'''<script type="module" id="vnc-clipboard-bridge-init">
-// Expose UI to window for clipboard bridge access
-// noVNC loads UI as ES module, not exposed globally by default
-import UI from './app/ui.js';
-window.UI = UI;
+// Expose UI to window for clipboard bridge access.
+// IMPORTANT: do not use a static import of app/ui.js here.
+// The head <script type=module> already imports UI and uses top-level await
+// (defaults.json / mandatory.json). A second static import races the live
+// binding and throws: Cannot access 'UI' before initialization.
+// Dynamic import() waits until the module graph finishes evaluating.
+import('./app/ui.js').then((mod) => {{
+  window.UI = mod.default;
+}}).catch((err) => {{
+  console.warn('[vnc-clipboard-bridge] deferred UI import failed', err);
+}});
 </script>
 <script id="vnc-clipboard-bridge">
 {{bridge_js}}
