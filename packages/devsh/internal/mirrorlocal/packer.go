@@ -324,10 +324,50 @@ func transformFile(base string, data []byte, opts PackOptions) []byte {
 		}
 	}
 	// TOML secret lines (simple key = "value" for known keys).
-	if strings.HasSuffix(strings.ToLower(base), ".toml") && !opts.IncludeSecrets {
-		data = redactTOMLSecrets(data)
+	if strings.HasSuffix(strings.ToLower(base), ".toml") {
+		if !opts.IncludeSecrets {
+			data = redactTOMLSecrets(data)
+		}
+		// After path rewrite, host project tables like [projects."$HOME/wiki"] and
+		// pre-existing [projects."/root/wiki"] collapse to the same key. Codex
+		// rejects duplicate TOML tables — keep the first occurrence of each header.
+		data = dedupeTOMLTables(data)
 	}
 	return data
+}
+
+// dedupeTOMLTables drops repeated table headers (and their bodies) after rewrite.
+// First occurrence of each exact header line wins. Handles standard TOML tables
+// like [projects."/root/wiki"] used by Codex config.toml.
+func dedupeTOMLTables(data []byte) []byte {
+	lines := bytes.Split(data, []byte("\n"))
+	seen := make(map[string]struct{})
+	out := make([][]byte, 0, len(lines))
+	skipping := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(string(line))
+		isTable := len(trimmed) >= 3 &&
+			trimmed[0] == '[' &&
+			trimmed[len(trimmed)-1] == ']' &&
+			!strings.HasPrefix(trimmed, "[[") // leave arrays-of-tables alone
+
+		if isTable {
+			if _, dup := seen[trimmed]; dup {
+				skipping = true
+				continue
+			}
+			seen[trimmed] = struct{}{}
+			skipping = false
+			out = append(out, line)
+			continue
+		}
+		if skipping {
+			// Skip body lines of a duplicate table until the next header.
+			continue
+		}
+		out = append(out, line)
+	}
+	return bytes.Join(out, []byte("\n"))
 }
 
 func isTextConfig(base string) bool {

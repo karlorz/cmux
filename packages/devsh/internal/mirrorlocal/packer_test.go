@@ -300,3 +300,77 @@ func TestPackContinuesWhenSingleEntryUnreadable(t *testing.T) {
 		t.Fatalf("skill should still be packed: %v", err)
 	}
 }
+
+func TestPackCodexConfigDedupesProjectTablesAfterPathRewrite(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	// Simulate local config that already has both macOS home paths and pre-existing /root paths
+	// (common after prior cloud sessions). Path rewrite of LocalHomePrefix -> /root must not
+	// produce duplicate [projects."..."] keys.
+	cfg := `
+model = "gpt"
+
+[projects."` + filepath.ToSlash(home) + `"]
+trust_level = "trusted"
+
+[projects."` + filepath.ToSlash(home) + `/wiki"]
+trust_level = "trusted"
+
+[projects."/root"]
+trust_level = "trusted"
+
+[projects."/root/wiki"]
+trust_level = "trusted"
+
+[projects."` + filepath.ToSlash(home) + `/Desktop/code/cmux"]
+trust_level = "trusted"
+
+[marketplaces.x]
+source = "` + filepath.ToSlash(home) + `/Desktop/code/agent-skills"
+`
+	// Write as .codex/config.toml under home
+	writeTree(t, home, map[string]string{
+		".codex/config.toml": cfg,
+	})
+
+	archive, err := Pack(PackOptions{
+		HomeDir:         home,
+		LocalHomePrefix: home,
+		TargetHome:      "/root",
+	})
+	if err != nil {
+		t.Fatalf("Pack: %v", err)
+	}
+	out, err := ReadTarFile(archive, ".codex/config.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	// Count occurrences of each projects table header
+	counts := map[string]int{}
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, `[projects."`) && strings.HasSuffix(line, `"]`) {
+			counts[line]++
+		}
+	}
+	for hdr, n := range counts {
+		if n != 1 {
+			t.Errorf("duplicate TOML table %s appears %d times; config:\n%s", hdr, n, s)
+		}
+	}
+	// Must still have cloud home project and rewritten cmux path once
+	if counts[`[projects."/root"]`] != 1 {
+		t.Errorf("expected single [projects.\"/root\"]; got %v\n%s", counts, s)
+	}
+	if counts[`[projects."/root/wiki"]`] != 1 {
+		t.Errorf("expected single [projects.\"/root/wiki\"]; got %v\n%s", counts, s)
+	}
+	if !strings.Contains(s, `[projects."/root/Desktop/code/cmux"]`) {
+		t.Errorf("expected rewritten cmux project path; got:\n%s", s)
+	}
+	// Local home prefix should be gone
+	if strings.Contains(s, home) {
+		t.Errorf("local home still present:\n%s", s)
+	}
+}
