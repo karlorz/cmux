@@ -9,5 +9,10 @@
     }
   },
   "include": ["./**/*"],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    // Experimental spike; SDKSessionOptions no longer includes permissionMode
+    // in @anthropic-ai/claude-agent-sdk (blocks monorepo typecheck).
+    "test-agent-sdk-spike.ts"
+  ]
 }

@@ -1992,6 +1992,8 @@ export type StartSandboxBody = {
     taskRunJwt?: string;
     isCloudWorkspace?: boolean;
     isOrchestrationHead?: boolean;
+    clean?: boolean;
+    mirrorLocal?: boolean;
     repoUrl?: string;
     branch?: string;
     newBranch?: string;

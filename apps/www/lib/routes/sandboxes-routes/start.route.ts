@@ -65,6 +65,11 @@ import {
   type SandboxInstance,
 } from "./_helpers";
 import { buildSystemSandboxEnvContent } from "./system-sandbox-env";
+import {
+  resolveWorkspaceStartMode,
+  shouldRunSetupProviderAuth,
+  validateMirrorLocalApiRequest,
+} from "@/lib/workspace-start-mode";
 
 export const sandboxesStartRouter = new OpenAPIHono();
 
@@ -174,6 +179,20 @@ sandboxesStartRouter.openapi(
     })();
 
     const body = c.req.valid("json");
+    const startMode = resolveWorkspaceStartMode({
+      clean: body.clean,
+      mirrorLocal: body.mirrorLocal,
+    });
+    if (body.mirrorLocal) {
+      // Server cannot pack host agent config; Electron must use local devsh.
+      const mirrorErr =
+        validateMirrorLocalApiRequest({
+          mirrorLocal: true,
+          provider: null,
+        }) ??
+        "mirrorLocal requires the Electron app with local devsh";
+      return c.json({ error: mirrorErr }, 400);
+    }
     try {
       console.log("[sandboxes.start] incoming", {
         teamSlugOrId: body.teamSlugOrId,
@@ -182,6 +201,9 @@ sandboxesStartRouter.openapi(
         repoUrl: body.repoUrl,
         branch: body.branch,
         authMethod: isJwtAuth ? "jwt" : "stack-auth",
+        startMode,
+        clean: Boolean(body.clean),
+        mirrorLocal: Boolean(body.mirrorLocal),
       });
     } catch {
       // noop
@@ -699,6 +721,14 @@ sandboxesStartRouter.openapi(
         });
 
       const providerAuthPromise = (async () => {
+        // Clean / mirror-local: skip setup-providers injection (devsh --clean semantics).
+        // Ownership / team sandbox records continue outside this block.
+        if (!shouldRunSetupProviderAuth(startMode)) {
+          console.log(
+            `[sandboxes.start] Skipping setup-providers (startMode=${startMode})`,
+          );
+          return;
+        }
         try {
           const [previousKnowledge, previousMailbox] = await Promise.all([
             convex
