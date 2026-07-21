@@ -535,6 +535,8 @@ interface CreateCloudWorkspaceRequest {
   projectFullName?: string;
   repoUrl?: string;
   theme?: "dark" | "light" | "system";
+  clean?: boolean;
+  mirrorLocal?: boolean;
 }
 
 interface CreateCloudWorkspaceResponse {
@@ -571,8 +573,15 @@ async function handleCreateCloudWorkspace(
     return;
   }
 
-  const { teamSlugOrId, taskId, environmentId, projectFullName, repoUrl } =
-    body;
+  const {
+    teamSlugOrId,
+    taskId,
+    environmentId,
+    projectFullName,
+    repoUrl,
+    clean,
+    mirrorLocal,
+  } = body;
 
   if (!teamSlugOrId || !taskId) {
     jsonResponse(res, 400, {
@@ -593,6 +602,8 @@ async function handleCreateCloudWorkspace(
     taskId,
     environmentId,
     projectFullName,
+    clean: Boolean(clean),
+    mirrorLocal: Boolean(mirrorLocal),
   });
 
   // Hoist taskRunId outside runWithAuth to handle failures properly
@@ -652,6 +663,11 @@ async function handleCreateCloudWorkspace(
           : `[create-cloud-workspace] Starting sandbox for repo ${projectFullName}`,
       );
 
+      const { buildSandboxesStartModeFields } = await import("@cmux/shared");
+      const modeFields = buildSandboxesStartModeFields({
+        clean,
+        mirrorLocal,
+      });
       const startRes = await postApiSandboxesStart({
         client: getWwwClient(),
         body: {
@@ -665,6 +681,7 @@ async function handleCreateCloudWorkspace(
           taskRunJwt,
           isCloudWorkspace: true,
           isOrchestrationHead: true,
+          ...modeFields,
           ...(environmentId ? { environmentId } : { projectFullName, repoUrl }),
         },
       });

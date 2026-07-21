@@ -726,6 +726,16 @@ export const StartSandboxBody = z
     isCloudWorkspace: z.boolean().optional(),
     /** Mark as orchestration head agent (can spawn sub-agents, gets full capabilities) */
     isOrchestrationHead: z.boolean().optional(),
+    /**
+     * Clean start: record ownership as usual but skip setup-providers auth injection
+     * (devsh --clean / dashboard Clean mode).
+     */
+    clean: z.boolean().optional(),
+    /**
+     * Mirror local intent. Server cannot pack host ~/.claude; dashboard Electron
+     * handles host pack. When true, treat like clean for setup-providers skip.
+     */
+    mirrorLocal: z.boolean().optional(),
     // Optional hydration parameters to clone a repo into the sandbox on start
     repoUrl: z.string().optional(),
     branch: z.string().optional(),

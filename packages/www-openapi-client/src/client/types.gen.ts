@@ -1992,6 +1992,10 @@ export type StartSandboxBody = {
     taskRunJwt?: string;
     isCloudWorkspace?: boolean;
     isOrchestrationHead?: boolean;
+    /** Skip setup-providers auth injection; ownership still recorded. */
+    clean?: boolean;
+    /** Host mirror intent; server treats like clean for auth. Pack is host-side. */
+    mirrorLocal?: boolean;
     repoUrl?: string;
     branch?: string;
     newBranch?: string;

@@ -11,6 +11,7 @@ export * from "./run-control-types";
 export * from "./local-run-artifacts";
 export * from "./codeReview/callback-schemas";
 export * from "./socket-schemas";
+export * from "./workspace-start-mode";
 export * from "./terminal-config";
 export * from "./verifyTaskRunToken";
 export * from "./utils/normalize-origin";

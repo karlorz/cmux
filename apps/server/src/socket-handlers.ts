@@ -2250,6 +2250,8 @@ export function setupSocketHandlers(
           projectFullName,
           repoUrl,
           taskId: providedTaskId,
+          clean,
+          mirrorLocal,
         } = parsed.data;
         const teamSlugOrId = requestedTeamSlugOrId || safeTeam;
 
@@ -2317,8 +2319,15 @@ export function setupSocketHandlers(
           serverLogger.info(
             environmentId
               ? `[create-cloud-workspace] Starting Morph sandbox for environment ${environmentId}`
-              : `[create-cloud-workspace] Starting Morph sandbox for repo ${projectFullName}`
+              : `[create-cloud-workspace] Starting Morph sandbox for repo ${projectFullName}`,
+            { clean: Boolean(clean), mirrorLocal: Boolean(mirrorLocal) },
           );
+
+          const { buildSandboxesStartModeFields } = await import("@cmux/shared");
+          const modeFields = buildSandboxesStartModeFields({
+            clean,
+            mirrorLocal,
+          });
 
           const startRes = await postApiSandboxesStart({
             client: getWwwClient(),
@@ -2333,6 +2342,7 @@ export function setupSocketHandlers(
               taskRunJwt,
               isCloudWorkspace: true,
               isOrchestrationHead: true,
+              ...modeFields,
               ...(environmentId
                 ? { environmentId }
                 : { projectFullName, repoUrl }),

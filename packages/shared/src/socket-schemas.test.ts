@@ -235,6 +235,31 @@ describe("socket-schemas", () => {
       });
       expect(result.success).toBe(false);
     });
+
+    it("accepts clean and mirrorLocal flags for dashboard start modes", () => {
+      const clean = CreateCloudWorkspaceSchema.safeParse({
+        teamSlugOrId: "team-123",
+        environmentId: "k57hmn7abc123def456ghi789",
+        clean: true,
+      });
+      expect(clean.success).toBe(true);
+      if (clean.success) {
+        expect(clean.data.clean).toBe(true);
+        expect(clean.data.mirrorLocal).toBeUndefined();
+      }
+
+      const mirror = CreateCloudWorkspaceSchema.safeParse({
+        teamSlugOrId: "team-123",
+        environmentId: "k57hmn7abc123def456ghi789",
+        clean: true,
+        mirrorLocal: true,
+      });
+      expect(mirror.success).toBe(true);
+      if (mirror.success) {
+        expect(mirror.data.mirrorLocal).toBe(true);
+        expect(mirror.data.clean).toBe(true);
+      }
+    });
   });
 
   describe("AuthenticateSchema", () => {

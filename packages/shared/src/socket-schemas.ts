@@ -101,6 +101,16 @@ export const CreateCloudWorkspaceSchema = z
     taskId: typedZid("tasks").optional(),
     taskRunId: typedZid("taskRuns").optional(),
     theme: z.enum(["dark", "light", "system"]).optional(),
+    /**
+     * Clean start: skip setup-providers auth injection; ownership still recorded.
+     * Maps to POST /api/sandboxes/start clean=true.
+     */
+    clean: z.boolean().optional(),
+    /**
+     * Mirror local agent config. Implies clean for auth. Host pack is Electron-only;
+     * server forwards clean and may soft-fail pack with client guidance.
+     */
+    mirrorLocal: z.boolean().optional(),
   })
   .refine(
     (value) => Boolean(value.environmentId || value.projectFullName),

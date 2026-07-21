@@ -7,6 +7,7 @@ import {
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
 import { useSocket } from "@/contexts/socket/use-socket";
 import { useTheme } from "@/components/theme/use-theme";
+import { isElectron } from "@/lib/electron";
 import { preloadTaskRunIframes } from "@/lib/preloadTaskRunIframes";
 import {
   rewriteLocalWorkspaceUrlIfNeeded,
@@ -18,11 +19,19 @@ import type { Id } from "@cmux/convex/dataModel";
 import type {
   CreateLocalWorkspaceResponse,
   CreateCloudWorkspaceResponse,
+  WorkspaceStartMode,
+} from "@cmux/shared";
+import {
+  buildCreateCloudWorkspaceModeFields,
+  buildDevshMirrorLocalCommand,
+  getMirrorLocalUiState,
+  WORKSPACE_START_MODE_LABELS,
+  WORKSPACE_START_MODES,
 } from "@cmux/shared";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useMutation } from "convex/react";
 import { Cloud, Loader2, Monitor } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 type WorkspaceCreationButtonsProps = {
@@ -47,6 +56,13 @@ export function WorkspaceCreationButtons({
   const localServeWeb = useLocalVSCodeServeWebQuery();
   const [isCreatingLocal, setIsCreatingLocal] = useState(false);
   const [isCreatingCloud, setIsCreatingCloud] = useState(false);
+  const [workspaceStartMode, setWorkspaceStartMode] =
+    useState<WorkspaceStartMode>("default");
+  const mirrorLocalUi = useMemo(
+    () => getMirrorLocalUiState(isElectron),
+    // isElectron is a module constant; recompute once per mount
+    [],
+  );
 
   const reserveLocalWorkspace = useMutation(api.localWorkspaces.reserve);
   const createTask = useMutation(api.tasks.create);
@@ -224,6 +240,17 @@ export function WorkspaceCreationButtons({
     // Use resolved environment name from props (falls back to "Unknown Environment" if unavailable)
     const environmentName = selectedEnvironmentName || "Unknown Environment";
 
+    if (
+      workspaceStartMode === "mirror-local" &&
+      !mirrorLocalUi.enabled
+    ) {
+      toast.error(
+        mirrorLocalUi.tooltip ??
+          "Mirror local requires the Electron desktop app.",
+      );
+      return;
+    }
+
     setIsCreatingCloud(true);
 
     try {
@@ -240,6 +267,8 @@ export function WorkspaceCreationButtons({
       // Hint the sidebar to auto-expand this task once it appears
       addTaskToExpand(taskId);
 
+      const modeFields = buildCreateCloudWorkspaceModeFields(workspaceStartMode);
+
       await new Promise<void>((resolve) => {
         socket.emit(
           "create-cloud-workspace",
@@ -248,6 +277,7 @@ export function WorkspaceCreationButtons({
             environmentId,
             taskId,
             theme,
+            ...modeFields,
           },
           async (response: CreateCloudWorkspaceResponse) => {
             try {
@@ -261,7 +291,18 @@ export function WorkspaceCreationButtons({
               const effectiveTaskId = response.taskId ?? taskId;
               const effectiveTaskRunId = response.taskRunId;
 
-              toast.success("Cloud workspace created successfully");
+              if (workspaceStartMode === "mirror-local") {
+                // Host pack is not yet attached to dashboard sandboxes in-process;
+                // soft-fail with explicit CLI guidance (do not claim silent pack success).
+                const cmd = buildDevshMirrorLocalCommand();
+                toast.message("Cloud workspace starting (mirror-local)", {
+                  description: `Agent config pack from this host is not fully wired for dashboard sandboxes yet. For a durable host pack, run: ${cmd}`,
+                });
+              } else if (workspaceStartMode === "clean") {
+                toast.success("Clean cloud workspace created successfully");
+              } else {
+                toast.success("Cloud workspace created successfully");
+              }
 
               if (effectiveTaskId && effectiveTaskRunId) {
                 void router
@@ -296,7 +337,7 @@ export function WorkspaceCreationButtons({
         );
       });
 
-      console.log("Cloud workspace created:", taskId);
+      console.log("Cloud workspace created:", taskId, workspaceStartMode);
     } catch (error) {
       console.error("Error creating cloud workspace:", error);
       toast.error("Failed to create cloud workspace");
@@ -314,6 +355,9 @@ export function WorkspaceCreationButtons({
     theme,
     navigate,
     router,
+    workspaceStartMode,
+    mirrorLocalUi.enabled,
+    mirrorLocalUi.tooltip,
   ]);
 
   const canCreateLocal = selectedProject.length > 0 && !isEnvSelected;
@@ -326,56 +370,110 @@ export function WorkspaceCreationButtons({
   }
 
   return (
-    <div className="flex items-center gap-2 mb-3">
-      {!env.NEXT_PUBLIC_WEB_MODE && (
+    <div className="flex flex-col gap-2 mb-3">
+      <div
+        className="flex flex-wrap items-center gap-2"
+        data-testid="dashboard-workspace-start-mode"
+        role="group"
+        aria-label="Cloud workspace start mode"
+      >
+        <span className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
+          Start mode
+        </span>
+        <div className="flex flex-wrap gap-1">
+          {WORKSPACE_START_MODES.map((mode) => {
+            const isMirror = mode === "mirror-local";
+            const disabled = isMirror && !mirrorLocalUi.enabled;
+            const selected = workspaceStartMode === mode;
+            return (
+              <button
+                key={mode}
+                type="button"
+                disabled={disabled}
+                title={
+                  isMirror && mirrorLocalUi.tooltip
+                    ? mirrorLocalUi.tooltip
+                    : undefined
+                }
+                data-testid={`dashboard-workspace-start-mode-${mode}`}
+                aria-pressed={selected}
+                onClick={() => {
+                  if (disabled) return;
+                  setWorkspaceStartMode(mode);
+                }}
+                className={[
+                  "rounded-md border px-2 py-1 text-[11px] font-medium transition",
+                  selected
+                    ? "border-neutral-900 bg-neutral-900 text-white dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900"
+                    : "border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700",
+                  disabled
+                    ? "opacity-50 cursor-not-allowed hover:bg-transparent"
+                    : "",
+                ].join(" ")}
+              >
+                {WORKSPACE_START_MODE_LABELS[mode]}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        {!env.NEXT_PUBLIC_WEB_MODE && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={handleCreateLocalWorkspace}
+                disabled={!canCreateLocal || isCreatingLocal}
+                className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium transition-colors rounded-lg bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isCreatingLocal ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Monitor className="w-3.5 h-3.5" />
+                )}
+                <span>Create Local Workspace</span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {!selectedProject.length
+                ? "Select a repository first"
+                : isEnvSelected
+                  ? "Switch to repository mode (not environment)"
+                  : "Create workspace from selected repository"}
+            </TooltipContent>
+          </Tooltip>
+        )}
+
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              onClick={handleCreateLocalWorkspace}
-              disabled={!canCreateLocal || isCreatingLocal}
+              onClick={handleCreateCloudWorkspace}
+              disabled={!canCreateCloud || isCreatingCloud}
+              data-testid="dashboard-create-cloud-workspace"
               className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium transition-colors rounded-lg bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isCreatingLocal ? (
+              {isCreatingCloud ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
-                <Monitor className="w-3.5 h-3.5" />
+                <Cloud className="w-4 h-4" />
               )}
-              <span>Create Local Workspace</span>
+              <span>Create Cloud Workspace</span>
             </button>
           </TooltipTrigger>
           <TooltipContent>
             {!selectedProject.length
-              ? "Select a repository first"
-              : isEnvSelected
-                ? "Switch to repository mode (not environment)"
-                : "Create workspace from selected repository"}
+              ? "Select an environment first"
+              : !isEnvSelected
+                ? "Switch to environment mode (not repository)"
+                : workspaceStartMode === "clean"
+                  ? "Create clean workspace (skip provider auth injection)"
+                  : workspaceStartMode === "mirror-local"
+                    ? "Create workspace and skip provider auth; host mirror pack is soft-fail"
+                    : "Create workspace from selected environment"}
           </TooltipContent>
         </Tooltip>
-      )}
-
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={handleCreateCloudWorkspace}
-            disabled={!canCreateCloud || isCreatingCloud}
-            className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium transition-colors rounded-lg bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isCreatingCloud ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Cloud className="w-4 h-4" />
-            )}
-            <span>Create Cloud Workspace</span>
-          </button>
-        </TooltipTrigger>
-        <TooltipContent>
-          {!selectedProject.length
-            ? "Select an environment first"
-            : !isEnvSelected
-              ? "Switch to environment mode (not repository)"
-              : "Create workspace from selected environment"}
-        </TooltipContent>
-      </Tooltip>
+      </div>
     </div>
   );
 }
