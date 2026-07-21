@@ -3,12 +3,16 @@ package pvelxc
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 )
+
+// errLocalRead marks failures that cannot be recovered via PCT fallback.
+var errLocalRead = errors.New("read local file")
 
 // MaxHTTPPushChunkSize is the max base64 payload size per exec call (8 KiB).
 // Multiple of 4 for base64 alignment; keeps shell args under CF / exec limits.
@@ -94,14 +98,14 @@ func SelectPushFallback(httpOK bool, exitCode int, stderr, stdout string, err er
 // file from base64 chunks (≤ MaxHTTPPushChunkSize each).
 func BuildHTTPPushCommands(remotePath string, fileData []byte) []string {
 	b64 := base64.StdEncoding.EncodeToString(fileData)
-	escaped := shellSingleQuote(remotePath)
-	parent := shellSingleQuote(filepath.Dir(remotePath))
+	escaped := ShellSingleQuote(remotePath)
+	parent := ShellSingleQuote(filepath.Dir(remotePath))
 	cmds := []string{
 		fmt.Sprintf("mkdir -p %s && : > %s", parent, escaped),
 	}
 	for _, chunk := range ChunkBase64(b64) {
 		// chunk is base64 alphabet — safe inside single quotes.
-		cmds = append(cmds, fmt.Sprintf("printf '%%s' %s | base64 -d >> %s", shellSingleQuote(chunk), escaped))
+		cmds = append(cmds, fmt.Sprintf("printf '%%s' %s | base64 -d >> %s", ShellSingleQuote(chunk), escaped))
 	}
 	return cmds
 }
@@ -112,7 +116,7 @@ func BuildHTTPPushCommands(remotePath string, fileData []byte) []string {
 func PushFileViaHTTPExec(ctx context.Context, runner ExecRunner, instanceID, localPath, remotePath string) (ok bool, err error) {
 	data, err := os.ReadFile(localPath)
 	if err != nil {
-		return false, fmt.Errorf("read local file: %w", err)
+		return false, fmt.Errorf("%w: %w", errLocalRead, err)
 	}
 	cmds := BuildHTTPPushCommands(remotePath, data)
 	for i, cmd := range cmds {
@@ -135,9 +139,10 @@ func PushFileViaHTTPExec(ctx context.Context, runner ExecRunner, instanceID, loc
 func PushFile(ctx context.Context, runner ExecRunner, instanceID, localPath, remotePath string, opts PushFileOptions) (*PushResult, error) {
 	ok, err := PushFileViaHTTPExec(ctx, runner, instanceID, localPath, remotePath)
 	if err != nil {
-		// Hard failure (local read / non-413 remote error) — still try fallback if configured?
-		// Match Python: non-413 RuntimeError re-raises; we treat non-413 as hard error
-		// only when fallback not selected.
+		// Local read failures cannot be fixed by PCT; only remote/transport errors fall back.
+		if errors.Is(err, errLocalRead) {
+			return nil, err
+		}
 		use, reason := SelectPushFallback(false, 1, err.Error(), "", nil, opts.SSHHost)
 		if !use {
 			return nil, err
@@ -176,7 +181,7 @@ func pushViaPCT(ctx context.Context, localPath, remotePath string, opts PushFile
 		return fmt.Errorf("scp to PVE host: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
 	// pct push vmid local_on_host remote_in_ct
-	pctCmd := fmt.Sprintf("pct push %d %s %s && rm -f %s", opts.VMID, shellSingleQuote(tmpName), shellSingleQuote(remotePath), shellSingleQuote(tmpName))
+	pctCmd := fmt.Sprintf("pct push %d %s %s && rm -f %s", opts.VMID, ShellSingleQuote(tmpName), ShellSingleQuote(remotePath), ShellSingleQuote(tmpName))
 	ssh := exec.CommandContext(ctx, "ssh", "-o", "StrictHostKeyChecking=accept-new", opts.SSHHost, pctCmd)
 	if out, err := ssh.CombinedOutput(); err != nil {
 		return fmt.Errorf("pct push: %w (%s)", err, strings.TrimSpace(string(out)))

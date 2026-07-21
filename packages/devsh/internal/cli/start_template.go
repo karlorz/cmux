@@ -124,21 +124,9 @@ func templateMirrorLocalEnabled(v any) bool {
 		return true
 	case map[any]any:
 		return true
+	case string:
+		return strings.EqualFold(t, "true") || t == "1"
 	default:
-		// yaml may decode as map[string]interface{} already handled;
-		// also accept non-empty string "true"
-		if s, ok := v.(string); ok {
-			return strings.EqualFold(s, "true") || s == "1"
-		}
 		return false
 	}
-}
-
-// TemplatesDir returns ~/.cmux/templates (for docs/tests).
-func TemplatesDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".cmux", "templates"), nil
 }

@@ -55,17 +55,18 @@ func buildExecURL(host string) (string, error) {
 	return u.String(), nil
 }
 
-func shellSingleQuote(value string) string {
+// ShellSingleQuote wraps value in single quotes with POSIX-safe escaping.
+func ShellSingleQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
 func VerifyTimezoneCommand(timezone string) string {
-	return fmt.Sprintf("TZ=%s; date +%%Z", shellSingleQuote(timezone))
+	return fmt.Sprintf("TZ=%s; date +%%Z", ShellSingleQuote(timezone))
 }
 
 func ApplyTimezoneCommand(timezone string) string {
-	quotedTimezone := shellSingleQuote(timezone)
-	zoneInfoPath := shellSingleQuote("/usr/share/zoneinfo/" + timezone)
+	quotedTimezone := ShellSingleQuote(timezone)
+	zoneInfoPath := ShellSingleQuote("/usr/share/zoneinfo/" + timezone)
 	return strings.Join([]string{
 		"if [ -e " + zoneInfoPath + " ]; then",
 		"timedatectl set-timezone " + quotedTimezone + " 2>/dev/null || {",

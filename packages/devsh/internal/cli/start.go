@@ -95,15 +95,12 @@ func applyStartTemplateFlags(cmd *cobra.Command) error {
 	cli.Provider = flagProvider
 
 	cliSet := map[string]bool{
-		"provider":     cmd.Flags().Changed("provider") || flagProvider != "",
+		// Global --provider is not always marked Changed on the local flag set.
+		"provider":     cmd.Flags().Changed("provider") || strings.TrimSpace(flagProvider) != "",
 		"snapshot":     cmd.Flags().Changed("snapshot"),
 		"clean":        cmd.Flags().Changed("clean"),
 		"mirror-local": cmd.Flags().Changed("mirror-local"),
 		"no-auth":      cmd.Flags().Changed("no-auth"),
-	}
-	// If user passed global --provider before template, treat as set.
-	if strings.TrimSpace(flagProvider) != "" {
-		cliSet["provider"] = true
 	}
 
 	merged := ExpandStartTemplate(tmpl, cli, cliSet)
@@ -566,7 +563,8 @@ func mirrorLocalAgentConfig(ctx context.Context, client *pvelxc.Client, instance
 	}
 
 	// Extract into /root (tar entries are relative like .claude/... .codex/...)
-	extractCmd := fmt.Sprintf("mkdir -p /root && tar -xf %s -C /root && rm -f %s", pvelxcShellQuote(remoteTar), pvelxcShellQuote(remoteTar))
+	quotedTar := pvelxc.ShellSingleQuote(remoteTar)
+	extractCmd := fmt.Sprintf("mkdir -p /root && tar -xf %s -C /root && rm -f %s", quotedTar, quotedTar)
 	stdout, stderr, code, execErr := client.ExecCommand(ctx, instance.ID, extractCmd)
 	if execErr != nil {
 		return fmt.Errorf("extract exec: %w", execErr)
@@ -576,10 +574,6 @@ func mirrorLocalAgentConfig(ctx context.Context, client *pvelxc.Client, instance
 	}
 	fmt.Println("  Local agent config mirrored (secrets redacted)")
 	return nil
-}
-
-func pvelxcShellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
 func init() {

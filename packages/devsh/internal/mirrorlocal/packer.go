@@ -242,16 +242,8 @@ func redactJSON(data []byte) ([]byte, bool) {
 	if err := json.Unmarshal(data, &v); err != nil {
 		return nil, false
 	}
-	changed := redactValue(v)
-	if !changed {
-		// Still re-encode for stable output when nested empty — only rewrite if we touch secrets.
-		// Actually always re-encode when parse succeeds so path rewrite can run after.
-		out, err := json.MarshalIndent(v, "", "  ")
-		if err != nil {
-			return nil, false
-		}
-		return append(out, '\n'), true
-	}
+	_ = redactValue(v)
+	// Always re-encode when parse succeeds so path rewrite runs on stable JSON text.
 	out, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return nil, false

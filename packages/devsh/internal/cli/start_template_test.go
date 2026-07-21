@@ -81,7 +81,6 @@ func TestResolveTemplatePathByName(t *testing.T) {
 	// Uses real HOME — isolate with t.Setenv
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	// UserHomeDir on macOS may not use HOME alone on all Go versions — also write via TemplatesDir
 	base := filepath.Join(home, ".cmux", "templates")
 	if err := os.MkdirAll(base, 0o755); err != nil {
 		t.Fatal(err)
