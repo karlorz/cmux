@@ -1887,7 +1887,10 @@ with open(bridge_script_path, "r") as f:
 with open(vnc_html_path, "r") as f:
     html = f.read()
 
-script_tag = f'''<script type="module" id="vnc-clipboard-bridge-init">
+# NOTE: This inject body is embedded in an outer Python f-string (shell cmd).
+# Use a plain string + concat here — an f-string would re-parse JS braces as
+# expressions (SyntaxError on mod.default). Outer f-string still needs {{ }}.
+script_tag = '''<script type="module" id="vnc-clipboard-bridge-init">
 // Expose UI to window for clipboard bridge access.
 // IMPORTANT: do not use a static import of app/ui.js here.
 // The head <script type=module> already imports UI and uses top-level await
@@ -1901,7 +1904,7 @@ import('./app/ui.js').then((mod) => {{
 }});
 </script>
 <script id="vnc-clipboard-bridge">
-{{bridge_js}}
+''' + bridge_js + '''
 </script>
 '''
 
