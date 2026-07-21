@@ -41,9 +41,12 @@ import {
 } from "@cmux/shared/components/vnc-viewer";
 import {
   buildDevshStartCommand,
-  buildStartSandboxModeFields,
+  buildStartSandboxRequestBody,
   detectIsElectron,
   getMirrorLocalUiState,
+  shouldAdvanceAfterProvision,
+  shouldAutoProvisionOnMount,
+  shouldProvisionOnUserStart,
   WORKSPACE_START_MODE_LABELS,
   type WorkspaceStartMode,
 } from "@/lib/workspace-start-mode";
@@ -471,6 +474,8 @@ export function PreviewConfigureClient({
   const [instance, setInstance] = useState<SandboxInstance | null>(null);
   const [isProvisioning, setIsProvisioning] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  /** Non-error status (e.g. Electron mirror-local host path started). */
+  const [startInfoMessage, setStartInfoMessage] = useState<string | null>(null);
 
   const selectedTeamSlugOrId = useMemo(
     () => initialTeamSlugOrId || teams[0]?.slugOrId || "",
@@ -480,14 +485,23 @@ export function PreviewConfigureClient({
   // Layout phase for animation - always start with initial-setup to avoid hydration mismatch
   const [layoutPhase, setLayoutPhase] = useState<LayoutPhase>("initial-setup");
 
-  // Sync layoutPhase with URL after hydration (runs once on mount)
+  // Sync layoutPhase with URL after hydration. Workspace step requires an
+  // instance; without auto-provision-on-mount, bare ?step=workspace would
+  // hang on "Starting VS Code..." with no mode selection UI.
   useEffect(() => {
     const url = new URL(window.location.href);
     const stepParam = url.searchParams.get("step");
-    if (stepParam === "workspace") {
-      setLayoutPhase("workspace-config");
+    if (stepParam !== "workspace") {
+      return;
     }
-  }, []);
+    if (instance) {
+      setLayoutPhase("workspace-config");
+      return;
+    }
+    url.searchParams.delete("step");
+    window.history.replaceState({}, "", url.toString());
+    setLayoutPhase("initial-setup");
+  }, [instance]);
   // Current config step (starts at run-scripts when entering workspace config)
   const [currentConfigStep, setCurrentConfigStep] =
     useState<ConfigStep>("run-scripts");
@@ -733,14 +747,19 @@ export function PreviewConfigureClient({
     [instance?.instanceId, resolvedVncWebsocketUrl]
   );
 
-  const provisionVM = useCallback(async () => {
+  const provisionVM = useCallback(async (): Promise<{
+    ok: boolean;
+    instance: SandboxInstance | null;
+    infoMessage?: string;
+  }> => {
     if (!resolvedTeamSlugOrId) {
       setErrorMessage("Select a team to start provisioning.");
-      return;
+      return { ok: false, instance: null };
     }
 
     setIsProvisioning(true);
     setErrorMessage(null);
+    setStartInfoMessage(null);
 
     try {
       // Mirror-local packs host agent config — Electron/host only via local devsh.
@@ -764,28 +783,26 @@ export function PreviewConfigureClient({
         };
         if (typeof w.cmux?.runCommandInTerminal === "function") {
           await w.cmux.runCommandInTerminal({ command: cmd, forceNew: true });
-          setErrorMessage(
-            `Started local: ${cmd}. Open the terminal panel for progress. For dashboard embed, use Clean or Default start instead.`,
-          );
-          return;
+          const infoMessage = `Started local: ${cmd}. Open the terminal panel for progress. For dashboard embed, use Clean or Default start instead.`;
+          // Informational — not a hard error; keep mode controls visible.
+          setStartInfoMessage(infoMessage);
+          return { ok: true, instance: null, infoMessage };
         }
         throw new Error(
           `Mirror local needs Electron terminal bridge. Run in a shell: ${cmd}`,
         );
       }
 
-      const modeFields = buildStartSandboxModeFields(workspaceStartMode);
+      const body = buildStartSandboxRequestBody({
+        teamSlugOrId: resolvedTeamSlugOrId,
+        repoUrl: `https://github.com/${repo}`,
+        mode: workspaceStartMode,
+        snapshotId: selectedSnapshotId || undefined,
+      });
       const response = await fetch("/api/sandboxes/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          teamSlugOrId: resolvedTeamSlugOrId,
-          repoUrl: `https://github.com/${repo}`,
-          branch: "main",
-          ttlSeconds: 3600,
-          ...(selectedSnapshotId ? { snapshotId: selectedSnapshotId } : {}),
-          ...modeFields,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {
@@ -801,13 +818,15 @@ export function PreviewConfigureClient({
         normalizedFromResponse ?? deriveVncUrl(data.instanceId, data.vscodeUrl);
 
       if (selectedTeamSlugOrIdRef.current !== resolvedTeamSlugOrId) {
-        return;
+        return { ok: false, instance: null };
       }
 
-      setInstance({
+      const nextInstance = {
         ...data,
         vncUrl: derived ?? undefined,
-      });
+      };
+      setInstance(nextInstance);
+      return { ok: true, instance: nextInstance };
     } catch (error) {
       const message =
         error instanceof Error
@@ -817,6 +836,7 @@ export function PreviewConfigureClient({
         setErrorMessage(message);
       }
       console.error("Failed to provision workspace:", error);
+      return { ok: false, instance: null };
     } finally {
       setIsProvisioning(false);
     }
@@ -829,7 +849,12 @@ export function PreviewConfigureClient({
     mirrorLocalUi.tooltip,
   ]);
 
+  // Defer sandbox start until Continue so the user can pick Clean / Mirror local.
+  // Auto-start on mount would always fire with mode=default before selection.
   useEffect(() => {
+    if (!shouldAutoProvisionOnMount()) {
+      return;
+    }
     if (!resolvedTeamSlugOrId) {
       return;
     }
@@ -1053,8 +1078,32 @@ export function PreviewConfigureClient({
     }
   };
 
-  // Handle transitioning from initial setup to workspace configuration
-  const handleStartWorkspaceConfig = useCallback(() => {
+  // Continue: provision with the selected start mode, then enter workspace config.
+  const handleStartWorkspaceConfig = useCallback(async () => {
+    let hasInstance = Boolean(instance);
+    let provisionSucceeded = hasInstance;
+
+    if (
+      shouldProvisionOnUserStart({
+        hasInstance,
+        isProvisioning,
+      })
+    ) {
+      const result = await provisionVM();
+      provisionSucceeded = result.ok;
+      hasInstance = Boolean(result.instance);
+      if (
+        !shouldAdvanceAfterProvision({
+          mode: workspaceStartMode,
+          hasInstance,
+          provisionSucceeded,
+        })
+      ) {
+        // Stay on initial setup so mode controls remain usable (error / mirror-local host path).
+        return;
+      }
+    }
+
     // Track entering workspace config (first step is run-scripts)
     posthog.capture("preview_config_step", {
       repo_full_name: repo,
@@ -1070,7 +1119,14 @@ export function PreviewConfigureClient({
     setTimeout(() => {
       setLayoutPhase("workspace-config");
     }, 650); // Match CSS transition duration (600ms + buffer)
-  }, [repo, selectedTeamSlugOrId]);
+  }, [
+    instance,
+    isProvisioning,
+    provisionVM,
+    repo,
+    selectedTeamSlugOrId,
+    workspaceStartMode,
+  ]);
 
   // Handle going back to initial setup from workspace config
   const handleBackToInitialSetup = useCallback(() => {
@@ -1211,7 +1267,10 @@ export function PreviewConfigureClient({
     vscodePersistKey,
   ]);
 
-  if (errorMessage && !instance) {
+  // Provision errors stay inline on initial-setup so Start mode controls remain
+  // selectable before Retry/Continue (full-page error hid Clean/Mirror local).
+  // Once past initial-setup without an instance, show a recoverable error shell.
+  if (errorMessage && !instance && layoutPhase !== "initial-setup") {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-[#05050a] text-white">
         <div className="text-center max-w-md px-6">
@@ -1221,11 +1280,11 @@ export function PreviewConfigureClient({
             type="button"
             onClick={() => {
               setErrorMessage(null);
-              void provisionVM();
+              setLayoutPhase("initial-setup");
             }}
             className="mt-4 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-neutral-200"
           >
-            Retry
+            Back to start mode
           </button>
         </div>
       </div>
@@ -1950,20 +2009,36 @@ export function PreviewConfigureClient({
             </p>
           </div>
         )}
+        {startInfoMessage && (
+          <div className="rounded-md bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 p-3 mt-6">
+            <p className="text-sm text-neutral-700 dark:text-neutral-300">
+              {startInfoMessage}
+            </p>
+          </div>
+        )}
 
-        {/* Footer Button */}
+        {/* Footer Button — provisions with selected start mode (not auto on mount) */}
         <div className="mt-8 pt-6 border-t border-neutral-200 dark:border-neutral-800">
           <button
             type="button"
-            onClick={handleStartWorkspaceConfig}
+            data-testid="workspace-start-continue"
+            disabled={isProvisioning}
+            onClick={() => {
+              void handleStartWorkspaceConfig();
+            }}
             className={clsx(
               "w-full inline-flex items-center justify-center gap-2 rounded-md px-5 py-2.5 text-sm font-semibold transition",
               "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 hover:bg-neutral-800 dark:hover:bg-neutral-200 cursor-pointer",
-              !isWorkspaceReady && "opacity-80"
+              (isProvisioning || !isWorkspaceReady) && "opacity-80",
+              isProvisioning && "cursor-wait",
             )}
           >
-            Continue
-            <ArrowRight className="w-4 h-4" />
+            {isProvisioning
+              ? "Starting workspace..."
+              : errorMessage && !instance
+                ? "Retry with selected mode"
+                : "Continue"}
+            {!isProvisioning && <ArrowRight className="w-4 h-4" />}
           </button>
         </div>
       </div>

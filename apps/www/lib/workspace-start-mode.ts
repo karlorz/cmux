@@ -165,3 +165,68 @@ export const WORKSPACE_START_MODE_LABELS: Record<WorkspaceStartMode, string> = {
   clean: "Clean",
   "mirror-local": "Mirror local",
 };
+
+/**
+ * Auto-provision on mount would start with mode=default before the user can
+ * pick Clean / Mirror local. Start Workspace defers until explicit Continue/Retry.
+ */
+export function shouldAutoProvisionOnMount(): boolean {
+  return false;
+}
+
+/** Continue / Retry should call provision when no sandbox instance exists yet. */
+export function shouldProvisionOnUserStart(params: {
+  hasInstance: boolean;
+  isProvisioning: boolean;
+}): boolean {
+  return !params.hasInstance && !params.isProvisioning;
+}
+
+export type StartSandboxRequestBody = {
+  teamSlugOrId: string;
+  repoUrl: string;
+  branch: string;
+  ttlSeconds: number;
+  snapshotId?: string;
+  clean?: boolean;
+  mirrorLocal?: boolean;
+};
+
+/** Full JSON body for POST /api/sandboxes/start including mode fields. */
+export function buildStartSandboxRequestBody(params: {
+  teamSlugOrId: string;
+  repoUrl: string;
+  mode: WorkspaceStartMode;
+  branch?: string;
+  ttlSeconds?: number;
+  snapshotId?: string;
+}): StartSandboxRequestBody {
+  const body: StartSandboxRequestBody = {
+    teamSlugOrId: params.teamSlugOrId,
+    repoUrl: params.repoUrl,
+    branch: params.branch ?? "main",
+    ttlSeconds: params.ttlSeconds ?? 3600,
+    ...buildStartSandboxModeFields(params.mode),
+  };
+  if (params.snapshotId?.trim()) {
+    body.snapshotId = params.snapshotId.trim();
+  }
+  return body;
+}
+
+/**
+ * Whether Continue should advance into workspace-config after a provision attempt.
+ * API starts need an instance; Electron mirror-local uses host devsh (no API instance).
+ */
+export function shouldAdvanceAfterProvision(params: {
+  mode: WorkspaceStartMode;
+  hasInstance: boolean;
+  provisionSucceeded: boolean;
+}): boolean {
+  if (!params.provisionSucceeded) return false;
+  if (params.mode === "mirror-local") {
+    // Host path: user continues in terminal; stay on setup unless an instance appeared.
+    return params.hasInstance;
+  }
+  return params.hasInstance;
+}

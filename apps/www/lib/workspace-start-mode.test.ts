@@ -2,10 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   buildDevshStartCommand,
   buildStartSandboxModeFields,
+  buildStartSandboxRequestBody,
   detectIsElectron,
   getMirrorLocalUiState,
   isMirrorLocalSupportedForProvider,
   resolveWorkspaceStartMode,
+  shouldAdvanceAfterProvision,
+  shouldAutoProvisionOnMount,
+  shouldProvisionOnUserStart,
   shouldRecordSandboxOwnership,
   shouldRunSetupProviderAuth,
   validateMirrorLocalApiRequest,
@@ -146,5 +150,78 @@ describe("WORKSPACE_START_MODE_LABELS", () => {
     expect(WORKSPACE_START_MODE_LABELS.clean).toBe("Clean");
     expect(WORKSPACE_START_MODE_LABELS["mirror-local"]).toBe("Mirror local");
     expect(WORKSPACE_START_MODE_LABELS.default).toBe("Default");
+  });
+});
+
+describe("provision timing vs mode selection", () => {
+  it("never auto-provisions on mount (mode defaults would bypass Clean/Mirror)", () => {
+    expect(shouldAutoProvisionOnMount()).toBe(false);
+  });
+
+  it("provisions only on explicit Continue/Retry when no instance yet", () => {
+    expect(
+      shouldProvisionOnUserStart({ hasInstance: false, isProvisioning: false }),
+    ).toBe(true);
+    expect(
+      shouldProvisionOnUserStart({ hasInstance: true, isProvisioning: false }),
+    ).toBe(false);
+    expect(
+      shouldProvisionOnUserStart({ hasInstance: false, isProvisioning: true }),
+    ).toBe(false);
+  });
+
+  it("buildStartSandboxRequestBody includes clean when mode selected before start", () => {
+    const defaultBody = buildStartSandboxRequestBody({
+      teamSlugOrId: "team_1",
+      repoUrl: "https://github.com/acme/repo",
+      mode: "default",
+      snapshotId: "snapshot_abc",
+    });
+    expect(defaultBody.clean).toBeUndefined();
+    expect(defaultBody.mirrorLocal).toBeUndefined();
+    expect(defaultBody.snapshotId).toBe("snapshot_abc");
+
+    const cleanBody = buildStartSandboxRequestBody({
+      teamSlugOrId: "team_1",
+      repoUrl: "https://github.com/acme/repo",
+      mode: "clean",
+    });
+    expect(cleanBody).toMatchObject({
+      teamSlugOrId: "team_1",
+      clean: true,
+    });
+    expect(cleanBody.mirrorLocal).toBeUndefined();
+
+    const mirrorBody = buildStartSandboxRequestBody({
+      teamSlugOrId: "team_1",
+      repoUrl: "https://github.com/acme/repo",
+      mode: "mirror-local",
+    });
+    // Server rejects mirrorLocal; Electron uses devsh. Body fields document intent.
+    expect(mirrorBody).toMatchObject({ clean: true, mirrorLocal: true });
+  });
+
+  it("does not advance to workspace-config without a successful API instance for clean/default", () => {
+    expect(
+      shouldAdvanceAfterProvision({
+        mode: "clean",
+        hasInstance: false,
+        provisionSucceeded: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAdvanceAfterProvision({
+        mode: "clean",
+        hasInstance: true,
+        provisionSucceeded: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldAdvanceAfterProvision({
+        mode: "mirror-local",
+        hasInstance: false,
+        provisionSucceeded: true,
+      }),
+    ).toBe(false);
   });
 });
