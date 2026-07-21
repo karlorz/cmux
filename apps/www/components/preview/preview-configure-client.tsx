@@ -39,6 +39,14 @@ import {
   VncViewer,
   type VncConnectionStatus,
 } from "@cmux/shared/components/vnc-viewer";
+import {
+  buildDevshStartCommand,
+  buildStartSandboxModeFields,
+  detectIsElectron,
+  getMirrorLocalUiState,
+  WORKSPACE_START_MODE_LABELS,
+  type WorkspaceStartMode,
+} from "@/lib/workspace-start-mode";
 
 const MASKED_ENV_VALUE = "••••••••••••••••";
 
@@ -494,6 +502,13 @@ export function PreviewConfigureClient({
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<MachinePresetId>(
     initialSnapshotId
   );
+  const [workspaceStartMode, setWorkspaceStartMode] =
+    useState<WorkspaceStartMode>("default");
+  const isElectronClient = useMemo(() => detectIsElectron(), []);
+  const mirrorLocalUi = useMemo(
+    () => getMirrorLocalUiState(isElectronClient),
+    [isElectronClient],
+  );
   const [maintenanceScript, setMaintenanceScript] = useState("");
   const [devScript, setDevScript] = useState("");
   const [hasUserEditedScripts, setHasUserEditedScripts] = useState(false);
@@ -728,6 +743,38 @@ export function PreviewConfigureClient({
     setErrorMessage(null);
 
     try {
+      // Mirror-local packs host agent config — Electron/host only via local devsh.
+      if (workspaceStartMode === "mirror-local") {
+        if (!mirrorLocalUi.enabled) {
+          throw new Error(
+            mirrorLocalUi.tooltip ??
+              "Mirror local requires the Electron app with local devsh.",
+          );
+        }
+        const cmd = buildDevshStartCommand("mirror-local", {
+          snapshotId: selectedSnapshotId || undefined,
+        });
+        const w = window as unknown as {
+          cmux?: {
+            runCommandInTerminal?: (opts: {
+              command: string;
+              forceNew?: boolean;
+            }) => Promise<unknown> | unknown;
+          };
+        };
+        if (typeof w.cmux?.runCommandInTerminal === "function") {
+          await w.cmux.runCommandInTerminal({ command: cmd, forceNew: true });
+          setErrorMessage(
+            `Started local: ${cmd}. Open the terminal panel for progress. For dashboard embed, use Clean or Default start instead.`,
+          );
+          return;
+        }
+        throw new Error(
+          `Mirror local needs Electron terminal bridge. Run in a shell: ${cmd}`,
+        );
+      }
+
+      const modeFields = buildStartSandboxModeFields(workspaceStartMode);
       const response = await fetch("/api/sandboxes/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -737,6 +784,7 @@ export function PreviewConfigureClient({
           branch: "main",
           ttlSeconds: 3600,
           ...(selectedSnapshotId ? { snapshotId: selectedSnapshotId } : {}),
+          ...modeFields,
         }),
       });
 
@@ -772,7 +820,14 @@ export function PreviewConfigureClient({
     } finally {
       setIsProvisioning(false);
     }
-  }, [repo, resolvedTeamSlugOrId, selectedSnapshotId]);
+  }, [
+    repo,
+    resolvedTeamSlugOrId,
+    selectedSnapshotId,
+    workspaceStartMode,
+    mirrorLocalUi.enabled,
+    mirrorLocalUi.tooltip,
+  ]);
 
   useEffect(() => {
     if (!resolvedTeamSlugOrId) {
@@ -1561,6 +1616,71 @@ export function PreviewConfigureClient({
           value={selectedSnapshotId}
           onValueChange={setSelectedSnapshotId}
         />
+
+        {/* Start mode: Default | Clean | Mirror local (Electron-only) */}
+        <div
+          className="space-y-2"
+          data-testid="workspace-start-mode"
+          role="group"
+          aria-label="Workspace start mode"
+        >
+          <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+            Start mode
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {(
+              ["default", "clean", "mirror-local"] as const satisfies WorkspaceStartMode[]
+            ).map((mode) => {
+              const isMirror = mode === "mirror-local";
+              const disabled = isMirror && !mirrorLocalUi.enabled;
+              const selected = workspaceStartMode === mode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  disabled={disabled}
+                  title={
+                    isMirror && mirrorLocalUi.tooltip
+                      ? mirrorLocalUi.tooltip
+                      : undefined
+                  }
+                  data-testid={`workspace-start-mode-${mode}`}
+                  aria-pressed={selected}
+                  onClick={() => {
+                    if (disabled) return;
+                    setWorkspaceStartMode(mode);
+                  }}
+                  className={clsx(
+                    "rounded-md border px-3 py-1.5 text-sm font-medium transition",
+                    selected
+                      ? "border-neutral-900 bg-neutral-900 text-white dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900"
+                      : "border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-900",
+                    disabled && "opacity-50 cursor-not-allowed hover:bg-transparent",
+                  )}
+                >
+                  {WORKSPACE_START_MODE_LABELS[mode]}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            {workspaceStartMode === "clean" &&
+              "Clean: skip provider auth injection; ownership still recorded."}
+            {workspaceStartMode === "mirror-local" &&
+              "Mirror local: pack redacted ~/.claude and ~/.codex via local devsh (Electron)."}
+            {workspaceStartMode === "default" &&
+              "Default: current start behavior including provider auth setup."}
+            {!mirrorLocalUi.enabled && (
+              <span className="block mt-1" title={mirrorLocalUi.tooltip ?? undefined}>
+                Mirror local is disabled in the browser — use the Electron app or{" "}
+                <code className="text-[11px]">
+                  devsh start -p pve-lxc --clean --mirror-local
+                </code>
+                .
+              </span>
+            )}
+          </p>
+        </div>
 
         {/* Maintenance and Dev Scripts - Always expanded on initial setup */}
         {renderScriptsSection({ defaultOpen: true })}
