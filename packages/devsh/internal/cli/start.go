@@ -5,11 +5,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/karlorz/devsh/internal/auth"
 	"github.com/karlorz/devsh/internal/e2b"
+	"github.com/karlorz/devsh/internal/mirrorlocal"
 	"github.com/karlorz/devsh/internal/provider"
 	"github.com/karlorz/devsh/internal/pvelxc"
 	"github.com/karlorz/devsh/internal/state"
@@ -32,13 +34,30 @@ Examples:
   devsh start ./my-project       # Create VM, sync specific directory
   devsh start --snapshot=snap_x  # Create from specific snapshot
   devsh start -i                 # Create VM and open VS Code
-  devsh start --no-auth          # Skip automatic provider auth setup`,
+  devsh start --no-auth          # Skip ownership recording and provider auth
+  devsh start --clean            # Record ownership; skip provider auth injection
+  devsh start --mirror-local     # Pack/redact local agent config into the box (pve-lxc)
+  devsh start --template name    # Expand ~/.cmux/templates/<name>.yaml into flags`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := applyStartTemplateFlags(cmd); err != nil {
+			return err
+		}
+
 		mode, err := resolveStartMode(flagProvider)
 		if err != nil {
 			return err
 		}
+
+		clean, _ := cmd.Flags().GetBool("clean")
+		mirrorLocal, _ := cmd.Flags().GetBool("mirror-local")
+		if (clean || mirrorLocal) && !mode.serverManaged && mode.provider != provider.PveLxc {
+			return fmt.Errorf("--clean and --mirror-local are only supported for provider pve-lxc (got %s)", mode.provider)
+		}
+		if mode.serverManaged && (clean || mirrorLocal) {
+			return fmt.Errorf("--clean and --mirror-local require an explicit pve-lxc provider (server-managed start is unsupported for these flags)")
+		}
+
 		if mode.serverManaged {
 			return runStartServerManaged(cmd, args)
 		}
@@ -56,6 +75,54 @@ Examples:
 	},
 }
 
+// applyStartTemplateFlags loads --template if set and merges into flag values.
+// Explicit CLI flags always win over template defaults.
+func applyStartTemplateFlags(cmd *cobra.Command) error {
+	templateName, _ := cmd.Flags().GetString("template")
+	if strings.TrimSpace(templateName) == "" {
+		return nil
+	}
+	tmpl, err := LoadStartTemplate(templateName)
+	if err != nil {
+		return err
+	}
+
+	cli := StartTemplateFlags{}
+	cli.Snapshot, _ = cmd.Flags().GetString("snapshot")
+	cli.Clean, _ = cmd.Flags().GetBool("clean")
+	cli.MirrorLocal, _ = cmd.Flags().GetBool("mirror-local")
+	cli.NoAuth, _ = cmd.Flags().GetBool("no-auth")
+	cli.Provider = flagProvider
+
+	cliSet := map[string]bool{
+		// Global --provider is not always marked Changed on the local flag set.
+		"provider":     cmd.Flags().Changed("provider") || strings.TrimSpace(flagProvider) != "",
+		"snapshot":     cmd.Flags().Changed("snapshot"),
+		"clean":        cmd.Flags().Changed("clean"),
+		"mirror-local": cmd.Flags().Changed("mirror-local"),
+		"no-auth":      cmd.Flags().Changed("no-auth"),
+	}
+
+	merged := ExpandStartTemplate(tmpl, cli, cliSet)
+	if merged.Snapshot != "" && !cliSet["snapshot"] {
+		_ = cmd.Flags().Set("snapshot", merged.Snapshot)
+	}
+	if !cliSet["clean"] {
+		_ = cmd.Flags().Set("clean", fmt.Sprintf("%t", merged.Clean))
+	}
+	if !cliSet["mirror-local"] {
+		_ = cmd.Flags().Set("mirror-local", fmt.Sprintf("%t", merged.MirrorLocal))
+	}
+	if !cliSet["no-auth"] {
+		_ = cmd.Flags().Set("no-auth", fmt.Sprintf("%t", merged.NoAuth))
+	}
+	if merged.Provider != "" && !cliSet["provider"] {
+		flagProvider = merged.Provider
+	}
+	fmt.Printf("Applied template %q\n", templateName)
+	return nil
+}
+
 func resolveSandboxTimezone() string {
 	if timezone := strings.TrimSpace(os.Getenv("TZ")); timezone != "" {
 		return timezone
@@ -66,10 +133,14 @@ func resolveSandboxTimezone() string {
 	return pvelxc.DefaultSandboxTimezone
 }
 
-// setupProviderAuthIfNeeded calls SetupProviders on the www API unless --no-auth is set.
+// setupProviderAuthIfNeeded calls SetupProviders on the www API when the
+// resolved start auth mode allows it (not --no-auth / --clean / mirror-implied clean).
 func setupProviderAuthIfNeeded(cmd *cobra.Command, ctx context.Context, client *vm.Client, instanceID string) {
 	noAuth, _ := cmd.Flags().GetBool("no-auth")
-	if noAuth {
+	clean, _ := cmd.Flags().GetBool("clean")
+	mirrorLocal, _ := cmd.Flags().GetBool("mirror-local")
+	mode := ResolveStartAuthMode(noAuth, clean, mirrorLocal)
+	if !mode.SetupProviders {
 		return
 	}
 
@@ -300,31 +371,49 @@ func runStartPveLxc(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Warning: sync is not supported for pve-lxc yet (skipping sync of %s)\n", syncPath)
 	}
 
-	// Set up provider auth via www API (requires authentication)
+	// Ownership vs provider-auth: --clean records ownership only; --no-auth skips both.
 	noAuth, _ := cmd.Flags().GetBool("no-auth")
-	if !noAuth {
-		// PVE LXC path needs a www client for the setup-providers endpoint
+	clean, _ := cmd.Flags().GetBool("clean")
+	mirrorLocal, _ := cmd.Flags().GetBool("mirror-local")
+	authMode := ResolveStartAuthMode(noAuth, clean, mirrorLocal)
+	if authMode.Warning != "" {
+		fmt.Printf("Note: %s\n", authMode.Warning)
+	}
+
+	if authMode.RecordOwnership || authMode.SetupProviders {
+		// PVE LXC path needs a www client for ownership / setup-providers.
 		teamSlug, teamErr := auth.GetTeamSlug()
 		if teamErr != nil {
-			fmt.Printf("Warning: provider auth setup skipped (not authenticated): %v\n", teamErr)
+			fmt.Printf("Warning: www API skipped (not authenticated): %v\n", teamErr)
 		} else {
 			wwwClient, wwwErr := vm.NewClient()
 			if wwwErr != nil {
-				fmt.Printf("Warning: provider auth setup skipped: %v\n", wwwErr)
+				fmt.Printf("Warning: www API client skipped: %v\n", wwwErr)
 			} else {
 				wwwClient.SetTeamSlug(teamSlug)
-				if err := wwwClient.RecordSandboxCreate(ctx, vm.RecordSandboxCreateRequest{
-					InstanceID:       instance.ID,
-					Provider:         provider.PveLxc,
-					VMID:             instance.VMID,
-					Hostname:         instance.Hostname,
-					SnapshotID:       snapshotID,
-					SnapshotProvider: provider.PveLxc,
-				}); err != nil {
-					fmt.Printf("Warning: failed to record sandbox ownership: %v\n", err)
+				if authMode.RecordOwnership {
+					if err := wwwClient.RecordSandboxCreate(ctx, vm.RecordSandboxCreateRequest{
+						InstanceID:       instance.ID,
+						Provider:         provider.PveLxc,
+						VMID:             instance.VMID,
+						Hostname:         instance.Hostname,
+						SnapshotID:       snapshotID,
+						SnapshotProvider: provider.PveLxc,
+					}); err != nil {
+						fmt.Printf("Warning: failed to record sandbox ownership: %v\n", err)
+					}
 				}
-				setupProviderAuthIfNeeded(cmd, ctx, wwwClient, instance.ID)
+				if authMode.SetupProviders {
+					setupProviderAuthIfNeeded(cmd, ctx, wwwClient, instance.ID)
+				}
 			}
+		}
+	}
+
+	// Optional: mirror safe local agent config (soft-fail).
+	if mirrorLocal {
+		if err := mirrorLocalAgentConfig(ctx, client, instance); err != nil {
+			fmt.Printf("Warning: --mirror-local failed (box remains usable): %v\n", err)
 		}
 	}
 
@@ -440,9 +529,59 @@ func runStartE2B(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// mirrorLocalAgentConfig packs a redacted ~/.claude + ~/.codex subset and dual-path
+// pushes it into the container, then extracts under /root. Soft-fail at caller.
+func mirrorLocalAgentConfig(ctx context.Context, client *pvelxc.Client, instance *pvelxc.Instance) error {
+	fmt.Println("Mirroring local agent config (--mirror-local)...")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("resolve home: %w", err)
+	}
+	tmpDir, err := os.MkdirTemp("", "devsh-mirror-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	archivePath := filepath.Join(tmpDir, "agent-config.tar")
+	if _, err := mirrorlocal.PackToFile(mirrorlocal.PackOptions{
+		HomeDir:         home,
+		LocalHomePrefix: home,
+		TargetHome:      "/root",
+		IncludeSecrets:  false,
+	}, archivePath); err != nil {
+		return fmt.Errorf("pack: %w", err)
+	}
+
+	remoteTar := "/tmp/devsh-mirror-agent-config.tar"
+	result, err := client.PushFileFromEnv(ctx, instance.ID, instance.VMID, archivePath, remoteTar)
+	if err != nil {
+		return fmt.Errorf("push: %w", err)
+	}
+	if result != nil {
+		fmt.Printf("  Push path: %s\n", result.Path)
+	}
+
+	// Extract into /root (tar entries are relative like .claude/... .codex/...)
+	quotedTar := pvelxc.ShellSingleQuote(remoteTar)
+	extractCmd := fmt.Sprintf("mkdir -p /root && tar -xf %s -C /root && rm -f %s", quotedTar, quotedTar)
+	stdout, stderr, code, execErr := client.ExecCommand(ctx, instance.ID, extractCmd)
+	if execErr != nil {
+		return fmt.Errorf("extract exec: %w", execErr)
+	}
+	if code != 0 {
+		return fmt.Errorf("extract failed (exit %d): %s", code, strings.TrimSpace(stderr+"\n"+stdout))
+	}
+	fmt.Println("  Local agent config mirrored (secrets redacted)")
+	return nil
+}
+
 func init() {
 	startCmd.Flags().String("snapshot", "", "Snapshot ID to create from")
 	startCmd.Flags().BoolP("interactive", "i", false, "Open VS Code in browser after creation")
-	startCmd.Flags().Bool("no-auth", false, "Skip automatic provider auth setup")
+	startCmd.Flags().Bool("no-auth", false, "Skip ownership recording and automatic provider auth setup")
+	startCmd.Flags().Bool("clean", false, "Skip provider auth setup but still record sandbox ownership (pve-lxc)")
+	startCmd.Flags().Bool("mirror-local", false, "Pack/redact local ~/.claude and ~/.codex into the box (pve-lxc; soft-fail)")
+	startCmd.Flags().String("template", "", "Load ~/.cmux/templates/<name>.yaml (or path) and expand to start flags")
 	rootCmd.AddCommand(startCmd)
 }
