@@ -24,21 +24,43 @@ type PackOptions struct {
 	TargetHome string
 	// IncludeSecrets keeps auth.json / known secret keys when true (v1 default false).
 	IncludeSecrets bool
-	// Sources lists relative home subdirs to consider (default: .claude, .codex).
+	// Sources lists relative home subdirs (legacy; ignored when IncludePaths is set).
 	Sources []string
+	// IncludePaths is an allowlist of paths relative to HomeDir (files or dirs).
+	// Empty means DefaultIncludePaths.
+	IncludePaths []string
 }
 
 // DefaultSources are the agent config roots mirrored in v1.
 var DefaultSources = []string{".claude", ".codex"}
 
+// DefaultIncludePaths are the only paths packed by default (relative to HomeDir).
+// This is an allowlist — full-tree walks of ~/.claude / ~/.codex pull multi‑GB
+// session history and blow CF/exec transfer limits. Skills may be directory
+// symlinks (e.g. ~/.claude/skills/foo -> ~/.agents/skills/foo); those are followed.
+var DefaultIncludePaths = []string{
+	".claude/settings.json",
+	".claude/config.json",
+	".claude/keybindings.json",
+	".claude/skills",
+	".claude/hooks",
+	".claude/commands",
+	".codex/config.toml",
+	".codex/keybindings.json",
+	".codex/AGENTS.md",
+	".codex/skills",
+	".codex/hooks",
+	".codex/automations",
+}
+
 // SecretFileBasenames are never copied unless IncludeSecrets is true.
 var SecretFileBasenames = map[string]struct{}{
-	"auth.json":       {},
+	"auth.json":         {},
 	".credentials.json": {},
 	"credentials.json":  {},
 }
 
-// ExcludeDirNames are skipped entirely (session history, caches, etc.).
+// ExcludeDirNames are skipped entirely when encountered under an include path.
 var ExcludeDirNames = map[string]struct{}{
 	"projects":          {},
 	"sessions":          {},
@@ -50,9 +72,14 @@ var ExcludeDirNames = map[string]struct{}{
 	"debug":             {},
 	"telemetry":         {},
 	"shell-snapshots":   {},
+	"shell_snapshots":   {},
 	"statsig":           {},
 	"todos":             {},
 	"file-history":      {},
+	"plugins":           {}, // large vendor trees; not needed for CLI settings
+	"backups":           {},
+	"node_modules":      {},
+	".git":              {},
 }
 
 // SecretJSONKeys are redacted (set to empty string / removed) in JSON configs.
@@ -88,88 +115,35 @@ func Pack(opts PackOptions) ([]byte, error) {
 	if opts.TargetHome == "" {
 		opts.TargetHome = "/root"
 	}
-	if len(opts.Sources) == 0 {
-		opts.Sources = append([]string(nil), DefaultSources...)
+	includePaths := opts.IncludePaths
+	if len(includePaths) == 0 {
+		includePaths = append([]string(nil), DefaultIncludePaths...)
 	}
 
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 
-	for _, src := range opts.Sources {
-		src = strings.TrimPrefix(src, "~/")
-		src = strings.TrimPrefix(src, "/")
-		root := filepath.Join(opts.HomeDir, src)
-		info, err := os.Stat(root)
+	for _, relPath := range includePaths {
+		relPath = strings.TrimPrefix(relPath, "~/")
+		relPath = strings.TrimPrefix(relPath, "/")
+		abs := filepath.Join(opts.HomeDir, relPath)
+		info, err := os.Stat(abs)
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
 			}
-			return nil, fmt.Errorf("stat %s: %w", root, err)
-		}
-		if !info.IsDir() {
+			// Soft-skip unreadable include roots.
 			continue
 		}
-		if err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
+		if info.IsDir() {
+			// logical root == path as it appears under HomeDir (may be a symlink dir).
+			if err := walkAndPack(tw, opts, abs, abs); err != nil {
+				return nil, err
 			}
-			rel, err := filepath.Rel(opts.HomeDir, path)
-			if err != nil {
-				return err
-			}
-			// Normalize to forward slashes for tar + cloud Linux.
-			relSlash := filepath.ToSlash(rel)
-
-			if d.IsDir() {
-				base := d.Name()
-				if _, skip := ExcludeDirNames[base]; skip && path != root {
-					return filepath.SkipDir
-				}
-				// Ensure directory entries exist in the archive.
-				hdr := &tar.Header{
-					Name:     relSlash + "/",
-					Mode:     0o755,
-					Typeflag: tar.TypeDir,
-				}
-				return tw.WriteHeader(hdr)
-			}
-
-			base := d.Name()
-			if !opts.IncludeSecrets {
-				if _, secret := SecretFileBasenames[base]; secret {
-					return nil
-				}
-			}
-			// Skip sqlite / binary caches by extension.
-			lower := strings.ToLower(base)
-			if strings.HasSuffix(lower, ".sqlite") ||
-				strings.HasSuffix(lower, ".sqlite3") ||
-				strings.HasSuffix(lower, ".db") ||
-				strings.HasSuffix(lower, ".lock") {
-				return nil
-			}
-
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return fmt.Errorf("read %s: %w", path, err)
-			}
-
-			data = transformFile(base, data, opts)
-
-			hdr := &tar.Header{
-				Name:     relSlash,
-				Mode:     0o644,
-				Size:     int64(len(data)),
-				Typeflag: tar.TypeReg,
-			}
-			if err := tw.WriteHeader(hdr); err != nil {
-				return err
-			}
-			if _, err := tw.Write(data); err != nil {
-				return err
-			}
-			return nil
-		}); err != nil {
+			continue
+		}
+		// Single file include.
+		if err := packFile(tw, opts, abs, relPath); err != nil {
 			return nil, err
 		}
 	}
@@ -178,6 +152,140 @@ func Pack(opts PackOptions) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// packFile packs one regular file (or symlink-to-file) at logicalRel under HomeDir.
+func packFile(tw *tar.Writer, opts PackOptions, absPath, logicalRel string) error {
+	base := filepath.Base(absPath)
+	if !opts.IncludeSecrets {
+		if _, secret := SecretFileBasenames[base]; secret {
+			return nil
+		}
+	}
+	lower := strings.ToLower(base)
+	if strings.HasSuffix(lower, ".sqlite") ||
+		strings.HasSuffix(lower, ".sqlite3") ||
+		strings.HasSuffix(lower, ".db") ||
+		strings.HasSuffix(lower, ".lock") ||
+		strings.HasSuffix(lower, ".wal") ||
+		strings.HasSuffix(lower, ".shm") {
+		return nil
+	}
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return nil
+	}
+	data = transformFile(base, data, opts)
+	relSlash := filepath.ToSlash(logicalRel)
+	// Ensure parent dir entries exist lightly (tar extract usually creates them).
+	hdr := &tar.Header{
+		Name:     relSlash,
+		Mode:     0o644,
+		Size:     int64(len(data)),
+		Typeflag: tar.TypeReg,
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		return err
+	}
+	_, err = tw.Write(data)
+	return err
+}
+
+// walkAndPack walks physicalRoot, packing files under archive names rooted at
+// logicalRoot (both absolute). Directory symlinks under HomeDir
+// (e.g. ~/.claude/skills/foo -> ~/.agents/skills/foo) are followed and archived
+// under the symlink path, not the external target path.
+// filepath.WalkDir does not descend into symlink dirs, so we re-enter manually.
+func walkAndPack(tw *tar.Writer, opts PackOptions, logicalRoot, physicalRoot string) error {
+	return filepath.WalkDir(physicalRoot, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			// Soft-skip unreadable entries so one bad file cannot abort the whole mirror.
+			return nil
+		}
+		sub, err := filepath.Rel(physicalRoot, path)
+		if err != nil {
+			return nil
+		}
+		logicalBase, err := filepath.Rel(opts.HomeDir, logicalRoot)
+		if err != nil {
+			return nil
+		}
+		var rel string
+		if sub == "." {
+			rel = logicalBase
+		} else {
+			rel = filepath.Join(logicalBase, sub)
+		}
+		// Refuse to emit archive paths that escape HomeDir naming.
+		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return nil
+		}
+		relSlash := filepath.ToSlash(rel)
+
+		isDir, isSymlinkDir, err := entryDirKind(path, d)
+		if err != nil {
+			return nil
+		}
+		if isDir {
+			base := d.Name()
+			if _, skip := ExcludeDirNames[base]; skip && path != physicalRoot {
+				return filepath.SkipDir
+			}
+			hdr := &tar.Header{
+				Name:     relSlash + "/",
+				Mode:     0o755,
+				Typeflag: tar.TypeDir,
+			}
+			if err := tw.WriteHeader(hdr); err != nil {
+				return err
+			}
+			// WalkDir does not descend into symlink directories; re-enter on the target.
+			if isSymlinkDir {
+				target, err := filepath.EvalSymlinks(path)
+				if err != nil {
+					return nil
+				}
+				// Archive names stay under the symlink path (path under HomeDir).
+				if err := walkAndPack(tw, opts, path, target); err != nil {
+					return err
+				}
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		return packFile(tw, opts, path, rel)
+	})
+}
+
+// entryDirKind reports whether path is a directory and whether it is a
+// directory reached via a symlink (WalkDir will not descend into those).
+func entryDirKind(path string, d fs.DirEntry) (isDir bool, isSymlinkDir bool, err error) {
+	if d.IsDir() {
+		return true, false, nil
+	}
+	if d.Type()&fs.ModeSymlink == 0 {
+		// Regular file (or other non-dir, non-symlink).
+		info, err := d.Info()
+		if err != nil {
+			// Fall back to Stat.
+			st, err := os.Stat(path)
+			if err != nil {
+				return false, false, err
+			}
+			return st.IsDir(), false, nil
+		}
+		return info.IsDir(), false, nil
+	}
+	// Symlink: Stat follows to target.
+	st, err := os.Stat(path)
+	if err != nil {
+		return false, false, err
+	}
+	if st.IsDir() {
+		return true, true, nil
+	}
+	return false, false, nil
 }
 
 // PackToFile writes the archive to destPath and returns that path.
@@ -216,10 +324,50 @@ func transformFile(base string, data []byte, opts PackOptions) []byte {
 		}
 	}
 	// TOML secret lines (simple key = "value" for known keys).
-	if strings.HasSuffix(strings.ToLower(base), ".toml") && !opts.IncludeSecrets {
-		data = redactTOMLSecrets(data)
+	if strings.HasSuffix(strings.ToLower(base), ".toml") {
+		if !opts.IncludeSecrets {
+			data = redactTOMLSecrets(data)
+		}
+		// After path rewrite, host project tables like [projects."$HOME/wiki"] and
+		// pre-existing [projects."/root/wiki"] collapse to the same key. Codex
+		// rejects duplicate TOML tables — keep the first occurrence of each header.
+		data = dedupeTOMLTables(data)
 	}
 	return data
+}
+
+// dedupeTOMLTables drops repeated table headers (and their bodies) after rewrite.
+// First occurrence of each exact header line wins. Handles standard TOML tables
+// like [projects."/root/wiki"] used by Codex config.toml.
+func dedupeTOMLTables(data []byte) []byte {
+	lines := bytes.Split(data, []byte("\n"))
+	seen := make(map[string]struct{})
+	out := make([][]byte, 0, len(lines))
+	skipping := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(string(line))
+		isTable := len(trimmed) >= 3 &&
+			trimmed[0] == '[' &&
+			trimmed[len(trimmed)-1] == ']' &&
+			!strings.HasPrefix(trimmed, "[[") // leave arrays-of-tables alone
+
+		if isTable {
+			if _, dup := seen[trimmed]; dup {
+				skipping = true
+				continue
+			}
+			seen[trimmed] = struct{}{}
+			skipping = false
+			out = append(out, line)
+			continue
+		}
+		if skipping {
+			// Skip body lines of a duplicate table until the next header.
+			continue
+		}
+		out = append(out, line)
+	}
+	return bytes.Join(out, []byte("\n"))
 }
 
 func isTextConfig(base string) bool {

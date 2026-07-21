@@ -164,14 +164,213 @@ func TestPackIncludeSecretsKeepsAuthJSON(t *testing.T) {
 	writeTree(t, home, map[string]string{
 		".codex/auth.json": `{"ok":true}`,
 	})
+	// auth.json is not in DefaultIncludePaths; opt-in requires both IncludeSecrets and path.
 	archive, err := Pack(PackOptions{
 		HomeDir:        home,
 		IncludeSecrets: true,
+		IncludePaths:   []string{".codex/auth.json"},
 	})
 	if err != nil {
 		t.Fatalf("Pack: %v", err)
 	}
 	if _, err := ReadTarFile(archive, ".codex/auth.json"); err != nil {
-		t.Fatalf("auth.json should be present when IncludeSecrets: %v", err)
+		t.Fatalf("auth.json should be present when IncludeSecrets + path: %v", err)
+	}
+
+	// Default allowlist never packs auth.json even if secrets flag is on without path.
+	archive2, err := Pack(PackOptions{HomeDir: home, IncludeSecrets: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadTarFile(archive2, ".codex/auth.json"); err == nil {
+		t.Fatal("default allowlist must not pack auth.json")
+	}
+}
+
+func TestPackDefaultAllowlistSkipsHistoryAndPlugins(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	writeTree(t, home, map[string]string{
+		".claude/settings.json":            `{"ok":true}` + "\n",
+		".claude/projects/p/session.json":  `{"no":true}`,
+		".claude/plugins/big/vendor.js":    "huge",
+		".claude/file-history/x":           "hist",
+		".codex/config.toml":               "model = \"x\"\n",
+		".codex/sessions/s1.json":          `{}`,
+		".codex/archived_sessions/a.json":  `{}`,
+		".codex/plugins/p/x.js":            "p",
+	})
+	archive, err := Pack(PackOptions{HomeDir: home, TargetHome: "/root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	names, _ := ListTarNames(archive)
+	joined := strings.Join(names, "\n")
+	for _, ban := range []string{"projects/", "plugins/", "file-history/", "sessions/", "archived_sessions/"} {
+		if strings.Contains(joined, ban) {
+			t.Errorf("must not include %q; got:\n%s", ban, joined)
+		}
+	}
+	if _, err := ReadTarFile(archive, ".claude/settings.json"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadTarFile(archive, ".codex/config.toml"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPackFollowsDirectorySymlinksForSkills(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+	// Real skill content outside .claude (like ~/.agents/skills/boost-prompt)
+	agents := filepath.Join(home, ".agents", "skills", "boost-prompt")
+	writeTree(t, home, map[string]string{
+		".claude/settings.json":               `{"model":"claude"}` + "\n",
+		".codex/config.toml":                  "model = \"gpt\"\n",
+		".agents/skills/boost-prompt/SKILL.md": "# boost\n",
+		".agents/skills/boost-prompt/nested/x.json": `{"a":1}` + "\n",
+	})
+	// Symlink skill dir into .claude/skills (macOS-dev layout)
+	skillsDir := filepath.Join(home, ".claude", "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(skillsDir, "boost-prompt")
+	if err := os.Symlink(agents, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	// Also a file symlink
+	realFile := filepath.Join(home, ".agents", "skills", "boost-prompt", "SKILL.md")
+	fileLink := filepath.Join(home, ".claude", "skills", "boost-link.md")
+	if err := os.Symlink(realFile, fileLink); err != nil {
+		t.Fatalf("file symlink: %v", err)
+	}
+
+	archive, err := Pack(PackOptions{
+		HomeDir:    home,
+		TargetHome: "/root",
+	})
+	if err != nil {
+		t.Fatalf("Pack must succeed with dir symlinks (got %v)", err)
+	}
+
+	// Core configs must always ship even when skills are symlinked
+	for _, want := range []string{
+		".claude/settings.json",
+		".codex/config.toml",
+		".claude/skills/boost-prompt/SKILL.md",
+		".claude/skills/boost-prompt/nested/x.json",
+		".claude/skills/boost-link.md",
+	} {
+		if _, err := ReadTarFile(archive, want); err != nil {
+			t.Errorf("missing %s: %v", want, err)
+		}
+	}
+	// External real path should not appear as archive root
+	names, _ := ListTarNames(archive)
+	joined := strings.Join(names, "\n")
+	if strings.Contains(joined, ".agents/") {
+		t.Errorf("archive should use symlink path names, not external target: %s", joined)
+	}
+}
+
+func TestPackContinuesWhenSingleEntryUnreadable(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	writeTree(t, home, map[string]string{
+		".claude/settings.json":        `{"ok":true}` + "\n",
+		".claude/skills/good/SKILL.md": "hello\n",
+	})
+	// Unreadable file under an included dir — pack should skip it, not fail whole archive
+	bad := filepath.Join(home, ".claude", "skills", "secret-unreadable.bin")
+	if err := os.WriteFile(bad, []byte("x"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(bad, 0o644) })
+
+	archive, err := Pack(PackOptions{HomeDir: home, TargetHome: "/root"})
+	if err != nil {
+		t.Fatalf("Pack should soft-skip unreadable files: %v", err)
+	}
+	if _, err := ReadTarFile(archive, ".claude/settings.json"); err != nil {
+		t.Fatalf("settings should still be packed: %v", err)
+	}
+	if _, err := ReadTarFile(archive, ".claude/skills/good/SKILL.md"); err != nil {
+		t.Fatalf("skill should still be packed: %v", err)
+	}
+}
+
+func TestPackCodexConfigDedupesProjectTablesAfterPathRewrite(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	// Simulate local config that already has both macOS home paths and pre-existing /root paths
+	// (common after prior cloud sessions). Path rewrite of LocalHomePrefix -> /root must not
+	// produce duplicate [projects."..."] keys.
+	cfg := `
+model = "gpt"
+
+[projects."` + filepath.ToSlash(home) + `"]
+trust_level = "trusted"
+
+[projects."` + filepath.ToSlash(home) + `/wiki"]
+trust_level = "trusted"
+
+[projects."/root"]
+trust_level = "trusted"
+
+[projects."/root/wiki"]
+trust_level = "trusted"
+
+[projects."` + filepath.ToSlash(home) + `/Desktop/code/cmux"]
+trust_level = "trusted"
+
+[marketplaces.x]
+source = "` + filepath.ToSlash(home) + `/Desktop/code/agent-skills"
+`
+	// Write as .codex/config.toml under home
+	writeTree(t, home, map[string]string{
+		".codex/config.toml": cfg,
+	})
+
+	archive, err := Pack(PackOptions{
+		HomeDir:         home,
+		LocalHomePrefix: home,
+		TargetHome:      "/root",
+	})
+	if err != nil {
+		t.Fatalf("Pack: %v", err)
+	}
+	out, err := ReadTarFile(archive, ".codex/config.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	// Count occurrences of each projects table header
+	counts := map[string]int{}
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, `[projects."`) && strings.HasSuffix(line, `"]`) {
+			counts[line]++
+		}
+	}
+	for hdr, n := range counts {
+		if n != 1 {
+			t.Errorf("duplicate TOML table %s appears %d times; config:\n%s", hdr, n, s)
+		}
+	}
+	// Must still have cloud home project and rewritten cmux path once
+	if counts[`[projects."/root"]`] != 1 {
+		t.Errorf("expected single [projects.\"/root\"]; got %v\n%s", counts, s)
+	}
+	if counts[`[projects."/root/wiki"]`] != 1 {
+		t.Errorf("expected single [projects.\"/root/wiki\"]; got %v\n%s", counts, s)
+	}
+	if !strings.Contains(s, `[projects."/root/Desktop/code/cmux"]`) {
+		t.Errorf("expected rewritten cmux project path; got:\n%s", s)
+	}
+	// Local home prefix should be gone
+	if strings.Contains(s, home) {
+		t.Errorf("local home still present:\n%s", s)
 	}
 }

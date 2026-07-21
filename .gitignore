@@ -78,3 +78,4 @@ apps/www/scripts/pr-review/evals/results/
 .claude/scheduled_tasks.lock
 .claude/dev-loop-debug/
 .claude/dev-loop/status/
+.worktrees/
