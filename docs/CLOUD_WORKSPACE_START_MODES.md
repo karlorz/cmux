@@ -1,7 +1,7 @@
 # Cloud workspace start modes
 
-> **Last updated:** 2026-07-22  
-> **Primary UI entry:** Team dashboard (`/$teamSlugOrId/dashboard`)  
+> **Last updated:** 2026-07-22
+> **Primary UI entry:** Team dashboard (`/$teamSlugOrId/dashboard`)
 > **Not the entry:** preview.new `/preview` (PR screenshot product)
 
 Operators can start cloud workspaces in three modes: **Default**, **Clean**, and **Mirror local**. Modes exist on both the **team dashboard** (app) and the **devsh CLI**. Dashboard and CLI share backend semantics where applicable; full host filesystem pack for mirror is CLI/Electron-only.
