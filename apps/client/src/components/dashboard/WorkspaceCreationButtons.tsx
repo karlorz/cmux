@@ -30,7 +30,7 @@ import {
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useMutation } from "convex/react";
 import { Cloud, Loader2, Monitor } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
 
 type WorkspaceCreationButtonsProps = {
@@ -60,14 +60,10 @@ export function WorkspaceCreationButtons({
   const [isCreatingCloud, setIsCreatingCloud] = useState(false);
   const [workspaceStartMode, setWorkspaceStartMode] =
     useState<WorkspaceStartMode>("default");
-  const mirrorLocalUi = useMemo(
-    () =>
-      getMirrorLocalUiState({
-        isElectron,
-        provider: selectedEnvironmentProvider,
-      }),
-    [selectedEnvironmentProvider],
-  );
+  const mirrorLocalUi = getMirrorLocalUiState({
+    isElectron,
+    provider: selectedEnvironmentProvider,
+  });
 
   const reserveLocalWorkspace = useMutation(api.localWorkspaces.reserve);
   const createTask = useMutation(api.tasks.create);

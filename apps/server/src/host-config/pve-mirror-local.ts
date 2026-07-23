@@ -46,17 +46,12 @@ function assertExecSucceeded(
   );
 }
 
-function chunkString(value: string, chunkSize: number): string[] {
+function assertValidChunkSize(chunkSize: number): void {
   if (!Number.isInteger(chunkSize) || chunkSize <= 0) {
     throw new Error(
       "Mirror local upload chunk size must be a positive integer",
     );
   }
-  const chunks: string[] = [];
-  for (let offset = 0; offset < value.length; offset += chunkSize) {
-    chunks.push(value.slice(offset, offset + chunkSize));
-  }
-  return chunks;
 }
 
 function buildValidateAndExtractCommand(
@@ -92,6 +87,7 @@ export async function applyMirrorLocalPackToPve({
   remoteNonce = randomUUID(),
   onProgress,
 }: ApplyMirrorLocalPackToPveOptions): Promise<void> {
+  assertValidChunkSize(chunkSize);
   const remoteArchive = `/tmp/cmux-mirror-${remoteNonce}.tar.gz`;
   const quotedArchive = shellSingleQuote(remoteArchive);
   let applied = false;
@@ -108,7 +104,8 @@ export async function applyMirrorLocalPackToPve({
     );
 
     const encoded = Buffer.from(pack.archive).toString("base64");
-    for (const chunk of chunkString(encoded, chunkSize)) {
+    for (let offset = 0; offset < encoded.length; offset += chunkSize) {
+      const chunk = encoded.slice(offset, offset + chunkSize);
       assertExecSucceeded(
         await exec({
           instanceId,

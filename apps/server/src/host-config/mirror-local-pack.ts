@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { Stats } from "node:fs";
 import {
   lstat,
   mkdtemp,
@@ -332,6 +333,10 @@ function transformFile(
   targetHome: string,
 ): Uint8Array {
   const fileName = basename(archivePath);
+  if (!isTextConfig(fileName)) {
+    return contents;
+  }
+
   const lower = fileName.toLowerCase();
   let text = Buffer.from(contents).toString("utf8");
 
@@ -419,6 +424,7 @@ export async function createMirrorLocalPack(
   const addFile = async (
     physicalPath: string,
     archivePath: string,
+    fileStats: Stats,
   ): Promise<void> => {
     const fileName = basename(physicalPath).toLowerCase();
     if (
@@ -428,7 +434,6 @@ export async function createMirrorLocalPack(
       return;
     }
 
-    const fileStats = await stat(physicalPath);
     if (!fileStats.isFile()) {
       return;
     }
@@ -516,7 +521,7 @@ export async function createMirrorLocalPack(
         }
         return;
       }
-      await addFile(target, archivePath);
+      await addFile(target, archivePath, targetStats);
       return;
     }
 
@@ -545,7 +550,7 @@ export async function createMirrorLocalPack(
       return;
     }
 
-    await addFile(physicalPath, archivePath);
+    await addFile(physicalPath, archivePath, entryStats);
   };
 
   for (const includePath of includePaths) {

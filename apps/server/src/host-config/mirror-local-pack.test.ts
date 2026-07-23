@@ -114,6 +114,21 @@ trust_level = "trusted"
     ).toBe("# demo\n");
   });
 
+  it("preserves binary skill assets without text transcoding", async () => {
+    const home = await mkdtemp(join(tmpdir(), "cmux-mirror-home-"));
+    const binary = Buffer.from([0x00, 0x80, 0xff, 0x41]);
+    const binaryPath = join(home, ".claude/skills/demo/icon.png");
+    await mkdir(dirname(binaryPath), { recursive: true });
+    await writeFile(binaryPath, binary);
+
+    const pack = await createMirrorLocalPack({ homeDir: home });
+    const extracted = await extractPack(pack.archive);
+
+    expect(
+      await readFile(join(extracted, ".claude/skills/demo/icon.png")),
+    ).toEqual(binary);
+  });
+
   it("rejects skill symlinks that escape approved host roots", async () => {
     const home = await mkdtemp(join(tmpdir(), "cmux-mirror-home-"));
     const outside = await mkdtemp(join(tmpdir(), "cmux-mirror-outside-"));

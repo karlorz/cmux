@@ -22,6 +22,7 @@ import {
   type TriggerLocalCloudSyncResponse,
   type AvailableEditors,
   type FileInfo,
+  buildSandboxesStartModeFields,
   isLoopbackHostname,
   LOCAL_VSCODE_PLACEHOLDER_ORIGIN,
   MIRROR_LOCAL_STATUS_MESSAGES,
@@ -2398,8 +2399,6 @@ export function setupSocketHandlers(
             { clean: Boolean(clean), mirrorLocal: Boolean(mirrorLocal) },
           );
 
-          const { buildSandboxesStartModeFields } =
-            await import("@cmux/shared");
           const modeFields = buildSandboxesStartModeFields({
             clean,
             mirrorLocal,

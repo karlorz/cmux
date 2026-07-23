@@ -17,6 +17,10 @@ import {
   DEFAULT_TASK_LIST_LIMIT,
   ORCHESTRATION_STATUSES,
 } from "@cmux/convex/orchestrationQueries";
+import {
+  buildSandboxesStartModeFields,
+  type TaskClass,
+} from "@cmux/shared";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { DEFAULT_CLAUDE_AGENT_NAME } from "@cmux/shared/providers/anthropic/models";
 import {
@@ -44,8 +48,6 @@ import { extractSandboxStartError } from "./utils/sandboxErrors";
 import { env } from "./utils/server-env";
 import { getResponseErrorMessage } from "./utils/httpError";
 import { buildTaskRunCreateArgs } from "./utils/taskRunCreateArgs";
-
-import type { TaskClass } from "@cmux/shared";
 
 interface StartTaskRequest {
   // Required fields
@@ -671,7 +673,6 @@ async function handleCreateCloudWorkspace(
           : `[create-cloud-workspace] Starting sandbox for repo ${projectFullName}`,
       );
 
-      const { buildSandboxesStartModeFields } = await import("@cmux/shared");
       const modeFields = buildSandboxesStartModeFields({
         clean,
         mirrorLocal,
