@@ -8,6 +8,7 @@
 
 import { Agent, fetch as undiciFetch } from "undici";
 import crypto from "node:crypto";
+import { formatExecCommandForLog } from "./exec-command-log";
 
 /**
  * Configuration for PveLxcClient.
@@ -812,10 +813,9 @@ export class PveLxcClient {
         const httpResult = await this.httpExec(host, command, options?.timeoutMs);
 
         if (httpResult) {
-          // Log command execution (truncate long commands for readability)
-          const truncatedCmd = command.length > 100 ? `${command.slice(0, 100)}...` : command;
+          const commandForLog = formatExecCommandForLog(command);
           console.log(
-            `[PveLxcClient] Exec completed (exit=${httpResult.exit_code}): ${truncatedCmd}`
+            `[PveLxcClient] Exec completed (exit=${httpResult.exit_code}): ${commandForLog}`
           );
           if (attempt > 1) {
             console.log(

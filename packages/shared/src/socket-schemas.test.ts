@@ -7,6 +7,7 @@ import {
   StartTaskSchema,
   CreateLocalWorkspaceSchema,
   CreateCloudWorkspaceSchema,
+  MirrorLocalProgressSchema,
   AuthenticateSchema,
   TerminalCreatedSchema,
   TerminalOutputSchema,
@@ -259,6 +260,31 @@ describe("socket-schemas", () => {
         expect(mirror.data.mirrorLocal).toBe(true);
         expect(mirror.data.clean).toBe(true);
       }
+    });
+  });
+
+  describe("MirrorLocalProgressSchema", () => {
+    it("accepts sanitized lifecycle metadata", () => {
+      expect(
+        MirrorLocalProgressSchema.parse({
+          taskRunId: "run-123",
+          state: "applied",
+          message: "Mirror local workspace ready",
+          policyVersion: "cmux-mirror-local/v1",
+          fileCount: 12,
+          compressedBytes: 4096,
+        }),
+      ).toMatchObject({ state: "applied", fileCount: 12 });
+    });
+
+    it("rejects unknown lifecycle states", () => {
+      expect(
+        MirrorLocalProgressSchema.safeParse({
+          taskRunId: "run-123",
+          state: "copying-secrets",
+          message: "unsafe",
+        }).success,
+      ).toBe(false);
     });
   });
 
@@ -600,7 +626,10 @@ describe("socket-schemas", () => {
       const result = ProviderStatusSchema.safeParse({
         name: "docker",
         isAvailable: false,
-        missingRequirements: ["Docker is not running", "Docker image not found"],
+        missingRequirements: [
+          "Docker is not running",
+          "Docker image not found",
+        ],
       });
       expect(result.success).toBe(true);
     });

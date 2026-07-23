@@ -598,6 +598,14 @@ async function handleCreateCloudWorkspace(
     return;
   }
 
+  if (mirrorLocal) {
+    jsonResponse(res, 400, {
+      error:
+        "Mirror local is available only through the Electron embedded server with a trusted host configuration service.",
+    });
+    return;
+  }
+
   serverLogger.info("[http-api] POST /api/create-cloud-workspace", {
     taskId,
     environmentId,

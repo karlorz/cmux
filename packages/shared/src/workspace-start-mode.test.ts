@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCreateCloudWorkspaceModeFields,
-  buildDevshMirrorLocalCommand,
   buildSandboxesStartModeFields,
+  getMirrorLocalStateFromStatusMessage,
   getMirrorLocalUiState,
+  MIRROR_LOCAL_STATUS_MESSAGES,
   resolveWorkspaceStartMode,
   shouldRecordSandboxOwnership,
   shouldRunSetupProviderAuth,
@@ -21,9 +22,9 @@ describe("resolveWorkspaceStartMode", () => {
   });
 
   it("mirrorLocal wins over clean", () => {
-    expect(
-      resolveWorkspaceStartMode({ clean: true, mirrorLocal: true }),
-    ).toBe("mirror-local");
+    expect(resolveWorkspaceStartMode({ clean: true, mirrorLocal: true })).toBe(
+      "mirror-local",
+    );
   });
 });
 
@@ -44,14 +45,42 @@ describe("shouldRecordSandboxOwnership", () => {
 });
 
 describe("getMirrorLocalUiState", () => {
-  it("enables only in Electron", () => {
-    expect(getMirrorLocalUiState(true)).toEqual({
+  it("enables only in Electron for a PVE LXC environment", () => {
+    expect(
+      getMirrorLocalUiState({ isElectron: true, provider: "pve-lxc" }),
+    ).toEqual({
       enabled: true,
       tooltip: null,
     });
-    const browser = getMirrorLocalUiState(false);
+
+    const browser = getMirrorLocalUiState({
+      isElectron: false,
+      provider: "pve-lxc",
+    });
     expect(browser.enabled).toBe(false);
     expect(browser.tooltip).toMatch(/Electron/i);
+  });
+
+  it.each(["morph", "pve-vm", "e2b"])(
+    "disables unsupported provider %s",
+    (provider) => {
+      const state = getMirrorLocalUiState({
+        isElectron: true,
+        provider,
+      });
+      expect(state.enabled).toBe(false);
+      expect(state.tooltip).toContain("PVE LXC");
+      expect(state.tooltip).toContain(provider);
+    },
+  );
+
+  it("disables Mirror local until the environment provider is known", () => {
+    const state = getMirrorLocalUiState({
+      isElectron: true,
+      provider: null,
+    });
+    expect(state.enabled).toBe(false);
+    expect(state.tooltip).toMatch(/select.*PVE LXC/i);
   });
 });
 
@@ -83,21 +112,20 @@ describe("buildSandboxesStartModeFields", () => {
 
 describe("labels and modes for dashboard UI", () => {
   it("exposes Default Clean Mirror local", () => {
-    expect(WORKSPACE_START_MODES).toEqual([
-      "default",
-      "clean",
-      "mirror-local",
-    ]);
+    expect(WORKSPACE_START_MODES).toEqual(["default", "clean", "mirror-local"]);
     expect(WORKSPACE_START_MODE_LABELS.default).toBe("Default");
     expect(WORKSPACE_START_MODE_LABELS.clean).toBe("Clean");
     expect(WORKSPACE_START_MODE_LABELS["mirror-local"]).toBe("Mirror local");
   });
 });
 
-describe("buildDevshMirrorLocalCommand", () => {
-  it("builds host CLI for soft-fail guidance", () => {
-    expect(buildDevshMirrorLocalCommand()).toBe(
-      "devsh start -p pve-lxc --clean --mirror-local",
-    );
+describe("Mirror local status messages", () => {
+  it("round-trips persisted messages to structured states", () => {
+    expect(
+      getMirrorLocalStateFromStatusMessage(
+        MIRROR_LOCAL_STATUS_MESSAGES.applied,
+      ),
+    ).toBe("applied");
+    expect(getMirrorLocalStateFromStatusMessage("Unrelated status")).toBeNull();
   });
 });

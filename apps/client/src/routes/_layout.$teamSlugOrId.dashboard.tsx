@@ -9,7 +9,10 @@ import { FileChangeHeatmap } from "@/components/dashboard/FileChangeHeatmap";
 import { SessionActivityCard } from "@/components/dashboard/SessionActivityCard";
 import { SessionTimeline } from "@/components/dashboard/SessionTimeline";
 import { TaskList } from "@/components/dashboard/TaskList";
-import { ErrorBoundary, CompactErrorFallback } from "@/components/ErrorBoundary";
+import {
+  ErrorBoundary,
+  CompactErrorFallback,
+} from "@/components/ErrorBoundary";
 import { WorkspaceCreationButtons } from "@/components/dashboard/WorkspaceCreationButtons";
 import { FloatingPane } from "@/components/floating-pane";
 import { WorkspaceSetupPanel } from "@/components/WorkspaceSetupPanel";
@@ -74,7 +77,7 @@ import { z } from "zod";
 const DashboardInput = lazy(() =>
   import("@/components/dashboard/DashboardInput").then((m) => ({
     default: m.DashboardInput,
-  }))
+  })),
 );
 
 // Skeleton fallback for DashboardInput while loading
@@ -120,7 +123,9 @@ const DEFAULT_AGENT_SELECTIONS = [
   "codex/gpt-5.4-xhigh",
 ]
   .map((agentName) => normalizeStoredAgentSelectionEntry(agentName))
-  .filter((selection): selection is SelectedAgentSelection => selection !== null);
+  .filter(
+    (selection): selection is SelectedAgentSelection => selection !== null,
+  );
 
 const STORED_AGENT_SELECTION_SCHEMA = z.array(
   z.union([
@@ -179,7 +184,9 @@ const parseStoredAgentSelection = (
 
     return result.data
       .map((value) => normalizeStoredAgentSelectionEntry(value))
-      .filter((selection): selection is SelectedAgentSelection => selection !== null);
+      .filter(
+        (selection): selection is SelectedAgentSelection => selection !== null,
+      );
   } catch (error) {
     console.warn("Failed to parse stored agent selection", error);
     return [];
@@ -258,7 +265,7 @@ function DashboardComponent() {
         </div>
       );
     },
-    []
+    [],
   );
 
   useEffect(() => {
@@ -294,7 +301,7 @@ function DashboardComponent() {
       } else {
         dockerPullToastIdRef.current = toast.custom(
           renderDockerPullToast(payload),
-          { duration: Infinity }
+          { duration: Infinity },
         );
       }
     };
@@ -308,12 +315,13 @@ function DashboardComponent() {
   // Lightweight query to check if user is new (has no real tasks) - for onboarding
   // Uses hasRealTasks query which returns early after finding first match
   const hasRealTasksQuery = useQuery(
-    convexQuery(api.tasks.hasRealTasks, { teamSlugOrId })
+    convexQuery(api.tasks.hasRealTasks, { teamSlugOrId }),
   );
 
   const tasksReady = hasRealTasksQuery.isSuccess;
   const hasRealTasks = hasRealTasksQuery.data?.hasRealTasks ?? false;
-  const hasCompletedRealTasks = hasRealTasksQuery.data?.hasCompletedRealTasks ?? false;
+  const hasCompletedRealTasks =
+    hasRealTasksQuery.data?.hasCompletedRealTasks ?? false;
 
   // Auto-start onboarding for new users on the dashboard
   useEffect(() => {
@@ -337,12 +345,7 @@ function DashboardComponent() {
 
     // Start onboarding for new users
     onboarding.startOnboarding();
-  }, [
-    onboarding,
-    tasksReady,
-    hasRealTasks,
-    hasCompletedRealTasks,
-  ]);
+  }, [onboarding, tasksReady, hasRealTasks, hasCompletedRealTasks]);
 
   const [selectedProject, setSelectedProject] = useState<string[]>(() => {
     const stored = localStorage.getItem(`selectedProject-${teamSlugOrId}`);
@@ -356,7 +359,7 @@ function DashboardComponent() {
     // Read from team-scoped key only (legacy keys migrated on component mount)
     const teamScopedKey = `selectedAgents-${teamSlugOrId}`;
     const storedAgents = parseStoredAgentSelection(
-      localStorage.getItem(teamScopedKey)
+      localStorage.getItem(teamScopedKey),
     );
 
     if (storedAgents.length > 0) {
@@ -374,11 +377,13 @@ function DashboardComponent() {
       selectedAgentSelectionsRef.current = selections;
       setSelectedAgentSelectionsState(selections);
     },
-    [setSelectedAgentSelectionsState]
+    [setSelectedAgentSelectionsState],
   );
 
   const [taskDescription, setTaskDescription] = useState<string>("");
-  const [enabledTools, setEnabledTools] = useState<Set<string>>(() => new Set(["context7", "devsh-memory-mcp"]));
+  const [enabledTools, setEnabledTools] = useState<Set<string>>(
+    () => new Set(["context7", "devsh-memory-mcp"]),
+  );
 
   const handleToggleTool = useCallback((toolName: string) => {
     setEnabledTools((prev) => {
@@ -428,7 +433,7 @@ function DashboardComponent() {
       setSelectedProject([val]);
       localStorage.setItem(
         `selectedProject-${teamSlugOrId}`,
-        JSON.stringify([val])
+        JSON.stringify([val]),
       );
       setIsCloudMode(true);
       localStorage.setItem("isCloudMode", JSON.stringify(true));
@@ -443,7 +448,7 @@ function DashboardComponent() {
   // Fetch branches for selected repo
   const isEnvSelected = useMemo(
     () => (selectedProject[0] || "").startsWith("env:"),
-    [selectedProject]
+    [selectedProject],
   );
 
   // Branch search state with debouncing for server-side search
@@ -452,7 +457,8 @@ function DashboardComponent() {
 
   // Immediately use empty string when cleared, otherwise use debounced value
   // This prevents delay when user clears the search
-  const effectiveBranchSearch = branchSearch === "" ? "" : debouncedBranchSearch;
+  const effectiveBranchSearch =
+    branchSearch === "" ? "" : debouncedBranchSearch;
 
   // Branches query - infinite scroll with server-side ordering by recent commits
   // Each search term is cached separately by React Query
@@ -517,7 +523,7 @@ function DashboardComponent() {
   // Extract branch names and default branch from the query
   const branchPages = useMemo(
     () => branchesQuery.data?.pages ?? [],
-    [branchesQuery.data]
+    [branchesQuery.data],
   );
   const branchNames = useMemo(() => {
     const names: string[] = [];
@@ -587,7 +593,7 @@ function DashboardComponent() {
       setSelectedProject(newProjects);
       localStorage.setItem(
         `selectedProject-${teamSlugOrId}`,
-        JSON.stringify(newProjects)
+        JSON.stringify(newProjects),
       );
       if (newProjects[0] !== selectedProject[0]) {
         setSelectedBranch([]);
@@ -598,7 +604,7 @@ function DashboardComponent() {
         localStorage.setItem("isCloudMode", JSON.stringify(true));
       }
     },
-    [selectedProject, teamSlugOrId]
+    [selectedProject, teamSlugOrId],
   );
 
   // Callback for branch selection changes
@@ -614,7 +620,7 @@ function DashboardComponent() {
   });
   const reposByOrg = useMemo(
     () => reposByOrgQuery.data || {},
-    [reposByOrgQuery.data]
+    [reposByOrgQuery.data],
   );
 
   // Team/user visibility is not managed here. Model filtering is done by:
@@ -624,7 +630,7 @@ function DashboardComponent() {
 
   // Fetch available models from Convex (filtered by API keys, includes runtime-discovered models)
   const convexModelsQuery = useQuery(
-    convexQuery(api.models.listAvailable, { teamSlugOrId })
+    convexQuery(api.models.listAvailable, { teamSlugOrId }),
   );
   const convexModels = convexModelsQuery.data ?? null;
 
@@ -653,12 +659,7 @@ function DashboardComponent() {
       .catch((error) => {
         console.error("[Dashboard] Auto-seed failed:", error);
       });
-  }, [
-    convexModels,
-    convexModelsQuery,
-    ensureModelsSeeded,
-    teamSlugOrId,
-  ]);
+  }, [convexModels, convexModelsQuery, ensureModelsSeeded, teamSlugOrId]);
 
   const availableAgentNames = useMemo(() => {
     if (!convexModels) {
@@ -668,7 +669,7 @@ function DashboardComponent() {
     return new Set(
       convexModels
         .filter((entry) => entry.disabled !== true)
-        .map((entry) => entry.name)
+        .map((entry) => entry.name),
     );
   }, [convexModels]);
 
@@ -691,10 +692,10 @@ function DashboardComponent() {
       return selections.filter(
         (selection) =>
           availableAgentNames.has(selection.agentName) &&
-          !isAgentBlockedByProviderStatus(selection.agentName, providerStatus)
+          !isAgentBlockedByProviderStatus(selection.agentName, providerStatus),
       );
     },
-    [availableAgentNames, providerStatus]
+    [availableAgentNames, providerStatus],
   );
 
   const persistAgentSelection = useCallback(
@@ -716,7 +717,7 @@ function DashboardComponent() {
         console.warn("Failed to persist agent selection", error);
       }
     },
-    [defaultAgentSelection, teamSlugOrId]
+    [defaultAgentSelection, teamSlugOrId],
   );
 
   // Keep selected agents aligned with Convex models and user model preferences.
@@ -740,7 +741,11 @@ function DashboardComponent() {
       setSelectedAgentSelections(normalizedSelections);
       persistAgentSelection(normalizedSelections);
     },
-    [normalizeAgentSelection, persistAgentSelection, setSelectedAgentSelections]
+    [
+      normalizeAgentSelection,
+      persistAgentSelection,
+      setSelectedAgentSelections,
+    ],
   );
 
   // Socket-based functions to fetch data from GitHub
@@ -835,7 +840,8 @@ function DashboardComponent() {
         ]);
 
         const optimisticAgentSelections: SelectedAgentSelection[] =
-          args.selectedAgentSelections && args.selectedAgentSelections.length > 0
+          args.selectedAgentSelections &&
+          args.selectedAgentSelections.length > 0
             ? args.selectedAgentSelections
             : (args.selectedAgents ?? []).map((agentName) => ({ agentName }));
 
@@ -928,55 +934,67 @@ function DashboardComponent() {
           }),
         });
         if (!response.ok) {
-          console.error("[prewarm] Failed:", response.status, response.statusText);
+          console.error(
+            "[prewarm] Failed:",
+            response.status,
+            response.statusText,
+          );
         }
       } catch (error) {
         console.error("[prewarm] Network error:", error);
       }
     })();
-  }, [taskDescription, selectedProject, effectiveSelectedBranch, isEnvSelected, isCloudMode, teamSlugOrId]);
+  }, [
+    taskDescription,
+    selectedProject,
+    effectiveSelectedBranch,
+    isEnvSelected,
+    isCloudMode,
+    teamSlugOrId,
+  ]);
 
-  const ensureDockerReadyForLocalTask = useCallback(async (): Promise<boolean> => {
-    if (!socket) {
-      console.error("Cannot verify Docker status: socket not connected");
-      toast.error(
-        "Cannot verify Docker status. Please ensure the server is running."
-      );
-      return false;
-    }
-
-    const status = await new Promise<ProviderStatusResponse | undefined>(
-      (resolve) => {
-        socket.emit("check-provider-status", resolve);
+  const ensureDockerReadyForLocalTask =
+    useCallback(async (): Promise<boolean> => {
+      if (!socket) {
+        console.error("Cannot verify Docker status: socket not connected");
+        toast.error(
+          "Cannot verify Docker status. Please ensure the server is running.",
+        );
+        return false;
       }
-    );
 
-    const isRunning = status?.dockerStatus?.isRunning ?? false;
-    setDockerReady(isRunning);
-
-    if (!isRunning) {
-      toast.error(
-        "Docker isn't running. Install or start Docker Desktop to run local tasks."
+      const status = await new Promise<ProviderStatusResponse | undefined>(
+        (resolve) => {
+          socket.emit("check-provider-status", resolve);
+        },
       );
-      return false;
-    }
 
-    const pullResponse = await new Promise<DockerPullImageResponse>(
-      (resolve) => {
-        socket.emit("docker-pull-image", resolve);
+      const isRunning = status?.dockerStatus?.isRunning ?? false;
+      setDockerReady(isRunning);
+
+      if (!isRunning) {
+        toast.error(
+          "Docker isn't running. Install or start Docker Desktop to run local tasks.",
+        );
+        return false;
       }
-    );
 
-    if (!pullResponse.success) {
-      toast.error(
-        pullResponse.error ??
-          "Docker image is not ready yet. Please try again."
+      const pullResponse = await new Promise<DockerPullImageResponse>(
+        (resolve) => {
+          socket.emit("docker-pull-image", resolve);
+        },
       );
-      return false;
-    }
 
-    return true;
-  }, [setDockerReady, socket]);
+      if (!pullResponse.success) {
+        toast.error(
+          pullResponse.error ??
+            "Docker image is not ready yet. Please try again.",
+        );
+        return false;
+      }
+
+      return true;
+    }, [setDockerReady, socket]);
 
   const handleStartTask = useCallback(async () => {
     if (isStartingTaskRef.current) {
@@ -1048,8 +1066,8 @@ function DashboardComponent() {
               fileName: image.fileName,
               altText: image.altText,
             };
-          }
-        )
+          },
+        ),
       );
 
       // Clear input after successful task creation
@@ -1140,7 +1158,7 @@ function DashboardComponent() {
           // Ralph Mode: keep working until explicit completion signal
           ...(isRalphMode ? { ralphMode: { enabled: true } } : {}),
         },
-        handleStartTaskAck
+        handleStartTaskAck,
       );
       console.log("Task created:", taskId);
     } catch (error) {
@@ -1187,7 +1205,7 @@ function DashboardComponent() {
   // Format repos for multiselect
   // Fetch environments
   const environmentsQuery = useQuery(
-    convexQuery(api.environments.list, { teamSlugOrId })
+    convexQuery(api.environments.list, { teamSlugOrId }),
   );
 
   const projectOptions = useMemo(() => {
@@ -1272,9 +1290,11 @@ function DashboardComponent() {
   const selectedEnvironment = useMemo(() => {
     if (!isEnvSelected || !selectedProject[0]) return null;
     const envId = selectedProject[0].replace(/^env:/, "") as Id<"environments">;
-    return environmentsQuery.data?.find(
-      (environment) => environment._id === envId
-    ) ?? null;
+    return (
+      environmentsQuery.data?.find(
+        (environment) => environment._id === envId,
+      ) ?? null
+    );
   }, [environmentsQuery.data, isEnvSelected, selectedProject]);
 
   const selectedEnvironmentRepos = useMemo(() => {
@@ -1284,6 +1304,10 @@ function DashboardComponent() {
 
   const selectedEnvironmentName = useMemo(() => {
     return selectedEnvironment?.name ?? null;
+  }, [selectedEnvironment]);
+
+  const selectedEnvironmentProvider = useMemo(() => {
+    return selectedEnvironment?.snapshotProvider ?? null;
   }, [selectedEnvironment]);
 
   const workspaceSetupProjects = useMemo(() => {
@@ -1296,7 +1320,10 @@ function DashboardComponent() {
   const shouldShowWorkspaceSetup = workspaceSetupProjects.length > 0;
 
   const shouldShowCloudRepoOnboarding =
-    !!selectedRepoFullName && isCloudMode && !isEnvSelected && !hasDismissedCloudRepoOnboarding;
+    !!selectedRepoFullName &&
+    isCloudMode &&
+    !isEnvSelected &&
+    !hasDismissedCloudRepoOnboarding;
 
   const createEnvironmentSearch = useMemo(() => {
     if (!selectedRepoFullName) return null;
@@ -1332,7 +1359,10 @@ function DashboardComponent() {
     if (isEnvSelected) return; // environment forces cloud mode
     const newMode = !isCloudMode;
     setIsCloudMode(newMode);
-    localStorage.setItem(`isCloudMode-${teamSlugOrId}`, JSON.stringify(newMode));
+    localStorage.setItem(
+      `isCloudMode-${teamSlugOrId}`,
+      JSON.stringify(newMode),
+    );
     // Clean up legacy global key
     localStorage.removeItem("isCloudMode");
   }, [isCloudMode, isEnvSelected, teamSlugOrId]);
@@ -1354,7 +1384,7 @@ function DashboardComponent() {
           setSelectedProject([result.fullName]);
           localStorage.setItem(
             `selectedProject-${teamSlugOrId}`,
-            JSON.stringify([result.fullName])
+            JSON.stringify([result.fullName]),
           );
 
           toast.success(`Added ${result.fullName} to repositories`);
@@ -1375,7 +1405,7 @@ function DashboardComponent() {
         return false; // Don't close dropdown if it's not a valid GitHub URL
       }
     },
-    [addManualRepo, teamSlugOrId, reposByOrgQuery]
+    [addManualRepo, teamSlugOrId, reposByOrgQuery],
   );
 
   // Listen for VSCode spawned events
@@ -1414,7 +1444,7 @@ function DashboardComponent() {
       setSelectedProject([data.repoFullName]);
       localStorage.setItem(
         `selectedProject-${teamSlugOrId}`,
-        JSON.stringify([data.repoFullName])
+        JSON.stringify([data.repoFullName]),
       );
 
       // Set the selected branch
@@ -1522,7 +1552,7 @@ function DashboardComponent() {
 
   const lexicalBranch = useMemo(
     () => effectiveSelectedBranch[0],
-    [effectiveSelectedBranch]
+    [effectiveSelectedBranch],
   );
 
   const canSubmit = useMemo(() => {
@@ -1553,6 +1583,7 @@ function DashboardComponent() {
               selectedProject={selectedProject}
               isEnvSelected={isEnvSelected}
               selectedEnvironmentName={selectedEnvironmentName}
+              selectedEnvironmentProvider={selectedEnvironmentProvider}
             />
 
             <DashboardMainCard
@@ -1583,14 +1614,19 @@ function DashboardComponent() {
               onRalphModeToggle={() => {
                 setIsRalphMode((prev) => {
                   const next = !prev;
-                  localStorage.setItem(`isRalphMode-${teamSlugOrId}`, JSON.stringify(next));
+                  localStorage.setItem(
+                    `isRalphMode-${teamSlugOrId}`,
+                    JSON.stringify(next),
+                  );
                   // Clean up legacy global key
                   localStorage.removeItem("isRalphMode");
                   return next;
                 });
               }}
               isLoadingProjects={reposByOrgQuery.isLoading}
-              isLoadingBranches={branchesQuery.isLoading && effectiveSelectedBranch.length === 0}
+              isLoadingBranches={
+                branchesQuery.isLoading && effectiveSelectedBranch.length === 0
+              }
               teamSlugOrId={teamSlugOrId}
               cloudToggleDisabled={isEnvSelected}
               branchDisabled={isEnvSelected || !selectedProject[0]}
@@ -1623,7 +1659,10 @@ function DashboardComponent() {
                     Set up an environment for {selectedRepoFullName}
                   </p>
                   <p className="text-xs text-green-900/80 dark:text-green-200/80">
-                    Environments let you preconfigure development and maintenance scripts, pre-install packages, and environment variables so cloud workspaces are ready to go the moment they start.
+                    Environments let you preconfigure development and
+                    maintenance scripts, pre-install packages, and environment
+                    variables so cloud workspaces are ready to go the moment
+                    they start.
                   </p>
                   <div className="flex gap-2 justify-end">
                     <button

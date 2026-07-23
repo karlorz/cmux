@@ -10,6 +10,7 @@ import { stackClientApp } from "../../lib/stack";
 import { authJsonQueryOptions } from "../convex/authJsonQueryOptions";
 import { setGlobalSocket, socketBoot } from "./socket-boot";
 import { WebSocketContext } from "./socket-context";
+import { registerMirrorLocalProgressToasts } from "./mirror-local-progress-toasts";
 import type { SocketContextType } from "./types";
 import { env } from "@/client-env";
 
@@ -50,6 +51,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({
     }
     let disposed = false;
     let createdSocket: SocketContextType["socket"] | null = null;
+    let unregisterMirrorLocalProgressToasts: (() => void) | undefined;
     (async () => {
       // Fetch full auth JSON for server to forward as x-stack-auth
       const user = await cachedGetUser(stackClientApp);
@@ -128,10 +130,13 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({
       newSocket.on("connect_error", handleConnectError);
       newSocket.on("available-editors", handleAvailableEditors);
       newSocket.on("local-repo-not-found", handleLocalRepoNotFound);
+      unregisterMirrorLocalProgressToasts =
+        registerMirrorLocalProgressToasts(newSocket);
     })();
 
     return () => {
       disposed = true;
+      unregisterMirrorLocalProgressToasts?.();
       if (createdSocket) {
         // Remove all listeners before disconnecting to prevent memory leaks
         createdSocket.off("connect");

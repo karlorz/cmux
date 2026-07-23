@@ -1,4 +1,5 @@
 import { GitDiffManager } from "@cmux/server/gitDiff";
+import { createMirrorLocalPack } from "@cmux/server/host-config/mirror-local-pack";
 import type { RealtimeServer, RealtimeSocket } from "@cmux/server/realtime";
 import { setupSocketHandlers } from "@cmux/server/socket-handlers";
 import {
@@ -20,7 +21,11 @@ export async function startEmbeddedServer() {
   const ipcRealtimeServer = createIPCRealtimeServer();
 
   // Setup the FULL server socket handlers - this gives us complete parity
-  setupSocketHandlers(ipcRealtimeServer, gitDiffManager, null);
+  setupSocketHandlers(ipcRealtimeServer, gitDiffManager, null, {
+    mirrorLocal: {
+      createPack: () => createMirrorLocalPack(),
+    },
+  });
 
   let vscodeServeHandle: VSCodeServeWebHandle | null = null;
   try {
@@ -33,7 +38,7 @@ export async function startEmbeddedServer() {
   } catch (error) {
     serverLogger.error(
       "Failed to ensure VS Code serve-web in embedded server:",
-      error
+      error,
     );
   }
 

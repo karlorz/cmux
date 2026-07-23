@@ -1,4 +1,5 @@
 import { api } from "@cmux/convex/api";
+import { getMirrorLocalStateFromStatusMessage } from "@cmux/shared";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { convexQuery } from "@convex-dev/react-query";
 import { createFileRoute } from "@tanstack/react-router";
@@ -34,7 +35,7 @@ const paramsSchema = z.object({
 });
 
 export const Route = createFileRoute(
-  "/_layout/$teamSlugOrId/task/$taskId/run/$runId/vscode"
+  "/_layout/$teamSlugOrId/task/$taskId/run/$runId/vscode",
 )({
   component: VSCodeComponent,
   params: {
@@ -58,17 +59,17 @@ export const Route = createFileRoute(
           convexQuery(api.taskRuns.get, {
             teamSlugOrId: opts.params.teamSlugOrId,
             id: opts.params.runId,
-          })
+          }),
         ),
         opts.context.queryClient.ensureQueryData(
-          localVSCodeServeWebQueryOptions()
+          localVSCodeServeWebQueryOptions(),
         ),
       ]);
       if (result) {
         const workspaceUrl = getWorkspaceUrl(
           result.vscode?.workspaceUrl,
           result.vscode?.provider,
-          localServeWeb.baseUrl
+          localServeWeb.baseUrl,
         );
         if (workspaceUrl) {
           await preloadTaskRunIframes([
@@ -93,13 +94,15 @@ function VSCodeComponent() {
   const { socket } = useSocket();
 
   // Query for linked local workspace to trigger sync
-  const linkedLocalWorkspace = useQuery(
-    api.tasks.getLinkedLocalWorkspace,
-    { teamSlugOrId, cloudTaskRunId: taskRunId }
-  );
+  const linkedLocalWorkspace = useQuery(api.tasks.getLinkedLocalWorkspace, {
+    teamSlugOrId,
+    cloudTaskRunId: taskRunId,
+  });
 
   // Query workspace settings for auto-sync preference
-  const workspaceSettings = useQuery(api.workspaceSettings.get, { teamSlugOrId });
+  const workspaceSettings = useQuery(api.workspaceSettings.get, {
+    teamSlugOrId,
+  });
   const autoSyncEnabled = workspaceSettings?.autoSyncEnabled ?? true;
 
   // Trigger sync when viewing a cloud task that has a linked local workspace
@@ -122,16 +125,28 @@ function VSCodeComponent() {
       },
       (response: { success: boolean; error?: string }) => {
         if (!response.success) {
-          console.error("[VSCode route] Failed to trigger sync:", response.error);
+          console.error(
+            "[VSCode route] Failed to trigger sync:",
+            response.error,
+          );
         }
-      }
+      },
     );
-  }, [autoSyncEnabled, socket, linkedLocalWorkspace?.task?.worktreePath, taskRunId]);
+  }, [
+    autoSyncEnabled,
+    socket,
+    linkedLocalWorkspace?.task?.worktreePath,
+    taskRunId,
+  ]);
 
   // Extract stable values from taskRun to avoid re-renders when unrelated fields change
   const rawWorkspaceUrl = taskRun?.vscode?.workspaceUrl;
   const vsCodeProvider = taskRun?.vscode?.provider;
   const vsCodeStatusMessage = taskRun?.vscode?.statusMessage;
+  const mirrorLocalState = getMirrorLocalStateFromStatusMessage(
+    vsCodeStatusMessage,
+  );
+  const isMirrorLocalReady = mirrorLocalState === "applied";
   const taskRunStatus = taskRun?.status;
   const taskRunErrorMessage = taskRun?.errorMessage;
   const localServeWebBaseUrl = localServeWeb.data?.baseUrl;
@@ -141,13 +156,15 @@ function VSCodeComponent() {
 
   // Memoize the workspace URL to prevent unnecessary recalculations
   const workspaceUrl = useMemo(
-    () => getWorkspaceUrl(rawWorkspaceUrl, vsCodeProvider, localServeWebBaseUrl),
-    [rawWorkspaceUrl, vsCodeProvider, localServeWebBaseUrl]
+    () =>
+      getWorkspaceUrl(rawWorkspaceUrl, vsCodeProvider, localServeWebBaseUrl),
+    [rawWorkspaceUrl, vsCodeProvider, localServeWebBaseUrl],
   );
 
   const disablePreflight = useMemo(
-    () => (rawWorkspaceUrl ? shouldUseServerIframePreflight(rawWorkspaceUrl) : false),
-    [rawWorkspaceUrl]
+    () =>
+      rawWorkspaceUrl ? shouldUseServerIframePreflight(rawWorkspaceUrl) : false,
+    [rawWorkspaceUrl],
   );
 
   const persistKey = getTaskRunPersistKey(taskRunId);
@@ -176,7 +193,11 @@ function VSCodeComponent() {
   }, []);
 
   const tryRestoreWorkspaceFocus = useCallback(async (): Promise<boolean> => {
-    if (typeof document === "undefined" || !hasWorkspace || iframeStatus !== "loaded") {
+    if (
+      typeof document === "undefined" ||
+      !hasWorkspace ||
+      iframeStatus !== "loaded"
+    ) {
       return false;
     }
 
@@ -189,10 +210,7 @@ function VSCodeComponent() {
     }
 
     const focused = await isWebviewFocused(currentPersistKey);
-    if (
-      focused ||
-      isInteractiveFocusRetentionElement(document.activeElement)
-    ) {
+    if (focused || isInteractiveFocusRetentionElement(document.activeElement)) {
       return focused;
     }
 
@@ -226,12 +244,9 @@ function VSCodeComponent() {
   }, [workspaceUrl]);
 
   // Stable callback for status changes - setIframeStatus is already stable
-  const handleStatusChange = useCallback(
-    (status: PersistentIframeStatus) => {
-      setIframeStatus(status);
-    },
-    []
-  );
+  const handleStatusChange = useCallback((status: PersistentIframeStatus) => {
+    setIframeStatus(status);
+  }, []);
 
   const handleWorkspaceActivate = useCallback(() => {
     shouldRestoreWorkspaceFocusOnWindowRefocusRef.current = true;
@@ -245,10 +260,10 @@ function VSCodeComponent() {
     (error: Error) => {
       console.error(
         `Failed to load workspace view for task run ${taskRunId}:`,
-        error
+        error,
       );
     },
-    [taskRunId]
+    [taskRunId],
   );
 
   useEffect(() => {
@@ -398,12 +413,18 @@ function VSCodeComponent() {
           void tryRestoreWorkspaceFocus().catch((error) => {
             console.warn(
               `Failed to restore workspace webview focus for task run ${taskRunId}`,
-              error
+              error,
             );
           });
         }, 150);
       }, 10);
-    }, [clearPendingFocusRestore, hasWorkspace, iframeStatus, taskRunId, tryRestoreWorkspaceFocus])
+    }, [
+      clearPendingFocusRestore,
+      hasWorkspace,
+      iframeStatus,
+      taskRunId,
+      tryRestoreWorkspaceFocus,
+    ]),
   );
 
   const loadingFallback = useMemo(
@@ -415,11 +436,11 @@ function VSCodeComponent() {
           loadingDescription={vsCodeStatusMessage}
         />
       ),
-    [isLocalWorkspace, vsCodeStatusMessage]
+    [isLocalWorkspace, vsCodeStatusMessage],
   );
   const errorFallback = useMemo(
     () => <WorkspaceLoadingIndicator variant="vscode" status="error" />,
-    []
+    [],
   );
 
   const isEditorBusy = !hasWorkspace || iframeStatus !== "loaded";
@@ -427,6 +448,18 @@ function VSCodeComponent() {
   return (
     <div className="flex flex-col grow bg-neutral-50 dark:bg-black">
       <div className="flex flex-col grow min-h-0 border-l border-neutral-200 dark:border-neutral-800">
+        {mirrorLocalState && vsCodeStatusMessage ? (
+          <div
+            role="status"
+            className={
+              isMirrorLocalReady
+                ? "border-b border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
+                : "border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+            }
+          >
+            {vsCodeStatusMessage}
+          </div>
+        ) : null}
         <div
           className="flex flex-row grow min-h-0 relative"
           aria-busy={isEditorBusy}

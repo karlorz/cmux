@@ -23,7 +23,6 @@ import type {
 } from "@cmux/shared";
 import {
   buildCreateCloudWorkspaceModeFields,
-  buildDevshMirrorLocalCommand,
   getMirrorLocalUiState,
   WORKSPACE_START_MODE_LABELS,
   WORKSPACE_START_MODES,
@@ -40,6 +39,8 @@ type WorkspaceCreationButtonsProps = {
   isEnvSelected: boolean;
   /** Resolved environment name from environments query (avoids parsing selectedProject) */
   selectedEnvironmentName?: string | null;
+  /** Provider declared by the selected environment. */
+  selectedEnvironmentProvider?: string | null;
 };
 
 export function WorkspaceCreationButtons({
@@ -47,6 +48,7 @@ export function WorkspaceCreationButtons({
   selectedProject,
   isEnvSelected,
   selectedEnvironmentName,
+  selectedEnvironmentProvider,
 }: WorkspaceCreationButtonsProps) {
   const { socket } = useSocket();
   const { addTaskToExpand } = useExpandTasks();
@@ -59,9 +61,12 @@ export function WorkspaceCreationButtons({
   const [workspaceStartMode, setWorkspaceStartMode] =
     useState<WorkspaceStartMode>("default");
   const mirrorLocalUi = useMemo(
-    () => getMirrorLocalUiState(isElectron),
-    // isElectron is a module constant; recompute once per mount
-    [],
+    () =>
+      getMirrorLocalUiState({
+        isElectron,
+        provider: selectedEnvironmentProvider,
+      }),
+    [selectedEnvironmentProvider],
   );
 
   const reserveLocalWorkspace = useMutation(api.localWorkspaces.reserve);
@@ -139,14 +144,14 @@ export function WorkspaceCreationButtons({
               const normalizedWorkspaceUrl = response.workspaceUrl
                 ? rewriteLocalWorkspaceUrlIfNeeded(
                     response.workspaceUrl,
-                    localServeWeb.data?.baseUrl
+                    localServeWeb.data?.baseUrl,
                   )
                 : null;
 
               if (response.workspaceUrl && effectiveTaskRunId) {
                 const proxiedUrl = toProxyWorkspaceUrl(
                   response.workspaceUrl,
-                  localServeWeb.data?.baseUrl
+                  localServeWeb.data?.baseUrl,
                 );
                 if (proxiedUrl) {
                   void preloadTaskRunIframes([
@@ -159,7 +164,7 @@ export function WorkspaceCreationButtons({
               }
 
               toast.success(
-                `Local workspace "${reservation.workspaceName}" created successfully`
+                `Local workspace "${reservation.workspaceName}" created successfully`,
               );
 
               if (effectiveTaskId && effectiveTaskRunId) {
@@ -185,15 +190,12 @@ export function WorkspaceCreationButtons({
                 window.location.assign(normalizedWorkspaceUrl);
               }
             } catch (callbackError) {
-              console.error(
-                "Error creating local workspace:",
-                callbackError
-              );
+              console.error("Error creating local workspace:", callbackError);
               toast.error("Failed to create local workspace");
             } finally {
               resolve();
             }
-          }
+          },
         );
       });
     } catch (error) {
@@ -234,16 +236,13 @@ export function WorkspaceCreationButtons({
     const projectFullName = selectedProject[0];
     const environmentId = projectFullName.replace(
       /^env:/,
-      ""
+      "",
     ) as Id<"environments">;
 
     // Use resolved environment name from props (falls back to "Unknown Environment" if unavailable)
     const environmentName = selectedEnvironmentName || "Unknown Environment";
 
-    if (
-      workspaceStartMode === "mirror-local" &&
-      !mirrorLocalUi.enabled
-    ) {
+    if (workspaceStartMode === "mirror-local" && !mirrorLocalUi.enabled) {
       toast.error(
         mirrorLocalUi.tooltip ??
           "Mirror local requires the Electron desktop app.",
@@ -267,7 +266,8 @@ export function WorkspaceCreationButtons({
       // Hint the sidebar to auto-expand this task once it appears
       addTaskToExpand(taskId);
 
-      const modeFields = buildCreateCloudWorkspaceModeFields(workspaceStartMode);
+      const modeFields =
+        buildCreateCloudWorkspaceModeFields(workspaceStartMode);
 
       await new Promise<void>((resolve) => {
         socket.emit(
@@ -283,7 +283,7 @@ export function WorkspaceCreationButtons({
             try {
               if (!response.success) {
                 toast.error(
-                  response.error || "Failed to create cloud workspace"
+                  response.error || "Failed to create cloud workspace",
                 );
                 return;
               }
@@ -291,16 +291,9 @@ export function WorkspaceCreationButtons({
               const effectiveTaskId = response.taskId ?? taskId;
               const effectiveTaskRunId = response.taskRunId;
 
-              if (workspaceStartMode === "mirror-local") {
-                // Host pack is not yet attached to dashboard sandboxes in-process;
-                // soft-fail with explicit CLI guidance (do not claim silent pack success).
-                const cmd = buildDevshMirrorLocalCommand();
-                toast.message("Cloud workspace starting (mirror-local)", {
-                  description: `Agent config pack from this host is not fully wired for dashboard sandboxes yet. For a durable host pack, run: ${cmd}`,
-                });
-              } else if (workspaceStartMode === "clean") {
+              if (workspaceStartMode === "clean") {
                 toast.success("Clean cloud workspace created successfully");
-              } else {
+              } else if (workspaceStartMode === "default") {
                 toast.success("Cloud workspace created successfully");
               }
 
@@ -325,15 +318,12 @@ export function WorkspaceCreationButtons({
                 });
               }
             } catch (callbackError) {
-              console.error(
-                "Error creating cloud workspace:",
-                callbackError
-              );
+              console.error("Error creating cloud workspace:", callbackError);
               toast.error("Failed to create cloud workspace");
             } finally {
               resolve();
             }
-          }
+          },
         );
       });
 
@@ -469,7 +459,7 @@ export function WorkspaceCreationButtons({
                 : workspaceStartMode === "clean"
                   ? "Create clean workspace (skip provider auth injection)"
                   : workspaceStartMode === "mirror-local"
-                    ? "Create workspace and skip provider auth; host mirror pack is soft-fail"
+                    ? "Create a clean PVE LXC workspace and apply this host's safe agent configuration pack"
                     : "Create workspace from selected environment"}
           </TooltipContent>
         </Tooltip>
