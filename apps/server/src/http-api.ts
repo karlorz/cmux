@@ -17,6 +17,10 @@ import {
   DEFAULT_TASK_LIST_LIMIT,
   ORCHESTRATION_STATUSES,
 } from "@cmux/convex/orchestrationQueries";
+import {
+  buildSandboxesStartModeFields,
+  type TaskClass,
+} from "@cmux/shared";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { DEFAULT_CLAUDE_AGENT_NAME } from "@cmux/shared/providers/anthropic/models";
 import {
@@ -44,8 +48,6 @@ import { extractSandboxStartError } from "./utils/sandboxErrors";
 import { env } from "./utils/server-env";
 import { getResponseErrorMessage } from "./utils/httpError";
 import { buildTaskRunCreateArgs } from "./utils/taskRunCreateArgs";
-
-import type { TaskClass } from "@cmux/shared";
 
 interface StartTaskRequest {
   // Required fields
@@ -535,6 +537,8 @@ interface CreateCloudWorkspaceRequest {
   projectFullName?: string;
   repoUrl?: string;
   theme?: "dark" | "light" | "system";
+  clean?: boolean;
+  mirrorLocal?: boolean;
 }
 
 interface CreateCloudWorkspaceResponse {
@@ -571,8 +575,15 @@ async function handleCreateCloudWorkspace(
     return;
   }
 
-  const { teamSlugOrId, taskId, environmentId, projectFullName, repoUrl } =
-    body;
+  const {
+    teamSlugOrId,
+    taskId,
+    environmentId,
+    projectFullName,
+    repoUrl,
+    clean,
+    mirrorLocal,
+  } = body;
 
   if (!teamSlugOrId || !taskId) {
     jsonResponse(res, 400, {
@@ -589,10 +600,20 @@ async function handleCreateCloudWorkspace(
     return;
   }
 
+  if (mirrorLocal) {
+    jsonResponse(res, 400, {
+      error:
+        "Mirror local is available only through the Electron embedded server with a trusted host configuration service.",
+    });
+    return;
+  }
+
   serverLogger.info("[http-api] POST /api/create-cloud-workspace", {
     taskId,
     environmentId,
     projectFullName,
+    clean: Boolean(clean),
+    mirrorLocal: Boolean(mirrorLocal),
   });
 
   // Hoist taskRunId outside runWithAuth to handle failures properly
@@ -652,6 +673,10 @@ async function handleCreateCloudWorkspace(
           : `[create-cloud-workspace] Starting sandbox for repo ${projectFullName}`,
       );
 
+      const modeFields = buildSandboxesStartModeFields({
+        clean,
+        mirrorLocal,
+      });
       const startRes = await postApiSandboxesStart({
         client: getWwwClient(),
         body: {
@@ -665,6 +690,7 @@ async function handleCreateCloudWorkspace(
           taskRunJwt,
           isCloudWorkspace: true,
           isOrchestrationHead: true,
+          ...modeFields,
           ...(environmentId ? { environmentId } : { projectFullName, repoUrl }),
         },
       });

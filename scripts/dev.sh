@@ -18,6 +18,7 @@
 # Environment variables:
 #   SKIP_DOCKER_BUILD       Set to "false" to build Docker image (default: true)
 #   SKIP_CONVEX             Set to "false" to run Convex (default: true)
+#   CMUX_ELECTRON_PARTITION Override the persistent Electron partition used in dev
 #
 # Examples:
 #   ./scripts/dev.sh                          # Start without Docker build
@@ -328,6 +329,10 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 export SKIP_DOCKER_BUILD
+
+if [ "$RUN_ELECTRON" = "true" ]; then
+    export CMUX_ELECTRON_PARTITION="${CMUX_ELECTRON_PARTITION:-persist:cmux-dev-${PROJECT_HASH}}"
+fi
 
 # Set the worker image name for local development
 # This overrides the default (docker.io/lawrencecchen/cmux:latest) to use the locally-built image
@@ -683,9 +688,10 @@ echo -e "${GREEN}Starting frontend on port 5173...${NC}"
 CLIENT_PID=$!
 check_process $CLIENT_PID "Frontend Client"
 
-# Start the www app
+# Start the www app. Webpack avoids Next's Turbopack package-root resolution
+# failure when this repository is running from a linked worktree.
 echo -e "${GREEN}Starting www app on port 9779...${NC}"
-(cd "$APP_DIR/apps/www" && exec bash -c 'trap "pkill -9 -P $$ 2>/dev/null || true" EXIT; bun run dev 2>&1 | tee "$LOG_DIR/www.log" | prefix_output "WWW" "$GREEN"') </dev/null &
+(cd "$APP_DIR/apps/www" && exec bash -c 'trap "pkill -9 -P $$ 2>/dev/null || true" EXIT; bun run dev:webpack 2>&1 | tee "$LOG_DIR/www.log" | prefix_output "WWW" "$GREEN"') </dev/null &
 WWW_PID=$!
 check_process $WWW_PID "WWW App"
 
@@ -734,6 +740,7 @@ if [ "$SKIP_CONVEX" != "true" ]; then
 fi
 if [ "$RUN_ELECTRON" = "true" ]; then
     echo -e "${BLUE}Electron app is starting...${NC}"
+    echo -e "${BLUE}Electron partition: $CMUX_ELECTRON_PARTITION${NC}"
     if [ "$ELECTRON_DEBUG" = "true" ]; then
         echo -e "${BLUE}Chrome DevTools: chrome://inspect or http://localhost:$ELECTRON_DEBUG_PORT${NC}"
     fi

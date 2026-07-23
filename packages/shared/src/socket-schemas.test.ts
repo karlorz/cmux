@@ -7,6 +7,7 @@ import {
   StartTaskSchema,
   CreateLocalWorkspaceSchema,
   CreateCloudWorkspaceSchema,
+  MirrorLocalProgressSchema,
   AuthenticateSchema,
   TerminalCreatedSchema,
   TerminalOutputSchema,
@@ -234,6 +235,56 @@ describe("socket-schemas", () => {
         teamSlugOrId: "team-123",
       });
       expect(result.success).toBe(false);
+    });
+
+    it("accepts clean and mirrorLocal flags for dashboard start modes", () => {
+      const clean = CreateCloudWorkspaceSchema.safeParse({
+        teamSlugOrId: "team-123",
+        environmentId: "k57hmn7abc123def456ghi789",
+        clean: true,
+      });
+      expect(clean.success).toBe(true);
+      if (clean.success) {
+        expect(clean.data.clean).toBe(true);
+        expect(clean.data.mirrorLocal).toBeUndefined();
+      }
+
+      const mirror = CreateCloudWorkspaceSchema.safeParse({
+        teamSlugOrId: "team-123",
+        environmentId: "k57hmn7abc123def456ghi789",
+        clean: true,
+        mirrorLocal: true,
+      });
+      expect(mirror.success).toBe(true);
+      if (mirror.success) {
+        expect(mirror.data.mirrorLocal).toBe(true);
+        expect(mirror.data.clean).toBe(true);
+      }
+    });
+  });
+
+  describe("MirrorLocalProgressSchema", () => {
+    it("accepts sanitized lifecycle metadata", () => {
+      expect(
+        MirrorLocalProgressSchema.parse({
+          taskRunId: "run-123",
+          state: "applied",
+          message: "Mirror local workspace ready",
+          policyVersion: "cmux-mirror-local/v1",
+          fileCount: 12,
+          compressedBytes: 4096,
+        }),
+      ).toMatchObject({ state: "applied", fileCount: 12 });
+    });
+
+    it("rejects unknown lifecycle states", () => {
+      expect(
+        MirrorLocalProgressSchema.safeParse({
+          taskRunId: "run-123",
+          state: "copying-secrets",
+          message: "unsafe",
+        }).success,
+      ).toBe(false);
     });
   });
 
@@ -575,7 +626,10 @@ describe("socket-schemas", () => {
       const result = ProviderStatusSchema.safeParse({
         name: "docker",
         isAvailable: false,
-        missingRequirements: ["Docker is not running", "Docker image not found"],
+        missingRequirements: [
+          "Docker is not running",
+          "Docker image not found",
+        ],
       });
       expect(result.success).toBe(true);
     });

@@ -21,6 +21,10 @@
       "import": "./src/gitDiff.ts",
       "types": "./src/gitDiff.ts"
     },
+    "./host-config/mirror-local-pack": {
+      "import": "./src/host-config/mirror-local-pack.ts",
+      "types": "./src/host-config/mirror-local-pack.ts"
+    },
     "./realtime": {
       "import": "./src/realtime.ts",
       "types": "./src/realtime.ts"

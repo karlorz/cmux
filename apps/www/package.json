@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "dotenv -e ../../.env -- next dev --port 9779",
+    "dev:webpack": "dotenv -e ../../.env -- next dev --port 9779 --webpack",
     "prebuild": "bun run generate-openapi-client",
     "build": "./scripts/build.sh",
     "start": "next start",

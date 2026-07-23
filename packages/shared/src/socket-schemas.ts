@@ -1,5 +1,6 @@
 import type { Id } from "@cmux/convex/dataModel";
 import { z } from "zod";
+import { MIRROR_LOCAL_STATES } from "./workspace-start-mode";
 import { typedZid } from "./utils/typed-zid";
 import { RUNTIME_PROVIDERS } from "./provider-types";
 import type {
@@ -52,7 +53,7 @@ export const StartTaskSchema = z.object({
         src: z.string(),
         fileName: z.string().optional(),
         altText: z.string(),
-      })
+      }),
     )
     .optional(),
   theme: z.enum(["dark", "light", "system"]).optional(),
@@ -101,10 +102,20 @@ export const CreateCloudWorkspaceSchema = z
     taskId: typedZid("tasks").optional(),
     taskRunId: typedZid("taskRuns").optional(),
     theme: z.enum(["dark", "light", "system"]).optional(),
+    /**
+     * Clean start: skip setup-providers auth injection; ownership still recorded.
+     * Maps to POST /api/sandboxes/start clean=true.
+     */
+    clean: z.boolean().optional(),
+    /**
+     * Mirror local agent config. Implies clean for auth. Host pack is Electron-only;
+     * server forwards clean and may soft-fail pack with client guidance.
+     */
+    mirrorLocal: z.boolean().optional(),
   })
   .refine(
     (value) => Boolean(value.environmentId || value.projectFullName),
-    "Either environmentId or projectFullName is required"
+    "Either environmentId or projectFullName is required",
   );
 
 export const CreateCloudWorkspaceResponseSchema = z.object({
@@ -277,7 +288,7 @@ export const ListFilesRequestSchema = z
   })
   .refine(
     (value) => Boolean(value.repoPath || value.environmentId),
-    "repoPath or environmentId is required"
+    "repoPath or environmentId is required",
   );
 
 export const FileInfoSchema = z.object({
@@ -310,6 +321,15 @@ export const VSCodeSpawnedSchema = z.object({
   provider: z.enum(RUNTIME_PROVIDERS),
 });
 
+export const MirrorLocalProgressSchema = z.object({
+  taskRunId: z.string(),
+  state: z.enum(MIRROR_LOCAL_STATES),
+  message: z.string(),
+  policyVersion: z.string().optional(),
+  fileCount: z.number().int().nonnegative().optional(),
+  compressedBytes: z.number().int().nonnegative().optional(),
+  errorCode: z.string().optional(),
+});
 
 // GitHub events
 export const GitHubFetchReposSchema = z.object({
@@ -334,8 +354,8 @@ export const GitHubReposResponseSchema = z.object({
         z.object({
           fullName: z.string(),
           name: z.string(),
-        })
-      )
+        }),
+      ),
     )
     .optional(),
   error: z.string().optional(),
@@ -520,6 +540,7 @@ export type ListFilesRequest = z.infer<typeof ListFilesRequestSchema>;
 export type FileInfo = z.infer<typeof FileInfoSchema>;
 export type ListFilesResponse = z.infer<typeof ListFilesResponseSchema>;
 export type VSCodeSpawned = z.infer<typeof VSCodeSpawnedSchema>;
+export type MirrorLocalProgress = z.infer<typeof MirrorLocalProgressSchema>;
 export type GitHubBranch = z.infer<typeof GitHubBranchSchema>;
 export type GitHubReposResponse = z.infer<typeof GitHubReposResponseSchema>;
 export type GitHubAuthResponse = z.infer<typeof GitHubAuthResponseSchema>;
@@ -550,20 +571,20 @@ export type DefaultRepo = z.infer<typeof DefaultRepoSchema>;
 export interface ClientToServerEvents {
   authenticate: (
     data: Authenticate,
-    callback?: (response?: { ok: boolean; error?: string }) => void
+    callback?: (response?: { ok: boolean; error?: string }) => void,
   ) => void;
   // Terminal operations
   "start-task": (
     data: StartTask,
-    callback: (response: TaskAcknowledged | TaskStarted | TaskError) => void
+    callback: (response: TaskAcknowledged | TaskStarted | TaskError) => void,
   ) => void;
   "create-local-workspace": (
     data: CreateLocalWorkspace,
-    callback: (response: CreateLocalWorkspaceResponse) => void
+    callback: (response: CreateLocalWorkspaceResponse) => void,
   ) => void;
   "create-cloud-workspace": (
     data: CreateCloudWorkspace,
-    callback: (response: CreateCloudWorkspaceResponse) => void
+    callback: (response: CreateCloudWorkspaceResponse) => void,
   ) => void;
   "git-status": (data: GitStatusRequest) => void;
   "git-diff": (
@@ -571,29 +592,29 @@ export interface ClientToServerEvents {
     callback: (
       response:
         | { ok: true; diffs: import("./diff-types.js").ReplaceDiffEntry[] }
-        | { ok: false; error: string; diffs: [] }
-    ) => void
+        | { ok: false; error: string; diffs: [] },
+    ) => void,
   ) => void;
   "git-full-diff": (data: GitFullDiffRequest) => void;
   "open-in-editor": (
     data: OpenInEditor,
-    callback: (response: OpenInEditorResponse) => void
+    callback: (response: OpenInEditorResponse) => void,
   ) => void;
   "list-files": (
     data: ListFilesRequest,
     callback: (
       response:
         | { ok: true; files: FileInfo[] }
-        | { ok: false; files: FileInfo[]; error: string }
-    ) => void
+        | { ok: false; files: FileInfo[]; error: string },
+    ) => void,
   ) => void;
   // GitHub operations
   "github-test-auth": (
-    callback: (response: GitHubAuthResponse) => void
+    callback: (response: GitHubAuthResponse) => void,
   ) => void;
   "github-fetch-repos": (
     data: GitHubFetchRepos,
-    callback: (response: GitHubReposResponse) => void
+    callback: (response: GitHubReposResponse) => void,
   ) => void;
   // Create a draft pull request for a given task run
   "github-create-draft-pr": (
@@ -603,7 +624,7 @@ export interface ClientToServerEvents {
       results: PullRequestActionResult[];
       aggregate: AggregatePullRequestSummary;
       error?: string;
-    }) => void
+    }) => void,
   ) => void;
   // Sync PR state with GitHub and update Convex
   "github-sync-pr-state": (
@@ -613,7 +634,7 @@ export interface ClientToServerEvents {
       results: PullRequestActionResult[];
       aggregate: AggregatePullRequestSummary;
       error?: string;
-    }) => void
+    }) => void,
   ) => void;
   // Merge branch directly
   "github-merge-branch": (
@@ -623,26 +644,29 @@ export interface ClientToServerEvents {
       merged?: boolean;
       commitSha?: string;
       error?: string;
-    }) => void
+    }) => void,
   ) => void;
   // Rust N-API test: returns current time
   "rust-get-time": (
     callback: (
-      response: { ok: true; time: string } | { ok: false; error: string }
-    ) => void
+      response: { ok: true; time: string } | { ok: false; error: string },
+    ) => void,
   ) => void;
   "iframe-preflight": (
     data: { url: string },
-    callback: (response: IframePreflightResult) => void
+    callback: (response: IframePreflightResult) => void,
   ) => void;
   "check-provider-status": (
-    callback: (response: ProviderStatusResponse) => void
+    callback: (response: ProviderStatusResponse) => void,
   ) => void;
   "docker-pull-image": (
-    callback: (response: DockerPullImageResponse) => void
+    callback: (response: DockerPullImageResponse) => void,
   ) => void;
   "get-local-vscode-serve-web-origin": (
-    callback: (response: { baseUrl: string | null; port: number | null }) => void
+    callback: (response: {
+      baseUrl: string | null;
+      port: number | null;
+    }) => void,
   ) => void;
   "check-vscode-availability": (
     data: { refresh?: boolean } | undefined,
@@ -653,15 +677,15 @@ export interface ClientToServerEvents {
       source: string | null;
       suggestions: string[];
       errors: string[];
-    }) => void
+    }) => void,
   ) => void;
   "archive-task": (
     data: ArchiveTask,
-    callback: (response: { success: boolean; error?: string }) => void
+    callback: (response: { success: boolean; error?: string }) => void,
   ) => void;
   "unarchive-task": (
     data: ArchiveTask,
-    callback: (response: { success: boolean; error?: string }) => void
+    callback: (response: { success: boolean; error?: string }) => void,
   ) => void;
   "spawn-from-comment": (
     data: SpawnFromComment,
@@ -673,12 +697,12 @@ export interface ClientToServerEvents {
       terminalId?: string;
       vscodeUrl?: string;
       error?: string;
-    }) => void
+    }) => void,
   ) => void;
   // Trigger local-to-cloud file sync
   "trigger-local-cloud-sync": (
     data: TriggerLocalCloudSync,
-    callback: (response: TriggerLocalCloudSyncResponse) => void
+    callback: (response: TriggerLocalCloudSyncResponse) => void,
   ) => void;
   // Scan filesystem for existing worktrees and register them
   "scan-worktrees": (
@@ -688,15 +712,12 @@ export interface ClientToServerEvents {
       found: number;
       registered: number;
       error?: string;
-    }) => void
+    }) => void,
   ) => void;
   // Delete a worktree from filesystem and registry
   "delete-worktree": (
     data: { teamSlugOrId: string; worktreePath: string },
-    callback: (response: {
-      success: boolean;
-      error?: string;
-    }) => void
+    callback: (response: { success: boolean; error?: string }) => void,
   ) => void;
   // Validate worktree paths and clean up stale entries
   "validate-worktrees": (
@@ -706,15 +727,12 @@ export interface ClientToServerEvents {
       validPaths: string[];
       invalidPaths: string[];
       error?: string;
-    }) => void
+    }) => void,
   ) => void;
   // Clean up a task's worktreePath if it doesn't exist
   "cleanup-stale-workspace": (
     data: { teamSlugOrId: string; taskId: string },
-    callback: (response: {
-      success: boolean;
-      error?: string;
-    }) => void
+    callback: (response: { success: boolean; error?: string }) => void,
   ) => void;
 }
 
@@ -729,6 +747,7 @@ export interface ServerToClientEvents {
   "git-full-diff-response": (data: GitFullDiffResponse) => void;
   "open-in-editor-error": (data: OpenInEditorError) => void;
   "vscode-spawned": (data: VSCodeSpawned) => void;
+  "mirror-local-progress": (data: MirrorLocalProgress) => void;
   "default-repo": (data: DefaultRepo) => void;
   "available-editors": (data: AvailableEditors) => void;
   "task-started": (data: TaskStarted) => void;

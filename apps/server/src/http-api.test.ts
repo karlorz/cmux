@@ -138,6 +138,32 @@ async function withLocalHttpApiServer<T>(
 }
 
 describe("HTTP API - apps/server", () => {
+  describe("POST /api/create-cloud-workspace", () => {
+    it("rejects Mirror local without a trusted Electron host service", async () => {
+      await withLocalHttpApiServer(async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/create-cloud-workspace`, {
+          method: "POST",
+          headers: {
+            authorization: "Bearer test-token",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            teamSlugOrId: "team-1",
+            taskId: "task-1",
+            environmentId: "environment-1",
+            clean: true,
+            mirrorLocal: true,
+          }),
+        });
+
+        expect(response.status).toBe(400);
+        await expect(response.json()).resolves.toMatchObject({
+          error: expect.stringMatching(/Electron embedded server/i),
+        });
+      });
+    });
+  });
+
   describe("Orchestration filtering helpers", () => {
     it("matches a single-task local flow by task id", () => {
       const orchestrationId = "orch_task_local_123";

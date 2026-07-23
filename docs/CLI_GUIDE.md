@@ -1,7 +1,7 @@
 # cmux CLI Guide
 
 > **Primary CLI**: `devsh` is the primary operator CLI for cmux.
-> **Last Updated**: 2026-03-24
+> **Last Updated**: 2026-07-22
 
 ## Quick Start
 
@@ -21,6 +21,9 @@ devsh start -p pve-lxc
 # List running sandboxes
 devsh ls
 ```
+
+For **Clean** / **Mirror local** start modes (CLI + team dashboard), see
+[Cloud workspace start modes](./CLOUD_WORKSPACE_START_MODES.md).
 
 ## CLI Surfaces
 
@@ -55,6 +58,11 @@ devsh start -p pve-lxc    # PVE-LXC (fastest, cheapest)
 devsh start -p e2b        # E2B (managed pause/resume)
 devsh start -p morph      # Morph (fallback)
 
+# Start modes (pve-lxc reference; see docs/CLOUD_WORKSPACE_START_MODES.md)
+devsh start -p pve-lxc --clean
+devsh start -p pve-lxc --clean --mirror-local
+devsh start -p pve-lxc --template <name>   # CLI-only templates under ~/.cmux/templates
+
 # List sandboxes
 devsh ls
 devsh list
@@ -71,6 +79,19 @@ devsh resume <id>
 # Execute command in sandbox
 devsh exec <id> "command"
 ```
+
+**Start modes (summary):**
+
+| Flag | Meaning |
+|------|---------|
+| (none) | Default: setup-providers auth injection as today |
+| `--clean` | Skip setup-providers auth injection; ownership still recorded |
+| `--mirror-local` | Clean + pack redacted host `~/.claude` / `~/.codex` (host FS; durable path) |
+
+In the **desktop app team dashboard**, the same Default / Clean / Mirror local
+choices appear as a segmented control above **Create Cloud Workspace**
+(environment still required). Mirror local is Electron-only in the UI.
+Do **not** use preview.new `/preview` for these modes.
 
 ### Task Orchestration
 

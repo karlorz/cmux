@@ -9,6 +9,7 @@ import { stackClientApp } from "../../lib/stack";
 import { authJsonQueryOptions } from "../convex/authJsonQueryOptions";
 import { setGlobalSocket, socketBoot } from "./socket-boot";
 import { ElectronSocketContext } from "./socket-context";
+import { registerMirrorLocalProgressToasts } from "./mirror-local-progress-toasts";
 import type { SocketContextType } from "./types";
 
 export const ElectronSocketProvider: React.FC<React.PropsWithChildren> = ({
@@ -84,6 +85,7 @@ export const ElectronSocketProvider: React.FC<React.PropsWithChildren> = ({
     }
 
     let disposed = false;
+    let unregisterMirrorLocalProgressToasts: (() => void) | undefined;
 
     (async () => {
       const user = await cachedGetUser(stackClientApp);
@@ -139,6 +141,9 @@ export const ElectronSocketProvider: React.FC<React.PropsWithChildren> = ({
         });
       });
 
+      unregisterMirrorLocalProgressToasts =
+        registerMirrorLocalProgressToasts(createdSocket);
+
       // Connect the socket
       createdSocket.connect();
 
@@ -152,6 +157,7 @@ export const ElectronSocketProvider: React.FC<React.PropsWithChildren> = ({
 
     return () => {
       disposed = true;
+      unregisterMirrorLocalProgressToasts?.();
       if (socketRef.current) {
         console.log("[ElectronSocket] Cleaning up IPC socket");
         socketRef.current.disconnect();
