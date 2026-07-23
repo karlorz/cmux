@@ -683,9 +683,10 @@ echo -e "${GREEN}Starting frontend on port 5173...${NC}"
 CLIENT_PID=$!
 check_process $CLIENT_PID "Frontend Client"
 
-# Start the www app
+# Start the www app. Webpack avoids Next's Turbopack package-root resolution
+# failure when this repository is running from a linked worktree.
 echo -e "${GREEN}Starting www app on port 9779...${NC}"
-(cd "$APP_DIR/apps/www" && exec bash -c 'trap "pkill -9 -P $$ 2>/dev/null || true" EXIT; bun run dev 2>&1 | tee "$LOG_DIR/www.log" | prefix_output "WWW" "$GREEN"') </dev/null &
+(cd "$APP_DIR/apps/www" && exec bash -c 'trap "pkill -9 -P $$ 2>/dev/null || true" EXIT; bun run dev:webpack 2>&1 | tee "$LOG_DIR/www.log" | prefix_output "WWW" "$GREEN"') </dev/null &
 WWW_PID=$!
 check_process $WWW_PID "WWW App"
 
