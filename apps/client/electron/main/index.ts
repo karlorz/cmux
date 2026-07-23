@@ -85,9 +85,16 @@ import {
   type LocalClaudePluginDevLaunchRequest,
   type LocalTerminalTarget,
 } from "../../src/lib/local-claude-plugin-dev";
+import {
+  LEGACY_ELECTRON_PARTITION,
+  resolveElectronPartition,
+} from "./electron-partition";
 
 // Use a cookieable HTTPS origin intercepted locally instead of a custom scheme.
-const PARTITION = "persist:cmux";
+const PARTITION = resolveElectronPartition({
+  isPackaged: app.isPackaged,
+  override: process.env.CMUX_ELECTRON_PARTITION,
+});
 const APP_HOST = "cmux.local";
 const FRAME_BLOCKING_RESPONSE_HEADERS = new Set([
   "x-frame-options",
@@ -143,6 +150,77 @@ const previewWebContentsIds = new Set<number>();
 const altGrActivePreviewContents = new Set<number>();
 let embeddedServerCleanup: (() => Promise<void>) | null = null;
 let autoUpdateIntervalId: ReturnType<typeof setInterval> | null = null;
+
+function getCookieMigrationUrl(cookie: Electron.Cookie): string | null {
+  const domain = cookie.domain?.startsWith(".")
+    ? cookie.domain.slice(1)
+    : cookie.domain;
+  if (!domain) {
+    return null;
+  }
+
+  const scheme = cookie.secure ? "https" : "http";
+  return `${scheme}://${domain}${cookie.path || "/"}`;
+}
+
+async function migrateLegacyDevAuthCookies(
+  targetSession: Electron.Session,
+): Promise<void> {
+  if (app.isPackaged || PARTITION === LEGACY_ELECTRON_PARTITION) {
+    return;
+  }
+
+  try {
+    const targetCookies = await targetSession.cookies.get({});
+    if (
+      targetCookies.some((cookie) =>
+        isStackAuthCookieName(cookie.name, env.NEXT_PUBLIC_STACK_PROJECT_ID),
+      )
+    ) {
+      return;
+    }
+
+    const legacySession = session.fromPartition(LEGACY_ELECTRON_PARTITION);
+    const legacyAuthCookies = (await legacySession.cookies.get({})).filter(
+      (cookie) =>
+        isStackAuthCookieName(cookie.name, env.NEXT_PUBLIC_STACK_PROJECT_ID),
+    );
+
+    let copiedCount = 0;
+    for (const cookie of legacyAuthCookies) {
+      const url = getCookieMigrationUrl(cookie);
+      if (!url) {
+        continue;
+      }
+
+      await targetSession.cookies.set({
+        url,
+        name: cookie.name,
+        value: cookie.value,
+        path: cookie.path,
+        secure: cookie.secure,
+        httpOnly: cookie.httpOnly,
+        sameSite: cookie.sameSite,
+        ...(cookie.hostOnly ? {} : { domain: cookie.domain }),
+        ...(typeof cookie.expirationDate === "number"
+          ? { expirationDate: cookie.expirationDate }
+          : {}),
+      });
+      copiedCount += 1;
+    }
+
+    if (copiedCount > 0) {
+      mainLog("Migrated Stack Auth cookies into isolated development partition", {
+        sourcePartition: LEGACY_ELECTRON_PARTITION,
+        targetPartition: PARTITION,
+        count: copiedCount,
+        names: legacyAuthCookies.map((cookie) => cookie.name),
+      });
+    }
+  } catch (error) {
+    mainWarn("Failed to migrate legacy development auth cookies", error);
+  }
+}
 
 function getTimestamp(): string {
   return new Date().toISOString();
@@ -1721,6 +1799,7 @@ app.whenReady().then(async () => {
   }
 
   const ses = session.fromPartition(PARTITION);
+  await migrateLegacyDevAuthCookies(ses);
   const trustedProxyDomains = buildTrustedProxyDomainSet([
     process.env.PVE_PUBLIC_DOMAIN,
   ]);

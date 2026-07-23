@@ -14,6 +14,7 @@ import { app, session } from "electron";
 
 import { clearLogDirectory } from "./log-management/clear-log-directory";
 import { resolveLogFilePath } from "./log-management/log-paths";
+import { resolveElectronPartition } from "./electron-partition";
 import { SENTRY_ELECTRON_DSN } from "../../src/sentry-config";
 
 const APP_ID = "com.karlorz.cmux";
@@ -23,7 +24,10 @@ const APP_NAME = "cmux-next";
 const require = createRequire(import.meta.url);
 (globalThis as typeof globalThis & { require?: typeof require }).require = require;
 
-const PARTITION = "persist:cmux";
+const PARTITION = resolveElectronPartition({
+  isPackaged: app.isPackaged,
+  override: process.env.CMUX_ELECTRON_PARTITION,
+});
 
 try {
   const appDataDir = app.getPath("appData");

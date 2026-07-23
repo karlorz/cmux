@@ -1,5 +1,4 @@
 import { api } from "@cmux/convex/api";
-import { getMirrorLocalStateFromStatusMessage } from "@cmux/shared";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { convexQuery } from "@convex-dev/react-query";
 import { createFileRoute } from "@tanstack/react-router";
@@ -143,10 +142,6 @@ function VSCodeComponent() {
   const rawWorkspaceUrl = taskRun?.vscode?.workspaceUrl;
   const vsCodeProvider = taskRun?.vscode?.provider;
   const vsCodeStatusMessage = taskRun?.vscode?.statusMessage;
-  const mirrorLocalState = getMirrorLocalStateFromStatusMessage(
-    vsCodeStatusMessage,
-  );
-  const isMirrorLocalReady = mirrorLocalState === "applied";
   const taskRunStatus = taskRun?.status;
   const taskRunErrorMessage = taskRun?.errorMessage;
   const localServeWebBaseUrl = localServeWeb.data?.baseUrl;
@@ -448,18 +443,6 @@ function VSCodeComponent() {
   return (
     <div className="flex flex-col grow bg-neutral-50 dark:bg-black">
       <div className="flex flex-col grow min-h-0 border-l border-neutral-200 dark:border-neutral-800">
-        {mirrorLocalState && vsCodeStatusMessage ? (
-          <div
-            role="status"
-            className={
-              isMirrorLocalReady
-                ? "border-b border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
-                : "border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
-            }
-          >
-            {vsCodeStatusMessage}
-          </div>
-        ) : null}
         <div
           className="flex flex-row grow min-h-0 relative"
           aria-busy={isEditorBusy}

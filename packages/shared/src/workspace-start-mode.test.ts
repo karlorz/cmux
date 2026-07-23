@@ -2,9 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCreateCloudWorkspaceModeFields,
   buildSandboxesStartModeFields,
-  getMirrorLocalStateFromStatusMessage,
   getMirrorLocalUiState,
-  MIRROR_LOCAL_STATUS_MESSAGES,
   resolveWorkspaceStartMode,
   shouldRecordSandboxOwnership,
   shouldRunSetupProviderAuth,
@@ -116,16 +114,5 @@ describe("labels and modes for dashboard UI", () => {
     expect(WORKSPACE_START_MODE_LABELS.default).toBe("Default");
     expect(WORKSPACE_START_MODE_LABELS.clean).toBe("Clean");
     expect(WORKSPACE_START_MODE_LABELS["mirror-local"]).toBe("Mirror local");
-  });
-});
-
-describe("Mirror local status messages", () => {
-  it("round-trips persisted messages to structured states", () => {
-    expect(
-      getMirrorLocalStateFromStatusMessage(
-        MIRROR_LOCAL_STATUS_MESSAGES.applied,
-      ),
-    ).toBe("applied");
-    expect(getMirrorLocalStateFromStatusMessage("Unrelated status")).toBeNull();
   });
 });

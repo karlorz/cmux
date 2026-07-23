@@ -33,20 +33,6 @@ export const MIRROR_LOCAL_STATUS_MESSAGES: Record<MirrorLocalState, string> = {
     "Workspace started, but local agent configuration could not be mirrored. The workspace is usable as a Clean workspace.",
 };
 
-export function getMirrorLocalStateFromStatusMessage(
-  message: string | null | undefined,
-): MirrorLocalState | null {
-  if (!message) {
-    return null;
-  }
-  for (const state of MIRROR_LOCAL_STATES) {
-    if (MIRROR_LOCAL_STATUS_MESSAGES[state] === message) {
-      return state;
-    }
-  }
-  return null;
-}
-
 export type WorkspaceStartModeInput = {
   clean?: boolean;
   mirrorLocal?: boolean;
