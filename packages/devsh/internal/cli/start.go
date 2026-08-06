@@ -412,7 +412,9 @@ func runStartPveLxc(cmd *cobra.Command, args []string) error {
 
 	// Optional: mirror safe local agent config (soft-fail).
 	if mirrorLocal {
-		if err := mirrorLocalAgentConfig(ctx, client, instance); err != nil {
+		targetHomeFlag, _ := cmd.Flags().GetString("target-home")
+		targetHome := resolveMirrorTargetHome(targetHomeFlag)
+		if err := mirrorLocalAgentConfig(ctx, client, instance, targetHome); err != nil {
 			fmt.Printf("Warning: --mirror-local failed (box remains usable): %v\n", err)
 		}
 	}
@@ -529,9 +531,40 @@ func runStartE2B(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// resolveMirrorTargetHome resolves the --target-home flag for --mirror-local.
+// Empty or non-absolute values fall back to the default "/root".
+func resolveMirrorTargetHome(flag string) string {
+	flag = strings.TrimSpace(flag)
+	if flag == "" {
+		return "/root"
+	}
+	if !strings.HasPrefix(flag, "/") {
+		return "/root" // or return error at call site; keep resolve pure
+	}
+	return flag
+}
+
+// buildMirrorExtractCommand builds the remote shell command that extracts the
+// pushed agent-config tar under targetHome. Tar entries are relative like
+// .claude/... .codex/... so extraction lands under the target home. When the
+// target is /home/orca the extracted config is chowned to orca:orca (the push
+// may land as root); the chown is best-effort (2>/dev/null || true).
+func buildMirrorExtractCommand(remoteTar, targetHome string) string {
+	quotedTar := pvelxc.ShellSingleQuote(remoteTar)
+	// tar entries are .claude/... .codex/... relative to home
+	cmd := fmt.Sprintf("mkdir -p %s && tar -xf %s -C %s && rm -f %s",
+		targetHome, quotedTar, targetHome, quotedTar)
+	if targetHome == "/home/orca" {
+		// ensure ownership after extract (push may land as root)
+		cmd += " && chown -R orca:orca /home/orca/.claude /home/orca/.codex 2>/dev/null || true"
+	}
+	return cmd
+}
+
 // mirrorLocalAgentConfig packs a redacted ~/.claude + ~/.codex subset and dual-path
-// pushes it into the container, then extracts under /root. Soft-fail at caller.
-func mirrorLocalAgentConfig(ctx context.Context, client *pvelxc.Client, instance *pvelxc.Instance) error {
+// pushes it into the container, then extracts under targetHome (default /root).
+// Soft-fail at caller.
+func mirrorLocalAgentConfig(ctx context.Context, client *pvelxc.Client, instance *pvelxc.Instance, targetHome string) error {
 	fmt.Println("Mirroring local agent config (--mirror-local)...")
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -547,7 +580,7 @@ func mirrorLocalAgentConfig(ctx context.Context, client *pvelxc.Client, instance
 	if _, err := mirrorlocal.PackToFile(mirrorlocal.PackOptions{
 		HomeDir:         home,
 		LocalHomePrefix: home,
-		TargetHome:      "/root",
+		TargetHome:      targetHome,
 		IncludeSecrets:  false,
 	}, archivePath); err != nil {
 		return fmt.Errorf("pack: %w", err)
@@ -562,9 +595,8 @@ func mirrorLocalAgentConfig(ctx context.Context, client *pvelxc.Client, instance
 		fmt.Printf("  Push path: %s\n", result.Path)
 	}
 
-	// Extract into /root (tar entries are relative like .claude/... .codex/...)
-	quotedTar := pvelxc.ShellSingleQuote(remoteTar)
-	extractCmd := fmt.Sprintf("mkdir -p /root && tar -xf %s -C /root && rm -f %s", quotedTar, quotedTar)
+	// Extract into targetHome (tar entries are relative like .claude/... .codex/...)
+	extractCmd := buildMirrorExtractCommand(remoteTar, targetHome)
 	stdout, stderr, code, execErr := client.ExecCommand(ctx, instance.ID, extractCmd)
 	if execErr != nil {
 		return fmt.Errorf("extract exec: %w", execErr)
@@ -582,6 +614,7 @@ func init() {
 	startCmd.Flags().Bool("no-auth", false, "Skip ownership recording and automatic provider auth setup")
 	startCmd.Flags().Bool("clean", false, "Skip provider auth setup but still record sandbox ownership (pve-lxc)")
 	startCmd.Flags().Bool("mirror-local", false, "Pack/redact local ~/.claude and ~/.codex into the box (pve-lxc; soft-fail)")
+	startCmd.Flags().String("target-home", "", "Cloud home for --mirror-local path rewrite/extract (default /root; use /home/orca for Orca Server)")
 	startCmd.Flags().String("template", "", "Load ~/.cmux/templates/<name>.yaml (or path) and expand to start flags")
 	rootCmd.AddCommand(startCmd)
 }
