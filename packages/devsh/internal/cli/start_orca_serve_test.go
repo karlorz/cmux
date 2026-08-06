@@ -70,16 +70,17 @@ func TestRunOrcaServePostStartOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runOrcaServePostStart: %v", err)
 	}
-	// Order must be B1 → migrate → workspace_gh → matrix.
+	// Order must be B1 → re-chown → migrate → workspace_gh → matrix.
 	b1 := indexOf(exec.cmds, "useradd")
-	migrate := indexOf(exec.cmds, "chown -R orca:orca")
+	rechown := indexOf(exec.cmds, "chown -R orca:orca /home/orca/.claude /home/orca/.codex")
+	migrate := indexOf(exec.cmds, "tar -C /root -cf -")
 	gh := indexOf(exec.cmds, "gh auth git-credential")
 	matrix := indexOf(exec.cmds, "orca agent matrix")
-	if b1 < 0 || migrate < 0 || gh < 0 || matrix < 0 {
-		t.Fatalf("missing step markers (b1=%d migrate=%d gh=%d matrix=%d):\n%s", b1, migrate, gh, matrix, strings.Join(exec.cmds, "\n---\n"))
+	if b1 < 0 || rechown < 0 || migrate < 0 || gh < 0 || matrix < 0 {
+		t.Fatalf("missing step markers (b1=%d rechown=%d migrate=%d gh=%d matrix=%d):\n%s", b1, rechown, migrate, gh, matrix, strings.Join(exec.cmds, "\n---\n"))
 	}
-	if !(b1 < migrate && migrate < gh && gh < matrix) {
-		t.Fatalf("order must be B1(%d) → migrate(%d) → workspace_gh(%d) → matrix(%d)", b1, migrate, gh, matrix)
+	if !(b1 < rechown && rechown < migrate && migrate < gh && gh < matrix) {
+		t.Fatalf("order must be B1(%d) → re-chown(%d) → migrate(%d) → workspace_gh(%d) → matrix(%d)", b1, rechown, migrate, gh, matrix)
 	}
 }
 
@@ -93,8 +94,12 @@ func TestRunOrcaServePostStartSkipsMigrate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runOrcaServePostStart: %v", err)
 	}
-	if indexOf(exec.cmds, "chown -R orca:orca") != -1 {
+	if indexOf(exec.cmds, "tar -C /root -cf -") != -1 {
 		t.Fatalf("migrate must be skipped when MigrateFromRoot=false:\n%s", strings.Join(exec.cmds, "\n---\n"))
+	}
+	// Re-chown (I2) must still run after B1 even without migrate.
+	if indexOf(exec.cmds, "chown -R orca:orca /home/orca/.claude /home/orca/.codex") == -1 {
+		t.Fatal("re-chown must run after B1 even when migrate is skipped")
 	}
 	if indexOf(exec.cmds, "orca agent matrix") == -1 {
 		t.Fatal("matrix must still run without migrate")
@@ -123,8 +128,11 @@ func TestRunOrcaServePostStartSoftFails(t *testing.T) {
 	if !strings.Contains(err.Error(), "B1") {
 		t.Fatalf("error should name the failing step: %v", err)
 	}
-	// Later steps must still have been attempted: migrate, gh, and matrix all ran.
-	if indexOf(exec.cmds, "chown -R orca:orca") == -1 {
+	// Later steps must still have been attempted: re-chown, migrate, gh, and matrix all ran.
+	if indexOf(exec.cmds, "chown -R orca:orca /home/orca/.claude /home/orca/.codex") == -1 {
+		t.Fatal("re-chown must still run after B1 soft-fail")
+	}
+	if indexOf(exec.cmds, "tar -C /root -cf -") == -1 {
 		t.Fatal("migrate must still run after B1 soft-fail")
 	}
 	if indexOf(exec.cmds, "gh auth git-credential") == -1 {

@@ -52,11 +52,13 @@ Examples:
 		clean, _ := cmd.Flags().GetBool("clean")
 		mirrorLocal, _ := cmd.Flags().GetBool("mirror-local")
 		orcaServe, _ := cmd.Flags().GetBool("orca-serve")
-		if (clean || mirrorLocal || orcaServe) && !mode.serverManaged && mode.provider != provider.PveLxc {
-			return fmt.Errorf("--clean, --mirror-local and --orca-serve are only supported for provider pve-lxc (got %s)", mode.provider)
+		targetHome, _ := cmd.Flags().GetString("target-home")
+		migrateFromRoot, _ := cmd.Flags().GetBool("migrate-agent-home-from-root")
+		if (clean || mirrorLocal || orcaServe || targetHome != "" || migrateFromRoot) && !mode.serverManaged && mode.provider != provider.PveLxc {
+			return fmt.Errorf("--clean, --mirror-local, --orca-serve, --target-home and --migrate-agent-home-from-root are only supported for provider pve-lxc (got %s)", mode.provider)
 		}
-		if mode.serverManaged && (clean || mirrorLocal || orcaServe) {
-			return fmt.Errorf("--clean, --mirror-local and --orca-serve require an explicit pve-lxc provider (server-managed start is unsupported for these flags)")
+		if mode.serverManaged && (clean || mirrorLocal || orcaServe || targetHome != "" || migrateFromRoot) {
+			return fmt.Errorf("--clean, --mirror-local, --orca-serve, --target-home and --migrate-agent-home-from-root require an explicit pve-lxc provider (server-managed start is unsupported for these flags)")
 		}
 
 		if mode.serverManaged {
@@ -593,9 +595,10 @@ func effectiveTargetHome(orcaServe bool, targetHomeFlag string) string {
 // may land as root); the chown is best-effort (2>/dev/null || true).
 func buildMirrorExtractCommand(remoteTar, targetHome string) string {
 	quotedTar := pvelxc.ShellSingleQuote(remoteTar)
+	quotedHome := pvelxc.ShellSingleQuote(targetHome)
 	// tar entries are .claude/... .codex/... relative to home
 	cmd := fmt.Sprintf("mkdir -p %s && tar -xf %s -C %s && rm -f %s",
-		targetHome, quotedTar, targetHome, quotedTar)
+		quotedHome, quotedTar, quotedHome, quotedTar)
 	if targetHome == "/home/orca" {
 		// ensure ownership after extract (push may land as root)
 		cmd += " && chown -R orca:orca /home/orca/.claude /home/orca/.codex 2>/dev/null || true"

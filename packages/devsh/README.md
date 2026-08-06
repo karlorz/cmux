@@ -460,7 +460,7 @@ Start a pve-lxc box composed for Orca Server: agent config is mirrored to
 `gh` (G1/G2), and the agent matrix.
 
 ```bash
-devsh start --provider pve-lxc --orca-serve --mirror-local --target-home /home/orca
+devsh start --provider pve-lxc --clean --orca-serve --mirror-local --target-home /home/orca
 ```
 
 Or use the example template (install once):

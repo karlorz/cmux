@@ -15,8 +15,6 @@ func TestResolveMirrorTargetHome(t *testing.T) {
 		t.Fatalf("orca: got %q", got)
 	}
 	if got := resolveMirrorTargetHome("home/orca"); got != "/root" {
-		// relative rejected → default (or error — pick one and test it)
-		// Recommended: invalid relative → return error from pack path; for resolve, empty invalid → "/root"
 		t.Fatalf("relative should fall back or error consistently; got %q", got)
 	}
 }
@@ -24,8 +22,7 @@ func TestResolveMirrorTargetHome(t *testing.T) {
 func TestMirrorExtractCommand(t *testing.T) {
 	t.Parallel()
 	cmd := buildMirrorExtractCommand("/tmp/devsh-mirror-agent-config.tar", "/home/orca")
-	if !containsAll(cmd, "mkdir -p /home/orca", "tar -xf", "-C /home/orca", "chown -R orca:orca /home/orca/.claude /home/orca/.codex") {
-		// chown only when target is /home/orca — encode that in builder
+	if !containsAll(cmd, "mkdir -p '/home/orca'", "tar -xf", "-C '/home/orca'", "chown -R orca:orca /home/orca/.claude /home/orca/.codex") {
 		t.Fatalf("extract cmd missing pieces: %s", cmd)
 	}
 	cmdRoot := buildMirrorExtractCommand("/tmp/x.tar", "/root")

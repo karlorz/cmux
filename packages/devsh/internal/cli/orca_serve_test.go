@@ -22,13 +22,32 @@ func TestBuildWorkspaceGHForOrcaCommands(t *testing.T) {
 	if !strings.Contains(joined, "credential.https://gist.github.com.helper") {
 		t.Fatalf("expected gist.github.com helper: %s", joined)
 	}
+	// Commands run as orca must use sudo -u orca env HOME=/home/orca bash -lc
+	// (su does not reliably set HOME; HOME=/root is forbidden for orca).
+	if !strings.Contains(joined, "sudo -u orca env HOME=/home/orca bash -lc") {
+		t.Fatalf("expected sudo -u orca env HOME=/home/orca bash -lc: %s", joined)
+	}
+	if strings.Contains(joined, "su -s /bin/bash orca") {
+		t.Fatal("must not use su -s /bin/bash orca (HOME not reliably set)")
+	}
 }
 
 func TestBuildMigrateAgentHomeFromRootCommandsSkipsAuth(t *testing.T) {
 	cmds := BuildMigrateAgentHomeFromRootCommands()
 	joined := strings.Join(cmds, "\n")
-	if strings.Contains(joined, "cp ") && strings.Contains(joined, "auth.json") && !strings.Contains(joined, "# skip") {
-		t.Fatal("must not copy auth.json")
+	// Tar-based copy must exclude secret basenames at copy time (nested
+	// auth.json inside allowlist dirs must never land in /home/orca).
+	if !strings.Contains(joined, "--exclude=auth.json") {
+		t.Fatalf("expected --exclude=auth.json in tar copy: %s", joined)
+	}
+	if !strings.Contains(joined, "--exclude=credentials.json") {
+		t.Fatalf("expected --exclude=credentials.json in tar copy: %s", joined)
+	}
+	if !strings.Contains(joined, "tar -C /root -cf -") || !strings.Contains(joined, "tar -C /home/orca -xf -") {
+		t.Fatalf("expected tar-based copy /root -> /home/orca: %s", joined)
+	}
+	if strings.Contains(joined, "cp -a") {
+		t.Fatal("must not use cp -a (copies nested secrets inside allowlist dirs)")
 	}
 	if !strings.Contains(joined, ".claude") || !strings.Contains(joined, ".codex") {
 		t.Fatal("must migrate allowlist trees")
@@ -82,9 +101,30 @@ func TestBuildOrcaB1EnsureCommands(t *testing.T) {
 	if !strings.Contains(joined, "safe.directory") {
 		t.Fatalf("expected git safe.directory: %s", joined)
 	}
+	// Commands run as orca must use sudo -u orca env HOME=/home/orca bash -lc
+	// (su does not reliably set HOME; HOME=/root is forbidden for orca).
+	if !strings.Contains(joined, "sudo -u orca env HOME=/home/orca bash -lc") {
+		t.Fatalf("expected sudo -u orca env HOME=/home/orca bash -lc: %s", joined)
+	}
+	if strings.Contains(joined, "su -s /bin/bash orca") {
+		t.Fatal("must not use su -s /bin/bash orca (HOME not reliably set)")
+	}
 	// Never HOME=/root (Chromium SIGTRAP).
 	if strings.Contains(joined, "HOME=/root") {
 		t.Fatal("must never set HOME=/root for orca")
+	}
+}
+
+func TestBuildOrcaRechownCommand(t *testing.T) {
+	cmd := BuildOrcaRechownCommand()
+	// Re-chown after B1 useradd: mirror-local may have extracted before the
+	// user existed, making the earlier chown a silent no-op.
+	if !strings.Contains(cmd, "chown -R orca:orca /home/orca/.claude /home/orca/.codex") {
+		t.Fatalf("expected re-chown of mirrored config: %s", cmd)
+	}
+	// Must soft-fail so the box stays usable when nothing was mirrored.
+	if !strings.Contains(cmd, "|| true") {
+		t.Fatalf("expected best-effort re-chown: %s", cmd)
 	}
 }
 

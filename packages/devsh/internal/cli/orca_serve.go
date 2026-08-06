@@ -50,6 +50,12 @@ func runOrcaServePostStart(ctx context.Context, exec ExecRunner, instanceID stri
 		failures = append(failures, err.Error())
 	}
 
+	// 1b) Re-chown mirrored config now that the orca user exists: mirror-local
+	// may have extracted before B1 useradd, making the earlier chown a no-op.
+	if err := execOne(ctx, exec, instanceID, "re-chown", BuildOrcaRechownCommand()); err != nil {
+		failures = append(failures, err.Error())
+	}
+
 	// 2) Optional migrate-from-root: allowlist copy /root → /home/orca.
 	if opts.MigrateFromRoot {
 		if err := execEach(ctx, exec, instanceID, "migrate-from-root", BuildMigrateAgentHomeFromRootCommands()); err != nil {
@@ -110,8 +116,8 @@ func execOne(ctx context.Context, exec ExecRunner, instanceID, step, command str
 // `gh` on orca's PATH behaves like root's gh.
 func BuildWorkspaceGHForOrcaCommands() []string {
 	return []string{
-		`su -s /bin/bash orca -c 'git config --global credential.https://github.com.helper "!sudo -n /usr/bin/gh auth git-credential"'`,
-		`su -s /bin/bash orca -c 'git config --global credential.https://gist.github.com.helper "!sudo -n /usr/bin/gh auth git-credential"'`,
+		`sudo -u orca env HOME=/home/orca bash -lc 'git config --global credential.https://github.com.helper "!sudo -n /usr/bin/gh auth git-credential"'`,
+		`sudo -u orca env HOME=/home/orca bash -lc 'git config --global credential.https://gist.github.com.helper "!sudo -n /usr/bin/gh auth git-credential"'`,
 		// Optional G2 wrapper: orca `gh` delegates to root's workspace gh.
 		`install -d /home/orca/.local/bin`,
 		`printf '%s\n' '#!/bin/sh' 'exec sudo -n /usr/bin/gh "$@"' > /home/orca/.local/bin/gh`,
@@ -123,12 +129,14 @@ func BuildWorkspaceGHForOrcaCommands() []string {
 // BuildMigrateAgentHomeFromRootCommands returns a script copying the agent
 // config allowlist from /root to /home/orca on long-lived boxes already
 // mirrored to root. The allowlist is mirrorlocal.DefaultIncludePaths; secrets
-// (auth.json etc.) are never copied. Ownership lands on orca:orca.
+// (auth.json etc.) are excluded at copy time — never copied, even nested
+// inside allowlist dirs. Ownership lands on orca:orca.
 func BuildMigrateAgentHomeFromRootCommands() []string {
 	var b strings.Builder
 	b.WriteString("set -e\n")
 	b.WriteString("# Migrate agent config allowlist from /root to /home/orca (mirrorlocal DefaultIncludePaths).\n")
-	b.WriteString("# skip auth.json and other secret files: never copied.\n")
+	b.WriteString("# Secret basenames (auth.json, credentials) and sqlite/db files are excluded at copy\n")
+	b.WriteString("# time — never copied, even nested inside allowlist dirs.\n")
 	b.WriteString("mkdir -p /home/orca\n")
 	b.WriteString("for p in \\\n")
 	for _, p := range mirrorlocal.DefaultIncludePaths {
@@ -137,11 +145,23 @@ func BuildMigrateAgentHomeFromRootCommands() []string {
 	b.WriteString("; do\n")
 	b.WriteString("  if [ -e \"/root/$p\" ]; then\n")
 	b.WriteString("    mkdir -p \"/home/orca/$(dirname \"$p\")\"\n")
-	b.WriteString("    cp -a \"/root/$p\" \"/home/orca/$p\"\n")
+	b.WriteString("    tar -C /root -cf - \\\n")
+	b.WriteString("      --exclude=auth.json --exclude=.credentials.json --exclude=credentials.json \\\n")
+	b.WriteString("      --exclude='*.sqlite' --exclude='*.sqlite3' --exclude='*.db' \\\n")
+	b.WriteString("      --exclude='*.lock' --exclude='*.wal' --exclude='*.shm' \\\n")
+	b.WriteString("      \"$p\" | tar -C /home/orca -xf -\n")
 	b.WriteString("  fi\n")
 	b.WriteString("done\n")
 	b.WriteString("chown -R orca:orca /home/orca/.claude /home/orca/.codex 2>/dev/null || true\n")
 	return []string{b.String()}
+}
+
+// BuildOrcaRechownCommand returns a best-effort re-chown of the mirrored agent
+// config under /home/orca. mirror-local may extract before B1 useradd (the
+// user does not exist yet, so its chown is a silent no-op); re-running after
+// B1 ensures ownership lands on orca:orca. Soft-fails (2>/dev/null || true).
+func BuildOrcaRechownCommand() string {
+	return `chown -R orca:orca /home/orca/.claude /home/orca/.codex 2>/dev/null || true`
 }
 
 // BuildOrcaB1EnsureCommands returns idempotent B1 bridge commands: system user
@@ -160,8 +180,8 @@ func BuildOrcaB1EnsureCommands() []string {
 		`ln -sfn /root/workspace /home/orca/workspace`,
 		`ln -sfn /root/wiki /home/orca/wiki`,
 		`chown -h orca:orca /home/orca/root-home /home/orca/workspace /home/orca/wiki`,
-		`su -s /bin/bash orca -c 'mkdir -p "$HOME/.local/bin" "$HOME/.local/lib/node_modules"; npm config set prefix "$HOME/.local"'`,
-		`su -s /bin/bash orca -c 'git config --global --add safe.directory /root/workspace; git config --global --add safe.directory /root/wiki; git config --global --add safe.directory /root'`,
+		`sudo -u orca env HOME=/home/orca bash -lc 'mkdir -p "$HOME/.local/bin" "$HOME/.local/lib/node_modules"; npm config set prefix "$HOME/.local"'`,
+		`sudo -u orca env HOME=/home/orca bash -lc 'git config --global --add safe.directory /root/workspace; git config --global --add safe.directory /root/wiki; git config --global --add safe.directory /root'`,
 	}
 }
 
@@ -175,7 +195,7 @@ func BuildAgentMatrixCommand() string {
 echo "== orca agent matrix =="
 echo "-- binaries on orca PATH --"
 for b in claude codex grok gh; do
-  if p=$(su -s /bin/bash orca -c "command -v $b" 2>/dev/null); then
+  if p=$(sudo -u orca env HOME=/home/orca bash -lc "command -v $b" 2>/dev/null); then
     echo "ok   $b: $p"
   else
     echo "miss $b"
