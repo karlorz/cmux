@@ -203,3 +203,35 @@ func TestExpandStartTemplateOrcaServeDefaults(t *testing.T) {
 		t.Fatalf("target home: got %q", got.TargetHome)
 	}
 }
+
+func TestExpandStartTemplateOrcaServeMigrateFromRoot(t *testing.T) {
+	t.Parallel()
+
+	// migrate_from_root: true in template flows into flags when orca_serve enabled.
+	tmpl := &StartTemplate{OrcaServe: &OrcaServeTemplate{Enable: true, MigrateFromRoot: true}}
+	got := ExpandStartTemplate(tmpl, StartTemplateFlags{}, map[string]bool{})
+	if !got.MigrateAgentHomeFromRoot {
+		t.Fatal("migrate_from_root should enable migrate-agent-home-from-root")
+	}
+
+	// migrate_from_root defaults false.
+	tmpl = &StartTemplate{OrcaServe: &OrcaServeTemplate{Enable: true}}
+	got = ExpandStartTemplate(tmpl, StartTemplateFlags{}, map[string]bool{})
+	if got.MigrateAgentHomeFromRoot {
+		t.Fatal("migrate_from_root should default false")
+	}
+
+	// migrate_from_root without orca_serve.enable is inert.
+	tmpl = &StartTemplate{OrcaServe: &OrcaServeTemplate{Enable: false, MigrateFromRoot: true}}
+	got = ExpandStartTemplate(tmpl, StartTemplateFlags{}, map[string]bool{})
+	if got.MigrateAgentHomeFromRoot {
+		t.Fatal("migrate_from_root must not apply without orca_serve")
+	}
+
+	// Explicit CLI --migrate-agent-home-from-root wins over template.
+	tmpl = &StartTemplate{OrcaServe: &OrcaServeTemplate{Enable: true, MigrateFromRoot: true}}
+	got = ExpandStartTemplate(tmpl, StartTemplateFlags{MigrateAgentHomeFromRoot: false}, map[string]bool{"migrate-agent-home-from-root": true})
+	if got.MigrateAgentHomeFromRoot {
+		t.Fatal("CLI --migrate-agent-home-from-root=false should win over template")
+	}
+}

@@ -16,10 +16,91 @@
 package cli
 
 import (
+	"context"
+	"fmt"
 	"strings"
 
 	"github.com/karlorz/devsh/internal/mirrorlocal"
 )
+
+// ExecRunner executes a shell command in the box. *pvelxc.Client implements it;
+// tests inject fakes.
+type ExecRunner interface {
+	ExecCommand(ctx context.Context, instanceID string, command string) (stdout, stderr string, exitCode int, err error)
+}
+
+// OrcaServeOpts selects the post-start composition steps for --orca-serve.
+type OrcaServeOpts struct {
+	// MigrateFromRoot copies the mirrorlocal allowlist from /root to
+	// /home/orca on long-lived boxes already mirrored to root (never auth.json).
+	MigrateFromRoot bool
+	// WorkspaceGH wires orca git/gh to the workspace root default (G1/G2).
+	WorkspaceGH bool
+}
+
+// runOrcaServePostStart composes the Orca Server agent home after a pve-lxc
+// start: B1 ensure → optional migrate-from-root → workspace gh → agent matrix.
+// Each step soft-fails: the error names the first failing step, but later
+// steps still run so the box remains usable.
+func runOrcaServePostStart(ctx context.Context, exec ExecRunner, instanceID string, opts OrcaServeOpts) error {
+	var failures []string
+
+	// 1) B1 bridge: orca user, sudoers, symlinks, npm prefix, safe.directory.
+	if err := execEach(ctx, exec, instanceID, "B1", BuildOrcaB1EnsureCommands()); err != nil {
+		failures = append(failures, err.Error())
+	}
+
+	// 2) Optional migrate-from-root: allowlist copy /root → /home/orca.
+	if opts.MigrateFromRoot {
+		if err := execEach(ctx, exec, instanceID, "migrate-from-root", BuildMigrateAgentHomeFromRootCommands()); err != nil {
+			failures = append(failures, err.Error())
+		}
+	}
+
+	// 3) Workspace gh for orca (G1 credential helper + G2 wrapper).
+	if opts.WorkspaceGH {
+		if err := execEach(ctx, exec, instanceID, "workspace-gh", BuildWorkspaceGHForOrcaCommands()); err != nil {
+			failures = append(failures, err.Error())
+		}
+	}
+
+	// 4) Agent detection matrix (always last).
+	if err := execOne(ctx, exec, instanceID, "agent-matrix", BuildAgentMatrixCommand()); err != nil {
+		failures = append(failures, err.Error())
+	}
+
+	if len(failures) > 0 {
+		return fmt.Errorf("orca-serve post-start soft-failed: %s", strings.Join(failures, "; "))
+	}
+	return nil
+}
+
+// execEach runs every command in cmds, stopping the step at the first failure.
+func execEach(ctx context.Context, exec ExecRunner, instanceID, step string, cmds []string) error {
+	for _, c := range cmds {
+		if err := execOne(ctx, exec, instanceID, step, c); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// execOne runs a single command and reports a step-scoped error on transport
+// failure or non-zero exit.
+func execOne(ctx context.Context, exec ExecRunner, instanceID, step, command string) error {
+	stdout, stderr, code, err := exec.ExecCommand(ctx, instanceID, command)
+	if err != nil {
+		return fmt.Errorf("%s exec: %w", step, err)
+	}
+	if code != 0 {
+		detail := strings.TrimSpace(stderr + "\n" + stdout)
+		if detail == "" {
+			detail = "no output"
+		}
+		return fmt.Errorf("%s failed (exit %d): %s", step, code, detail)
+	}
+	return nil
+}
 
 // BuildWorkspaceGHForOrcaCommands returns commands wiring orca git/gh to the
 // workspace root default (/root/.config/gh) without a second gh auth login.

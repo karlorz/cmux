@@ -51,11 +51,12 @@ Examples:
 
 		clean, _ := cmd.Flags().GetBool("clean")
 		mirrorLocal, _ := cmd.Flags().GetBool("mirror-local")
-		if (clean || mirrorLocal) && !mode.serverManaged && mode.provider != provider.PveLxc {
-			return fmt.Errorf("--clean and --mirror-local are only supported for provider pve-lxc (got %s)", mode.provider)
+		orcaServe, _ := cmd.Flags().GetBool("orca-serve")
+		if (clean || mirrorLocal || orcaServe) && !mode.serverManaged && mode.provider != provider.PveLxc {
+			return fmt.Errorf("--clean, --mirror-local and --orca-serve are only supported for provider pve-lxc (got %s)", mode.provider)
 		}
-		if mode.serverManaged && (clean || mirrorLocal) {
-			return fmt.Errorf("--clean and --mirror-local require an explicit pve-lxc provider (server-managed start is unsupported for these flags)")
+		if mode.serverManaged && (clean || mirrorLocal || orcaServe) {
+			return fmt.Errorf("--clean, --mirror-local and --orca-serve require an explicit pve-lxc provider (server-managed start is unsupported for these flags)")
 		}
 
 		if mode.serverManaged {
@@ -92,15 +93,21 @@ func applyStartTemplateFlags(cmd *cobra.Command) error {
 	cli.Clean, _ = cmd.Flags().GetBool("clean")
 	cli.MirrorLocal, _ = cmd.Flags().GetBool("mirror-local")
 	cli.NoAuth, _ = cmd.Flags().GetBool("no-auth")
+	cli.TargetHome, _ = cmd.Flags().GetString("target-home")
+	cli.OrcaServe, _ = cmd.Flags().GetBool("orca-serve")
+	cli.MigrateAgentHomeFromRoot, _ = cmd.Flags().GetBool("migrate-agent-home-from-root")
 	cli.Provider = flagProvider
 
 	cliSet := map[string]bool{
 		// Global --provider is not always marked Changed on the local flag set.
-		"provider":     cmd.Flags().Changed("provider") || strings.TrimSpace(flagProvider) != "",
-		"snapshot":     cmd.Flags().Changed("snapshot"),
-		"clean":        cmd.Flags().Changed("clean"),
-		"mirror-local": cmd.Flags().Changed("mirror-local"),
-		"no-auth":      cmd.Flags().Changed("no-auth"),
+		"provider":                     cmd.Flags().Changed("provider") || strings.TrimSpace(flagProvider) != "",
+		"snapshot":                     cmd.Flags().Changed("snapshot"),
+		"clean":                        cmd.Flags().Changed("clean"),
+		"mirror-local":                 cmd.Flags().Changed("mirror-local"),
+		"no-auth":                      cmd.Flags().Changed("no-auth"),
+		"target-home":                  cmd.Flags().Changed("target-home"),
+		"orca-serve":                   cmd.Flags().Changed("orca-serve"),
+		"migrate-agent-home-from-root": cmd.Flags().Changed("migrate-agent-home-from-root"),
 	}
 
 	merged := ExpandStartTemplate(tmpl, cli, cliSet)
@@ -115,6 +122,15 @@ func applyStartTemplateFlags(cmd *cobra.Command) error {
 	}
 	if !cliSet["no-auth"] {
 		_ = cmd.Flags().Set("no-auth", fmt.Sprintf("%t", merged.NoAuth))
+	}
+	if !cliSet["target-home"] && merged.TargetHome != "" {
+		_ = cmd.Flags().Set("target-home", merged.TargetHome)
+	}
+	if !cliSet["orca-serve"] {
+		_ = cmd.Flags().Set("orca-serve", fmt.Sprintf("%t", merged.OrcaServe))
+	}
+	if !cliSet["migrate-agent-home-from-root"] {
+		_ = cmd.Flags().Set("migrate-agent-home-from-root", fmt.Sprintf("%t", merged.MigrateAgentHomeFromRoot))
 	}
 	if merged.Provider != "" && !cliSet["provider"] {
 		flagProvider = merged.Provider
@@ -411,11 +427,24 @@ func runStartPveLxc(cmd *cobra.Command, args []string) error {
 	}
 
 	// Optional: mirror safe local agent config (soft-fail).
+	orcaServe, _ := cmd.Flags().GetBool("orca-serve")
+	targetHomeFlag, _ := cmd.Flags().GetString("target-home")
+	targetHome := effectiveTargetHome(orcaServe, targetHomeFlag)
 	if mirrorLocal {
-		targetHomeFlag, _ := cmd.Flags().GetString("target-home")
-		targetHome := resolveMirrorTargetHome(targetHomeFlag)
 		if err := mirrorLocalAgentConfig(ctx, client, instance, targetHome); err != nil {
 			fmt.Printf("Warning: --mirror-local failed (box remains usable): %v\n", err)
+		}
+	}
+
+	// Optional: compose Orca Server post-start (B1 → migrate? → workspace gh → matrix).
+	// Each step soft-fails with a Warning; the box stays usable.
+	if orcaServe {
+		migrateFromRoot, _ := cmd.Flags().GetBool("migrate-agent-home-from-root")
+		if err := runOrcaServePostStart(ctx, client, instance.ID, OrcaServeOpts{
+			MigrateFromRoot: migrateFromRoot,
+			WorkspaceGH:     true,
+		}); err != nil {
+			fmt.Printf("Warning: --orca-serve post-start: %v\n", err)
 		}
 	}
 
@@ -544,6 +573,19 @@ func resolveMirrorTargetHome(flag string) string {
 	return flag
 }
 
+// effectiveTargetHome resolves the cloud home for agent config materialization.
+// An explicit --target-home always wins; otherwise --orca-serve implies
+// /home/orca (Orca Server agent home) and the default stays /root.
+func effectiveTargetHome(orcaServe bool, targetHomeFlag string) string {
+	if strings.TrimSpace(targetHomeFlag) != "" {
+		return resolveMirrorTargetHome(targetHomeFlag)
+	}
+	if orcaServe {
+		return "/home/orca"
+	}
+	return "/root"
+}
+
 // buildMirrorExtractCommand builds the remote shell command that extracts the
 // pushed agent-config tar under targetHome. Tar entries are relative like
 // .claude/... .codex/... so extraction lands under the target home. When the
@@ -615,6 +657,8 @@ func init() {
 	startCmd.Flags().Bool("clean", false, "Skip provider auth setup but still record sandbox ownership (pve-lxc)")
 	startCmd.Flags().Bool("mirror-local", false, "Pack/redact local ~/.claude and ~/.codex into the box (pve-lxc; soft-fail)")
 	startCmd.Flags().String("target-home", "", "Cloud home for --mirror-local path rewrite/extract (default /root; use /home/orca for Orca Server)")
+	startCmd.Flags().Bool("orca-serve", false, "Compose Orca Server agent home post-start: B1 bridge, workspace gh, agent matrix (pve-lxc; soft-fail)")
+	startCmd.Flags().Bool("migrate-agent-home-from-root", false, "With --orca-serve: copy mirrorlocal allowlist from /root to /home/orca (never auth.json)")
 	startCmd.Flags().String("template", "", "Load ~/.cmux/templates/<name>.yaml (or path) and expand to start flags")
 	rootCmd.AddCommand(startCmd)
 }

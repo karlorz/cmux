@@ -37,13 +37,14 @@ type OrcaServeTemplate struct {
 
 // StartTemplateFlags is the resolved flag state after template + CLI merge.
 type StartTemplateFlags struct {
-	Provider    string
-	Snapshot    string
-	Clean       bool
-	MirrorLocal bool
-	NoAuth      bool
-	TargetHome  string
-	OrcaServe   bool
+	Provider                 string
+	Snapshot                 string
+	Clean                    bool
+	MirrorLocal              bool
+	NoAuth                   bool
+	TargetHome               string
+	OrcaServe                bool
+	MigrateAgentHomeFromRoot bool
 }
 
 // LoadStartTemplate loads a template by name (under ~/.cmux/templates/) or absolute path.
@@ -132,6 +133,10 @@ func ExpandStartTemplate(tmpl *StartTemplate, cli StartTemplateFlags, cliSet map
 	// orca_serve.enable implies /home/orca unless target-home was set explicitly.
 	if out.OrcaServe && !cliSet["target-home"] && out.TargetHome == "" {
 		out.TargetHome = "/home/orca"
+	}
+	// migrate_from_root only applies when orca_serve is enabled; explicit CLI wins.
+	if !cliSet["migrate-agent-home-from-root"] && out.OrcaServe && tmpl.OrcaServe != nil {
+		out.MigrateAgentHomeFromRoot = tmpl.OrcaServe.MigrateFromRoot
 	}
 	if !cliSet["mirror-local"] {
 		if tmpl.MirrorLocal != nil {
