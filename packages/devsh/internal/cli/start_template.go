@@ -26,9 +26,6 @@ type StartTemplate struct {
 	// optional migrate-from-root). Enable implies target_home /home/orca and
 	// mirror_local unless explicitly overridden.
 	OrcaServe *OrcaServeTemplate `yaml:"orca_serve"`
-	// CloudWorkspace records the sandbox as a cloud workspace so it appears
-	// in the Workspaces section of the dashboard (isCloudWorkspace=true).
-	CloudWorkspace *bool `yaml:"cloud_workspace"`
 }
 
 // OrcaServeTemplate is the orca_serve: block of a start template.
@@ -48,7 +45,6 @@ type StartTemplateFlags struct {
 	TargetHome               string
 	OrcaServe                bool
 	MigrateAgentHomeFromRoot bool
-	CloudWorkspace           bool
 }
 
 // LoadStartTemplate loads a template by name (under ~/.cmux/templates/) or absolute path.
@@ -141,9 +137,6 @@ func ExpandStartTemplate(tmpl *StartTemplate, cli StartTemplateFlags, cliSet map
 	// migrate_from_root only applies when orca_serve is enabled; explicit CLI wins.
 	if !cliSet["migrate-agent-home-from-root"] && out.OrcaServe && tmpl.OrcaServe != nil {
 		out.MigrateAgentHomeFromRoot = tmpl.OrcaServe.MigrateFromRoot
-	}
-	if !cliSet["cloud-workspace"] && tmpl.CloudWorkspace != nil {
-		out.CloudWorkspace = *tmpl.CloudWorkspace
 	}
 	if !cliSet["mirror-local"] {
 		if tmpl.MirrorLocal != nil {
