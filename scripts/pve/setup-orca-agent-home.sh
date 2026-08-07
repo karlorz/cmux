@@ -101,7 +101,7 @@ echo "== setup-orca-agent-home: agent matrix =="
 # 4) Detection matrix (same as devsh BuildAgentMatrixCommand).
 echo "-- binaries on orca PATH --"
 for b in claude codex grok gh; do
-  if p=$(su -s /bin/bash "$ORCA" -c "command -v $b" 2>/dev/null); then
+  if p=$(orca_run "command -v $b" 2>/dev/null); then
     echo "ok   $b: $p"
   else
     echo "miss $b"
