@@ -39,6 +39,16 @@ ln -sfn /root/wiki "$ORCA_HOME/wiki"
 chown -h "$ORCA:$ORCA" "$ORCA_HOME/root-home" "$ORCA_HOME/workspace" "$ORCA_HOME/wiki"
 # shellcheck disable=SC2016 # $HOME expands inside the container's bash -lc, not here
 orca_run 'mkdir -p "$HOME/.local/bin" "$HOME/.local/lib/node_modules"; if command -v npm >/dev/null 2>&1; then npm config set prefix "$HOME/.local"; fi'
+# Link bun-installed agent CLIs (claude, gemini, opencode, etc.) into orca PATH
+# bun installs to /root/.bun/bin/ which is not on orca's PATH by default
+echo "[B1] Linking bun-installed CLIs to /home/orca/.local/bin..."
+for cli in /root/.bun/bin/*; do
+    name=$(basename "$cli")
+    [ "$name" = "bun" ] && continue
+    [ "$name" = "bunx" ] && continue
+    ln -sfn "$cli" "$ORCA_HOME/.local/bin/$name"
+done
+chown -h "$ORCA:$ORCA" "$ORCA_HOME/.local/bin/"* 2>/dev/null || true
 orca_run 'git config --global --add safe.directory /root/workspace; git config --global --add safe.directory /root/wiki; git config --global --add safe.directory /root'
 
 echo "== setup-orca-agent-home: migrate allowlist root -> /home/orca =="

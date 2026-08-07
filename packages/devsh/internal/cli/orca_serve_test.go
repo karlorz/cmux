@@ -97,6 +97,11 @@ func TestBuildOrcaB1EnsureCommands(t *testing.T) {
 	if !strings.Contains(joined, "npm config set prefix") || !strings.Contains(joined, ".local") {
 		t.Fatalf("expected npm prefix ~/.local: %s", joined)
 	}
+	// B1 must link bun-installed CLIs from /root/.bun/bin into orca PATH
+	// (bun installs to /root/.bun/bin which is not on orca's PATH by default).
+	if !strings.Contains(joined, "/root/.bun/bin") {
+		t.Fatal("B1 must link bun-installed CLIs from /root/.bun/bin into orca PATH")
+	}
 	// git safe.directory for root-owned trees.
 	if !strings.Contains(joined, "safe.directory") {
 		t.Fatalf("expected git safe.directory: %s", joined)

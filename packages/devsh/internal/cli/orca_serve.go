@@ -181,6 +181,10 @@ func BuildOrcaB1EnsureCommands() []string {
 		`ln -sfn /root/wiki /home/orca/wiki`,
 		`chown -h orca:orca /home/orca/root-home /home/orca/workspace /home/orca/wiki`,
 		`sudo -u orca env HOME=/home/orca bash -lc 'mkdir -p "$HOME/.local/bin" "$HOME/.local/lib/node_modules"; npm config set prefix "$HOME/.local"'`,
+		// Link bun-installed agent CLIs (claude, codex, gemini, etc.) into orca PATH
+		// bun installs to /root/.bun/bin/ which is not on orca's PATH by default
+		`for cli in /root/.bun/bin/*; do name=$(basename "$cli"); [ "$name" = "bun" ] && continue; [ "$name" = "bunx" ] && continue; ln -sfn "$cli" /home/orca/.local/bin/"$name"; done`,
+		`chown -h orca:orca /home/orca/.local/bin/* 2>/dev/null || true`,
 		`sudo -u orca env HOME=/home/orca bash -lc 'git config --global --add safe.directory /root/workspace; git config --global --add safe.directory /root/wiki; git config --global --add safe.directory /root'`,
 	}
 }
