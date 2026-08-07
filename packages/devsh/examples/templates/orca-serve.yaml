@@ -11,3 +11,4 @@ orca_serve:
   enable: true
   workspace_gh: true
   migrate_from_root: false
+cloud_workspace: true

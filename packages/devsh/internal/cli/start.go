@@ -98,6 +98,7 @@ func applyStartTemplateFlags(cmd *cobra.Command) error {
 	cli.TargetHome, _ = cmd.Flags().GetString("target-home")
 	cli.OrcaServe, _ = cmd.Flags().GetBool("orca-serve")
 	cli.MigrateAgentHomeFromRoot, _ = cmd.Flags().GetBool("migrate-agent-home-from-root")
+	cli.CloudWorkspace, _ = cmd.Flags().GetBool("cloud-workspace")
 	cli.Provider = flagProvider
 
 	cliSet := map[string]bool{
@@ -110,6 +111,7 @@ func applyStartTemplateFlags(cmd *cobra.Command) error {
 		"target-home":                  cmd.Flags().Changed("target-home"),
 		"orca-serve":                   cmd.Flags().Changed("orca-serve"),
 		"migrate-agent-home-from-root": cmd.Flags().Changed("migrate-agent-home-from-root"),
+		"cloud-workspace":              cmd.Flags().Changed("cloud-workspace"),
 	}
 
 	merged := ExpandStartTemplate(tmpl, cli, cliSet)
@@ -410,6 +412,7 @@ func runStartPveLxc(cmd *cobra.Command, args []string) error {
 			} else {
 				wwwClient.SetTeamSlug(teamSlug)
 				if authMode.RecordOwnership {
+					cloudWorkspace, _ := cmd.Flags().GetBool("cloud-workspace")
 					if err := wwwClient.RecordSandboxCreate(ctx, vm.RecordSandboxCreateRequest{
 						InstanceID:       instance.ID,
 						Provider:         provider.PveLxc,
@@ -417,6 +420,7 @@ func runStartPveLxc(cmd *cobra.Command, args []string) error {
 						Hostname:         instance.Hostname,
 						SnapshotID:       snapshotID,
 						SnapshotProvider: provider.PveLxc,
+						IsCloudWorkspace: cloudWorkspace,
 					}); err != nil {
 						fmt.Printf("Warning: failed to record sandbox ownership: %v\n", err)
 					}
@@ -662,6 +666,7 @@ func init() {
 	startCmd.Flags().String("target-home", "", "Cloud home for --mirror-local path rewrite/extract (default /root; use /home/orca for Orca Server)")
 	startCmd.Flags().Bool("orca-serve", false, "Compose Orca Server agent home post-start: B1 bridge, workspace gh, agent matrix (pve-lxc; soft-fail)")
 	startCmd.Flags().Bool("migrate-agent-home-from-root", false, "With --orca-serve: copy mirrorlocal allowlist from /root to /home/orca (never auth.json)")
+	startCmd.Flags().Bool("cloud-workspace", false, "Record sandbox as a cloud workspace so it appears in the Workspaces section (pve-lxc)")
 	startCmd.Flags().String("template", "", "Load ~/.cmux/templates/<name>.yaml (or path) and expand to start flags")
 	rootCmd.AddCommand(startCmd)
 }
