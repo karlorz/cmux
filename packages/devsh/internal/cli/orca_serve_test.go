@@ -76,6 +76,11 @@ func TestBuildOrcaB1EnsureCommands(t *testing.T) {
 	if !strings.Contains(joined, "useradd --system --create-home --shell /usr/sbin/nologin orca") {
 		t.Fatalf("expected nologin system user: %s", joined)
 	}
+	// Home base dir must be orca-owned: mirror-local may create /home/orca as
+	// root before useradd, and useradd leaves existing homes untouched.
+	if !strings.Contains(joined, "chown orca:orca /home/orca") {
+		t.Fatalf("expected chown of /home/orca base dir: %s", joined)
+	}
 	// Passwordless sudoers.
 	if !strings.Contains(joined, "NOPASSWD") || !strings.Contains(joined, "/etc/sudoers.d/orca") {
 		t.Fatalf("expected sudoers NOPASSWD: %s", joined)

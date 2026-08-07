@@ -171,6 +171,10 @@ func BuildOrcaRechownCommand() string {
 func BuildOrcaB1EnsureCommands() []string {
 	return []string{
 		`id orca >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin orca`,
+		// Mirror-local may have created /home/orca (as root) before B1's
+		// useradd; useradd leaves an existing home's ownership untouched, so
+		// orca's later writes (~/.local, .npmrc, .gitconfig) would EACCES.
+		`chown orca:orca /home/orca 2>/dev/null || true`,
 		`echo "orca ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/orca`,
 		`chmod 440 /etc/sudoers.d/orca`,
 		`chmod 755 /root`,
