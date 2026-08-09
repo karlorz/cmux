@@ -110,11 +110,11 @@ const (
 	// Development defaults - used when Mode="dev" and no other values provided
 	// These point to local development servers for convenience
 	// ==========================================================================
-	DevProjectID      = "1467bed0-8522-45ee-a8d8-055de324118c"              // Dev Stack Auth project
+	DevProjectID      = "1467bed0-8522-45ee-a8d8-055de324118c"         // Dev Stack Auth project
 	DevPublishableKey = "pck_pt4nwry6sdskews2pxk4g2fbe861ak2zvaf3mqendspa0" // Dev publishable key
-	DevCmuxURL        = "http://localhost:9779"                             // Local dev server
-	DevConvexSiteURL  = "https://famous-camel-162.convex.site"              // Dev Convex deployment
-	DevServerURL      = "http://localhost:9776"                             // Local apps/server socket.io & HTTP API
+	DevCmuxURL        = "http://localhost:9779"                         // Local dev server
+	DevConvexSiteURL  = "https://famous-camel-162.convex.site"          // Dev Convex deployment
+	DevServerURL      = "http://localhost:9776"                         // Local apps/server socket.io & HTTP API
 )
 
 // Build-time configuration variables
@@ -403,27 +403,27 @@ type storedRefreshTokenLoader func() (string, error)
 func getRefreshTokenCredential(loadStoredRefreshToken storedRefreshTokenLoader) (refreshTokenCredential, error) {
 	cfg := GetConfig()
 
-	// 1. Check mode-specific env var first (preferred for CI)
+	// Mode-specific env var takes priority (preferred for CI)
 	modeEnvVar := "DEVSH_PROD_REFRESH_TOKEN"
 	if cfg.IsDev {
 		modeEnvVar = "DEVSH_DEV_REFRESH_TOKEN"
 	}
 
-	// 2. Check generic env vars (legacy support)
+	// Check env vars in priority order: mode-specific first, then generic legacy vars
 	for _, envVar := range []string{modeEnvVar, "DEVSH_REFRESH_TOKEN", "DEVBOX_REFRESH_TOKEN"} {
 		if token := os.Getenv(envVar); token != "" {
 			if err := ValidateRefreshTokenFormat(token); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: %s may be invalid: %v\n", envVar, err)
-				continue
+			} else {
+				return refreshTokenCredential{
+					token:  token,
+					envVar: envVar,
+				}, nil
 			}
-			return refreshTokenCredential{
-				token:  token,
-				envVar: envVar,
-			}, nil
 		}
 	}
 
-	// 3. File-based credentials
+	// File-based credentials
 	storedToken, err := loadStoredRefreshToken()
 	if err != nil {
 		return refreshTokenCredential{}, err
@@ -875,11 +875,10 @@ func getAccessTokenWithStoredRefreshTokenLoader(loadStoredRefreshToken storedRef
 	cfg := GetConfig()
 	client := &http.Client{Timeout: 30 * time.Second}
 	accessToken, statusCode, err := refreshAccessToken(client, cfg, credential.token)
-	if err != nil && statusCode == http.StatusUnauthorized && credential.envVar != "" {
+	if statusCode == http.StatusUnauthorized && credential.envVar != "" {
 		fmt.Fprintf(
 			os.Stderr,
-			"Warning: %s was rejected by Stack Auth with status 401; retrying with stored credentials. Unset %s to remove the stale override.\n",
-			credential.envVar,
+			"Warning: %[1]s was rejected by Stack Auth with status 401; retrying with stored credentials. Unset %[1]s to remove the stale override.\n",
 			credential.envVar,
 		)
 
@@ -897,14 +896,8 @@ func getAccessTokenWithStoredRefreshTokenLoader(loadStoredRefreshToken storedRef
 		return "", err
 	}
 
-	// Parse JWT to get expiry (simple extraction, no verification needed)
-	expiresAt := time.Now().Add(1 * time.Hour).Unix() // Default 1 hour
-	if parts := strings.Split(accessToken, "."); len(parts) == 3 {
-		// Try to parse payload for actual expiry
-		// This is best-effort; we'll use default if it fails
-	}
-
-	// Cache the new access token
+	// Cache the new access token (default 1 hour expiry; JWT exp parsing is best-effort future work)
+	expiresAt := time.Now().Add(1 * time.Hour).Unix()
 	_ = CacheAccessToken(accessToken, expiresAt)
 
 	return accessToken, nil
@@ -930,13 +923,7 @@ func refreshAccessToken(client *http.Client, cfg Config, refreshToken string) (s
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		if _, drainErr := io.Copy(io.Discard, resp.Body); drainErr != nil {
-			return "", resp.StatusCode, fmt.Errorf(
-				"failed to refresh token: status %d; failed to drain response body: %w",
-				resp.StatusCode,
-				drainErr,
-			)
-		}
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return "", resp.StatusCode, fmt.Errorf("failed to refresh token: status %d. Try 'devsh auth login' to re-authenticate", resp.StatusCode)
 	}
 
