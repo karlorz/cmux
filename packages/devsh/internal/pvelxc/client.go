@@ -60,6 +60,10 @@ type Client struct {
 	// doesn't exist (older containers without cmux-token-init).
 	execTokenMu sync.Mutex
 	execToken   string
+
+	// execRetryBaseDelay is the base backoff between exec attempts; 0 means
+	// the default (2s). Tests set it to 0 to keep retry loops fast.
+	execRetryBaseDelay time.Duration
 }
 
 type Instance struct {
@@ -128,14 +132,15 @@ func NewClient(cfg Config) (*Client, error) {
 	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: !cfg.VerifyTLS}
 
 	return &Client{
-		apiURL:           apiURL,
-		apiToken:         cfg.APIToken,
-		publicDomain:     strings.TrimSpace(cfg.PublicDomain),
-		verifyTLS:        cfg.VerifyTLS,
-		apiHTTP:          &http.Client{Transport: transport, Timeout: 180 * time.Second},
-		execHTTP:         &http.Client{Timeout: 0},
-		snapshotResolver: cfg.SnapshotResolver,
-		node:             strings.TrimSpace(cfg.Node),
+		apiURL:             apiURL,
+		apiToken:           cfg.APIToken,
+		publicDomain:       strings.TrimSpace(cfg.PublicDomain),
+		verifyTLS:          cfg.VerifyTLS,
+		apiHTTP:            &http.Client{Transport: transport, Timeout: 180 * time.Second},
+		execHTTP:           &http.Client{Timeout: 0},
+		snapshotResolver:   cfg.SnapshotResolver,
+		node:               strings.TrimSpace(cfg.Node),
+		execRetryBaseDelay: 2 * time.Second,
 	}, nil
 }
 

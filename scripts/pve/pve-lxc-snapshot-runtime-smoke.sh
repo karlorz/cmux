@@ -117,6 +117,8 @@ for line in "${snapshot_lines[@]}"; do
   exec_ready="false"
   saw_401="false"
   saw_token_fetch_fail="false"
+  saw_conn_error="false"
+  saw_edge_error="false"
   deadline=$((SECONDS + 600))
   while (( SECONDS < deadline )); do
     remaining=$((deadline - SECONDS))
@@ -134,6 +136,12 @@ for line in "${snapshot_lines[@]}"; do
     if [[ "${probe_out}" == *"fetch exec token"* ]]; then
       saw_token_fetch_fail="true"
     fi
+    if [[ "${probe_out}" == *"connection refused"* || "${probe_out}" == *"no such host"* || "${probe_out}" == *"i/o timeout"* ]]; then
+      saw_conn_error="true"
+    fi
+    if [[ "${probe_out}" == *"HTTP 502"* || "${probe_out}" == *"HTTP 503"* || "${probe_out}" == *"HTTP 504"* || "${probe_out}" == *"HTTP 524"* ]]; then
+      saw_edge_error="true"
+    fi
 
     remaining=$((deadline - SECONDS))
     if (( remaining <= 0 )); then
@@ -150,6 +158,10 @@ for line in "${snapshot_lines[@]}"; do
       echo "exec endpoint returned HTTP 401 (auth) - execd token propagation broken; check execd auth token fetch" >&2
     elif [[ "${saw_token_fetch_fail}" == "true" ]]; then
       echo "exec probe could not fetch the execd auth token - check snapshot token persistence (execd-token-*.txt) and PVE_EXECD_TOKEN_FILE" >&2
+    elif [[ "${saw_edge_error}" == "true" ]]; then
+      echo "execd did not respond (edge/HTTP error) - check cmux-execd startup in the container and cloudflared/tailscale tunnel" >&2
+    elif [[ "${saw_conn_error}" == "true" ]]; then
+      echo "execd connection failed (refused/DNS/timeout) - check cmux-execd startup in the container and network routes" >&2
     else
       echo "exec endpoint unreachable (network) - check cloudflared/tailscale route and cmux-execd startup" >&2
     fi

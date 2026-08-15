@@ -70,6 +70,16 @@ devsh() {
         return 1
       fi
 
+      if [[ "${DEVSH_MODE}" == "edge-502" ]]; then
+        echo "Error: failed to execute command: HTTP exec failed for container 227 via candidates: https://port-39375-x.alphasolves.com, http://x.tail715a6.ts.net:39375; last error: execd at https://port-39375-x.alphasolves.com/exec returned HTTP 502" >&2
+        return 1
+      fi
+
+      if [[ "${DEVSH_MODE}" == "conn-refused" ]]; then
+        echo "Error: failed to execute command: HTTP exec failed for container 227 via candidates: https://port-39375-x.alphasolves.com, http://x.tail715a6.ts.net:39375; last error: request to http://x.tail715a6.ts.net:39375/exec failed: Post \"http://x.tail715a6.ts.net:39375/exec\": dial tcp 10.0.0.5:39375: connect: connection refused" >&2
+        return 1
+      fi
+
       echo "exec endpoint not ready" >&2
       return 1
       ;;
@@ -145,3 +155,31 @@ if [[ "${token_output}" == *"exec endpoint unreachable (network)"* ]]; then
 fi
 
 echo "PASS: token-fetch failures are classified distinctly from network failures"
+
+calls_file="${tmp_dir}/calls.edge"
+if edge_output="$(run_smoke edge-502 "${calls_file}" 2>&1)"; then
+  printf '%s\n' "${edge_output}" >&2
+  fail "runtime smoke must fail when the execd edge returns HTTP 502"
+fi
+if [[ "${edge_output}" != *"execd did not respond (edge/HTTP error)"* ]]; then
+  fail "edge failure lost its diagnostic: ${edge_output}"
+fi
+if [[ "${edge_output}" == *"exec endpoint unreachable (network)"* ]]; then
+  fail "edge failure was misclassified as a network failure"
+fi
+
+echo "PASS: edge/HTTP failures are classified distinctly from network failures"
+
+calls_file="${tmp_dir}/calls.conn"
+if conn_output="$(run_smoke conn-refused "${calls_file}" 2>&1)"; then
+  printf '%s\n' "${conn_output}" >&2
+  fail "runtime smoke must fail when the execd connection is refused"
+fi
+if [[ "${conn_output}" != *"execd connection failed (refused/DNS/timeout)"* ]]; then
+  fail "connection failure lost its diagnostic: ${conn_output}"
+fi
+if [[ "${conn_output}" == *"exec endpoint unreachable (network)"* ]]; then
+  fail "connection failure was misclassified as a network failure"
+fi
+
+echo "PASS: connection failures are classified distinctly from network failures"

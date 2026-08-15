@@ -272,7 +272,7 @@ func (c *Client) tryHTTPExec(ctx context.Context, host string, command string, t
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, nil
+		return nil, fmt.Errorf("request to %s failed: %w", execURL, err)
 	}
 	defer resp.Body.Close()
 
@@ -280,7 +280,7 @@ func (c *Client) tryHTTPExec(ctx context.Context, host string, command string, t
 		return nil, ErrExecUnauthorized
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil
+		return nil, fmt.Errorf("execd at %s returned HTTP %d", execURL, resp.StatusCode)
 	}
 
 	var stdout strings.Builder
@@ -474,7 +474,11 @@ func (c *Client) ExecCommand(ctx context.Context, instanceID string, command str
 	}
 
 	maxRetries := 5
-	baseDelay := 2 * time.Second
+	baseDelay := c.execRetryBaseDelay
+	if baseDelay <= 0 {
+		baseDelay = 2 * time.Second
+	}
+	var lastErr error
 
 	for _, host := range candidates {
 		for attempt := 1; attempt <= maxRetries; attempt++ {
@@ -495,11 +499,16 @@ func (c *Client) ExecCommand(ctx context.Context, instanceID string, command str
 				// 401: invalidate token and retry with a fresh one (once per attempt).
 				if errors.Is(err, ErrExecUnauthorized) && attempt == 1 {
 					c.invalidateExecToken()
+					lastErr = err
 					continue
 				}
+				lastErr = err
 			}
 			if err == nil && result != nil {
 				return result.Stdout, result.Stderr, result.ExitCode, nil
+			}
+			if err == nil {
+				lastErr = fmt.Errorf("execd at %s returned no result", host)
 			}
 
 			if attempt < maxRetries {
@@ -512,6 +521,9 @@ func (c *Client) ExecCommand(ctx context.Context, instanceID string, command str
 		}
 	}
 
+	if lastErr != nil {
+		return "", "", -1, fmt.Errorf("HTTP exec failed for container %d via candidates: %s; last error: %v", vmid, strings.Join(candidates, ", "), lastErr)
+	}
 	return "", "", -1, fmt.Errorf("HTTP exec failed for container %d via candidates: %s", vmid, strings.Join(candidates, ", "))
 }
 

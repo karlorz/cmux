@@ -48,7 +48,8 @@ func newExecTestClient(t *testing.T, apiHandler http.HandlerFunc, execHandler ht
 		execHTTP: &http.Client{
 			Transport: &rewriteExecTransport{target: targetURL},
 		},
-		node: "test-node",
+		node:               "test-node",
+		execRetryBaseDelay: time.Nanosecond,
 	}
 }
 
@@ -518,6 +519,98 @@ func TestExecCommandRetriesOn401WithFreshTokenViaAPI(t *testing.T) {
 	}
 	if len(auths) != 2 || auths[0] != "Bearer stale-token" || auths[1] != "Bearer fresh-api-token" {
 		t.Errorf("exec Authorization sequence = %q, want [Bearer stale-token Bearer fresh-api-token]", auths)
+	}
+}
+
+func TestTryHTTPExecReturnsErrorOnNonOKStatus(t *testing.T) {
+	client := newExecTestClient(t,
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case strings.HasSuffix(r.URL.Path, "/dns"):
+				_, _ = w.Write([]byte(`{"data":{"search":""}}`))
+			case strings.HasSuffix(r.URL.Path, "/config"):
+				_, _ = w.Write([]byte(`{"data":{"hostname":"cmux-200"}}`))
+			default:
+				t.Errorf("unexpected PVE API path: %s", r.URL.Path)
+			}
+		}),
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte(`{"error":"Bad Gateway"}`))
+		}),
+	)
+
+	_, err := client.tryHTTPExec(context.Background(), "https://port-39375-cmux-200.example.com", "echo ok", 0, "")
+	if err == nil {
+		t.Fatal("tryHTTPExec() error = nil, want HTTP 502 error")
+	}
+	if !strings.Contains(err.Error(), "HTTP 502") {
+		t.Errorf("tryHTTPExec() error = %v, want it to mention HTTP 502", err)
+	}
+}
+
+func TestTryHTTPExecReturnsErrorOnConnectionFailure(t *testing.T) {
+	client := newExecTestClient(t,
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{}}`))
+		}),
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t.Fatal("exec handler must not be reached")
+		}),
+	)
+
+	// Point the exec transport at a closed listener so the request fails
+	// with a connection error instead of a response.
+	dead := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	deadURL, err := url.Parse(dead.URL)
+	if err != nil {
+		t.Fatalf("parse dead server URL: %v", err)
+	}
+	dead.Close()
+	client.execHTTP = &http.Client{Transport: &rewriteExecTransport{target: deadURL}}
+
+	_, err = client.tryHTTPExec(context.Background(), "https://port-39375-cmux-200.example.com", "echo ok", 0, "")
+	if err == nil {
+		t.Fatal("tryHTTPExec() error = nil, want connection error")
+	}
+	if !strings.Contains(err.Error(), "connection refused") {
+		t.Errorf("tryHTTPExec() error = %v, want it to mention connection refused", err)
+	}
+}
+
+func TestExecCommandSurfacesLastError(t *testing.T) {
+	// A persistent 401 must surface in the final error (with the fast retry
+	// base delay of 0 set by the test client) instead of a generic message.
+	client := newExecTestClient(t,
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case strings.HasSuffix(r.URL.Path, "/dns"):
+				_, _ = w.Write([]byte(`{"data":{"search":""}}`))
+			case strings.HasSuffix(r.URL.Path, "/config"):
+				_, _ = w.Write([]byte(`{"data":{"hostname":"cmux-200"}}`))
+			case strings.HasSuffix(r.URL.Path, "/files"):
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"data":null}`))
+			default:
+				t.Errorf("unexpected PVE API path: %s", r.URL.Path)
+			}
+		}),
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"Unauthorized"}`))
+		}),
+	)
+
+	_, _, _, err := client.ExecCommand(context.Background(), "200", "echo ok")
+	if err == nil {
+		t.Fatal("ExecCommand() error = nil, want surfaced last error")
+	}
+	if !strings.Contains(err.Error(), "401 Unauthorized") {
+		t.Errorf("ExecCommand() error = %v, want it to mention 401 Unauthorized", err)
+	}
+	if !strings.Contains(err.Error(), "last error:") {
+		t.Errorf("ExecCommand() error = %v, want it to mention last error", err)
 	}
 }
 
