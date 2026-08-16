@@ -32,7 +32,7 @@
     "@google/gemini-cli": "0.55.1",
     "opencode-ai": "1.18.18",
     "@devcontainers/cli": "0.88.0",
-    "@sourcegraph/amp": "0.0.1786881675-g57e027",
+    "@sourcegraph/amp": "0.0.1786910444-gbc03aa",
     "@xai-official/grok": "1.0.4",
     "devsh": "0.1.23"
   }
