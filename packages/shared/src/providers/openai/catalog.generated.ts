@@ -164,11 +164,10 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
     ],
     "tier": "paid",
     "tags": [
-      "default",
       "reasoning"
     ],
     "hidden": false,
-    "isDefault": true,
+    "isDefault": false,
     "defaultVariant": "low",
     "variants": [
       {
@@ -261,6 +260,60 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
     ]
   },
   {
+    "name": "codex/gpt-6-astra",
+    "displayName": "GPT-6-Astra",
+    "description": "Our most capable model for complex, demanding work.",
+    "vendor": "openai",
+    "requiredApiKeys": [
+      "OPENAI_API_KEY",
+      "CODEX_AUTH_JSON"
+    ],
+    "tier": "paid",
+    "tags": [
+      "default",
+      "reasoning"
+    ],
+    "hidden": false,
+    "isDefault": true,
+    "defaultVariant": "low",
+    "variants": [
+      {
+        "id": "low",
+        "displayName": "Low",
+        "description": "Fast responses with lighter reasoning"
+      },
+      {
+        "id": "medium",
+        "displayName": "Medium",
+        "description": "Balances speed and reasoning depth for everyday tasks"
+      },
+      {
+        "id": "high",
+        "displayName": "High",
+        "description": "Greater reasoning depth for complex problems"
+      },
+      {
+        "id": "xhigh",
+        "displayName": "Extra High",
+        "description": "Extra high reasoning depth for complex problems"
+      },
+      {
+        "id": "max",
+        "displayName": "Max",
+        "description": "Maximum reasoning depth for the hardest problems"
+      },
+      {
+        "id": "ultra",
+        "displayName": "Ultra",
+        "description": "Maximum reasoning with automatic task delegation"
+      }
+    ],
+    "inputModalities": [
+      "text",
+      "image"
+    ]
+  },
+  {
     "name": "codex/codex-auto-review",
     "displayName": "Codex Auto Review",
     "description": "Automatic approval review model for Codex.",
@@ -297,6 +350,119 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
         "id": "xhigh",
         "displayName": "Extra High",
         "description": "Extra high reasoning depth for complex problems"
+      },
+      {
+        "id": "max",
+        "displayName": "Max",
+        "description": "Maximum reasoning depth for the hardest problems"
+      }
+    ],
+    "inputModalities": [
+      "text",
+      "image"
+    ]
+  },
+  {
+    "name": "codex/gpt-daybreak-blue-latest",
+    "displayName": "Daybreak Blue",
+    "description": "Latest frontier agentic coding model for broad defensive cybersecurity work.",
+    "vendor": "openai",
+    "requiredApiKeys": [
+      "OPENAI_API_KEY",
+      "CODEX_AUTH_JSON"
+    ],
+    "tier": "paid",
+    "tags": [
+      "hidden",
+      "reasoning"
+    ],
+    "hidden": true,
+    "isDefault": false,
+    "defaultVariant": "low",
+    "variants": [
+      {
+        "id": "low",
+        "displayName": "Low",
+        "description": "Fast responses with lighter reasoning"
+      },
+      {
+        "id": "medium",
+        "displayName": "Medium",
+        "description": "Balances speed and reasoning depth for everyday tasks"
+      },
+      {
+        "id": "high",
+        "displayName": "High",
+        "description": "Greater reasoning depth for complex problems"
+      },
+      {
+        "id": "xhigh",
+        "displayName": "Extra High",
+        "description": "Extra high reasoning depth for complex problems"
+      },
+      {
+        "id": "max",
+        "displayName": "Max",
+        "description": "Maximum reasoning depth for the hardest problems"
+      },
+      {
+        "id": "ultra",
+        "displayName": "Ultra",
+        "description": "Maximum reasoning with automatic task delegation"
+      }
+    ],
+    "inputModalities": [
+      "text",
+      "image"
+    ]
+  },
+  {
+    "name": "codex/gpt-daybreak-red-latest",
+    "displayName": "Daybreak Red",
+    "description": "Cyber-permissive variant of our latest frontier agentic coding model for advanced, authorized cybersecurity research.",
+    "vendor": "openai",
+    "requiredApiKeys": [
+      "OPENAI_API_KEY",
+      "CODEX_AUTH_JSON"
+    ],
+    "tier": "paid",
+    "tags": [
+      "hidden",
+      "reasoning"
+    ],
+    "hidden": true,
+    "isDefault": false,
+    "defaultVariant": "medium",
+    "variants": [
+      {
+        "id": "low",
+        "displayName": "Low",
+        "description": "Fast responses with lighter reasoning"
+      },
+      {
+        "id": "medium",
+        "displayName": "Medium",
+        "description": "Balances speed and reasoning depth for everyday tasks"
+      },
+      {
+        "id": "high",
+        "displayName": "High",
+        "description": "Greater reasoning depth for complex problems"
+      },
+      {
+        "id": "xhigh",
+        "displayName": "Extra High",
+        "description": "Extra high reasoning depth for complex problems"
+      },
+      {
+        "id": "max",
+        "displayName": "Max",
+        "description": "Maximum reasoning depth for the hardest problems"
+      },
+      {
+        "id": "ultra",
+        "displayName": "Ultra",
+        "description": "Maximum reasoning with automatic task delegation"
       }
     ],
     "inputModalities": [
