@@ -20,52 +20,9 @@ export interface CodexModelEntry extends AgentCatalogEntry {
  */
 export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
   {
-    "name": "codex/gpt-5.2",
-    "displayName": "GPT-5.2",
-    "description": "Optimized for professional work and long-running agents.",
-    "vendor": "openai",
-    "requiredApiKeys": [
-      "OPENAI_API_KEY",
-      "CODEX_AUTH_JSON"
-    ],
-    "tier": "paid",
-    "tags": [
-      "reasoning"
-    ],
-    "hidden": false,
-    "isDefault": false,
-    "defaultVariant": "medium",
-    "variants": [
-      {
-        "id": "low",
-        "displayName": "Low",
-        "description": "Balances speed with some reasoning; useful for straightforward queries and short explanations"
-      },
-      {
-        "id": "medium",
-        "displayName": "Medium",
-        "description": "Provides a solid balance of reasoning depth and latency for general-purpose tasks"
-      },
-      {
-        "id": "high",
-        "displayName": "High",
-        "description": "Maximizes reasoning depth for complex or ambiguous problems"
-      },
-      {
-        "id": "xhigh",
-        "displayName": "Extra High",
-        "description": "Extra high reasoning for complex problems"
-      }
-    ],
-    "inputModalities": [
-      "text",
-      "image"
-    ]
-  },
-  {
     "name": "codex/gpt-5.5",
     "displayName": "GPT-5.5",
-    "description": "Frontier model for complex coding, research, and real-world work.",
+    "description": "Legacy coding model.",
     "vendor": "openai",
     "requiredApiKeys": [
       "OPENAI_API_KEY",
@@ -73,6 +30,7 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
     ],
     "tier": "paid",
     "tags": [
+      "upgradeable",
       "reasoning"
     ],
     "hidden": false,
@@ -100,6 +58,7 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
         "description": "Extra high reasoning depth for complex problems"
       }
     ],
+    "upgrade": "gpt-6-sol",
     "inputModalities": [
       "text",
       "image"
@@ -108,7 +67,7 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
   {
     "name": "codex/gpt-5.6-luna",
     "displayName": "GPT-5.6-Luna",
-    "description": "Fast and affordable agentic coding model.",
+    "description": "Older fast and efficient model.",
     "vendor": "openai",
     "requiredApiKeys": [
       "OPENAI_API_KEY",
@@ -116,6 +75,7 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
     ],
     "tier": "paid",
     "tags": [
+      "upgradeable",
       "reasoning"
     ],
     "hidden": false,
@@ -148,6 +108,7 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
         "description": "Maximum reasoning depth for the hardest problems"
       }
     ],
+    "upgrade": "gpt-6-luna",
     "inputModalities": [
       "text",
       "image"
@@ -156,7 +117,117 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
   {
     "name": "codex/gpt-5.6-sol",
     "displayName": "GPT-5.6-Sol",
-    "description": "Latest frontier agentic coding model.",
+    "description": "Older coding model for complex work.",
+    "vendor": "openai",
+    "requiredApiKeys": [
+      "OPENAI_API_KEY",
+      "CODEX_AUTH_JSON"
+    ],
+    "tier": "paid",
+    "tags": [
+      "upgradeable",
+      "reasoning"
+    ],
+    "hidden": false,
+    "isDefault": false,
+    "defaultVariant": "low",
+    "variants": [
+      {
+        "id": "low",
+        "displayName": "Low",
+        "description": "Fast responses with lighter reasoning"
+      },
+      {
+        "id": "medium",
+        "displayName": "Medium",
+        "description": "Balances speed and reasoning depth for everyday tasks"
+      },
+      {
+        "id": "high",
+        "displayName": "High",
+        "description": "Greater reasoning depth for complex problems"
+      },
+      {
+        "id": "xhigh",
+        "displayName": "Extra High",
+        "description": "Extra high reasoning depth for complex problems"
+      },
+      {
+        "id": "max",
+        "displayName": "Max",
+        "description": "Maximum reasoning depth for the hardest problems"
+      },
+      {
+        "id": "ultra",
+        "displayName": "Ultra",
+        "description": "Maximum reasoning with automatic task delegation"
+      }
+    ],
+    "upgrade": "gpt-6-sol",
+    "inputModalities": [
+      "text",
+      "image"
+    ]
+  },
+  {
+    "name": "codex/gpt-5.6-terra",
+    "displayName": "GPT-5.6-Terra",
+    "description": "Older balanced model for straightforward work.",
+    "vendor": "openai",
+    "requiredApiKeys": [
+      "OPENAI_API_KEY",
+      "CODEX_AUTH_JSON"
+    ],
+    "tier": "paid",
+    "tags": [
+      "upgradeable",
+      "reasoning"
+    ],
+    "hidden": false,
+    "isDefault": false,
+    "defaultVariant": "medium",
+    "variants": [
+      {
+        "id": "low",
+        "displayName": "Low",
+        "description": "Fast responses with lighter reasoning"
+      },
+      {
+        "id": "medium",
+        "displayName": "Medium",
+        "description": "Balances speed and reasoning depth for everyday tasks"
+      },
+      {
+        "id": "high",
+        "displayName": "High",
+        "description": "Greater reasoning depth for complex problems"
+      },
+      {
+        "id": "xhigh",
+        "displayName": "Extra High",
+        "description": "Extra high reasoning depth for complex problems"
+      },
+      {
+        "id": "max",
+        "displayName": "Max",
+        "description": "Maximum reasoning depth for the hardest problems"
+      },
+      {
+        "id": "ultra",
+        "displayName": "Ultra",
+        "description": "Maximum reasoning with automatic task delegation"
+      }
+    ],
+    "upgrade": "gpt-6-sol",
+    "inputModalities": [
+      "text",
+      "image"
+    ]
+  },
+  {
+    "name": "codex/gpt-6-astra",
+    "displayName": "GPT-6-Astra",
+    "description": "Frontier intelligence for the most demanding work.",
     "vendor": "openai",
     "requiredApiKeys": [
       "OPENAI_API_KEY",
@@ -208,9 +279,57 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
     ]
   },
   {
-    "name": "codex/gpt-5.6-terra",
-    "displayName": "GPT-5.6-Terra",
-    "description": "Balanced agentic coding model for everyday work.",
+    "name": "codex/gpt-6-luna",
+    "displayName": "GPT-6-Luna",
+    "description": "Fast and affordable model for easier tasks.",
+    "vendor": "openai",
+    "requiredApiKeys": [
+      "OPENAI_API_KEY",
+      "CODEX_AUTH_JSON"
+    ],
+    "tier": "paid",
+    "tags": [
+      "reasoning"
+    ],
+    "hidden": false,
+    "isDefault": false,
+    "defaultVariant": "medium",
+    "variants": [
+      {
+        "id": "low",
+        "displayName": "Low",
+        "description": "Fast responses with lighter reasoning"
+      },
+      {
+        "id": "medium",
+        "displayName": "Medium",
+        "description": "Balances speed and reasoning depth for everyday tasks"
+      },
+      {
+        "id": "high",
+        "displayName": "High",
+        "description": "Greater reasoning depth for complex problems"
+      },
+      {
+        "id": "xhigh",
+        "displayName": "Extra High",
+        "description": "Extra high reasoning depth for complex problems"
+      },
+      {
+        "id": "max",
+        "displayName": "Max",
+        "description": "Maximum reasoning depth for the hardest problems"
+      }
+    ],
+    "inputModalities": [
+      "text",
+      "image"
+    ]
+  },
+  {
+    "name": "codex/gpt-6-sol",
+    "displayName": "GPT-6-Sol",
+    "description": "Workhorse model for coding and everyday work.",
     "vendor": "openai",
     "requiredApiKeys": [
       "OPENAI_API_KEY",
@@ -297,6 +416,11 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
         "id": "xhigh",
         "displayName": "Extra High",
         "description": "Extra high reasoning depth for complex problems"
+      },
+      {
+        "id": "max",
+        "displayName": "Max",
+        "description": "Maximum reasoning depth for the hardest problems"
       }
     ],
     "inputModalities": [
@@ -305,9 +429,9 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
     ]
   },
   {
-    "name": "codex/gpt-5.4",
-    "displayName": "GPT-5.4",
-    "description": "Strong model for everyday coding.",
+    "name": "codex/gpt-daybreak-blue-latest",
+    "displayName": "Daybreak Blue",
+    "description": "Latest frontier agentic coding model for broad defensive cybersecurity work.",
     "vendor": "openai",
     "requiredApiKeys": [
       "OPENAI_API_KEY",
@@ -316,7 +440,60 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
     "tier": "paid",
     "tags": [
       "hidden",
-      "upgradeable",
+      "reasoning"
+    ],
+    "hidden": true,
+    "isDefault": false,
+    "defaultVariant": "low",
+    "variants": [
+      {
+        "id": "low",
+        "displayName": "Low",
+        "description": "Fast responses with lighter reasoning"
+      },
+      {
+        "id": "medium",
+        "displayName": "Medium",
+        "description": "Balances speed and reasoning depth for everyday tasks"
+      },
+      {
+        "id": "high",
+        "displayName": "High",
+        "description": "Greater reasoning depth for complex problems"
+      },
+      {
+        "id": "xhigh",
+        "displayName": "Extra High",
+        "description": "Extra high reasoning depth for complex problems"
+      },
+      {
+        "id": "max",
+        "displayName": "Max",
+        "description": "Maximum reasoning depth for the hardest problems"
+      },
+      {
+        "id": "ultra",
+        "displayName": "Ultra",
+        "description": "Maximum reasoning with automatic task delegation"
+      }
+    ],
+    "inputModalities": [
+      "text",
+      "image"
+    ]
+  },
+  {
+    "name": "codex/gpt-daybreak-red-latest",
+    "displayName": "Daybreak Red",
+    "description": "Cyber-permissive variant of our latest frontier agentic coding model for advanced, authorized cybersecurity research.",
+    "vendor": "openai",
+    "requiredApiKeys": [
+      "OPENAI_API_KEY",
+      "CODEX_AUTH_JSON"
+    ],
+    "tier": "paid",
+    "tags": [
+      "hidden",
       "reasoning"
     ],
     "hidden": true,
@@ -342,55 +519,18 @@ export const CODEX_CATALOG_GENERATED: CodexModelEntry[] = [
         "id": "xhigh",
         "displayName": "Extra High",
         "description": "Extra high reasoning depth for complex problems"
+      },
+      {
+        "id": "max",
+        "displayName": "Max",
+        "description": "Maximum reasoning depth for the hardest problems"
+      },
+      {
+        "id": "ultra",
+        "displayName": "Ultra",
+        "description": "Maximum reasoning with automatic task delegation"
       }
     ],
-    "upgrade": "gpt-5.6-terra",
-    "inputModalities": [
-      "text",
-      "image"
-    ]
-  },
-  {
-    "name": "codex/gpt-5.4-mini",
-    "displayName": "GPT-5.4-Mini",
-    "description": "Small, fast, and cost-efficient model for simpler coding tasks.",
-    "vendor": "openai",
-    "requiredApiKeys": [
-      "OPENAI_API_KEY",
-      "CODEX_AUTH_JSON"
-    ],
-    "tier": "paid",
-    "tags": [
-      "hidden",
-      "upgradeable",
-      "reasoning"
-    ],
-    "hidden": true,
-    "isDefault": false,
-    "defaultVariant": "medium",
-    "variants": [
-      {
-        "id": "low",
-        "displayName": "Low",
-        "description": "Fast responses with lighter reasoning"
-      },
-      {
-        "id": "medium",
-        "displayName": "Medium",
-        "description": "Balances speed and reasoning depth for everyday tasks"
-      },
-      {
-        "id": "high",
-        "displayName": "High",
-        "description": "Greater reasoning depth for complex problems"
-      },
-      {
-        "id": "xhigh",
-        "displayName": "Extra High",
-        "description": "Extra high reasoning depth for complex problems"
-      }
-    ],
-    "upgrade": "gpt-5.6-luna",
     "inputModalities": [
       "text",
       "image"
